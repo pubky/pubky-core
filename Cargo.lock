@@ -3,5 +3,21 @@
 version = 3
 
 [[package]]
+name = "bytes"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
+
+[[package]]
 name = "kytes"
 version = "0.1.0"
+dependencies = [
+ "bytes",
+ "z32",
+]
+
+[[package]]
+name = "z32"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4e62ec361f7259399a83b7983270dd0249067d94600c50475e65dca64e24083"
