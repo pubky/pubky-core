@@ -1,4 +1,5 @@
 use bytes::{BufMut, Bytes, BytesMut};
+use rand::Rng;
 
 const SEED_FILE_PREFIX: &str = "kytes encrypted-seed";
 const VERSION: u8 = 0;
@@ -29,16 +30,19 @@ pub fn encrypt_seed_file() {
     unimplemented!()
 }
 
+pub fn generate_seed() -> [u8; 32] {
+    let mut rng = rand::thread_rng();
+    rng.gen()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn test_format_encrypted_seed_file() {
-        let seed = [0u8; 32];
+        let seed = generate_seed();
         let seed_file = format_encrypted_seed_file(&seed);
-
-        dbg!(&seed_file);
 
         assert_eq!(seed_file.len(), 52 + 4 + SEED_FILE_PREFIX.len());
         assert!(seed_file.starts_with(SEED_FILE_PREFIX.as_bytes()));

@@ -9,4 +9,5 @@ license = "MIT"
 
 [dependencies]
 bytes = "1.5.0"
+rand = "0.8.5"
 z32 = "1.0.2"
