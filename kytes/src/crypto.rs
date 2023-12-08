@@ -1,8 +1,10 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use rand::Rng;
 
-const SEED_FILE_PREFIX: &str = "kytes encrypted-seed";
+const SEED_FILE_PREFIX: &str = "kytes seed";
 const VERSION: u8 = 0;
+
+const PASSPHRASE_HASHING_ITERATIONS: i32 = 100_000;
 
 /// Takes an encrypted seed and format it into a seed file as follows:
 /// `kytes encrypted-seed v<version> <zbase32 encoded encrypted_seed>`
@@ -35,8 +37,22 @@ pub fn generate_seed() -> [u8; 32] {
     rng.gen()
 }
 
+pub fn seed_encryption_key(passphrase: &str) -> [u8; 32] {
+    let mut hash: [u8; 32] = blake3::hash(passphrase.as_bytes()).into();
+
+    for i in 0..PASSPHRASE_HASHING_ITERATIONS {
+        hash = blake3::hash(&hash).into();
+    }
+
+    hash.to_owned()
+}
+
 #[cfg(test)]
 mod test {
+    use std::time::Instant;
+
+    use crate::passphrase::generate_4words_passphrase;
+
     use super::*;
 
     #[test]
@@ -44,10 +60,27 @@ mod test {
         let seed = generate_seed();
         let seed_file = format_encrypted_seed_file(&seed);
 
+        dbg!(&seed_file);
+
         assert_eq!(seed_file.len(), 52 + 4 + SEED_FILE_PREFIX.len());
         assert!(seed_file.starts_with(SEED_FILE_PREFIX.as_bytes()));
         assert!(seed_file.starts_with(SEED_FILE_PREFIX.as_bytes()));
         assert_eq!(encrypted_seed_file_version(&seed_file).unwrap(), 0);
         assert!(seed_file.ends_with(&z32::encode(&seed).as_bytes()));
+    }
+
+    #[test]
+    fn hash() {
+        let passphrase = generate_4words_passphrase();
+
+        let start = Instant::now();
+
+        println!("start hashing...");
+
+        let hash = seed_encryption_key(&passphrase);
+
+        println!("final hash: {:?}", hash);
+
+        println!("{} ms", start.elapsed().as_millis());
     }
 }
