@@ -1,9 +1,9 @@
 # Seed
 
-Kytes seed is an encrypted seed encoded as URI as follows:
+Kytz seed is an encrypted seed encoded as URI as follows:
 
 ```
-kytes:seed:<suffix>
+kytz:seed:<suffix>
 ```
 
 The `suffix` is a `z-base32` encoded bytes as follows:

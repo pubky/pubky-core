@@ -1,4 +1,4 @@
-//! Manage Kytes seed files.
+//! Manage Kytz seed files.
 //!
 //! Seed file contains a seed encrypted with a strong passphrase.
 
@@ -15,7 +15,7 @@ use crate::{
     Error, Result,
 };
 
-const SEED_SCHEME: &[u8] = b"kytes:seed:";
+const SEED_SCHEME: &[u8] = b"kytz:seed:";
 
 const VERSION: u8 = 0;
 const KNOWN_VERSIONS: [u8; 1] = [0];
@@ -41,7 +41,7 @@ pub fn encrypt_seed(seed: &Key, passphrase: &str) -> Bytes {
 
 pub fn decrypt_seed(seed_file: Bytes, passphrase: &str) -> Result<Vec<u8>> {
     if !seed_file.starts_with(SEED_SCHEME) {
-        return Err(Error::Generic("Not a Kytes seed".to_string()));
+        return Err(Error::Generic("Not a Kytz seed".to_string()));
     }
 
     let suffix = z32::decode(&seed_file[SEED_SCHEME.len()..])
@@ -51,9 +51,7 @@ pub fn decrypt_seed(seed_file: Bytes, passphrase: &str) -> Result<Vec<u8>> {
 
     match version {
         0 => decrypted_seed_v0(&suffix, passphrase),
-        _ => Err(Error::Generic(
-            "Unknown kytes seed file version".to_string(),
-        )),
+        _ => Err(Error::Generic("Unknown Kytz seed file version".to_string())),
     }
 }
 

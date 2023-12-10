@@ -1,5 +1,10 @@
 use clap::{Parser, Subcommand};
 
+mod cli;
+mod error;
+
+pub use crate::error::{Error, Result};
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -29,6 +34,7 @@ enum Commands {
 }
 
 fn main() {
+    dbg!(cli::config::kytz_config_path("seed.kytz").unwrap());
     let cli = Cli::parse();
 
     // You can check the value provided by positional arguments, or option arguments
