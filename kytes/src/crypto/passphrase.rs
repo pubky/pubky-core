@@ -1,3 +1,5 @@
+//! EFF large wordlist passphrase generator.
+
 use rand::seq::SliceRandom;
 
 /// Generate a 4 words passphrase with spaces, from the [EFF large wordlist](https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt).
