@@ -3,6 +3,7 @@
 //! Seed file contains a seed encrypted with a strong passphrase.
 
 use bytes::{Bytes, BytesMut};
+use zeroize::Zeroize;
 
 use crate::{
     crypto::{
@@ -19,7 +20,7 @@ const VERSION: u8 = 0;
 /// Encrypt the seed with a strong passphrase, and return an [encrypted seed
 /// file](../../../design/seed.md).
 pub fn encrypt_seed(seed: &Key, passphrase: &str) -> Bytes {
-    let encryption_key = derive_encrypiton_key(passphrase);
+    let mut encryption_key = derive_encryption_key(passphrase);
 
     let mut seed_file = BytesMut::with_capacity(SEED_SCHEME.len() + 33);
     seed_file.extend_from_slice(SEED_SCHEME);
@@ -32,9 +33,12 @@ pub fn encrypt_seed(seed: &Key, passphrase: &str) -> Bytes {
 
     seed_file.extend_from_slice(z32::encode(&suffix).as_bytes());
 
+    encryption_key.zeroize();
+
     seed_file.freeze()
 }
 
+/// Decrypt the [seed file](../../../design/seed.md).
 pub fn decrypt_seed(seed_file: Bytes, passphrase: &str) -> Result<Vec<u8>> {
     if !seed_file.starts_with(SEED_SCHEME) {
         return Err(Error::Generic("Not a Kytz seed".to_string()));
@@ -52,14 +56,19 @@ pub fn decrypt_seed(seed_file: Bytes, passphrase: &str) -> Result<Vec<u8>> {
 }
 
 fn decrypted_seed_v0(suffix: &[u8], passphrase: &str) -> Result<Vec<u8>> {
-    let encryption_key = derive_encrypiton_key(passphrase);
+    let mut encryption_key = derive_encryption_key(passphrase);
     let encrypted_seed = &suffix[1..];
 
-    decrypt(&encryption_key, encrypted_seed)
+    let decrypted_seed = decrypt(&encryption_key, encrypted_seed);
+
+    // Empty the encryption key in memory.
+    encryption_key.zeroize();
+
+    decrypted_seed
 }
 
 /// Derive a secret key from a strong passphrase for encrypting/decrypting the seed.
-fn derive_encrypiton_key(passphrase: &str) -> Key {
+fn derive_encryption_key(passphrase: &str) -> Key {
     // Argon2 with default params (Argon2id v19)
     let hasher = argon2::Argon2::default();
 
@@ -84,8 +93,8 @@ mod test {
     use std::time::Instant;
 
     use super::*;
-    use crate::crypto::keys::*;
     use crate::crypto::passphrase::*;
+    use crate::crypto::*;
 
     #[test]
     fn test_encrypt_decrypt_seed() {
@@ -94,7 +103,7 @@ mod test {
 
         let encrypted_seed_file = encrypt_seed(&seed, &passphrase);
 
-        dbg!(&encrypted_seed_file);
+        // dbg!(&encrypted_seed_file);
 
         let start = Instant::now();
         let decrypted_seed = decrypt_seed(encrypted_seed_file, &passphrase)
