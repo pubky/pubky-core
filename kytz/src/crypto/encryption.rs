@@ -1,9 +1,8 @@
 //! Encryption functions.
 
 use crate::{Error, Result};
-use rand::{Rng, RngCore};
 
-use crate::crypto::{Key, Nonce};
+use crate::crypto::Key;
 
 /// Compute the length of a ciphertext, given the length of a plaintext.
 ///

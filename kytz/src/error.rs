@@ -1,8 +1,5 @@
 //! Main Crate Error
 
-// Alias Result to be the crate Result.
-pub type Result<T, E = Error> = core::result::Result<T, E>;
-
 #[derive(thiserror::Error, Debug)]
 /// Kytz crate error enum.
 pub enum Error {

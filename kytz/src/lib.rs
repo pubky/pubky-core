@@ -1,5 +1,9 @@
-#![allow(unused)]
-mod crypto;
-mod error;
+// #![allow(unused)]
+pub mod crypto;
+pub mod error;
 
-pub use crate::error::{Error, Result};
+// Re-exports
+pub use error::Error;
+
+// Alias Result to be the crate Result.
+pub type Result<T, E = Error> = core::result::Result<T, E>;

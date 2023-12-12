@@ -2,15 +2,12 @@
 //!
 //! Seed file contains a seed encrypted with a strong passphrase.
 
-use argon2::PasswordHasher;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 
 use crate::{
     crypto::{
         encryption::{ciphertext_len, decrypt, encrypt_to_slice},
-        keys::generate_seed,
-        passphrase::generate_4words_passphrase,
-        Key, Nonce,
+        Key,
     },
     Error, Result,
 };
@@ -18,7 +15,6 @@ use crate::{
 const SEED_SCHEME: &[u8] = b"kytz:seed:";
 
 const VERSION: u8 = 0;
-const KNOWN_VERSIONS: [u8; 1] = [0];
 
 /// Encrypt the seed with a strong passphrase, and return an [encrypted seed
 /// file](../../../design/seed.md).
@@ -62,17 +58,6 @@ fn decrypted_seed_v0(suffix: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     decrypt(&encryption_key, encrypted_seed)
 }
 
-fn parse_version(byte_string: &[u8]) -> Result<u8> {
-    // Convert byte array to string slice
-    let str_slice = std::str::from_utf8(byte_string)
-        .map_err(|_| Error::Generic("Invalid version number".to_string()))?;
-
-    str_slice
-        .parse::<u8>()
-        .map(Ok)
-        .map_err(|_| Error::Generic("Invalid version number".to_string()))?
-}
-
 /// Derive a secret key from a strong passphrase for encrypting/decrypting the seed.
 fn derive_encrypiton_key(passphrase: &str) -> Key {
     // Argon2 with default params (Argon2id v19)
@@ -99,6 +84,8 @@ mod test {
     use std::time::Instant;
 
     use super::*;
+    use crate::crypto::keys::*;
+    use crate::crypto::passphrase::*;
 
     #[test]
     fn test_encrypt_decrypt_seed() {
