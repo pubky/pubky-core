@@ -2,215 +2,221 @@
 
 use blake3::{Hash, Hasher};
 
-use std::cmp::Ordering;
+use std::cmp::{self, Ordering};
+use std::collections::HashMap;
 use std::mem;
+use std::ops::Deref;
 
-type Key = Box<[u8]>;
-type Value = Box<[u8]>;
+const EMPTY_HASH: Hash = Hash::from_bytes([0_u8; 32]);
 
-const KEY: [u8; 32] = [1_u8; 32];
-
-#[derive(Debug, Clone)]
-pub struct Node {
-    key: Key,
-    value: Value,
-
-    priority: Hash,
-
-    left: Option<Box<Node>>,
-    right: Option<Box<Node>>,
-}
-
-enum RemovalCases {
-    RemoveNode,
-    RotateLeft,
-    RotateRight,
+#[derive(Debug, Clone, PartialEq)]
+struct Node {
+    key: Box<[u8]>,
+    value: Hash,
+    rank: Hash,
+    left: Hash,
+    right: Hash,
 }
 
 impl Node {
-    pub fn new(key: &[u8], value: &[u8]) -> Node {
-        let priority = Hasher::new().update(&key).finalize();
+    fn new(key: &[u8], value: Hash) -> Self {
+        let mut hasher = Hasher::new();
+        hasher.update(key);
 
-        Node {
+        let rank = hasher.finalize();
+
+        Self {
             key: key.into(),
-            value: value.into(),
-            priority,
-            left: None,
-            right: None,
+            value,
+            left: EMPTY_HASH,
+            right: EMPTY_HASH,
+            rank,
         }
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<&[u8]> {
-        match key.cmp(&self.key) {
-            Ordering::Equal => Some(&self.value),
-            Ordering::Less => self.left.as_ref().and_then(|n| n.get(key)),
-            Ordering::Greater => self.right.as_ref().and_then(|n| n.get(key)),
-        }
+    // TODO: memoize
+    fn hash(&self) -> Hash {
+        let mut hasher = Hasher::new();
+
+        hasher.update(&self.key);
+        hasher.update(self.value.as_bytes());
+        hasher.update(self.left.as_bytes());
+        hasher.update(self.right.as_bytes());
+
+        hasher.finalize()
     }
 
-    // pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-    //     match key.cmp(&self.key) {
-    //         Ordering::Equal => Some(&mut self.value),
-    //         Ordering::Less => self.left.as_mut().and_then(|n| n.get_mut(key)),
-    //         Ordering::Greater => self.right.as_mut().and_then(|n| n.get_mut(key)),
-    //     }
-    // }
+    fn to_bytes(&self) -> Box<[u8]> {
+        let mut bytes = vec![];
 
-    pub fn insert_or_replace(subtree: &mut Option<Box<Node>>, new: Node) -> Option<Value> {
-        match *subtree {
-            None => {
-                mem::replace(subtree, Some(Box::new(new)));
-                None
-            }
-            Some(ref mut node) => node.insert(new),
-        }
+        bytes.extend_from_slice(self.value.as_bytes());
+        bytes.extend_from_slice(self.left.as_bytes());
+        bytes.extend_from_slice(self.right.as_bytes());
+        bytes.extend_from_slice(&self.key);
+
+        bytes.into_boxed_slice()
     }
 
-    pub fn insert(&mut self, node: Node) -> Option<Value> {
-        match node.key.cmp(&self.key) {
-            Ordering::Equal => {
-                if self.priority.as_bytes() < node.priority.as_bytes() {
-                    self.priority = node.priority;
-                }
-                Some(mem::replace(&mut self.value, node.value))
-            }
-            Ordering::Less => {
-                let old_value = Node::insert_or_replace(&mut self.left, node);
-                if self.is_heap_property_violated(&self.left) {
-                    self.right_rotate();
-                }
-                old_value
-            }
-            Ordering::Greater => {
-                let old_value = Node::insert_or_replace(&mut self.right, node);
-                if self.is_heap_property_violated(&self.right) {
-                    self.left_rotate();
-                }
-                old_value
-            }
-        }
-    }
+    fn from_bytes(bytes: &Box<[u8]>) -> Self {
+        // TODO: Make sure that bytes is long enough at least >96 bytes.
 
-    // pub fn remove(subtree: &mut Option<Box<Node<K, V>>>, key: &K) -> Option<V> {
-    //     {
-    //         let node = match *subtree {
-    //             None => return None,
-    //             Some(ref mut n) => n,
-    //         };
-    //         match key.cmp(&node.key) {
-    //             Ordering::Less => return Node::remove(&mut node.left, key),
-    //             Ordering::Greater => return Node::remove(&mut node.right, key),
-    //             Ordering::Equal => {}
-    //         }
-    //     }
-    //     Node::rotate_down(subtree)
-    // }
-    //
-    // fn rotate_down(subtree: &mut Option<Box<Node<K, V>>>) -> Option<V> {
-    //     let case = match *subtree {
-    //         None => return None,
-    //         Some(ref root) => match (&root.left, &root.right) {
-    //             (&None, &None) => RemovalCases::RemoveNode,
-    //             (&Some(ref left), &Some(ref right)) => {
-    //                 if left.priority >= right.priority {
-    //                     RemovalCases::RotateRight
-    //                 } else {
-    //                     RemovalCases::RotateLeft
-    //                 }
-    //             }
-    //             (&Some(_), &None) => RemovalCases::RotateRight,
-    //             (&None, &Some(_)) => RemovalCases::RotateLeft,
-    //         },
-    //     };
-    //     match case {
-    //         RemovalCases::RemoveNode => subtree.take().map(|n| n.value),
-    //         RemovalCases::RotateLeft => subtree.as_mut().and_then(|n| {
-    //             n.left_rotate();
-    //             Node::rotate_down(&mut n.left)
-    //         }),
-    //         RemovalCases::RotateRight => subtree.as_mut().and_then(|n| {
-    //             n.right_rotate();
-    //             Node::rotate_down(&mut n.right)
-    //         }),
-    //     }
-    // }
+        let mut node = Self::new(
+            &bytes[96..],
+            Hash::from_bytes(bytes[..32].try_into().unwrap()),
+        );
 
-    // #[inline]
-    fn is_heap_property_violated(&self, subtree: &Option<Box<Node>>) -> bool {
-        match *subtree {
-            None => false,
-            Some(ref b) => self.priority.as_bytes() < b.priority.as_bytes(),
-        }
-    }
+        node.left = Hash::from_bytes(bytes[32..64].try_into().unwrap());
+        node.right = Hash::from_bytes(bytes[64..96].try_into().unwrap());
 
-    //       q               p
-    //      / \             / \
-    //     p  C   --->     A  q
-    //    / \                / \
-    //   A  B               B  C
-    fn right_rotate(&mut self) {
-        // Cut left subtree of q
-        let left = mem::replace(&mut self.left, None);
-        if let Some(mut node) = left {
-            // Let subtree p be root and `node` point to q
-            mem::swap(self, &mut *node);
-            // Move subtree B from p to left subtree of q
-            mem::swap(&mut self.right, &mut node.left);
-            // Let q be right child of p
-            mem::replace(&mut self.right, Some(node));
-        }
-    }
-
-    //     p               q
-    //    / \             / \
-    //   A  q   --->     p  C
-    //     / \          / \
-    //    B  C         A  B
-    fn left_rotate(&mut self) {
-        // Cut right subtree of p
-        let right = mem::replace(&mut self.right, None);
-        if let Some(mut node) = right {
-            // Let subtree q be root and `node` point to p
-            mem::swap(self, &mut *node);
-            // Move subtree B from q to right subtree of p
-            mem::swap(&mut self.left, &mut node.right);
-            // Let p be left child of q
-            mem::replace(&mut self.left, Some(node));
-        }
-    }
-
-    pub fn as_mermaid_graph(&self) -> String {
-        let mut graph = String::from("graph TD;\n"); // Start of the Mermaid graph
-        build_graph_string(&Some(self.clone().into()), &mut graph);
-        graph
+        node
     }
 }
 
-fn build_graph_string(node: &Option<Box<Node>>, graph: &mut String) {
-    if let Some(ref n) = node {
-        let key = bytes_to_string(&n.key);
+#[derive(Debug)]
+pub struct Treap {
+    root: Hash,
+    storage: HashMap<Hash, Box<[u8]>>,
+}
+
+impl Treap {
+    pub fn new(storage: HashMap<Hash, Box<[u8]>>) -> Self {
+        Self {
+            root: EMPTY_HASH,
+            storage,
+        }
+    }
+
+    pub fn insert(&mut self, key: &[u8], value: &[u8]) {
+        let value = self.insert_blob(value);
+        let mut node = Node::new(key, value);
+
+        // TODO: batch inserting updated nodes.
+
+        let new_root = self.insert_impl(&mut node, self.root);
+        self.root = new_root.hash();
+        dbg!(("new root", self.root));
+    }
+
+    // Recursive insertion (unzipping) algorithm.
+    //
+    // Returns the new root node.
+    fn insert_impl(&mut self, x: &mut Node, root_hash: Hash) -> Node {
+        if let Some(mut root) = self.get_node(root_hash) {
+            if x.key < root.key {
+                if self.insert_impl(x, root.left).key == x.key {
+                    if x.rank.as_bytes() < root.rank.as_bytes() {
+                        root.left = self.store_node(x);
+                        self.store_node(&root);
+                    } else {
+                        root.left = x.right;
+                        x.right = self.store_node(&root);
+
+                        self.store_node(x);
+                        return x.clone();
+                    }
+                }
+            } else {
+                dbg!("going right",);
+                if self.insert_impl(x, root.right).key == x.key {
+                    if x.rank.as_bytes() < root.rank.as_bytes() {
+                        root.right = self.store_node(x);
+
+                        self.store_node(&root);
+                    } else {
+                        root.right = x.left;
+                        x.right = self.store_node(&root);
+
+                        self.store_node(x);
+
+                        // dbg!(("after going right", &x, &root));
+                        return x.clone();
+                    }
+                }
+            }
+
+            self.store_node(&root);
+
+            return root;
+        } else {
+            self.store_node(x);
+
+            return x.clone();
+        }
+    }
+
+    /// Store a node after it has been modified and had a new hash.
+    fn store_node(&mut self, node: &Node) -> Hash {
+        // TODO: save the hash somewhere in the Node instead of hashing it again.
+
+        let hash = node.hash();
+        self.storage.insert(hash, node.to_bytes());
+
+        hash
+    }
+
+    // TODO: Add stream input API.
+    fn insert_blob(&mut self, blob: &[u8]) -> Hash {
+        let mut hasher = Hasher::new();
+        hasher.update(blob);
+        let hash = hasher.finalize();
+
+        self.storage.insert(hash, blob.into());
+
+        hash
+    }
+
+    // TODO: move to storage abstraction.
+    fn get_node(&self, hash: Hash) -> Option<Node> {
+        if hash == EMPTY_HASH {
+            return None;
+        }
+
+        self.storage.get(&hash).map(Node::from_bytes)
+    }
+
+    fn as_mermaid_graph(&self) -> String {
+        let mut graph = String::new();
+
+        graph.push_str("graph TD;\n");
+
+        if let Some(root) = self.get_node(self.root) {
+            self.build_graph_string(&root, &mut graph);
+        }
+
+        graph
+    }
+
+    fn build_graph_string(&self, node: &Node, graph: &mut String) {
+        dbg!(("building for", &node.key, &node.left, &node.right));
+
+        let key = bytes_to_string(&node.key);
         let node_label = format!("{}({}:)", key, key);
 
         graph.push_str(&format!("    {};\n", node_label));
 
-        if n.left.is_some() {
-            let key = bytes_to_string(&n.left.as_ref().unwrap().key);
+        if let Some(left) = self.get_node(node.left) {
+            let key = bytes_to_string(&left.key);
             let left_label = format!("{}({})", key, key);
 
             graph.push_str(&format!("    {} --> {};\n", node_label, left_label));
-            build_graph_string(&n.left, graph);
+            self.build_graph_string(&left, graph);
         }
 
-        if n.right.is_some() {
-            let key = bytes_to_string(&n.right.as_ref().unwrap().key);
+        if let Some(right) = self.get_node(node.right) {
+            let key = bytes_to_string(&right.key);
             let right_label = format!("{}({})", key, key);
 
             graph.push_str(&format!("    {} --> {};\n", node_label, right_label));
-            build_graph_string(&n.right, graph);
+            self.build_graph_string(&right, graph);
         }
     }
 }
 
+impl Default for Treap {
+    fn default() -> Self {
+        Self::new(HashMap::new())
+    }
+}
 fn bytes_to_string(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| b.to_string()).collect()
 }
@@ -221,12 +227,13 @@ mod test {
 
     #[test]
     fn basic() {
-        let mut tree = Node::new(b"a", b"0");
+        let mut tree = Treap::default();
 
-        for i in 0..254 {
-            tree.insert(Node::new(&[i], b"0"));
+        for i in 0..4 {
+            tree.insert(&[i], b"0");
         }
 
-        println!("{}", tree.as_mermaid_graph())
+        dbg!(tree);
+        // println!("{}", tree.as_mermaid_graph())
     }
 }
