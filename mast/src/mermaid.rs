@@ -1,40 +1,45 @@
-use crate::treap::{Node, Treap};
+#[cfg(test)]
+mod test {
+    use crate::{Node, Treap};
 
-impl Treap {
-    pub fn as_mermaid_graph(&self) -> String {
-        let mut graph = String::new();
+    impl<'a> Treap<'a> {
+        pub fn as_mermaid_graph(&self) -> String {
+            let mut graph = String::new();
 
-        graph.push_str("graph TD;\n");
+            graph.push_str("graph TD;\n");
 
-        if let Some(root) = self.get_node(self.root) {
-            self.build_graph_string(&root, &mut graph);
+            if let Some(root) = &self.root {
+                self.build_graph_string(&root, &mut graph);
+            }
+
+            graph
         }
 
-        graph
+        fn build_graph_string(&self, node: &Node, graph: &mut String) {
+            let key = bytes_to_string(node.key());
+            let node_label = format!("{}({})", key, key);
+
+            graph.push_str(&format!("    {};\n", node_label));
+
+            if let Some(child) = self.get_node(node.left()) {
+                let key = bytes_to_string(child.key());
+                let child_label = format!("{}({})", key, key);
+
+                graph.push_str(&format!("    {} --> {};\n", node_label, child_label));
+                self.build_graph_string(&child, graph);
+            }
+
+            if let Some(child) = self.get_node(node.right()) {
+                let key = bytes_to_string(child.key());
+                let child_label = format!("{}({})", key, key);
+
+                graph.push_str(&format!("    {} --> {};\n", node_label, child_label));
+                self.build_graph_string(&child, graph);
+            }
+        }
     }
 
-    fn build_graph_string(&self, node: &Node, graph: &mut String) {
-        let key = bytes_to_string(&node.key);
-        let node_label = format!("{}({}:)", key, key);
-
-        if let Some(left) = self.get_node(node.left) {
-            let key = bytes_to_string(&left.key);
-            let left_label = format!("{}({})", key, key);
-
-            graph.push_str(&format!("    {} --> {};\n", node_label, left_label));
-            self.build_graph_string(&left, graph);
-        }
-
-        if let Some(right) = self.get_node(node.right) {
-            let key = bytes_to_string(&right.key);
-            let right_label = format!("{}({})", key, key);
-
-            graph.push_str(&format!("    {} --> {};\n", node_label, right_label));
-            self.build_graph_string(&right, graph);
-        }
+    fn bytes_to_string(byte: &[u8]) -> String {
+        String::from_utf8(byte.to_vec()).expect("Invalid utf8 key in test with mermaig graph")
     }
-}
-
-fn bytes_to_string(bytes: &[u8]) -> String {
-    bytes.iter().map(|&b| b.to_string()).collect()
 }
