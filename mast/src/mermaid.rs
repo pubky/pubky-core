@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod test {
-    use crate::{Node, Treap};
+    use crate::{HashTreap, Node};
 
-    impl<'a> Treap<'a> {
+    impl<'a> HashTreap<'a> {
         pub fn as_mermaid_graph(&self) -> String {
             let mut graph = String::new();
 
             graph.push_str("graph TD;\n");
 
-            if let Some(root) = &self.root {
+            if let Some(root) = self.get_node(&self.root) {
                 self.build_graph_string(&root, &mut graph);
             }
 

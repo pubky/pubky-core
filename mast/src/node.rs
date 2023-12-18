@@ -23,17 +23,13 @@ pub(crate) struct Node {
     right: Option<Hash>,
 }
 
-pub(crate) enum Child {
+#[derive(Debug)]
+pub(crate) enum Branch {
     Left,
     Right,
 }
 
 impl Node {
-    // TODO: Convert to Result, since it shouldn't be missing!
-    pub(crate) fn open(storage: &MemoryStorage, hash: Hash) -> Option<Self> {
-        storage.get_node(&hash)
-    }
-
     pub fn new(key: &[u8], value: Hash) -> Self {
         let mut hasher = Hasher::new();
         hasher.update(key);
@@ -50,10 +46,10 @@ impl Node {
             rank,
         };
 
-        node.update_hash();
-
         node
     }
+
+    // TODO: add from bytes and remember to update its hash.
 
     // === Getters ===
 
@@ -96,49 +92,54 @@ impl Node {
         self.hash
     }
 
-    // /// Replace a child of this node, and return the old child.
-    // ///
-    // /// This method decrements the ref count of the old child,
-    // /// and incrments the ref count of the new child,
-    // ///
-    // /// but it dosn't flush any changes to the storage.
-    // pub(crate) fn set_child(
-    //     &mut self,
-    //     node: &mut Option<Node>,
-    //     child: Child,
-    //     storage: &MemoryStorage,
-    // ) -> Option<Node> {
-    //     // Decrement old child's ref count.
-    //     let mut old_child = match child {
-    //         Child::Left => self.left,
-    //         Child::Right => self.right,
-    //     }
-    //     .and_then(|hash| storage.get_node(&hash));
-    //     old_child.as_mut().map(|n| n.decrement_ref_count());
-    //
-    //     // Increment new child's ref count.
-    //     node.as_mut().map(|n| n.increment_ref_count());
-    //
-    //     // swap children
-    //     match child {
-    //         Child::Left => self.left = node.as_mut().map(|n| n.update_hash()),
-    //         Child::Right => self.right = node.as_mut().map(|n| n.update_hash()),
-    //     }
-    //
-    //     // Update this node's hash.
-    //     self.update_hash();
-    //
-    //     old_child
-    // }
-
-    pub(crate) fn set_child_hash(&mut self, child: Child, hash: Hash) {
-        // Swap the child.
-        match child {
-            Child::Left => self.left = Some(hash),
-            Child::Right => self.right = Some(hash),
+    /// When inserting a node, once we find its instertion point,
+    /// we give one of its children (depending on the direction),
+    /// to the current node at the insertion position, and then we
+    /// replace that child with the updated current node.
+    pub(crate) fn insertion_swap(
+        &mut self,
+        direction: Branch,
+        current_node: &mut Node,
+        storage: &mut MemoryStorage,
+    ) {
+        match direction {
+            Branch::Left => current_node.set_child(&Branch::Left, *self.right()),
+            Branch::Right => current_node.set_child(&Branch::Left, *self.left()),
         }
 
-        // Update this node's hash, after updating the child.
+        current_node.update(storage);
+
+        match direction {
+            Branch::Left => self.left = Some(*current_node.hash()),
+            Branch::Right => self.right = Some(*current_node.hash()),
+        }
+
+        self.update(storage);
+    }
+
+    pub(crate) fn set_child(&mut self, branch: &Branch, hash: Option<Hash>) {
+        // decrement old child's ref count.
+
+        // set children
+        match branch {
+            Branch::Left => self.left = hash,
+            Branch::Right => self.right = hash,
+        }
+
+        // TODO: increment node's ref count.
+    }
+
+    pub(crate) fn update(&mut self, storage: &mut MemoryStorage) -> &Hash {
+        // TODO: save new hash to storage.
+        // TODO: increment ref count.
+        // TODO: decrement ref count of old hash!
+
+        // let old_hash = self.hash();
+
         self.update_hash();
+
+        storage.insert_node(self);
+
+        self.hash()
     }
 }
