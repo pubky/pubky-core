@@ -12,29 +12,39 @@ mod test {
                 self.build_graph_string(&root, &mut graph);
             }
 
+            graph.push_str(&format!(
+                "    classDef null fill:#1111,stroke-width:1px,color:#fff,stroke-dasharray: 5 5;\n"
+            ));
+
             graph
         }
 
         fn build_graph_string(&self, node: &Node, graph: &mut String) {
             let key = bytes_to_string(node.key());
-            let node_label = format!("{}({})", key, key);
+            let node_label = format!("{}(({}))", node.hash(), key);
 
             graph.push_str(&format!("    {};\n", node_label));
 
             if let Some(child) = self.get_node(node.left()) {
                 let key = bytes_to_string(child.key());
-                let child_label = format!("{}({})", key, key);
+                let child_label = format!("{}(({}))", child.hash(), key);
 
                 graph.push_str(&format!("    {} --> {};\n", node_label, child_label));
                 self.build_graph_string(&child, graph);
+            } else {
+                graph.push_str(&format!("    {} -.-> {}l((l));\n", node_label, node.hash()));
+                graph.push_str(&format!("    class {}l null;\n", node.hash()));
             }
 
             if let Some(child) = self.get_node(node.right()) {
                 let key = bytes_to_string(child.key());
-                let child_label = format!("{}({})", key, key);
+                let child_label = format!("{}(({}))", child.hash(), key);
 
                 graph.push_str(&format!("    {} --> {};\n", node_label, child_label));
                 self.build_graph_string(&child, graph);
+            } else {
+                graph.push_str(&format!("    {} -.-> {}r((r));\n", node_label, node.hash()));
+                graph.push_str(&format!("    class {}r null;\n", node.hash()));
             }
         }
     }

@@ -25,12 +25,8 @@ impl<'a> HashTreap<'a> {
         let value = self.insert_blob(value);
         let mut node = Node::new(key, value);
 
-        println!(
-            "\n New insert {:?}",
-            String::from_utf8(key.to_vec()).unwrap()
-        );
-
         if self.root.is_none() {
+            node.update(self.storage);
             self.update_root(*node.hash());
             return;
         }
@@ -97,12 +93,6 @@ impl<'a> HashTreap<'a> {
                 }
             };
         }
-        dbg!((
-            "Out of the first loop",
-            &top_path,
-            &left_unzip_path,
-            &right_unzip_path
-        ));
 
         // === Updating hashes bottom up ===
 
@@ -150,7 +140,8 @@ impl<'a> HashTreap<'a> {
         //         I
 
         node.set_child(&Branch::Left, left_unzip_path.first().map(|n| *n.hash()));
-        node.set_child(&Branch::Right, left_unzip_path.first().map(|n| *n.hash()));
+        node.set_child(&Branch::Right, right_unzip_path.first().map(|n| *n.hash()));
+        // No more updates lower than the new node, save it to storage.
         node.update(self.storage);
 
         // Update the rest of the path upwards with the new hashes.
@@ -248,11 +239,11 @@ mod test {
         let mut storage = MemoryStorage::new();
         let mut treap = HashTreap::new(&mut storage);
 
-        // let mut keys = ["A", "C", "D", "F", "G", "H", "M", "P", "X", "Y"];
+        let mut keys = ["A", "C", "D", "F", "G", "H", "M", "P", "X", "Y"];
         let mut keys = [
             "D", "N", "P", "X", "F", "Z", "Y", "A", "G", "C", "M", "H", "I", "J",
         ];
-        // let mut keys = ["A", "B", "C"];
+        let mut keys = ["A", "B", "C"];
         // keys.reverse();
         // keys.reverse(); // Overflowing stack! damn recursion.
 
@@ -261,7 +252,6 @@ mod test {
         }
 
         assert!(treap.verify_ranks());
-        // dbg!(&tree);
         println!("{}", treap.as_mermaid_graph())
     }
 }
