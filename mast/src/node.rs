@@ -1,9 +1,11 @@
 use redb::{Database, ReadableTable, Table, TableDefinition, WriteTransaction};
 
-use crate::{Hash, Hasher, EMPTY_HASH};
+use crate::{Hash, Hasher};
 
 // TODO: Are we creating too many hashers?
 // TODO: are we calculating the rank and hash too often?
+
+const HASH_LEN: usize = 32;
 
 #[derive(Debug, Clone)]
 /// In memory reprsentation of treap node.
@@ -27,31 +29,6 @@ pub(crate) enum Branch {
 }
 
 impl Node {
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let (size, remaining) = varu64::decode(bytes).unwrap();
-        let key = remaining[..size as usize].to_vec().into_boxed_slice();
-
-        let (size, remaining) = varu64::decode(&remaining[size as usize..]).unwrap();
-        let value = remaining[..size as usize].to_vec().into_boxed_slice();
-
-        let left = remaining[size as usize..((size as usize) + 32)]
-            .try_into()
-            .map_or(None, |h| Some(Hash::from_bytes(h)));
-
-        let right = remaining[(size as usize) + 32..((size as usize) + 32 + 32)]
-            .try_into()
-            .map_or(None, |h| Some(Hash::from_bytes(h)));
-
-        Node {
-            key,
-            value,
-            left,
-            right,
-
-            ref_count: 0,
-        }
-    }
-
     pub fn new(key: &[u8], value: &[u8]) -> Self {
         Self {
             key: key.into(),
@@ -62,7 +39,46 @@ impl Node {
             ref_count: 0,
         }
     }
-    // TODO: remember to update its hash.
+
+    pub fn decode(data: (u64, &[u8])) -> Node {
+        let (ref_count, encoded_node) = data;
+
+        let (key, rest) = decode(encoded_node);
+        let (value, rest) = decode(rest);
+
+        let (left, rest) = decode(rest);
+        let left = match left.len() {
+            0 => None,
+            32 => {
+                let bytes: [u8; HASH_LEN] = left.try_into().unwrap();
+                Some(Hash::from_bytes(bytes))
+            }
+            _ => {
+                panic!("invalid hash length!")
+            }
+        };
+
+        let (right, rest) = decode(rest);
+        let right = match right.len() {
+            0 => None,
+            32 => {
+                let bytes: [u8; HASH_LEN] = right.try_into().unwrap();
+                Some(Hash::from_bytes(bytes))
+            }
+            _ => {
+                panic!("invalid hash length!")
+            }
+        };
+
+        Node {
+            key: key.into(),
+            value: value.into(),
+            left,
+            right,
+
+            ref_count,
+        }
+    }
 
     // === Getters ===
 
@@ -116,9 +132,15 @@ impl Node {
             Branch::Right => self.right = new_child,
         }
 
+        self.save(table);
+    }
+
+    pub(crate) fn save(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
         let encoded = self.canonical_encode();
+        let hash = hash(&encoded);
+
         table.insert(
-            hash(&encoded).as_bytes().as_slice(),
+            hash.as_bytes().as_slice(),
             (self.ref_count, encoded.as_slice()),
         );
     }
@@ -130,22 +152,37 @@ impl Node {
 
         encode(&self.key, &mut bytes);
         encode(&self.value, &mut bytes);
-        encode(
-            &self.left.map(|h| h.as_bytes().to_vec()).unwrap_or_default(),
-            &mut bytes,
-        );
-        encode(
-            &self.left.map(|h| h.as_bytes().to_vec()).unwrap_or_default(),
-            &mut bytes,
-        );
+
+        let left = &self.left.map(|h| h.as_bytes().to_vec()).unwrap_or_default();
+        let right = &self
+            .right
+            .map(|h| h.as_bytes().to_vec())
+            .unwrap_or_default();
+
+        encode(left, &mut bytes);
+        encode(right, &mut bytes);
 
         bytes
     }
 }
 
 fn encode(bytes: &[u8], out: &mut Vec<u8>) {
-    varu64::encode(bytes.len() as u64, out);
+    // TODO: find a better way to reserve bytes.
+    let current_len = out.len();
+    for _ in 0..varu64::encoding_length(bytes.len() as u64) {
+        out.push(0)
+    }
+    varu64::encode(bytes.len() as u64, &mut out[current_len..]);
+
     out.extend_from_slice(bytes);
+}
+
+fn decode(bytes: &[u8]) -> (&[u8], &[u8]) {
+    let (len, remaining) = varu64::decode(bytes).unwrap();
+    let value = &remaining[..len as usize];
+    let rest = &remaining[value.len() as usize..];
+
+    (value, rest)
 }
 
 fn hash(bytes: &[u8]) -> Hash {
@@ -176,9 +213,24 @@ fn update_ref_count(child: Option<Hash>, ref_diff: i8, table: &mut Table<&[u8], 
         };
         drop(existing);
 
-        table.insert(
-            hash.as_bytes().as_slice(),
-            (ref_count + ref_diff as u64, bytes.as_slice()),
-        );
+        match ref_count {
+            0 => {
+                // TODO: This doesn't seem to work yet.
+                // I think we should keep doing it recursively.
+                // or wait for the GC to do it?
+                // TODO: Is it the case that we don't clean up the other branch when the tree requires that?
+                // Well that should not happen really, but it is probably caused by the fact that
+                // the order of keys are missed up (not history independent)
+                //
+                // TODO: Confirm (read: test) this, because it is not easy to see in graphs.
+                table.remove(hash.as_bytes().as_slice());
+            }
+            _ => {
+                table.insert(
+                    hash.as_bytes().as_slice(),
+                    (ref_count + ref_diff as u64, bytes.as_slice()),
+                );
+            }
+        }
     }
 }

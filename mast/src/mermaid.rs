@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test {
-    use crate::{HashTreap, Node};
+    use crate::node::Node;
+    use crate::treap::HashTreap;
 
     impl<'a> HashTreap<'a> {
         pub fn as_mermaid_graph(&self) -> String {
@@ -8,7 +9,7 @@ mod test {
 
             graph.push_str("graph TD;\n");
 
-            if let Some(root) = self.get_node(&self.root) {
+            if let Some(root) = self.root.clone() {
                 self.build_graph_string(&root, &mut graph);
             }
 
@@ -23,29 +24,30 @@ mod test {
             let key = bytes_to_string(node.key());
             let node_label = format!("{}(({}))", node.hash(), key);
 
-            graph.push_str(&format!("    {};\n", node_label));
-
+            // graph.push_str(&format!("## START node {}\n", node_label));
             if let Some(child) = self.get_node(node.left()) {
                 let key = bytes_to_string(child.key());
                 let child_label = format!("{}(({}))", child.hash(), key);
 
-                graph.push_str(&format!("    {} --> {};\n", node_label, child_label));
+                graph.push_str(&format!("    {} --l--> {};\n", node_label, child_label));
                 self.build_graph_string(&child, graph);
             } else {
                 graph.push_str(&format!("    {} -.-> {}l((l));\n", node_label, node.hash()));
                 graph.push_str(&format!("    class {}l null;\n", node.hash()));
             }
+            // graph.push_str(&format!("## done left at node {}\n", node_label));
 
             if let Some(child) = self.get_node(node.right()) {
                 let key = bytes_to_string(child.key());
                 let child_label = format!("{}(({}))", child.hash(), key);
 
-                graph.push_str(&format!("    {} --> {};\n", node_label, child_label));
+                graph.push_str(&format!("    {} --r--> {};\n", node_label, child_label));
                 self.build_graph_string(&child, graph);
             } else {
                 graph.push_str(&format!("    {} -.-> {}r((r));\n", node_label, node.hash()));
                 graph.push_str(&format!("    class {}r null;\n", node.hash()));
             }
+            // graph.push_str(&format!("## done right at node {}\n", node_label));
         }
     }
 
