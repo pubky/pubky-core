@@ -35,7 +35,6 @@ mod test {
                 graph.push_str(&format!("    {} -.-> {}l((l));\n", node_label, node.hash()));
                 graph.push_str(&format!("    class {}l null;\n", node.hash()));
             }
-            // graph.push_str(&format!("## done left at node {}\n", node_label));
 
             if let Some(child) = self.get_node(node.right()) {
                 let key = bytes_to_string(child.key());
@@ -47,7 +46,6 @@ mod test {
                 graph.push_str(&format!("    {} -.-> {}r((r));\n", node_label, node.hash()));
                 graph.push_str(&format!("    class {}r null;\n", node.hash()));
             }
-            // graph.push_str(&format!("## done right at node {}\n", node_label));
         }
     }
 

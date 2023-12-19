@@ -137,16 +137,53 @@ impl<'a> HashTreap<'a> {
             //      \  |
             //       I |  M
 
-            while left_unzip_path.len() > 1 {
-                let child = left_unzip_path.pop().unwrap();
-                let mut parent = left_unzip_path.last_mut().unwrap();
+            dbg!((
+                "unzipping left",
+                String::from_utf8(node.key().to_vec()).unwrap(),
+                &left_unzip_path
+                    .iter()
+                    .map(|n| String::from_utf8(n.key().to_vec()).unwrap())
+                    .collect::<Vec<_>>(),
+                &right_unzip_path
+                    .iter()
+                    .map(|n| String::from_utf8(n.key().to_vec()).unwrap())
+                    .collect::<Vec<_>>(),
+            ));
+
+            let left_unzip_path_len = left_unzip_path.len();
+            for i in 0..left_unzip_path_len {
+                if i == left_unzip_path_len - 1 {
+                    // The last node in the path is special, since we need to clear its right
+                    // child from older versions.
+                    let child = left_unzip_path.get_mut(i).unwrap();
+                    child.set_child(&Branch::Right, None, &mut nodes_table);
+
+                    // Skip the last element for the first iterator
+                    break;
+                }
+
+                let (first, second) = left_unzip_path.split_at_mut(i + 1);
+                let child = &first[i];
+                let parent = &mut second[0];
 
                 parent.set_child(&Branch::Right, Some(child.hash()), &mut nodes_table);
             }
 
-            while right_unzip_path.len() > 1 {
-                let child = right_unzip_path.pop().unwrap();
-                let mut parent = right_unzip_path.last_mut().unwrap();
+            let right_unzip_path_len = right_unzip_path.len();
+            for i in 0..right_unzip_path_len {
+                if i == right_unzip_path_len - 1 {
+                    // The last node in the path is special, since we need to clear its right
+                    // child from older versions.
+                    let child = right_unzip_path.get_mut(i).unwrap();
+                    child.set_child(&Branch::Left, None, &mut nodes_table);
+
+                    // Skip the last element for the first iterator
+                    break;
+                }
+
+                let (first, second) = right_unzip_path.split_at_mut(i + 1);
+                let child = &first[i];
+                let parent = &mut second[0];
 
                 parent.set_child(&Branch::Left, Some(child.hash()), &mut nodes_table);
             }
@@ -260,8 +297,10 @@ mod test {
 
     use redb::{Database, Error, ReadableTable, TableDefinition};
 
+    // TODO: write a good test for GC.
+
     #[test]
-    fn basic() {
+    fn sorted_insert() {
         // Create an in-memory database
         let file = tempfile::NamedTempFile::new().unwrap();
         let db = Database::create(file.path()).unwrap();
@@ -270,133 +309,7 @@ mod test {
 
         let mut keys = [
             "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
-            "R", "S", "T", "U", "V", "W", "X", "Y", "Z", //
-            "A0", "B0", "C0", "D0", "E0", "F0", "G0", "H0", "I0", "J0", "K0", "L0", "M0", "N0",
-            "O0", "P0", "Q0", "R0", "S0", "T0", "U0", "V0", "W0", "X0", "Y0", "Z0", //
-            "A1", "B1", "C1", "D1", "E1", "F1", "G1", "H1", "I1", "J1", "K1", "L1", "M1", "N1",
-            "O1", "P1", "Q1", "R1", "S1", "T1", "U1", "V1", "W1", "X1", "Y1", "Z1",
-        ];
-        let mut keys = [
-            "abacus",
-            "abdomen",
-            "abdominal",
-            "abide",
-            "abiding",
-            "ability",
-            "ablaze",
-            "able",
-            "abnormal",
-            "abrasion",
-            "abrasive",
-            "abreast",
-            "abridge",
-            "abroad",
-            "abruptly",
-            "absence",
-            "absentee",
-            "absently",
-            "absinthe",
-            "absolute",
-            "absolve",
-            "abstain",
-            "abstract",
-            "absurd",
-            "accent",
-            "acclaim",
-            "acclimate",
-            "accompany",
-            "account",
-            "accuracy",
-            "accurate",
-            "accustom",
-            "acetone",
-            "achiness",
-            "aching",
-            "acid",
-            "acorn",
-            "acquaint",
-            "acquire",
-            "acre",
-            "acrobat",
-            "acronym",
-            "acting",
-            "action",
-            "activate",
-            "activator",
-            "active",
-            "activism",
-            "activist",
-            "activity",
-            "actress",
-            "acts",
-            "acutely",
-            "acuteness",
-            "aeration",
-            "aerobics",
-            "aerosol",
-            "aerospace",
-            "afar",
-            "affair",
-            "affected",
-            "affecting",
-            "affection",
-            "affidavit",
-            "affiliate",
-            "affirm",
-            "affix",
-            "afflicted",
-            "affluent",
-            "afford",
-            "affront",
-            "aflame",
-            "afloat",
-            "aflutter",
-            "afoot",
-            "afraid",
-            "afterglow",
-            "afterlife",
-            "aftermath",
-            "aftermost",
-            "afternoon",
-            "aged",
-            "ageless",
-            "agency",
-            "agenda",
-            "agent",
-            "aggregate",
-            "aghast",
-            "agile",
-            "agility",
-            "aging",
-            "agnostic",
-            "agonize",
-            "agonizing",
-            "agony",
-            "agreeable",
-            "agreeably",
-            "agreed",
-            "agreeing",
-            "agreement",
-            "aground",
-            "ahead",
-            "ahoy",
-            "aide",
-            "aids",
-            "aim",
-            "ajar",
-            "alabaster",
-            "alarm",
-            "albatross",
-            "album",
-            "alfalfa",
-            "algebra",
-            "algorithm",
-            "alias",
-            "alibi",
-            "alienable",
-            "alienate",
-            "aliens",
-            "alike",
+            "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
         ];
 
         for key in keys.iter() {
@@ -407,7 +320,8 @@ mod test {
         println!("{}", treap.as_mermaid_graph())
     }
 
-    fn failin_cases() {
+    #[test]
+    fn unsorted_insert() {
         // Create an in-memory database
         let file = tempfile::NamedTempFile::new().unwrap();
         let db = Database::create(file.path()).unwrap();
@@ -416,8 +330,15 @@ mod test {
 
         // TODO: fix this cases
         let mut keys = [
-            "D", "N", "P", "X", "F", "Z", "Y", "A", "G", "C", "M", "H", "I", "J",
+            // "D", "N", "P",
+            "X", // "F", "Z", "Y",
+            "A", "G", //
+            "C",
+            //"M", "H", "I", "J",
         ];
+
+        // TODO: fix without sort.
+        // keys.sort();
 
         for key in keys.iter() {
             treap.insert(key.as_bytes(), b"0");

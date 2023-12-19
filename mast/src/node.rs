@@ -115,6 +115,8 @@ impl Node {
         new_child: Option<Hash>,
         table: &mut Table<&[u8], (u64, &[u8])>,
     ) {
+        let old_hash = self.hash();
+
         let old_child = match branch {
             Branch::Left => self.left,
             Branch::Right => self.right,
@@ -235,13 +237,6 @@ fn update_ref_count(
 
         match ref_count {
             0 => {
-                // TODO: This doesn't seem to work yet.
-                // I think we should keep doing it recursively.
-                // or wait for the GC to do it?
-                // TODO: Is it the case that we don't clean up the other branch when the tree requires that?
-                // Well that should not happen really, but it is probably caused by the fact that
-                // the order of keys are missed up (not history independent)
-                //
                 // TODO: Confirm (read: test) this, because it is not easy to see in graphs.
                 table.remove(hash.as_bytes().as_slice());
             }
