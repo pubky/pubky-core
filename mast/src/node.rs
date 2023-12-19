@@ -1,26 +1,23 @@
-use crate::storage::memory::MemoryStorage;
+use redb::{Database, ReadableTable, Table, TableDefinition, WriteTransaction};
+
 use crate::{Hash, Hasher, EMPTY_HASH};
 
-// TODO: make sure that the hash is always in sync.
-// TODO: keep track of ref count and sync status in the storage, without adding it to the in memory
-// representation.
+// TODO: Are we creating too many hashers?
+// TODO: are we calculating the rank and hash too often?
 
 #[derive(Debug, Clone)]
 /// In memory reprsentation of treap node.
 pub(crate) struct Node {
-    /// The hash of this node, uniquely identifying its key, value, and children.
-    hash: Hash,
-
     // Key value
     key: Box<[u8]>,
-    value: Hash,
-
-    // Rank
-    rank: Hash,
+    value: Box<[u8]>,
 
     // Children
     left: Option<Hash>,
     right: Option<Hash>,
+
+    // Metadata that should not be encoded.
+    ref_count: u64,
 }
 
 #[derive(Debug)]
@@ -30,26 +27,42 @@ pub(crate) enum Branch {
 }
 
 impl Node {
-    pub fn new(key: &[u8], value: Hash) -> Self {
-        let mut hasher = Hasher::new();
-        hasher.update(key);
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let (size, remaining) = varu64::decode(bytes).unwrap();
+        let key = remaining[..size as usize].to_vec().into_boxed_slice();
 
-        let rank = hasher.finalize();
+        let (size, remaining) = varu64::decode(&remaining[size as usize..]).unwrap();
+        let value = remaining[..size as usize].to_vec().into_boxed_slice();
 
-        let mut node = Self {
-            hash: EMPTY_HASH,
+        let left = remaining[size as usize..((size as usize) + 32)]
+            .try_into()
+            .map_or(None, |h| Some(Hash::from_bytes(h)));
 
-            key: key.into(),
+        let right = remaining[(size as usize) + 32..((size as usize) + 32 + 32)]
+            .try_into()
+            .map_or(None, |h| Some(Hash::from_bytes(h)));
+
+        Node {
+            key,
             value,
-            left: None,
-            right: None,
-            rank,
-        };
+            left,
+            right,
 
-        node
+            ref_count: 0,
+        }
     }
 
-    // TODO: add from bytes and remember to update its hash.
+    pub fn new(key: &[u8], value: &[u8]) -> Self {
+        Self {
+            key: key.into(),
+            value: value.into(),
+            left: None,
+            right: None,
+
+            ref_count: 0,
+        }
+    }
+    // TODO: remember to update its hash.
 
     // === Getters ===
 
@@ -57,17 +70,8 @@ impl Node {
         &self.key
     }
 
-    pub(crate) fn value(&self) -> &Hash {
+    pub(crate) fn value(&self) -> &[u8] {
         &self.value
-    }
-
-    pub(crate) fn rank(&self) -> &Hash {
-        &self.rank
-    }
-
-    /// Returns the hash of the node.
-    pub(crate) fn hash(&self) -> &Hash {
-        &self.hash
     }
 
     pub(crate) fn left(&self) -> &Option<Hash> {
@@ -78,68 +82,103 @@ impl Node {
         &self.right
     }
 
+    // === Public Methods ===
+
+    pub(crate) fn rank(&self) -> Hash {
+        hash(&self.key)
+    }
+
+    /// Returns the hash of the node.
+    pub(crate) fn hash(&self) -> Hash {
+        hash(&self.canonical_encode())
+    }
+
+    pub(crate) fn set_child(
+        &mut self,
+        branch: &Branch,
+        new_child: Option<Hash>,
+        table: &mut Table<&[u8], (u64, &[u8])>,
+    ) {
+        let old_child = match branch {
+            Branch::Left => self.left,
+            Branch::Right => self.right,
+        };
+
+        // increment old child's ref count.
+        decrement_ref_count(old_child, table);
+
+        // increment new child's ref count.
+        increment_ref_count(new_child, table);
+
+        // set new child
+        match branch {
+            Branch::Left => self.left = new_child,
+            Branch::Right => self.right = new_child,
+        }
+
+        let encoded = self.canonical_encode();
+        table.insert(
+            hash(&encoded).as_bytes().as_slice(),
+            (self.ref_count, encoded.as_slice()),
+        );
+    }
+
     // === Private Methods ===
 
-    pub(crate) fn update_hash(&mut self) -> Hash {
-        let mut hasher = Hasher::new();
+    fn canonical_encode(&self) -> Vec<u8> {
+        let mut bytes = vec![];
 
-        hasher.update(&self.key);
-        hasher.update(self.value.as_bytes());
-        hasher.update(self.left.unwrap_or(EMPTY_HASH).as_bytes());
-        hasher.update(self.right.unwrap_or(EMPTY_HASH).as_bytes());
+        encode(&self.key, &mut bytes);
+        encode(&self.value, &mut bytes);
+        encode(
+            &self.left.map(|h| h.as_bytes().to_vec()).unwrap_or_default(),
+            &mut bytes,
+        );
+        encode(
+            &self.left.map(|h| h.as_bytes().to_vec()).unwrap_or_default(),
+            &mut bytes,
+        );
 
-        self.hash = hasher.finalize();
-        self.hash
+        bytes
     }
+}
 
-    /// When inserting a node, once we find its instertion point,
-    /// we give one of its children (depending on the direction),
-    /// to the current node at the insertion position, and then we
-    /// replace that child with the updated current node.
-    pub(crate) fn insertion_swap(
-        &mut self,
-        direction: Branch,
-        current_node: &mut Node,
-        storage: &mut MemoryStorage,
-    ) {
-        match direction {
-            Branch::Left => current_node.set_child(&Branch::Left, *self.right()),
-            Branch::Right => current_node.set_child(&Branch::Left, *self.left()),
-        }
+fn encode(bytes: &[u8], out: &mut Vec<u8>) {
+    varu64::encode(bytes.len() as u64, out);
+    out.extend_from_slice(bytes);
+}
 
-        current_node.update(storage);
+fn hash(bytes: &[u8]) -> Hash {
+    let mut hasher = Hasher::new();
+    hasher.update(bytes);
 
-        match direction {
-            Branch::Left => self.left = Some(*current_node.hash()),
-            Branch::Right => self.right = Some(*current_node.hash()),
-        }
+    hasher.finalize()
+}
 
-        self.update(storage);
-    }
+fn increment_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
+    update_ref_count(child, 1, table);
+}
 
-    pub(crate) fn set_child(&mut self, branch: &Branch, hash: Option<Hash>) {
-        // decrement old child's ref count.
+fn decrement_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
+    update_ref_count(child, -1, table);
+}
 
-        // set children
-        match branch {
-            Branch::Left => self.left = hash,
-            Branch::Right => self.right = hash,
-        }
+fn update_ref_count(child: Option<Hash>, ref_diff: i8, table: &mut Table<&[u8], (u64, &[u8])>) {
+    if let Some(hash) = child {
+        let mut existing = table
+            .get(hash.as_bytes().as_slice())
+            .unwrap()
+            .expect("Child shouldn't be messing!");
 
-        // TODO: increment node's ref count.
-    }
+        let (ref_count, bytes) = {
+            let (r, v) = existing.value();
+            (r + 1, v.to_vec())
+        };
+        drop(existing);
 
-    pub(crate) fn update(&mut self, storage: &mut MemoryStorage) -> &Hash {
-        // TODO: save new hash to storage.
-        // TODO: increment ref count.
-        // TODO: decrement ref count of old hash!
-
-        // let old_hash = self.hash();
-
-        self.update_hash();
-
-        storage.insert_node(self);
-
-        self.hash()
+        table.insert(
+            hash.as_bytes().as_slice(),
+            (ref_count + ref_diff as u64, bytes.as_slice()),
+        );
     }
 }

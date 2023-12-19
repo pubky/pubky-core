@@ -7,5 +7,8 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1.5.0"
-bytes = "1.5.0"
+redb = "1.4.0"
 varu64 = "0.7.0"
+
+[dev-dependencies]
+tempfile = "3.8.1"
