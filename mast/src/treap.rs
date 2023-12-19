@@ -268,15 +268,156 @@ mod test {
 
         let mut treap = HashTreap::new(&db);
 
-        let mut keys = ["A", "C", "D", "F", "G", "H", "M", "P", "X", "Y"];
-        // let mut keys = [
-        // "D", "N", "P", "X", "F", "Z", "Y", "A", "G", "C", "M", "H", "I", "J",
-        // ];
-        let mut keys = ["A", "B", "C"];
-        // let mut keys = ["A", "B"];
-        // let mut keys = ["A"];
-        // keys.reverse();
-        // keys.reverse(); // Overflowing stack! damn recursion.
+        let mut keys = [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
+            "R", "S", "T", "U", "V", "W", "X", "Y", "Z", //
+            "A0", "B0", "C0", "D0", "E0", "F0", "G0", "H0", "I0", "J0", "K0", "L0", "M0", "N0",
+            "O0", "P0", "Q0", "R0", "S0", "T0", "U0", "V0", "W0", "X0", "Y0", "Z0", //
+            "A1", "B1", "C1", "D1", "E1", "F1", "G1", "H1", "I1", "J1", "K1", "L1", "M1", "N1",
+            "O1", "P1", "Q1", "R1", "S1", "T1", "U1", "V1", "W1", "X1", "Y1", "Z1",
+        ];
+        let mut keys = [
+            "abacus",
+            "abdomen",
+            "abdominal",
+            "abide",
+            "abiding",
+            "ability",
+            "ablaze",
+            "able",
+            "abnormal",
+            "abrasion",
+            "abrasive",
+            "abreast",
+            "abridge",
+            "abroad",
+            "abruptly",
+            "absence",
+            "absentee",
+            "absently",
+            "absinthe",
+            "absolute",
+            "absolve",
+            "abstain",
+            "abstract",
+            "absurd",
+            "accent",
+            "acclaim",
+            "acclimate",
+            "accompany",
+            "account",
+            "accuracy",
+            "accurate",
+            "accustom",
+            "acetone",
+            "achiness",
+            "aching",
+            "acid",
+            "acorn",
+            "acquaint",
+            "acquire",
+            "acre",
+            "acrobat",
+            "acronym",
+            "acting",
+            "action",
+            "activate",
+            "activator",
+            "active",
+            "activism",
+            "activist",
+            "activity",
+            "actress",
+            "acts",
+            "acutely",
+            "acuteness",
+            "aeration",
+            "aerobics",
+            "aerosol",
+            "aerospace",
+            "afar",
+            "affair",
+            "affected",
+            "affecting",
+            "affection",
+            "affidavit",
+            "affiliate",
+            "affirm",
+            "affix",
+            "afflicted",
+            "affluent",
+            "afford",
+            "affront",
+            "aflame",
+            "afloat",
+            "aflutter",
+            "afoot",
+            "afraid",
+            "afterglow",
+            "afterlife",
+            "aftermath",
+            "aftermost",
+            "afternoon",
+            "aged",
+            "ageless",
+            "agency",
+            "agenda",
+            "agent",
+            "aggregate",
+            "aghast",
+            "agile",
+            "agility",
+            "aging",
+            "agnostic",
+            "agonize",
+            "agonizing",
+            "agony",
+            "agreeable",
+            "agreeably",
+            "agreed",
+            "agreeing",
+            "agreement",
+            "aground",
+            "ahead",
+            "ahoy",
+            "aide",
+            "aids",
+            "aim",
+            "ajar",
+            "alabaster",
+            "alarm",
+            "albatross",
+            "album",
+            "alfalfa",
+            "algebra",
+            "algorithm",
+            "alias",
+            "alibi",
+            "alienable",
+            "alienate",
+            "aliens",
+            "alike",
+        ];
+
+        for key in keys.iter() {
+            treap.insert(key.as_bytes(), b"0");
+        }
+
+        assert!(treap.verify_ranks());
+        println!("{}", treap.as_mermaid_graph())
+    }
+
+    fn failin_cases() {
+        // Create an in-memory database
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db = Database::create(file.path()).unwrap();
+
+        let mut treap = HashTreap::new(&db);
+
+        // TODO: fix this cases
+        let mut keys = [
+            "D", "N", "P", "X", "F", "Z", "Y", "A", "G", "C", "M", "H", "I", "J",
+        ];
 
         for key in keys.iter() {
             treap.insert(key.as_bytes(), b"0");

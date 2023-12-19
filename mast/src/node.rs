@@ -192,15 +192,24 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.finalize()
 }
 
+enum RefCountDiff {
+    Increment,
+    Decrement,
+}
+
 fn increment_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
-    update_ref_count(child, 1, table);
+    update_ref_count(child, RefCountDiff::Increment, table);
 }
 
 fn decrement_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
-    update_ref_count(child, -1, table);
+    update_ref_count(child, RefCountDiff::Decrement, table);
 }
 
-fn update_ref_count(child: Option<Hash>, ref_diff: i8, table: &mut Table<&[u8], (u64, &[u8])>) {
+fn update_ref_count(
+    child: Option<Hash>,
+    ref_diff: RefCountDiff,
+    table: &mut Table<&[u8], (u64, &[u8])>,
+) {
     if let Some(hash) = child {
         let mut existing = table
             .get(hash.as_bytes().as_slice())
@@ -212,6 +221,17 @@ fn update_ref_count(child: Option<Hash>, ref_diff: i8, table: &mut Table<&[u8], 
             (r + 1, v.to_vec())
         };
         drop(existing);
+
+        let ref_count = match ref_diff {
+            RefCountDiff::Increment => ref_count + 1,
+            RefCountDiff::Decrement => {
+                if ref_count > 0 {
+                    ref_count - 1
+                } else {
+                    ref_count
+                }
+            }
+        };
 
         match ref_count {
             0 => {
@@ -226,10 +246,7 @@ fn update_ref_count(child: Option<Hash>, ref_diff: i8, table: &mut Table<&[u8], 
                 table.remove(hash.as_bytes().as_slice());
             }
             _ => {
-                table.insert(
-                    hash.as_bytes().as_slice(),
-                    (ref_count + ref_diff as u64, bytes.as_slice()),
-                );
+                table.insert(hash.as_bytes().as_slice(), (ref_count, bytes.as_slice()));
             }
         }
     }
