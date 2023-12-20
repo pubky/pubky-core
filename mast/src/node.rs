@@ -1,11 +1,13 @@
-use redb::{Database, ReadableTable, Table, TableDefinition, WriteTransaction};
+//! In memory representation of a treap node.
 
-use crate::{Hash, Hasher};
+use redb::{ReadableTable, Table};
+
+use crate::{Hash, Hasher, HASH_LEN};
 
 // TODO: Are we creating too many hashers?
 // TODO: are we calculating the rank and hash too often?
-
-const HASH_LEN: usize = 32;
+// TODO: remove unused
+// TODO: remove unwrap
 
 #[derive(Debug, Clone)]
 /// In memory reprsentation of treap node.
@@ -26,6 +28,12 @@ pub(crate) struct Node {
 pub(crate) enum Branch {
     Left,
     Right,
+}
+
+#[derive(Debug)]
+enum RefCountDiff {
+    Increment,
+    Decrement,
 }
 
 impl Node {
@@ -58,7 +66,7 @@ impl Node {
             }
         };
 
-        let (right, rest) = decode(rest);
+        let (right, _) = decode(rest);
         let right = match right.len() {
             0 => None,
             32 => {
@@ -109,31 +117,7 @@ impl Node {
         hash(&self.canonical_encode())
     }
 
-    pub(crate) fn set_child(
-        &mut self,
-        branch: &Branch,
-        new_child: Option<Hash>,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-    ) {
-        let old_child = match branch {
-            Branch::Left => self.left,
-            Branch::Right => self.right,
-        };
-
-        // increment old child's ref count.
-        decrement_ref_count(old_child, table);
-
-        // increment new child's ref count.
-        increment_ref_count(new_child, table);
-
-        // set new child
-        match branch {
-            Branch::Left => self.left = new_child,
-            Branch::Right => self.right = new_child,
-        }
-
-        self.save(table);
-    }
+    pub(crate) fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {}
 
     pub(crate) fn save(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
         let encoded = self.canonical_encode();
@@ -146,6 +130,27 @@ impl Node {
     }
 
     // === Private Methods ===
+
+    fn update_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>, diff: RefCountDiff) {
+        let ref_count = match diff {
+            RefCountDiff::Increment => self.ref_count + 1,
+            RefCountDiff::Decrement => {
+                if self.ref_count > 0 {
+                    self.ref_count - 1
+                } else {
+                    self.ref_count
+                }
+            }
+        };
+
+        let bytes = self.canonical_encode();
+        let hash = hash(&bytes);
+
+        match ref_count {
+            0 => table.remove(hash.as_bytes().as_slice()),
+            _ => table.insert(hash.as_bytes().as_slice(), (ref_count, bytes.as_slice())),
+        };
+    }
 
     fn canonical_encode(&self) -> Vec<u8> {
         let mut bytes = vec![];
@@ -164,6 +169,40 @@ impl Node {
 
         bytes
     }
+}
+
+pub(crate) fn rank(key: &[u8]) -> Hash {
+    hash(key)
+}
+
+/// Returns the node for a given hash.
+pub(crate) fn get_node<'a>(
+    table: &'a impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
+    hash: &[u8],
+) -> Option<Node> {
+    let existing = table.get(hash).unwrap();
+
+    if existing.is_none() {
+        return None;
+    }
+    let data = existing.unwrap();
+
+    Some(Node::decode(data.value()))
+}
+
+/// Returns the root hash for a given table.
+pub(crate) fn get_root_hash<'a>(
+    table: &'a impl ReadableTable<&'static [u8], &'static [u8]>,
+    name: &str,
+) -> Option<Hash> {
+    let existing = table.get(name.as_bytes()).unwrap();
+    if existing.is_none() {
+        return None;
+    }
+    let hash = existing.unwrap();
+
+    let hash: [u8; HASH_LEN] = hash.value().try_into().expect("Invalid root hash");
+    Some(Hash::from_bytes(hash))
 }
 
 fn encode(bytes: &[u8], out: &mut Vec<u8>) {
@@ -190,65 +229,4 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.update(bytes);
 
     hasher.finalize()
-}
-
-#[derive(Debug)]
-enum RefCountDiff {
-    Increment,
-    Decrement,
-}
-
-pub(crate) fn increment_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
-    update_ref_count(child, RefCountDiff::Increment, table);
-}
-
-pub(crate) fn decrement_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
-    update_ref_count(child, RefCountDiff::Decrement, table);
-}
-
-fn update_ref_count(
-    child: Option<Hash>,
-    ref_diff: RefCountDiff,
-    table: &mut Table<&[u8], (u64, &[u8])>,
-) {
-    if let Some(hash) = child {
-        dbg!("should update child ref", &child);
-        let mut existing = table
-            .get(hash.as_bytes().as_slice())
-            .unwrap()
-            .expect("Child shouldn't be messing!");
-
-        let (ref_count, bytes) = {
-            let (r, v) = existing.value();
-            (r, v.to_vec())
-        };
-        drop(existing);
-        dbg!((
-            "\n\n decrmenting blah blah blah child",
-            &child,
-            &ref_count,
-            &ref_diff
-        ));
-
-        let ref_count = match ref_diff {
-            RefCountDiff::Increment => ref_count + 1,
-            RefCountDiff::Decrement => {
-                if ref_count > 0 {
-                    ref_count - 1
-                } else {
-                    ref_count
-                }
-            }
-        };
-
-        match ref_count {
-            0 => {
-                // TODO: Confirm (read: test) this, because it is not easy to see in graphs.
-                table.remove(hash.as_bytes().as_slice());
-            }
-            _ => {
-                table.insert(hash.as_bytes().as_slice(), (ref_count, bytes.as_slice()));
-            }
-        }
-    }
 }

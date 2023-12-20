@@ -3,13 +3,13 @@ mod test {
     use crate::node::Node;
     use crate::treap::HashTreap;
 
-    impl<'a> HashTreap<'a> {
+    impl<'treap> HashTreap<'treap> {
         pub fn as_mermaid_graph(&self) -> String {
             let mut graph = String::new();
 
             graph.push_str("graph TD;\n");
 
-            if let Some(root) = self.root.clone() {
+            if let Some(root) = self.root() {
                 self.build_graph_string(&root, &mut graph);
             }
 
