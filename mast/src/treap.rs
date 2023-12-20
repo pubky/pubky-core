@@ -3,6 +3,9 @@ use redb::*;
 
 use crate::{node::Node, HASH_LEN};
 
+// TODO: test that order is correct
+// TODO: test that there are no extr anodes.
+
 // Table: Nodes v0
 // stores all the hash treap nodes from all the treaps in the storage.
 //
@@ -53,14 +56,13 @@ impl<'treap> HashTreap<'treap> {
             .and_then(|hash| Node::open(&nodes_table, hash))
     }
 
-    fn root_hash<'a>(
+    fn root_hash(
         &self,
-        table: &'a impl ReadableTable<&'static [u8], &'static [u8]>,
+        table: &'_ impl ReadableTable<&'static [u8], &'static [u8]>,
     ) -> Option<Hash> {
         let existing = table.get(self.name.as_bytes()).unwrap();
-        if existing.is_none() {
-            return None;
-        }
+        existing.as_ref()?;
+
         let hash = existing.unwrap();
 
         let hash: [u8; HASH_LEN] = hash.value().try_into().expect("Invalid root hash");
@@ -75,13 +77,15 @@ impl<'treap> HashTreap<'treap> {
 
         let write_txn = self.db.begin_write().unwrap();
 
-        'transaction: {
-            let roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
+        {
+            let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
             let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
 
             let root = self.root_hash(&roots_table);
 
-            crate::operations::insert::insert(&mut nodes_table, root, key, value)
+            let new_root = crate::operations::insert::insert(&mut nodes_table, root, key, value);
+
+            roots_table.insert(self.name.as_bytes(), new_root.as_bytes().as_slice());
         };
 
         // Finally commit the changes to the storage.
@@ -90,18 +94,19 @@ impl<'treap> HashTreap<'treap> {
 
     // === Private Methods ===
 
+    // === Test Methods ===
+
+    // TODO: move tests and test helper methods to separate module.
+    // Only keep the public methods here, and probably move it to lib.rs too.
+
     /// Create a read transaction and get a node from the nodes table.
+    #[cfg(test)]
     pub(crate) fn get_node(&self, hash: &Option<Hash>) -> Option<Node> {
         let read_txn = self.db.begin_read().unwrap();
         let table = read_txn.open_table(NODES_TABLE).unwrap();
 
         hash.and_then(|h| Node::open(&table, h))
     }
-
-    // === Test Methods ===
-
-    // TODO: move tests and test helper methods to separate module.
-    // Only keep the public methods here, and probably move it to lib.rs too.
 
     #[cfg(test)]
     fn verify_ranks(&self) -> bool {
@@ -190,18 +195,7 @@ mod test {
 
         let mut treap = HashTreap::new(&db, "test");
 
-        // TODO: fix this cases
-        let mut keys = [
-            // "D", "N", "P",
-            "X", // "F", "Z", "Y",
-            "A", //
-                 // "G", //
-                 // "C", //
-                 //"M", "H", "I", "J",
-        ];
-
-        // TODO: fix without sort.
-        // keys.sort();
+        let mut keys = ["D", "N", "P", "X", "A", "G", "C", "M", "H", "I", "J"];
 
         for key in keys.iter() {
             treap.insert(key.as_bytes(), b"0");
@@ -241,7 +235,7 @@ mod test {
 
         let mut treap = HashTreap::new(&db, "test");
 
-        let mut keys = ["F", "X", "X"];
+        let keys = ["F", "X", "X"];
 
         for key in keys.iter() {
             treap.insert(key.as_bytes(), b"0");

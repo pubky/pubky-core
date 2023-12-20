@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::node::{rank, Branch, Node};
 use crate::treap::{HashTreap, NODES_TABLE, ROOTS_TABLE};
 use crate::HASH_LEN;
@@ -81,84 +83,91 @@ use redb::{Database, ReadTransaction, ReadableTable, Table, TableDefinition, Wri
 //  The simplest way to do so, is to decrement all the nodes in the search path, and then increment
 //  all then new nodes (in both the upper and lower paths) before comitting the write transaction.
 
-pub fn insert<'a>(
-    table: &'a mut Table<&'static [u8], (u64, &'static [u8])>,
+pub fn insert(
+    table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
     root: Option<Hash>,
     key: &[u8],
     value: &[u8],
-) {
+) -> Hash {
     let mut path = binary_search_path(table, root, key);
 
-    path.iter_mut()
-        .for_each(|(node, _)| node.decrement_ref_count(table));
+    let mut unzip_left_root: Option<Hash> = None;
+    let mut unzip_right_root: Option<Hash> = None;
 
-    let mut unzipped_left: Option<Hash> = None;
-    let mut unzipped_right: Option<Hash> = None;
-    let mut upper_path: Option<Hash> = None;
-
-    let rank = rank(key);
-
-    for (node, branch) in path.iter().rev() {
-        match node.rank().as_bytes().cmp(&rank.as_bytes()) {
-            std::cmp::Ordering::Equal => {
-                // We found an exact match, we update the value and proceed.
-
-                upper_path = Some(Node::insert(table, key, value))
-            }
-            std::cmp::Ordering::Less => {
-                // previous_hash = *current_node.left();
-                //
-                // path.push((current_node, Branch::Left));
-            }
-            std::cmp::Ordering::Greater => {
-                // previous_hash = *current_node.right();
-                //
-                // path.push((current_node, Branch::Right));
-            }
+    for (node, branch) in path.unzip_path.iter_mut().rev() {
+        match branch {
+            Branch::Right => unzip_left_root = Some(node.set_right_child(table, unzip_left_root)),
+            Branch::Left => unzip_right_root = Some(node.set_left_child(table, unzip_right_root)),
         }
     }
 
-    // if let Some((node, _)) = path.last_mut() {
-    //     // If the last node is an exact match
-    // } else {
-    //     // handle lower path
-    // }
+    let mut root = Node::insert(table, key, value, unzip_left_root, unzip_right_root);
+
+    for (node, branch) in path.upper_path.iter_mut().rev() {
+        match branch {
+            Branch::Left => root = node.set_left_child(table, Some(root)),
+            Branch::Right => root = node.set_right_child(table, Some(root)),
+        }
+    }
+
+    // Finally return the new root to be committed.
+    root
 }
 
-/// Returns the current nodes from the root to the insertion point on the binary search path.
-fn binary_search_path<'a>(
-    nodes_table: &'a impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
+struct BinarySearchPath {
+    upper_path: Vec<(Node, Branch)>,
+    exact_match: Option<Node>,
+    unzip_path: Vec<(Node, Branch)>,
+}
+
+fn binary_search_path(
+    table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
     root: Option<Hash>,
     key: &[u8],
-) -> Vec<(Node, Branch)> {
-    let mut path: Vec<(Node, Branch)> = Vec::new();
+) -> BinarySearchPath {
+    let rank = rank(key);
+
+    let mut result = BinarySearchPath {
+        upper_path: Default::default(),
+        exact_match: None,
+        unzip_path: Default::default(),
+    };
 
     let mut previous_hash = root;
 
     while let Some(current_hash) = previous_hash {
-        let current_node = Node::open(nodes_table, current_hash).expect("Node not found!");
+        let current_node = Node::open(table, current_hash).expect("Node not found!");
 
-        let current_key = current_node.key();
+        // Decrement each node in the binary search path.
+        // if it doesn't change, we will increment it again later.
+        //
+        // It is important then to terminate the loop if we found an exact match,
+        // as lower nodes shouldn't change then.
+        current_node.decrement_ref_count(table);
 
-        match key.cmp(current_key) {
-            std::cmp::Ordering::Equal => {
-                // We found an exact match, we don't need to unzip the rest.
-                // Branch here doesn't matter
-                path.push((current_node, Branch::Left));
-                break;
+        let mut path = if current_node.rank().as_bytes() > rank.as_bytes() {
+            &mut result.upper_path
+        } else {
+            &mut result.unzip_path
+        };
+
+        match key.cmp(current_node.key()) {
+            Ordering::Equal => {
+                // We found exact match. terminate the search.
+                return result;
             }
-            std::cmp::Ordering::Less => {
+            Ordering::Less => {
                 previous_hash = *current_node.left();
 
                 path.push((current_node, Branch::Left));
             }
-            std::cmp::Ordering::Greater => {
+            Ordering::Greater => {
                 previous_hash = *current_node.right();
 
                 path.push((current_node, Branch::Right));
             }
-        }
+        };
     }
 
-    path
+    result
 }
