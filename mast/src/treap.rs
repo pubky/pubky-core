@@ -1,7 +1,8 @@
 use blake3::{Hash, Hasher};
-use redb::{Database, ReadableTable, Table, TableDefinition};
+// use redb::{Database, ite, ReadableTable, Table, TableDefinition};
+use redb::*;
 
-use crate::node::{Branch, Node};
+use crate::node::{decrement_ref_count, increment_ref_count, Branch, Node};
 
 // TODO: remove unused
 // TODO: remove unwrap
@@ -49,7 +50,6 @@ impl<'a> HashTreap<'a> {
             if self.root.is_none() {
                 // We are done.
                 self.update_root(&node, &mut nodes_table);
-
                 break 'transaction;
             }
 
@@ -94,7 +94,16 @@ impl<'a> HashTreap<'a> {
 
             // Top down traversal of the binary search path.
             while let Some(current) = self.get_node(&next) {
-                let should_zip = node.rank().as_bytes() > current.rank().as_bytes();
+                let node_rank = node.rank();
+                let curr_rank = current.rank();
+
+                if node_rank.as_bytes() == curr_rank.as_bytes() {
+                    // Same key, we should update the value and return.
+                    self.update_root(&node, &mut nodes_table);
+                    break 'transaction;
+                }
+
+                let should_zip = node_rank.as_bytes() > curr_rank.as_bytes();
 
                 // Traverse left or right.
                 if key < current.key() {
@@ -137,18 +146,18 @@ impl<'a> HashTreap<'a> {
             //      \  |
             //       I |  M
 
-            dbg!((
-                "unzipping left",
-                String::from_utf8(node.key().to_vec()).unwrap(),
-                &left_unzip_path
-                    .iter()
-                    .map(|n| String::from_utf8(n.key().to_vec()).unwrap())
-                    .collect::<Vec<_>>(),
-                &right_unzip_path
-                    .iter()
-                    .map(|n| String::from_utf8(n.key().to_vec()).unwrap())
-                    .collect::<Vec<_>>(),
-            ));
+            // dbg!((
+            //     "unzipping left",
+            //     String::from_utf8(node.key().to_vec()).unwrap(),
+            //     &left_unzip_path
+            //         .iter()
+            //         .map(|n| String::from_utf8(n.key().to_vec()).unwrap())
+            //         .collect::<Vec<_>>(),
+            //     &right_unzip_path
+            //         .iter()
+            //         .map(|n| String::from_utf8(n.key().to_vec()).unwrap())
+            //         .collect::<Vec<_>>(),
+            // ));
 
             let left_unzip_path_len = left_unzip_path.len();
             for i in 0..left_unzip_path_len {
@@ -175,7 +184,9 @@ impl<'a> HashTreap<'a> {
                     // The last node in the path is special, since we need to clear its right
                     // child from older versions.
                     let child = right_unzip_path.get_mut(i).unwrap();
+                    dbg!(("clearing the left child fuckin please", &child));
                     child.set_child(&Branch::Left, None, &mut nodes_table);
+                    dbg!(("clearing the left child fuckin please", &child));
 
                     // Skip the last element for the first iterator
                     break;
@@ -244,12 +255,16 @@ impl<'a> HashTreap<'a> {
     // === Private Methods ===
 
     fn update_root(&mut self, node: &Node, table: &mut Table<&[u8], (u64, &[u8])>) {
+        // decrement_ref_count(self.root.clone().map(|n| n.hash()), table);
+
         node.save(table);
 
         // The tree is empty, the incoming node has to be the root, and we are done.
         self.root = Some(node.clone());
 
         // TODO: we need to persist the root change too to the storage.
+        // TODO: add a tag to persist snapshots.
+        increment_ref_count(self.root.clone().map(|n| n.hash()), table);
     }
 
     pub(crate) fn get_node(&self, hash: &Option<Hash>) -> Option<Node> {
@@ -277,15 +292,42 @@ impl<'a> HashTreap<'a> {
         match node {
             Some(n) => {
                 let left_check = self.get_node(n.left()).map_or(true, |left| {
+                    dbg!(("left", &left));
                     n.rank().as_bytes() > left.rank().as_bytes() && self.check_rank(Some(left))
                 });
                 let right_check = self.get_node(n.right()).map_or(true, |right| {
+                    dbg!(("right", &right));
                     n.rank().as_bytes() > right.rank().as_bytes() && self.check_rank(Some(right))
                 });
 
                 left_check && right_check
             }
             None => true,
+        }
+    }
+
+    #[cfg(test)]
+    fn list_all_nodes(&self) {
+        let read_txn = self.db.begin_read().unwrap();
+        let nodes_table = read_txn.open_table(NODES_TABLE).unwrap();
+
+        let mut iter = nodes_table.iter().unwrap();
+
+        while let Some(existing) = iter.next() {
+            let key;
+            let data;
+            let existing = existing.unwrap();
+            {
+                key = existing.0.value();
+                data = existing.1.value();
+            }
+
+            println!(
+                "HEre is a node key:{:?} ref_count:{:?} node:{:?}",
+                Hash::from_bytes(key.try_into().unwrap()),
+                data.0,
+                Node::decode(data)
+            );
         }
     }
 }
@@ -332,9 +374,10 @@ mod test {
         let mut keys = [
             // "D", "N", "P",
             "X", // "F", "Z", "Y",
-            "A", "G", //
-            "C",
-            //"M", "H", "I", "J",
+            "A", //
+                 // "G", //
+                 // "C", //
+                 //"M", "H", "I", "J",
         ];
 
         // TODO: fix without sort.
@@ -344,7 +387,30 @@ mod test {
             treap.insert(key.as_bytes(), b"0");
         }
 
-        assert!(treap.verify_ranks());
+        assert!(treap.verify_ranks(), "Ranks are not correct");
+
+        treap.list_all_nodes();
+
+        println!("{}", treap.as_mermaid_graph())
+    }
+
+    #[test]
+    fn upsert() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db = Database::create(file.path()).unwrap();
+
+        let mut treap = HashTreap::new(&db);
+
+        let mut keys = ["X", "X"];
+
+        for key in keys.iter() {
+            treap.insert(key.as_bytes(), b"0");
+        }
+
+        assert!(treap.verify_ranks(), "Ranks are not correct");
+
+        // TODO: check the value.
+
         println!("{}", treap.as_mermaid_graph())
     }
 }

@@ -115,8 +115,6 @@ impl Node {
         new_child: Option<Hash>,
         table: &mut Table<&[u8], (u64, &[u8])>,
     ) {
-        let old_hash = self.hash();
-
         let old_child = match branch {
             Branch::Left => self.left,
             Branch::Right => self.right,
@@ -194,16 +192,17 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.finalize()
 }
 
+#[derive(Debug)]
 enum RefCountDiff {
     Increment,
     Decrement,
 }
 
-fn increment_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
+pub(crate) fn increment_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
     update_ref_count(child, RefCountDiff::Increment, table);
 }
 
-fn decrement_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
+pub(crate) fn decrement_ref_count(child: Option<Hash>, table: &mut Table<&[u8], (u64, &[u8])>) {
     update_ref_count(child, RefCountDiff::Decrement, table);
 }
 
@@ -213,6 +212,7 @@ fn update_ref_count(
     table: &mut Table<&[u8], (u64, &[u8])>,
 ) {
     if let Some(hash) = child {
+        dbg!("should update child ref", &child);
         let mut existing = table
             .get(hash.as_bytes().as_slice())
             .unwrap()
@@ -220,9 +220,15 @@ fn update_ref_count(
 
         let (ref_count, bytes) = {
             let (r, v) = existing.value();
-            (r + 1, v.to_vec())
+            (r, v.to_vec())
         };
         drop(existing);
+        dbg!((
+            "\n\n decrmenting blah blah blah child",
+            &child,
+            &ref_count,
+            &ref_diff
+        ));
 
         let ref_count = match ref_diff {
             RefCountDiff::Increment => ref_count + 1,
