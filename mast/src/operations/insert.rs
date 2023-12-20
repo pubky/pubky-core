@@ -1,4 +1,4 @@
-use crate::node::{get_node, get_root_hash, rank, Branch, Node};
+use crate::node::{rank, Branch, Node};
 use crate::treap::{HashTreap, NODES_TABLE, ROOTS_TABLE};
 use crate::HASH_LEN;
 use blake3::Hash;
@@ -81,61 +81,83 @@ use redb::{Database, ReadTransaction, ReadableTable, Table, TableDefinition, Wri
 //  The simplest way to do so, is to decrement all the nodes in the search path, and then increment
 //  all then new nodes (in both the upper and lower paths) before comitting the write transaction.
 
-impl<'treap> HashTreap<'treap> {
-    pub fn insert(&mut self, key: &[u8], value: &[u8]) {
-        // TODO: validate key and value length.
+pub fn insert<'a>(
+    table: &'a mut Table<&'static [u8], (u64, &'static [u8])>,
+    root: Option<Hash>,
+    key: &[u8],
+    value: &[u8],
+) {
+    let mut path = binary_search_path(table, root, key);
 
-        let write_txn = self.db.begin_write().unwrap();
+    path.iter_mut()
+        .for_each(|(node, _)| node.decrement_ref_count(table));
 
-        'transaction: {
-            let roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
-            let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
+    let mut unzipped_left: Option<Hash> = None;
+    let mut unzipped_right: Option<Hash> = None;
+    let mut upper_path: Option<Hash> = None;
 
-            let root = get_root_hash(&roots_table, &self.name);
+    let rank = rank(key);
 
-            let mut path = upper_path(key, root, &nodes_table);
+    for (node, branch) in path.iter().rev() {
+        match node.rank().as_bytes().cmp(&rank.as_bytes()) {
+            std::cmp::Ordering::Equal => {
+                // We found an exact match, we update the value and proceed.
 
-            path.iter_mut()
-                .for_each(|node| node.decrement_ref_count(&mut nodes_table))
-
-            // if path.
-        };
-
-        // Finally commit the changes to the storage.
-        write_txn.commit().unwrap();
+                upper_path = Some(Node::insert(table, key, value))
+            }
+            std::cmp::Ordering::Less => {
+                // previous_hash = *current_node.left();
+                //
+                // path.push((current_node, Branch::Left));
+            }
+            std::cmp::Ordering::Greater => {
+                // previous_hash = *current_node.right();
+                //
+                // path.push((current_node, Branch::Right));
+            }
+        }
     }
+
+    // if let Some((node, _)) = path.last_mut() {
+    //     // If the last node is an exact match
+    // } else {
+    //     // handle lower path
+    // }
 }
 
 /// Returns the current nodes from the root to the insertion point on the binary search path.
-fn upper_path<'a>(
-    key: &[u8],
-    root: Option<Hash>,
+fn binary_search_path<'a>(
     nodes_table: &'a impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
-) -> Vec<Node> {
-    let rank = rank(key);
-
-    let mut path: Vec<Node> = Vec::new();
+    root: Option<Hash>,
+    key: &[u8],
+) -> Vec<(Node, Branch)> {
+    let mut path: Vec<(Node, Branch)> = Vec::new();
 
     let mut previous_hash = root;
 
     while let Some(current_hash) = previous_hash {
-        let current_node = get_node(nodes_table, current_hash.as_bytes()).expect("Node not found!");
+        let current_node = Node::open(nodes_table, current_hash).expect("Node not found!");
 
         let current_key = current_node.key();
 
-        if key == current_key {
-            // We found an exact match, we don't need to unzip the rest.
-            path.push(current_node);
-            break;
-        }
+        match key.cmp(current_key) {
+            std::cmp::Ordering::Equal => {
+                // We found an exact match, we don't need to unzip the rest.
+                // Branch here doesn't matter
+                path.push((current_node, Branch::Left));
+                break;
+            }
+            std::cmp::Ordering::Less => {
+                previous_hash = *current_node.left();
 
-        if key < current_key {
-            previous_hash = *current_node.left();
-        } else {
-            previous_hash = *current_node.right();
-        }
+                path.push((current_node, Branch::Left));
+            }
+            std::cmp::Ordering::Greater => {
+                previous_hash = *current_node.right();
 
-        path.push(current_node);
+                path.push((current_node, Branch::Right));
+            }
+        }
     }
 
     path

@@ -1,2 +1,1 @@
-pub mod gc;
-mod insert;
+pub mod insert;

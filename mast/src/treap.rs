@@ -1,7 +1,7 @@
 use blake3::Hash;
 use redb::*;
 
-use crate::node::{get_node, get_root_hash, Node};
+use crate::{node::Node, HASH_LEN};
 
 // Table: Nodes v0
 // stores all the hash treap nodes from all the treaps in the storage.
@@ -49,8 +49,43 @@ impl<'treap> HashTreap<'treap> {
         let roots_table = read_txn.open_table(ROOTS_TABLE).unwrap();
         let nodes_table = read_txn.open_table(NODES_TABLE).unwrap();
 
-        let hash = get_root_hash(&roots_table, self.name);
-        hash.and_then(|hash| get_node(&nodes_table, hash.as_bytes()))
+        self.root_hash(&roots_table)
+            .and_then(|hash| Node::open(&nodes_table, hash))
+    }
+
+    fn root_hash<'a>(
+        &self,
+        table: &'a impl ReadableTable<&'static [u8], &'static [u8]>,
+    ) -> Option<Hash> {
+        let existing = table.get(self.name.as_bytes()).unwrap();
+        if existing.is_none() {
+            return None;
+        }
+        let hash = existing.unwrap();
+
+        let hash: [u8; HASH_LEN] = hash.value().try_into().expect("Invalid root hash");
+
+        Some(Hash::from_bytes(hash))
+    }
+
+    // === Public Methods ===
+
+    pub fn insert(&mut self, key: &[u8], value: &[u8]) {
+        // TODO: validate key and value length.
+
+        let write_txn = self.db.begin_write().unwrap();
+
+        'transaction: {
+            let roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
+            let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
+
+            let root = self.root_hash(&roots_table);
+
+            crate::operations::insert::insert(&mut nodes_table, root, key, value)
+        };
+
+        // Finally commit the changes to the storage.
+        write_txn.commit().unwrap();
     }
 
     // === Private Methods ===
@@ -60,12 +95,7 @@ impl<'treap> HashTreap<'treap> {
         let read_txn = self.db.begin_read().unwrap();
         let table = read_txn.open_table(NODES_TABLE).unwrap();
 
-        hash.and_then(|h| {
-            table
-                .get(h.as_bytes().as_slice())
-                .unwrap()
-                .map(|existing| Node::decode(existing.value()))
-        })
+        hash.and_then(|h| Node::open(&table, h))
     }
 
     // === Test Methods ===
@@ -112,12 +142,13 @@ impl<'treap> HashTreap<'treap> {
                 data = existing.1.value();
             }
 
-            println!(
-                "HEre is a node key:{:?} ref_count:{:?} node:{:?}",
-                Hash::from_bytes(key.try_into().unwrap()),
-                data.0,
-                Node::decode(data)
-            );
+            // TODO: iterate over nodes
+            // println!(
+            //     "HEre is a node key:{:?} ref_count:{:?} node:{:?}",
+            //     Hash::from_bytes(key.try_into().unwrap()),
+            //     data.0,
+            //     Node::open(data)
+            // );
         }
     }
 }

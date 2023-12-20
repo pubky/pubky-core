@@ -37,55 +37,42 @@ enum RefCountDiff {
 }
 
 impl Node {
-    pub fn new(key: &[u8], value: &[u8]) -> Self {
-        Self {
+    pub(crate) fn open<'a>(
+        table: &'a impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
+        hash: Hash,
+    ) -> Option<Node> {
+        let mut existing = table.get(hash.as_bytes().as_slice()).unwrap();
+
+        existing.map(|existing| {
+            let (ref_count, bytes) = {
+                let (r, v) = existing.value();
+                (r, v.to_vec())
+            };
+            drop(existing);
+
+            decode_node((ref_count, &bytes))
+        })
+    }
+
+    pub(crate) fn insert(table: &mut Table<&[u8], (u64, &[u8])>, key: &[u8], value: &[u8]) -> Hash {
+        let node = Self {
             key: key.into(),
             value: value.into(),
             left: None,
             right: None,
 
-            ref_count: 0,
-        }
-    }
-
-    pub fn decode(data: (u64, &[u8])) -> Node {
-        let (ref_count, encoded_node) = data;
-
-        let (key, rest) = decode(encoded_node);
-        let (value, rest) = decode(rest);
-
-        let (left, rest) = decode(rest);
-        let left = match left.len() {
-            0 => None,
-            32 => {
-                let bytes: [u8; HASH_LEN] = left.try_into().unwrap();
-                Some(Hash::from_bytes(bytes))
-            }
-            _ => {
-                panic!("invalid hash length!")
-            }
+            ref_count: 1,
         };
 
-        let (right, _) = decode(rest);
-        let right = match right.len() {
-            0 => None,
-            32 => {
-                let bytes: [u8; HASH_LEN] = right.try_into().unwrap();
-                Some(Hash::from_bytes(bytes))
-            }
-            _ => {
-                panic!("invalid hash length!")
-            }
-        };
+        let encoded = node.canonical_encode();
+        let hash = hash(&encoded);
 
-        Node {
-            key: key.into(),
-            value: value.into(),
-            left,
-            right,
+        table.insert(
+            hash.as_bytes().as_slice(),
+            (node.ref_count, encoded.as_slice()),
+        );
 
-            ref_count,
-        }
+        hash
     }
 
     // === Getters ===
@@ -117,19 +104,15 @@ impl Node {
         hash(&self.canonical_encode())
     }
 
-    pub(crate) fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {}
-
-    pub(crate) fn save(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
-        let encoded = self.canonical_encode();
-        let hash = hash(&encoded);
-
-        table.insert(
-            hash.as_bytes().as_slice(),
-            (self.ref_count, encoded.as_slice()),
-        );
+    pub(crate) fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
+        self.update_ref_count(table, RefCountDiff::Decrement)
     }
 
     // === Private Methods ===
+
+    fn increment_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
+        self.update_ref_count(table, RefCountDiff::Increment)
+    }
 
     fn update_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>, diff: RefCountDiff) {
         let ref_count = match diff {
@@ -175,36 +158,6 @@ pub(crate) fn rank(key: &[u8]) -> Hash {
     hash(key)
 }
 
-/// Returns the node for a given hash.
-pub(crate) fn get_node<'a>(
-    table: &'a impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
-    hash: &[u8],
-) -> Option<Node> {
-    let existing = table.get(hash).unwrap();
-
-    if existing.is_none() {
-        return None;
-    }
-    let data = existing.unwrap();
-
-    Some(Node::decode(data.value()))
-}
-
-/// Returns the root hash for a given table.
-pub(crate) fn get_root_hash<'a>(
-    table: &'a impl ReadableTable<&'static [u8], &'static [u8]>,
-    name: &str,
-) -> Option<Hash> {
-    let existing = table.get(name.as_bytes()).unwrap();
-    if existing.is_none() {
-        return None;
-    }
-    let hash = existing.unwrap();
-
-    let hash: [u8; HASH_LEN] = hash.value().try_into().expect("Invalid root hash");
-    Some(Hash::from_bytes(hash))
-}
-
 fn encode(bytes: &[u8], out: &mut Vec<u8>) {
     // TODO: find a better way to reserve bytes.
     let current_len = out.len();
@@ -229,4 +182,44 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.update(bytes);
 
     hasher.finalize()
+}
+
+pub fn decode_node(data: (u64, &[u8])) -> Node {
+    let (ref_count, encoded_node) = data;
+
+    let (key, rest) = decode(encoded_node);
+    let (value, rest) = decode(rest);
+
+    let (left, rest) = decode(rest);
+    let left = match left.len() {
+        0 => None,
+        32 => {
+            let bytes: [u8; HASH_LEN] = left.try_into().unwrap();
+            Some(Hash::from_bytes(bytes))
+        }
+        _ => {
+            panic!("invalid hash length!")
+        }
+    };
+
+    let (right, _) = decode(rest);
+    let right = match right.len() {
+        0 => None,
+        32 => {
+            let bytes: [u8; HASH_LEN] = right.try_into().unwrap();
+            Some(Hash::from_bytes(bytes))
+        }
+        _ => {
+            panic!("invalid hash length!")
+        }
+    };
+
+    Node {
+        key: key.into(),
+        value: value.into(),
+        left,
+        right,
+
+        ref_count,
+    }
 }
