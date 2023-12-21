@@ -6,7 +6,6 @@ use crate::{Hash, Hasher, HASH_LEN};
 
 // TODO: Are we creating too many hashers?
 // TODO: are we calculating the rank and hash too often?
-// TODO: remove unused
 // TODO: remove unwrap
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +40,7 @@ impl Node {
         table: &'_ impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
         hash: Hash,
     ) -> Option<Node> {
-        let mut existing = table.get(hash.as_bytes().as_slice()).unwrap();
+        let existing = table.get(hash.as_bytes().as_slice()).unwrap();
 
         existing.map(|existing| {
             let (ref_count, bytes) = {
@@ -61,7 +60,7 @@ impl Node {
         left: Option<Hash>,
         right: Option<Hash>,
     ) -> Hash {
-        let mut node = Self {
+        let node = Self {
             key: key.into(),
             value: value.into(),
             left,
@@ -73,10 +72,12 @@ impl Node {
         let encoded = node.canonical_encode();
         let hash = hash(&encoded);
 
-        table.insert(
-            hash.as_bytes().as_slice(),
-            (node.ref_count, encoded.as_slice()),
-        );
+        table
+            .insert(
+                hash.as_bytes().as_slice(),
+                (node.ref_count, encoded.as_slice()),
+            )
+            .unwrap();
 
         hash
     }
@@ -158,10 +159,12 @@ impl Node {
         let encoded = self.canonical_encode();
         let hash = hash(&encoded);
 
-        table.insert(
-            hash.as_bytes().as_slice(),
-            (self.ref_count, encoded.as_slice()),
-        );
+        table
+            .insert(
+                hash.as_bytes().as_slice(),
+                (self.ref_count, encoded.as_slice()),
+            )
+            .unwrap();
 
         hash
     }
@@ -170,10 +173,12 @@ impl Node {
         let encoded = self.canonical_encode();
         let hash = hash(&encoded);
 
-        table.insert(
-            hash.as_bytes().as_slice(),
-            (self.ref_count, encoded.as_slice()),
-        );
+        table
+            .insert(
+                hash.as_bytes().as_slice(),
+                (self.ref_count, encoded.as_slice()),
+            )
+            .unwrap();
 
         hash
     }
@@ -200,7 +205,8 @@ impl Node {
         match ref_count {
             0 => table.remove(hash.as_bytes().as_slice()),
             _ => table.insert(hash.as_bytes().as_slice(), (ref_count, bytes.as_slice())),
-        };
+        }
+        .unwrap();
     }
 
     fn canonical_encode(&self) -> Vec<u8> {

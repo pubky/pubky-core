@@ -1,10 +1,8 @@
 use std::cmp::Ordering;
 
 use crate::node::{rank, Branch, Node};
-use crate::treap::{HashTreap, NODES_TABLE, ROOTS_TABLE};
-use crate::HASH_LEN;
 use blake3::Hash;
-use redb::{Database, ReadTransaction, ReadableTable, Table, TableDefinition, WriteTransaction};
+use redb::Table;
 
 // Watch this [video](https://youtu.be/NxRXhBur6Xs?si=GNwaUOfuGwr_tBKI&t=1763) for a good explanation of the unzipping algorithm.
 // Also see the Iterative insertion algorithm in the page 12 of the [original paper](https://arxiv.org/pdf/1806.06726.pdf).
@@ -90,7 +88,6 @@ pub fn insert(
     value: &[u8],
 ) -> Hash {
     let mut path = binary_search_path(table, root, key);
-    dbg!(&path);
 
     let mut unzip_left_root: Option<Hash> = None;
     let mut unzip_right_root: Option<Hash> = None;
@@ -157,7 +154,7 @@ fn binary_search_path(
         // as lower nodes shouldn't change then.
         current_node.decrement_ref_count(table);
 
-        let mut path = if current_node.rank().as_bytes() > rank.as_bytes() {
+        let path = if current_node.rank().as_bytes() > rank.as_bytes() {
             &mut result.upper_path
         } else {
             &mut result.unzip_path

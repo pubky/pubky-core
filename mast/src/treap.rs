@@ -69,7 +69,9 @@ impl<'treap> HashTreap<'treap> {
 
             let new_root = crate::operations::insert::insert(&mut nodes_table, root, key, value);
 
-            roots_table.insert(self.name.as_bytes(), new_root.as_bytes().as_slice());
+            roots_table
+                .insert(self.name.as_bytes(), new_root.as_bytes().as_slice())
+                .unwrap();
         };
 
         // Finally commit the changes to the storage.

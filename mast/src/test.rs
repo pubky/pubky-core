@@ -1,9 +1,9 @@
 use crate::node::Node;
-use crate::treap::{HashTreap, NODES_TABLE};
+use crate::treap::HashTreap;
 use crate::Hash;
 
 use redb::backends::InMemoryBackend;
-use redb::{Database, Error, ReadableTable, TableDefinition};
+use redb::Database;
 
 #[test]
 fn cases() {
@@ -32,7 +32,7 @@ fn cases() {
     let upsert_at_root = ["X", "X"]
         .iter()
         .enumerate()
-        .map(|(i, key)| {
+        .map(|(i, _)| {
             (
                 Entry {
                     key: b"X".to_vec(),
@@ -201,12 +201,14 @@ fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash:
     let mut sorted = expected.to_vec();
     sorted.sort_by(|a, b| a.key.cmp(&b.key));
 
-    dbg!(&treap.root_hash());
-    dbg!(&input, &expected);
-    println!("{}", into_mermaid_graph(&treap));
+    // println!("{}", into_mermaid_graph(&treap));
 
     if root_hash.is_some() {
         assert_root(&treap, root_hash.unwrap());
+    } else {
+        dbg!(&treap.root_hash());
+
+        verify_ranks(&treap);
     }
 
     assert_eq!(
@@ -214,18 +216,6 @@ fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash:
         sorted,
         "{}",
         format!("Entries do not match at: \"{}\"", name)
-    );
-}
-
-/// Verify ranks, and keys order
-fn verify(treap: &HashTreap, entries: &[(&[u8], Vec<u8>)]) {
-    verify_ranks(treap);
-    verify_entries(
-        treap,
-        entries
-            .iter()
-            .map(|(k, v)| (k.to_vec(), v.to_vec()))
-            .collect::<Vec<_>>(),
     );
 }
 
@@ -253,19 +243,6 @@ fn verify_children_rank(treap: &HashTreap, node: Option<Node>) -> bool {
         }
         None => true,
     }
-}
-
-/// Verify that the expected entries are both sorted and present in the treap.
-fn verify_entries(treap: &HashTreap, entries: Vec<(Vec<u8>, Vec<u8>)>) {
-    let collected = treap
-        .iter()
-        .map(|n| (n.key().to_vec(), n.value().to_vec()))
-        .collect::<Vec<_>>();
-
-    let mut sorted = entries.iter().cloned().collect::<Vec<_>>();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-
-    assert_eq!(collected, sorted, "Entries do not match");
 }
 
 fn assert_root(treap: &HashTreap, expected_root_hash: &str) {
