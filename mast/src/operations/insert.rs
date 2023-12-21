@@ -90,6 +90,7 @@ pub fn insert(
     value: &[u8],
 ) -> Hash {
     let mut path = binary_search_path(table, root, key);
+    dbg!(&path);
 
     let mut unzip_left_root: Option<Hash> = None;
     let mut unzip_right_root: Option<Hash> = None;
@@ -101,7 +102,11 @@ pub fn insert(
         }
     }
 
-    let mut root = Node::insert(table, key, value, unzip_left_root, unzip_right_root);
+    let mut root = if let Some(mut existing) = path.existing {
+        existing.set_value(table, value)
+    } else {
+        Node::insert(table, key, value, unzip_left_root, unzip_right_root)
+    };
 
     for (node, branch) in path.upper_path.iter_mut().rev() {
         match branch {
@@ -114,6 +119,7 @@ pub fn insert(
     root
 }
 
+#[derive(Debug)]
 struct BinarySearchPath {
     upper_path: Vec<(Node, Branch)>,
     existing: Option<Node>,
@@ -160,6 +166,8 @@ fn binary_search_path(
         match key.cmp(current_node.key()) {
             Ordering::Equal => {
                 // We found exact match. terminate the search.
+
+                result.existing = Some(current_node);
                 return result;
             }
             Ordering::Less => {

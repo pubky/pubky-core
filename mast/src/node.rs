@@ -81,24 +81,6 @@ impl Node {
         hash
     }
 
-    /// Set the left child, save the updated node, and return the new hash.
-    pub(crate) fn set_left_child(
-        &mut self,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        child: Option<Hash>,
-    ) -> Hash {
-        self.set_child(table, Branch::Left, child)
-    }
-
-    /// Set the right child, save the updated node, and return the new hash.
-    pub(crate) fn set_right_child(
-        &mut self,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        child: Option<Hash>,
-    ) -> Hash {
-        self.set_child(table, Branch::Right, child)
-    }
-
     // === Getters ===
 
     pub fn key(&self) -> &[u8] {
@@ -128,6 +110,34 @@ impl Node {
         hash(&self.canonical_encode())
     }
 
+    /// Set the value and save the updated node.
+    pub(crate) fn set_value(
+        &mut self,
+        table: &mut Table<&[u8], (u64, &[u8])>,
+        value: &[u8],
+    ) -> Hash {
+        self.value = value.into();
+        self.save(table)
+    }
+
+    /// Set the left child, save the updated node, and return the new hash.
+    pub(crate) fn set_left_child(
+        &mut self,
+        table: &mut Table<&[u8], (u64, &[u8])>,
+        child: Option<Hash>,
+    ) -> Hash {
+        self.set_child(table, Branch::Left, child)
+    }
+
+    /// Set the right child, save the updated node, and return the new hash.
+    pub(crate) fn set_right_child(
+        &mut self,
+        table: &mut Table<&[u8], (u64, &[u8])>,
+        child: Option<Hash>,
+    ) -> Hash {
+        self.set_child(table, Branch::Right, child)
+    }
+
     // === Private Methods ===
 
     pub fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
@@ -145,6 +155,18 @@ impl Node {
             Branch::Right => self.right = child,
         }
 
+        let encoded = self.canonical_encode();
+        let hash = hash(&encoded);
+
+        table.insert(
+            hash.as_bytes().as_slice(),
+            (self.ref_count, encoded.as_slice()),
+        );
+
+        hash
+    }
+
+    fn save(&mut self, table: &mut Table<&[u8], (u64, &[u8])>) -> Hash {
         let encoded = self.canonical_encode();
         let hash = hash(&encoded);
 

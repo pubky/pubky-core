@@ -29,46 +29,55 @@ fn cases() {
         value: [b"v", key.as_bytes()].concat(),
     });
 
-    let upsert_at_root = [
-        (
-            Entry {
-                key: b"X".to_vec(),
-                value: b"A".to_vec(),
-            },
-            Operation::Insert,
-        ),
-        ((
-            Entry {
-                key: b"X".to_vec(),
-                value: b"B".to_vec(),
-            },
-            Operation::Insert,
-        )),
-    ];
+    let upsert_at_root = ["X", "X"]
+        .iter()
+        .enumerate()
+        .map(|(i, key)| {
+            (
+                Entry {
+                    key: b"X".to_vec(),
+                    value: i.to_string().into(),
+                },
+                Operation::Insert,
+            )
+        })
+        .collect::<Vec<_>>();
 
-    let upsert_deeper = [
-        (
-            Entry {
-                key: b"F".to_vec(),
-                value: b"A".to_vec(),
-            },
-            Operation::Insert,
-        ),
-        (
-            Entry {
-                key: b"X".to_vec(),
-                value: b"A".to_vec(),
-            },
-            Operation::Insert,
-        ),
-        ((
-            Entry {
-                key: b"X".to_vec(),
-                value: b"B".to_vec(),
-            },
-            Operation::Insert,
-        )),
-    ];
+    // X has higher rank.
+    let upsert_deeper = ["X", "F", "F"]
+        .iter()
+        .enumerate()
+        .map(|(i, key)| {
+            (
+                Entry {
+                    key: key.as_bytes().to_vec(),
+                    value: i.to_string().into(),
+                },
+                Operation::Insert,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut upsert_deeper_expected = upsert_deeper.clone();
+    upsert_deeper_expected.remove(upsert_deeper.len() - 2);
+
+    // X has higher rank.
+    let upsert_root_with_children = ["F", "X", "X"]
+        .iter()
+        .enumerate()
+        .map(|(i, key)| {
+            (
+                Entry {
+                    key: key.as_bytes().to_vec(),
+                    value: i.to_string().into(),
+                },
+                Operation::Insert,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut upsert_root_with_children_expected = upsert_root_with_children.clone();
+    upsert_root_with_children_expected.remove(upsert_root_with_children.len() - 2);
 
     let cases = [
         (
@@ -105,23 +114,33 @@ fn cases() {
             Some("b3e862d316e6f5caca72c8f91b7a15015b4f7f8f970c2731433aad793f7fe3e6"),
         ),
         (
-            "upsert at root",
-            upsert_at_root.to_vec(),
+            "upsert at root without children",
+            upsert_at_root.clone(),
             upsert_at_root[1..]
                 .iter()
                 .map(|(e, _)| e.clone())
                 .collect::<Vec<_>>(),
-            Some("2947139081bbcc3816ebd73cb81ac0be5c564df55b88d6dbeb52c5254c1de887"),
+            Some("b1353174e730b9ff6850577357fd9ff608071bbab46ebe72c434133f5d4f0383"),
         ),
         (
             "upsert deeper",
             upsert_deeper.to_vec(),
-            upsert_at_root[0..2]
+            upsert_deeper_expected
+                .to_vec()
                 .iter()
                 .map(|(e, _)| e.clone())
                 .collect::<Vec<_>>(),
-            // Some("2947139081bbcc3816ebd73cb81ac0be5c564df55b88d6dbeb52c5254c1de887"),
-            None,
+            Some("58272c9e8c9e6b7266e4b60e45d55257b94e85561997f1706e0891ee542a8cd5"),
+        ),
+        (
+            "upsert at root with children",
+            upsert_root_with_children.to_vec(),
+            upsert_root_with_children_expected
+                .to_vec()
+                .iter()
+                .map(|(e, _)| e.clone())
+                .collect::<Vec<_>>(),
+            Some("f46daf022dc852cd4e60a98a33de213f593e17bcd234d9abff7a178d8a5d0761"),
         ),
     ];
 
@@ -132,7 +151,7 @@ fn cases() {
 
 // === Helpers ===
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Operation {
     Insert,
     Delete,
@@ -150,7 +169,7 @@ impl std::fmt::Debug for Entry {
     }
 }
 
-fn test(name: &str, input: &[(Entry, Operation)], output: &[Entry], root_hash: Option<&str>) {
+fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash: Option<&str>) {
     let inmemory = InMemoryBackend::new();
     let db = Database::builder()
         .create_with_backend(inmemory)
@@ -163,6 +182,12 @@ fn test(name: &str, input: &[(Entry, Operation)], output: &[Entry], root_hash: O
             Operation::Insert => treap.insert(&entry.key, &entry.value),
             Operation::Delete => todo!(),
         }
+        println!(
+            "{:?} {:?}\n{}",
+            &entry.key,
+            &entry.value,
+            into_mermaid_graph(&treap)
+        );
     }
 
     let collected = treap
@@ -173,10 +198,11 @@ fn test(name: &str, input: &[(Entry, Operation)], output: &[Entry], root_hash: O
         })
         .collect::<Vec<_>>();
 
-    let mut sorted = output.to_vec();
+    let mut sorted = expected.to_vec();
     sorted.sort_by(|a, b| a.key.cmp(&b.key));
 
-    // dbg!(&treap.root_hash());
+    dbg!(&treap.root_hash());
+    dbg!(&input, &expected);
     println!("{}", into_mermaid_graph(&treap));
 
     if root_hash.is_some() {
