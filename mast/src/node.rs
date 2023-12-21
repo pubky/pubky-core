@@ -9,9 +9,9 @@ use crate::{Hash, Hasher, HASH_LEN};
 // TODO: remove unused
 // TODO: remove unwrap
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// In memory reprsentation of treap node.
-pub(crate) struct Node {
+pub struct Node {
     // Key value
     key: Box<[u8]>,
     value: Box<[u8]>,
@@ -101,38 +101,38 @@ impl Node {
 
     // === Getters ===
 
-    pub(crate) fn key(&self) -> &[u8] {
+    pub fn key(&self) -> &[u8] {
         &self.key
     }
 
-    pub(crate) fn value(&self) -> &[u8] {
+    pub fn value(&self) -> &[u8] {
         &self.value
     }
 
-    pub(crate) fn left(&self) -> &Option<Hash> {
+    pub fn left(&self) -> &Option<Hash> {
         &self.left
     }
 
-    pub(crate) fn right(&self) -> &Option<Hash> {
+    pub fn right(&self) -> &Option<Hash> {
         &self.right
     }
 
     // === Public Methods ===
 
-    pub(crate) fn rank(&self) -> Hash {
+    pub fn rank(&self) -> Hash {
         hash(&self.key)
     }
 
     /// Returns the hash of the node.
-    pub(crate) fn hash(&self) -> Hash {
+    pub fn hash(&self) -> Hash {
         hash(&self.canonical_encode())
     }
 
-    pub(crate) fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
+    // === Private Methods ===
+
+    pub fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
         self.update_ref_count(table, RefCountDiff::Decrement)
     }
-
-    // === Private Methods ===
 
     fn set_child(
         &mut self,

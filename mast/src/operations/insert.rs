@@ -116,10 +116,16 @@ pub fn insert(
 
 struct BinarySearchPath {
     upper_path: Vec<(Node, Branch)>,
-    exact_match: Option<Node>,
+    existing: Option<Node>,
     unzip_path: Vec<(Node, Branch)>,
 }
 
+/// Returns the binary search path for a given key in the following form:
+/// - `upper_path` is the path with nodes with rank higher than the rank of the key.
+/// - `match`      is the node with the exact same key (if any).
+/// - `lower_path` is the path with nodes with rank lesss  than the rank of the key.
+///
+/// If a match was found, the `lower_path` will be empty.
 fn binary_search_path(
     table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
     root: Option<Hash>,
@@ -129,7 +135,7 @@ fn binary_search_path(
 
     let mut result = BinarySearchPath {
         upper_path: Default::default(),
-        exact_match: None,
+        existing: None,
         unzip_path: Default::default(),
     };
 

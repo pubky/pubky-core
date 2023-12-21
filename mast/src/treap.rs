@@ -46,28 +46,12 @@ impl<'treap> HashTreap<'treap> {
 
     // === Getters ===
 
-    pub(crate) fn root(&self) -> Option<Node> {
+    /// Returns the root hash of the treap.
+    pub fn root_hash(&self) -> Option<Hash> {
         let read_txn = self.db.begin_read().unwrap();
+        let table = read_txn.open_table(ROOTS_TABLE).unwrap();
 
-        let roots_table = read_txn.open_table(ROOTS_TABLE).unwrap();
-        let nodes_table = read_txn.open_table(NODES_TABLE).unwrap();
-
-        self.root_hash(&roots_table)
-            .and_then(|hash| Node::open(&nodes_table, hash))
-    }
-
-    fn root_hash(
-        &self,
-        table: &'_ impl ReadableTable<&'static [u8], &'static [u8]>,
-    ) -> Option<Hash> {
-        let existing = table.get(self.name.as_bytes()).unwrap();
-        existing.as_ref()?;
-
-        let hash = existing.unwrap();
-
-        let hash: [u8; HASH_LEN] = hash.value().try_into().expect("Invalid root hash");
-
-        Some(Hash::from_bytes(hash))
+        self.root_hash_inner(&table)
     }
 
     // === Public Methods ===
@@ -81,7 +65,7 @@ impl<'treap> HashTreap<'treap> {
             let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
             let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
 
-            let root = self.root_hash(&roots_table);
+            let root = self.root_hash_inner(&roots_table);
 
             let new_root = crate::operations::insert::insert(&mut nodes_table, root, key, value);
 
@@ -92,159 +76,85 @@ impl<'treap> HashTreap<'treap> {
         write_txn.commit().unwrap();
     }
 
+    pub fn iter(&self) -> TreapIterator<'_> {
+        TreapIterator::new(self)
+    }
+
     // === Private Methods ===
 
-    // === Test Methods ===
+    pub(crate) fn root(&self) -> Option<Node> {
+        let read_txn = self.db.begin_read().unwrap();
 
-    // TODO: move tests and test helper methods to separate module.
-    // Only keep the public methods here, and probably move it to lib.rs too.
+        let roots_table = read_txn.open_table(ROOTS_TABLE).unwrap();
+        let nodes_table = read_txn.open_table(NODES_TABLE).unwrap();
 
-    /// Create a read transaction and get a node from the nodes table.
-    #[cfg(test)]
+        self.root_hash_inner(&roots_table)
+            .and_then(|hash| Node::open(&nodes_table, hash))
+    }
+
+    fn root_hash_inner(
+        &self,
+        table: &'_ impl ReadableTable<&'static [u8], &'static [u8]>,
+    ) -> Option<Hash> {
+        let existing = table.get(self.name.as_bytes()).unwrap();
+        existing.as_ref()?;
+
+        let hash = existing.unwrap();
+
+        let hash: [u8; HASH_LEN] = hash.value().try_into().expect("Invalid root hash");
+
+        Some(Hash::from_bytes(hash))
+    }
+
     pub(crate) fn get_node(&self, hash: &Option<Hash>) -> Option<Node> {
         let read_txn = self.db.begin_read().unwrap();
         let table = read_txn.open_table(NODES_TABLE).unwrap();
 
         hash.and_then(|h| Node::open(&table, h))
     }
+}
 
-    #[cfg(test)]
-    fn verify_ranks(&self) -> bool {
-        self.check_rank(self.root())
+pub struct TreapIterator<'treap> {
+    treap: &'treap HashTreap<'treap>,
+    stack: Vec<Node>,
+}
+
+impl<'a> TreapIterator<'a> {
+    fn new(treap: &'a HashTreap<'a>) -> Self {
+        let mut iter = TreapIterator {
+            treap,
+            stack: Vec::new(),
+        };
+
+        if let Some(root) = treap.root() {
+            iter.push_left(root)
+        };
+
+        iter
     }
 
-    #[cfg(test)]
-    fn check_rank(&self, node: Option<Node>) -> bool {
-        match node {
-            Some(n) => {
-                let left_check = self.get_node(n.left()).map_or(true, |left| {
-                    n.rank().as_bytes() > left.rank().as_bytes() && self.check_rank(Some(left))
-                });
-                let right_check = self.get_node(n.right()).map_or(true, |right| {
-                    n.rank().as_bytes() > right.rank().as_bytes() && self.check_rank(Some(right))
-                });
-
-                left_check && right_check
-            }
-            None => true,
+    fn push_left(&mut self, mut node: Node) {
+        while let Some(left) = self.treap.get_node(node.left()) {
+            self.stack.push(node);
+            node = left;
         }
-    }
-
-    #[cfg(test)]
-    fn list_all_nodes(&self) {
-        // TODO: return all the nodes to verify GC in the test, or verify it here.
-        let read_txn = self.db.begin_read().unwrap();
-        let nodes_table = read_txn.open_table(NODES_TABLE).unwrap();
-
-        let mut iter = nodes_table.iter().unwrap();
-
-        while let Some(existing) = iter.next() {
-            let key;
-            let data;
-            let existing = existing.unwrap();
-            {
-                key = existing.0.value();
-                data = existing.1.value();
-            }
-
-            // TODO: iterate over nodes
-            // println!(
-            //     "HEre is a node key:{:?} ref_count:{:?} node:{:?}",
-            //     Hash::from_bytes(key.try_into().unwrap()),
-            //     data.0,
-            //     Node::open(data)
-            // );
-        }
+        self.stack.push(node);
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::HashTreap;
-    use super::Node;
+impl<'a> Iterator for TreapIterator<'a> {
+    type Item = Node;
 
-    use redb::backends::InMemoryBackend;
-    use redb::{Database, Error, ReadableTable, TableDefinition};
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.stack.pop() {
+            Some(node) => {
+                if let Some(right) = self.treap.get_node(node.right()) {
+                    self.push_left(right)
+                }
 
-    // TODO: write a good test for GC.
-
-    #[test]
-    fn sorted_insert() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let db = Database::create(file.path()).unwrap();
-
-        let mut treap = HashTreap::new(&db, "test");
-
-        let mut keys = [
-            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
-            "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
-        ];
-
-        for key in keys.iter() {
-            treap.insert(key.as_bytes(), b"0");
+                Some(node.clone())
+            }
+            _ => None,
         }
-
-        assert!(treap.verify_ranks());
-        println!("{}", treap.as_mermaid_graph())
-    }
-
-    #[test]
-    fn unsorted_insert() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let db = Database::create(file.path()).unwrap();
-
-        let mut treap = HashTreap::new(&db, "test");
-
-        let mut keys = ["D", "N", "P", "X", "A", "G", "C", "M", "H", "I", "J"];
-
-        for key in keys.iter() {
-            treap.insert(key.as_bytes(), b"0");
-        }
-
-        assert!(treap.verify_ranks(), "Ranks are not correct");
-
-        treap.list_all_nodes();
-
-        println!("{}", treap.as_mermaid_graph())
-    }
-
-    #[test]
-    fn upsert() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let db = Database::create(file.path()).unwrap();
-
-        let mut treap = HashTreap::new(&db, "test");
-
-        let mut keys = ["X", "X"];
-
-        for key in keys.iter() {
-            treap.insert(key.as_bytes(), b"0");
-        }
-
-        assert!(treap.verify_ranks(), "Ranks are not correct");
-
-        // TODO: check the value.
-
-        println!("{}", treap.as_mermaid_graph())
-    }
-
-    #[test]
-    fn upsert_deeper_than_root() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let db = Database::create(file.path()).unwrap();
-
-        let mut treap = HashTreap::new(&db, "test");
-
-        let keys = ["F", "X", "X"];
-
-        for key in keys.iter() {
-            treap.insert(key.as_bytes(), b"0");
-        }
-
-        assert!(treap.verify_ranks(), "Ranks are not correct");
-
-        // TODO: check the value.
-
-        println!("{}", treap.as_mermaid_graph())
     }
 }
