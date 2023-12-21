@@ -100,6 +100,10 @@ impl Node {
         &self.right
     }
 
+    pub(crate) fn ref_count(&self) -> &u64 {
+        &self.ref_count
+    }
+
     // === Public Methods ===
 
     pub fn rank(&self) -> Hash {

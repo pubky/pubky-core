@@ -1,3 +1,5 @@
+use std::assert_eq;
+
 use crate::node::Node;
 use crate::treap::HashTreap;
 use crate::Hash;
@@ -192,9 +194,13 @@ fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash:
 
     let collected = treap
         .iter()
-        .map(|n| Entry {
-            key: n.key().to_vec(),
-            value: n.value().to_vec(),
+        .map(|n| {
+            assert_eq!(*n.ref_count(), 1_u64, "Node has wrong ref count");
+
+            Entry {
+                key: n.key().to_vec(),
+                value: n.value().to_vec(),
+            }
         })
         .collect::<Vec<_>>();
 
