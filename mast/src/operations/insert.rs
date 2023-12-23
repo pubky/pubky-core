@@ -221,19 +221,14 @@ fn binary_search_path(
 
 #[cfg(test)]
 mod test {
-    use crate::test::{test_operations, Entry, Operation};
+    use crate::test::{test_operations, Entry};
 
     #[test]
     fn insert_single_entry() {
         let case = ["A"];
 
-        let expected = case.map(|key| Entry {
-            key: key.as_bytes().to_vec(),
-            value: [b"v", key.as_bytes()].concat(),
-        });
-
         test_operations(
-            &expected.map(|e| (e, Operation::Insert)),
+            &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
             Some("78fd7507ef338f1a5816ffd702394999680a9694a85f4b8af77795d9fdd5854d"),
         )
     }
@@ -245,13 +240,11 @@ mod test {
             "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
         ];
 
-        let expected = case.map(|key| Entry {
-            key: key.as_bytes().to_vec(),
-            value: [b"v", key.as_bytes()].concat(),
-        });
+        let expected =
+            case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat()));
 
         test_operations(
-            &expected.map(|e| (e, Operation::Insert)),
+            &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
             Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
         );
     }
@@ -262,16 +255,10 @@ mod test {
             "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
             "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
         ];
-
         case.reverse();
 
-        let expected = case.map(|key| Entry {
-            key: key.as_bytes().to_vec(),
-            value: [b"v", key.as_bytes()].concat(),
-        });
-
         test_operations(
-            &expected.map(|e| (e, Operation::Insert)),
+            &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
             Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
         )
     }
@@ -280,13 +267,8 @@ mod test {
     fn unsorted() {
         let case = ["D", "N", "P", "X", "A", "G", "C", "M", "H", "I", "J"];
 
-        let expected = case.map(|key| Entry {
-            key: key.as_bytes().to_vec(),
-            value: [b"v", key.as_bytes()].concat(),
-        });
-
         test_operations(
-            &expected.map(|e| (e, Operation::Insert)),
+            &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
             Some("0957cc9b87c11cef6d88a95328cfd9043a3d6a99e9ba35ee5c9c47e53fb6d42b"),
         )
     }
@@ -297,16 +279,11 @@ mod test {
 
         let mut i = 0;
 
-        let entries = case.map(|key| {
-            i += 1;
-            Entry {
-                key: key.as_bytes().to_vec(),
-                value: i.to_string().into(),
-            }
-        });
-
         test_operations(
-            &entries.map(|e| (e, Operation::Insert)),
+            &case.map(|key| {
+                i += 1;
+                Entry::insert(key.as_bytes(), i.to_string().as_bytes())
+            }),
             Some("4538b4de5e58f9be9d54541e69fab8c94c31553a1dec579227ef9b572d1c1dff"),
         )
     }
@@ -318,16 +295,11 @@ mod test {
 
         let mut i = 0;
 
-        let entries = case.map(|key| {
-            i += 1;
-            Entry {
-                key: key.as_bytes().to_vec(),
-                value: i.to_string().into(),
-            }
-        });
-
         test_operations(
-            &entries.map(|e| (e, Operation::Insert)),
+            &case.map(|key| {
+                i += 1;
+                Entry::insert(key.as_bytes(), i.to_string().as_bytes())
+            }),
             Some("c9f7aaefb18ec8569322b9621fc64f430a7389a790e0bf69ec0ad02879d6ce54"),
         )
     }
@@ -339,16 +311,11 @@ mod test {
 
         let mut i = 0;
 
-        let entries = case.map(|key| {
-            i += 1;
-            Entry {
-                key: key.as_bytes().to_vec(),
-                value: i.to_string().into(),
-            }
-        });
-
         test_operations(
-            &entries.map(|e| (e, Operation::Insert)),
+            &case.map(|key| {
+                i += 1;
+                Entry::insert(key.as_bytes(), i.to_string().as_bytes())
+            }),
             Some("02e26311f2b55bf6d4a7163399f99e17c975891a05af2f1e09bc969f8bf0f95d"),
         )
     }

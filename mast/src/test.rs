@@ -22,6 +22,18 @@ pub struct Entry {
     pub(crate) value: Vec<u8>,
 }
 
+impl Entry {
+    pub fn insert(key: &[u8], value: &[u8]) -> (Self, Operation) {
+        (
+            Self {
+                key: key.to_vec(),
+                value: value.to_vec(),
+            },
+            Operation::Insert,
+        )
+    }
+}
+
 impl std::fmt::Debug for Entry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({:?}, {:?})", self.key, self.value)

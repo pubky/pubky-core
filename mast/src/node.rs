@@ -9,6 +9,7 @@ use crate::{Hash, Hasher, HASH_LEN};
 //  - cache hashing
 
 // TODO: remove unwrap
+// TODO: KeyType and ValueType
 
 #[derive(Debug, Clone, PartialEq)]
 /// In memory reprsentation of treap node.
