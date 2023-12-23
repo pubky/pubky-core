@@ -4,8 +4,10 @@ use redb::{ReadableTable, Table};
 
 use crate::{Hash, Hasher, HASH_LEN};
 
-// TODO: Are we creating too many hashers?
-// TODO: are we calculating the rank and hash too often?
+// TODO: room for improvement (pending actual benchmarks to justify):
+//  - cache encoding
+//  - cache hashing
+
 // TODO: remove unwrap
 
 #[derive(Debug, Clone, PartialEq)]

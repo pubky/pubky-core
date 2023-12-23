@@ -1,4 +1,5 @@
 use std::assert_eq;
+use std::collections::BTreeMap;
 
 use crate::node::Node;
 use crate::treap::HashTreap;
@@ -27,7 +28,7 @@ impl std::fmt::Debug for Entry {
     }
 }
 
-pub fn test_operations(input: &[(Entry, Operation)], expected: &[Entry], root_hash: Option<&str>) {
+pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
     let inmemory = InMemoryBackend::new();
     let db = Database::builder()
         .create_with_backend(inmemory)
@@ -62,12 +63,29 @@ pub fn test_operations(input: &[(Entry, Operation)], expected: &[Entry], root_ha
         })
         .collect::<Vec<_>>();
 
-    let mut sorted = expected.to_vec();
-    sorted.sort_by(|a, b| a.key.cmp(&b.key));
-
     verify_ranks(&treap);
 
-    assert_eq!(collected, sorted, "{}", format!("Entries do not match"));
+    let mut btree = BTreeMap::new();
+    for (entry, operation) in input {
+        match operation {
+            Operation::Insert => {
+                btree.insert(&entry.key, &entry.value);
+            }
+            Operation::Delete => {
+                btree.remove(&entry.key);
+            }
+        }
+    }
+
+    let expected = btree
+        .iter()
+        .map(|(key, value)| Entry {
+            key: key.to_vec(),
+            value: value.to_vec(),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(collected, expected, "{}", format!("Entries do not match"));
 
     if root_hash.is_some() {
         assert_root(&treap, root_hash.unwrap());
