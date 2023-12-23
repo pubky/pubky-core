@@ -4,124 +4,150 @@ use redb::Table;
 use super::search::binary_search_path;
 use crate::node::{hash, Branch, Node};
 
+/// Removes the target node if it exists, and returns the new root and the removed node.
 pub(crate) fn remove<'a>(
     nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
     root: Option<Node>,
     key: &[u8],
-) -> Option<Node> {
+) -> (Option<Node>, Option<Node>) {
     let mut path = binary_search_path(nodes_table, root, key);
 
-    // The key doesn't exist, so there is nothing to remove.
-    let mut root = path.upper.first().map(|(n, _)| n.clone());
+    let mut root = None;
 
-    dbg!(&path);
-    if let Some(mut target) = path.target {
-        // Zipping
-
-        target.decrement_ref_count();
-        target.save(nodes_table);
-
-        let mut left_subtree = Vec::new();
-        let mut right_subtree = Vec::new();
-
-        target
-            .left()
-            .and_then(|h| Node::open(nodes_table, h))
-            .map(|n| left_subtree.push(n));
-
-        while let Some(next) = left_subtree
-            .last()
-            .and_then(|n| n.right().and_then(|h| Node::open(nodes_table, h)))
-        {
-            left_subtree.push(next);
-        }
-
-        target
-            .right()
-            .and_then(|h| Node::open(nodes_table, h))
-            .map(|n| right_subtree.push(n));
-
-        while let Some(next) = right_subtree
-            .last()
-            .and_then(|n| n.left().and_then(|h| Node::open(nodes_table, h)))
-        {
-            right_subtree.push(next);
-        }
-
-        let mut i = left_subtree.len().max(right_subtree.len());
-        let mut last: Option<Node> = None;
-
-        while i > 0 {
-            last = match (left_subtree.get_mut(i - 1), right_subtree.get_mut(i - 1)) {
-                (Some(left), None) => Some(left.clone()), // Left  subtree is deeper
-                (None, Some(right)) => Some(right.clone()), // Right subtree is deeper
-                (Some(left), Some(right)) => {
-                    let rank_left = hash(left.key());
-                    let rank_right = hash(right.key());
-
-                    if hash(left.key()).as_bytes() > hash(right.key()).as_bytes() {
-                        right
-                            // decrement old version
-                            .decrement_ref_count()
-                            .save(nodes_table)
-                            // save new version
-                            .set_left_child(last.map(|n| n.hash()))
-                            .increment_ref_count()
-                            .save(nodes_table);
-
-                        left
-                            // decrement old version
-                            .decrement_ref_count()
-                            .save(nodes_table)
-                            // save new version
-                            .set_right_child(Some(right.hash()))
-                            .increment_ref_count()
-                            .save(nodes_table);
-
-                        Some(left.clone())
-                    } else {
-                        left
-                            // decrement old version
-                            .decrement_ref_count()
-                            .save(nodes_table)
-                            // save new version
-                            .set_right_child(last.map(|n| n.hash()))
-                            .increment_ref_count()
-                            .save(nodes_table);
-
-                        right
-                            // decrement old version
-                            .decrement_ref_count()
-                            .save(nodes_table)
-                            // save new version
-                            .set_left_child(Some(left.hash()))
-                            .increment_ref_count()
-                            .save(nodes_table);
-
-                        Some(right.clone())
-                    }
-                }
-                _ => {
-                    // Should never happen!
-                    None
-                }
-            };
-
-            i -= 1;
-        }
-
-        // dbg!(&last);
-        return last;
+    if let Some(mut target) = path.target.clone() {
+        root = zip(nodes_table, &mut target)
     } else {
         // clearly the lower path has the highest node, and it won't be changed.
-        return path.lower.first().map(|(n, _)| n.clone());
-    }
-
-    if root.is_none() {
         root = path.lower.first().map(|(n, _)| n.clone());
     }
 
-    return root;
+    // If there is an upper path, we propagate the hash updates upwards.
+    while let Some((mut node, branch)) = path.upper.pop() {
+        node.decrement_ref_count().save(nodes_table);
+
+        match branch {
+            Branch::Left => node.set_left_child(root.map(|n| n.hash())),
+            Branch::Right => node.set_right_child(root.map(|n| n.hash())),
+        };
+
+        node.increment_ref_count().save(nodes_table);
+
+        root = Some(node);
+    }
+
+    return (root, path.target);
+}
+
+fn zip(
+    nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
+    target: &mut Node,
+) -> Option<Node> {
+    target.decrement_ref_count();
+    target.save(nodes_table);
+
+    let mut left_subtree = Vec::new();
+    let mut right_subtree = Vec::new();
+
+    target
+        .left()
+        .and_then(|h| Node::open(nodes_table, h))
+        .map(|n| left_subtree.push(n));
+    target
+        .right()
+        .and_then(|h| Node::open(nodes_table, h))
+        .map(|n| right_subtree.push(n));
+
+    while let Some(next) = left_subtree
+        .last()
+        .and_then(|n| n.right().and_then(|h| Node::open(nodes_table, h)))
+    {
+        left_subtree.push(next);
+    }
+
+    while let Some(next) = right_subtree
+        .last()
+        .and_then(|n| n.left().and_then(|h| Node::open(nodes_table, h)))
+    {
+        right_subtree.push(next);
+    }
+
+    let mut i = left_subtree.len().max(right_subtree.len());
+    let mut previous: Option<Node> = None;
+
+    while i > 0 {
+        previous = zip_up(
+            nodes_table,
+            previous,
+            left_subtree.get_mut(i - 1),
+            right_subtree.get_mut(i - 1),
+        );
+
+        i -= 1;
+    }
+
+    previous
+}
+
+fn zip_up(
+    nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
+    previous: Option<Node>,
+    left: Option<&mut Node>,
+    right: Option<&mut Node>,
+) -> Option<Node> {
+    match (left, right) {
+        (Some(left), None) => Some(left.clone()), // Left  subtree is deeper
+        (None, Some(right)) => Some(right.clone()), // Right subtree is deeper
+        (Some(left), Some(right)) => {
+            let rank_left = hash(left.key());
+            let rank_right = hash(right.key());
+
+            if hash(left.key()).as_bytes() > hash(right.key()).as_bytes() {
+                right
+                    // decrement old version
+                    .decrement_ref_count()
+                    .save(nodes_table)
+                    // save new version
+                    .set_left_child(previous.map(|n| n.hash()))
+                    .increment_ref_count()
+                    .save(nodes_table);
+
+                left
+                    // decrement old version
+                    .decrement_ref_count()
+                    .save(nodes_table)
+                    // save new version
+                    .set_right_child(Some(right.hash()))
+                    .increment_ref_count()
+                    .save(nodes_table);
+
+                Some(left.clone())
+            } else {
+                left
+                    // decrement old version
+                    .decrement_ref_count()
+                    .save(nodes_table)
+                    // save new version
+                    .set_right_child(previous.map(|n| n.hash()))
+                    .increment_ref_count()
+                    .save(nodes_table);
+
+                right
+                    // decrement old version
+                    .decrement_ref_count()
+                    .save(nodes_table)
+                    // save new version
+                    .set_left_child(Some(left.hash()))
+                    .increment_ref_count()
+                    .save(nodes_table);
+
+                Some(right.clone())
+            }
+        }
+        _ => {
+            // Should never happen!
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -138,7 +164,7 @@ mod test {
     }
 
     proptest! {
-        // #[test]
+        #[test]
         fn insert_remove(
             random_entries in prop::collection::vec(
                 (prop::collection::vec(any::<u8>(), 1), prop::collection::vec(any::<u8>(), 1), operation_strategy()),
@@ -153,15 +179,12 @@ mod test {
         }
     }
 
-    // #[test]
-    fn empty() {
+    #[test]
+    fn becomes_empty() {
         let case = [("A", Operation::Insert), ("A", Operation::Remove)]
             .map(|(k, op)| (Entry::new(k.as_bytes(), k.as_bytes()), op));
 
-        test_operations(
-            &case,
-            Some("78fd7507ef338f1a5816ffd702394999680a9694a85f4b8af77795d9fdd5854d"),
-        )
+        test_operations(&case, None)
     }
 
     #[test]
@@ -187,5 +210,23 @@ mod test {
         let case = [Entry::insert(&[88], &[0]), Entry::remove(&[0])];
 
         test_operations(&case, None)
+    }
+
+    #[test]
+    fn alphabet_after_remove() {
+        let mut case = [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
+            "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        ]
+        .map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat()))
+        .to_vec();
+
+        case.push(Entry::insert(&[0], &[0]));
+        case.push(Entry::remove(&[0]));
+
+        test_operations(
+            &case,
+            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
+        );
     }
 }

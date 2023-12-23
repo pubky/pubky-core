@@ -73,7 +73,7 @@ pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
     }
 
     // Uncomment to see the graph
-    println!("{}", into_mermaid_graph(&treap));
+    // println!("{}", into_mermaid_graph(&treap));
 
     let collected = treap
         .iter()

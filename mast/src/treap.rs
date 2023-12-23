@@ -79,8 +79,10 @@ impl<'treap> HashTreap<'treap> {
         write_txn.commit().unwrap();
     }
 
-    pub fn remove(&mut self, key: &[u8]) -> Option<&[u8]> {
+    pub fn remove(&mut self, key: &[u8]) -> Option<Box<[u8]>> {
         let write_txn = self.db.begin_write().unwrap();
+
+        let mut removed_node;
 
         {
             let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
@@ -90,7 +92,9 @@ impl<'treap> HashTreap<'treap> {
                 .root_hash_inner(&roots_table)
                 .and_then(|hash| Node::open(&nodes_table, hash));
 
-            let new_root = crate::operations::remove(&mut nodes_table, old_root, key);
+            let (new_root, old_node) = crate::operations::remove(&mut nodes_table, old_root, key);
+
+            removed_node = old_node;
 
             if let Some(new_root) = new_root {
                 roots_table
@@ -104,7 +108,7 @@ impl<'treap> HashTreap<'treap> {
         // Finally commit the changes to the storage.
         write_txn.commit().unwrap();
 
-        None
+        removed_node.map(|node| node.value().to_vec().into_boxed_slice())
     }
 
     pub fn iter(&self) -> TreapIterator<'_> {
