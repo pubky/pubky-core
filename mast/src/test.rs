@@ -13,7 +13,7 @@ use redb::Database;
 #[derive(Clone, Debug)]
 pub enum Operation {
     Insert,
-    Delete,
+    Remove,
 }
 
 #[derive(Clone, PartialEq)]
@@ -23,6 +23,12 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub fn new(key: &[u8], value: &[u8]) -> Self {
+        Self {
+            key: key.to_vec(),
+            value: value.to_vec(),
+        }
+    }
     pub fn insert(key: &[u8], value: &[u8]) -> (Self, Operation) {
         (
             Self {
@@ -30,6 +36,15 @@ impl Entry {
                 value: value.to_vec(),
             },
             Operation::Insert,
+        )
+    }
+    pub fn remove(key: &[u8]) -> (Self, Operation) {
+        (
+            Self {
+                key: key.to_vec(),
+                value: b"".to_vec(),
+            },
+            Operation::Remove,
         )
     }
 }
@@ -51,12 +66,14 @@ pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
     for (entry, operation) in input {
         match operation {
             Operation::Insert => treap.insert(&entry.key, &entry.value),
-            Operation::Delete => todo!(),
+            Operation::Remove => {
+                treap.remove(&entry.key);
+            }
         }
     }
 
-    // Uncomment to see the graph (only if values are utf8)
-    // println!("{}", into_mermaid_graph(&treap));
+    // Uncomment to see the graph
+    println!("{}", into_mermaid_graph(&treap));
 
     let collected = treap
         .iter()
@@ -83,7 +100,7 @@ pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
             Operation::Insert => {
                 btree.insert(&entry.key, &entry.value);
             }
-            Operation::Delete => {
+            Operation::Remove => {
                 btree.remove(&entry.key);
             }
         }

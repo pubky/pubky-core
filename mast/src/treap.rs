@@ -33,7 +33,6 @@ impl<'treap> HashTreap<'treap> {
     // TODO: add name to open from storage with.
     pub fn new(db: &'treap Database, name: &'treap str) -> Self {
         // Setup tables
-
         let write_tx = db.begin_write().unwrap();
         {
             let _table = write_tx.open_table(NODES_TABLE).unwrap();
@@ -69,8 +68,7 @@ impl<'treap> HashTreap<'treap> {
                 .root_hash_inner(&roots_table)
                 .and_then(|hash| Node::open(&nodes_table, hash));
 
-            let new_root =
-                crate::operations::insert::insert(&mut nodes_table, old_root, key, value);
+            let new_root = crate::operations::insert(&mut nodes_table, old_root, key, value);
 
             roots_table
                 .insert(self.name.as_bytes(), new_root.hash().as_bytes().as_slice())
@@ -79,6 +77,34 @@ impl<'treap> HashTreap<'treap> {
 
         // Finally commit the changes to the storage.
         write_txn.commit().unwrap();
+    }
+
+    pub fn remove(&mut self, key: &[u8]) -> Option<&[u8]> {
+        let write_txn = self.db.begin_write().unwrap();
+
+        {
+            let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
+            let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
+
+            let old_root = self
+                .root_hash_inner(&roots_table)
+                .and_then(|hash| Node::open(&nodes_table, hash));
+
+            let new_root = crate::operations::remove(&mut nodes_table, old_root, key);
+
+            if let Some(new_root) = new_root {
+                roots_table
+                    .insert(self.name.as_bytes(), new_root.hash().as_bytes().as_slice())
+                    .unwrap();
+            } else {
+                roots_table.remove(self.name.as_bytes()).unwrap();
+            }
+        };
+
+        // Finally commit the changes to the storage.
+        write_txn.commit().unwrap();
+
+        None
     }
 
     pub fn iter(&self) -> TreapIterator<'_> {
