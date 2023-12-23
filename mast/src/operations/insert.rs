@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::node::{hash, Branch, Node};
+use blake3::Hash;
 use redb::Table;
 
 // Watch this [video](https://youtu.be/NxRXhBur6Xs?si=GNwaUOfuGwr_tBKI&t=1763) for a good explanation of the unzipping algorithm.
@@ -88,39 +89,37 @@ pub fn insert(
 ) -> Node {
     let mut path = binary_search_path(nodes_table, root, key);
 
-    let mut unzip_left_root: Option<&mut Node> = None;
-    let mut unzip_right_root: Option<&mut Node> = None;
+    let mut unzip_left_root: Option<Hash> = None;
+    let mut unzip_right_root: Option<Hash> = None;
 
     // Unzip the lower path to get left and right children of the inserted node.
     for (node, branch) in path.unzip_path.iter_mut().rev() {
+        // Decrement the old version.
         node.decrement_ref_count().save(nodes_table);
 
         match branch {
             Branch::Right => {
-                node.set_right_child(unzip_left_root)
-                    .increment_ref_count()
-                    .save(nodes_table);
-
-                unzip_left_root = Some(node);
+                node.set_right_child(unzip_left_root);
+                unzip_left_root = Some(node.hash());
             }
             Branch::Left => {
-                node.set_left_child(unzip_right_root)
-                    .increment_ref_count()
-                    .save(nodes_table);
-
-                unzip_right_root = Some(node);
+                node.set_left_child(unzip_right_root);
+                unzip_right_root = Some(node.hash());
             }
         }
+
+        node.increment_ref_count().save(nodes_table);
     }
 
-    let mut root = path.existing;
+    let mut root;
 
-    if let Some(mut existing) = root {
+    if let Some(mut existing) = path.existing {
         if existing.value() == value {
             // There is really nothing to update. Skip traversing upwards.
             return path.upper_path.pop().map(|(n, _)| n).unwrap_or(existing);
         }
 
+        // Decrement the old version.
         existing.decrement_ref_count().save(nodes_table);
 
         // Else, update the value and rehashe the node so that we can update the hashes upwards.
@@ -129,18 +128,17 @@ pub fn insert(
             .increment_ref_count()
             .save(nodes_table);
 
-        root = Some(existing)
+        root = existing
     } else {
         // Insert the new node.
         let mut node = Node::new(key, value);
 
-        // TODO: we do hash the node twice here, can we do better?
         node.set_left_child(unzip_left_root)
             .set_right_child(unzip_right_root)
             .increment_ref_count()
             .save(nodes_table);
 
-        root = Some(node);
+        root = node
     };
 
     let mut upper_path = path.upper_path;
@@ -150,17 +148,17 @@ pub fn insert(
         node.decrement_ref_count().save(nodes_table);
 
         match branch {
-            Branch::Left => node.set_left_child(root.as_mut()),
-            Branch::Right => node.set_right_child(root.as_mut()),
+            Branch::Left => node.set_left_child(Some(root.hash())),
+            Branch::Right => node.set_right_child(Some(root.hash())),
         };
 
         node.increment_ref_count().save(nodes_table);
 
-        root = Some(node);
+        root = node;
     }
 
     // Finally return the new root to be set to the root.
-    root.expect("Root should be set by now")
+    root
 }
 
 #[derive(Debug)]

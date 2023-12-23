@@ -106,20 +106,20 @@ impl Node {
     }
 
     /// Set the left child, save the updated node, and return the new hash.
-    pub(crate) fn set_left_child(&mut self, child: Option<&mut Node>) -> &mut Self {
+    pub(crate) fn set_left_child(&mut self, child: Option<Hash>) -> &mut Self {
         self.set_child(Branch::Left, child)
     }
 
     /// Set the right child, save the updated node, and return the new hash.
-    pub(crate) fn set_right_child(&mut self, child: Option<&mut Node>) -> &mut Self {
+    pub(crate) fn set_right_child(&mut self, child: Option<Hash>) -> &mut Self {
         self.set_child(Branch::Right, child)
     }
 
     /// Set the child, update its ref_count, save the updated node and return it.
-    fn set_child(&mut self, branch: Branch, new_child: Option<&mut Node>) -> &mut Self {
+    fn set_child(&mut self, branch: Branch, new_child: Option<Hash>) -> &mut Self {
         match branch {
-            Branch::Left => self.left = new_child.as_ref().map(|n| n.hash()),
-            Branch::Right => self.right = new_child.as_ref().map(|n| n.hash()),
+            Branch::Left => self.left = new_child,
+            Branch::Right => self.right = new_child,
         };
 
         self
@@ -150,6 +150,7 @@ impl Node {
         self
     }
 
+    /// Saves the node to the nodes table by its hash.
     pub(crate) fn save(&mut self, table: &mut Table<&[u8], (u64, &[u8])>) -> &mut Self {
         // TODO: keep data in encoded in a bytes field.
         let encoded = self.canonical_encode();
