@@ -162,12 +162,12 @@ fn into_mermaid_graph(treap: &HashTreap) -> String {
 }
 
 fn build_graph_string(treap: &HashTreap, node: &Node, graph: &mut String) {
-    let key = bytes_to_string(node.key());
+    let key = format_key(node.key());
     let node_label = format!("{}(({}))", node.hash(), key);
 
     // graph.push_str(&format!("## START node {}\n", node_label));
     if let Some(child) = treap.get_node(node.left()) {
-        let key = bytes_to_string(child.key());
+        let key = format_key(child.key());
         let child_label = format!("{}(({}))", child.hash(), key);
 
         graph.push_str(&format!("    {} --l--> {};\n", node_label, child_label));
@@ -178,7 +178,7 @@ fn build_graph_string(treap: &HashTreap, node: &Node, graph: &mut String) {
     }
 
     if let Some(child) = treap.get_node(node.right()) {
-        let key = bytes_to_string(child.key());
+        let key = format_key(child.key());
         let child_label = format!("{}(({}))", child.hash(), key);
 
         graph.push_str(&format!("    {} --r--> {};\n", node_label, child_label));
@@ -189,6 +189,6 @@ fn build_graph_string(treap: &HashTreap, node: &Node, graph: &mut String) {
     }
 }
 
-fn bytes_to_string(byte: &[u8]) -> String {
-    String::from_utf8(byte.to_vec()).expect("Invalid utf8 key in test with mermaig graph")
+fn format_key(bytes: &[u8]) -> String {
+    format!("\"{:?}\"", bytes)
 }

@@ -11,4 +11,5 @@ redb = "1.4.0"
 varu64 = "0.7.0"
 
 [dev-dependencies]
+proptest = "1.4.0"
 tempfile = "3.8.1"

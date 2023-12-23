@@ -116,7 +116,12 @@ pub fn insert(
     if let Some(mut existing) = path.existing {
         if existing.value() == value {
             // There is really nothing to update. Skip traversing upwards.
-            return path.upper_path.pop().map(|(n, _)| n).unwrap_or(existing);
+
+            return path
+                .upper_path
+                .first()
+                .map(|(n, _)| n.clone())
+                .unwrap_or(existing);
         }
 
         // Decrement the old version.
@@ -222,6 +227,35 @@ fn binary_search_path(
 #[cfg(test)]
 mod test {
     use crate::test::{test_operations, Entry};
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        /// Test that upserting an entry with the same key in different tree shapes results in the
+        /// expected structure
+        fn test_upsert(random_entries in prop::collection::vec(
+            (prop::collection::vec(any::<u8>(), 1), prop::collection::vec(any::<u8>(), 1)),
+            1..10,
+        )) {
+            let operations = random_entries.into_iter().map(|(key, value)| {
+                Entry::insert(&key, &value)
+            }).collect::<Vec<_>>();
+
+            test_operations(&operations, None);
+        }
+
+        #[test]
+        fn test_general_insertiong(random_entries in prop::collection::vec(
+            (prop::collection::vec(any::<u8>(), 32), prop::collection::vec(any::<u8>(), 32)),
+            1..50,
+        )) {
+            let operations = random_entries.into_iter().map(|(key, value)| {
+                Entry::insert(&key, &value)
+            }).collect::<Vec<_>>();
+
+            test_operations(&operations, None);
+        }
+    }
 
     #[test]
     fn insert_single_entry() {
