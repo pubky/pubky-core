@@ -65,12 +65,15 @@ impl<'treap> HashTreap<'treap> {
             let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
             let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
 
-            let root = self.root_hash_inner(&roots_table);
+            let old_root = self
+                .root_hash_inner(&roots_table)
+                .and_then(|hash| Node::open(&nodes_table, hash));
 
-            let new_root = crate::operations::insert::insert(&mut nodes_table, root, key, value);
+            let new_root =
+                crate::operations::insert::insert(&mut nodes_table, old_root, key, value);
 
             roots_table
-                .insert(self.name.as_bytes(), new_root.as_bytes().as_slice())
+                .insert(self.name.as_bytes(), new_root.hash().as_bytes().as_slice())
                 .unwrap();
         };
 

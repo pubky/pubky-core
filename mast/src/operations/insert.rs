@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::node::{rank, Branch, Node};
-use blake3::Hash;
+use crate::node::{hash, Branch, Node};
 use redb::Table;
 
 // Watch this [video](https://youtu.be/NxRXhBur6Xs?si=GNwaUOfuGwr_tBKI&t=1763) for a good explanation of the unzipping algorithm.
@@ -82,38 +81,86 @@ use redb::Table;
 //  all then new nodes (in both the upper and lower paths) before comitting the write transaction.
 
 pub fn insert(
-    table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
-    root: Option<Hash>,
+    nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
+    root: Option<Node>,
     key: &[u8],
     value: &[u8],
-) -> Hash {
-    let mut path = binary_search_path(table, root, key);
+) -> Node {
+    let mut path = binary_search_path(nodes_table, root, key);
 
-    let mut unzip_left_root: Option<Hash> = None;
-    let mut unzip_right_root: Option<Hash> = None;
+    let mut unzip_left_root: Option<&mut Node> = None;
+    let mut unzip_right_root: Option<&mut Node> = None;
 
+    // Unzip the lower path to get left and right children of the inserted node.
     for (node, branch) in path.unzip_path.iter_mut().rev() {
+        node.decrement_ref_count().save(nodes_table);
+
         match branch {
-            Branch::Right => unzip_left_root = Some(node.set_right_child(table, unzip_left_root)),
-            Branch::Left => unzip_right_root = Some(node.set_left_child(table, unzip_right_root)),
+            Branch::Right => {
+                node.set_right_child(unzip_left_root)
+                    .increment_ref_count()
+                    .save(nodes_table);
+
+                unzip_left_root = Some(node);
+            }
+            Branch::Left => {
+                node.set_left_child(unzip_right_root)
+                    .increment_ref_count()
+                    .save(nodes_table);
+
+                unzip_right_root = Some(node);
+            }
         }
     }
 
-    let mut root = if let Some(mut existing) = path.existing {
-        existing.set_value(table, value)
+    let mut root = path.existing;
+
+    if let Some(mut existing) = root {
+        if existing.value() == value {
+            // There is really nothing to update. Skip traversing upwards.
+            return path.upper_path.pop().map(|(n, _)| n).unwrap_or(existing);
+        }
+
+        existing.decrement_ref_count().save(nodes_table);
+
+        // Else, update the value and rehashe the node so that we can update the hashes upwards.
+        existing
+            .set_value(value)
+            .increment_ref_count()
+            .save(nodes_table);
+
+        root = Some(existing)
     } else {
-        Node::insert(table, key, value, unzip_left_root, unzip_right_root)
+        // Insert the new node.
+        let mut node = Node::new(key, value);
+
+        // TODO: we do hash the node twice here, can we do better?
+        node.set_left_child(unzip_left_root)
+            .set_right_child(unzip_right_root)
+            .increment_ref_count()
+            .save(nodes_table);
+
+        root = Some(node);
     };
 
-    for (node, branch) in path.upper_path.iter_mut().rev() {
+    let mut upper_path = path.upper_path;
+
+    // Propagate the new hashes upwards if there are any nodes in the upper_path.
+    while let Some((mut node, branch)) = upper_path.pop() {
+        node.decrement_ref_count().save(nodes_table);
+
         match branch {
-            Branch::Left => root = node.set_left_child(table, Some(root)),
-            Branch::Right => root = node.set_right_child(table, Some(root)),
-        }
+            Branch::Left => node.set_left_child(root.as_mut()),
+            Branch::Right => node.set_right_child(root.as_mut()),
+        };
+
+        node.increment_ref_count().save(nodes_table);
+
+        root = Some(node);
     }
 
-    // Finally return the new root to be committed.
-    root
+    // Finally return the new root to be set to the root.
+    root.expect("Root should be set by now")
 }
 
 #[derive(Debug)]
@@ -130,11 +177,11 @@ struct BinarySearchPath {
 ///
 /// If a match was found, the `lower_path` will be empty.
 fn binary_search_path(
-    table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
-    root: Option<Hash>,
+    table: &Table<&'static [u8], (u64, &'static [u8])>,
+    root: Option<Node>,
     key: &[u8],
 ) -> BinarySearchPath {
-    let rank = rank(key);
+    let rank = hash(key);
 
     let mut result = BinarySearchPath {
         upper_path: Default::default(),
@@ -142,43 +189,182 @@ fn binary_search_path(
         unzip_path: Default::default(),
     };
 
-    let mut previous_hash = root;
+    let mut next = root;
 
-    while let Some(current_hash) = previous_hash {
-        let current_node = Node::open(table, current_hash).expect("Node not found!");
-
-        // Decrement each node in the binary search path.
-        // if it doesn't change, we will increment it again later.
-        //
-        // It is important then to terminate the loop if we found an exact match,
-        // as lower nodes shouldn't change then.
-        current_node.decrement_ref_count(table);
-
-        let path = if current_node.rank().as_bytes() > rank.as_bytes() {
+    while let Some(current) = next {
+        let path = if current.rank().as_bytes() > rank.as_bytes() {
             &mut result.upper_path
         } else {
             &mut result.unzip_path
         };
 
-        match key.cmp(current_node.key()) {
+        match key.cmp(current.key()) {
             Ordering::Equal => {
                 // We found exact match. terminate the search.
 
-                result.existing = Some(current_node);
+                result.existing = Some(current);
                 return result;
             }
             Ordering::Less => {
-                previous_hash = *current_node.left();
+                next = current.left().and_then(|n| Node::open(table, n));
 
-                path.push((current_node, Branch::Left));
+                path.push((current, Branch::Left));
             }
             Ordering::Greater => {
-                previous_hash = *current_node.right();
+                next = current.right().and_then(|n| Node::open(table, n));
 
-                path.push((current_node, Branch::Right));
+                path.push((current, Branch::Right));
             }
         };
     }
 
     result
+}
+
+#[cfg(test)]
+mod test {
+    use crate::test::{test_operations, Entry, Operation};
+
+    #[test]
+    fn insert_single_entry() {
+        let case = ["A"];
+
+        let expected = case.map(|key| Entry {
+            key: key.as_bytes().to_vec(),
+            value: [b"v", key.as_bytes()].concat(),
+        });
+
+        test_operations(
+            &expected.clone().map(|e| (e, Operation::Insert)),
+            &expected,
+            Some("78fd7507ef338f1a5816ffd702394999680a9694a85f4b8af77795d9fdd5854d"),
+        )
+    }
+
+    #[test]
+    fn sorted_alphabets() {
+        let case = [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
+            "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        ];
+
+        let expected = case.map(|key| Entry {
+            key: key.as_bytes().to_vec(),
+            value: [b"v", key.as_bytes()].concat(),
+        });
+
+        test_operations(
+            &expected.clone().map(|e| (e, Operation::Insert)),
+            &expected,
+            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
+        );
+    }
+
+    #[test]
+    fn reverse_alphabets() {
+        let mut case = [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
+            "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        ];
+
+        case.reverse();
+
+        let expected = case.map(|key| Entry {
+            key: key.as_bytes().to_vec(),
+            value: [b"v", key.as_bytes()].concat(),
+        });
+
+        test_operations(
+            &expected.clone().map(|e| (e, Operation::Insert)),
+            &expected,
+            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
+        )
+    }
+
+    #[test]
+    fn unsorted() {
+        let case = ["D", "N", "P", "X", "A", "G", "C", "M", "H", "I", "J"];
+
+        let expected = case.map(|key| Entry {
+            key: key.as_bytes().to_vec(),
+            value: [b"v", key.as_bytes()].concat(),
+        });
+
+        test_operations(
+            &expected.clone().map(|e| (e, Operation::Insert)),
+            &expected,
+            Some("0957cc9b87c11cef6d88a95328cfd9043a3d6a99e9ba35ee5c9c47e53fb6d42b"),
+        )
+    }
+
+    #[test]
+    fn upsert_at_root() {
+        let case = ["X", "X"];
+
+        let mut i = 0;
+
+        let entries = case.map(|key| {
+            i += 1;
+            Entry {
+                key: key.as_bytes().to_vec(),
+                value: i.to_string().into(),
+            }
+        });
+
+        test_operations(
+            &entries.clone().map(|e| (e, Operation::Insert)),
+            &entries[1..],
+            Some("4538b4de5e58f9be9d54541e69fab8c94c31553a1dec579227ef9b572d1c1dff"),
+        )
+    }
+
+    #[test]
+    fn upsert_deeper() {
+        // X has higher rank.
+        let case = ["X", "F", "F"];
+
+        let mut i = 0;
+
+        let entries = case.map(|key| {
+            i += 1;
+            Entry {
+                key: key.as_bytes().to_vec(),
+                value: i.to_string().into(),
+            }
+        });
+
+        let mut expected = entries.to_vec();
+        expected.sort_by(|a, b| a.key.cmp(&b.key));
+
+        test_operations(
+            &entries.clone().map(|e| (e, Operation::Insert)),
+            &expected[1..],
+            Some("c9f7aaefb18ec8569322b9621fc64f430a7389a790e0bf69ec0ad02879d6ce54"),
+        )
+    }
+
+    #[test]
+    fn upsert_root_with_children() {
+        // X has higher rank.
+        let case = ["F", "X", "X"];
+
+        let mut i = 0;
+
+        let entries = case.map(|key| {
+            i += 1;
+            Entry {
+                key: key.as_bytes().to_vec(),
+                value: i.to_string().into(),
+            }
+        });
+
+        let mut expected = entries.to_vec();
+        expected.remove(1);
+
+        test_operations(
+            &entries.clone().map(|e| (e, Operation::Insert)),
+            &expected,
+            Some("02e26311f2b55bf6d4a7163399f99e17c975891a05af2f1e09bc969f8bf0f95d"),
+        )
+    }
 }

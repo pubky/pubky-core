@@ -7,162 +7,18 @@ use crate::Hash;
 use redb::backends::InMemoryBackend;
 use redb::Database;
 
-#[test]
-fn cases() {
-    let sorted_alphabets = [
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R",
-        "S", "T", "U", "V", "W", "X", "Y", "Z",
-    ]
-    .map(|key| Entry {
-        key: key.as_bytes().to_vec(),
-        value: [b"v", key.as_bytes()].concat(),
-    });
-
-    let mut reverse_alphabets = sorted_alphabets.clone();
-    reverse_alphabets.reverse();
-
-    let unsorted = ["D", "N", "P", "X", "A", "G", "C", "M", "H", "I", "J"].map(|key| Entry {
-        key: key.as_bytes().to_vec(),
-        value: [b"v", key.as_bytes()].concat(),
-    });
-
-    let single_entry = ["X"].map(|key| Entry {
-        key: key.as_bytes().to_vec(),
-        value: [b"v", key.as_bytes()].concat(),
-    });
-
-    let upsert_at_root = ["X", "X"]
-        .iter()
-        .enumerate()
-        .map(|(i, _)| {
-            (
-                Entry {
-                    key: b"X".to_vec(),
-                    value: i.to_string().into(),
-                },
-                Operation::Insert,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    // X has higher rank.
-    let upsert_deeper = ["X", "F", "F"]
-        .iter()
-        .enumerate()
-        .map(|(i, key)| {
-            (
-                Entry {
-                    key: key.as_bytes().to_vec(),
-                    value: i.to_string().into(),
-                },
-                Operation::Insert,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let mut upsert_deeper_expected = upsert_deeper.clone();
-    upsert_deeper_expected.remove(upsert_deeper.len() - 2);
-
-    // X has higher rank.
-    let upsert_root_with_children = ["F", "X", "X"]
-        .iter()
-        .enumerate()
-        .map(|(i, key)| {
-            (
-                Entry {
-                    key: key.as_bytes().to_vec(),
-                    value: i.to_string().into(),
-                },
-                Operation::Insert,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let mut upsert_root_with_children_expected = upsert_root_with_children.clone();
-    upsert_root_with_children_expected.remove(upsert_root_with_children.len() - 2);
-
-    let cases = [
-        (
-            "sorted alphabets",
-            sorted_alphabets
-                .clone()
-                .map(|e| (e, Operation::Insert))
-                .to_vec(),
-            sorted_alphabets.to_vec(),
-            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
-        ),
-        (
-            "reversed alphabets",
-            sorted_alphabets
-                .clone()
-                .map(|e| (e, Operation::Insert))
-                .to_vec(),
-            sorted_alphabets.to_vec(),
-            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
-        ),
-        (
-            "unsorted alphabets",
-            unsorted.clone().map(|e| (e, Operation::Insert)).to_vec(),
-            unsorted.to_vec(),
-            Some("0957cc9b87c11cef6d88a95328cfd9043a3d6a99e9ba35ee5c9c47e53fb6d42b"),
-        ),
-        (
-            "Single insert",
-            single_entry
-                .clone()
-                .map(|e| (e, Operation::Insert))
-                .to_vec(),
-            single_entry.to_vec(),
-            Some("b3e862d316e6f5caca72c8f91b7a15015b4f7f8f970c2731433aad793f7fe3e6"),
-        ),
-        (
-            "upsert at root without children",
-            upsert_at_root.clone(),
-            upsert_at_root[1..]
-                .iter()
-                .map(|(e, _)| e.clone())
-                .collect::<Vec<_>>(),
-            Some("b1353174e730b9ff6850577357fd9ff608071bbab46ebe72c434133f5d4f0383"),
-        ),
-        (
-            "upsert deeper",
-            upsert_deeper.to_vec(),
-            upsert_deeper_expected
-                .to_vec()
-                .iter()
-                .map(|(e, _)| e.clone())
-                .collect::<Vec<_>>(),
-            Some("58272c9e8c9e6b7266e4b60e45d55257b94e85561997f1706e0891ee542a8cd5"),
-        ),
-        (
-            "upsert at root with children",
-            upsert_root_with_children.to_vec(),
-            upsert_root_with_children_expected
-                .to_vec()
-                .iter()
-                .map(|(e, _)| e.clone())
-                .collect::<Vec<_>>(),
-            Some("f46daf022dc852cd4e60a98a33de213f593e17bcd234d9abff7a178d8a5d0761"),
-        ),
-    ];
-
-    for case in cases {
-        test(case.0, &case.1, &case.2, case.3);
-    }
-}
-
 // === Helpers ===
 
 #[derive(Clone, Debug)]
-enum Operation {
+pub enum Operation {
     Insert,
     Delete,
 }
 
 #[derive(Clone, PartialEq)]
-struct Entry {
-    key: Vec<u8>,
-    value: Vec<u8>,
+pub struct Entry {
+    pub(crate) key: Vec<u8>,
+    pub(crate) value: Vec<u8>,
 }
 
 impl std::fmt::Debug for Entry {
@@ -171,7 +27,7 @@ impl std::fmt::Debug for Entry {
     }
 }
 
-fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash: Option<&str>) {
+pub fn test_operations(input: &[(Entry, Operation)], expected: &[Entry], root_hash: Option<&str>) {
     let inmemory = InMemoryBackend::new();
     let db = Database::builder()
         .create_with_backend(inmemory)
@@ -184,18 +40,20 @@ fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash:
             Operation::Insert => treap.insert(&entry.key, &entry.value),
             Operation::Delete => todo!(),
         }
-        println!(
-            "{:?} {:?}\n{}",
-            &entry.key,
-            &entry.value,
-            into_mermaid_graph(&treap)
-        );
     }
+
+    // Uncomment to see the graph (only if values are utf8)
+    // println!("{}", into_mermaid_graph(&treap));
 
     let collected = treap
         .iter()
         .map(|n| {
-            assert_eq!(*n.ref_count(), 1_u64, "Node has wrong ref count");
+            assert_eq!(
+                *n.ref_count(),
+                1_u64,
+                "{}",
+                format!("Node has wrong ref count {:?}", n)
+            );
 
             Entry {
                 key: n.key().to_vec(),
@@ -207,22 +65,13 @@ fn test(name: &str, input: &[(Entry, Operation)], expected: &[Entry], root_hash:
     let mut sorted = expected.to_vec();
     sorted.sort_by(|a, b| a.key.cmp(&b.key));
 
-    // println!("{}", into_mermaid_graph(&treap));
+    verify_ranks(&treap);
+
+    assert_eq!(collected, sorted, "{}", format!("Entries do not match"));
 
     if root_hash.is_some() {
         assert_root(&treap, root_hash.unwrap());
-    } else {
-        dbg!(&treap.root_hash());
-
-        verify_ranks(&treap);
     }
-
-    assert_eq!(
-        collected,
-        sorted,
-        "{}",
-        format!("Entries do not match at: \"{}\"", name)
-    );
 }
 
 /// Verify that every node has higher rank than its children.

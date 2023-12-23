@@ -36,10 +36,22 @@ enum RefCountDiff {
 }
 
 impl Node {
+    pub(crate) fn new(key: &[u8], value: &[u8]) -> Self {
+        Self {
+            key: key.into(),
+            value: value.into(),
+            left: None,
+            right: None,
+
+            ref_count: 0,
+        }
+    }
+
     pub(crate) fn open(
         table: &'_ impl ReadableTable<&'static [u8], (u64, &'static [u8])>,
         hash: Hash,
     ) -> Option<Node> {
+        // TODO: make it Result instead!
         let existing = table.get(hash.as_bytes().as_slice()).unwrap();
 
         existing.map(|existing| {
@@ -51,35 +63,6 @@ impl Node {
 
             decode_node((ref_count, &bytes))
         })
-    }
-
-    pub(crate) fn insert(
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        key: &[u8],
-        value: &[u8],
-        left: Option<Hash>,
-        right: Option<Hash>,
-    ) -> Hash {
-        let node = Self {
-            key: key.into(),
-            value: value.into(),
-            left,
-            right,
-
-            ref_count: 1,
-        };
-
-        let encoded = node.canonical_encode();
-        let hash = hash(&encoded);
-
-        table
-            .insert(
-                hash.as_bytes().as_slice(),
-                (node.ref_count, encoded.as_slice()),
-            )
-            .unwrap();
-
-        hash
     }
 
     // === Getters ===
@@ -100,98 +83,57 @@ impl Node {
         &self.right
     }
 
+    pub fn rank(&self) -> Hash {
+        hash(self.key())
+    }
+
     pub(crate) fn ref_count(&self) -> &u64 {
         &self.ref_count
     }
 
-    // === Public Methods ===
-
-    pub fn rank(&self) -> Hash {
-        hash(&self.key)
-    }
-
     /// Returns the hash of the node.
     pub fn hash(&self) -> Hash {
-        hash(&self.canonical_encode())
-    }
-
-    /// Set the value and save the updated node.
-    pub(crate) fn set_value(
-        &mut self,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        value: &[u8],
-    ) -> Hash {
-        self.value = value.into();
-        self.save(table)
-    }
-
-    /// Set the left child, save the updated node, and return the new hash.
-    pub(crate) fn set_left_child(
-        &mut self,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        child: Option<Hash>,
-    ) -> Hash {
-        self.set_child(table, Branch::Left, child)
-    }
-
-    /// Set the right child, save the updated node, and return the new hash.
-    pub(crate) fn set_right_child(
-        &mut self,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        child: Option<Hash>,
-    ) -> Hash {
-        self.set_child(table, Branch::Right, child)
+        let encoded = self.canonical_encode();
+        hash(&encoded)
     }
 
     // === Private Methods ===
 
-    pub fn decrement_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
-        self.update_ref_count(table, RefCountDiff::Decrement)
+    /// Set the value.
+    pub(crate) fn set_value(&mut self, value: &[u8]) -> &mut Self {
+        self.value = value.into();
+        self
     }
 
-    fn set_child(
-        &mut self,
-        table: &mut Table<&[u8], (u64, &[u8])>,
-        branch: Branch,
-        child: Option<Hash>,
-    ) -> Hash {
+    /// Set the left child, save the updated node, and return the new hash.
+    pub(crate) fn set_left_child(&mut self, child: Option<&mut Node>) -> &mut Self {
+        self.set_child(Branch::Left, child)
+    }
+
+    /// Set the right child, save the updated node, and return the new hash.
+    pub(crate) fn set_right_child(&mut self, child: Option<&mut Node>) -> &mut Self {
+        self.set_child(Branch::Right, child)
+    }
+
+    /// Set the child, update its ref_count, save the updated node and return it.
+    fn set_child(&mut self, branch: Branch, new_child: Option<&mut Node>) -> &mut Self {
         match branch {
-            Branch::Left => self.left = child,
-            Branch::Right => self.right = child,
-        }
+            Branch::Left => self.left = new_child.as_ref().map(|n| n.hash()),
+            Branch::Right => self.right = new_child.as_ref().map(|n| n.hash()),
+        };
 
-        let encoded = self.canonical_encode();
-        let hash = hash(&encoded);
-
-        table
-            .insert(
-                hash.as_bytes().as_slice(),
-                (self.ref_count, encoded.as_slice()),
-            )
-            .unwrap();
-
-        hash
+        self
     }
 
-    fn save(&mut self, table: &mut Table<&[u8], (u64, &[u8])>) -> Hash {
-        let encoded = self.canonical_encode();
-        let hash = hash(&encoded);
-
-        table
-            .insert(
-                hash.as_bytes().as_slice(),
-                (self.ref_count, encoded.as_slice()),
-            )
-            .unwrap();
-
-        hash
+    pub(crate) fn increment_ref_count(&mut self) -> &mut Self {
+        self.update_ref_count(RefCountDiff::Increment)
     }
 
-    fn increment_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>) {
-        self.update_ref_count(table, RefCountDiff::Increment)
+    pub(crate) fn decrement_ref_count(&mut self) -> &mut Self {
+        self.update_ref_count(RefCountDiff::Decrement)
     }
 
-    fn update_ref_count(&self, table: &mut Table<&[u8], (u64, &[u8])>, diff: RefCountDiff) {
+    fn update_ref_count(&mut self, diff: RefCountDiff) -> &mut Self {
         let ref_count = match diff {
             RefCountDiff::Increment => self.ref_count + 1,
             RefCountDiff::Decrement => {
@@ -203,14 +145,23 @@ impl Node {
             }
         };
 
-        let bytes = self.canonical_encode();
-        let hash = hash(&bytes);
+        // We only updaet the ref count, and handle deletion elsewhere.
+        self.ref_count = ref_count;
+        self
+    }
 
-        match ref_count {
-            0 => table.remove(hash.as_bytes().as_slice()),
-            _ => table.insert(hash.as_bytes().as_slice(), (ref_count, bytes.as_slice())),
-        }
-        .unwrap();
+    pub(crate) fn save(&mut self, table: &mut Table<&[u8], (u64, &[u8])>) -> &mut Self {
+        // TODO: keep data in encoded in a bytes field.
+        let encoded = self.canonical_encode();
+
+        table
+            .insert(
+                hash(&encoded).as_bytes().as_slice(),
+                (self.ref_count, encoded.as_slice()),
+            )
+            .unwrap();
+
+        self
     }
 
     fn canonical_encode(&self) -> Vec<u8> {
@@ -232,8 +183,11 @@ impl Node {
     }
 }
 
-pub(crate) fn rank(key: &[u8]) -> Hash {
-    hash(key)
+pub(crate) fn hash(bytes: &[u8]) -> Hash {
+    let mut hasher = Hasher::new();
+    hasher.update(bytes);
+
+    hasher.finalize()
 }
 
 fn encode(bytes: &[u8], out: &mut Vec<u8>) {
@@ -255,14 +209,7 @@ fn decode(bytes: &[u8]) -> (&[u8], &[u8]) {
     (value, rest)
 }
 
-fn hash(bytes: &[u8]) -> Hash {
-    let mut hasher = Hasher::new();
-    hasher.update(bytes);
-
-    hasher.finalize()
-}
-
-pub fn decode_node(data: (u64, &[u8])) -> Node {
+fn decode_node(data: (u64, &[u8])) -> Node {
     let (ref_count, encoded_node) = data;
 
     let (key, rest) = decode(encoded_node);
