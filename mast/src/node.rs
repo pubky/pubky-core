@@ -25,6 +25,7 @@ pub struct Node {
     ref_count: u64,
 
     // Memoized hashes
+    rank: Hash,
     /// The Hash of the node, if None then something changed, and the hash should be recomputed.
     hash: Option<Hash>,
 }
@@ -50,6 +51,8 @@ impl Node {
             right: None,
 
             ref_count: 0,
+
+            rank: hash(key),
             hash: None,
         }
     }
@@ -90,8 +93,8 @@ impl Node {
         &self.right
     }
 
-    pub fn rank(&self) -> Hash {
-        hash(self.key())
+    pub fn rank(&self) -> &Hash {
+        &self.rank
     }
 
     pub(crate) fn ref_count(&self) -> &u64 {
@@ -198,7 +201,7 @@ impl Node {
     }
 }
 
-pub(crate) fn hash(bytes: &[u8]) -> Hash {
+fn hash(bytes: &[u8]) -> Hash {
     let mut hasher = Hasher::new();
     hasher.update(bytes);
 
@@ -261,6 +264,8 @@ fn decode_node(data: (u64, &[u8])) -> Node {
         right,
 
         ref_count,
+
+        rank: hash(key),
         hash: None,
     }
 }

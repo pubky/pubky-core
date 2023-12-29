@@ -2,7 +2,7 @@ use blake3::Hash;
 use redb::Table;
 
 use super::search::binary_search_path;
-use crate::node::{hash, Branch, Node};
+use crate::node::{Branch, Node};
 
 /// Removes the target node if it exists, and returns the new root and the removed node.
 pub(crate) fn remove<'a>(
@@ -14,7 +14,7 @@ pub(crate) fn remove<'a>(
 
     let mut root = None;
 
-    if let Some(mut target) = path.target.clone() {
+    if let Some(mut target) = path.found.clone() {
         root = zip(nodes_table, &mut target)
     } else {
         // clearly the lower path has the highest node, and it won't be changed.
@@ -35,7 +35,7 @@ pub(crate) fn remove<'a>(
         root = Some(node);
     }
 
-    return (root, path.target);
+    return (root, path.found);
 }
 
 fn zip(
@@ -98,10 +98,10 @@ fn zip_up(
         (Some(left), None) => Some(left.clone()), // Left  subtree is deeper
         (None, Some(right)) => Some(right.clone()), // Right subtree is deeper
         (Some(left), Some(right)) => {
-            let rank_left = hash(left.key());
-            let rank_right = hash(right.key());
+            let rank_left = left.rank();
+            let rank_right = right.rank();
 
-            if hash(left.key()).as_bytes() > hash(right.key()).as_bytes() {
+            if left.rank().as_bytes() > right.rank().as_bytes() {
                 right
                     // decrement old version
                     .decrement_ref_count()

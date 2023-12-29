@@ -1,12 +1,13 @@
 use redb::Table;
 use std::cmp::Ordering;
 
-use crate::node::{hash, Branch, Node};
+use crate::node::{Branch, Node};
 
 #[derive(Debug)]
 pub(crate) struct BinarySearchPath {
     pub upper: Vec<(Node, Branch)>,
-    pub target: Option<Node>,
+    /// The node with the exact same key (if any).
+    pub found: Option<Node>,
     pub lower: Vec<(Node, Branch)>,
 }
 
@@ -21,28 +22,28 @@ pub(crate) fn binary_search_path(
     root: Option<Node>,
     key: &[u8],
 ) -> BinarySearchPath {
-    let rank = hash(key);
+    let target = Node::new(key, &[]);
 
     let mut path = BinarySearchPath {
         upper: Default::default(),
-        target: None,
+        found: None,
         lower: Default::default(),
     };
 
     let mut next = root;
 
     while let Some(current) = next {
-        let stack = if current.rank().as_bytes() > rank.as_bytes() {
+        let stack = if current.rank().as_bytes() > target.rank().as_bytes() {
             &mut path.upper
         } else {
             &mut path.lower
         };
 
-        match key.cmp(current.key()) {
+        match target.key().cmp(current.key()) {
             Ordering::Equal => {
                 // We found exact match. terminate the search.
 
-                path.target = Some(current);
+                path.found = Some(current);
                 return path;
             }
             Ordering::Less => {

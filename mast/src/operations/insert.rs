@@ -132,23 +132,23 @@ pub(crate) fn insert(
 
     let mut root;
 
-    if let Some(mut target) = path.target {
-        if target.value() == value {
+    if let Some(mut found) = path.found {
+        if found.value() == value {
             // There is really nothing to update. Skip traversing upwards.
 
-            return path.upper.first().map(|(n, _)| n.clone()).unwrap_or(target);
+            return path.upper.first().map(|(n, _)| n.clone()).unwrap_or(found);
         }
 
         // Decrement the old version.
-        target.decrement_ref_count().save(nodes_table);
+        found.decrement_ref_count().save(nodes_table);
 
         // Else, update the value and rehashe the node so that we can update the hashes upwards.
-        target
+        found
             .set_value(value)
             .increment_ref_count()
             .save(nodes_table);
 
-        root = target
+        root = found
     } else {
         // Insert the new node.
         let mut node = Node::new(key, value);
