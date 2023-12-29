@@ -5,7 +5,7 @@ use super::search::binary_search_path;
 use crate::node::{Branch, Node};
 
 /// Removes the target node if it exists, and returns the new root and the removed node.
-pub(crate) fn remove<'a>(
+pub(crate) fn remove(
     nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
     root: Option<Node>,
     key: &[u8],
@@ -35,7 +35,7 @@ pub(crate) fn remove<'a>(
         root = Some(node);
     }
 
-    return (root, path.found);
+    (root, path.found)
 }
 
 fn zip(
@@ -48,14 +48,13 @@ fn zip(
     let mut left_subtree = Vec::new();
     let mut right_subtree = Vec::new();
 
-    target
-        .left()
-        .and_then(|h| Node::open(nodes_table, h))
-        .map(|n| left_subtree.push(n));
-    target
-        .right()
-        .and_then(|h| Node::open(nodes_table, h))
-        .map(|n| right_subtree.push(n));
+    if let Some(n) = target.left().and_then(|h| Node::open(nodes_table, h)) {
+        left_subtree.push(n)
+    }
+
+    if let Some(n) = target.right().and_then(|h| Node::open(nodes_table, h)) {
+        right_subtree.push(n)
+    }
 
     while let Some(next) = left_subtree
         .last()
