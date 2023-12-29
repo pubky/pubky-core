@@ -195,8 +195,7 @@ impl Node {
         let key_length_encoding_length = len_encoding_length(key_length);
         let val_length_encoding_length = len_encoding_length(val_length);
 
-        let header = 0_u8
-            | (key_length_encoding_length << 4)
+        let header = (key_length_encoding_length << 4)
             | (val_length_encoding_length << 2)
             | ((self.left.is_some() as u8) << 1)
             | (self.right.is_some() as u8);
@@ -240,14 +239,6 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.update(bytes);
 
     hasher.finalize()
-}
-
-fn varu64_decode(bytes: &[u8]) -> (&[u8], &[u8]) {
-    let (len, remaining) = varu64::decode(bytes).unwrap();
-    let value = &remaining[..len as usize];
-    let rest = &remaining[value.len()..];
-
-    (value, rest)
 }
 
 fn decode_node(data: (u64, &[u8])) -> Node {
