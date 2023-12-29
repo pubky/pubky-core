@@ -6,7 +6,6 @@ use crate::{Hash, Hasher, HASH_LEN};
 
 // TODO: room for improvement (pending actual benchmarks to justify):
 //  - cache encoding
-//  - cache hashing
 
 // TODO: remove unwrap
 // TODO: KeyType and ValueType
@@ -24,6 +23,10 @@ pub struct Node {
 
     // Metadata that should not be encoded.
     ref_count: u64,
+
+    // Memoized hashes
+    /// The Hash of the node, if None then something changed, and the hash should be recomputed.
+    hash: Option<Hash>,
 }
 
 #[derive(Debug)]
@@ -47,6 +50,7 @@ impl Node {
             right: None,
 
             ref_count: 0,
+            hash: None,
         }
     }
 
@@ -95,9 +99,13 @@ impl Node {
     }
 
     /// Returns the hash of the node.
-    pub fn hash(&self) -> Hash {
-        let encoded = self.canonical_encode();
-        hash(&encoded)
+    pub fn hash(&mut self) -> Hash {
+        self.hash.unwrap_or_else(|| {
+            let encoded = self.canonical_encode();
+            let hash = hash(&encoded);
+            self.hash = Some(hash);
+            hash
+        })
     }
 
     // === Private Methods ===
@@ -105,6 +113,8 @@ impl Node {
     /// Set the value.
     pub(crate) fn set_value(&mut self, value: &[u8]) -> &mut Self {
         self.value = value.into();
+        self.hash = None;
+
         self
     }
 
@@ -124,6 +134,7 @@ impl Node {
             Branch::Left => self.left = new_child,
             Branch::Right => self.right = new_child,
         };
+        self.hash = None;
 
         self
     }
@@ -250,5 +261,6 @@ fn decode_node(data: (u64, &[u8])) -> Node {
         right,
 
         ref_count,
+        hash: None,
     }
 }

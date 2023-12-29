@@ -150,7 +150,7 @@ fn verify_children_rank(treap: &HashTreap, node: Option<Node>) -> bool {
 fn assert_root(treap: &HashTreap, expected_root_hash: &str) {
     let root_hash = treap
         .root()
-        .map(|n| n.hash())
+        .map(|mut n| n.hash())
         .expect("Has root hash after insertion");
 
     assert_eq!(
@@ -167,8 +167,8 @@ fn into_mermaid_graph(treap: &HashTreap) -> String {
 
     graph.push_str("graph TD;\n");
 
-    if let Some(root) = treap.root() {
-        build_graph_string(&treap, &root, &mut graph);
+    if let Some(mut root) = treap.root() {
+        build_graph_string(&treap, &mut root, &mut graph);
     }
 
     graph.push_str(&format!(
@@ -178,28 +178,28 @@ fn into_mermaid_graph(treap: &HashTreap) -> String {
     graph
 }
 
-fn build_graph_string(treap: &HashTreap, node: &Node, graph: &mut String) {
+fn build_graph_string(treap: &HashTreap, node: &mut Node, graph: &mut String) {
     let key = format_key(node.key());
     let node_label = format!("{}(({}))", node.hash(), key);
 
     // graph.push_str(&format!("## START node {}\n", node_label));
-    if let Some(child) = treap.get_node(node.left()) {
+    if let Some(mut child) = treap.get_node(node.left()) {
         let key = format_key(child.key());
         let child_label = format!("{}(({}))", child.hash(), key);
 
         graph.push_str(&format!("    {} --l--> {};\n", node_label, child_label));
-        build_graph_string(&treap, &child, graph);
+        build_graph_string(&treap, &mut child, graph);
     } else {
         graph.push_str(&format!("    {} -.-> {}l((l));\n", node_label, node.hash()));
         graph.push_str(&format!("    class {}l null;\n", node.hash()));
     }
 
-    if let Some(child) = treap.get_node(node.right()) {
+    if let Some(mut child) = treap.get_node(node.right()) {
         let key = format_key(child.key());
         let child_label = format!("{}(({}))", child.hash(), key);
 
         graph.push_str(&format!("    {} --r--> {};\n", node_label, child_label));
-        build_graph_string(&treap, &child, graph);
+        build_graph_string(&treap, &mut child, graph);
     } else {
         graph.push_str(&format!("    {} -.-> {}r((r));\n", node_label, node.hash()));
         graph.push_str(&format!("    class {}r null;\n", node.hash()));

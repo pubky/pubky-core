@@ -68,7 +68,7 @@ impl<'treap> HashTreap<'treap> {
                 .root_hash_inner(&roots_table)
                 .and_then(|hash| Node::open(&nodes_table, hash));
 
-            let new_root = crate::operations::insert(&mut nodes_table, old_root, key, value);
+            let mut new_root = crate::operations::insert(&mut nodes_table, old_root, key, value);
 
             roots_table
                 .insert(self.name.as_bytes(), new_root.hash().as_bytes().as_slice())
@@ -96,7 +96,7 @@ impl<'treap> HashTreap<'treap> {
 
             removed_node = old_node;
 
-            if let Some(new_root) = new_root {
+            if let Some(mut new_root) = new_root {
                 roots_table
                     .insert(self.name.as_bytes(), new_root.hash().as_bytes().as_slice())
                     .unwrap();

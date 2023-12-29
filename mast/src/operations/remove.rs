@@ -26,8 +26,8 @@ pub(crate) fn remove<'a>(
         node.decrement_ref_count().save(nodes_table);
 
         match branch {
-            Branch::Left => node.set_left_child(root.map(|n| n.hash())),
-            Branch::Right => node.set_right_child(root.map(|n| n.hash())),
+            Branch::Left => node.set_left_child(root.map(|mut n| n.hash())),
+            Branch::Right => node.set_right_child(root.map(|mut n| n.hash())),
         };
 
         node.increment_ref_count().save(nodes_table);
@@ -107,7 +107,7 @@ fn zip_up(
                     .decrement_ref_count()
                     .save(nodes_table)
                     // save new version
-                    .set_left_child(previous.map(|n| n.hash()))
+                    .set_left_child(previous.map(|mut n| n.hash()))
                     .increment_ref_count()
                     .save(nodes_table);
 
@@ -127,7 +127,7 @@ fn zip_up(
                     .decrement_ref_count()
                     .save(nodes_table)
                     // save new version
-                    .set_right_child(previous.map(|n| n.hash()))
+                    .set_right_child(previous.map(|mut n| n.hash()))
                     .increment_ref_count()
                     .save(nodes_table);
 
