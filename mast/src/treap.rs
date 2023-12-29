@@ -57,6 +57,7 @@ impl<'treap> HashTreap<'treap> {
 
     pub fn insert(&mut self, key: &[u8], value: &[u8]) {
         // TODO: validate key and value length.
+        // key and value mast be less than 2^32 bytes.
 
         let write_txn = self.db.begin_write().unwrap();
 

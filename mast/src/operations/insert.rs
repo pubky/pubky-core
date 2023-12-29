@@ -220,7 +220,7 @@ mod test {
 
         test_operations(
             &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
-            Some("78fd7507ef338f1a5816ffd702394999680a9694a85f4b8af77795d9fdd5854d"),
+            Some("9fbdb0a2023f8029871b44722b2091a45b8209eaa5ce912740959fc00c611b91"),
         )
     }
 
@@ -233,7 +233,7 @@ mod test {
 
         test_operations(
             &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
-            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
+            Some("26820b21fec1451a2478808bb8bc3ade05dcfbcd50d9556cca77d12d6239f4a7"),
         );
     }
 
@@ -247,7 +247,7 @@ mod test {
 
         test_operations(
             &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
-            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
+            Some("26820b21fec1451a2478808bb8bc3ade05dcfbcd50d9556cca77d12d6239f4a7"),
         )
     }
 
@@ -257,7 +257,7 @@ mod test {
 
         test_operations(
             &case.map(|key| Entry::insert(key.as_bytes(), &[b"v", key.as_bytes()].concat())),
-            Some("0957cc9b87c11cef6d88a95328cfd9043a3d6a99e9ba35ee5c9c47e53fb6d42b"),
+            Some("96c3cff677fb331fe2901a6b5297395f089a38af9ab4ad310d362f557d60fca5"),
         )
     }
 
@@ -272,7 +272,7 @@ mod test {
                 i += 1;
                 Entry::insert(key.as_bytes(), i.to_string().as_bytes())
             }),
-            Some("4538b4de5e58f9be9d54541e69fab8c94c31553a1dec579227ef9b572d1c1dff"),
+            Some("69e8b408d10174feb9d9befd0a3de95767cc0e342d0dba5f51139f4b49588fb7"),
         )
     }
 
@@ -288,7 +288,7 @@ mod test {
                 i += 1;
                 Entry::insert(key.as_bytes(), i.to_string().as_bytes())
             }),
-            Some("c9f7aaefb18ec8569322b9621fc64f430a7389a790e0bf69ec0ad02879d6ce54"),
+            Some("9e73a80068adf0fb31382eb35d489aa9b50f91a3ad8e55523d5cca6d6247b15b"),
         )
     }
 
@@ -304,7 +304,7 @@ mod test {
                 i += 1;
                 Entry::insert(key.as_bytes(), i.to_string().as_bytes())
             }),
-            Some("02e26311f2b55bf6d4a7163399f99e17c975891a05af2f1e09bc969f8bf0f95d"),
+            Some("8c3cb6bb83df437b73183692e4b1b3809afd6974aec49d67b1ce3266e909cb67"),
         )
     }
 }

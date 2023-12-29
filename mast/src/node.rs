@@ -4,9 +4,6 @@ use redb::{ReadableTable, Table};
 
 use crate::{Hash, Hasher, HASH_LEN};
 
-// TODO: room for improvement (pending actual benchmarks to justify):
-//  - cache encoding
-
 // TODO: remove unwrap
 // TODO: KeyType and ValueType
 
@@ -182,20 +179,57 @@ impl Node {
         self
     }
 
+    /// Encodes the node in a canonical way:
+    /// - 1 byte header
+    ///     - 0b1100_0000: Two reserved bits
+    ///     - 0b0011_0000: Two bits represents the size of the key length (0, u8, u16, u32)
+    ///     - 0b0000_1100: Two bits represents the size of the value length (0, u8, u16, u32)
+    ///     - 0b0000_0010: left child is present
+    ///     - 0b0000_0001: right child is present
+    /// - key
+    /// - value
     fn canonical_encode(&self) -> Vec<u8> {
-        let mut bytes = vec![];
+        let key_length = self.key.len();
+        let val_length = self.value.len();
 
-        encode(&self.key, &mut bytes);
-        encode(&self.value, &mut bytes);
+        let key_length_encoding_length = len_encoding_length(key_length);
+        let val_length_encoding_length = len_encoding_length(val_length);
 
-        let left = &self.left.map(|h| h.as_bytes().to_vec()).unwrap_or_default();
-        let right = &self
-            .right
-            .map(|h| h.as_bytes().to_vec())
-            .unwrap_or_default();
+        let header = 0_u8
+            | (key_length_encoding_length << 4)
+            | (val_length_encoding_length << 2)
+            | ((self.left.is_some() as u8) << 1)
+            | (self.right.is_some() as u8);
 
-        encode(left, &mut bytes);
-        encode(right, &mut bytes);
+        let mut bytes = vec![header];
+
+        // Encode key length
+        match key_length_encoding_length {
+            1 => bytes.push(key_length as u8),
+            2 => bytes.extend_from_slice(&(key_length as u16).to_be_bytes()),
+            3 => bytes.extend_from_slice(&(key_length as u32).to_be_bytes()),
+            _ => {} // Do nothing for 0 length
+        }
+
+        // Encode value length
+        match val_length_encoding_length {
+            1 => bytes.push(val_length as u8),
+            2 => bytes.extend_from_slice(&(val_length as u16).to_be_bytes()),
+            3 => bytes.extend_from_slice(&(val_length as u32).to_be_bytes()),
+            _ => {} // Do nothing for 0 length
+        }
+
+        bytes.extend_from_slice(&self.key);
+        bytes.extend_from_slice(&self.value);
+
+        if let Some(left) = &self.left {
+            bytes[0] |= 0b0000_0010;
+            bytes.extend_from_slice(left.as_bytes());
+        }
+        if let Some(right) = &self.right {
+            bytes[0] |= 0b0000_0001;
+            bytes.extend_from_slice(right.as_bytes());
+        }
 
         bytes
     }
@@ -208,18 +242,7 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.finalize()
 }
 
-fn encode(bytes: &[u8], out: &mut Vec<u8>) {
-    // TODO: find a better way to reserve bytes.
-    let current_len = out.len();
-    for _ in 0..varu64::encoding_length(bytes.len() as u64) {
-        out.push(0)
-    }
-    varu64::encode(bytes.len() as u64, &mut out[current_len..]);
-
-    out.extend_from_slice(bytes);
-}
-
-fn decode(bytes: &[u8]) -> (&[u8], &[u8]) {
+fn varu64_decode(bytes: &[u8]) -> (&[u8], &[u8]) {
     let (len, remaining) = varu64::decode(bytes).unwrap();
     let value = &remaining[..len as usize];
     let rest = &remaining[value.len()..];
@@ -230,30 +253,70 @@ fn decode(bytes: &[u8]) -> (&[u8], &[u8]) {
 fn decode_node(data: (u64, &[u8])) -> Node {
     let (ref_count, encoded_node) = data;
 
-    let (key, rest) = decode(encoded_node);
-    let (value, rest) = decode(rest);
+    // We can calculate the size of then node from the first few bytes.
+    let header = encoded_node[0];
 
-    let (left, rest) = decode(rest);
-    let left = match left.len() {
-        0 => None,
-        32 => {
-            let bytes: [u8; HASH_LEN] = left.try_into().unwrap();
-            Some(Hash::from_bytes(bytes))
+    let mut rest = &encoded_node[1..];
+
+    let key_length = match (header & 0b0011_0000) >> 4 {
+        1 => {
+            let len = rest[0] as usize;
+            rest = &rest[1..];
+            len
         }
-        _ => {
-            panic!("invalid hash length!")
+        2 => {
+            let len = u16::from_be_bytes(rest[0..3].try_into().unwrap()) as usize;
+            rest = &rest[3..];
+            len
+        }
+        3 => {
+            let len = u32::from_be_bytes(rest[0..4].try_into().unwrap()) as usize;
+            rest = &rest[4..];
+            len
+        }
+        _ => 0,
+    };
+
+    let val_length = match (header & 0b0000_1100) >> 2 {
+        1 => {
+            let len = rest[0] as usize;
+            rest = &rest[1..];
+            len
+        }
+        2 => {
+            let len = u16::from_be_bytes(rest[0..3].try_into().unwrap()) as usize;
+            rest = &rest[3..];
+            len
+        }
+        3 => {
+            let len = u32::from_be_bytes(rest[0..4].try_into().unwrap()) as usize;
+            rest = &rest[4..];
+            len
+        }
+        _ => 0,
+    };
+
+    let key = &rest[..key_length];
+    rest = &rest[key_length..];
+
+    let value = &rest[..val_length];
+    rest = &rest[val_length..];
+
+    let left = match header & 0b0000_0010 == 0 {
+        true => None,
+        false => {
+            let hash_bytes: [u8; HASH_LEN] = rest[0..32].try_into().unwrap();
+            rest = &rest[32..];
+
+            Some(Hash::from_bytes(hash_bytes))
         }
     };
 
-    let (right, _) = decode(rest);
-    let right = match right.len() {
-        0 => None,
-        32 => {
-            let bytes: [u8; HASH_LEN] = right.try_into().unwrap();
-            Some(Hash::from_bytes(bytes))
-        }
-        _ => {
-            panic!("invalid hash length!")
+    let right = match header & 0b0000_0001 == 0 {
+        true => None,
+        false => {
+            let hash_bytes: [u8; HASH_LEN] = rest[0..32].try_into().unwrap();
+            Some(Hash::from_bytes(hash_bytes))
         }
     };
 
@@ -267,5 +330,17 @@ fn decode_node(data: (u64, &[u8])) -> Node {
 
         rank: hash(key),
         hash: None,
+    }
+}
+
+fn len_encoding_length(len: usize) -> u8 {
+    if len == 0 {
+        0
+    } else if len <= u8::max_value() as usize {
+        1
+    } else if len <= u16::max_value() as usize {
+        2
+    } else {
+        3
     }
 }

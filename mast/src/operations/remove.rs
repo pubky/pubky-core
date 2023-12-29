@@ -225,7 +225,7 @@ mod test {
 
         test_operations(
             &case,
-            Some("02af3de6ed6368c5abc16f231a17d1140e7bfec483c8d0aa63af4ef744d29bc3"),
+            Some("26820b21fec1451a2478808bb8bc3ade05dcfbcd50d9556cca77d12d6239f4a7"),
         );
     }
 }
