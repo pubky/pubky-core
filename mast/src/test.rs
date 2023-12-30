@@ -1,3 +1,5 @@
+//! Test helpers for the merkle treap.
+
 use std::assert_eq;
 use std::collections::BTreeMap;
 
@@ -7,8 +9,6 @@ use crate::Hash;
 
 use redb::backends::InMemoryBackend;
 use redb::Database;
-
-// === Helpers ===
 
 #[derive(Clone, Debug)]
 pub enum Operation {

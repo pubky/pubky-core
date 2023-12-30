@@ -1,5 +1,5 @@
 [package]
-name = "kytes"
+name = "kytz"
 version = "0.1.0"
 edition = "2021"
 description = "Soaring in the Cloud, but you pull the strings."
