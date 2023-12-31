@@ -1,7 +1,7 @@
 use blake3::Hash;
 use redb::Table;
 
-use super::search::binary_search_path;
+use super::{read::root_node_inner, search::binary_search_path, NODES_TABLE, ROOTS_TABLE};
 use crate::node::{Branch, Node};
 
 // Watch this [video](https://youtu.be/NxRXhBur6Xs?si=GNwaUOfuGwr_tBKI&t=1763) for a good explanation of the unzipping algorithm.
@@ -101,12 +101,17 @@ use crate::node::{Branch, Node};
 //
 
 pub(crate) fn insert(
-    nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
-    root: Option<Node>,
+    write_txn: &mut redb::WriteTransaction,
+    treap: &str,
     key: &[u8],
     value: &[u8],
-) -> Node {
-    let mut path = binary_search_path(nodes_table, root, key);
+) -> Option<Node> {
+    let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
+    let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
+
+    let old_root = root_node_inner(&roots_table, &nodes_table, treap);
+
+    let mut path = binary_search_path(&nodes_table, old_root, key);
 
     let mut left_subtree: Option<Hash> = None;
     let mut right_subtree: Option<Hash> = None;
@@ -114,7 +119,7 @@ pub(crate) fn insert(
     // Unzip the lower path to get left and right children of the inserted node.
     for (node, branch) in path.lower.iter_mut().rev() {
         // Decrement the old version.
-        node.decrement_ref_count().save(nodes_table);
+        node.decrement_ref_count().save(&mut nodes_table);
 
         match branch {
             Branch::Right => {
@@ -127,28 +132,27 @@ pub(crate) fn insert(
             }
         }
 
-        node.increment_ref_count().save(nodes_table);
+        node.increment_ref_count().save(&mut nodes_table);
     }
 
-    let mut root;
+    let mut new_root;
 
     if let Some(mut found) = path.found {
         if found.value() == value {
             // There is really nothing to update. Skip traversing upwards.
-
-            return path.upper.first().map(|(n, _)| n.clone()).unwrap_or(found);
+            return Some(found);
         }
 
         // Decrement the old version.
-        found.decrement_ref_count().save(nodes_table);
+        found.decrement_ref_count().save(&mut nodes_table);
 
         // Else, update the value and rehashe the node so that we can update the hashes upwards.
         found
             .set_value(value)
             .increment_ref_count()
-            .save(nodes_table);
+            .save(&mut nodes_table);
 
-        root = found
+        new_root = found
     } else {
         // Insert the new node.
         let mut node = Node::new(key, value);
@@ -156,29 +160,34 @@ pub(crate) fn insert(
         node.set_left_child(left_subtree)
             .set_right_child(right_subtree)
             .increment_ref_count()
-            .save(nodes_table);
+            .save(&mut nodes_table);
 
-        root = node
+        new_root = node
     };
 
     let mut upper_path = path.upper;
 
     // Propagate the new hashes upwards if there are any nodes in the upper_path.
     while let Some((mut node, branch)) = upper_path.pop() {
-        node.decrement_ref_count().save(nodes_table);
+        node.decrement_ref_count().save(&mut nodes_table);
 
         match branch {
-            Branch::Left => node.set_left_child(Some(root.hash())),
-            Branch::Right => node.set_right_child(Some(root.hash())),
+            Branch::Left => node.set_left_child(Some(new_root.hash())),
+            Branch::Right => node.set_right_child(Some(new_root.hash())),
         };
 
-        node.increment_ref_count().save(nodes_table);
+        node.increment_ref_count().save(&mut nodes_table);
 
-        root = node;
+        new_root = node;
     }
 
-    // Finally return the new root to be set to the root.
-    root
+    // Finally set the new root .
+    roots_table
+        .insert(treap.as_bytes(), new_root.hash().as_bytes().as_slice())
+        .unwrap();
+
+    // No older value was found.
+    None
 }
 
 #[cfg(test)]

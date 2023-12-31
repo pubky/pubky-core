@@ -1,41 +1,54 @@
 use blake3::Hash;
 use redb::Table;
 
-use super::search::binary_search_path;
+use super::{read::root_node_inner, search::binary_search_path, NODES_TABLE, ROOTS_TABLE};
 use crate::node::{Branch, Node};
 
 /// Removes the target node if it exists, and returns the new root and the removed node.
 pub(crate) fn remove(
-    nodes_table: &'_ mut Table<&'static [u8], (u64, &'static [u8])>,
-    root: Option<Node>,
+    write_txn: &mut redb::WriteTransaction,
+    treap: &str,
     key: &[u8],
-) -> (Option<Node>, Option<Node>) {
-    let mut path = binary_search_path(nodes_table, root, key);
+) -> Option<Node> {
+    let mut roots_table = write_txn.open_table(ROOTS_TABLE).unwrap();
+    let mut nodes_table = write_txn.open_table(NODES_TABLE).unwrap();
 
-    let mut root = None;
+    let old_root = root_node_inner(&roots_table, &nodes_table, treap);
+
+    let mut path = binary_search_path(&nodes_table, old_root, key);
+
+    let mut new_root = None;
 
     if let Some(mut target) = path.found.clone() {
-        root = zip(nodes_table, &mut target)
+        new_root = zip(&mut nodes_table, &mut target)
     } else {
         // clearly the lower path has the highest node, and it won't be changed.
-        root = path.lower.first().map(|(n, _)| n.clone());
+        new_root = path.lower.first().map(|(n, _)| n.clone());
     }
 
     // If there is an upper path, we propagate the hash updates upwards.
     while let Some((mut node, branch)) = path.upper.pop() {
-        node.decrement_ref_count().save(nodes_table);
+        node.decrement_ref_count().save(&mut nodes_table);
 
         match branch {
-            Branch::Left => node.set_left_child(root.map(|mut n| n.hash())),
-            Branch::Right => node.set_right_child(root.map(|mut n| n.hash())),
+            Branch::Left => node.set_left_child(new_root.map(|mut n| n.hash())),
+            Branch::Right => node.set_right_child(new_root.map(|mut n| n.hash())),
         };
 
-        node.increment_ref_count().save(nodes_table);
+        node.increment_ref_count().save(&mut nodes_table);
 
-        root = Some(node);
+        new_root = Some(node);
     }
 
-    (root, path.found)
+    if let Some(mut new_root) = new_root {
+        roots_table
+            .insert(treap.as_bytes(), new_root.hash().as_bytes().as_slice())
+            .unwrap();
+    } else {
+        roots_table.remove(treap.as_bytes()).unwrap();
+    }
+
+    path.found
 }
 
 fn zip(

@@ -4,11 +4,8 @@ use std::assert_eq;
 use std::collections::BTreeMap;
 
 use crate::node::Node;
-use crate::treap::HashTreap;
+use crate::Database;
 use crate::Hash;
-
-use redb::backends::InMemoryBackend;
-use redb::Database;
 
 #[derive(Clone, Debug)]
 pub enum Operation {
@@ -56,27 +53,24 @@ impl std::fmt::Debug for Entry {
 }
 
 pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
-    let inmemory = InMemoryBackend::new();
-    let db = Database::builder()
-        .create_with_backend(inmemory)
-        .expect("Failed to create DB");
-
-    let mut treap = HashTreap::new(&db, "test");
+    let db = Database::in_memory();
+    let mut txn = db.begin_write().unwrap();
+    let treap = "test";
 
     for (entry, operation) in input {
         match operation {
-            Operation::Insert => treap.insert(&entry.key, &entry.value),
-            Operation::Remove => {
-                treap.remove(&entry.key);
-            }
-        }
+            Operation::Insert => txn.insert(treap, &entry.key, &entry.value),
+            Operation::Remove => txn.remove(treap, &entry.key),
+        };
     }
+
+    txn.commit();
 
     // Uncomment to see the graph
     // println!("{}", into_mermaid_graph(&treap));
 
-    let collected = treap
-        .iter()
+    let collected = db
+        .iter(treap)
         .map(|n| {
             assert_eq!(
                 *n.ref_count(),
@@ -92,7 +86,7 @@ pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
         })
         .collect::<Vec<_>>();
 
-    verify_ranks(&treap);
+    verify_ranks(&db, treap);
 
     let mut btree = BTreeMap::new();
     for (entry, operation) in input {
@@ -117,28 +111,28 @@ pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
     assert_eq!(collected, expected, "{}", format!("Entries do not match"));
 
     if root_hash.is_some() {
-        assert_root(&treap, root_hash.unwrap());
+        assert_root(&db, treap, root_hash.unwrap());
     }
 }
 
 /// Verify that every node has higher rank than its children.
-fn verify_ranks(treap: &HashTreap) {
+fn verify_ranks(db: &Database, treap: &str) {
     assert!(
-        verify_children_rank(treap, treap.root()),
+        verify_children_rank(db, treap, db.root(treap)),
         "Ranks are not sorted correctly"
     )
 }
 
-fn verify_children_rank(treap: &HashTreap, node: Option<Node>) -> bool {
+fn verify_children_rank(db: &Database, treap: &str, node: Option<Node>) -> bool {
     match node {
         Some(n) => {
-            let left_check = treap.get_node(n.left()).map_or(true, |left| {
+            let left_check = db.get_node(n.left()).map_or(true, |left| {
                 n.rank().as_bytes() > left.rank().as_bytes()
-                    && verify_children_rank(treap, Some(left))
+                    && verify_children_rank(db, treap, Some(left))
             });
-            let right_check = treap.get_node(n.right()).map_or(true, |right| {
+            let right_check = db.get_node(n.right()).map_or(true, |right| {
                 n.rank().as_bytes() > right.rank().as_bytes()
-                    && verify_children_rank(treap, Some(right))
+                    && verify_children_rank(db, treap, Some(right))
             });
 
             left_check && right_check
@@ -147,11 +141,8 @@ fn verify_children_rank(treap: &HashTreap, node: Option<Node>) -> bool {
     }
 }
 
-fn assert_root(treap: &HashTreap, expected_root_hash: &str) {
-    let root_hash = treap
-        .root()
-        .map(|mut n| n.hash())
-        .expect("Has root hash after insertion");
+fn assert_root(db: &Database, treap: &str, expected_root_hash: &str) {
+    let root_hash = db.root_hash(treap).expect("Has root hash after insertion");
 
     assert_eq!(
         root_hash,
@@ -162,13 +153,13 @@ fn assert_root(treap: &HashTreap, expected_root_hash: &str) {
 
 // === Visualize the treap to verify the structure ===
 
-fn into_mermaid_graph(treap: &HashTreap) -> String {
+fn into_mermaid_graph(db: &Database, treap: &str) -> String {
     let mut graph = String::new();
 
     graph.push_str("graph TD;\n");
 
-    if let Some(mut root) = treap.root() {
-        build_graph_string(&treap, &mut root, &mut graph);
+    if let Some(mut root) = db.root(treap) {
+        build_graph_string(db, treap, &mut root, &mut graph);
     }
 
     graph.push_str(&format!(
@@ -178,28 +169,28 @@ fn into_mermaid_graph(treap: &HashTreap) -> String {
     graph
 }
 
-fn build_graph_string(treap: &HashTreap, node: &mut Node, graph: &mut String) {
+fn build_graph_string(db: &Database, treap: &str, node: &mut Node, graph: &mut String) {
     let key = format_key(node.key());
     let node_label = format!("{}(({}))", node.hash(), key);
 
     // graph.push_str(&format!("## START node {}\n", node_label));
-    if let Some(mut child) = treap.get_node(node.left()) {
+    if let Some(mut child) = db.get_node(node.left()) {
         let key = format_key(child.key());
         let child_label = format!("{}(({}))", child.hash(), key);
 
         graph.push_str(&format!("    {} --l--> {};\n", node_label, child_label));
-        build_graph_string(&treap, &mut child, graph);
+        build_graph_string(db, treap, &mut child, graph);
     } else {
         graph.push_str(&format!("    {} -.-> {}l((l));\n", node_label, node.hash()));
         graph.push_str(&format!("    class {}l null;\n", node.hash()));
     }
 
-    if let Some(mut child) = treap.get_node(node.right()) {
+    if let Some(mut child) = db.get_node(node.right()) {
         let key = format_key(child.key());
         let child_label = format!("{}(({}))", child.hash(), key);
 
         graph.push_str(&format!("    {} --r--> {};\n", node_label, child_label));
-        build_graph_string(&treap, &mut child, graph);
+        build_graph_string(db, treap, &mut child, graph);
     } else {
         graph.push_str(&format!("    {} -.-> {}r((r));\n", node_label, node.hash()));
         graph.push_str(&format!("    class {}r null;\n", node.hash()));
