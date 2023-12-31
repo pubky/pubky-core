@@ -1,9 +1,11 @@
 //! Test helpers for the merkle treap.
 
+use redb::ReadableTable;
 use std::assert_eq;
 use std::collections::BTreeMap;
 
 use crate::node::Node;
+use crate::operations::NODES_TABLE;
 use crate::Database;
 use crate::Hash;
 
@@ -113,6 +115,8 @@ pub fn test_operations(input: &[(Entry, Operation)], root_hash: Option<&str>) {
     if root_hash.is_some() {
         assert_root(&db, treap, root_hash.unwrap());
     }
+
+    assert_ref_count(&db, expected.len())
 }
 
 /// Verify that every node has higher rank than its children.
@@ -149,6 +153,24 @@ fn assert_root(db: &Database, treap: &str, expected_root_hash: &str) {
         Hash::from_hex(expected_root_hash).expect("Invalid hash hex"),
         "Root hash is not correct"
     )
+}
+
+fn assert_ref_count(db: &Database, n: usize) {
+    // TODO: Assert ref count for blob hashes
+    let read_txn = db.inner.begin_read().unwrap();
+
+    let nodes_table = read_txn.open_table(NODES_TABLE).unwrap();
+
+    let mut count = 0;
+
+    for result in nodes_table.iter().unwrap() {
+        let (_, value) = result.unwrap();
+        let (ref_count, _) = value.value();
+
+        count += (ref_count > 0) as u64;
+    }
+
+    assert_eq!(count, n as u64, "Wrong number of nodes with ref count > 0");
 }
 
 // === Visualize the treap to verify the structure ===
