@@ -1,1 +1,1 @@
-pub mod challenge;
+pub mod auth;

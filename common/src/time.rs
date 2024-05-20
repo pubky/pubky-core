@@ -1,6 +1,11 @@
 //! Simple handling for timestamps
 
-use std::{ops::Add, time::SystemTime};
+use std::{
+    ops::{Add, Sub},
+    time::SystemTime,
+};
+
+use crate::Error;
 
 /// Timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64
 #[derive(Debug, PartialEq, PartialOrd)]
@@ -11,9 +16,30 @@ impl Timestamp {
         Self(system_time())
     }
 
-    /// Encode Timestamp as Big-Endian 8 bytes
-    pub fn encode(&self, bytes: &mut [u8]) {
-        bytes.copy_from_slice(&self.0.to_be_bytes())
+    pub fn to_bytes(&self) -> [u8; 8] {
+        self.0.to_be_bytes()
+    }
+
+    pub fn difference(&self, rhs: &Timestamp) -> u64 {
+        self.0.abs_diff(rhs.0)
+    }
+}
+
+impl TryFrom<&[u8]> for Timestamp {
+    type Error = Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let bytes: [u8; 8] = bytes
+            .try_into()
+            .map_err(|_| Error::Generic("Timestamp should be 8 bytes".to_string()))?;
+
+        Ok(bytes.into())
+    }
+}
+
+impl From<[u8; 8]> for Timestamp {
+    fn from(bytes: [u8; 8]) -> Self {
+        Self(u64::from_be_bytes(bytes))
     }
 }
 
@@ -22,6 +48,14 @@ impl Add<u64> for Timestamp {
 
     fn add(self, rhs: u64) -> Self::Output {
         Timestamp(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for Timestamp {
+    type Output = Timestamp;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        Timestamp(self.0 - rhs)
     }
 }
 
