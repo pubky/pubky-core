@@ -1,3 +1,3 @@
-# Pubky Homeserver
+# Pk Homeserver
 
 Home

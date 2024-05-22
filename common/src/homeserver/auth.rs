@@ -22,8 +22,8 @@ pub enum VerifiedAttestation {
 /// Homeaudience generated challenge to be signed by a client's private key
 /// for authentication (signup / login).
 ///
-/// Encoded as `<32 bytes signer's pubky><64 bytes signature><payload>`
-/// where `payload` is encoded as `<32 bytes signer's public_key><64 bytes signature><8 bytes namespace><8 bytes timestamp><audience's public_key>[<32 bytes blake3 hash of an access token>]`
+/// Encoded as `<32 bytes signer's public_key><64 bytes signature><payload>`
+/// where `payload` is encoded as `<8 bytes namespace><8 bytes timestamp><audience's public_key>[<32 bytes blake3 hash of an access token>]`
 #[derive(Debug, PartialEq)]
 pub struct Attestation(Box<[u8]>);
 
@@ -32,7 +32,7 @@ impl Attestation {
         let mut bytes = [0u8; TOKEN_ATTESTATION_LEN];
 
         bytes[..32].copy_from_slice(keypair.public_key().as_bytes());
-        bytes[96..104].copy_from_slice(crate::namespaces::PUBKY_AUTH);
+        bytes[96..104].copy_from_slice(crate::namespaces::PK_AUTH);
         bytes[104..112].copy_from_slice(&Timestamp::now().to_bytes());
         bytes[112..144].copy_from_slice(audience.as_bytes());
 
