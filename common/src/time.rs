@@ -11,15 +11,50 @@ use rand::Rng;
 
 use crate::Error;
 
-static NODE_ID: Lazy<u8> = Lazy::new(|| {
-    let mut rng = rand::thread_rng();
-    rng.gen::<u8>()
-});
-static COUNTER: Lazy<Mutex<u8>> = Lazy::new(|| Mutex::new(0));
+/// Up to 1024 clocks in parallel
+const DEFAULT_CLOCK_BITS: u8 = 10;
+
+pub struct TimestampFactory {
+    clock_mask: u64,
+    time_mask: u64,
+    clock_id: u64,
+    last_time: u64,
+}
+
+impl TimestampFactory {
+    pub fn new(clock_bits: u8) -> Self {
+        let clock_mask = (1 << clock_bits) - 1;
+        let time_mask = !0 >> clock_bits;
+
+        Self {
+            clock_mask,
+            time_mask,
+            clock_id: rand::thread_rng().gen::<u64>() & clock_mask,
+            last_time: system_time() & time_mask,
+        }
+    }
+
+    pub fn now(&mut self) -> Timestamp {
+        // Ensure the system time stays monotonic (doesn't move to past values).
+        self.last_time = (system_time() & self.time_mask).max(self.last_time + self.clock_mask + 1);
+
+        // Add clock_id to the end of the timestamp
+        Timestamp(self.last_time | self.clock_id)
+    }
+}
+
+impl Default for TimestampFactory {
+    fn default() -> Self {
+        Self::new(DEFAULT_CLOCK_BITS)
+    }
+}
+
+static DEFAULT_FACTORY: Lazy<Mutex<TimestampFactory>> =
+    Lazy::new(|| Mutex::new(TimestampFactory::default()));
 
 /// Monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64
 ///
-/// Uses 8 bits machine ID
+/// Uses 10 bits of randomness for clock id
 /// Encoded and decoded as LE bytes.
 ///
 /// Valid for the next 500 thousand years!
@@ -28,13 +63,7 @@ pub struct Timestamp(pub(crate) u64);
 
 impl Timestamp {
     pub fn now() -> Self {
-        let mut counter = COUNTER.lock().unwrap();
-        *counter = (*counter).wrapping_add(1);
-
-        let time =
-            (system_time() & 0xFFFFFFFFFFFF0000) | ((*NODE_ID as u64) << 8) | (*counter as u64);
-
-        Self(time)
+        DEFAULT_FACTORY.lock().unwrap().now()
     }
 
     pub fn to_bytes(&self) -> [u8; 8] {
