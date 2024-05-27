@@ -7,13 +7,19 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
+use rand::Rng;
 
 use crate::Error;
 
-static LAST_TIMESTAMP: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(0));
+static NODE_ID: Lazy<u8> = Lazy::new(|| {
+    let mut rng = rand::thread_rng();
+    rng.gen::<u8>()
+});
+static COUNTER: Lazy<Mutex<u8>> = Lazy::new(|| Mutex::new(0));
 
 /// Monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64
 ///
+/// Uses 8 bits machine ID
 /// Encoded and decoded as LE bytes.
 ///
 /// Valid for the next 500 thousand years!
@@ -22,10 +28,13 @@ pub struct Timestamp(pub(crate) u64);
 
 impl Timestamp {
     pub fn now() -> Self {
-        let mut last_timestamp = LAST_TIMESTAMP.lock().unwrap();
-        *last_timestamp = system_time().max(*last_timestamp + 1);
+        let mut counter = COUNTER.lock().unwrap();
+        *counter = (*counter).wrapping_add(1);
 
-        Self(*last_timestamp)
+        let time =
+            (system_time() & 0xFFFFFFFFFFFF0000) | ((*NODE_ID as u64) << 8) | (*counter as u64);
+
+        Self(time)
     }
 
     pub fn to_bytes(&self) -> [u8; 8] {
