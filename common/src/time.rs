@@ -1,5 +1,6 @@
 //! Monotonic unix timestamp in microseconds
 
+use std::fmt::Display;
 use std::time::SystemTime;
 use std::{
     ops::{Add, Sub},
@@ -9,9 +10,9 @@ use std::{
 use once_cell::sync::Lazy;
 use rand::Rng;
 
-use crate::Error;
+use crate::{Error, Result};
 
-/// Up to 1024 clocks in parallel
+/// 1 in 1024 chance of collision with another machine.
 const DEFAULT_CLOCK_BITS: u8 = 10;
 
 pub struct TimestampFactory {
@@ -55,11 +56,12 @@ static DEFAULT_FACTORY: Lazy<Mutex<TimestampFactory>> =
 /// Monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64
 ///
 /// Uses 10 bits of randomness for clock id
-/// Encoded and decoded as LE bytes.
+/// Encoded and decoded as BE bytes (for order preserving).
+/// Stringified as BE bytes encoded with [base32::Alphabet::Crockford]
 ///
 /// Valid for the next 500 thousand years!
-#[derive(Debug, PartialEq, PartialOrd)]
-pub struct Timestamp(pub(crate) u64);
+#[derive(Debug, Clone, PartialEq, PartialOrd, Hash, Eq, Ord)]
+pub struct Timestamp(u64);
 
 impl Timestamp {
     pub fn now() -> Self {
@@ -67,11 +69,37 @@ impl Timestamp {
     }
 
     pub fn to_bytes(&self) -> [u8; 8] {
-        self.0.to_le_bytes()
+        self.0.to_be_bytes()
     }
 
     pub fn difference(&self, rhs: &Timestamp) -> u64 {
         self.0.abs_diff(rhs.0)
+    }
+}
+
+impl Display for Timestamp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let bytes: [u8; 8] = self.into();
+        f.write_str(&base32::encode(base32::Alphabet::Crockford, &bytes))
+    }
+}
+
+impl TryFrom<String> for Timestamp {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        match base32::decode(base32::Alphabet::Crockford, &value) {
+            Some(vec) => {
+                let bytes: [u8; 8] = vec.try_into().map_err(|_| {
+                    Error::Generic("Could not decode timestamp from string".to_string())
+                })?;
+
+                Ok(bytes.into())
+            }
+            None => Err(Error::Generic(
+                "Could not decode timestamp from string".to_string(),
+            )),
+        }
     }
 }
 
@@ -87,9 +115,15 @@ impl TryFrom<&[u8]> for Timestamp {
     }
 }
 
+impl From<&Timestamp> for [u8; 8] {
+    fn from(timestamp: &Timestamp) -> Self {
+        timestamp.0.to_be_bytes()
+    }
+}
+
 impl From<[u8; 8]> for Timestamp {
     fn from(bytes: [u8; 8]) -> Self {
-        Self(u64::from_le_bytes(bytes))
+        Self(u64::from_be_bytes(bytes))
     }
 }
 
@@ -126,14 +160,54 @@ mod tests {
 
     #[test]
     fn monotonic() {
-        let mut set = HashSet::new();
-
         const COUNT: usize = 100;
 
+        let mut set = HashSet::with_capacity(COUNT);
+        let mut vec = Vec::with_capacity(COUNT);
+
         for _ in 0..COUNT {
-            set.insert(Timestamp::now().0);
+            let timestamp = Timestamp::now();
+
+            set.insert(timestamp.clone());
+            vec.push(timestamp);
         }
 
-        assert_eq!(set.len(), COUNT)
+        let mut ordered = vec.clone();
+        ordered.sort();
+
+        assert_eq!(set.len(), COUNT, "unique");
+        assert_eq!(ordered, vec, "ordered");
+    }
+
+    #[test]
+    fn strings() {
+        const COUNT: usize = 100;
+
+        let mut set = HashSet::with_capacity(COUNT);
+        let mut vec = Vec::with_capacity(COUNT);
+
+        for _ in 0..COUNT {
+            let string = Timestamp::now().to_string();
+
+            set.insert(string.clone());
+            vec.push(string)
+        }
+
+        dbg!(&vec);
+        let mut ordered = vec.clone();
+        ordered.sort();
+
+        dbg!(&vec);
+        assert_eq!(set.len(), COUNT, "unique");
+        assert_eq!(ordered, vec, "ordered");
+    }
+
+    #[test]
+    fn to_from_string() {
+        let timestamp = Timestamp::now();
+        let string = timestamp.to_string();
+        let decoded: Timestamp = string.try_into().unwrap();
+
+        assert_eq!(decoded, timestamp)
     }
 }
