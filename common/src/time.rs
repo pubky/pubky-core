@@ -193,11 +193,9 @@ mod tests {
             vec.push(string)
         }
 
-        dbg!(&vec);
         let mut ordered = vec.clone();
         ordered.sort();
 
-        dbg!(&vec);
         assert_eq!(set.len(), COUNT, "unique");
         assert_eq!(ordered, vec, "ordered");
     }

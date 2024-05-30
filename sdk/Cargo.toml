@@ -1,0 +1,15 @@
+[package]
+name = "pk-sdk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pk-common = { version = "0.1.0", path = "../common" }
+pk-homeserver = { version = "0.1.0", path = "../homeserver" }
+pkarr = "2.0.1"
+ureq = "2.9.7"
+
+[dev-dependencies]
+tokio = "1.37.0"

@@ -1,1 +1,1 @@
-pub const PK_AUTH: &[u8; 8] = b"PK:AUTHN";
+pub const PK_AUTHN: &[u8; 8] = b"PK:AUTHN";
