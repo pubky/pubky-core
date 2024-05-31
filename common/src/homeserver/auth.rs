@@ -29,7 +29,7 @@ pub enum AuthnVerified {
 pub struct AuthnSignature(Box<[u8]>);
 
 impl AuthnSignature {
-    fn new(keypair: Keypair, audience: &PublicKey, access_token: Option<&[u8]>) -> Self {
+    pub fn new(keypair: &Keypair, audience: &PublicKey, access_token: Option<&[u8]>) -> Self {
         let mut bytes = [0u8; TOKEN_AUTHN_SIGNATURE_LEN];
 
         bytes[64..72].copy_from_slice(crate::namespaces::PK_AUTHN);
@@ -60,11 +60,11 @@ impl AuthnSignature {
         })
     }
 
-    pub fn bearer(keypair: Keypair, audience: &PublicKey) -> Self {
+    pub fn bearer(keypair: &Keypair, audience: &PublicKey) -> Self {
         AuthnSignature::new(keypair, audience, None)
     }
 
-    pub fn with_token(keypair: Keypair, audience: &PublicKey, token: &[u8]) -> Self {
+    pub fn with_token(keypair: &Keypair, audience: &PublicKey, token: &[u8]) -> Self {
         AuthnSignature::new(keypair, audience, Some(token))
     }
 
@@ -149,7 +149,7 @@ mod tests {
         let keypair = Keypair::random();
         let audience = Keypair::random().public_key();
 
-        let authn_signature = AuthnSignature::bearer(keypair, &audience);
+        let authn_signature = AuthnSignature::bearer(&keypair, &audience);
 
         AuthnSignature::verify(authn_signature.as_bytes(), &audience).unwrap();
 

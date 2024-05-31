@@ -18,6 +18,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/", get(root::handler))
         // TODO: greatly rate limit this function from IPs
         .route("/register", put(users::register))
+        .route("/authn", put(users::authn))
         // .route("/authn", get(auth::authn))
         .with_state(state)
         .layer(CorsLayer::very_permissive())

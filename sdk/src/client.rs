@@ -7,7 +7,7 @@ use pkarr::{
 };
 use ureq::{Agent, Response};
 
-use pk_common::{url::PkUrl, Error, Result};
+use pk_common::{homeserver::auth::AuthnSignature, url::PkUrl, Error, Result};
 
 pub struct Client {
     agent: Agent,
@@ -68,35 +68,37 @@ impl Client {
             .agent
             .request(HttpMethod::PUT.into(), &url)
             .send_bytes(signed_packet.as_bytes())
-            .map_err(|e| match e {
-                ureq::Error::Status(status, response) => {
-                    let mut buf = vec![];
-                    response.into_reader().read(&mut buf);
-                    dbg!(buf);
-                    Error::Generic("foobar".to_string())
-                }
-                ureq::Error::Transport(transport) => Error::Generic("transport".to_string()),
-            })
-            .map_err(|e| {
-                dbg!(&e, &e, url);
-                Error::Generic("ureq error".to_string())
-            })?)
+            .map_err(|e| Error::Generic("ureq error".to_string()))?)
     }
 
-    // fn fetch(&self, method: HttpMethod, url: &str) -> Result<Response> {
-    //     let url = PkUrl::parse(url);
-    //     let homeserever =
-    //
-    //     let url = format!("{}{}", self.homeserver_base_url(homeserver)?);
-    //
-    //     self.fetch_direct(method, url)
-    // }
+    pub fn authn(&self, keypair: &Keypair) -> Result<Response> {
+        let public_key = keypair.public_key();
+        let homeserver = self.user_homeserver(&public_key).unwrap();
+
+        let signature = AuthnSignature::bearer(keypair, &homeserver);
+
+        let base_url = self.homeserver_base_url(&homeserver).unwrap();
+        let url = format!("{}/authn", base_url);
+
+        Ok(self
+            .agent
+            .request(HttpMethod::PUT.into(), &url)
+            .send_bytes(signature.as_bytes())
+            .map_err(|e| Error::Generic("ureq error".to_string()))?)
+    }
 
     fn fetch_direct(&self, method: HttpMethod, url: &str) -> Result<Response> {
-        Ok(self.agent.request(method.into(), url).call().map_err(|e| {
-            dbg!(e, url);
-            Error::Generic("ureq error".to_string())
-        })?)
+        Ok(self
+            .agent
+            .request(method.into(), url)
+            .call()
+            .map_err(|e| Error::Generic("ureq error".to_string()))?)
+    }
+
+    fn user_homeserver(&self, public_key: &PublicKey) -> Result<PublicKey> {
+        let signed_packet = self.pkarr.resolve(public_key).unwrap().unwrap();
+
+        pk_common::pkarr::homeserver(&signed_packet)
     }
 
     /// Takes a [PublicKey] and returns the actual domain it is listening on.
@@ -120,8 +122,6 @@ impl Client {
                     _ => None,
                 }
                 .unwrap();
-
-                dbg!(port);
 
                 Ok(format!("http://{}:{}", cname, port))
             } else {
@@ -169,7 +169,11 @@ mod tests {
                 .register(&keypair, &server_pk)
                 .unwrap();
 
-            dbg!(xx);
+            dbg!(&keypair.public_key());
+
+            let yy = Client::test(&testnet).authn(&keypair).unwrap();
+
+            dbg!(yy);
         })
         .await
         .expect("task failed")
