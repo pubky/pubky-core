@@ -1,0 +1,14 @@
+name = "Counter"
+description = "A simple counter app"
+authors = ["Red Badger Consulting Limited"]
+repository = "https://github.com/redbadger/crux/"
+
+[cores.shared]
+source = "shared"
+type_gen = "shared_types"
+crux_version = "0.6.3"
+
+[shells.tauri]
+template = "tauri"
+source = "tauri"
+cores = ["shared"]
