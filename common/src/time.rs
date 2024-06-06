@@ -12,32 +12,26 @@ use rand::Rng;
 
 use crate::{Error, Result};
 
-/// 1 in 1024 chance of collision with another machine.
-const DEFAULT_CLOCK_BITS: u8 = 10;
+/// ~4% chance of none of 10 clocks have matching id.
+const CLOCK_MASK: u64 = (1 << 8) - 1;
+const TIME_MASK: u64 = !0 >> 8;
 
 pub struct TimestampFactory {
-    clock_mask: u64,
-    time_mask: u64,
     clock_id: u64,
     last_time: u64,
 }
 
 impl TimestampFactory {
-    pub fn new(clock_bits: u8) -> Self {
-        let clock_mask = (1 << clock_bits) - 1;
-        let time_mask = !0 >> clock_bits;
-
+    pub fn new() -> Self {
         Self {
-            clock_mask,
-            time_mask,
-            clock_id: rand::thread_rng().gen::<u64>() & clock_mask,
-            last_time: system_time() & time_mask,
+            clock_id: rand::thread_rng().gen::<u64>() & CLOCK_MASK,
+            last_time: system_time() & TIME_MASK,
         }
     }
 
     pub fn now(&mut self) -> Timestamp {
-        // Ensure the system time stays monotonic (doesn't move to past values).
-        self.last_time = (system_time() & self.time_mask).max(self.last_time + self.clock_mask + 1);
+        // Ensure monotonicity.
+        self.last_time = (system_time() & TIME_MASK).max(self.last_time + CLOCK_MASK + 1);
 
         // Add clock_id to the end of the timestamp
         Timestamp(self.last_time | self.clock_id)
@@ -46,20 +40,27 @@ impl TimestampFactory {
 
 impl Default for TimestampFactory {
     fn default() -> Self {
-        Self::new(DEFAULT_CLOCK_BITS)
+        Self::new()
     }
 }
 
 static DEFAULT_FACTORY: Lazy<Mutex<TimestampFactory>> =
     Lazy::new(|| Mutex::new(TimestampFactory::default()));
 
-/// Monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64
+/// Monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64.
 ///
-/// Uses 10 bits of randomness for clock id
-/// Encoded and decoded as BE bytes (for order preserving).
-/// Stringified as BE bytes encoded with [base32::Alphabet::Crockford]
+/// The purpose of this timestamp is to unique per "user", not globally,
+/// it achieves this by:
+///     1. Override the last byte with a random `clock_id`, reducing the probability
+///         of two matching timestamps across multiple machines/threads.
+///     2. Gurantee that the remaining 3 bytes are ever increasing (monotonic) within
+///         the same thread regardless of the wall clock value
 ///
-/// Valid for the next 500 thousand years!
+/// This timestamp is also serialized as BE bytes to remain sortable.
+/// If a `utf-8` encoding is necessary, it is encoded as [base32::Alphabet::Crockford]
+/// to act as a sortable Id.
+///
+/// U64 of microseconds is valid for the next 500 thousand years!
 #[derive(Debug, Clone, PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub struct Timestamp(u64);
 
@@ -104,12 +105,12 @@ impl TryFrom<String> for Timestamp {
 }
 
 impl TryFrom<&[u8]> for Timestamp {
-    type Error = Error;
+    type Error = TimestampError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let bytes: [u8; 8] = bytes
             .try_into()
-            .map_err(|_| Error::Generic("Timestamp should be 8 bytes".to_string()))?;
+            .map_err(|_| TimestampError::InvalidBytesLength(bytes.len()))?;
 
         Ok(bytes.into())
     }
@@ -150,6 +151,12 @@ fn system_time() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("time drift")
         .as_micros() as u64
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TimestampError {
+    #[error("Invalid bytes length, Timestamp should be encoded as 8 bytes, got {0}")]
+    InvalidBytesLength(usize),
 }
 
 #[cfg(test)]
