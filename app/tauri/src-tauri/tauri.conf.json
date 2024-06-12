@@ -7,7 +7,7 @@
     "withGlobalTauri": false
   },
   "package": {
-    "productName": "tauri",
+    "productName": "pubky",
     "version": "0.0.0"
   },
   "tauri": {
