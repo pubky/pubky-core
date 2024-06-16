@@ -1,6 +1,6 @@
+pub mod auth;
 pub mod crypto;
 pub mod error;
-pub mod homeserver;
 pub mod namespaces;
 pub mod pkarr;
 pub mod time;

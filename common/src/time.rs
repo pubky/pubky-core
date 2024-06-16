@@ -76,6 +76,10 @@ impl Timestamp {
     pub fn difference(&self, rhs: &Timestamp) -> u64 {
         self.0.abs_diff(rhs.0)
     }
+
+    pub fn into_inner(&self) -> u64 {
+        self.0
+    }
 }
 
 impl Display for Timestamp {
@@ -125,6 +129,14 @@ impl From<&Timestamp> for [u8; 8] {
 impl From<[u8; 8]> for Timestamp {
     fn from(bytes: [u8; 8]) -> Self {
         Self(u64::from_be_bytes(bytes))
+    }
+}
+
+// === U64 conversion ===
+
+impl From<Timestamp> for u64 {
+    fn from(value: Timestamp) -> Self {
+        value.into_inner()
     }
 }
 
