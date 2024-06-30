@@ -69,6 +69,7 @@ impl Timestamp {
         DEFAULT_FACTORY.lock().unwrap().now()
     }
 
+    /// Return big endian bytes
     pub fn to_bytes(&self) -> [u8; 8] {
         self.0.to_be_bytes()
     }
@@ -140,7 +141,7 @@ impl From<Timestamp> for u64 {
     }
 }
 
-impl Add<u64> for Timestamp {
+impl Add<u64> for &Timestamp {
     type Output = Timestamp;
 
     fn add(self, rhs: u64) -> Self::Output {
@@ -148,7 +149,7 @@ impl Add<u64> for Timestamp {
     }
 }
 
-impl Sub<u64> for Timestamp {
+impl Sub<u64> for &Timestamp {
     type Output = Timestamp;
 
     fn sub(self, rhs: u64) -> Self::Output {
