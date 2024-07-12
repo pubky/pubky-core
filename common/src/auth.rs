@@ -46,6 +46,7 @@ impl AuthnSignature {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AuthnVerifier {
     audience: PublicKey,
     inner: Arc<Mutex<Vec<[u8; 40]>>>,
@@ -132,14 +133,13 @@ fn verify_at(
     if result.is_ok() {
         let mut inner = verifier.inner.lock().unwrap();
 
-        match inner.binary_search_by(|element| element[0..8].cmp(&time_step_bytes)) {
+        let mut candidate = [0_u8; 40];
+        candidate[..8].copy_from_slice(&time_step_bytes);
+        candidate[8..].copy_from_slice(token_hash);
+
+        match inner.binary_search_by(|element| element.cmp(&candidate)) {
             Ok(index) | Err(index) => {
-                let mut array40: [u8; 40] = [0; 40];
-
-                array40[..8].copy_from_slice(&time_step_bytes);
-                array40[8..].copy_from_slice(token_hash);
-
-                inner.insert(index, array40);
+                inner.insert(index, candidate);
             }
         };
 
