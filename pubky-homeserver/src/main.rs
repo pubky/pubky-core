@@ -7,7 +7,7 @@ async fn main() -> Result<()> {
         .with_env_filter("pubky_homeserver=debug,tower_http=debug")
         .init();
 
-    let server = Homeserver::start().await?;
+    let server = Homeserver::start(Default::default()).await?;
 
     server.run_until_done().await?;
 
