@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.82"
 axum = "0.7.5"
+pkarr = "2.0.3"
 tokio = { version = "1.37.0", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
 tracing = "0.1.40"

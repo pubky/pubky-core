@@ -18,7 +18,7 @@ impl Homeserver {
         let app = app.clone();
 
         let listener = TcpListener::bind(SocketAddr::from((
-            [127, 0, 0, 1],
+            [0, 0, 0, 0],
             6287, // config.port()
         )))
         .await?;

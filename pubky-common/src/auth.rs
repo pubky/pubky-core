@@ -20,7 +20,7 @@ impl AuthnSignature {
         let time: u64 = Timestamp::now().into();
         let time_step = time / TIME_INTERVAL;
 
-        let token_hash = token.map_or(random_hash(), |t| crate::crypto::hash(t));
+        let token_hash = token.map_or(random_hash(), crate::crypto::hash);
 
         let signature = signer
             .sign(&signable(
@@ -80,7 +80,7 @@ impl AuthnVerifier {
         let past = now - TIME_INTERVAL;
         let future = now + TIME_INTERVAL;
 
-        let result = verify_at(now, &self, &signature, signer, &token_hash);
+        let result = verify_at(now, self, &signature, signer, &token_hash);
 
         match result {
             Ok(_) => return Ok(()),
@@ -88,7 +88,7 @@ impl AuthnVerifier {
             _ => {}
         }
 
-        let result = verify_at(past, &self, &signature, signer, &token_hash);
+        let result = verify_at(past, self, &signature, signer, &token_hash);
 
         match result {
             Ok(_) => return Ok(()),
@@ -96,7 +96,7 @@ impl AuthnVerifier {
             _ => {}
         }
 
-        verify_at(future, &self, &signature, signer, &token_hash)
+        verify_at(future, self, &signature, signer, &token_hash)
     }
 
     // === Private Methods ===
