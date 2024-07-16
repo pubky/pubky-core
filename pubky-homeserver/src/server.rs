@@ -4,26 +4,31 @@ use anyhow::{Error, Result};
 use tokio::{net::TcpListener, signal, task::JoinSet};
 use tracing::{info, warn};
 
+use pkarr::{
+    mainline::dht::{DhtSettings, Testnet},
+    PkarrClient, PublicKey, Settings,
+};
+
+use crate::{config::Config, pkarr::publish_server_packet};
+
 #[derive(Debug)]
 pub struct Homeserver {
+    pub(crate) config: Config,
+    port: u16,
     tasks: JoinSet<std::io::Result<()>>,
 }
 
 impl Homeserver {
-    pub async fn start() -> Result<Self> {
+    pub async fn start(config: Config) -> Result<Self> {
         let app = crate::routes::create_app();
 
         let mut tasks = JoinSet::new();
 
         let app = app.clone();
 
-        let listener = TcpListener::bind(SocketAddr::from((
-            [0, 0, 0, 0],
-            6287, // config.port()
-        )))
-        .await?;
+        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port()))).await?;
 
-        let bound_addr = listener.local_addr()?;
+        let port = listener.local_addr()?.port();
 
         // Spawn http server task
         tasks.spawn(
@@ -35,9 +40,44 @@ impl Homeserver {
             .into_future(),
         );
 
-        info!("HTTP server listening on {bound_addr}");
+        info!("Homeserver listening on http://localhost:{port}");
 
-        Ok(Self { tasks })
+        let pkarr_client = PkarrClient::new(Settings {
+            dht: DhtSettings {
+                bootstrap: config.bootstsrap(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })?
+        .as_async();
+
+        publish_server_packet(pkarr_client, config.keypair(), config.domain(), port).await?;
+
+        info!(
+            "Homeserver listening on pubky://{}",
+            config.keypair().public_key()
+        );
+
+        Ok(Self {
+            tasks,
+            config,
+            port,
+        })
+    }
+
+    /// Test version of [Homeserver::start], using mainline Testnet, and a temporary storage.
+    pub async fn start_test(testnet: &Testnet) -> Result<Self> {
+        Homeserver::start(Config::test(testnet)).await
+    }
+
+    // === Getters ===
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.config.keypair().public_key()
     }
 
     // === Public Methods ===

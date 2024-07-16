@@ -19,6 +19,7 @@ pub async fn publish_server_packet(
     // assuming any other domain will point to a reverse proxy
     // at the conventional ports.
     if domain == "localhost" {
+        svcb.priority = 1;
         svcb.set_port(port);
 
         // TODO: Add more parameteres like the signer key!
@@ -26,9 +27,10 @@ pub async fn publish_server_packet(
     };
 
     // TODO: announce A/AAAA records as well for Noise connections?
+    // Or maybe Iroh's magic socket
 
     packet.answers.push(pkarr::dns::ResourceRecord::new(
-        "pubky".try_into().unwrap(),
+        "@".try_into().unwrap(),
         pkarr::dns::CLASS::IN,
         60 * 60,
         pkarr::dns::rdata::RData::SVCB(svcb),

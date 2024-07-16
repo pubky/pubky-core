@@ -1,3 +1,5 @@
+//! Client-server Authentication using signed timesteps
+
 use std::sync::{Arc, Mutex};
 
 use ed25519_dalek::ed25519::SignatureBytes;
@@ -37,8 +39,9 @@ impl AuthnSignature {
         Self(bytes.into())
     }
 
-    pub fn for_token(keypair: &Keypair, audience: &PublicKey, token: &[u8]) -> Self {
-        AuthnSignature::new(keypair, audience, Some(token))
+    /// Sign a randomly generated nonce
+    pub fn generate(keypair: &Keypair, audience: &PublicKey) -> Self {
+        AuthnSignature::new(keypair, audience, None)
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -192,7 +195,7 @@ mod tests {
 
         let verifier = AuthnVerifier::new(audience.clone());
 
-        let authn_signature = AuthnSignature::new(&keypair, &audience, None);
+        let authn_signature = AuthnSignature::generate(&keypair, &audience);
 
         verifier
             .verify(authn_signature.as_bytes(), &signer)

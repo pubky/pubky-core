@@ -1,0 +1,16 @@
+[package]
+name = "pubky"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pubky-common = { version = "0.1.0", path = "../pubky-common" }
+
+pkarr = "2.1.0"
+ureq = "2.10.0"
+thiserror = "1.0.62"
+url = "2.5.2"
+
+[dev-dependencies]
+pubky_homeserver = { path = "../pubky-homeserver" }
+tokio = "1.37.0"
