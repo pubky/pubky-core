@@ -919,6 +919,7 @@ dependencies = [
 name = "pubky"
 version = "0.1.0"
 dependencies = [
+ "flume",
  "pkarr",
  "pubky-common",
  "pubky_homeserver",
@@ -947,6 +948,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "bytes",
  "dirs-next",
  "pkarr",
  "pubky-common",

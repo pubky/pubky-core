@@ -10,6 +10,7 @@ pkarr = "2.1.0"
 ureq = "2.10.0"
 thiserror = "1.0.62"
 url = "2.5.2"
+flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
 
 [dev-dependencies]
 pubky_homeserver = { path = "../pubky-homeserver" }

@@ -1,12 +1,20 @@
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post, put},
+    Router,
+};
 use tower_http::trace::TraceLayer;
 
-pub mod drive;
-pub mod root;
+use crate::server::AppState;
 
-pub fn create_app() -> Router {
+mod auth;
+mod drive;
+mod root;
+
+pub fn create_app(state: AppState) -> Router {
     Router::new()
         .route("/", get(root::handler))
+        .route("/:pubky", put(auth::signup))
         .route("/:pubky/*key", get(drive::put))
         .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }

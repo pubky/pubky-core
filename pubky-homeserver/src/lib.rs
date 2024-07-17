@@ -1,4 +1,7 @@
+#![allow(unused)]
+
 pub mod config;
+mod error;
 mod extractors;
 mod pkarr;
 mod routes;

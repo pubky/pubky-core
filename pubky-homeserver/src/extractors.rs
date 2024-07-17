@@ -10,6 +10,8 @@ use axum::{
 
 use pkarr::PublicKey;
 
+use crate::error::{Error, Result};
+
 #[derive(Debug)]
 pub struct Pubky(PublicKey);
 
@@ -32,11 +34,11 @@ where
 
         let pubky_id = params
             .get("pubky")
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "Pubky not found").into_response())?;
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "pubky param missing").into_response())?;
 
         let public_key = PublicKey::try_from(pubky_id.to_string())
-            // TODO: convert Pkarr errors to app errors, in this case a params validation error
-            .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid Pubky").into_response())?;
+            .map_err(Error::try_from)
+            .map_err(IntoResponse::into_response)?;
 
         Ok(Pubky(public_key))
     }

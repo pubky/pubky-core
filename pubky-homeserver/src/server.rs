@@ -1,6 +1,7 @@
 use std::{future::IntoFuture, net::SocketAddr};
 
 use anyhow::{Error, Result};
+use pubky_common::auth::AuthnVerifier;
 use tokio::{net::TcpListener, signal, task::JoinSet};
 use tracing::{info, warn};
 
@@ -13,14 +14,25 @@ use crate::{config::Config, pkarr::publish_server_packet};
 
 #[derive(Debug)]
 pub struct Homeserver {
-    pub(crate) config: Config,
     port: u16,
+    config: Config,
     tasks: JoinSet<std::io::Result<()>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AppState {
+    pub verifier: AuthnVerifier,
 }
 
 impl Homeserver {
     pub async fn start(config: Config) -> Result<Self> {
-        let app = crate::routes::create_app();
+        let public_key = config.keypair().public_key();
+
+        let state = AppState {
+            verifier: AuthnVerifier::new(public_key.clone()),
+        };
+
+        let app = crate::routes::create_app(state);
 
         let mut tasks = JoinSet::new();
 
@@ -53,10 +65,7 @@ impl Homeserver {
 
         publish_server_packet(pkarr_client, config.keypair(), config.domain(), port).await?;
 
-        info!(
-            "Homeserver listening on pubky://{}",
-            config.keypair().public_key()
-        );
+        info!("Homeserver listening on pubky://{public_key}");
 
         Ok(Self {
             tasks,

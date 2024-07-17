@@ -17,4 +17,13 @@ pub enum Error {
 
     #[error(transparent)]
     Pkarr(#[from] pkarr::Error),
+
+    #[error(transparent)]
+    Flume(#[from] flume::RecvError),
+
+    #[error(transparent)]
+    Ureq(#[from] Box<ureq::Error>),
+
+    #[error(transparent)]
+    Url(#[from] url::ParseError),
 }
