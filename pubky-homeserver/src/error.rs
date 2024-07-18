@@ -6,6 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 use pubky_common::auth::AuthnSignatureError;
+use tracing::debug;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -52,39 +53,47 @@ impl IntoResponse for Error {
 }
 
 impl From<QueryRejection> for Error {
-    fn from(value: QueryRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+    fn from(error: QueryRejection) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }
 
 impl From<ExtensionRejection> for Error {
-    fn from(value: ExtensionRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+    fn from(error: ExtensionRejection) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }
 
 impl From<PathRejection> for Error {
-    fn from(value: PathRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+    fn from(error: PathRejection) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }
 
 impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
+    fn from(error: std::io::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
     }
 }
 
 // === Pubky specific errors ===
 
 impl From<AuthnSignatureError> for Error {
-    fn from(value: AuthnSignatureError) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+    fn from(error: AuthnSignatureError) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }
 
 impl From<pkarr::Error> for Error {
-    fn from(value: pkarr::Error) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+    fn from(error: pkarr::Error) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
+    }
+}
+
+impl From<heed::Error> for Error {
+    fn from(error: heed::Error) -> Self {
+        debug!(?error);
+
+        Self::with_status(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
