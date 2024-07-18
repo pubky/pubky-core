@@ -10,7 +10,7 @@ use pkarr::{
     PkarrClient, PublicKey, Settings,
 };
 
-use crate::{config::Config, pkarr::publish_server_packet};
+use crate::{config::Config, database::DB, pkarr::publish_server_packet};
 
 #[derive(Debug)]
 pub struct Homeserver {
@@ -22,14 +22,18 @@ pub struct Homeserver {
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub verifier: AuthnVerifier,
+    pub db: DB,
 }
 
 impl Homeserver {
     pub async fn start(config: Config) -> Result<Self> {
         let public_key = config.keypair().public_key();
 
+        let db = DB::open(&config.storage()?)?;
+
         let state = AppState {
             verifier: AuthnVerifier::new(public_key.clone()),
+            db,
         };
 
         let app = crate::routes::create_app(state);

@@ -8,6 +8,7 @@ anyhow = "1.0.82"
 axum = "0.7.5"
 bytes = "1.6.1"
 dirs-next = "2.0.0"
+heed = "0.20.3"
 pkarr = { version = "2.1.0", features = ["async"] }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 tokio = { version = "1.37.0", features = ["full"] }

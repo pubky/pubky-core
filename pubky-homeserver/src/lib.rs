@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 pub mod config;
+mod database;
 mod error;
 mod extractors;
 mod pkarr;
