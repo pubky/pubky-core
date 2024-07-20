@@ -15,10 +15,13 @@ pub type SessionsTable = Database<Bytes, Session>;
 
 pub const SESSIONS_TABLE: &str = "sessions";
 
+// TODO: add IP address?
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Session {
     pub created_at: u64,
-    pub name: String,
+    /// User specified name, defaults to the user-agent.
+    pub name: Option<String>,
+    pub user_agent: String,
 }
 
 impl<'a> BytesEncode<'a> for Session {

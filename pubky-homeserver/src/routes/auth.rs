@@ -7,6 +7,8 @@ use axum::{
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
 use bytes::Bytes;
+use heed::BytesEncode;
+use postcard::to_allocvec;
 use tower_cookies::{Cookie, Cookies};
 
 use pubky_common::{
@@ -57,7 +59,8 @@ pub async fn signup(
     // TODO: handle not having a user agent?
     let session = &Session {
         created_at: Timestamp::now().into_inner(),
-        name: user_agent.to_string(),
+        user_agent: user_agent.to_string(),
+        name: None,
     };
 
     sessions.put(&mut wtxn, &session_secret, session)?;
@@ -92,7 +95,11 @@ pub async fn session(
             &base32::decode(base32::Alphabet::Crockford, cookie.value()).unwrap_or_default(),
         )? {
             rtxn.commit()?;
-            return Ok(());
+            // TODO: avoid  decoding then encoding sesison
+            let x: Vec<u8> = to_allocvec::<Session>(&session)
+                .map_err(|_| Error::with_status(StatusCode::INTERNAL_SERVER_ERROR))?;
+
+            return Ok(x);
         };
 
         rtxn.commit()?;

@@ -7,7 +7,7 @@ edition = "2021"
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 
 pkarr = "2.1.0"
-ureq = "2.10.0"
+ureq = { version = "2.10.0", features = ["cookies"] }
 thiserror = "1.0.62"
 url = "2.5.2"
 flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }

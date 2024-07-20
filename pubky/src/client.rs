@@ -65,14 +65,23 @@ impl PubkyClient {
 
     /// Check the current sesison for a given Pubky in its homeserver.
     pub fn session(&self, pubky: &PublicKey) -> Result<()> {
+        // TODO: use https://crates.io/crates/user-agent-parser to parse the session
+        // and get more informations from the user-agent.
+
         let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
 
-        url.set_path(&format!("/{}/sesison", pubky));
+        url.set_path(&format!("/{}/session", pubky));
 
-        let response = self
+        let mut bytes = vec![];
+
+        let reader = self
             .request(HttpMethod::Get, &url)
             .call()
-            .map_err(Box::new)?;
+            .map_err(Box::new)?
+            .into_reader()
+            .read_to_end(&mut bytes);
+
+        // TODO: return the decoded session
 
         Ok(())
     }
