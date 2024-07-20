@@ -12,3 +12,12 @@ pub fn random_hash() -> Hash {
     let mut rng = rand::thread_rng();
     Hash::from_bytes(rng.gen())
 }
+
+pub fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut rng = rand::thread_rng();
+    let mut arr = [0u8; N];
+    for i in 0..N {
+        arr[i] = rng.gen();
+    }
+    arr
+}

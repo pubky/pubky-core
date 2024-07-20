@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.82"
 axum = "0.7.5"
+axum-extra = { version = "0.9.3", features = ["typed-header"] }
+base32 = "0.5.1"
 bytes = "1.6.1"
 dirs-next = "2.0.0"
 heed = "0.20.3"
@@ -14,6 +16,7 @@ postcard = { version = "1.0.8", features = ["alloc"] }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 serde = { version = "1.0.204", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
+tower-cookies = "0.10.0"
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

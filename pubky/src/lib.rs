@@ -25,6 +25,8 @@ mod tests {
         client
             .signup(&keypair, &server.public_key().to_string())
             .await
-            .unwrap()
+            .unwrap();
+
+        let session = client.session(&keypair.public_key()).await.unwrap();
     }
 }

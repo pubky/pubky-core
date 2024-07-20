@@ -63,6 +63,20 @@ impl PubkyClient {
         Ok(())
     }
 
+    /// Check the current sesison for a given Pubky in its homeserver.
+    pub fn session(&self, pubky: &PublicKey) -> Result<()> {
+        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
+
+        url.set_path(&format!("/{}/sesison", pubky));
+
+        let response = self
+            .request(HttpMethod::Get, &url)
+            .call()
+            .map_err(Box::new)?;
+
+        Ok(())
+    }
+
     // === Private Methods ===
 
     /// Publish the SVCB record for `_pubky.<public_key>`.

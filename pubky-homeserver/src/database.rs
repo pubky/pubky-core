@@ -30,6 +30,7 @@ impl DB {
         let mut wtxn = self.env.write_txn()?;
 
         migrations::create_users_table(&self.env, &mut wtxn);
+        migrations::create_sessions_table(&self.env, &mut wtxn);
 
         wtxn.commit()?;
 
