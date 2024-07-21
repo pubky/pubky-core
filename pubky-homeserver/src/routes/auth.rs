@@ -34,41 +34,9 @@ pub async fn signup(
     pubky: Pubky,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
-    let public_key = pubky.public_key();
-
-    state.verifier.verify(&body, public_key)?;
-
-    let mut wtxn = state.db.env.write_txn()?;
-    let users: UsersTable = state.db.env.create_database(&mut wtxn, Some(USERS_TABLE))?;
-
-    users.put(
-        &mut wtxn,
-        public_key,
-        &User {
-            created_at: Timestamp::now().into_inner(),
-        },
-    )?;
-
-    let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
-
-    let sessions: SessionsTable = state
-        .db
-        .env
-        .open_database(&wtxn, Some(SESSIONS_TABLE))?
-        .expect("Sessions table already created");
-
-    // TODO: handle not having a user agent?
-    let mut session = Session::new();
-
-    session.set_user_agent(user_agent.to_string());
-
-    sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
-
-    cookies.add(Cookie::new(public_key.to_string(), session_secret));
-
-    wtxn.commit()?;
-
-    Ok(())
+    // TODO: Verify invitation link.
+    // TODO: add errors in case of already axisting user.
+    signin(State(state), TypedHeader(user_agent), cookies, pubky, body).await
 }
 
 pub async fn session(
@@ -121,4 +89,52 @@ pub async fn signout(
     };
 
     Err(Error::with_status(StatusCode::UNAUTHORIZED))
+}
+
+pub async fn signin(
+    State(state): State<AppState>,
+    TypedHeader(user_agent): TypedHeader<UserAgent>,
+    cookies: Cookies,
+    pubky: Pubky,
+    body: Bytes,
+) -> Result<impl IntoResponse> {
+    let public_key = pubky.public_key();
+
+    state.verifier.verify(&body, public_key)?;
+
+    let mut wtxn = state.db.env.write_txn()?;
+    let users: UsersTable = state.db.env.create_database(&mut wtxn, Some(USERS_TABLE))?;
+
+    if let Some(existing) = users.get(&wtxn, public_key)? {
+        users.put(&mut wtxn, public_key, &existing)?;
+    } else {
+        users.put(
+            &mut wtxn,
+            public_key,
+            &User {
+                created_at: Timestamp::now().into_inner(),
+            },
+        )?;
+    }
+
+    let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
+
+    let sessions: SessionsTable = state
+        .db
+        .env
+        .open_database(&wtxn, Some(SESSIONS_TABLE))?
+        .expect("Sessions table already created");
+
+    // TODO: handle not having a user agent?
+    let mut session = Session::new();
+
+    session.set_user_agent(user_agent.to_string());
+
+    sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
+
+    cookies.add(Cookie::new(public_key.to_string(), session_secret));
+
+    wtxn.commit()?;
+
+    Ok(())
 }

@@ -95,6 +95,21 @@ impl PubkyClient {
         Ok(())
     }
 
+    /// Signin to a homeserver.
+    pub fn signin(&self, keypair: &Keypair) -> Result<()> {
+        let pubky = keypair.public_key();
+
+        let (audience, mut url) = self.resolve_pubky_homeserver(&pubky)?;
+
+        url.set_path(&format!("/{}/session", &pubky));
+
+        self.request(HttpMethod::Post, &url)
+            .send_bytes(AuthnSignature::generate(keypair, &audience).as_bytes())
+            .map_err(Box::new)?;
+
+        Ok(())
+    }
+
     // === Private Methods ===
 
     /// Publish the SVCB record for `_pubky.<public_key>`.

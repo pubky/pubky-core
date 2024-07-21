@@ -47,5 +47,13 @@ mod tests {
                 _ => assert!(false, "expected NotSignedInt error"),
             }
         }
+
+        client.signin(&keypair).await.unwrap();
+
+        {
+            let session = client.session(&keypair.public_key()).await.unwrap();
+
+            assert_eq!(session, Session { ..session.clone() });
+        }
     }
 }

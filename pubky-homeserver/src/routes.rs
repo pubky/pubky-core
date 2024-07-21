@@ -16,6 +16,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/", get(root::handler))
         .route("/:pubky", put(auth::signup))
         .route("/:pubky/session", get(auth::session))
+        .route("/:pubky/session", post(auth::signin))
         .route("/:pubky/session", delete(auth::signout))
         .route("/:pubky/*key", get(drive::put))
         .layer(TraceLayer::new_for_http())

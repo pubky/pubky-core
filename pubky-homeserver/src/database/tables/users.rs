@@ -15,6 +15,7 @@ pub type UsersTable = Database<PublicKeyCodec, User>;
 
 pub const USERS_TABLE: &str = "users";
 
+// TODO: add more adminstration metadata like quota, invitation links, etc..
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct User {
     pub created_at: u64,

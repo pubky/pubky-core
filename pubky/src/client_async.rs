@@ -50,4 +50,16 @@ impl PubkyClientAsync {
 
         receiver.recv_async().await?
     }
+
+    /// Async version of [PubkyClient::signin]
+    pub async fn signin(&self, keypair: &Keypair) -> Result<()> {
+        let (sender, receiver) = flume::bounded::<Result<()>>(1);
+
+        let client = self.0.clone();
+        let keypair = keypair.clone();
+
+        thread::spawn(move || sender.send(client.signin(&keypair)));
+
+        receiver.recv_async().await?
+    }
 }
