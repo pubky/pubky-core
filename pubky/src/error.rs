@@ -26,4 +26,7 @@ pub enum Error {
 
     #[error(transparent)]
     Url(#[from] url::ParseError),
+
+    #[error(transparent)]
+    Session(#[from] pubky_common::session::Error),
 }

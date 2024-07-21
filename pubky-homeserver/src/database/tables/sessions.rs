@@ -1,45 +1,11 @@
 use std::{borrow::Cow, time::SystemTime};
 
-use postcard::{from_bytes, to_allocvec};
-use pubky_common::timestamp::Timestamp;
-use serde::{Deserialize, Serialize};
-
-use heed::{types::Bytes, BoxedError, BytesDecode, BytesEncode, Database};
-use pkarr::PublicKey;
-
-extern crate alloc;
-use alloc::vec::Vec;
+use heed::{
+    types::{Bytes, Str},
+    BoxedError, BytesDecode, BytesEncode, Database,
+};
 
 /// session secret => Session.
-pub type SessionsTable = Database<Bytes, Session>;
+pub type SessionsTable = Database<Str, Bytes>;
 
 pub const SESSIONS_TABLE: &str = "sessions";
-
-// TODO: add IP address?
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
-pub struct Session {
-    pub created_at: u64,
-    /// User specified name, defaults to the user-agent.
-    pub name: Option<String>,
-    pub user_agent: String,
-}
-
-impl<'a> BytesEncode<'a> for Session {
-    type EItem = Self;
-
-    fn bytes_encode(session: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        let vec = to_allocvec(session)?;
-
-        Ok(Cow::Owned(vec))
-    }
-}
-
-impl<'a> BytesDecode<'a> for Session {
-    type DItem = Self;
-
-    fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
-        let sesison: Session = from_bytes(bytes).unwrap();
-
-        Ok(sesison)
-    }
-}

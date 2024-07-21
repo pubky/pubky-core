@@ -8,7 +8,7 @@ use pkarr::{
 use ureq::{Agent, Response};
 use url::Url;
 
-use pubky_common::auth::AuthnSignature;
+use pubky_common::{auth::AuthnSignature, session::Session};
 
 use crate::error::{Error, Result};
 
@@ -64,10 +64,7 @@ impl PubkyClient {
     }
 
     /// Check the current sesison for a given Pubky in its homeserver.
-    pub fn session(&self, pubky: &PublicKey) -> Result<()> {
-        // TODO: use https://crates.io/crates/user-agent-parser to parse the session
-        // and get more informations from the user-agent.
-
+    pub fn session(&self, pubky: &PublicKey) -> Result<Session> {
         let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
 
         url.set_path(&format!("/{}/session", pubky));
@@ -81,9 +78,7 @@ impl PubkyClient {
             .into_reader()
             .read_to_end(&mut bytes);
 
-        // TODO: return the decoded session
-
-        Ok(())
+        Ok(Session::deserialize(&bytes)?)
     }
 
     // === Private Methods ===

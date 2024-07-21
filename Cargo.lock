@@ -1267,7 +1267,9 @@ dependencies = [
  "ed25519-dalek",
  "once_cell",
  "pkarr",
+ "postcard",
  "rand",
+ "serde",
  "thiserror",
 ]
 

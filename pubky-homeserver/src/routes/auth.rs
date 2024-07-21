@@ -13,12 +13,13 @@ use tower_cookies::{Cookie, Cookies};
 
 use pubky_common::{
     crypto::{random_bytes, random_hash},
+    session::Session,
     timestamp::Timestamp,
 };
 
 use crate::{
     database::tables::{
-        sessions::{Session, SessionsTable, SESSIONS_TABLE},
+        sessions::{SessionsTable, SESSIONS_TABLE},
         users::{User, UsersTable, USERS_TABLE},
     },
     error::{Error, Result},
@@ -48,7 +49,7 @@ pub async fn signup(
         },
     )?;
 
-    let session_secret = random_bytes::<16>();
+    let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
 
     let sessions: SessionsTable = state
         .db
@@ -57,18 +58,13 @@ pub async fn signup(
         .expect("Sessions table already created");
 
     // TODO: handle not having a user agent?
-    let session = &Session {
-        created_at: Timestamp::now().into_inner(),
-        user_agent: user_agent.to_string(),
-        name: None,
-    };
+    let mut session = Session::new();
 
-    sessions.put(&mut wtxn, &session_secret, session)?;
+    session.set_user_agent(user_agent.to_string());
 
-    cookies.add(Cookie::new(
-        public_key.to_string(),
-        base32::encode(base32::Alphabet::Crockford, &session_secret),
-    ));
+    sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
+
+    cookies.add(Cookie::new(public_key.to_string(), session_secret));
 
     wtxn.commit()?;
 
@@ -90,16 +86,11 @@ pub async fn session(
             .open_database(&rtxn, Some(SESSIONS_TABLE))?
             .expect("Session table already created");
 
-        if let Some(session) = sessions.get(
-            &rtxn,
-            &base32::decode(base32::Alphabet::Crockford, cookie.value()).unwrap_or_default(),
-        )? {
+        if let Some(session) = sessions.get(&rtxn, cookie.value())? {
+            let session = session.to_owned();
             rtxn.commit()?;
-            // TODO: avoid  decoding then encoding sesison
-            let x: Vec<u8> = to_allocvec::<Session>(&session)
-                .map_err(|_| Error::with_status(StatusCode::INTERNAL_SERVER_ERROR))?;
 
-            return Ok(x);
+            return Ok(session);
         };
 
         rtxn.commit()?;

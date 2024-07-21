@@ -1,6 +1,7 @@
 use std::thread;
 
 use pkarr::{Keypair, PublicKey};
+use pubky_common::session::Session;
 
 use crate::{error::Result, PubkyClient};
 
@@ -21,25 +22,19 @@ impl PubkyClientAsync {
         let keypair = keypair.clone();
         let homeserver = homeserver.to_string();
 
-        thread::spawn(move || {
-            let result = client.signup(&keypair, &homeserver);
-            sender.send(result)
-        });
+        thread::spawn(move || sender.send(client.signup(&keypair, &homeserver)));
 
         receiver.recv_async().await?
     }
 
     /// Async version of [PubkyClient::session]
-    pub async fn session(&self, pubky: &PublicKey) -> Result<()> {
-        let (sender, receiver) = flume::bounded::<Result<()>>(1);
+    pub async fn session(&self, pubky: &PublicKey) -> Result<Session> {
+        let (sender, receiver) = flume::bounded::<Result<Session>>(1);
 
         let client = self.0.clone();
         let pubky = pubky.clone();
 
-        thread::spawn(move || {
-            let result = client.session(&pubky);
-            sender.send(result)
-        });
+        thread::spawn(move || sender.send(client.session(&pubky)));
 
         receiver.recv_async().await?
     }

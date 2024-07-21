@@ -11,6 +11,7 @@ mod tests {
     use super::*;
 
     use pkarr::{mainline::Testnet, Keypair};
+    use pubky_common::session::Session;
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
@@ -28,5 +29,7 @@ mod tests {
             .unwrap();
 
         let session = client.session(&keypair.public_key()).await.unwrap();
+
+        assert_eq!(session, Session { ..session.clone() });
     }
 }
