@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
 use tower_cookies::CookieManagerLayer;
@@ -16,6 +16,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/", get(root::handler))
         .route("/:pubky", put(auth::signup))
         .route("/:pubky/session", get(auth::session))
+        .route("/:pubky/session", delete(auth::signout))
         .route("/:pubky/*key", get(drive::put))
         .layer(TraceLayer::new_for_http())
         .layer(CookieManagerLayer::new())

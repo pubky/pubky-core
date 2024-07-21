@@ -38,4 +38,16 @@ impl PubkyClientAsync {
 
         receiver.recv_async().await?
     }
+
+    /// Async version of [PubkyClient::signout]
+    pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
+        let (sender, receiver) = flume::bounded::<Result<()>>(1);
+
+        let client = self.0.clone();
+        let pubky = pubky.clone();
+
+        thread::spawn(move || sender.send(client.signout(&pubky)));
+
+        receiver.recv_async().await?
+    }
 }

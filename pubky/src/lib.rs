@@ -4,11 +4,14 @@ mod client;
 mod client_async;
 mod error;
 
-use client::PubkyClient;
+pub use client::PubkyClient;
+pub use error::Error;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use super::error::Error;
 
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_common::session::Session;
@@ -31,5 +34,18 @@ mod tests {
         let session = client.session(&keypair.public_key()).await.unwrap();
 
         assert_eq!(session, Session { ..session.clone() });
+
+        client.signout(&keypair.public_key()).await.unwrap();
+
+        {
+            let session = client.session(&keypair.public_key()).await;
+
+            assert!(session.is_err());
+
+            match session {
+                Err(Error::NotSignedIn) => {}
+                _ => assert!(false, "expected NotSignedInt error"),
+            }
+        }
     }
 }

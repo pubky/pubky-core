@@ -16,6 +16,8 @@ pub fn random_hash() -> Hash {
 pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut rng = rand::thread_rng();
     let mut arr = [0u8; N];
+
+    #[allow(clippy::needless_range_loop)]
     for i in 0..N {
         arr[i] = rng.gen();
     }

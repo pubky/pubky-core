@@ -98,3 +98,27 @@ pub async fn session(
 
     Err(Error::with_status(StatusCode::NOT_FOUND))
 }
+
+pub async fn signout(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    pubky: Pubky,
+) -> Result<impl IntoResponse> {
+    if let Some(cookie) = cookies.get(&pubky.public_key().to_string()) {
+        let mut wtxn = state.db.env.write_txn()?;
+
+        let sessions: SessionsTable = state
+            .db
+            .env
+            .open_database(&wtxn, Some(SESSIONS_TABLE))?
+            .expect("Session table already created");
+
+        let _ = sessions.delete(&mut wtxn, cookie.value());
+
+        wtxn.commit()?;
+
+        return Ok(());
+    };
+
+    Err(Error::with_status(StatusCode::UNAUTHORIZED))
+}

@@ -12,6 +12,10 @@ pub enum Error {
     #[error("Generic error: {0}")]
     Generic(String),
 
+    #[error("Not signed in")]
+    NotSignedIn,
+
+    // === Transparent ===
     #[error(transparent)]
     Dns(#[from] SimpleDnsError),
 

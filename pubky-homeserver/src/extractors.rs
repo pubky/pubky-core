@@ -40,6 +40,8 @@ where
             .map_err(Error::try_from)
             .map_err(IntoResponse::into_response)?;
 
+        // TODO: return 404 if the user doesn't exist, but exclude signups.
+
         Ok(Pubky(public_key))
     }
 }

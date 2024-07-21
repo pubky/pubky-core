@@ -71,14 +71,28 @@ impl PubkyClient {
 
         let mut bytes = vec![];
 
-        let reader = self
-            .request(HttpMethod::Get, &url)
-            .call()
-            .map_err(Box::new)?
-            .into_reader()
-            .read_to_end(&mut bytes);
+        let result = self.request(HttpMethod::Get, &url).call().map_err(Box::new);
+
+        if let Ok(reader) = result {
+            reader.into_reader().read_to_end(&mut bytes);
+        } else {
+            return Err(Error::NotSignedIn);
+        }
 
         Ok(Session::deserialize(&bytes)?)
+    }
+
+    /// Signout from a homeserver.
+    pub fn signout(&self, pubky: &PublicKey) -> Result<()> {
+        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
+
+        url.set_path(&format!("/{}/session", pubky));
+
+        self.request(HttpMethod::Delete, &url)
+            .call()
+            .map_err(Box::new)?;
+
+        Ok(())
     }
 
     // === Private Methods ===
@@ -200,6 +214,7 @@ pub enum HttpMethod {
     Get,
     Put,
     Post,
+    Delete,
 }
 
 impl From<HttpMethod> for &str {
@@ -208,6 +223,7 @@ impl From<HttpMethod> for &str {
             HttpMethod::Get => "GET",
             HttpMethod::Put => "PUT",
             HttpMethod::Post => "POST",
+            HttpMethod::Delete => "DELETE",
         }
     }
 }
