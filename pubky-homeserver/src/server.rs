@@ -3,7 +3,7 @@ use std::{future::IntoFuture, net::SocketAddr};
 use anyhow::{Error, Result};
 use pubky_common::auth::AuthnVerifier;
 use tokio::{net::TcpListener, signal, task::JoinSet};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use pkarr::{
     mainline::dht::{DhtSettings, Testnet},
@@ -27,6 +27,8 @@ pub(crate) struct AppState {
 
 impl Homeserver {
     pub async fn start(config: Config) -> Result<Self> {
+        debug!(?config);
+
         let public_key = config.keypair().public_key();
 
         let db = DB::open(&config.storage()?)?;
