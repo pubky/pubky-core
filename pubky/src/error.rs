@@ -34,3 +34,9 @@ pub enum Error {
     #[error(transparent)]
     Session(#[from] pubky_common::session::Error),
 }
+
+impl From<ureq::Error> for Error {
+    fn from(error: ureq::Error) -> Self {
+        Error::Ureq(Box::new(error))
+    }
+}
