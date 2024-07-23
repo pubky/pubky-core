@@ -27,15 +27,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{pubky}/{path}"));
 
-        let result = self.request(super::HttpMethod::Get, &url).call();
-
-        if let Err(error) = result {
-            dbg!(&error);
-
-            return Err(error)?;
-        }
-
-        let response = result.unwrap();
+        let response = self.request(super::HttpMethod::Get, &url).call()?;
 
         let len = response
             .header("Content-Length")
@@ -45,7 +37,7 @@ impl PubkyClient {
 
         // TODO: bail on too large files.
 
-        let mut bytes = Vec::with_capacity(len as usize);
+        let mut bytes = vec![0; len as usize];
 
         response.into_reader().read_exact(&mut bytes);
 
@@ -102,14 +94,17 @@ mod tests {
             }
         }
 
-        let response = client.get(&keypair.public_key(), "/pub/foo.txt").await;
+        let response = client
+            .get(&keypair.public_key(), "/pub/foo.txt")
+            .await
+            .unwrap();
 
-        if let Err(Error::Ureq(ureqerror)) = response {
-            if let Some(r) = ureqerror.into_response() {
-                dbg!(r.into_string());
-            }
-        }
+        // if let Err(Error::Ureq(ureqerror)) = response {
+        //     if let Some(r) = ureqerror.into_response() {
+        //         dbg!(r.into_string());
+        //     }
+        // }
 
-        // dbg!(response);
+        assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]))
     }
 }

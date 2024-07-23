@@ -1250,6 +1250,7 @@ dependencies = [
 name = "pubky"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "flume",
  "pkarr",
  "pubky-common",

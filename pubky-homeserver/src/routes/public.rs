@@ -23,7 +23,7 @@ use crate::{
 };
 
 pub async fn put(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     pubky: Pubky,
     path: EntryPath,
     mut body: Body,
@@ -45,43 +45,7 @@ pub async fn put(
 
         // TODO: Authorize
 
-        let mut wtxn = state.db.env.write_txn()?;
-        let blobs: BlobsTable = state
-            .db
-            .env
-            .open_database(&wtxn, Some(BLOBS_TABLE))?
-            .expect("Blobs table already created");
-
-        let entries: EntriesTable = state
-            .db
-            .env
-            .open_database(&wtxn, Some(ENTRIES_TABLE))?
-            .expect("Entries table already created");
-
-        let mut hasher = Hasher::new();
-        let mut bytes = vec![];
-        let mut length = 0;
-
-        while let Ok(chunk) = rx.recv() {
-            hasher.update(&chunk);
-            bytes.extend_from_slice(&chunk);
-            length += chunk.len();
-        }
-
-        let hash = hasher.finalize();
-
-        blobs.put(&mut wtxn, hash.as_bytes(), &bytes)?;
-
-        let mut entry = Entry::new();
-
-        entry.set_content_hash(hash);
-        entry.set_content_length(length);
-
-        let mut key = vec![];
-        key.extend_from_slice(public_key.as_bytes());
-        key.extend_from_slice(path.as_bytes());
-
-        entries.put(&mut wtxn, &key, &entry.serialize());
+        state.db.put_entry(public_key, path.as_str(), rx);
 
         Ok(())
     });
@@ -101,7 +65,7 @@ pub async fn put(
 }
 
 pub async fn get(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     pubky: Pubky,
     path: EntryPath,
 ) -> Result<impl IntoResponse> {
@@ -111,39 +75,9 @@ pub async fn get(
 
     let public_key = pubky.public_key();
 
-    let mut rtxn = state.db.env.read_txn()?;
-
-    let entries: EntriesTable = state
-        .db
-        .env
-        .open_database(&rtxn, Some(ENTRIES_TABLE))?
-        .expect("Entries table already created");
-
-    let blobs: BlobsTable = state
-        .db
-        .env
-        .open_database(&rtxn, Some(BLOBS_TABLE))?
-        .expect("Blobs table already created");
-
-    let mut count = 0;
-
-    for x in entries.iter(&rtxn)? {
-        count += 1
+    match state.db.get_blob(public_key, path.as_str()) {
+        Err(error) => Err(error)?,
+        Ok(Some(bytes)) => Ok(bytes),
+        Ok(None) => Err(Error::with_status(StatusCode::NOT_FOUND)),
     }
-
-    return Err(Error::new(StatusCode::NOT_FOUND, count.to_string().into()));
-
-    let mut key = vec![];
-    key.extend_from_slice(public_key.as_bytes());
-    key.extend_from_slice(path.as_bytes());
-
-    if let Some(bytes) = entries.get(&rtxn, &key)? {
-        let entry = Entry::deserialize(bytes)?;
-
-        if let Some(blob) = blobs.get(&rtxn, entry.content_hash())? {
-            return Ok(blob.to_vec());
-        };
-    };
-
-    Err(Error::new(StatusCode::NOT_FOUND, path.0.into()))
 }

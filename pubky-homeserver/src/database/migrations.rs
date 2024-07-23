@@ -2,16 +2,16 @@ use heed::{types::Str, Database, Env, RwTxn};
 
 mod m0;
 
-use super::tables;
+use super::tables::Tables;
 
-pub const TABLES_COUNT: u32 = 4;
-
-pub fn run(env: &Env) -> anyhow::Result<()> {
+pub fn run(env: &Env) -> anyhow::Result<Tables> {
     let mut wtxn = env.write_txn()?;
 
     m0::run(env, &mut wtxn);
 
+    let tables = Tables::new(env, &mut wtxn)?;
+
     wtxn.commit()?;
 
-    Ok(())
+    Ok(tables)
 }

@@ -78,6 +78,6 @@ impl Entry {
             panic!("Unknown Entry version");
         }
 
-        Ok(from_bytes(bytes)?)
+        from_bytes(bytes)
     }
 }
