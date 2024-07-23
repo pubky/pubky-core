@@ -19,21 +19,10 @@ impl DB {
 
         let env = unsafe { EnvOpenOptions::new().max_dbs(TABLES_COUNT).open(storage) }?;
 
+        migrations::run(&env);
+
         let db = DB { env };
 
-        db.run_migrations();
-
         Ok(db)
-    }
-
-    fn run_migrations(&self) -> anyhow::Result<()> {
-        let mut wtxn = self.env.write_txn()?;
-
-        migrations::create_users_table(&self.env, &mut wtxn);
-        migrations::create_sessions_table(&self.env, &mut wtxn);
-
-        wtxn.commit()?;
-
-        Ok(())
     }
 }

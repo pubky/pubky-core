@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, post, put},
     Router,
 };
@@ -18,8 +19,11 @@ pub fn create_app(state: AppState) -> Router {
         .route("/:pubky/session", get(auth::session))
         .route("/:pubky/session", post(auth::signin))
         .route("/:pubky/session", delete(auth::signout))
-        .route("/:pubky/*key", get(drive::put))
+        .route("/:pubky/*key", put(drive::put))
         .layer(TraceLayer::new_for_http())
         .layer(CookieManagerLayer::new())
+        // TODO: revisit if we enable streaming big payloads
+        // TODO: maybe add to a separate router (drive router?).
+        .layer(DefaultBodyLimit::max(16 * 1024))
         .with_state(state)
 }

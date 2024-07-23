@@ -2,7 +2,6 @@ use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::get,
     Router,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
@@ -103,7 +102,11 @@ pub async fn signin(
     state.verifier.verify(&body, public_key)?;
 
     let mut wtxn = state.db.env.write_txn()?;
-    let users: UsersTable = state.db.env.create_database(&mut wtxn, Some(USERS_TABLE))?;
+    let users: UsersTable = state
+        .db
+        .env
+        .open_database(&wtxn, Some(USERS_TABLE))?
+        .expect("Users table already created");
 
     if let Some(existing) = users.get(&wtxn, public_key)? {
         users.put(&mut wtxn, public_key, &existing)?;

@@ -40,13 +40,16 @@ impl Config {
 
     /// Test configurations
     pub fn test(testnet: &pkarr::mainline::Testnet) -> Self {
+        let bootstrap = Some(testnet.bootstrap.to_owned());
+        let storage = Some(
+            std::env::temp_dir()
+                .join(Timestamp::now().to_string())
+                .join(DEFAULT_STORAGE_DIR),
+        );
+
         Self {
-            bootstrap: Some(testnet.bootstrap.to_owned()),
-            storage: Some(
-                std::env::temp_dir()
-                    .join(Timestamp::now().to_string())
-                    .join(DEFAULT_STORAGE_DIR),
-            ),
+            bootstrap,
+            storage,
             ..Default::default()
         }
     }
