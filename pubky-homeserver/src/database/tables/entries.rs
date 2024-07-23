@@ -7,10 +7,10 @@ use heed::{
     BoxedError, BytesDecode, BytesEncode, Database,
 };
 
-use pubky_common::crypto::Hash;
+use pubky_common::{crypto::Hash, timestamp::Timestamp};
 
 /// full_path(pubky/*path) => Entry.
-pub type EntriesTable = Database<Hash, Entry>;
+pub type EntriesTable = Database<Bytes, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
 
@@ -30,7 +30,10 @@ pub struct Entry {
 
 impl Entry {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            timestamp: Timestamp::now().into_inner(),
+            ..Default::default()
+        }
     }
 
     // === Setters ===
@@ -62,5 +65,19 @@ impl Entry {
 
     pub fn content_type(&self) -> &str {
         &self.content_type
+    }
+
+    // === Public Method ===
+
+    pub fn serialize(&self) -> Vec<u8> {
+        to_allocvec(self).expect("Session::serialize")
+    }
+
+    pub fn deserialize(bytes: &[u8]) -> core::result::Result<Self, postcard::Error> {
+        if bytes[0] > 0 {
+            panic!("Unknown Entry version");
+        }
+
+        Ok(from_bytes(bytes)?)
     }
 }

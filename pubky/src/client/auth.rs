@@ -16,8 +16,7 @@ impl PubkyClient {
         url.set_path(&format!("/{}", keypair.public_key()));
 
         self.request(HttpMethod::Put, &url)
-            .send_bytes(AuthnSignature::generate(keypair, &audience).as_bytes())
-            .map_err(Box::new)?;
+            .send_bytes(AuthnSignature::generate(keypair, &audience).as_bytes())?;
 
         self.publish_pubky_homeserver(keypair, homeserver);
 
@@ -25,6 +24,9 @@ impl PubkyClient {
     }
 
     /// Check the current sesison for a given Pubky in its homeserver.
+    ///
+    /// Returns an [Error::NotSignedIn] if so, or [ureq::Error] if
+    /// the response has any other `>=400` status code.
     pub fn session(&self, pubky: &PublicKey) -> Result<Session> {
         let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
 
@@ -34,11 +36,15 @@ impl PubkyClient {
 
         let result = self.request(HttpMethod::Get, &url).call().map_err(Box::new);
 
-        if let Ok(reader) = result {
-            reader.into_reader().read_to_end(&mut bytes);
-        } else {
-            return Err(Error::NotSignedIn);
-        }
+        let reader = self.request(HttpMethod::Get, &url).call().map_err(|err| {
+            match err {
+                ureq::Error::Status(404, _) => Error::NotSignedIn,
+                // TODO: handle other types of errors
+                _ => err.into(),
+            }
+        })?;
+
+        reader.into_reader().read_to_end(&mut bytes);
 
         Ok(Session::deserialize(&bytes)?)
     }

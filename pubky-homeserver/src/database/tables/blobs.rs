@@ -5,9 +5,7 @@ use heed::{
     BoxedError, BytesDecode, BytesEncode, Database,
 };
 
-use pubky_common::crypto::Hash;
-
 /// hash of the blob => bytes.
-pub type BlobsTable = Database<Hash, Bytes>;
+pub type BlobsTable = Database<Bytes, Bytes>;
 
 pub const BLOBS_TABLE: &str = "blobs";

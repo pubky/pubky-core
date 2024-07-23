@@ -9,7 +9,7 @@ use tower_http::trace::TraceLayer;
 use crate::server::AppState;
 
 mod auth;
-mod drive;
+mod public;
 mod root;
 
 pub fn create_app(state: AppState) -> Router {
@@ -19,7 +19,8 @@ pub fn create_app(state: AppState) -> Router {
         .route("/:pubky/session", get(auth::session))
         .route("/:pubky/session", post(auth::signin))
         .route("/:pubky/session", delete(auth::signout))
-        .route("/:pubky/*key", put(drive::put))
+        .route("/:pubky/*path", put(public::put))
+        .route("/:pubky/*path", get(public::get))
         .layer(TraceLayer::new_for_http())
         .layer(CookieManagerLayer::new())
         // TODO: revisit if we enable streaming big payloads
