@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    // Declarations control
+    "target": "esnext",
+    "module": "esnext",
+
+    "noEmitOnError": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": true,
+    "isolatedModules": true,
+
+    "incremental": true,
+    "composite": true,
+
+    // Check control
+    "strict": false,
+    "allowJs": true,
+    "checkJs": true,
+
+    // module resolution
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+
+    // advanced
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+
+    "outDir": "types"
+  },
+  "include": ["src", "lib"]
+}
