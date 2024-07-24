@@ -1252,6 +1252,8 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "flume",
+ "futures",
+ "js-sys",
  "pkarr",
  "pubky-common",
  "pubky_homeserver",
@@ -1259,6 +1261,9 @@ dependencies = [
  "tokio",
  "ureq",
  "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
