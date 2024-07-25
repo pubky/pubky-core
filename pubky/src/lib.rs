@@ -24,7 +24,7 @@ if_not_wasm! {
 }
 
 if_wasm! {
-mod wasm;
+    mod wasm;
 
-pub use wasm::{PubkyClient, Keypair};
+    pub use wasm::{PubkyClient, Keypair};
 }

@@ -1,0 +1,17 @@
+{
+  "scripts": {
+    "start": "vite serve"
+  },
+  "dependencies": {
+    "@synonymdev/pubky": "file:../../../pubky/pkg",
+
+    "@solidjs/router": "^0.10.9",
+    "solid-js": "^1.7.0" 
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5",
+    "vite": "^4.1.4",
+    "vite-plugin-html": "^3.2.0",
+    "vite-plugin-solid": "^2.10.2"
+  }
+}

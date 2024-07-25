@@ -60,14 +60,25 @@ async fn fetch_base(
     }
 
     let js_request = web_sys::Request::new_with_str_and_init(url, &opts)?;
-    // .map_err(|error| Error::JsError(error))?;
 
     let window = web_sys::window().unwrap();
     let response = JsFuture::from(window.fetch_with_request(&js_request)).await?;
-    // .map_err(|error| Error::JsError(error))?;
 
     let response: web_sys::Response = response.dyn_into()?;
-    // .map_err(|error| Error::JsError(error))?
 
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+    use super::*;
+
+    #[wasm_bindgen_test]
+    async fn basic() {
+        // let client = PubkyClient::new();
+    }
 }

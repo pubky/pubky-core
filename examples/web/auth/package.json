@@ -1,0 +1,23 @@
+{
+  "private": "true",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "vite serve",
+    "preview": "vite preview",
+    "wasm": "wasm-pack build ../../../pubky/ --target web"
+  },
+  "dependencies": {
+    "@synonymdev/pubky": "file:../../../pubky/pkg",
+
+    "@solidjs/router": "^0.10.9",
+    "solid-js": "^1.7.0",
+    "vite-plugin-solid": "^2.10.2"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5",
+    "vite": "^4.1.4",
+    "vite-plugin-html": "^3.2.0"
+  }
+}
