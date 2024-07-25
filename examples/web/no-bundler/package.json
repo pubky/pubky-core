@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "start": "vite serve"
+    "start": "vite serve",
+    "preinstall": "cargo run --bin bundle_pubky_npm"
   },
   "dependencies": {
     "@synonymdev/pubky": "file:../../../pubky/pkg",

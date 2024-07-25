@@ -1,3 +1,4 @@
+use std::env;
 use std::io;
 use std::process::{Command, ExitStatus};
 
@@ -11,9 +12,12 @@ fn main() {
 }
 
 fn build_wasm(target: &str) -> io::Result<ExitStatus> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+
     let output = Command::new("wasm-pack")
         .args([
             "build",
+            &manifest_dir,
             "--release",
             "--target",
             target,
@@ -38,8 +42,11 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
 }
 
 fn patch() -> io::Result<ExitStatus> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+
+    println!("{manifest_dir}/src/bin/patch.mjs");
     let output = Command::new("node")
-        .args(["./src/bin/patch.mjs"])
+        .args([format!("{manifest_dir}/src/bin/patch.mjs")])
         .output()?;
 
     println!(
@@ -49,7 +56,7 @@ fn patch() -> io::Result<ExitStatus> {
 
     if !output.status.success() {
         eprintln!(
-            "wasm-pack failed: {}",
+            "patch.mjs failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
