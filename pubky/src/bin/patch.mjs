@@ -3,12 +3,17 @@
 // Based on hacks from [this issue](https://github.com/rustwasm/wasm-pack/issues/1334)
 
 import { readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from 'node:url';
+import path, { dirname } from 'node:path';
 
-const cargoTomlContent = await readFile("./Cargo.toml", "utf8");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const cargoTomlContent = await readFile(path.join(__dirname, "../../Cargo.toml"), "utf8");
 const cargoPackageName = /\[package\]\nname = "(.*?)"/.exec(cargoTomlContent)[1]
 const name = cargoPackageName.replace(/-/g, '_')
 
-const content = await readFile(`./pkg/nodejs/${name}.js`, "utf8");
+const content = await readFile(path.join(__dirname, `../../pkg/nodejs/${name}.js`), "utf8");
 
 const patched = content
   // use global TextDecoder TextEncoder
@@ -46,9 +51,9 @@ var __toBinary = /* @__PURE__ */ (() => {
   };
 })();
 
-const bytes = __toBinary(${JSON.stringify(await readFile(`./pkg/nodejs/${name}_bg.wasm`, "base64"))
+const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `../../pkg/nodejs/${name}_bg.wasm`), "base64"))
     });
 `,
   );
 
-await writeFile(`./pkg/${name}.mjs`, patched);
+await writeFile(path.join(__dirname, `../../pkg/${name}.mjs`), patched);

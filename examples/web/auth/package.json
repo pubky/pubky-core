@@ -6,7 +6,7 @@
     "build": "vite build",
     "start": "vite serve",
     "preview": "vite preview",
-    "wasm": "wasm-pack build ../../../pubky/ --target web"
+    "preinstall": "cargo run --bin bundle_pubky_npm"
   },
   "dependencies": {
     "@synonymdev/pubky": "file:../../../pubky/pkg",
