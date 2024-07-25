@@ -1,0 +1,30 @@
+{
+  "private": "true",
+  "type": "module",
+  "source": "src/index.html",
+  "browserslist": "> 0.5%, last 2 versions, not dead",
+  "scripts": {
+    "start": "parcel -p 7251",
+    "serve": "npm run start",
+    "build": "parcel build",
+    "lint": "standard --fix"
+  },
+  "standard": {
+    "ignore": [
+      "src/pages",
+      "src/components",
+      "dist"
+    ]
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.10.9",
+    "parcel": "^2.0.1",
+    "@synonymdev/pubky": "file:../../../pubky/pkg",
+    "solid-js": "^1.7.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.9",
+    "babel-preset-solid": "^1.2.5",
+    "solid-refresh": "^0.2.2"
+  }
+}

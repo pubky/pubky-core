@@ -2,6 +2,10 @@
 name = "pubky"
 version = "0.1.0"
 edition = "2021"
+description = "Pubky client"
+license = "MIT"
+repository = "https://github.com/pubky/pubky"
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -36,7 +40,13 @@ web-sys = { version = "0.3.69", features = [
 pubky_homeserver = { path = "../pubky-homeserver" }
 tokio = "1.37.0"
 
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.42"
+
 [features]
 async = ["flume/async"]
 
 default = ["async"]
+
+[package.metadata.docs.rs]
+all-features = true

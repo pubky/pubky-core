@@ -1,0 +1,137 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  min-width: 320px;
+}
+
+body,
+#app {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem 1rem 0;
+  font-family: 'IBM Plex Sans', Helvetica, sans-serif;
+}
+
+.button {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.button:disabled {
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+main {
+  height: 100%;
+  margin: 1rem 0;
+}
+
+footer {
+  text-align: center;
+  color: #666;
+  padding: 1rem 0;
+  border-top: 1px solid #ddd;
+  margin-top: 1rem;
+}
+
+footer p,
+footer a {
+  font-size: 0.8rem !important;
+  padding-bottom: 0.3rem;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+a {
+  color: #000;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.button.primary {
+  background: black;
+  color: white;
+
+  min-width: 90px;
+  width: 100%;
+
+  padding: 0.4rem 0.8rem;
+  border: 2px solid #000;
+}
+
+.button.primary:hover {
+  background: #222;
+}
+
+.divider {
+  background: #333;
+  height: 1px;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+}
+
+label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+form input {
+  font-size: 1rem;
+  width: 100%;
+  height: 2rem;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  border-bottom: 1px solid #ddd;
+}
+
+form input:focus {
+  outline: none;
+  border-bottom: 2px solid #000;
+}
+
+label.checkbox {
+  display: flex;
+  font-weight: normal;
+  line-height: 1rem;
+}
+
+label.checkbox input {
+  width: 1rem;
+  margin: 0 0.5rem 0 0;
+}
+label.checkbox:focus-within {
+  outline: 1px solid;
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@synonymdev/pubky",
+  "type": "module",
+  "description": "Pubky client",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pubky/pubky"
+  },
+  "files": [
+    "nodejs/*",
+    "pupky.mjs"
+  ],
+  "main": "nodejs/pubky.js",
+  "browser": "pubky.mjs",
+  "types": "pubky.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "web",
+    "dht",
+    "dns",
+    "decentralized",
+    "identity"
+  ]
+}
