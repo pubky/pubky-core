@@ -7,9 +7,9 @@ use std::{collections::HashMap, fmt::format, time::Duration};
 use ureq::{Agent, Response};
 use url::Url;
 
-use crate::error::{Error, Result};
-
 use pkarr::{DhtSettings, PkarrClient, Settings, Testnet};
+
+use crate::error::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct PubkyClient {
@@ -39,8 +39,6 @@ impl PubkyClient {
             .unwrap(),
         }
     }
-
-    // === Public Methods ===
 
     // === Private Methods ===
 

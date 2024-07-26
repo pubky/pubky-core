@@ -1,9 +1,8 @@
-use crate::PubkyClient;
+use pkarr::{Keypair, PublicKey};
 
 use pubky_common::{auth::AuthnSignature, session::Session};
 
-use super::{Error, HttpMethod, Result};
-use pkarr::{Keypair, PublicKey};
+use super::{Error, HttpMethod, PubkyClient, Result};
 
 impl PubkyClient {
     /// Signup to a homeserver and update Pkarr accordingly.

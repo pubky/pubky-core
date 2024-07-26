@@ -14,18 +14,21 @@ macro_rules! if_wasm {
     )*}
 }
 
-mod error;
-pub use error::Error;
-
 if_not_wasm! {
     mod client;
     mod client_async;
 
-    pub use client::PubkyClient;
+    use pkarr::{PkarrClient};
+    use ureq::{Agent, Response};
+    use url::Url;
 }
 
 if_wasm! {
     mod wasm;
 
-    pub use wasm::{PubkyClient, Keypair};
+    pub use wasm::keys::Keypair;
+    pub use wasm::PubkyClient;
 }
+
+mod error;
+pub use error::Error;
