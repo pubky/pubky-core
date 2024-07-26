@@ -56,4 +56,4 @@ const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `.
 `,
   );
 
-await writeFile(path.join(__dirname, `../../pkg/${name}.mjs`), patched);
+await writeFile(path.join(__dirname, `../../pkg/browser.js`), patched);
