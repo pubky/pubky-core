@@ -112,7 +112,7 @@ mod tests {
 
             match session {
                 Err(Error::NotSignedIn) => {}
-                _ => assert!(false, "expected NotSignedInt error"),
+                _ => panic!("expected NotSignedInt error"),
             }
         }
 

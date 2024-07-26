@@ -18,9 +18,7 @@ if_not_wasm! {
     mod client;
     mod client_async;
 
-    use pkarr::{PkarrClient};
-    use ureq::{Agent, Response};
-    use url::Url;
+    use client::PubkyClient;
 }
 
 if_wasm! {
