@@ -11,7 +11,7 @@ pub struct Error {}
 
 #[wasm_bindgen]
 pub struct PubkyClient {
-    pkarr: PkarrRelayClient,
+    pub(crate) pkarr: PkarrRelayClient,
 }
 
 #[wasm_bindgen]

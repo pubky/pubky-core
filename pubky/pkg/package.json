@@ -11,6 +11,7 @@
   "scripts": {
     "lint": "standard --fix",
     "test": "brittle test/*.js -cov",
+    "preinstall": "cargo run --bin bundle_pubky_npm",
     "prepublishOnly": "npm run lint && npm run test"
   },
   "files": [

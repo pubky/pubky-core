@@ -14,13 +14,14 @@ macro_rules! if_wasm {
     )*}
 }
 
+mod error;
+pub use error::Error;
+
 if_not_wasm! {
     mod client;
     mod client_async;
-    mod error;
 
     pub use client::PubkyClient;
-    pub use error::Error;
 }
 
 if_wasm! {
