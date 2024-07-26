@@ -8,12 +8,18 @@
     "type": "git",
     "url": "https://github.com/pubky/pubky"
   },
+  "scripts": {
+    "lint": "standard --fix",
+    "test": "brittle test/*.js -cov",
+    "prepublishOnly": "npm run lint && npm run test"
+  },
   "files": [
     "nodejs/*",
-    "pupky.mjs"
+    "index.js",
+    "browser.js"
   ],
-  "main": "nodejs/pubky.js",
-  "browser": "pubky.mjs",
+  "main": "index.js",
+  "browser": "browser.js",
   "types": "pubky.d.ts",
   "sideEffects": [
     "./snippets/*"
@@ -24,5 +30,9 @@
     "dns",
     "decentralized",
     "identity"
-  ]
+  ],
+  "devDependencies": {
+    "brittle": "^3.6.1",
+    "standard": "^17.1.0"
+  }
 }
