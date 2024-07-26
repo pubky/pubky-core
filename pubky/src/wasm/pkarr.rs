@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 
 pub use pkarr::{
     dns::{rdata::SVCB, Packet},
-    Keypair, PublicKey, SignedPacket,
+    Keypair, PkarrRelayClient, PublicKey, SignedPacket,
 };
 
 use crate::error::Result;

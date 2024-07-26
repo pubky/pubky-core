@@ -4,15 +4,7 @@ use web_sys::RequestMode;
 
 use pkarr::PkarrRelayClient;
 
-use super::Keypair;
-
-#[wasm_bindgen]
-pub struct Error {}
-
-#[wasm_bindgen]
-pub struct PubkyClient {
-    pub(crate) pkarr: PkarrRelayClient,
-}
+use super::{keys::Keypair, PubkyClient};
 
 #[wasm_bindgen]
 impl PubkyClient {

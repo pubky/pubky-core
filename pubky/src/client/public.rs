@@ -2,9 +2,7 @@ use bytes::Bytes;
 
 use pkarr::PublicKey;
 
-use crate::PubkyClient;
-
-use super::Result;
+use super::{PubkyClient, Result};
 
 impl PubkyClient {
     pub fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {

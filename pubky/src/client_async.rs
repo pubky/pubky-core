@@ -5,7 +5,7 @@ use bytes::Bytes;
 use pkarr::{Keypair, PublicKey};
 use pubky_common::session::Session;
 
-use crate::{error::Result, PubkyClient};
+use crate::{client::PubkyClient, error::Result};
 
 pub struct PubkyClientAsync(PubkyClient);
 
