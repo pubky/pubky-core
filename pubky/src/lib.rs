@@ -29,4 +29,6 @@ if_wasm! {
 }
 
 mod error;
+mod shared;
+
 pub use error::Error;

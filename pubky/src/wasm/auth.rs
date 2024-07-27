@@ -8,19 +8,12 @@ use super::{keys::Keypair, PubkyClient};
 
 #[wasm_bindgen]
 impl PubkyClient {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self {
-            pkarr: PkarrRelayClient::default(),
-        }
-    }
-
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
     #[wasm_bindgen]
-    pub fn signup(&self, secret_key: Keypair, homeserver: &str) -> Result<(), JsValue> {
+    pub async fn signup(&self, keypair: &Keypair, homeserver: &str) -> Result<(), JsError> {
         // let (audience, mut url) = self.resolve_endpoint(homeserver)?;
 
         // url.set_path(&format!("/{}", keypair.public_key()));
@@ -29,7 +22,7 @@ impl PubkyClient {
 
         // fetch_base(url.to_string(), "PUT", body).await?;
 
-        // self.publish_pubky_homeserver(keypair, homeserver);
+        self.publish_pubky_homeserver(keypair, homeserver).await?;
 
         Ok(())
     }

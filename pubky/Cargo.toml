@@ -13,12 +13,13 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pkarr = "2.1.0"
 thiserror = "1.0.62"
+wasm-bindgen = "0.2.92"
+url = "2.5.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 
 ureq = { version = "2.10.0", features = ["cookies"] }
-url = "2.5.2"
 flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
 bytes = "1.6.1"
 

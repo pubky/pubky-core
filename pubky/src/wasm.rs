@@ -8,3 +8,13 @@ pub mod pkarr;
 pub struct PubkyClient {
     pub(crate) pkarr: pkarr::PkarrRelayClient,
 }
+
+#[wasm_bindgen]
+impl PubkyClient {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            pkarr: pkarr::PkarrRelayClient::default(),
+        }
+    }
+}
