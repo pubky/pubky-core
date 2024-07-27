@@ -23,16 +23,15 @@ pub enum Error {
     Pkarr(#[from] pkarr::Error),
 
     #[error(transparent)]
+    Url(#[from] url::ParseError),
+
+    #[error(transparent)]
     #[cfg(not(target_arch = "wasm32"))]
     Flume(#[from] flume::RecvError),
 
     #[error(transparent)]
     #[cfg(not(target_arch = "wasm32"))]
     Ureq(#[from] Box<ureq::Error>),
-
-    #[error(transparent)]
-    #[cfg(not(target_arch = "wasm32"))]
-    Url(#[from] url::ParseError),
 
     #[error(transparent)]
     #[cfg(not(target_arch = "wasm32"))]

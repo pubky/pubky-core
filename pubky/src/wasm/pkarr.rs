@@ -2,14 +2,13 @@ use wasm_bindgen::prelude::*;
 
 pub use pkarr::{
     dns::{rdata::SVCB, Packet},
-    Keypair, PkarrRelayClient, PublicKey, SignedPacket,
+    PkarrRelayClient, PublicKey, SignedPacket,
 };
 
 use crate::error::Result;
+use crate::shared::pkarr::{format_url, parse_pubky_svcb, prepare_packet_for_signup};
 
-use super::PubkyClient;
-
-// TODO: Share more code with the non-wasm client.
+use super::{keys::Keypair, PubkyClient};
 
 impl PubkyClient {
     /// Publish the SVCB record for `_pubky.<public_key>`.
@@ -18,26 +17,9 @@ impl PubkyClient {
         keypair: &Keypair,
         host: &str,
     ) -> Result<()> {
-        let mut packet = Packet::new_reply(0);
+        let existing = self.pkarr.resolve(&keypair.public_key().as_inner()).await?;
 
-        if let Some(existing) = self.pkarr.resolve(&keypair.public_key()).await? {
-            for answer in existing.packet().answers.iter().cloned() {
-                if !answer.name.to_string().starts_with("_pubky") {
-                    packet.answers.push(answer.into_owned())
-                }
-            }
-        }
-
-        let svcb = SVCB::new(0, host.try_into()?);
-
-        packet.answers.push(pkarr::dns::ResourceRecord::new(
-            "_pubky".try_into().unwrap(),
-            pkarr::dns::CLASS::IN,
-            60 * 60,
-            pkarr::dns::rdata::RData::SVCB(svcb),
-        ));
-
-        let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
+        let signed_packet = prepare_packet_for_signup(keypair.as_inner(), host, existing)?;
 
         self.pkarr.publish(&signed_packet).await?;
 

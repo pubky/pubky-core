@@ -27,6 +27,12 @@ impl Keypair {
     }
 }
 
+impl Keypair {
+    pub fn as_inner(&self) -> &pkarr::Keypair {
+        &self.0
+    }
+}
+
 #[wasm_bindgen]
 pub struct PublicKey(pkarr::PublicKey);
 
@@ -41,5 +47,11 @@ impl PublicKey {
     #[wasm_bindgen]
     pub fn to_string(&self) -> String {
         self.0.to_string()
+    }
+}
+
+impl PublicKey {
+    pub fn as_inner(&self) -> &pkarr::PublicKey {
+        &self.0
     }
 }
