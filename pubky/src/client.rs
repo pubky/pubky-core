@@ -1,6 +1,6 @@
 mod auth;
 mod pkarr;
-// mod public;
+mod public;
 
 use std::{collections::HashMap, fmt::format, time::Duration};
 
