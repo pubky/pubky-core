@@ -5,41 +5,31 @@ use pkarr::PublicKey;
 use super::{PubkyClient, Result};
 
 impl PubkyClient {
-    pub fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
+    pub async fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
         let path = normalize_path(path);
 
-        let (_, mut url) = self.resolve_pubky_homeserver(pubky)?;
+        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{pubky}/{path}"));
 
-        self.request(super::HttpMethod::Put, &url)
-            .send_bytes(content)?;
+        self.http.put(url).body(content.to_owned()).send().await?;
 
         Ok(())
     }
 
-    pub fn get(&self, pubky: &PublicKey, path: &str) -> Result<Bytes> {
+    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<Bytes> {
         let path = normalize_path(path);
 
-        let (_, mut url) = self.resolve_pubky_homeserver(pubky)?;
+        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{pubky}/{path}"));
 
-        let response = self.request(super::HttpMethod::Get, &url).call()?;
-
-        let len = response
-            .header("Content-Length")
-            .and_then(|s| s.parse::<u64>().ok())
-            // TODO: return an error in case content-length header is missing
-            .unwrap_or(0);
+        let response = self.http.get(url).send().await?;
 
         // TODO: bail on too large files.
+        let bytes = response.bytes().await?;
 
-        let mut bytes = vec![0; len as usize];
-
-        response.into_reader().read_exact(&mut bytes);
-
-        Ok(bytes.into())
+        Ok(bytes)
     }
 }
 
@@ -85,12 +75,6 @@ mod tests {
         let response = client
             .put(&keypair.public_key(), "/pub/foo.txt", &[0, 1, 2, 3, 4])
             .await;
-
-        if let Err(Error::Ureq(ureqerror)) = response {
-            if let Some(r) = ureqerror.into_response() {
-                dbg!(r.into_string());
-            }
-        }
 
         let response = client
             .get(&keypair.public_key(), "/pub/foo.txt")
