@@ -30,17 +30,9 @@ pub enum Error {
     Flume(#[from] flume::RecvError),
 
     #[error(transparent)]
-    #[cfg(not(target_arch = "wasm32"))]
-    Ureq(#[from] Box<ureq::Error>),
+    Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]
     #[cfg(not(target_arch = "wasm32"))]
     Session(#[from] pubky_common::session::Error),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl From<ureq::Error> for Error {
-    fn from(error: ureq::Error) -> Self {
-        Error::Ureq(Box::new(error))
-    }
 }

@@ -73,7 +73,7 @@ mod tests {
         let testnet = Testnet::new(3);
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet).as_async();
+        let client = PubkyClient::test(&testnet);
 
         let keypair = Keypair::random();
 

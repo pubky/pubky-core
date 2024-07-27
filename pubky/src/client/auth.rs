@@ -1,23 +1,27 @@
-use pkarr::{Keypair, PublicKey};
+use reqwest::StatusCode;
 
+use pkarr::{Keypair, PublicKey};
 use pubky_common::{auth::AuthnSignature, session::Session};
 
-use super::{Error, HttpMethod, PubkyClient, Result};
+use super::{Error, PubkyClient, Result};
 
 impl PubkyClient {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub fn signup(&self, keypair: &Keypair, homeserver: &str) -> Result<()> {
-        let (audience, mut url) = self.resolve_endpoint(homeserver)?;
+    pub async fn signup(&self, keypair: &Keypair, homeserver: &str) -> Result<()> {
+        let (audience, mut url) = self.resolve_endpoint(homeserver).await?;
 
         url.set_path(&format!("/{}", keypair.public_key()));
 
-        self.request(HttpMethod::Put, &url)
-            .send_bytes(AuthnSignature::generate(keypair, &audience).as_bytes())?;
+        let body = AuthnSignature::generate(keypair, &audience)
+            .as_bytes()
+            .to_owned();
 
-        self.publish_pubky_homeserver(keypair, homeserver);
+        self.http.put(url).body(body).send().await?;
+
+        self.publish_pubky_homeserver(keypair, homeserver).await?;
 
         Ok(())
     }
@@ -26,52 +30,50 @@ impl PubkyClient {
     ///
     /// Returns an [Error::NotSignedIn] if so, or [ureq::Error] if
     /// the response has any other `>=400` status code.
-    pub fn session(&self, pubky: &PublicKey) -> Result<Session> {
-        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
+    pub async fn session(&self, pubky: &PublicKey) -> Result<Session> {
+        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
-        let mut bytes = vec![];
+        let res = self.http.get(url).send().await?;
 
-        let result = self.request(HttpMethod::Get, &url).call().map_err(Box::new);
+        if res.status() == StatusCode::NOT_FOUND {
+            return Err(Error::NotSignedIn);
+        }
 
-        let reader = self.request(HttpMethod::Get, &url).call().map_err(|err| {
-            match err {
-                ureq::Error::Status(404, _) => Error::NotSignedIn,
-                // TODO: handle other types of errors
-                _ => err.into(),
-            }
-        })?;
+        if !res.status().is_success() {
+            res.error_for_status_ref()?;
+        };
 
-        reader.into_reader().read_to_end(&mut bytes);
+        let bytes = res.bytes().await?;
 
         Ok(Session::deserialize(&bytes)?)
     }
 
     /// Signout from a homeserver.
-    pub fn signout(&self, pubky: &PublicKey) -> Result<()> {
-        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky)?;
+    pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
+        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
-        self.request(HttpMethod::Delete, &url)
-            .call()
-            .map_err(Box::new)?;
+        self.http.delete(url).send().await?;
 
         Ok(())
     }
 
     /// Signin to a homeserver.
-    pub fn signin(&self, keypair: &Keypair) -> Result<()> {
+    pub async fn signin(&self, keypair: &Keypair) -> Result<()> {
         let pubky = keypair.public_key();
 
-        let (audience, mut url) = self.resolve_pubky_homeserver(&pubky)?;
+        let (audience, mut url) = self.resolve_pubky_homeserver(&pubky).await?;
 
         url.set_path(&format!("/{}/session", &pubky));
 
-        self.request(HttpMethod::Post, &url)
-            .send_bytes(AuthnSignature::generate(keypair, &audience).as_bytes())
-            .map_err(Box::new)?;
+        let body = AuthnSignature::generate(keypair, &audience)
+            .as_bytes()
+            .to_owned();
+
+        self.http.post(url).body(body).send().await?;
 
         Ok(())
     }
@@ -90,7 +92,7 @@ mod tests {
         let testnet = Testnet::new(3);
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet).as_async();
+        let client = PubkyClient::test(&testnet);
 
         let keypair = Keypair::random();
 

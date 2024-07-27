@@ -1,33 +1,42 @@
 mod auth;
 mod pkarr;
-mod public;
+// mod public;
 
 use std::{collections::HashMap, fmt::format, time::Duration};
 
-use ureq::{Agent, Response};
+use ::pkarr::PkarrClientAsync;
 use url::Url;
 
 use pkarr::{DhtSettings, PkarrClient, Settings, Testnet};
 
 use crate::error::{Error, Result};
 
+static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
+
 #[derive(Debug, Clone)]
 pub struct PubkyClient {
-    agent: Agent,
-    pkarr: PkarrClient,
+    http: reqwest::Client,
+    pkarr: PkarrClientAsync,
 }
 
 impl PubkyClient {
     pub fn new() -> Self {
         Self {
-            agent: Agent::new(),
-            pkarr: PkarrClient::new(Default::default()).unwrap(),
+            http: reqwest::Client::builder()
+                .user_agent(DEFAULT_USER_AGENT)
+                .build()
+                .unwrap(),
+            pkarr: PkarrClient::new(Default::default()).unwrap().as_async(),
         }
     }
 
     pub fn test(testnet: &Testnet) -> Self {
         Self {
-            agent: Agent::new(),
+            http: reqwest::Client::builder()
+                .cookie_store(true)
+                .user_agent(DEFAULT_USER_AGENT)
+                .build()
+                .unwrap(),
             pkarr: PkarrClient::new(Settings {
                 dht: DhtSettings {
                     request_timeout: Some(Duration::from_millis(10)),
@@ -36,38 +45,14 @@ impl PubkyClient {
                 },
                 ..Settings::default()
             })
-            .unwrap(),
+            .unwrap()
+            .as_async(),
         }
-    }
-
-    // === Private Methods ===
-
-    fn request(&self, method: HttpMethod, url: &Url) -> ureq::Request {
-        self.agent.request_url(method.into(), url)
     }
 }
 
 impl Default for PubkyClient {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum HttpMethod {
-    Get,
-    Put,
-    Post,
-    Delete,
-}
-
-impl From<HttpMethod> for &str {
-    fn from(value: HttpMethod) -> Self {
-        match value {
-            HttpMethod::Get => "GET",
-            HttpMethod::Put => "PUT",
-            HttpMethod::Post => "POST",
-            HttpMethod::Delete => "DELETE",
-        }
     }
 }
