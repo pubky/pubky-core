@@ -16,7 +16,6 @@ macro_rules! if_wasm {
 
 if_not_wasm! {
     mod client;
-    mod client_async;
 
     use client::PubkyClient;
 }
