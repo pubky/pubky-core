@@ -41,10 +41,6 @@ pub fn create_app(state: AppState) -> Router {
     base(state.clone())
         // TODO: Only enable this for test environments?
         .nest("/pkarr", pkarr_router(state))
-        .layer(
-            CorsLayer::new()
-                .allow_methods([Method::GET, Method::PUT, Method::POST, Method::DELETE])
-                .allow_origin(cors::Any),
-        )
+        .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
 }

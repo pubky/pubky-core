@@ -9,7 +9,7 @@ pub struct Keypair(pkarr::Keypair);
 impl Keypair {
     #[wasm_bindgen]
     /// Generate a random [Keypair]
-    pub fn random(secret_key: js_sys::Uint8Array) -> Self {
+    pub fn random() -> Self {
         Self(pkarr::Keypair::random())
     }
 

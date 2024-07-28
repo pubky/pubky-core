@@ -1,16 +1,13 @@
 use reqwest::StatusCode;
-use url::Url;
-use wasm_bindgen::prelude::*;
 
-pub use pkarr::{
-    dns::{rdata::SVCB, Packet},
-    Keypair, PublicKey, SignedPacket,
-};
+pub use pkarr::{PublicKey, SignedPacket};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::PubkyClient;
 
 const TEST_RELAY: &str = "http://localhost:15411/pkarr";
+
+// TODO: Add an in memory cache of packets
 
 impl PubkyClient {
     //TODO: Allow multiple relays in parallel

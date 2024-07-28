@@ -12,9 +12,6 @@ pub enum Error {
     #[error("Generic error: {0}")]
     Generic(String),
 
-    #[error("Not signed in")]
-    NotSignedIn,
-
     // === Transparent ===
     #[error(transparent)]
     Dns(#[from] SimpleDnsError),
@@ -29,7 +26,6 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]
-    #[cfg(not(target_arch = "wasm32"))]
     Session(#[from] pubky_common::session::Error),
 
     #[error("Could not resolve endpoint for {0}")]
@@ -37,7 +33,7 @@ pub enum Error {
 }
 
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_bindgen::JsValue;
 
 #[cfg(target_arch = "wasm32")]
 impl From<Error> for JsValue {

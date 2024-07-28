@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.82"
-axum = "0.7.5"
+axum = { version = "0.7.5", features = ["macros"] }
 axum-extra = { version = "0.9.3", features = ["typed-header", "async-read-body"] }
 base32 = "0.5.1"
 bytes = "1.6.1"
