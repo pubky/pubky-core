@@ -43,9 +43,6 @@ web-sys = { version = "0.3.69", features = [
 pubky_homeserver = { path = "../pubky-homeserver" }
 tokio = "1.37.0"
 
-[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = "0.3.42"
-
 [features]
 
 [package.metadata.docs.rs]

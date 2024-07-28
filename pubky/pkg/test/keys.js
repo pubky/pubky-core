@@ -1,4 +1,4 @@
-import test from 'brittle'
+import test from 'tape'
 
 import { Keypair } from '../index.js'
 
