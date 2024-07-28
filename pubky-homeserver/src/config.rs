@@ -1,9 +1,9 @@
 //! Configuration for the server
 
 use anyhow::{anyhow, Result};
-use pkarr::Keypair;
+use pkarr::{mainline::dht::DhtSettings, Keypair};
 // use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, path::PathBuf};
+use std::{fmt::Debug, path::PathBuf, time::Duration};
 
 use pubky_common::timestamp::Timestamp;
 
@@ -18,14 +18,15 @@ const DEFAULT_STORAGE_DIR: &str = "pubky";
     Clone,
 )]
 pub struct Config {
-    port: Option<u16>,
-    bootstrap: Option<Vec<String>>,
-    domain: String,
+    pub port: Option<u16>,
+    pub bootstrap: Option<Vec<String>>,
+    pub domain: String,
     /// Path to the storage directory
     ///
     /// Defaults to a directory in the OS data directory
-    storage: Option<PathBuf>,
-    keypair: Keypair,
+    pub storage: Option<PathBuf>,
+    pub keypair: Keypair,
+    pub request_timeout: Option<Duration>,
 }
 
 impl Config {
@@ -50,6 +51,7 @@ impl Config {
         Self {
             bootstrap,
             storage,
+            request_timeout: Some(Duration::from_millis(10)),
             ..Default::default()
         }
     }
@@ -93,6 +95,7 @@ impl Default for Config {
             domain: "localhost".to_string(),
             storage: None,
             keypair: Keypair::random(),
+            request_timeout: None,
         }
     }
 }

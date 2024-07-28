@@ -2,35 +2,39 @@ use std::{collections::HashMap, sync::RwLock};
 
 use axum::{
     body::{Body, Bytes},
+    extract::State,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, put},
     Router,
 };
 use futures_util::stream::StreamExt;
-use once_cell::sync::OnceCell;
 
 use pkarr::{PublicKey, SignedPacket};
+use tracing::debug;
 
 use crate::{
     error::{Error, Result},
     extractors::Pubky,
+    server::AppState,
 };
-
-// TODO: maybe replace after we have local storage of users packets?
-static IN_MEMORY: OnceCell<RwLock<HashMap<PublicKey, SignedPacket>>> = OnceCell::new();
 
 /// Pkarr relay, helpful for testing.
 ///
 /// For real productioin, you should use a [production ready
 /// relay](https://github.com/pubky/pkarr/server).
-pub fn pkarr_router() -> Router {
+pub fn pkarr_router(state: AppState) -> Router {
     Router::new()
-        .route("/pkarr/:pubky", put(pkarr_put))
-        .route("/pkarr/:pubky", get(pkarr_get))
+        .route("/:pubky", put(pkarr_put))
+        .route("/:pubky", get(pkarr_get))
+        .with_state(state)
 }
 
-pub async fn pkarr_put(pubky: Pubky, body: Body) -> Result<impl IntoResponse> {
+pub async fn pkarr_put(
+    State(mut state): State<AppState>,
+    pubky: Pubky,
+    body: Body,
+) -> Result<impl IntoResponse> {
     let mut bytes = Vec::with_capacity(1104);
 
     let mut stream = body.into_data_stream();
@@ -43,25 +47,13 @@ pub async fn pkarr_put(pubky: Pubky, body: Body) -> Result<impl IntoResponse> {
 
     let signed_packet = SignedPacket::from_relay_payload(&public_key, &Bytes::from(bytes))?;
 
-    let mut store = IN_MEMORY
-        .get()
-        .expect("In memory pkarr store is not initialized")
-        .write()
-        .unwrap();
-
-    store.insert(public_key, signed_packet);
+    state.pkarr_client.publish(&signed_packet).await?;
 
     Ok(())
 }
 
-pub async fn pkarr_get(pubky: Pubky) -> Result<impl IntoResponse> {
-    let store = IN_MEMORY
-        .get()
-        .expect("In memory pkarr store is not initialized")
-        .read()
-        .unwrap();
-
-    if let Some(signed_packet) = store.get(pubky.public_key()) {
+pub async fn pkarr_get(State(state): State<AppState>, pubky: Pubky) -> Result<impl IntoResponse> {
+    if let Some(signed_packet) = state.pkarr_client.resolve(pubky.public_key()).await? {
         return Ok(signed_packet.to_relay_payload());
     }
 

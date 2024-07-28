@@ -3,15 +3,20 @@ use reqwest::StatusCode;
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{auth::AuthnSignature, session::Session};
 
-use super::{Error, PubkyClient, Result};
+use crate::{
+    error::{Error, Result},
+    PubkyClient,
+};
 
 impl PubkyClient {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &str) -> Result<()> {
-        let (audience, mut url) = self.resolve_endpoint(homeserver).await?;
+    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<()> {
+        let homeserver = homeserver.to_string();
+
+        let (audience, mut url) = self.resolve_endpoint(&homeserver).await?;
 
         url.set_path(&format!("/{}", keypair.public_key()));
 
@@ -21,7 +26,7 @@ impl PubkyClient {
 
         self.http.put(url).body(body).send().await?;
 
-        self.publish_pubky_homeserver(keypair, homeserver).await?;
+        self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
         Ok(())
     }
@@ -96,10 +101,7 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client
-            .signup(&keypair, &server.public_key().to_string())
-            .await
-            .unwrap();
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let session = client.session(&keypair.public_key()).await.unwrap();
 

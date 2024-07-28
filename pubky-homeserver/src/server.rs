@@ -1,13 +1,16 @@
-use std::{future::IntoFuture, net::SocketAddr};
+use std::{
+    collections::HashMap, future::IntoFuture, net::SocketAddr, num::NonZeroUsize, sync::Arc,
+};
 
 use anyhow::{Error, Result};
+use lru::LruCache;
 use pubky_common::auth::AuthnVerifier;
-use tokio::{net::TcpListener, signal, task::JoinSet};
+use tokio::{net::TcpListener, signal, sync::Mutex, task::JoinSet};
 use tracing::{debug, info, warn};
 
 use pkarr::{
     mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PublicKey, Settings,
+    PkarrClient, PkarrClientAsync, PublicKey, Settings, SignedPacket,
 };
 
 use crate::{config::Config, database::DB, pkarr::publish_server_packet};
@@ -23,6 +26,7 @@ pub struct Homeserver {
 pub(crate) struct AppState {
     pub verifier: AuthnVerifier,
     pub db: DB,
+    pub pkarr_client: PkarrClientAsync,
 }
 
 impl Homeserver {
@@ -33,9 +37,20 @@ impl Homeserver {
 
         let db = DB::open(&config.storage()?)?;
 
+        let pkarr_client = PkarrClient::new(Settings {
+            dht: DhtSettings {
+                bootstrap: config.bootstsrap(),
+                request_timeout: config.request_timeout,
+                ..Default::default()
+            },
+            ..Default::default()
+        })?
+        .as_async();
+
         let state = AppState {
             verifier: AuthnVerifier::new(public_key.clone()),
             db,
+            pkarr_client: pkarr_client.clone(),
         };
 
         let app = crate::routes::create_app(state);
@@ -59,15 +74,6 @@ impl Homeserver {
         );
 
         info!("Homeserver listening on http://localhost:{port}");
-
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: config.bootstsrap(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })?
-        .as_async();
 
         publish_server_packet(pkarr_client, config.keypair(), config.domain(), port).await?;
 

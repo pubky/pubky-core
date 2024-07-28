@@ -4,11 +4,7 @@ pub mod auth;
 pub mod keys;
 pub mod pkarr;
 
-#[wasm_bindgen]
-pub struct PubkyClient {
-    pub(crate) http: reqwest::Client,
-    pub(crate) pkarr: pkarr::PkarrRelayClient,
-}
+use crate::PubkyClient;
 
 #[wasm_bindgen]
 impl PubkyClient {
@@ -16,7 +12,7 @@ impl PubkyClient {
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::new(),
-            pkarr: pkarr::PkarrRelayClient::default(),
+            // pkarr: pkarr::PkarrRelayClient::default(),
         }
     }
 }

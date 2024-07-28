@@ -1,12 +1,15 @@
 import test from 'brittle'
-import z32 from 'z32'
 
-import App from '@pubky/homeserver/test/helper/app.js'
-
-import Client from '../src/index.js'
+import { PubkyClient, Keypair, PublicKey } from '../index.js'
 
 test('seed auth', async (t) => {
-  // const homeserver = await App(t)
+
+  let client = new PubkyClient();
+
+  let keypair = Keypair.random();
+  let homeserver = PublicKey.try_from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
+
+  await client.signup(keypair, homeserver);
 
   // const client = new Client(
   //   homeserver.homeserver.pkarr.serverPkarr.publicKey(),

@@ -11,20 +11,22 @@ keywords = ["web", "dht", "dns", "decentralized", "identity"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pkarr = "2.1.0"
 thiserror = "1.0.62"
 wasm-bindgen = "0.2.92"
 url = "2.5.2"
 reqwest = { version = "0.12.5", features = ["cookies"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-pubky-common = { version = "0.1.0", path = "../pubky-common" }
-
-ureq = { version = "2.10.0", features = ["cookies"] }
-flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
 bytes = "1.6.1"
 
+pubky-common = { version = "0.1.0", path = "../pubky-common" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pkarr = { version="2.1.0", features = ["async"] }
+
+flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+pkarr = { version = "2.1.0", default-features = false }
+
 futures = "0.3.29"
 js-sys = "0.3.69"
 wasm-bindgen = "0.2.92"

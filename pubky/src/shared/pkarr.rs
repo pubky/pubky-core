@@ -87,6 +87,7 @@ pub fn parse_pubky_svcb(
 }
 
 pub fn format_url(
+    original_target: &str,
     homeserver_public_key: Option<PublicKey>,
     host: String,
 ) -> Result<(PublicKey, Url)> {
@@ -100,5 +101,5 @@ pub fn format_url(
         return Ok((homeserver, Url::parse(&url)?));
     }
 
-    Err(Error::Generic("Could not resolve endpoint".to_string()))
+    Err(Error::ResolveEndpoint(original_target.into()))
 }
