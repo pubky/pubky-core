@@ -26,10 +26,6 @@ pub enum Error {
     Url(#[from] url::ParseError),
 
     #[error(transparent)]
-    #[cfg(not(target_arch = "wasm32"))]
-    Flume(#[from] flume::RecvError),
-
-    #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]
