@@ -8,11 +8,14 @@ use tower_http::trace::TraceLayer;
 
 use crate::server::AppState;
 
+use self::pkarr::pkarr_router;
+
 mod auth;
+mod pkarr;
 mod public;
 mod root;
 
-pub fn create_app(state: AppState) -> Router {
+fn base(state: AppState) -> Router {
     Router::new()
         .route("/", get(root::handler))
         .route("/:pubky", put(auth::signup))
@@ -27,4 +30,8 @@ pub fn create_app(state: AppState) -> Router {
         // TODO: maybe add to a separate router (drive router?).
         .layer(DefaultBodyLimit::max(16 * 1024))
         .with_state(state)
+}
+
+pub fn create_app(state: AppState) -> Router {
+    base(state).merge(pkarr_router())
 }

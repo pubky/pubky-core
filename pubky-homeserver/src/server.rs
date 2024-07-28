@@ -82,6 +82,8 @@ impl Homeserver {
 
     /// Test version of [Homeserver::start], using mainline Testnet, and a temporary storage.
     pub async fn start_test(testnet: &Testnet) -> Result<Self> {
+        info!("Running testnet..");
+
         Homeserver::start(Config::test(testnet)).await
     }
 
