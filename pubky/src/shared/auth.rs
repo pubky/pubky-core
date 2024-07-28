@@ -1,4 +1,4 @@
-use reqwest::StatusCode;
+use reqwest::{Method, StatusCode};
 
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{auth::AuthnSignature, session::Session};
@@ -13,7 +13,11 @@ impl PubkyClient {
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<()> {
+    pub(crate) async fn inner_signup(
+        &self,
+        keypair: &Keypair,
+        homeserver: &PublicKey,
+    ) -> Result<()> {
         let homeserver = homeserver.to_string();
 
         let (audience, mut url) = self.resolve_endpoint(&homeserver).await?;
@@ -24,7 +28,7 @@ impl PubkyClient {
             .as_bytes()
             .to_owned();
 
-        self.http.put(url).body(body).send().await?;
+        self.request(Method::PUT, url).body(body).send().await?;
 
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
@@ -33,17 +37,17 @@ impl PubkyClient {
 
     /// Check the current sesison for a given Pubky in its homeserver.
     ///
-    /// Returns an [Error::NotSignedIn] if so, or [reqwest::Error] if
-    /// the response has any other `>=400` status code.
-    pub async fn session(&self, pubky: &PublicKey) -> Result<Session> {
-        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky).await?;
+    /// Returns None  if not signed in, or [reqwest::Error]
+    /// if the response has any other `>=404` status code.
+    pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
+        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
-        let res = self.http.get(url).send().await?;
+        let res = self.request(Method::GET, url).send().await?;
 
         if res.status() == StatusCode::NOT_FOUND {
-            return Err(Error::NotSignedIn);
+            return Ok(None);
         }
 
         if !res.status().is_success() {
@@ -52,22 +56,22 @@ impl PubkyClient {
 
         let bytes = res.bytes().await?;
 
-        Ok(Session::deserialize(&bytes)?)
+        Ok(Some(Session::deserialize(&bytes)?))
     }
 
     /// Signout from a homeserver.
-    pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
-        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky).await?;
+    pub async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
+        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
-        self.http.delete(url).send().await?;
+        self.request(Method::DELETE, url).send().await?;
 
         Ok(())
     }
 
     /// Signin to a homeserver.
-    pub async fn signin(&self, keypair: &Keypair) -> Result<()> {
+    pub async fn inner_signin(&self, keypair: &Keypair) -> Result<()> {
         let pubky = keypair.public_key();
 
         let (audience, mut url) = self.resolve_pubky_homeserver(&pubky).await?;
@@ -78,7 +82,7 @@ impl PubkyClient {
             .as_bytes()
             .to_owned();
 
-        self.http.post(url).body(body).send().await?;
+        self.request(Method::POST, url).body(body).send().await?;
 
         Ok(())
     }
@@ -86,11 +90,15 @@ impl PubkyClient {
 
 #[cfg(test)]
 mod tests {
+
+    use std::time::Duration;
+
     use crate::*;
 
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_common::session::Session;
     use pubky_homeserver::Homeserver;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn basic_authn() {
@@ -103,27 +111,30 @@ mod tests {
 
         client.signup(&keypair, &server.public_key()).await.unwrap();
 
-        let session = client.session(&keypair.public_key()).await.unwrap();
+        let session = client
+            .session(&keypair.public_key())
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(session, Session { ..session.clone() });
 
         client.signout(&keypair.public_key()).await.unwrap();
 
         {
-            let session = client.session(&keypair.public_key()).await;
+            let session = client.session(&keypair.public_key()).await.unwrap();
 
-            assert!(session.is_err());
-
-            match session {
-                Err(Error::NotSignedIn) => {}
-                _ => panic!("expected NotSignedInt error"),
-            }
+            assert!(session.is_none());
         }
 
         client.signin(&keypair).await.unwrap();
 
         {
-            let session = client.session(&keypair.public_key()).await.unwrap();
+            let session = client
+                .session(&keypair.public_key())
+                .await
+                .unwrap()
+                .unwrap();
 
             assert_eq!(session, Session { ..session.clone() });
         }

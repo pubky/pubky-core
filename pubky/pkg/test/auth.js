@@ -3,30 +3,28 @@ import test from 'tape'
 import { PubkyClient, Keypair, PublicKey } from '../index.js'
 
 test('seed auth', async (t) => {
+  const client = new PubkyClient()
 
-  let client = new PubkyClient();
+  const keypair = Keypair.random()
+  const publicKey = keypair.public_key()
 
-  let keypair = Keypair.random();
+  const homeserver = PublicKey.try_from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+  await client.signup(keypair, homeserver)
 
-  let homeserver = PublicKey.try_from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
-  await client.signup(keypair, homeserver);
+  const session = await client.session(publicKey)
+  t.ok(session)
 
-  t.ok(true);
+  {
+    await client.signout(publicKey)
 
-  // const session = await client.session()
-  // t.ok(session)
-  //
-  // {
-  //   await client.logout(userId)
-  //
-  //   const session = await client.session()
-  //   t.absent(session?.users?.[userId])
-  // }
-  //
-  // {
-  //   await client.login(seed)
-  //
-  //   const session = await client.session()
-  //   t.ok(session?.users[userId])
-  // }
+    const session = await client.session(publicKey)
+    t.notOk(session)
+  }
+
+  {
+    await client.signin(keypair)
+
+    const session = await client.session(publicKey)
+    t.ok(session)
+  }
 })

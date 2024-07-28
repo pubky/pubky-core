@@ -50,12 +50,10 @@ fn normalize_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
 
     use crate::*;
 
     use pkarr::{mainline::Testnet, Keypair};
-    use pubky_common::session::Session;
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
@@ -69,9 +67,10 @@ mod tests {
 
         client.signup(&keypair, &server.public_key()).await.unwrap();
 
-        let response = client
+        client
             .put(&keypair.public_key(), "/pub/foo.txt", &[0, 1, 2, 3, 4])
-            .await;
+            .await
+            .unwrap();
 
         let response = client
             .get(&keypair.public_key(), "/pub/foo.txt")

@@ -1,6 +1,7 @@
 use axum::{
+    debug_handler,
     extract::{Request, State},
-    http::{HeaderMap, StatusCode},
+    http::{uri::Scheme, HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     Router,
 };
@@ -8,7 +9,7 @@ use axum_extra::{headers::UserAgent, TypedHeader};
 use bytes::Bytes;
 use heed::BytesEncode;
 use postcard::to_allocvec;
-use tower_cookies::{Cookie, Cookies};
+use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
 use pubky_common::{
     crypto::{random_bytes, random_hash},
@@ -26,16 +27,26 @@ use crate::{
     server::AppState,
 };
 
+#[debug_handler]
 pub async fn signup(
     State(state): State<AppState>,
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     cookies: Cookies,
     pubky: Pubky,
+    uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
-    signin(State(state), TypedHeader(user_agent), cookies, pubky, body).await
+    signin(
+        State(state),
+        TypedHeader(user_agent),
+        cookies,
+        pubky,
+        uri,
+        body,
+    )
+    .await
 }
 
 pub async fn session(
@@ -57,6 +68,7 @@ pub async fn session(
             let session = session.to_owned();
             rtxn.commit()?;
 
+            // TODO: add content-type
             return Ok(session);
         };
 
@@ -95,6 +107,7 @@ pub async fn signin(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     cookies: Cookies,
     pubky: Pubky,
+    uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key();
@@ -135,7 +148,15 @@ pub async fn signin(
 
     sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
 
-    cookies.add(Cookie::new(public_key.to_string(), session_secret));
+    let mut cookie = Cookie::new(public_key.to_string(), session_secret);
+    cookie.set_path("/");
+    if *uri.scheme().unwrap_or(&Scheme::HTTP) == Scheme::HTTPS {
+        cookie.set_secure(true);
+        cookie.set_same_site(SameSite::None);
+    }
+    cookie.set_http_only(true);
+
+    cookies.add(cookie);
 
     wtxn.commit()?;
 
