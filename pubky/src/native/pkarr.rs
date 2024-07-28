@@ -5,75 +5,21 @@ use pkarr::{
     Keypair, PublicKey, SignedPacket,
 };
 
-use crate::shared::pkarr::{format_url, parse_pubky_svcb, prepare_packet_for_signup};
-
 use crate::{
     error::{Error, Result},
     PubkyClient,
 };
 
 impl PubkyClient {
-    /// Publish the SVCB record for `_pubky.<public_key>`.
-    pub(crate) async fn publish_pubky_homeserver(
+    pub(crate) async fn pkarr_resolve(
         &self,
-        keypair: &Keypair,
-        host: &str,
-    ) -> Result<()> {
-        let existing = self.pkarr.resolve(&keypair.public_key()).await?;
-
-        let signed_packet = prepare_packet_for_signup(keypair, host, existing)?;
-
-        self.pkarr.publish(&signed_packet).await?;
-
-        Ok(())
+        public_key: &PublicKey,
+    ) -> Result<Option<SignedPacket>> {
+        Ok(self.pkarr.resolve(public_key).await?)
     }
 
-    /// Resolve the homeserver for a pubky.
-    pub(crate) async fn resolve_pubky_homeserver(
-        &self,
-        pubky: &PublicKey,
-    ) -> Result<(PublicKey, Url)> {
-        let target = format!("_pubky.{}", pubky);
-
-        self.resolve_endpoint(&target)
-            .await
-            .map_err(|_| Error::Generic("Could not resolve homeserver".to_string()))
-    }
-
-    /// Resolve a service's public_key and clearnet url from a Pubky domain
-    pub(crate) async fn resolve_endpoint(&self, target: &str) -> Result<(PublicKey, Url)> {
-        let original_target = target;
-        // TODO: cache the result of this function?
-
-        let mut target = target.to_string();
-        let mut homeserver_public_key = None;
-        let mut host = target.clone();
-
-        let mut step = 0;
-
-        // PublicKey is very good at extracting the Pkarr TLD from a string.
-        while let Ok(public_key) = PublicKey::try_from(target.clone()) {
-            let response = self
-                .pkarr
-                .resolve(&public_key)
-                .await
-                .map_err(|e| Error::ResolveEndpoint(original_target.into()))?;
-
-            let done = parse_pubky_svcb(
-                response,
-                &public_key,
-                &mut target,
-                &mut homeserver_public_key,
-                &mut host,
-                &mut step,
-            );
-
-            if done {
-                break;
-            }
-        }
-
-        format_url(original_target, homeserver_public_key, host)
+    pub(crate) async fn pkarr_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        Ok(self.pkarr.publish(signed_packet).await?)
     }
 }
 
@@ -87,15 +33,6 @@ mod tests {
         Keypair, PkarrClient, Settings, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
-
-    #[tokio::test]
-    async fn resolve_endpoint() {
-        let target = "oc9tdmh8c4pmy3tk946oqqfkhic18xdiytadspiy55qhbnja5w9o";
-
-        let client = PubkyClient::new();
-
-        client.resolve_endpoint(target).await.unwrap();
-    }
 
     #[tokio::test]
     async fn resolve_homeserver() {

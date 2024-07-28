@@ -20,5 +20,5 @@ pub use error::Error;
 pub struct PubkyClient {
     http: reqwest::Client,
     #[cfg(not(target_arch = "wasm32"))]
-    pkarr: PkarrClientAsync,
+    pub(crate) pkarr: PkarrClientAsync,
 }

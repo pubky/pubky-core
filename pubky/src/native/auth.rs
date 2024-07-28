@@ -33,7 +33,7 @@ impl PubkyClient {
 
     /// Check the current sesison for a given Pubky in its homeserver.
     ///
-    /// Returns an [Error::NotSignedIn] if so, or [ureq::Error] if
+    /// Returns an [Error::NotSignedIn] if so, or [reqwest::Error] if
     /// the response has any other `>=400` status code.
     pub async fn session(&self, pubky: &PublicKey) -> Result<Session> {
         let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky).await?;
