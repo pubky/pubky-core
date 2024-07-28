@@ -1,23 +1,17 @@
-mod auth;
-mod pkarr;
-mod public;
+pub mod auth;
+pub mod pkarr;
+pub mod public;
 
-use std::{collections::HashMap, fmt::format, time::Duration};
+use std::time::Duration;
 
-use ::pkarr::PkarrClientAsync;
-use url::Url;
+use ::pkarr::{
+    mainline::dht::{DhtSettings, Testnet},
+    PkarrClient, PkarrClientAsync, Settings,
+};
 
-use pkarr::{DhtSettings, PkarrClient, Settings, Testnet};
-
-use crate::error::{Error, Result};
+use crate::PubkyClient;
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
-
-#[derive(Debug, Clone)]
-pub struct PubkyClient {
-    http: reqwest::Client,
-    pkarr: PkarrClientAsync,
-}
 
 impl PubkyClient {
     pub fn new() -> Self {
@@ -26,10 +20,12 @@ impl PubkyClient {
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
+            #[cfg(not(target_arch = "wasm32"))]
             pkarr: PkarrClient::new(Default::default()).unwrap().as_async(),
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn test(testnet: &Testnet) -> Self {
         Self {
             http: reqwest::Client::builder()

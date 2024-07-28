@@ -1,12 +1,16 @@
-pub use pkarr::{
+use url::Url;
+
+use pkarr::{
     dns::{rdata::SVCB, Packet},
-    mainline::{dht::DhtSettings, Testnet},
-    Keypair, PkarrClient, PublicKey, Settings, SignedPacket,
+    Keypair, PublicKey, SignedPacket,
 };
 
 use crate::shared::pkarr::{format_url, parse_pubky_svcb, prepare_packet_for_signup};
 
-use super::{Error, PubkyClient, Result, Url};
+use crate::{
+    error::{Error, Result},
+    PubkyClient,
+};
 
 impl PubkyClient {
     /// Publish the SVCB record for `_pubky.<public_key>`.
@@ -38,6 +42,7 @@ impl PubkyClient {
 
     /// Resolve a service's public_key and clearnet url from a Pubky domain
     pub(crate) async fn resolve_endpoint(&self, target: &str) -> Result<(PublicKey, Url)> {
+        let original_target = target;
         // TODO: cache the result of this function?
 
         let mut target = target.to_string();
@@ -48,7 +53,11 @@ impl PubkyClient {
 
         // PublicKey is very good at extracting the Pkarr TLD from a string.
         while let Ok(public_key) = PublicKey::try_from(target.clone()) {
-            let response = self.pkarr.resolve(&public_key).await?;
+            let response = self
+                .pkarr
+                .resolve(&public_key)
+                .await
+                .map_err(|e| Error::ResolveEndpoint(original_target.into()))?;
 
             let done = parse_pubky_svcb(
                 response,
@@ -64,7 +73,7 @@ impl PubkyClient {
             }
         }
 
-        format_url(homeserver_public_key, host)
+        format_url(original_target, homeserver_public_key, host)
     }
 }
 
@@ -78,6 +87,15 @@ mod tests {
         Keypair, PkarrClient, Settings, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
+
+    #[tokio::test]
+    async fn resolve_endpoint() {
+        let target = "oc9tdmh8c4pmy3tk946oqqfkhic18xdiytadspiy55qhbnja5w9o";
+
+        let client = PubkyClient::new();
+
+        client.resolve_endpoint(target).await.unwrap();
+    }
 
     #[tokio::test]
     async fn resolve_homeserver() {

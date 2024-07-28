@@ -1,10 +1,14 @@
+use pubky_common::auth::AuthnSignature;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::RequestMode;
 
 use pkarr::PkarrRelayClient;
 
-use super::{keys::Keypair, PubkyClient};
+use super::{
+    keys::{Keypair, PublicKey},
+    PubkyClient,
+};
 
 #[wasm_bindgen]
 impl PubkyClient {
@@ -13,16 +17,21 @@ impl PubkyClient {
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
     #[wasm_bindgen]
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &str) -> Result<String, JsValue> {
-        let (audience, mut url) = self.resolve_endpoint(homeserver)?;
+    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<(), JsValue> {
+        let keypair = keypair.as_inner();
+        let homeserver = homeserver.as_inner().to_string();
+
+        let (audience, mut url) = self.resolve_endpoint(&homeserver).await?;
 
         url.set_path(&format!("/{}", keypair.public_key()));
 
-        self.http
-            .put(&url)
-            .send_bytes(AuthnSignature::generate(keypair, &audience).as_bytes())?;
+        let body = AuthnSignature::generate(keypair, &audience)
+            .as_bytes()
+            .to_owned();
 
-        self.publish_pubky_homeserver(keypair, homeserver).await;
+        self.http.put(url).body(body).send().await?;
+
+        self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
         Ok(())
     }

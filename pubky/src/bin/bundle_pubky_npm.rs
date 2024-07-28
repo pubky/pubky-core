@@ -5,7 +5,7 @@ use std::process::{Command, ExitStatus};
 // If the process hangs, try `cargo clean` to remove all locks.
 
 fn main() {
-    println!("cargo:rerun-if-changed=client/");
+    println!("Building wasm for pubky...");
 
     build_wasm("nodejs").unwrap();
     patch().unwrap();

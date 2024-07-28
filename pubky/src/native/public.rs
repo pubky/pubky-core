@@ -2,7 +2,7 @@ use bytes::Bytes;
 
 use pkarr::PublicKey;
 
-use super::{PubkyClient, Result};
+use crate::{error::Result, PubkyClient};
 
 impl PubkyClient {
     pub async fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
@@ -67,10 +67,7 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client
-            .signup(&keypair, &server.public_key().to_string())
-            .await
-            .unwrap();
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let response = client
             .put(&keypair.public_key(), "/pub/foo.txt", &[0, 1, 2, 3, 4])

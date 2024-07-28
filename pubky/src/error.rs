@@ -35,4 +35,18 @@ pub enum Error {
     #[error(transparent)]
     #[cfg(not(target_arch = "wasm32"))]
     Session(#[from] pubky_common::session::Error),
+
+    #[error("Could not resolve endpoint for {0}")]
+    ResolveEndpoint(String),
+}
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+
+#[cfg(target_arch = "wasm32")]
+impl From<Error> for JsValue {
+    fn from(error: Error) -> JsValue {
+        let error_message = error.to_string();
+        js_sys::Error::new(&error_message).into()
+    }
 }
