@@ -3,7 +3,6 @@ use std::{
 };
 
 use anyhow::{Error, Result};
-use lru::LruCache;
 use pubky_common::auth::AuthnVerifier;
 use tokio::{net::TcpListener, signal, sync::Mutex, task::JoinSet};
 use tracing::{debug, info, warn};

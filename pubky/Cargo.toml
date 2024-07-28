@@ -18,11 +18,10 @@ reqwest = { version = "0.12.5", features = ["cookies"] }
 bytes = "1.6.1"
 
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
+flume = "0.11.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pkarr = { version="2.1.0", features = ["async"] }
-
-flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pkarr = { version = "2.1.0", default-features = false }
@@ -48,9 +47,6 @@ tokio = "1.37.0"
 wasm-bindgen-test = "0.3.42"
 
 [features]
-async = ["flume/async"]
-
-default = ["async"]
 
 [package.metadata.docs.rs]
 all-features = true
