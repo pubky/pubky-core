@@ -1,9 +1,14 @@
-use pubky_common::auth::AuthnSignature;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::RequestMode;
 
+use reqwest::StatusCode;
+
 use pkarr::PkarrRelayClient;
+
+use pubky_common::{auth::AuthnSignature, session::Session};
+
+use crate::Error;
 
 use super::{
     keys::{Keypair, PublicKey},
@@ -35,18 +40,29 @@ impl PubkyClient {
 
         Ok(())
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use wasm_bindgen_test::wasm_bindgen_test;
+    /// Check the current sesison for a given Pubky in its homeserver.
+    ///
+    /// Returns an [Error::NotSignedIn] if so, or [reqwest::Error] if
+    /// the response has any other `>=400` status code.
+    #[wasm_bindgen]
+    pub async fn session(&self, pubky: &PublicKey) -> Result<Session, JsValue> {
+        let (homeserver, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
-    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+        url.set_path(&format!("/{}/session", pubky));
 
-    use super::*;
+        let res = self.http.get(url).send().await?;
 
-    #[wasm_bindgen_test]
-    async fn basic() {
-        // let client = PubkyClient::new();
+        if res.status() == StatusCode::NOT_FOUND {
+            return Err(Error::NotSignedIn);
+        }
+
+        if !res.status().is_success() {
+            res.error_for_status_ref()?;
+        };
+
+        let bytes = res.bytes().await?;
+
+        Ok(Session::deserialize(&bytes)?)
     }
 }

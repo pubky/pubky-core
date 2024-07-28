@@ -10,7 +10,8 @@
   },
   "scripts": {
     "lint": "standard --fix",
-    "test": "brittle test/*.js -cov",
+    "test": "tape test/*.js -cov",
+    "test-browser": "browserify test/*.js -p esmify | npx tape-run",
     "preinstall": "cargo run --bin bundle_pubky_npm",
     "prepublishOnly": "npm run lint && npm run test"
   },
@@ -33,7 +34,10 @@
     "identity"
   ],
   "devDependencies": {
-    "brittle": "^3.6.1",
-    "standard": "^17.1.0"
+    "browser-resolve": "^2.0.0",
+    "esmify": "^2.1.1",
+    "standard": "^17.1.0",
+    "tape": "^5.8.1",
+    "tape-run": "^11.0.0"
   }
 }
