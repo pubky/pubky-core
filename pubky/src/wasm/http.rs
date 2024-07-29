@@ -7,10 +7,10 @@ use ::pkarr::PublicKey;
 
 impl PubkyClient {
     pub(crate) fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        let request = self.http.request(method, url).fetch_credentials_include();
+        let mut request = self.http.request(method, url).fetch_credentials_include();
 
         for cookie in self.session_cookies.read().unwrap().iter() {
-            return request.header("Cookie", cookie);
+            request = request.header("Cookie", cookie);
         }
 
         request
