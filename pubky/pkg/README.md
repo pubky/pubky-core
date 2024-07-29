@@ -24,10 +24,10 @@ let homeserver = PublicKey.from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn4
 
 await client.signup(keypair, homeserver)
 
+const publicKey = keypair.public_key();
+
 // Verify that you are signed in.
 const session = await client.session(publicKey)
-
-const publicKey = keypair.public_key();
 
 const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
 
