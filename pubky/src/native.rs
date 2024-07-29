@@ -8,7 +8,7 @@ use ::pkarr::{
 };
 use pkarr::Keypair;
 use pubky_common::session::Session;
-use reqwest::{Method, RequestBuilder};
+use reqwest::{Method, RequestBuilder, Response};
 use url::Url;
 
 use crate::{error::Result, PubkyClient};
@@ -94,4 +94,7 @@ impl PubkyClient {
     pub(crate) fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
         self.http.request(method, url)
     }
+
+    pub(crate) fn store_session(&self, response: Response) {}
+    pub(crate) fn remove_session(&self, pubky: &PublicKey) {}
 }
