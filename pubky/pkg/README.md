@@ -23,6 +23,9 @@ let keypair = Keypair.random();
 let homeserver = PublicKey.try_from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
 
 await client.signup(keypair, homeserver)
+
+// Verify that you are signed in.
+const session = await client.session(publicKey)
 ```
 
 ## Test and Development
@@ -39,11 +42,11 @@ Clone the Pubky repository:
 
 ```bash
 git clone https://github.com/pubky/pubky
-cd pubky/
+cd pubky/pkg
 ```
 
-Run the testnet server
+Run the local testnet server
 
 ```bash
-cargo run --bin pubky_homeserver -- --testnet
+npm run testnet
 ```
