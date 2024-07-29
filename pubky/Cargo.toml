@@ -47,3 +47,6 @@ tokio = "1.37.0"
 
 [package.metadata.docs.rs]
 all-features = true
+
+# [package.metadata.wasm-pack.profile.release]
+# wasm-opt = ['-g', '-O']
