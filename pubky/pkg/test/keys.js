@@ -9,5 +9,5 @@ test('generate keys from a seed', async (t) => {
 
   const publicKey = keypair.public_key()
 
-  t.is(publicKey.to_string(), 'gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o')
+  t.is(publicKey.z32(), 'gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o')
 })

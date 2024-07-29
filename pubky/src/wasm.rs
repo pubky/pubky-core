@@ -18,6 +18,12 @@ mod session;
 use keys::{Keypair, PublicKey};
 use session::Session;
 
+impl Default for PubkyClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen]
 impl PubkyClient {
     #[wasm_bindgen(constructor)]
@@ -47,7 +53,7 @@ impl PubkyClient {
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>, JsValue> {
         self.inner_session(pubky.as_inner())
             .await
-            .map(|s| s.map(|s| Session(s).into()))
+            .map(|s| s.map(Session))
             .map_err(|e| e.into())
     }
 
@@ -79,10 +85,14 @@ impl PubkyClient {
 
     #[wasm_bindgen]
     /// Download a small payload from a given path relative to a pubky author.
-    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<js_sys::Uint8Array, JsValue> {
+    pub async fn get(
+        &self,
+        pubky: &PublicKey,
+        path: &str,
+    ) -> Result<Option<js_sys::Uint8Array>, JsValue> {
         self.inner_get(pubky.as_inner(), path)
             .await
-            .map(|b| (*b).into())
+            .map(|b| b.map(|b| (&*b).into()))
             .map_err(|e| e.into())
     }
 }
