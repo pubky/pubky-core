@@ -69,9 +69,10 @@ mod tests {
 
     #[test]
     fn serialize() {
-        let mut session = Session::default();
-
-        session.user_agent = "foo".to_string();
+        let session = Session {
+            user_agent: "foo".to_string(),
+            ..Default::default()
+        };
 
         let serialized = session.serialize();
 
