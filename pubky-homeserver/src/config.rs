@@ -11,8 +11,6 @@ const DEFAULT_HOMESERVER_PORT: u16 = 6287;
 const DEFAULT_STORAGE_DIR: &str = "pubky";
 
 /// Server configuration
-///
-/// The config is usually loaded from a file with [`Self::load`].
 #[derive(
     // Serialize, Deserialize,
     Clone,

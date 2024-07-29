@@ -67,8 +67,8 @@ impl PubkyClient {
 
     /// Check the current sesison for a given Pubky in its homeserver.
     ///
-    /// Returns an [Error::NotSignedIn] if so, or [reqwest::Error] if
-    /// the response has any other `>=400` status code.
+    /// Returns [Session] or `None` (if recieved `404 NOT_FOUND`),
+    /// or [reqwest::Error] if the response has any other `>=400` status code.
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         self.inner_session(pubky).await
     }
