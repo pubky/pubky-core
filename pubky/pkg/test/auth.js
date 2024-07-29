@@ -8,7 +8,7 @@ test('seed auth', async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.public_key()
 
-  const homeserver = PublicKey.try_from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
   await client.signup(keypair, homeserver)
 
   const session = await client.session(publicKey)

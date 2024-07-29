@@ -1,11 +1,10 @@
-pub mod public;
-
 use std::time::Duration;
 
 use ::pkarr::{
     mainline::dht::{DhtSettings, Testnet},
     PkarrClient, PublicKey, Settings, SignedPacket,
 };
+use bytes::Bytes;
 use pkarr::Keypair;
 use pubky_common::session::Session;
 use reqwest::{Method, RequestBuilder, Response};
@@ -20,6 +19,8 @@ impl Default for PubkyClient {
         Self::new()
     }
 }
+
+// === Public API ===
 
 impl PubkyClient {
     pub fn new() -> Self {
@@ -54,6 +55,8 @@ impl PubkyClient {
         }
     }
 
+    // === Auth ===
+
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
@@ -80,6 +83,24 @@ impl PubkyClient {
         self.inner_signin(keypair).await
     }
 
+    // === Public data ===
+
+    /// Upload a small payload to a given path.
+    pub async fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
+        self.inner_put(pubky, path, content).await
+    }
+
+    /// Download a small payload from a given path relative to a pubky author.
+    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<Bytes> {
+        self.inner_get(pubky, path).await
+    }
+}
+
+// === Internals ===
+
+impl PubkyClient {
+    // === Pkarr ===
+
     pub(crate) async fn pkarr_resolve(
         &self,
         public_key: &PublicKey,
@@ -90,6 +111,8 @@ impl PubkyClient {
     pub(crate) async fn pkarr_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         Ok(self.pkarr.publish(signed_packet).await?)
     }
+
+    // === HTTP ===
 
     pub(crate) fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
         self.http.request(method, url)

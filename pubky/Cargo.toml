@@ -14,30 +14,21 @@ crate-type = ["cdylib", "rlib"]
 thiserror = "1.0.62"
 wasm-bindgen = "0.2.92"
 url = "2.5.2"
-reqwest = { version = "0.12.5", features = ["cookies"] }
 bytes = "1.6.1"
 
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
-flume = "0.11.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pkarr = { version="2.1.0", features = ["async"] }
+reqwest = { version = "0.12.5", features = ["cookies"], default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pkarr = { version = "2.1.0", default-features = false }
+reqwest = { version = "0.12.5", default-features = false }
 
-futures = "0.3.29"
 js-sys = "0.3.69"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.42"
-web-sys = { version = "0.3.69", features = [
-  "console",
-  "Request",
-  "RequestInit",
-  "RequestMode",
-  "Response",
-  "Window",
-] }
 
 [dev-dependencies]
 pubky_homeserver = { path = "../pubky-homeserver" }

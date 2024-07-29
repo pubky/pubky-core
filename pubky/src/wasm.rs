@@ -10,6 +10,7 @@ use url::Url;
 
 use crate::PubkyClient;
 
+mod http;
 mod keys;
 mod pkarr;
 mod session;
@@ -66,37 +67,22 @@ impl PubkyClient {
             .map_err(|e| e.into())
     }
 
-    pub(crate) fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
-        let request = self.http.request(method, url).fetch_credentials_include();
+    // === Public data ===
 
-        for cookie in self.session_cookies.read().unwrap().iter() {
-            return request.header("Cookie", cookie);
-        }
-
-        request
+    #[wasm_bindgen]
+    /// Upload a small payload to a given path.
+    pub async fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<(), JsValue> {
+        self.inner_put(pubky.as_inner(), path, content)
+            .await
+            .map_err(|e| e.into())
     }
 
-    // Support cookies for nodejs
-
-    pub(crate) fn store_session(&self, response: Response) {
-        if let Some(cookie) = response
-            .headers()
-            .get("set-cookie")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| s.split(';').next())
-        {
-            self.session_cookies
-                .write()
-                .unwrap()
-                .insert(cookie.to_string());
-        }
-    }
-    pub(crate) fn remove_session(&self, pubky: &pkarr::PublicKey) {
-        let key = pubky.to_string();
-
-        self.session_cookies
-            .write()
-            .unwrap()
-            .retain(|cookie| !cookie.starts_with(&key));
+    #[wasm_bindgen]
+    /// Download a small payload from a given path relative to a pubky author.
+    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<js_sys::Uint8Array, JsValue> {
+        self.inner_get(pubky.as_inner(), path)
+            .await
+            .map(|b| (*b).into())
+            .map_err(|e| e.into())
     }
 }
