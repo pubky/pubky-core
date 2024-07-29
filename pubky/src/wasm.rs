@@ -24,6 +24,8 @@ impl Default for PubkyClient {
     }
 }
 
+static DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
+
 #[wasm_bindgen]
 impl PubkyClient {
     #[wasm_bindgen(constructor)]
@@ -31,7 +33,31 @@ impl PubkyClient {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
             session_cookies: Arc::new(RwLock::new(HashSet::new())),
+            pkarr_relays: DEFAULT_RELAYS.into_iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    /// Set the relays used for publishing and resolving Pkarr packets.
+    ///
+    /// By default, [PubkyClient] will use `["https://relay.pkarr.org"]`
+    #[wasm_bindgen(js_name = "setPkarrRelays")]
+    pub fn set_pkarr_relays(mut self, relays: Vec<JsValue>) -> Self {
+        let relays: Vec<String> = relays
+            .into_iter()
+            .filter_map(|name| name.as_string())
+            .collect();
+
+        self.pkarr_relays = relays;
+        self
+    }
+
+    #[wasm_bindgen(js_name = "getPkarrRelays")]
+    pub fn get_pkarr_relays(&self) -> Vec<JsValue> {
+        self.pkarr_relays
+            .clone()
+            .into_iter()
+            .map(JsValue::from)
+            .collect()
     }
 
     /// Signup to a homeserver and update Pkarr accordingly.

@@ -30,4 +30,6 @@ pub struct PubkyClient {
     /// A cookie jar for nodejs fetch.
     #[cfg(target_arch = "wasm32")]
     pub(crate) session_cookies: Arc<RwLock<HashSet<String>>>,
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) pkarr_relays: Vec<String>,
 }
