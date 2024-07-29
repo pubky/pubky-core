@@ -51,7 +51,8 @@ impl PublicKey {
         self.0.to_string()
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "from")]
+    /// @throws
     pub fn try_from(value: JsValue) -> Result<PublicKey, JsValue> {
         let string = value.as_string().ok_or(Error::Generic(
             "Couldn't create a PublicKey from this type of value".to_string(),
