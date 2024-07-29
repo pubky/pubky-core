@@ -206,7 +206,7 @@ mod tests {
             let mut invalid = authn_signature.as_bytes().to_vec();
             invalid[64..].copy_from_slice(&[0; 32]);
 
-            assert!(!verifier.verify(&invalid, &signer).is_ok())
+            assert!(verifier.verify(&invalid, &signer).is_err())
         }
 
         {
@@ -214,7 +214,7 @@ mod tests {
             let mut invalid = authn_signature.as_bytes().to_vec();
             invalid[0..32].copy_from_slice(&[0; 32]);
 
-            assert!(!verifier.verify(&invalid, &signer).is_ok())
+            assert!(verifier.verify(&invalid, &signer).is_err())
         }
     }
 }

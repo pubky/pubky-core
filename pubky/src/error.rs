@@ -12,9 +12,6 @@ pub enum Error {
     #[error("Generic error: {0}")]
     Generic(String),
 
-    #[error("Not signed in")]
-    NotSignedIn,
-
     // === Transparent ===
     #[error(transparent)]
     Dns(#[from] SimpleDnsError),
@@ -23,20 +20,25 @@ pub enum Error {
     Pkarr(#[from] pkarr::Error),
 
     #[error(transparent)]
-    Flume(#[from] flume::RecvError),
-
-    #[error(transparent)]
-    Ureq(#[from] Box<ureq::Error>),
-
-    #[error(transparent)]
     Url(#[from] url::ParseError),
 
     #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error(transparent)]
     Session(#[from] pubky_common::session::Error),
+
+    #[error("Could not resolve endpoint for {0}")]
+    ResolveEndpoint(String),
 }
 
-impl From<ureq::Error> for Error {
-    fn from(error: ureq::Error) -> Self {
-        Error::Ureq(Box::new(error))
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
+
+#[cfg(target_arch = "wasm32")]
+impl From<Error> for JsValue {
+    fn from(error: Error) -> JsValue {
+        let error_message = error.to_string();
+        js_sys::Error::new(&error_message).into()
     }
 }

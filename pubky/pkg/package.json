@@ -1,0 +1,44 @@
+{
+  "name": "@synonymdev/pubky",
+  "type": "module",
+  "description": "Pubky client",
+  "version": "0.0.2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pubky/pubky"
+  },
+  "scripts": {
+    "testnet": "cargo run -p pubky_homeserver -- --testnet",
+    "test": "npm run test-nodejs && npm run test-browser",
+    "test-nodejs": "tape test/*.js -cov",
+    "test-browser": "browserify test/*.js -p esmify | npx tape-run",
+    "build": "cargo run --bin bundle_pubky_npm",
+    "preinstall": "npm run build",
+    "prepublishOnly": "npm run build && npm run test"
+  },
+  "files": [
+    "nodejs/*",
+    "index.js",
+    "browser.js"
+  ],
+  "main": "index.js",
+  "browser": "browser.js",
+  "types": "pubky.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "web",
+    "dht",
+    "dns",
+    "decentralized",
+    "identity"
+  ],
+  "devDependencies": {
+    "browser-resolve": "^2.0.0",
+    "esmify": "^2.1.1",
+    "tape": "^5.8.1",
+    "tape-run": "^11.0.0"
+  }
+}

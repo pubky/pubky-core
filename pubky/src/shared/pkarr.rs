@@ -1,19 +1,29 @@
-pub use pkarr::{
+use url::Url;
+
+use pkarr::{
     dns::{rdata::SVCB, Packet},
-    mainline::{dht::DhtSettings, Testnet},
-    Keypair, PkarrClient, PublicKey, Settings, SignedPacket,
+    Keypair, PublicKey, SignedPacket,
 };
 
-use super::{Error, PubkyClient, Result, Url};
+use crate::{
+    error::{Error, Result},
+    PubkyClient,
+};
 
 const MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION: u8 = 3;
 
 impl PubkyClient {
     /// Publish the SVCB record for `_pubky.<public_key>`.
-    pub(crate) fn publish_pubky_homeserver(&self, keypair: &Keypair, host: &str) -> Result<()> {
+    pub(crate) async fn publish_pubky_homeserver(
+        &self,
+        keypair: &Keypair,
+        host: &str,
+    ) -> Result<()> {
+        let existing = self.pkarr_resolve(&keypair.public_key()).await?;
+
         let mut packet = Packet::new_reply(0);
 
-        if let Some(existing) = self.pkarr.resolve(&keypair.public_key())? {
+        if let Some(existing) = existing {
             for answer in existing.packet().answers.iter().cloned() {
                 if !answer.name.to_string().starts_with("_pubky") {
                     packet.answers.push(answer.into_owned())
@@ -32,34 +42,46 @@ impl PubkyClient {
 
         let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
 
-        self.pkarr.publish(&signed_packet)?;
+        self.pkarr_publish(&signed_packet).await?;
 
         Ok(())
     }
 
     /// Resolve the homeserver for a pubky.
-    pub(crate) fn resolve_pubky_homeserver(&self, pubky: &PublicKey) -> Result<(PublicKey, Url)> {
+    pub(crate) async fn resolve_pubky_homeserver(
+        &self,
+        pubky: &PublicKey,
+    ) -> Result<(PublicKey, Url)> {
         let target = format!("_pubky.{}", pubky);
 
         self.resolve_endpoint(&target)
+            .await
             .map_err(|_| Error::Generic("Could not resolve homeserver".to_string()))
     }
 
     /// Resolve a service's public_key and clearnet url from a Pubky domain
-    pub(crate) fn resolve_endpoint(&self, target: &str) -> Result<(PublicKey, Url)> {
+    pub(crate) async fn resolve_endpoint(&self, target: &str) -> Result<(PublicKey, Url)> {
+        let original_target = target;
         // TODO: cache the result of this function?
-        // TODO: use MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION
-        // TODO: move to common?
 
         let mut target = target.to_string();
         let mut homeserver_public_key = None;
         let mut host = target.clone();
 
+        let mut step = 0;
+
         // PublicKey is very good at extracting the Pkarr TLD from a string.
         while let Ok(public_key) = PublicKey::try_from(target.clone()) {
-            if let Some(signed_packet) = self.pkarr.resolve(&public_key)? {
-                let mut prior = None;
+            step += 1;
 
+            let response = self
+                .pkarr_resolve(&public_key)
+                .await
+                .map_err(|_| Error::ResolveEndpoint(original_target.into()))?;
+
+            let mut prior = None;
+
+            if let Some(signed_packet) = response {
                 for answer in signed_packet.resource_records(&target) {
                     if let pkarr::dns::rdata::RData::SVCB(svcb) = &answer.rdata {
                         if svcb.priority == 0 {
@@ -76,7 +98,7 @@ impl PubkyClient {
                 }
 
                 if let Some(svcb) = prior {
-                    homeserver_public_key = Some(public_key);
+                    homeserver_public_key = Some(public_key.clone());
                     target = svcb.target.to_string();
 
                     if let Some(port) = svcb.get_param(pkarr::dns::rdata::SVCB::PORT) {
@@ -90,11 +112,11 @@ impl PubkyClient {
                         host.clone_from(&target);
                     };
 
-                    continue;
+                    if step >= MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION {
+                        continue;
+                    };
                 }
-            };
-
-            break;
+            }
         }
 
         if let Some(homeserver) = homeserver_public_key {
@@ -107,7 +129,7 @@ impl PubkyClient {
             return Ok((homeserver, Url::parse(&url)?));
         }
 
-        Err(Error::Generic("Could not resolve endpoint".to_string()))
+        Err(Error::ResolveEndpoint(original_target.into()))
     }
 }
 
@@ -157,23 +179,24 @@ mod tests {
 
         pkarr_client.publish(&signed_packet).await.unwrap();
 
-        tokio::task::spawn_blocking(move || {
+        {
             let client = PubkyClient::test(&testnet);
 
             let pubky = Keypair::random();
 
             client
-                .publish_pubky_homeserver(&pubky, &format!("pubky.{}", &intermediate.public_key()));
+                .publish_pubky_homeserver(&pubky, &format!("pubky.{}", &intermediate.public_key()))
+                .await
+                .unwrap();
 
             let (public_key, url) = client
                 .resolve_pubky_homeserver(&pubky.public_key())
+                .await
                 .unwrap();
 
             assert_eq!(public_key, server.public_key());
             assert_eq!(url.host_str(), Some("localhost"));
             assert_eq!(url.port(), Some(server.port()));
-        })
-        .await
-        .expect("task failed")
+        }
     }
 }
