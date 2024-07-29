@@ -20,15 +20,19 @@ impl PubkyClient {
     ) -> Result<()> {
         let homeserver = homeserver.to_string();
 
+        let public_key = &keypair.public_key();
+
         let (audience, mut url) = self.resolve_endpoint(&homeserver).await?;
 
-        url.set_path(&format!("/{}", keypair.public_key()));
+        url.set_path(&format!("/{}", public_key));
 
         let body = AuthnSignature::generate(keypair, &audience)
             .as_bytes()
             .to_owned();
 
-        self.request(Method::PUT, url).body(body).send().await?;
+        let response = self.request(Method::PUT, url).body(body).send().await?;
+
+        self.store_session(response);
 
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
@@ -67,6 +71,8 @@ impl PubkyClient {
 
         self.request(Method::DELETE, url).send().await?;
 
+        self.remove_session(pubky);
+
         Ok(())
     }
 
@@ -82,7 +88,9 @@ impl PubkyClient {
             .as_bytes()
             .to_owned();
 
-        self.request(Method::POST, url).body(body).send().await?;
+        let response = self.request(Method::POST, url).body(body).send().await?;
+
+        self.store_session(response);
 
         Ok(())
     }

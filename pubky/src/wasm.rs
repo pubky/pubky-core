@@ -1,6 +1,11 @@
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+};
+
 use wasm_bindgen::prelude::*;
 
-use reqwest::{Method, RequestBuilder};
+use reqwest::{Method, RequestBuilder, Response};
 use url::Url;
 
 use crate::PubkyClient;
@@ -18,6 +23,7 @@ impl PubkyClient {
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
+            session_cookies: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -60,7 +66,37 @@ impl PubkyClient {
             .map_err(|e| e.into())
     }
 
-    pub(crate) fn request(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
-        self.http.request(method, url).fetch_credentials_include()
+    pub(crate) fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
+        let request = self.http.request(method, url).fetch_credentials_include();
+
+        for cookie in self.session_cookies.read().unwrap().iter() {
+            return request.header("Cookie", cookie);
+        }
+
+        request
+    }
+
+    // Support cookies for nodejs
+
+    pub(crate) fn store_session(&self, response: Response) {
+        if let Some(cookie) = response
+            .headers()
+            .get("set-cookie")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.split(';').next())
+        {
+            self.session_cookies
+                .write()
+                .unwrap()
+                .insert(cookie.to_string());
+        }
+    }
+    pub(crate) fn remove_session(&self, pubky: &pkarr::PublicKey) {
+        let key = pubky.to_string();
+
+        self.session_cookies
+            .write()
+            .unwrap()
+            .retain(|cookie| !cookie.starts_with(&key));
     }
 }
