@@ -9,11 +9,13 @@
     "url": "https://github.com/pubky/pubky"
   },
   "scripts": {
-    "test": "tape test/*.js -cov",
+    "testnet": "cargo run -p pubky_homeserver -- --testnet",
+    "test": "npm run test-nodejs && npm run test-browser",
+    "test-nodejs": "tape test/*.js -cov",
     "test-browser": "browserify test/*.js -p esmify | npx tape-run",
     "build": "cargo run --bin bundle_pubky_npm",
     "preinstall": "npm run build",
-    "prepublishOnly": "npm run build && npm run test && npm run test-browser"
+    "prepublishOnly": "npm run build && npm run test"
   },
   "files": [
     "nodejs/*",
