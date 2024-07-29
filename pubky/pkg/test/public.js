@@ -3,7 +3,7 @@ import test from 'tape'
 import { PubkyClient, Keypair, PublicKey } from '../index.js'
 
 test('public: put/get', async (t) => {
-  const client = new PubkyClient();
+  const client = new PubkyClient().setPkarrRelays(["http://localhost:15411/pkarr"])
 
   const keypair = Keypair.random();
 
@@ -20,7 +20,7 @@ test('public: put/get', async (t) => {
 
   // GET public data without signup or signin
   {
-    const client = new PubkyClient();
+    const client = new PubkyClient().setPkarrRelays(["http://localhost:15411/pkarr"])
 
     let response = await client.get(publicKey, "/pub/example.com/arbitrary");
 

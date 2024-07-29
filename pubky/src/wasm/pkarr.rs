@@ -5,20 +5,20 @@ pub use pkarr::{PublicKey, SignedPacket};
 use crate::error::Result;
 use crate::PubkyClient;
 
-const TEST_RELAY: &str = "http://localhost:15411/pkarr";
-
 // TODO: Add an in memory cache of packets
 
 impl PubkyClient {
-    //TODO: Allow multiple relays in parallel
     //TODO: migrate to pkarr::PkarrRelayClient
     pub(crate) async fn pkarr_resolve(
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>> {
+        //TODO: Allow multiple relays in parallel
+        let relay = self.pkarr_relays.first().expect("initialized with relays");
+
         let res = self
             .http
-            .get(format!("{TEST_RELAY}/{}", public_key))
+            .get(format!("{relay}/{}", public_key))
             .send()
             .await?;
 
@@ -35,8 +35,10 @@ impl PubkyClient {
     }
 
     pub(crate) async fn pkarr_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        let relay = self.pkarr_relays.first().expect("initialized with relays");
+
         self.http
-            .put(format!("{TEST_RELAY}/{}", signed_packet.public_key()))
+            .put(format!("{relay}/{}", signed_packet.public_key()))
             .body(signed_packet.to_relay_payload())
             .send()
             .await?;

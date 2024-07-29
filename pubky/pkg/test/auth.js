@@ -2,8 +2,8 @@ import test from 'tape'
 
 import { PubkyClient, Keypair, PublicKey } from '../index.js'
 
-test('seed auth', async (t) => {
-  const client = new PubkyClient()
+test('auth', async (t) => {
+  const client = new PubkyClient().setPkarrRelays(["http://localhost:15411/pkarr"])
 
   const keypair = Keypair.random()
   const publicKey = keypair.public_key()
@@ -12,19 +12,19 @@ test('seed auth', async (t) => {
   await client.signup(keypair, homeserver)
 
   const session = await client.session(publicKey)
-  t.ok(session)
+  t.ok(session, "signup")
 
   {
     await client.signout(publicKey)
 
     const session = await client.session(publicKey)
-    t.notOk(session)
+    t.notOk(session, "singout")
   }
 
   {
     await client.signin(keypair)
 
     const session = await client.session(publicKey)
-    t.ok(session)
+    t.ok(session, "signin")
   }
 })
