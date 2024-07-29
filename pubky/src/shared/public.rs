@@ -1,17 +1,14 @@
 use bytes::Bytes;
 
 use pkarr::PublicKey;
-use reqwest::Method;
+use reqwest::{Method, Response, StatusCode};
+use url::Url;
 
 use crate::{error::Result, PubkyClient};
 
 impl PubkyClient {
     pub async fn inner_put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
-        let path = normalize_path(path);
-
-        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
-
-        url.set_path(&format!("/{pubky}/{path}"));
+        let url = self.url(pubky, path).await?;
 
         self.request(Method::PUT, url)
             .body(content.to_owned())
@@ -21,23 +18,41 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub async fn inner_get(&self, pubky: &PublicKey, path: &str) -> Result<Bytes> {
-        let path = normalize_path(path);
+    pub async fn inner_get(&self, pubky: &PublicKey, path: &str) -> Result<Option<Bytes>> {
+        let url = self.url(pubky, path).await?;
+
+        let res = self.request(Method::GET, url).send().await?;
+
+        if res.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        // TODO: bail on too large files.
+        let bytes = res.bytes().await?;
+
+        Ok(Some(bytes))
+    }
+
+    pub async fn inner_delete(&self, pubky: &PublicKey, path: &str) -> Result<()> {
+        let url = self.url(pubky, path).await?;
+
+        self.request(Method::DELETE, url).send().await?;
+
+        Ok(())
+    }
+
+    async fn url(&self, pubky: &PublicKey, path: &str) -> Result<Url> {
+        let path = normalize_path(path)?;
 
         let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{pubky}/{path}"));
 
-        let response = self.request(Method::GET, url).send().await?;
-
-        // TODO: bail on too large files.
-        let bytes = response.bytes().await?;
-
-        Ok(bytes)
+        Ok(url)
     }
 }
 
-fn normalize_path(path: &str) -> String {
+fn normalize_path(path: &str) -> Result<String> {
     let mut path = path.to_string();
 
     if path.starts_with('/') {
@@ -49,7 +64,7 @@ fn normalize_path(path: &str) -> String {
         path = path[..path.len()].to_string()
     }
 
-    path
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -61,7 +76,7 @@ mod tests {
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
-    async fn put_get() {
+    async fn put_get_delete() {
         let testnet = Testnet::new(3);
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
@@ -79,8 +94,21 @@ mod tests {
         let response = client
             .get(&keypair.public_key(), "/pub/foo.txt")
             .await
+            .unwrap()
             .unwrap();
 
-        assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]))
+        assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+
+        // client
+        // .delete(&keypair.public_key(), "/pub/foo.txt")
+        //     .await
+        //     .unwrap();
+        //
+        // let response = client
+        //     .get(&keypair.public_key(), "/pub/foo.txt")
+        //     .await
+        //     .unwrap();
+        //
+        // assert_eq!(response, None);
     }
 }

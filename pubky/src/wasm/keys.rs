@@ -47,7 +47,8 @@ impl PublicKey {
     }
 
     #[wasm_bindgen]
-    pub fn to_string(&self) -> String {
+    /// Returns the z-base32 encoding of this public key
+    pub fn z32(&self) -> String {
         self.0.to_string()
     }
 
@@ -59,7 +60,7 @@ impl PublicKey {
         ))?;
 
         Ok(PublicKey(
-            pkarr::PublicKey::try_from(string).map_err(|e| Error::Pkarr(e))?,
+            pkarr::PublicKey::try_from(string).map_err(Error::Pkarr)?,
         ))
     }
 }

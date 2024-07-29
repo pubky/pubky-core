@@ -91,9 +91,14 @@ impl PubkyClient {
     }
 
     /// Download a small payload from a given path relative to a pubky author.
-    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<Bytes> {
+    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<Option<Bytes>> {
         self.inner_get(pubky, path).await
     }
+
+    // /// Delete a file at a path relative to a pubky author.
+    // pub async fn delete(&self, pubky: &PublicKey, path: &str) -> Result<()> {
+    //     self.inner_delete(pubky, path).await
+    // }
 }
 
 // === Internals ===
