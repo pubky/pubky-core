@@ -39,6 +39,7 @@ impl Homeserver {
         let pkarr_client = PkarrClient::new(Settings {
             dht: DhtSettings {
                 bootstrap: config.bootstsrap(),
+                request_timeout: config.dht_request_timeout(),
                 ..Default::default()
             },
             ..Default::default()

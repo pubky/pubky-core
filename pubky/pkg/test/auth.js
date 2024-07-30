@@ -3,7 +3,7 @@ import test from 'tape'
 import { PubkyClient, Keypair, PublicKey } from '../index.js'
 
 test('auth', async (t) => {
-  const client = new PubkyClient().setPkarrRelays(["http://localhost:15411/pkarr"])
+  const client = PubkyClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.public_key()

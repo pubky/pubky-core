@@ -25,6 +25,7 @@ impl Default for PubkyClient {
 }
 
 static DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
+static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/pkarr"];
 
 #[wasm_bindgen]
 impl PubkyClient {
@@ -37,7 +38,18 @@ impl PubkyClient {
         }
     }
 
-    /// Set the relays used for publishing and resolving Pkarr packets.
+    /// Create a client with with configurations appropriate for local testing:
+    /// - set Pkarr relays to `["http://localhost:15411/pkarr"]` instead of default relay.
+    #[wasm_bindgen]
+    pub fn testnet() -> Self {
+        Self {
+            http: reqwest::Client::builder().build().unwrap(),
+            session_cookies: Arc::new(RwLock::new(HashSet::new())),
+            pkarr_relays: TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// Set Pkarr relays used for publishing and resolving Pkarr packets.
     ///
     /// By default, [PubkyClient] will use `["https://relay.pkarr.org"]`
     #[wasm_bindgen(js_name = "setPkarrRelays")]
@@ -51,6 +63,7 @@ impl PubkyClient {
         self
     }
 
+    // Read the set of pkarr relays used by this client.
     #[wasm_bindgen(js_name = "getPkarrRelays")]
     pub fn get_pkarr_relays(&self) -> Vec<JsValue> {
         self.pkarr_relays
