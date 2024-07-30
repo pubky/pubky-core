@@ -65,6 +65,7 @@ impl PubkyClient {
         // TODO: cache the result of this function?
 
         let mut target = target.to_string();
+
         let mut homeserver_public_key = None;
         let mut host = target.clone();
 
@@ -72,32 +73,42 @@ impl PubkyClient {
 
         // PublicKey is very good at extracting the Pkarr TLD from a string.
         while let Ok(public_key) = PublicKey::try_from(target.clone()) {
+            if step >= MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION {
+                break;
+            };
+
             step += 1;
 
-            let response = self
+            if let Some(signed_packet) = self
                 .pkarr_resolve(&public_key)
                 .await
-                .map_err(|_| Error::ResolveEndpoint(original_target.into()))?;
+                .map_err(|_| Error::ResolveEndpoint(original_target.into()))?
+            {
+                // Choose most prior SVCB record
+                let svcb = signed_packet.resource_records(&target).fold(
+                    None,
+                    |prev: Option<SVCB>, answer| {
+                        if let pkarr::dns::rdata::RData::SVCB(curr) = &answer.rdata {
+                            let curr = curr.clone();
 
-            let mut prior = None;
-
-            if let Some(signed_packet) = response {
-                for answer in signed_packet.resource_records(&target) {
-                    if let pkarr::dns::rdata::RData::SVCB(svcb) = &answer.rdata {
-                        if svcb.priority == 0 {
-                            prior = Some(svcb)
-                        } else if let Some(sofar) = prior {
-                            if svcb.priority >= sofar.priority {
-                                prior = Some(svcb)
+                            if curr.priority == 0 {
+                                return Some(curr);
                             }
-                            // TODO return random if priority is the same
-                        } else {
-                            prior = Some(svcb)
+                            if let Some(prev) = &prev {
+                                // TODO return random if priority is the same
+                                if curr.priority >= prev.priority {
+                                    return Some(curr);
+                                }
+                            } else {
+                                return Some(curr);
+                            }
                         }
-                    }
-                }
 
-                if let Some(svcb) = prior {
+                        prev
+                    },
+                );
+
+                if let Some(svcb) = svcb {
                     homeserver_public_key = Some(public_key.clone());
                     target = svcb.target.to_string();
 
