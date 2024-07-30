@@ -1,5 +1,4 @@
 use anyhow::Result;
-use pkarr::{mainline::Testnet, Keypair};
 use pubky_homeserver::{config::Config, Homeserver};
 
 use clap::Parser;
@@ -24,18 +23,12 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let server = if args.testnet {
-        let testnet = Testnet::new(10);
-
-        Homeserver::start(Config {
-            port: Some(15411),
-            keypair: Keypair::from_secret_key(&[0_u8; 32]),
-            ..Config::test(&testnet)
-        })
-        .await?
+    let server = Homeserver::start(if args.testnet {
+        Config::testnet()
     } else {
-        Homeserver::start(Default::default()).await?
-    };
+        Default::default()
+    })
+    .await?;
 
     server.run_until_done().await?;
 

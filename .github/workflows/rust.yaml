@@ -36,6 +36,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-index-
     - name: Cache cargo build
+      id: cargo-build-cache
       uses: actions/cache@v2
       with:
         path: target
@@ -54,20 +55,21 @@ jobs:
           cargo install cargo-nextest
         fi
 
-    # - name: Check no default features
-      # run: cargo check --no-default-features
+    - name: Check no default features
+      run: cargo check --no-default-features
 
-    # - name: Check formatting
-      # run: cargo fmt -- --check
+    - name: Check formatting
+      run: cargo fmt -- --check
 
-    # - name: Lint with Clippy
-      # run: cargo clippy --workspace --all-features --bins --tests
+    - name: Lint with Clippy
+      run: cargo clippy --workspace --all-features --bins --tests
 
-    # - name: Build
-      # run: cargo build --release --workspace --all-features --verbose
+    - name: Build
+      if: steps.cargo-build-cache.outputs.cache-hit != 'true'
+      run: cargo build --release --workspace --all-features --verbose
 
     - name: Run tests with Nextest
-      run: cargo nextest run homeserver_in_tokio
+      run: cargo nextest run --all-features --workspace --verbose
 
-    # - name: Run docs
-      # run: cargo doc --workspace --all-features --no-deps --document-private-items --verbose
+    - name: Run docs
+      run: cargo doc --workspace --all-features --no-deps --document-private-items --verbose

@@ -44,7 +44,7 @@ impl PubkyClient {
                 .unwrap(),
             pkarr: PkarrClient::new(Settings {
                 dht: DhtSettings {
-                    request_timeout: Some(Duration::from_millis(10)),
+                    request_timeout: Some(Duration::from_millis(100)),
                     bootstrap: Some(testnet.bootstrap.to_owned()),
                     ..DhtSettings::default()
                 },

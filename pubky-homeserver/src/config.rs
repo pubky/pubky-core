@@ -16,15 +16,14 @@ const DEFAULT_STORAGE_DIR: &str = "pubky";
     Clone,
 )]
 pub struct Config {
-    pub port: Option<u16>,
-    pub bootstrap: Option<Vec<String>>,
-    pub domain: String,
+    port: Option<u16>,
+    bootstrap: Option<Vec<String>>,
+    domain: String,
     /// Path to the storage directory
     ///
     /// Defaults to a directory in the OS data directory
-    pub storage: Option<PathBuf>,
-    pub keypair: Keypair,
-    pub request_timeout: Option<Duration>,
+    storage: Option<PathBuf>,
+    keypair: Keypair,
 }
 
 impl Config {
@@ -36,6 +35,26 @@ impl Config {
     //     let config: Config = toml::from_str(&s)?;
     //     Ok(config)
     // }
+
+    /// Testnet configurations
+    pub fn testnet() -> Self {
+        let testnet = pkarr::mainline::Testnet::new(10);
+
+        let bootstrap = Some(testnet.bootstrap.to_owned());
+        let storage = Some(
+            std::env::temp_dir()
+                .join(Timestamp::now().to_string())
+                .join(DEFAULT_STORAGE_DIR),
+        );
+
+        Self {
+            bootstrap,
+            storage,
+            port: Some(15411),
+            keypair: Keypair::from_secret_key(&[0_u8; 32]),
+            ..Default::default()
+        }
+    }
 
     /// Test configurations
     pub fn test(testnet: &pkarr::mainline::Testnet) -> Self {
@@ -49,7 +68,6 @@ impl Config {
         Self {
             bootstrap,
             storage,
-            request_timeout: Some(Duration::from_millis(10)),
             ..Default::default()
         }
     }
@@ -93,7 +111,6 @@ impl Default for Config {
             domain: "localhost".to_string(),
             storage: None,
             keypair: Keypair::random(),
-            request_timeout: None,
         }
     }
 }
