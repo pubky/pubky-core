@@ -1,4 +1,5 @@
 use std::fs;
+
 use std::path::Path;
 
 use bytes::Bytes;
@@ -31,66 +32,6 @@ impl DB {
         let db = DB { env, tables };
 
         Ok(db)
-    }
-
-    pub fn put_entry(
-        &mut self,
-        public_key: &PublicKey,
-        path: &str,
-        rx: flume::Receiver<Bytes>,
-    ) -> anyhow::Result<()> {
-        let mut wtxn = self.env.write_txn()?;
-
-        let mut hasher = Hasher::new();
-        let mut bytes = vec![];
-        let mut length = 0;
-
-        while let Ok(chunk) = rx.recv() {
-            hasher.update(&chunk);
-            bytes.extend_from_slice(&chunk);
-            length += chunk.len();
-        }
-
-        let hash = hasher.finalize();
-
-        self.tables.blobs.put(&mut wtxn, hash.as_bytes(), &bytes)?;
-
-        let mut entry = Entry::new();
-
-        entry.set_content_hash(hash);
-        entry.set_content_length(length);
-
-        let mut key = vec![];
-        key.extend_from_slice(public_key.as_bytes());
-        key.extend_from_slice(path.as_bytes());
-
-        self.tables.entries.put(&mut wtxn, &key, &entry.serialize());
-
-        wtxn.commit()?;
-
-        Ok(())
-    }
-
-    pub fn get_blob(
-        &mut self,
-        public_key: &PublicKey,
-        path: &str,
-    ) -> anyhow::Result<Option<Bytes>> {
-        let mut rtxn = self.env.read_txn()?;
-
-        let mut key = vec![];
-        key.extend_from_slice(public_key.as_bytes());
-        key.extend_from_slice(path.as_bytes());
-
-        if let Some(bytes) = self.tables.entries.get(&rtxn, &key)? {
-            let entry = Entry::deserialize(bytes)?;
-
-            if let Some(blob) = self.tables.blobs.get(&rtxn, entry.content_hash())? {
-                return Ok(Some(Bytes::from(blob.to_vec())));
-            };
-        };
-
-        Ok(None)
     }
 }
 
