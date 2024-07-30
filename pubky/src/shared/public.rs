@@ -10,10 +10,13 @@ impl PubkyClient {
     pub async fn inner_put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
         let url = self.url(pubky, path).await?;
 
-        self.request(Method::PUT, url)
+        let response = self
+            .request(Method::PUT, url)
             .body(content.to_owned())
             .send()
             .await?;
+
+        response.error_for_status()?;
 
         Ok(())
     }
@@ -21,14 +24,16 @@ impl PubkyClient {
     pub async fn inner_get(&self, pubky: &PublicKey, path: &str) -> Result<Option<Bytes>> {
         let url = self.url(pubky, path).await?;
 
-        let res = self.request(Method::GET, url).send().await?;
+        let response = self.request(Method::GET, url).send().await?;
 
-        if res.status() == StatusCode::NOT_FOUND {
+        response.error_for_status_ref()?;
+
+        if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
 
         // TODO: bail on too large files.
-        let bytes = res.bytes().await?;
+        let bytes = response.bytes().await?;
 
         Ok(Some(bytes))
     }
@@ -36,7 +41,9 @@ impl PubkyClient {
     pub async fn inner_delete(&self, pubky: &PublicKey, path: &str) -> Result<()> {
         let url = self.url(pubky, path).await?;
 
-        self.request(Method::DELETE, url).send().await?;
+        let response = self.request(Method::DELETE, url).send().await?;
+
+        response.error_for_status_ref()?;
 
         Ok(())
     }
@@ -70,10 +77,13 @@ fn normalize_path(path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
 
+    use core::panic;
+
     use crate::*;
 
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_homeserver::Homeserver;
+    use reqwest::StatusCode;
 
     #[tokio::test]
     async fn put_get_delete() {
@@ -99,6 +109,60 @@ mod tests {
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
+        // client
+        // .delete(&keypair.public_key(), "/pub/foo.txt")
+        //     .await
+        //     .unwrap();
+        //
+        // let response = client
+        //     .get(&keypair.public_key(), "/pub/foo.txt")
+        //     .await
+        //     .unwrap();
+        //
+        // assert_eq!(response, None);
+    }
+
+    #[tokio::test]
+    async fn forbidden_put_delete() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let public_key = keypair.public_key();
+
+        let other_client = PubkyClient::test(&testnet);
+        {
+            let other = Keypair::random();
+
+            other_client
+                .signup(&other, &server.public_key())
+                .await
+                .unwrap();
+
+            let response = other_client
+                .put(&public_key, "/pub/foo.txt", &[0, 1, 2, 3, 4])
+                .await;
+
+            match response {
+                Err(Error::Reqwest(error)) => {
+                    assert!(error.status() == Some(StatusCode::UNAUTHORIZED))
+                }
+                error => {
+                    panic!("expected error StatusCode::UNAUTHORIZED")
+                }
+            }
+        }
+
+        // client
+        //     .put(&keypair.public_key(), "/pub/foo.txt", &[0, 1, 2, 3, 4])
+        //     .await
+        //     .unwrap();
+        //
         // client
         // .delete(&keypair.public_key(), "/pub/foo.txt")
         //     .await
