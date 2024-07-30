@@ -110,7 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(10);
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);

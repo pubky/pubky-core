@@ -145,8 +145,14 @@ mod tests {
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
+    fn homeserver_in_tokio() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn resolve_homeserver() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(10);
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         // Publish an intermediate controller of the homeserver
