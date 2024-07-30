@@ -30,7 +30,7 @@ use crate::{
 #[debug_handler]
 pub async fn signup(
     State(state): State<AppState>,
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
+    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
     pubky: Pubky,
     uri: Uri,
@@ -38,15 +38,7 @@ pub async fn signup(
 ) -> Result<impl IntoResponse> {
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
-    signin(
-        State(state),
-        TypedHeader(user_agent),
-        cookies,
-        pubky,
-        uri,
-        body,
-    )
-    .await
+    signin(State(state), user_agent, cookies, pubky, uri, body).await
 }
 
 pub async fn session(
@@ -104,7 +96,7 @@ pub async fn signout(
 
 pub async fn signin(
     State(state): State<AppState>,
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
+    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
     pubky: Pubky,
     uri: Uri,
@@ -141,10 +133,11 @@ pub async fn signin(
         .open_database(&wtxn, Some(SESSIONS_TABLE))?
         .expect("Sessions table already created");
 
-    // TODO: handle not having a user agent?
     let mut session = Session::new();
 
-    session.set_user_agent(user_agent.to_string());
+    if let Some(user_agent) = user_agent {
+        session.set_user_agent(user_agent.to_string());
+    }
 
     sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
 
