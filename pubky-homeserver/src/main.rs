@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
         .init();
 
     let server = if args.testnet {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(10);
 
         Homeserver::start(Config {
             port: Some(15411),
