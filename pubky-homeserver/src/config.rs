@@ -24,6 +24,8 @@ pub struct Config {
     /// Defaults to a directory in the OS data directory
     storage: Option<PathBuf>,
     keypair: Keypair,
+
+    dht_request_timeout: Option<Duration>,
 }
 
 impl Config {
@@ -52,6 +54,7 @@ impl Config {
             storage,
             port: Some(15411),
             keypair: Keypair::from_secret_key(&[0_u8; 32]),
+            dht_request_timeout: Some(Duration::from_millis(10)),
             ..Default::default()
         }
     }
@@ -101,6 +104,10 @@ impl Config {
     pub fn keypair(&self) -> &Keypair {
         &self.keypair
     }
+
+    pub(crate) fn dht_request_timeout(&self) -> Option<Duration> {
+        self.dht_request_timeout
+    }
 }
 
 impl Default for Config {
@@ -111,6 +118,7 @@ impl Default for Config {
             domain: "localhost".to_string(),
             storage: None,
             keypair: Keypair::random(),
+            dht_request_timeout: None,
         }
     }
 }
