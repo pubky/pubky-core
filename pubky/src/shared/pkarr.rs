@@ -139,16 +139,10 @@ mod tests {
 
     use pkarr::{
         dns::{rdata::SVCB, Packet},
-        mainline::{dht::DhtSettings, Testnet},
+        mainline::{dht::DhtSettings, Dht, Testnet},
         Keypair, PkarrClient, Settings, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
-
-    #[tokio::test]
-    fn homeserver_in_tokio() {
-        let testnet = Testnet::new(10);
-        let server = Homeserver::start_test(&testnet).await.unwrap();
-    }
 
     #[tokio::test]
     async fn resolve_homeserver() {
