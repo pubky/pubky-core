@@ -1,3 +1,4 @@
+use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, time::SystemTime};
@@ -7,12 +8,57 @@ use heed::{
     BoxedError, BytesDecode, BytesEncode, Database,
 };
 
-use pubky_common::{crypto::Hash, timestamp::Timestamp};
+use pubky_common::{
+    crypto::{Hash, Hasher},
+    timestamp::Timestamp,
+};
+
+use crate::database::DB;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Bytes, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
+
+impl DB {
+    pub fn put_entry(
+        &mut self,
+        public_key: &PublicKey,
+        path: &str,
+        rx: flume::Receiver<bytes::Bytes>,
+    ) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
+
+        let mut hasher = Hasher::new();
+        let mut bytes = vec![];
+        let mut length = 0;
+
+        while let Ok(chunk) = rx.recv() {
+            hasher.update(&chunk);
+            bytes.extend_from_slice(&chunk);
+            length += chunk.len();
+        }
+
+        let hash = hasher.finalize();
+
+        self.tables.blobs.put(&mut wtxn, hash.as_bytes(), &bytes)?;
+
+        let mut entry = Entry::new();
+
+        entry.set_content_hash(hash);
+        entry.set_content_length(length);
+
+        let mut key = vec![];
+        key.extend_from_slice(public_key.as_bytes());
+        key.extend_from_slice(path.as_bytes());
+
+        self.tables.entries.put(&mut wtxn, &key, &entry.serialize());
+
+        wtxn.commit()?;
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Entry {

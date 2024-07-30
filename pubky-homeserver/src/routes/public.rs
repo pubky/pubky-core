@@ -7,6 +7,7 @@ use axum::{
 };
 use axum_extra::body::AsyncReadBody;
 use futures_util::stream::StreamExt;
+use tower_cookies::Cookies;
 
 use tracing::debug;
 
@@ -26,9 +27,27 @@ pub async fn put(
     State(mut state): State<AppState>,
     pubky: Pubky,
     path: EntryPath,
+    cookies: Cookies,
     mut body: Body,
 ) -> Result<impl IntoResponse> {
-    // TODO: return an error if path does not start with '/pub/'
+    let public_key = pubky.public_key().clone();
+    let path = path.as_str().to_string();
+
+    // TODO: can we move this logic to the extractor or a layer
+    // to perform this validation?
+    let session = state
+        .db
+        .get_session(cookies, &public_key, &path)?
+        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+
+    if !path.starts_with("pub/") {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "Writing to directories other than '/pub/' is forbidden".into(),
+        ));
+    }
+
+    // TODO: should we forbid paths ending with `/`?
 
     let mut stream = body.into_data_stream();
 
@@ -41,11 +60,7 @@ pub async fn put(
         // to stream this to filesystem, and keep track of any failed
         // writes to GC these files later.
 
-        let public_key = pubky.public_key();
-
-        // TODO: Authorize
-
-        state.db.put_entry(public_key, path.as_str(), rx);
+        state.db.put_entry(&public_key, &path, rx);
 
         Ok(())
     });
