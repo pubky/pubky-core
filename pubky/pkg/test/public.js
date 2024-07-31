@@ -12,17 +12,19 @@ test('public: put/get', async (t) => {
 
   const publicKey = keypair.public_key();
 
+  let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
+
   const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
 
   // PUT public data, by authorized client
-  await client.put(publicKey, "/pub/example.com/arbitrary", body);
+  await client.put(url, body);
 
 
   // GET public data without signup or signin
   {
     const client = PubkyClient.testnet();
 
-    let response = await client.get(publicKey, "/pub/example.com/arbitrary");
+    let response = await client.get(url);
 
     t.ok(Buffer.from(response).equals(body))
   }

@@ -26,19 +26,22 @@ await client.signup(keypair, homeserver)
 
 const publicKey = keypair.public_key();
 
+// Pubky URL
+let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
+
 // Verify that you are signed in.
 const session = await client.session(publicKey)
 
 const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
 
 // PUT public data, by authorized client
-await client.put(publicKey, "/pub/example.com/arbitrary", body);
+await client.put(url, body);
 
 // GET public data without signup or signin
 {
     const client = new PubkyClient();
 
-    let response = await client.get(publicKey, "/pub/example.com/arbitrary");
+    let response = await client.get(url);
 }
 ```
 
