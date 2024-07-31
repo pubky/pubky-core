@@ -1,4 +1,4 @@
-use url::Url;
+use url::{Origin, Url};
 
 use pkarr::{
     dns::{rdata::SVCB, Packet},
@@ -48,11 +48,8 @@ impl PubkyClient {
     }
 
     /// Resolve the homeserver for a pubky.
-    pub(crate) async fn resolve_pubky_homeserver(
-        &self,
-        pubky: &PublicKey,
-    ) -> Result<(PublicKey, Url)> {
-        let target = format!("_pubky.{}", pubky);
+    pub(crate) async fn resolve_pubky_homeserver(&self, pubky: &PublicKey) -> Result<Endpoint> {
+        let target = format!("_pubky.{pubky}");
 
         self.resolve_endpoint(&target)
             .await
@@ -60,14 +57,14 @@ impl PubkyClient {
     }
 
     /// Resolve a service's public_key and clearnet url from a Pubky domain
-    pub(crate) async fn resolve_endpoint(&self, target: &str) -> Result<(PublicKey, Url)> {
+    pub(crate) async fn resolve_endpoint(&self, target: &str) -> Result<Endpoint> {
         let original_target = target;
         // TODO: cache the result of this function?
 
         let mut target = target.to_string();
 
         let mut homeserver_public_key = None;
-        let mut host = target.clone();
+        let mut origin = target.clone();
 
         let mut step = 0;
 
@@ -118,9 +115,9 @@ impl PubkyClient {
                         }
                         let port = u16::from_be_bytes([port[0], port[1]]);
 
-                        host = format!("{target}:{port}");
+                        origin = format!("{target}:{port}");
                     } else {
-                        host.clone_from(&target);
+                        origin.clone_from(&target);
                     };
 
                     if step >= MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION {
@@ -130,18 +127,27 @@ impl PubkyClient {
             }
         }
 
-        if let Some(homeserver) = homeserver_public_key {
-            let url = if host.starts_with("localhost") {
-                format!("http://{host}")
-            } else {
-                format!("https://{host}")
-            };
+        if let Some(public_key) = homeserver_public_key {
+            let mut url = Url::parse(&format!(
+                "{}://{}",
+                if origin.starts_with("localhost") {
+                    "http"
+                } else {
+                    "https"
+                },
+                origin
+            ))?;
 
-            return Ok((homeserver, Url::parse(&url)?));
+            return Ok(Endpoint { public_key, url });
         }
 
         Err(Error::ResolveEndpoint(original_target.into()))
     }
+}
+
+pub(crate) struct Endpoint {
+    pub public_key: PublicKey,
+    pub url: Url,
 }
 
 #[cfg(test)]
@@ -200,7 +206,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            let (public_key, url) = client
+            let Endpoint { public_key, url } = client
                 .resolve_pubky_homeserver(&pubky.public_key())
                 .await
                 .unwrap();

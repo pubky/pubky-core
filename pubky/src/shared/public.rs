@@ -4,11 +4,16 @@ use pkarr::PublicKey;
 use reqwest::{Method, Response, StatusCode};
 use url::Url;
 
-use crate::{error::Result, PubkyClient};
+use crate::{
+    error::{Error, Result},
+    PubkyClient,
+};
+
+use super::pkarr::Endpoint;
 
 impl PubkyClient {
-    pub async fn inner_put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
-        let url = self.url(pubky, path).await?;
+    pub async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
+        let url = self.pubky_to_http(url).await?;
 
         let response = self
             .request(Method::PUT, url)
@@ -21,8 +26,8 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub async fn inner_get(&self, pubky: &PublicKey, path: &str) -> Result<Option<Bytes>> {
-        let url = self.url(pubky, path).await?;
+    pub async fn inner_get<T: TryInto<Url>>(&self, url: T) -> Result<Option<Bytes>> {
+        let url = self.pubky_to_http(url).await?;
 
         let response = self.request(Method::GET, url).send().await?;
 
@@ -38,8 +43,8 @@ impl PubkyClient {
         Ok(Some(bytes))
     }
 
-    pub async fn inner_delete(&self, pubky: &PublicKey, path: &str) -> Result<()> {
-        let url = self.url(pubky, path).await?;
+    pub async fn inner_delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
+        let url = self.pubky_to_http(url).await?;
 
         let response = self.request(Method::DELETE, url).send().await?;
 
@@ -48,12 +53,35 @@ impl PubkyClient {
         Ok(())
     }
 
-    async fn url(&self, pubky: &PublicKey, path: &str) -> Result<Url> {
-        let path = normalize_path(path)?;
+    async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
+        let mut original_url: Url = url
+            .try_into()
+            .map_err(|e| Error::Generic("Invalid Url".to_string()))?;
 
-        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
+        if original_url.scheme() != "pubky" {
+            return Ok(original_url);
+        }
 
-        url.set_path(&format!("/{pubky}/{path}"));
+        let pubky = original_url
+            .host_str()
+            .ok_or(Error::Generic("Missing Pubky Url host".to_string()))?
+            .to_string();
+
+        let Endpoint { mut url, .. } = self
+            .resolve_pubky_homeserver(&PublicKey::try_from(pubky.clone())?)
+            .await?;
+
+        let path = original_url.path_segments();
+
+        // TODO: replace if we move to subdomains instead of paths.
+        let mut split = url.path_segments_mut().unwrap();
+        split.push(&pubky);
+        if let Some(segments) = path {
+            for segment in segments {
+                split.push(segment);
+            }
+        }
+        drop(split);
 
         Ok(url)
     }
@@ -96,16 +124,11 @@ mod tests {
 
         client.signup(&keypair, &server.public_key()).await.unwrap();
 
-        client
-            .put(&keypair.public_key(), "/pub/foo.txt", &[0, 1, 2, 3, 4])
-            .await
-            .unwrap();
+        let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
 
-        let response = client
-            .get(&keypair.public_key(), "/pub/foo.txt")
-            .await
-            .unwrap()
-            .unwrap();
+        client.put(url.as_str(), &[0, 1, 2, 3, 4]).await.unwrap();
+
+        let response = client.get(url.as_str()).await.unwrap().unwrap();
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
@@ -135,18 +158,19 @@ mod tests {
 
         let public_key = keypair.public_key();
 
+        let url = format!("pubky://{public_key}/pub/foo.txt");
+
         let other_client = PubkyClient::test(&testnet);
         {
             let other = Keypair::random();
 
+            // TODO: remove extra client after switching to subdomains.
             other_client
                 .signup(&other, &server.public_key())
                 .await
                 .unwrap();
 
-            let response = other_client
-                .put(&public_key, "/pub/foo.txt", &[0, 1, 2, 3, 4])
-                .await;
+            let response = other_client.put(url.as_str(), &[0, 1, 2, 3, 4]).await;
 
             match response {
                 Err(Error::Reqwest(error)) => {

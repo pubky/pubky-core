@@ -2,11 +2,14 @@ use reqwest::{Method, StatusCode};
 
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{auth::AuthnSignature, session::Session};
+use url::Url;
 
 use crate::{
     error::{Error, Result},
     PubkyClient,
 };
+
+use super::pkarr::Endpoint;
 
 impl PubkyClient {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -22,7 +25,10 @@ impl PubkyClient {
 
         let public_key = &keypair.public_key();
 
-        let (audience, mut url) = self.resolve_endpoint(&homeserver).await?;
+        let Endpoint {
+            public_key: audience,
+            mut url,
+        } = self.resolve_endpoint(&homeserver).await?;
 
         url.set_path(&format!("/{}", public_key));
 
@@ -30,7 +36,11 @@ impl PubkyClient {
             .as_bytes()
             .to_owned();
 
-        let response = self.request(Method::PUT, url).body(body).send().await?;
+        let response = self
+            .request(Method::PUT, url.clone())
+            .body(body)
+            .send()
+            .await?;
 
         self.store_session(response);
 
@@ -44,7 +54,7 @@ impl PubkyClient {
     /// Returns None  if not signed in, or [reqwest::Error]
     /// if the response has any other `>=404` status code.
     pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
-        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
+        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
@@ -65,7 +75,10 @@ impl PubkyClient {
 
     /// Signout from a homeserver.
     pub async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        let (_, mut url) = self.resolve_pubky_homeserver(pubky).await?;
+        let Endpoint {
+            public_key,
+            mut url,
+        } = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
@@ -80,7 +93,10 @@ impl PubkyClient {
     pub async fn inner_signin(&self, keypair: &Keypair) -> Result<()> {
         let pubky = keypair.public_key();
 
-        let (audience, mut url) = self.resolve_pubky_homeserver(&pubky).await?;
+        let Endpoint {
+            public_key: audience,
+            mut url,
+        } = self.resolve_pubky_homeserver(&pubky).await?;
 
         url.set_path(&format!("/{}/session", &pubky));
 

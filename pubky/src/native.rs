@@ -86,13 +86,13 @@ impl PubkyClient {
     // === Public data ===
 
     /// Upload a small payload to a given path.
-    pub async fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<()> {
-        self.inner_put(pubky, path, content).await
+    pub async fn put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
+        self.inner_put(url, content).await
     }
 
     /// Download a small payload from a given path relative to a pubky author.
-    pub async fn get(&self, pubky: &PublicKey, path: &str) -> Result<Option<Bytes>> {
-        self.inner_get(pubky, path).await
+    pub async fn get<T: TryInto<Url>>(&self, url: T) -> Result<Option<Bytes>> {
+        self.inner_get(url).await
     }
 
     // /// Delete a file at a path relative to a pubky author.

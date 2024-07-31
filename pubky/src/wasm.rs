@@ -5,7 +5,7 @@ use std::{
 
 use wasm_bindgen::prelude::*;
 
-use reqwest::{Method, RequestBuilder, Response};
+use reqwest::{IntoUrl, Method, RequestBuilder, Response};
 use url::Url;
 
 use crate::PubkyClient;
@@ -116,20 +116,14 @@ impl PubkyClient {
 
     #[wasm_bindgen]
     /// Upload a small payload to a given path.
-    pub async fn put(&self, pubky: &PublicKey, path: &str, content: &[u8]) -> Result<(), JsValue> {
-        self.inner_put(pubky.as_inner(), path, content)
-            .await
-            .map_err(|e| e.into())
+    pub async fn put(&self, url: &str, content: &[u8]) -> Result<(), JsValue> {
+        self.inner_put(url, content).await.map_err(|e| e.into())
     }
 
     #[wasm_bindgen]
     /// Download a small payload from a given path relative to a pubky author.
-    pub async fn get(
-        &self,
-        pubky: &PublicKey,
-        path: &str,
-    ) -> Result<Option<js_sys::Uint8Array>, JsValue> {
-        self.inner_get(pubky.as_inner(), path)
+    pub async fn get(&self, url: &str) -> Result<Option<js_sys::Uint8Array>, JsValue> {
+        self.inner_get(url)
             .await
             .map(|b| b.map(|b| (&*b).into()))
             .map_err(|e| e.into())
