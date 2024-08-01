@@ -95,10 +95,10 @@ impl PubkyClient {
         self.inner_get(url).await
     }
 
-    // /// Delete a file at a path relative to a pubky author.
-    // pub async fn delete(&self, pubky: &PublicKey, path: &str) -> Result<()> {
-    //     self.inner_delete(pubky, path).await
-    // }
+    /// Delete a file at a path relative to a pubky author.
+    pub async fn delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
+        self.inner_delete(url).await
+    }
 }
 
 // === Internals ===

@@ -31,11 +31,11 @@ impl PubkyClient {
 
         let response = self.request(Method::GET, url).send().await?;
 
-        response.error_for_status_ref()?;
-
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
+
+        response.error_for_status_ref()?;
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;
@@ -125,28 +125,23 @@ mod tests {
         client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
+        let url = url.as_str();
 
-        client.put(url.as_str(), &[0, 1, 2, 3, 4]).await.unwrap();
+        client.put(url, &[0, 1, 2, 3, 4]).await.unwrap();
 
-        let response = client.get(url.as_str()).await.unwrap().unwrap();
+        let response = client.get(url).await.unwrap().unwrap();
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-        // client
-        // .delete(&keypair.public_key(), "/pub/foo.txt")
-        //     .await
-        //     .unwrap();
-        //
-        // let response = client
-        //     .get(&keypair.public_key(), "/pub/foo.txt")
-        //     .await
-        //     .unwrap();
-        //
-        // assert_eq!(response, None);
+        client.delete(url).await.unwrap();
+
+        let response = client.get(url).await.unwrap();
+
+        assert_eq!(response, None);
     }
 
     #[tokio::test]
-    async fn forbidden_put_delete() {
+    async fn unauthorized_put_delete() {
         let testnet = Testnet::new(10);
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
@@ -159,6 +154,7 @@ mod tests {
         let public_key = keypair.public_key();
 
         let url = format!("pubky://{public_key}/pub/foo.txt");
+        let url = url.as_str();
 
         let other_client = PubkyClient::test(&testnet);
         {
@@ -170,7 +166,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            let response = other_client.put(url.as_str(), &[0, 1, 2, 3, 4]).await;
+            let response = other_client.put(url, &[0, 1, 2, 3, 4]).await;
 
             match response {
                 Err(Error::Reqwest(error)) => {
@@ -182,21 +178,33 @@ mod tests {
             }
         }
 
-        // client
-        //     .put(&keypair.public_key(), "/pub/foo.txt", &[0, 1, 2, 3, 4])
-        //     .await
-        //     .unwrap();
-        //
-        // client
-        // .delete(&keypair.public_key(), "/pub/foo.txt")
-        //     .await
-        //     .unwrap();
-        //
-        // let response = client
-        //     .get(&keypair.public_key(), "/pub/foo.txt")
-        //     .await
-        //     .unwrap();
-        //
-        // assert_eq!(response, None);
+        client.put(url, &[0, 1, 2, 3, 4]).await.unwrap();
+
+        {
+            let other = Keypair::random();
+
+            // TODO: remove extra client after switching to subdomains.
+            other_client
+                .signup(&other, &server.public_key())
+                .await
+                .unwrap();
+
+            let response = other_client.delete(url).await;
+
+            dbg!(&response);
+
+            match response {
+                Err(Error::Reqwest(error)) => {
+                    assert!(error.status() == Some(StatusCode::UNAUTHORIZED))
+                }
+                error => {
+                    panic!("expected error StatusCode::UNAUTHORIZED")
+                }
+            }
+        }
+
+        let response = client.get(url).await.unwrap().unwrap();
+
+        assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
     }
 }

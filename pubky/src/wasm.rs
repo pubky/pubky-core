@@ -128,4 +128,10 @@ impl PubkyClient {
             .map(|b| b.map(|b| (&*b).into()))
             .map_err(|e| e.into())
     }
+
+    #[wasm_bindgen]
+    /// Delete a file at a path relative to a pubky author.
+    pub async fn delete(&self, url: &str) -> Result<(), JsValue> {
+        self.inner_delete(url).await.map_err(|e| e.into())
+    }
 }

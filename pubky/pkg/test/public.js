@@ -19,28 +19,25 @@ test('public: put/get', async (t) => {
   // PUT public data, by authorized client
   await client.put(url, body);
 
+  const otherClient = PubkyClient.testnet();
 
   // GET public data without signup or signin
   {
-    const client = PubkyClient.testnet();
-
-    let response = await client.get(url);
+    let response = await otherClient.get(url);
 
     t.ok(Buffer.from(response).equals(body))
   }
 
-  // // DELETE public data, by authorized client
-  // await client.delete(publicKey, "/pub/example.com/arbitrary");
-  //
-  //
-  // // GET public data without signup or signin
-  // {
-  //   const client = new PubkyClient();
-  //
-  //   let response = await client.get(publicKey, "/pub/example.com/arbitrary");
-  //
-  //   t.notOk(response)
-  // }
+  // DELETE public data, by authorized client
+  await client.delete(url);
+
+
+  // GET public data without signup or signin
+  {
+    let response = await otherClient.get(url);
+
+    t.notOk(response)
+  }
 })
 
 test("not found", async (t) => {
@@ -58,11 +55,7 @@ test("not found", async (t) => {
 
   let result = await client.get(url).catch(e => e);
 
-  t.ok(result instanceof Error);
-  t.is(
-    result.message,
-    `HTTP status client error (404 Not Found) for url (http://localhost:15411/${publicKey.z32()}/pub/example.com/arbitrary)`
-  )
+  t.notOk(result);
 })
 
 test("unauthorized", async (t) => {

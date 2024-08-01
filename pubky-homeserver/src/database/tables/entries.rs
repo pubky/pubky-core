@@ -58,6 +58,31 @@ impl DB {
 
         Ok(())
     }
+
+    pub fn delete_entry(&mut self, public_key: &PublicKey, path: &str) -> anyhow::Result<bool> {
+        let mut wtxn = self.env.write_txn()?;
+
+        let mut key = vec![];
+        key.extend_from_slice(public_key.as_bytes());
+        key.extend_from_slice(path.as_bytes());
+
+        let deleted = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
+            let entry = Entry::deserialize(bytes)?;
+
+            // TODO: reference counting of blobs
+            let deleted_blobs = self.tables.blobs.delete(&mut wtxn, entry.content_hash())?;
+
+            let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
+
+            deleted_entry & deleted_blobs
+        } else {
+            false
+        };
+
+        wtxn.commit()?;
+
+        Ok(deleted)
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]

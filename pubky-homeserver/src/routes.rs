@@ -30,6 +30,7 @@ fn base(state: AppState) -> Router {
         .route("/:pubky/session", delete(auth::signout))
         .route("/:pubky/*path", put(public::put))
         .route("/:pubky/*path", get(public::get))
+        .route("/:pubky/*path", delete(public::delete))
         .layer(CookieManagerLayer::new())
         // TODO: revisit if we enable streaming big payloads
         // TODO: maybe add to a separate router (drive router?).
