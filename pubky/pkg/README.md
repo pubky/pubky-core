@@ -43,6 +43,9 @@ await client.put(url, body);
 
     let response = await client.get(url);
 }
+
+// Delete public data, by authorized client
+await client.delete(url);
 ```
 
 ## Test and Development
