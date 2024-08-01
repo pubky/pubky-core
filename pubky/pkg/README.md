@@ -24,7 +24,7 @@ let homeserver = PublicKey.from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn4
 
 await client.signup(keypair, homeserver)
 
-const publicKey = keypair.public_key();
+const publicKey = keypair.publicKey();
 
 // Pubky URL
 let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;

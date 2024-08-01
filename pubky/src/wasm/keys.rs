@@ -22,7 +22,7 @@ impl Keypair {
         Self(pkarr::Keypair::from_secret_key(&bytes))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "publicKey")]
     /// Returns the [PublicKey] of this keypair.
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.public_key())

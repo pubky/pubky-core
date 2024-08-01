@@ -6,7 +6,7 @@ test('auth', async (t) => {
   const client = PubkyClient.testnet();
 
   const keypair = Keypair.random()
-  const publicKey = keypair.public_key()
+  const publicKey = keypair.publicKey()
 
   const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
   await client.signup(keypair, homeserver)
