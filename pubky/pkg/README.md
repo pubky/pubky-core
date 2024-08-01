@@ -71,12 +71,10 @@ Run the local testnet server
 npm run testnet
 ```
 
-Pass the logged addresses as inputs to `PubkyClient`
+Use the logged addresses as inputs to `PubkyClient`
 
 ```js
-import { PubkyClient, PublicKey } from '../index.js'
+import { PubkyClient } from '../index.js'
 
-const client = new PubkyClient().setPkarrRelays(["http://localhost:15411/pkarr"]);
-
-let homeserver = PublicKey.from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
+const client = new PubkyClient().testnet();
 ```
