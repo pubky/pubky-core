@@ -2,7 +2,7 @@
   "name": "@synonymdev/pubky",
   "type": "module",
   "description": "Pubky client",
-  "version": "0.1.7",
+  "version": "0.1.9",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,15 +17,14 @@
     "prepublishOnly": "npm run build && npm run test"
   },
   "files": [
-    "nodejs/pubky_bg.wasm",
-    "nodejs/pubky.js",
-    "nodejs/pubky.d.ts",
+    "index.cjs",
     "browser.js",
-    "index.js"
+    "pubky.d.ts",
+    "pubky_bg.wasm"
   ],
-  "main": "index.js",
+  "main": "index.cjs",
   "browser": "browser.js",
-  "types": "nodejs/pubky.d.ts",
+  "types": "pubky.d.ts",
   "keywords": [
     "web",
     "dht",
