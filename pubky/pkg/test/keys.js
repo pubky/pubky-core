@@ -7,7 +7,7 @@ test('generate keys from a seed', async (t) => {
 
   const keypair = Keypair.from_secret_key(secretkey)
 
-  const publicKey = keypair.public_key()
+  const publicKey = keypair.publicKey()
 
   t.is(publicKey.z32(), 'gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o')
 })
