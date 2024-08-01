@@ -1,6 +1,6 @@
 import test from 'tape'
 
-import { PubkyClient, Keypair, PublicKey } from '../index.js'
+import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
 
 test('auth', async (t) => {
   const client = PubkyClient.testnet();

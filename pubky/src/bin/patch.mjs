@@ -2,7 +2,7 @@
 //
 // Based on hacks from [this issue](https://github.com/rustwasm/wasm-pack/issues/1334)
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { fileURLToPath } from 'node:url';
 import path, { dirname } from 'node:path';
 
@@ -57,3 +57,12 @@ const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `.
   );
 
 await writeFile(path.join(__dirname, `../../pkg/browser.js`), patched);
+
+// Move outside of nodejs
+
+await Promise.all([".js", ".d.ts", "_bg.wasm"].map(suffix =>
+  rename(
+    path.join(__dirname, `../../pkg/nodejs/${name}${suffix}`),
+    path.join(__dirname, `../../pkg/${suffix === '.js' ? "index.cjs" : (name + suffix)}`),
+  ))
+)
