@@ -13,8 +13,8 @@ impl Keypair {
         Self(pkarr::Keypair::random())
     }
 
-    #[wasm_bindgen]
     /// Generate a [Keypair] from a secret key.
+    #[wasm_bindgen(js_name = "fromSecretKey")]
     pub fn from_secret_key(secret_key: js_sys::Uint8Array) -> Self {
         let mut bytes = [0; 32];
         secret_key.copy_to(&mut bytes);
@@ -22,8 +22,14 @@ impl Keypair {
         Self(pkarr::Keypair::from_secret_key(&bytes))
     }
 
-    #[wasm_bindgen(js_name = "publicKey")]
+    /// Returns the secret key of this keypair.
+    #[wasm_bindgen(js_name = "secretKey")]
+    pub fn secret_key(&self) -> js_sys::Uint8Array {
+        self.0.secret_key().as_slice().into()
+    }
+
     /// Returns the [PublicKey] of this keypair.
+    #[wasm_bindgen(js_name = "publicKey")]
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.public_key())
     }
