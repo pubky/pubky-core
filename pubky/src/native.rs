@@ -10,7 +10,11 @@ use pubky_common::session::Session;
 use reqwest::{Method, RequestBuilder, Response};
 use url::Url;
 
-use crate::{error::Result, PubkyClient};
+use crate::{
+    error::Result,
+    shared::recovery_file::{create_recovery_file, decrypt_recovery_file},
+    PubkyClient,
+};
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -98,6 +102,15 @@ impl PubkyClient {
     /// Delete a file at a path relative to a pubky author.
     pub async fn delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
         self.inner_delete(url).await
+    }
+
+    // === Helpers ===
+
+    pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>> {
+        create_recovery_file(keypair, passphrase)
+    }
+    pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair> {
+        decrypt_recovery_file(recovery_file, passphrase)
     }
 }
 
