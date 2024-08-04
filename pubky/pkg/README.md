@@ -2,6 +2,12 @@
 
 JavaScript implementation of [Pubky](https://github.com/pubky/pubky).
 
+## Table of Contents
+- [Install](#install)
+- [Getting Started](#getting-started)
+- [API](#api)
+- [Test and Development](#test-and-development)
+
 ## Install
 
 ```bash
@@ -47,6 +53,110 @@ await client.put(url, body);
 // Delete public data, by authorized client
 await client.delete(url);
 ```
+
+## API
+
+### PubkyClient
+
+#### constructor
+```js
+let client = new PubkyClient()
+```
+
+#### createRecoveryFile
+```js
+let recoveryFile = PubkyClient.createRecoveryFile(keypair, passphrase)
+```
+- keypair: An instance of [Keypair](#keypair).
+- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
+- Returns: A recovery file with a spec line and an encrypted secret key.
+
+#### createRecoveryFile
+```js
+let keypair = PubkyClient.decryptRecoveryfile(recoveryFile, passphrase)
+```
+- recoveryFile: An instance of Uint8Array containing the recovery file blob.
+- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
+- Returns: An instance of [Keypair](#keypair).
+
+#### signup
+```js
+await client.signup(keypair, homeserver)
+```
+- keypair: An instance of [Keypair](#keypair).
+- homeserver: An instance of [PublicKey](#publickey) representing the homeserver.
+
+#### session
+```js
+let session = await client.session(publicKey)
+```
+- publicKey: An instance of [PublicKey](#publickey).
+- Returns: A session object if signed in, or undefined if not.
+
+#### put
+```js
+let response = await client.put(url, body);
+```
+- url: A string representing the Pubky URL.
+- body: A Buffer containing the data to be stored.
+
+### get
+```js
+let response = await client.get(url)
+```
+- url: A string representing the Pubky URL.
+- Returns: A response object containing the requested data.
+
+### delete
+
+```js
+let response = await delete(url);
+```
+- url: A string representing the Pubky URL.
+
+### Keypair
+
+#### random
+```js
+let keypair = Keypair.random()
+```
+- Returns: A new random Keypair.
+
+#### fromSecretKey
+```js
+let keypair = Keypair.fromSecretKey(secretKey)
+```
+- secretKey: A 32 bytes Uint8array.
+- Returns: A new Keypair.
+
+
+#### publicKey
+```js
+let publicKey = keypair.publicKey()
+```
+- Returns: The [PublicKey](#publickey) associated with the Keypair.
+
+#### secretKey
+```js
+let secretKey = keypair.secretKey()
+```
+- Returns: The Uint8array secret key associated with the Keypair.
+
+### PublicKey
+
+#### from
+
+```js
+let publicKey = PublicKey.from(string);
+```
+- string: A string representing the public key.
+- Returns: A new PublicKey instance.
+
+#### z32
+```js
+let pubky = publicKey.z32();
+```
+Returns: The z-base-32 encoded string representation of the PublicKey.
 
 ## Test and Development
 
