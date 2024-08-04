@@ -91,11 +91,23 @@ impl DB {
         prefix: &str,
         reverse: bool,
         limit: Option<i32>,
+        cursor: Option<String>,
     ) -> anyhow::Result<Vec<String>> {
         let db = self.tables.entries;
         let txn = self.env.read_txn()?;
 
         let prefix = format!("{public_key}/{prefix}");
+        // Normalized cursor
+        let cursor = cursor.map(|mut cursor| {
+            if cursor.starts_with("pubky://") {
+                cursor = cursor[8..].into();
+            }
+            if cursor.starts_with(&prefix) {
+                cursor
+            } else {
+                format!("{prefix}{cursor}")
+            }
+        });
         let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
 
         // Vector to store results
@@ -103,22 +115,44 @@ impl DB {
 
         // Fetch data based on direction
         if reverse {
-            let mut iter = self.tables.entries.rev_prefix_iter(&txn, &prefix)?;
+            if let Some(x) = &cursor {
+                let mut cursor = cursor.unwrap_or(prefix.to_string());
+                let mut cursor = cursor.as_str();
 
-            for _ in 0..limit {
-                if let Some((key, _)) = iter.next().transpose()? {
-                    results.push(format!("pubky://{}", key))
-                };
+                for _ in 0..limit {
+                    if let Some((key, _)) = self.tables.entries.get_lower_than(&txn, cursor)? {
+                        if !key.starts_with(&prefix) {
+                            break;
+                        }
+                        cursor = key;
+                        results.push(format!("pubky://{}", key))
+                    };
+                }
+            } else {
+                // TODO: find a way to avoid this special case.
+
+                let mut iter = self.tables.entries.rev_prefix_iter(&txn, &prefix)?;
+
+                for _ in 0..limit {
+                    if let Some((key, _)) = iter.next().transpose()? {
+                        results.push(format!("pubky://{}", key))
+                    };
+                }
             }
         } else {
-            let mut iter = self.tables.entries.prefix_iter(&txn, &prefix)?;
+            let mut cursor = cursor.unwrap_or(prefix.to_string());
+            let mut cursor = cursor.as_str();
 
             for _ in 0..limit {
-                if let Some((key, _)) = iter.next().transpose()? {
+                if let Some((key, _)) = self.tables.entries.get_greater_than(&txn, cursor)? {
+                    if !key.starts_with(&prefix) {
+                        break;
+                    }
+                    cursor = key;
                     results.push(format!("pubky://{}", key))
                 };
             }
-        }
+        };
 
         Ok(results)
     }
