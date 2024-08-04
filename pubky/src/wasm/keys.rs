@@ -41,6 +41,12 @@ impl Keypair {
     }
 }
 
+impl From<pkarr::Keypair> for Keypair {
+    fn from(keypair: pkarr::Keypair) -> Self {
+        Self(keypair)
+    }
+}
+
 #[wasm_bindgen]
 pub struct PublicKey(pkarr::PublicKey);
 

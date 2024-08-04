@@ -8,7 +8,10 @@ use wasm_bindgen::prelude::*;
 use reqwest::{IntoUrl, Method, RequestBuilder, Response};
 use url::Url;
 
-use crate::PubkyClient;
+use crate::{
+    shared::recovery_file::{create_recovery_file, decrypt_recovery_file},
+    PubkyClient,
+};
 
 mod http;
 mod keys;
@@ -49,28 +52,43 @@ impl PubkyClient {
         }
     }
 
+    /// Create a recovery file of the `keypair`, containing the secret key encrypted
+    /// using the `passphrase`.
+    #[wasm_bindgen(js_name = "createRecoveryFile")]
+    pub fn create_recovery_file(
+        keypair: &Keypair,
+        passphrase: &str,
+    ) -> Result<js_sys::Uint8Array, JsValue> {
+        create_recovery_file(keypair.as_inner(), passphrase)
+            .map(|b| b.as_slice().into())
+            .map_err(|e| e.into())
+    }
+
+    /// Create a recovery file of the `keypair`, containing the secret key encrypted
+    /// using the `passphrase`.
+    #[wasm_bindgen(js_name = "decryptRecoveryFile")]
+    pub fn decrypt_recovery_file(
+        recovery_file: &[u8],
+        passphrase: &str,
+    ) -> Result<Keypair, JsValue> {
+        decrypt_recovery_file(recovery_file, passphrase)
+            .map(Keypair::from)
+            .map_err(|e| e.into())
+    }
+
     /// Set Pkarr relays used for publishing and resolving Pkarr packets.
     ///
     /// By default, [PubkyClient] will use `["https://relay.pkarr.org"]`
     #[wasm_bindgen(js_name = "setPkarrRelays")]
-    pub fn set_pkarr_relays(mut self, relays: Vec<JsValue>) -> Self {
-        let relays: Vec<String> = relays
-            .into_iter()
-            .filter_map(|name| name.as_string())
-            .collect();
-
+    pub fn set_pkarr_relays(mut self, relays: Vec<String>) -> Self {
         self.pkarr_relays = relays;
         self
     }
 
     // Read the set of pkarr relays used by this client.
     #[wasm_bindgen(js_name = "getPkarrRelays")]
-    pub fn get_pkarr_relays(&self) -> Vec<JsValue> {
-        self.pkarr_relays
-            .clone()
-            .into_iter()
-            .map(JsValue::from)
-            .collect()
+    pub fn get_pkarr_relays(&self) -> Vec<String> {
+        self.pkarr_relays.clone()
     }
 
     /// Signup to a homeserver and update Pkarr accordingly.
