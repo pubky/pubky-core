@@ -96,7 +96,7 @@ impl DB {
         let txn = self.env.read_txn()?;
 
         let prefix = format!("{public_key}/{prefix}");
-        let limit = limit.unwrap_or(MAX_LIST_LIMIT).max(MAX_LIST_LIMIT);
+        let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
 
         // Vector to store results
         let mut results = Vec::new();

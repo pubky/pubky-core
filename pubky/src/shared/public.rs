@@ -53,14 +53,26 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub async fn list<T: TryInto<Url>>(&self, url: T, reverse: bool) -> Result<Vec<String>> {
+    pub async fn list<T: TryInto<Url>>(
+        &self,
+        url: T,
+        reverse: bool,
+        limit: Option<i32>,
+    ) -> Result<Vec<String>> {
         let mut url = self.pubky_to_http(url).await?;
 
+        let mut query = url.query_pairs_mut();
+        query.append_key_only("list");
+
         if reverse {
-            url.set_query("list&reverse".into());
-        } else {
-            url.set_query("list".into());
+            query.append_key_only("reverse");
         }
+
+        if let Some(limit) = limit {
+            query.append_pair("limit", &limit.to_string());
+        }
+
+        drop(query);
 
         let response = self.request(Method::GET, url).send().await?;
 
@@ -255,7 +267,7 @@ mod tests {
 
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
-            let list = client.list(url.as_str(), false).await.unwrap();
+            let list = client.list(url.as_str(), false, None).await.unwrap();
 
             assert_eq!(
                 list,
@@ -270,7 +282,20 @@ mod tests {
 
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
-            let list = client.list(url.as_str(), true).await.unwrap();
+            let list = client.list(url.as_str(), false, Some(2)).await.unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                ]
+            );
+        }
+
+        {
+            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+            let list = client.list(url.as_str(), true, None).await.unwrap();
 
             assert_eq!(
                 list,
@@ -279,6 +304,19 @@ mod tests {
                     format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
                     format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
                     format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                ]
+            );
+        }
+
+        {
+            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+            let list = client.list(url.as_str(), true, Some(2)).await.unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
                 ]
             );
         }
