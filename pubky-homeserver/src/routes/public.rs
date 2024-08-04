@@ -89,6 +89,7 @@ pub async fn get(
             path.as_str(),
             params.contains_key("reverse"),
             params.get("limit").and_then(|l| l.parse::<i32>().ok()),
+            params.get("cursor").map(|cursor| cursor.into()),
         )?;
 
         return Ok(vec.join("\n").into());
