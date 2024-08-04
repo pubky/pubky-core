@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use axum::{
     body::{Body, Bytes},
-    extract::{Path, State},
+    debug_handler,
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     RequestExt, Router,
@@ -8,6 +11,7 @@ use axum::{
 use axum_extra::body::AsyncReadBody;
 use futures_util::stream::StreamExt;
 use pkarr::PublicKey;
+use serde::Deserialize;
 use tower_cookies::Cookies;
 
 use tracing::debug;
@@ -73,12 +77,24 @@ pub async fn get(
     State(mut state): State<AppState>,
     pubky: Pubky,
     path: EntryPath,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse> {
     verify(path.as_str());
+    let public_key = pubky.public_key();
+
+    if params.contains_key("list") {
+        // Handle listing
+        let vec = state.db.list(
+            public_key,
+            path.as_str(),
+            params.contains_key("reverse"),
+            params.get("limit").and_then(|l| l.parse::<i32>().ok()),
+        )?;
+
+        return Ok(vec.join("\n").into());
+    }
 
     // TODO: Enable streaming
-
-    let public_key = pubky.public_key();
 
     match state.db.get_blob(public_key, path.as_str()) {
         Err(error) => Err(error)?,
@@ -100,7 +116,12 @@ pub async fn delete(
     authorize(&mut state, cookies, &public_key, path)?;
     verify(path)?;
 
-    state.db.delete_entry(&public_key, path)?;
+    let deleted = state.db.delete_entry(&public_key, path)?;
+
+    if !deleted {
+        // TODO: if the path ends with `/` return a `CONFLICT` error?
+        return Err(Error::with_status(StatusCode::NOT_FOUND));
+    }
 
     // TODO: return relevant headers, like Etag?
 

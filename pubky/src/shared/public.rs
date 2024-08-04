@@ -53,6 +53,28 @@ impl PubkyClient {
         Ok(())
     }
 
+    pub async fn list<T: TryInto<Url>>(&self, url: T, reverse: bool) -> Result<Vec<String>> {
+        let mut url = self.pubky_to_http(url).await?;
+
+        if reverse {
+            url.set_query("list&reverse".into());
+        } else {
+            url.set_query("list".into());
+        }
+
+        let response = self.request(Method::GET, url).send().await?;
+
+        response.error_for_status_ref()?;
+
+        // TODO: bail on too large files.
+        let bytes = response.bytes().await?;
+
+        Ok(String::from_utf8_lossy(&bytes)
+            .lines()
+            .map(String::from)
+            .collect())
+    }
+
     async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
         let mut original_url: Url = url
             .try_into()
@@ -191,8 +213,6 @@ mod tests {
 
             let response = other_client.delete(url).await;
 
-            dbg!(&response);
-
             match response {
                 Err(Error::Reqwest(error)) => {
                     assert!(error.status() == Some(StatusCode::UNAUTHORIZED))
@@ -206,5 +226,61 @@ mod tests {
         let response = client.get(url).await.unwrap().unwrap();
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    }
+
+    #[tokio::test]
+    async fn list() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let urls = vec![
+            format!("pubky://{}/pub/a.wrong/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.wrong/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+            format!("pubky://{}/pub/z.wrong/a.txt", keypair.public_key()),
+        ];
+
+        for url in urls {
+            client.put(url.as_str(), &[0]).await.unwrap();
+        }
+
+        {
+            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+            let list = client.list(url.as_str(), false).await.unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                ]
+            );
+        }
+
+        {
+            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+            let list = client.list(url.as_str(), true).await.unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                ]
+            );
+        }
     }
 }
