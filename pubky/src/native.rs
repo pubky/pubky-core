@@ -106,9 +106,13 @@ impl PubkyClient {
 
     // === Helpers ===
 
+    /// Create a recovery file of the `keypair`, containing the secret key encrypted
+    /// using the `passphrase`.
     pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>> {
         create_recovery_file(keypair, passphrase)
     }
+
+    /// Recover a keypair from a recovery file by decrypting the secret key using `passphrase`.
     pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair> {
         decrypt_recovery_file(recovery_file, passphrase)
     }
