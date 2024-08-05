@@ -111,3 +111,135 @@ test("forbidden", async (t) => {
     `HTTP status client error (403 Forbidden) for url (http://localhost:15411/${publicKey.z32()}/priv/example.com/arbitrary)`
   )
 })
+
+test("list", async (t) => {
+  const client = PubkyClient.testnet();
+
+  const keypair = Keypair.random()
+  const publicKey = keypair.publicKey()
+  const pubky = publicKey.z32()
+
+  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+  await client.signup(keypair, homeserver)
+
+
+
+  let urls = [
+    `pubky://${pubky}/pub/a.wrong/a.txt`,
+    `pubky://${pubky}/pub/example.com/a.txt`,
+    `pubky://${pubky}/pub/example.com/b.txt`,
+    `pubky://${pubky}/pub/example.wrong/a.txt`,
+    `pubky://${pubky}/pub/example.com/c.txt`,
+    `pubky://${pubky}/pub/example.com/d.txt`,
+    `pubky://${pubky}/pub/z.wrong/a.txt`,
+  ]
+
+  for (let url of urls) {
+    await client.put(url, Buffer.from(""));
+  }
+
+  let url = `pubky://${pubky}/pub/example.com/`;
+
+  {
+    let list = await client.list(url);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/a.txt`,
+        `pubky://${pubky}/pub/example.com/b.txt`,
+        `pubky://${pubky}/pub/example.com/c.txt`,
+        `pubky://${pubky}/pub/example.com/d.txt`,
+
+      ],
+      "normal list with no limit or cursor"
+    );
+  }
+
+  {
+    let list = await client.list(url, null, null, 2);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/a.txt`,
+        `pubky://${pubky}/pub/example.com/b.txt`,
+
+      ],
+      "normal list with limit but no cursor"
+    );
+  }
+
+  {
+    let list = await client.list(url, "a.txt", null, 2);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/b.txt`,
+        `pubky://${pubky}/pub/example.com/c.txt`,
+
+      ],
+      "normal list with limit and a suffix cursor"
+    );
+  }
+
+  {
+    let list = await client.list(url, `pubky://${pubky}/pub/example.com/a.txt`, null, 2);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/b.txt`,
+        `pubky://${pubky}/pub/example.com/c.txt`,
+
+      ],
+      "normal list with limit and a full url cursor"
+    );
+  }
+
+
+  {
+    let list = await client.list(url, null, true);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/d.txt`,
+        `pubky://${pubky}/pub/example.com/c.txt`,
+        `pubky://${pubky}/pub/example.com/b.txt`,
+        `pubky://${pubky}/pub/example.com/a.txt`,
+
+      ],
+      "reverse list with no limit or cursor"
+    );
+  }
+
+  {
+    let list = await client.list(url, null, true, 2);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/d.txt`,
+        `pubky://${pubky}/pub/example.com/c.txt`,
+
+      ],
+      "reverse list with limit but no cursor"
+    );
+  }
+
+  {
+    let list = await client.list(url, "d.txt", true, 2);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.com/c.txt`,
+        `pubky://${pubky}/pub/example.com/b.txt`,
+
+      ],
+      "reverse list with limit and a suffix cursor"
+    );
+  }
+})
