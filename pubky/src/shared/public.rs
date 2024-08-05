@@ -236,8 +236,9 @@ mod tests {
             client.put(url.as_str(), &[0]).await.unwrap();
         }
 
+        let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client.list(url.as_str()).unwrap().send().await.unwrap();
 
             assert_eq!(
@@ -253,7 +254,6 @@ mod tests {
         }
 
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
                 .list(url.as_str())
                 .unwrap()
@@ -273,7 +273,6 @@ mod tests {
         }
 
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
                 .list(url.as_str())
                 .unwrap()
@@ -294,7 +293,6 @@ mod tests {
         }
 
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
                 .list(url.as_str())
                 .unwrap()
@@ -318,7 +316,6 @@ mod tests {
         }
 
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
                 .list(url.as_str())
                 .unwrap()
@@ -340,7 +337,6 @@ mod tests {
         }
 
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
                 .list(url.as_str())
                 .unwrap()
@@ -361,7 +357,6 @@ mod tests {
         }
 
         {
-            let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
                 .list(url.as_str())
                 .unwrap()
