@@ -3,7 +3,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use wasm_bindgen::prelude::*;
+use js_sys::{Array, Uint8Array};
+use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 use reqwest::{IntoUrl, Method, RequestBuilder, Response};
 use url::Url;
@@ -58,7 +59,7 @@ impl PubkyClient {
     pub fn create_recovery_file(
         keypair: &Keypair,
         passphrase: &str,
-    ) -> Result<js_sys::Uint8Array, JsValue> {
+    ) -> Result<Uint8Array, JsValue> {
         create_recovery_file(keypair.as_inner(), passphrase)
             .map(|b| b.as_slice().into())
             .map_err(|e| e.into())
@@ -138,18 +139,69 @@ impl PubkyClient {
         self.inner_put(url, content).await.map_err(|e| e.into())
     }
 
-    #[wasm_bindgen]
     /// Download a small payload from a given path relative to a pubky author.
-    pub async fn get(&self, url: &str) -> Result<Option<js_sys::Uint8Array>, JsValue> {
+    #[wasm_bindgen]
+    pub async fn get(&self, url: &str) -> Result<Option<Uint8Array>, JsValue> {
         self.inner_get(url)
             .await
             .map(|b| b.map(|b| (&*b).into()))
             .map_err(|e| e.into())
     }
 
-    #[wasm_bindgen]
     /// Delete a file at a path relative to a pubky author.
+    #[wasm_bindgen]
     pub async fn delete(&self, url: &str) -> Result<(), JsValue> {
         self.inner_delete(url).await.map_err(|e| e.into())
+    }
+
+    /// Returns a list of Pubky URLs of the files within the `url` path,
+    /// respecting the `cursor`, `reverse` and `limit` options.
+    ///
+    /// `cursor` is usually the last url from previous responses.
+    #[wasm_bindgen]
+    pub async fn list(
+        &self,
+        url: &str,
+        cursor: Option<String>,
+        reverse: Option<bool>,
+        limit: Option<u16>,
+    ) -> Result<Array, JsValue> {
+        // TODO: try later to return Vec<String> from async function.
+
+        if let Some(cursor) = cursor {
+            return self
+                .inner_list(url)?
+                .reverse(reverse.unwrap_or(false))
+                .limit(limit.unwrap_or(u16::MAX))
+                .cursor(&cursor)
+                .send()
+                .await
+                .map(|urls| {
+                    let js_array = Array::new();
+
+                    for url in urls {
+                        js_array.push(&JsValue::from_str(&url));
+                    }
+
+                    js_array
+                })
+                .map_err(|e| e.into());
+        }
+
+        self.inner_list(url)?
+            .reverse(reverse.unwrap_or(false))
+            .limit(limit.unwrap_or(u16::MAX))
+            .send()
+            .await
+            .map(|urls| {
+                let js_array = Array::new();
+
+                for url in urls {
+                    js_array.push(&JsValue::from_str(&url));
+                }
+
+                js_array
+            })
+            .map_err(|e| e.into())
     }
 }

@@ -23,9 +23,7 @@ impl DB {
     ) -> anyhow::Result<Option<bytes::Bytes>> {
         let rtxn = self.env.read_txn()?;
 
-        let mut key = vec![];
-        key.extend_from_slice(public_key.as_bytes());
-        key.extend_from_slice(path.as_bytes());
+        let key = format!("{public_key}/{path}");
 
         let result = if let Some(bytes) = self.tables.entries.get(&rtxn, &key)? {
             let entry = Entry::deserialize(bytes)?;

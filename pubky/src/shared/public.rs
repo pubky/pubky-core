@@ -9,7 +9,7 @@ use crate::{
     PubkyClient,
 };
 
-use super::pkarr::Endpoint;
+use super::{list_builder::ListBuilder, pkarr::Endpoint};
 
 impl PubkyClient {
     pub async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
@@ -53,10 +53,15 @@ impl PubkyClient {
         Ok(())
     }
 
-    async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
-        let mut original_url: Url = url
-            .try_into()
-            .map_err(|e| Error::Generic("Invalid Url".to_string()))?;
+    pub fn inner_list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
+        Ok(ListBuilder::new(
+            self,
+            url.try_into().map_err(|_| Error::InvalidUrl)?,
+        ))
+    }
+
+    pub(crate) async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
+        let mut original_url: Url = url.try_into().map_err(|_| Error::InvalidUrl)?;
 
         if original_url.scheme() != "pubky" {
             return Ok(original_url);
@@ -191,8 +196,6 @@ mod tests {
 
             let response = other_client.delete(url).await;
 
-            dbg!(&response);
-
             match response {
                 Err(Error::Reqwest(error)) => {
                     assert!(error.status() == Some(StatusCode::UNAUTHORIZED))
@@ -206,5 +209,172 @@ mod tests {
         let response = client.get(url).await.unwrap().unwrap();
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    }
+
+    #[tokio::test]
+    async fn list() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let urls = vec![
+            format!("pubky://{}/pub/a.wrong/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.wrong/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+            format!("pubky://{}/pub/z.wrong/a.txt", keypair.public_key()),
+        ];
+
+        for url in urls {
+            client.put(url.as_str(), &[0]).await.unwrap();
+        }
+
+        let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+
+        {
+            let list = client.list(url.as_str()).unwrap().send().await.unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                ],
+                "normal list with no limit or cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .limit(2)
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                ],
+                "normal list with limit but no cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .limit(2)
+                .cursor("a.txt")
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                ],
+                "normal list with limit and a suffix cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .limit(2)
+                .cursor(&format!(
+                    "pubky://{}/pub/example.com/a.txt",
+                    keypair.public_key()
+                ))
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                ],
+                "normal list with limit and a full url cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .reverse(true)
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                ],
+                "reverse list with no limit or cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .reverse(true)
+                .limit(2)
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                ],
+                "reverse list with limit but no cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .reverse(true)
+                .limit(2)
+                .cursor("d.txt")
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                ],
+                "reverse list with limit and cursor"
+            );
+        }
     }
 }
