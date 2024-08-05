@@ -14,6 +14,10 @@ JavaScript implementation of [Pubky](https://github.com/pubky/pubky).
 npm install @synonymdev/pubky
 ```
 
+### Prerequisites
+
+For Nodejs, you need Node v20 or later.
+
 ## Getting started
 
 ```js
@@ -110,9 +114,19 @@ let response = await client.get(url)
 ### delete
 
 ```js
-let response = await delete(url);
+let response = await client.delete(url);
 ```
 - url: A string representing the Pubky URL.
+
+### list
+```js
+let response = await client.list(url, cursor, reverse, limit)
+```
+- url: A string representing the Pubky URL. The path in that url is the prefix that you want to list files within.
+- cursor: Usually the last URL from previous calls. List urls after/before (depending on `reverse`) the cursor.
+- reverse: Whether or not return urls in reverse order.
+- limit: Number of urls to return.
+- Returns: A list of URLs of the files in the `url` you passed.
 
 ### Keypair
 
@@ -186,5 +200,5 @@ Use the logged addresses as inputs to `PubkyClient`
 ```js
 import { PubkyClient } from '../index.js'
 
-const client = new PubkyClient().testnet();
+const client = PubkyClient().testnet();
 ```

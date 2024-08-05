@@ -1,7 +1,7 @@
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, time::SystemTime};
+use std::{borrow::Cow, fmt::Result, time::SystemTime};
 
 use heed::{
     types::{Bytes, Str},
@@ -16,9 +16,11 @@ use pubky_common::{
 use crate::database::DB;
 
 /// full_path(pubky/*path) => Entry.
-pub type EntriesTable = Database<Bytes, Bytes>;
+pub type EntriesTable = Database<Str, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
+
+const MAX_LIST_LIMIT: u16 = 100;
 
 impl DB {
     pub fn put_entry(
@@ -48,9 +50,7 @@ impl DB {
         entry.set_content_hash(hash);
         entry.set_content_length(length);
 
-        let mut key = vec![];
-        key.extend_from_slice(public_key.as_bytes());
-        key.extend_from_slice(path.as_bytes());
+        let key = format!("{public_key}/{path}");
 
         self.tables.entries.put(&mut wtxn, &key, &entry.serialize());
 
@@ -62,9 +62,7 @@ impl DB {
     pub fn delete_entry(&mut self, public_key: &PublicKey, path: &str) -> anyhow::Result<bool> {
         let mut wtxn = self.env.write_txn()?;
 
-        let mut key = vec![];
-        key.extend_from_slice(public_key.as_bytes());
-        key.extend_from_slice(path.as_bytes());
+        let key = format!("{public_key}/{path}");
 
         let deleted = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
             let entry = Entry::deserialize(bytes)?;
@@ -82,6 +80,81 @@ impl DB {
         wtxn.commit()?;
 
         Ok(deleted)
+    }
+
+    /// Return a list of pubky urls.
+    ///
+    /// - limit defaults to and capped by [MAX_LIST_LIMIT]
+    pub fn list(
+        &self,
+        public_key: &PublicKey,
+        prefix: &str,
+        reverse: bool,
+        limit: Option<u16>,
+        cursor: Option<String>,
+    ) -> anyhow::Result<Vec<String>> {
+        let db = self.tables.entries;
+        let txn = self.env.read_txn()?;
+
+        let prefix = format!("{public_key}/{prefix}");
+        // Normalized cursor
+        let cursor = cursor.map(|mut cursor| {
+            if cursor.starts_with("pubky://") {
+                cursor = cursor[8..].into();
+            }
+            if cursor.starts_with(&prefix) {
+                cursor
+            } else {
+                format!("{prefix}{cursor}")
+            }
+        });
+        let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
+
+        // Vector to store results
+        let mut results = Vec::new();
+
+        // Fetch data based on direction
+        if reverse {
+            if let Some(x) = &cursor {
+                let mut cursor = cursor.unwrap_or(prefix.to_string());
+                let mut cursor = cursor.as_str();
+
+                for _ in 0..limit {
+                    if let Some((key, _)) = self.tables.entries.get_lower_than(&txn, cursor)? {
+                        if !key.starts_with(&prefix) {
+                            break;
+                        }
+                        cursor = key;
+                        results.push(format!("pubky://{}", key))
+                    };
+                }
+            } else {
+                // TODO: find a way to avoid this special case.
+
+                let mut iter = self.tables.entries.rev_prefix_iter(&txn, &prefix)?;
+
+                for _ in 0..limit {
+                    if let Some((key, _)) = iter.next().transpose()? {
+                        results.push(format!("pubky://{}", key))
+                    };
+                }
+            }
+        } else {
+            let mut cursor = cursor.unwrap_or(prefix.to_string());
+            let mut cursor = cursor.as_str();
+
+            for _ in 0..limit {
+                if let Some((key, _)) = self.tables.entries.get_greater_than(&txn, cursor)? {
+                    if !key.starts_with(&prefix) {
+                        break;
+                    }
+                    cursor = key;
+                    results.push(format!("pubky://{}", key))
+                };
+            }
+        };
+
+        Ok(results)
     }
 }
 
