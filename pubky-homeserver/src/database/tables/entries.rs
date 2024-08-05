@@ -20,7 +20,7 @@ pub type EntriesTable = Database<Str, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
 
-const MAX_LIST_LIMIT: i32 = 100;
+const MAX_LIST_LIMIT: u16 = 100;
 
 impl DB {
     pub fn put_entry(
@@ -90,7 +90,7 @@ impl DB {
         public_key: &PublicKey,
         prefix: &str,
         reverse: bool,
-        limit: Option<i32>,
+        limit: Option<u16>,
         cursor: Option<String>,
     ) -> anyhow::Result<Vec<String>> {
         let db = self.tables.entries;

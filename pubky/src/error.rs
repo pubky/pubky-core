@@ -28,6 +28,9 @@ pub enum Error {
     #[error("Recovery file encrypted secret key should be 32 bytes, got {0}")]
     RecoverFileInvalidSecretKeyLength(usize),
 
+    #[error("Could not convert the passed type into a Url")]
+    InvalidUrl,
+
     // === Transparent ===
     #[error(transparent)]
     Dns(#[from] SimpleDnsError),
