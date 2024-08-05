@@ -12,7 +12,10 @@ use url::Url;
 
 use crate::{
     error::Result,
-    shared::recovery_file::{create_recovery_file, decrypt_recovery_file},
+    shared::{
+        list_builder::ListBuilder,
+        recovery_file::{create_recovery_file, decrypt_recovery_file},
+    },
     PubkyClient,
 };
 
@@ -102,6 +105,10 @@ impl PubkyClient {
     /// Delete a file at a path relative to a pubky author.
     pub async fn delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
         self.inner_delete(url).await
+    }
+
+    pub fn list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
+        self.inner_list(url)
     }
 
     // === Helpers ===

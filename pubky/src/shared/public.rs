@@ -9,7 +9,7 @@ use crate::{
     PubkyClient,
 };
 
-use super::pkarr::Endpoint;
+use super::{list_builder::ListBuilder, pkarr::Endpoint};
 
 impl PubkyClient {
     pub async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
@@ -53,49 +53,15 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub async fn list<T: TryInto<Url>>(
-        &self,
-        url: T,
-        reverse: bool,
-        limit: Option<i32>,
-        cursor: Option<&str>,
-    ) -> Result<Vec<String>> {
-        let mut url = self.pubky_to_http(url).await?;
-
-        let mut query = url.query_pairs_mut();
-        query.append_key_only("list");
-
-        if reverse {
-            query.append_key_only("reverse");
-        }
-
-        if let Some(limit) = limit {
-            query.append_pair("limit", &limit.to_string());
-        }
-
-        if let Some(cursor) = cursor {
-            query.append_pair("cursor", cursor);
-        }
-
-        drop(query);
-
-        let response = self.request(Method::GET, url).send().await?;
-
-        response.error_for_status_ref()?;
-
-        // TODO: bail on too large files.
-        let bytes = response.bytes().await?;
-
-        Ok(String::from_utf8_lossy(&bytes)
-            .lines()
-            .map(String::from)
-            .collect())
+    pub fn inner_list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
+        Ok(ListBuilder::new(
+            self,
+            url.try_into().map_err(|_| Error::InvalidUrl)?,
+        ))
     }
 
-    async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
-        let mut original_url: Url = url
-            .try_into()
-            .map_err(|e| Error::Generic("Invalid Url".to_string()))?;
+    pub(crate) async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
+        let mut original_url: Url = url.try_into().map_err(|_| Error::InvalidUrl)?;
 
         if original_url.scheme() != "pubky" {
             return Ok(original_url);
@@ -272,7 +238,7 @@ mod tests {
 
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
-            let list = client.list(url.as_str(), false, None, None).await.unwrap();
+            let list = client.list(url.as_str()).unwrap().send().await.unwrap();
 
             assert_eq!(
                 list,
@@ -289,7 +255,10 @@ mod tests {
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
-                .list(url.as_str(), false, Some(2), None)
+                .list(url.as_str())
+                .unwrap()
+                .limit(2)
+                .send()
                 .await
                 .unwrap();
 
@@ -306,7 +275,11 @@ mod tests {
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
-                .list(url.as_str(), false, Some(2), Some("a.txt"))
+                .list(url.as_str())
+                .unwrap()
+                .limit(2)
+                .cursor("a.txt")
+                .send()
                 .await
                 .unwrap();
 
@@ -323,15 +296,14 @@ mod tests {
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
-                .list(
-                    url.as_str(),
-                    false,
-                    Some(2),
-                    Some(&format!(
-                        "pubky://{}/pub/example.com/a.txt",
-                        keypair.public_key()
-                    )),
-                )
+                .list(url.as_str())
+                .unwrap()
+                .limit(2)
+                .cursor(&format!(
+                    "pubky://{}/pub/example.com/a.txt",
+                    keypair.public_key()
+                ))
+                .send()
                 .await
                 .unwrap();
 
@@ -347,7 +319,13 @@ mod tests {
 
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
-            let list = client.list(url.as_str(), true, None, None).await.unwrap();
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .reverse(true)
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -364,7 +342,11 @@ mod tests {
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
-                .list(url.as_str(), true, Some(2), None)
+                .list(url.as_str())
+                .unwrap()
+                .reverse(true)
+                .limit(2)
+                .send()
                 .await
                 .unwrap();
 
@@ -381,7 +363,12 @@ mod tests {
         {
             let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
             let list = client
-                .list(url.as_str(), true, Some(2), Some("d.txt"))
+                .list(url.as_str())
+                .unwrap()
+                .reverse(true)
+                .limit(2)
+                .cursor("d.txt")
+                .send()
                 .await
                 .unwrap();
 
