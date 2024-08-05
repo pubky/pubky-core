@@ -14,6 +14,10 @@ JavaScript implementation of [Pubky](https://github.com/pubky/pubky).
 npm install @synonymdev/pubky
 ```
 
+### Prerequisites
+
+For Nodejs, you need Node v20 or later.
+
 ## Getting started
 
 ```js
