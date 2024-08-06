@@ -4,7 +4,7 @@ use axum::{
     body::{Body, Bytes},
     debug_handler,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header, Response, StatusCode},
     response::IntoResponse,
     RequestExt, Router,
 };
@@ -92,14 +92,18 @@ pub async fn get(
             params.get("cursor").map(|cursor| cursor.into()),
         )?;
 
-        return Ok(vec.join("\n").into());
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(vec.join("\n")))
+            .unwrap());
     }
 
     // TODO: Enable streaming
 
     match state.db.get_blob(public_key, path.as_str()) {
         Err(error) => Err(error)?,
-        Ok(Some(bytes)) => Ok(bytes),
+        Ok(Some(bytes)) => Ok(Response::builder().body(Body::from(bytes)).unwrap()),
         Ok(None) => Err(Error::with_status(StatusCode::NOT_FOUND)),
     }
 }
