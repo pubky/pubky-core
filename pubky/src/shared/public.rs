@@ -319,7 +319,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .reverse()
+                .reverse(true)
                 .send()
                 .await
                 .unwrap();
@@ -340,7 +340,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .reverse()
+                .reverse(true)
                 .limit(2)
                 .send()
                 .await
@@ -360,7 +360,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .reverse()
+                .reverse(true)
                 .limit(2)
                 .cursor("d.txt")
                 .send()
@@ -412,7 +412,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .shallow()
+                .shallow(true)
                 .send()
                 .await
                 .unwrap();
@@ -436,8 +436,8 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .shallow()
-                .reverse()
+                .shallow(true)
+                .reverse(true)
                 .send()
                 .await
                 .unwrap();

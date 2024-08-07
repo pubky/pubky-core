@@ -243,3 +243,71 @@ test("list", async (t) => {
     );
   }
 })
+
+test('list shallow', async (t) => {
+  const client = PubkyClient.testnet();
+
+  const keypair = Keypair.random()
+  const publicKey = keypair.publicKey()
+  const pubky = publicKey.z32()
+
+  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+  await client.signup(keypair, homeserver)
+
+
+
+  let urls = [
+    `pubky://${pubky}/pub/a.com/a.txt`,
+    `pubky://${pubky}/pub/example.com/a.txt`,
+    `pubky://${pubky}/pub/example.com/b.txt`,
+    `pubky://${pubky}/pub/example.com/c.txt`,
+    `pubky://${pubky}/pub/example.com/d.txt`,
+    `pubky://${pubky}/pub/example.con/d.txt`,
+    `pubky://${pubky}/pub/example.con`,
+    `pubky://${pubky}/pub/file`,
+    `pubky://${pubky}/pub/file2`,
+    `pubky://${pubky}/pub/z.com/a.txt`,
+  ]
+
+  for (let url of urls) {
+    await client.put(url, Buffer.from(""));
+  }
+
+  let url = `pubky://${pubky}/pub/`;
+
+  {
+    let list = await client.list(url, null, false, null, true);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/a.com/`,
+        `pubky://${pubky}/pub/example.com/`,
+        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.con/`,
+        `pubky://${pubky}/pub/file`,
+        `pubky://${pubky}/pub/file2`,
+        `pubky://${pubky}/pub/z.com/`,
+      ],
+      "normal list shallow"
+    );
+  }
+
+  {
+    let list = await client.list(url, null, true, null, true);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/z.com/`,
+        `pubky://${pubky}/pub/file2`,
+        `pubky://${pubky}/pub/file`,
+        `pubky://${pubky}/pub/example.con/`,
+        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.com/`,
+        `pubky://${pubky}/pub/a.com/`,
+      ],
+      "normal list shallow"
+    );
+  }
+})
