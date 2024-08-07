@@ -165,6 +165,7 @@ impl PubkyClient {
         cursor: Option<String>,
         reverse: Option<bool>,
         limit: Option<u16>,
+        shallow: Option<bool>,
     ) -> Result<Array, JsValue> {
         // TODO: try later to return Vec<String> from async function.
 
@@ -174,6 +175,7 @@ impl PubkyClient {
                 .reverse(reverse.unwrap_or(false))
                 .limit(limit.unwrap_or(u16::MAX))
                 .cursor(&cursor)
+                .shallow(shallow.unwrap_or(false))
                 .send()
                 .await
                 .map(|urls| {
@@ -191,6 +193,7 @@ impl PubkyClient {
         self.inner_list(url)?
             .reverse(reverse.unwrap_or(false))
             .limit(limit.unwrap_or(u16::MAX))
+            .shallow(shallow.unwrap_or(false))
             .send()
             .await
             .map(|urls| {

@@ -27,8 +27,8 @@ impl<'a> ListBuilder<'a> {
     }
 
     /// Set the `reverse` option.
-    pub fn reverse(mut self) -> Self {
-        self.reverse = true;
+    pub fn reverse(mut self, reverse: bool) -> Self {
+        self.reverse = reverse;
         self
     }
 
@@ -46,8 +46,8 @@ impl<'a> ListBuilder<'a> {
         self
     }
 
-    pub fn shallow(mut self) -> Self {
-        self.shallow = true;
+    pub fn shallow(mut self, shallow: bool) -> Self {
+        self.shallow = shallow;
         self
     }
 
