@@ -319,7 +319,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .reverse(true)
+                .reverse()
                 .send()
                 .await
                 .unwrap();
@@ -340,7 +340,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .reverse(true)
+                .reverse()
                 .limit(2)
                 .send()
                 .await
@@ -360,7 +360,7 @@ mod tests {
             let list = client
                 .list(url.as_str())
                 .unwrap()
-                .reverse(true)
+                .reverse()
                 .limit(2)
                 .cursor("d.txt")
                 .send()
@@ -374,6 +374,86 @@ mod tests {
                     format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
                 ],
                 "reverse list with limit and cursor"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn list_shallow() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let urls = vec![
+            format!("pubky://{}/pub/a.com/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.con/d.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.con", keypair.public_key()),
+            format!("pubky://{}/pub/file", keypair.public_key()),
+            format!("pubky://{}/pub/file2", keypair.public_key()),
+            format!("pubky://{}/pub/z.com/a.txt", keypair.public_key()),
+        ];
+
+        for url in urls {
+            client.put(url.as_str(), &[0]).await.unwrap();
+        }
+
+        let url = format!("pubky://{}/pub/", keypair.public_key());
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .shallow()
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/a.com/", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
+                    format!("pubky://{}/pub/example.con", keypair.public_key()),
+                    format!("pubky://{}/pub/example.con/", keypair.public_key()),
+                    format!("pubky://{}/pub/file", keypair.public_key()),
+                    format!("pubky://{}/pub/file2", keypair.public_key()),
+                    format!("pubky://{}/pub/z.com/", keypair.public_key()),
+                ],
+                "normal list shallow"
+            );
+        }
+
+        {
+            let list = client
+                .list(url.as_str())
+                .unwrap()
+                .shallow()
+                .reverse()
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/z.com/", keypair.public_key()),
+                    format!("pubky://{}/pub/file2", keypair.public_key()),
+                    format!("pubky://{}/pub/file", keypair.public_key()),
+                    format!("pubky://{}/pub/example.con/", keypair.public_key()),
+                    format!("pubky://{}/pub/example.con", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
+                    format!("pubky://{}/pub/a.com/", keypair.public_key()),
+                ],
+                "reverse list shallow"
             );
         }
     }
