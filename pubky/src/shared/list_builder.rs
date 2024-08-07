@@ -10,6 +10,7 @@ pub struct ListBuilder<'a> {
     limit: Option<u16>,
     cursor: Option<&'a str>,
     client: &'a PubkyClient,
+    shallow: bool,
 }
 
 impl<'a> ListBuilder<'a> {
@@ -21,12 +22,13 @@ impl<'a> ListBuilder<'a> {
             limit: None,
             cursor: None,
             reverse: false,
+            shallow: false,
         }
     }
 
     /// Set the `reverse` option.
-    pub fn reverse(mut self, reverse: bool) -> Self {
-        self.reverse = reverse;
+    pub fn reverse(mut self) -> Self {
+        self.reverse = true;
         self
     }
 
@@ -41,6 +43,11 @@ impl<'a> ListBuilder<'a> {
     /// usually the last url from previous responses.
     pub fn cursor(mut self, cursor: &'a str) -> Self {
         self.cursor = cursor.into();
+        self
+    }
+
+    pub fn shallow(mut self) -> Self {
+        self.shallow = true;
         self
     }
 
@@ -66,6 +73,10 @@ impl<'a> ListBuilder<'a> {
 
         if self.reverse {
             query.append_key_only("reverse");
+        }
+
+        if self.shallow {
+            query.append_key_only("shallow");
         }
 
         if let Some(limit) = self.limit {

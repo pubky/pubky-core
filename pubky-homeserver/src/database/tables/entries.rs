@@ -98,39 +98,82 @@ impl DB {
         cursor: Option<String>,
         shallow: bool,
     ) -> anyhow::Result<Vec<String>> {
+        // Vector to store results
+        let mut results = Vec::new();
+
+        let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
+
         // Remove directories from the cursor;
         let cursor = cursor
             .as_deref()
             .and_then(|mut cursor| cursor.rsplit('/').next())
             .unwrap_or(if reverse { "~" } else { "" });
 
-        let cursor = format!("{path}{cursor}");
-        let mut cursor = cursor.as_str();
-
-        let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
-
-        // Vector to store results
-        let mut results = Vec::new();
+        let mut cursor = format!("{path}{cursor}");
 
         // Fetch data based on direction
         if reverse {
             for _ in 0..limit {
-                if let Some((key, _)) = self.tables.entries.get_lower_than(txn, cursor)? {
+                if let Some((key, _)) = self.tables.entries.get_lower_than(txn, &cursor)? {
                     if !key.starts_with(path) {
                         break;
                     }
-                    cursor = key;
-                    results.push(format!("pubky://{}", key))
+
+                    if shallow {
+                        let mut split = key[path.len()..].split('/');
+                        let item = split.next().expect("should not be reachable");
+
+                        let is_directory = split.next().is_some();
+
+                        cursor = format!(
+                            "{}{}",
+                            &key[..(path.len() + item.len())],
+                            // `.` is immediately lower than `/`
+                            if is_directory { "." } else { "" }
+                        );
+
+                        let url = format!(
+                            "pubky://{path}{item}{}",
+                            if is_directory { "/" } else { "" }
+                        );
+
+                        results.push(url);
+                    } else {
+                        cursor = key.to_string();
+                        results.push(format!("pubky://{}", key))
+                    }
                 };
             }
         } else {
             for _ in 0..limit {
-                if let Some((key, _)) = self.tables.entries.get_greater_than(txn, cursor)? {
+                if let Some((key, _)) = self.tables.entries.get_greater_than(txn, &cursor)? {
                     if !key.starts_with(path) {
                         break;
                     }
-                    cursor = key;
-                    results.push(format!("pubky://{}", key))
+
+                    if shallow {
+                        let mut split = key[path.len()..].split('/');
+                        let item = split.next().expect("should not be reachable");
+
+                        let is_directory = split.next().is_some();
+
+                        cursor = format!(
+                            "{}{}",
+                            &key[..(path.len() + item.len())],
+                            // `0` is immediately higher than `/`
+                            if is_directory { "0" } else { "" }
+                        );
+
+                        let url = format!(
+                            "pubky://{path}{item}{}",
+                            if is_directory { "/" } else { "" }
+                        );
+
+                        results.push(url);
+                    } else {
+                        cursor = key.to_string();
+                        results.push(format!("pubky://{}", key))
+                    }
                 };
             }
         };
