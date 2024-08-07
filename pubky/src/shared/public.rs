@@ -236,7 +236,7 @@ mod tests {
             client.put(url.as_str(), &[0]).await.unwrap();
         }
 
-        let url = format!("pubky://{}/pub/example.com/", keypair.public_key());
+        let url = format!("pubky://{}/pub/example.com/extra", keypair.public_key());
 
         {
             let list = client.list(url.as_str()).unwrap().send().await.unwrap();

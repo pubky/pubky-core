@@ -82,14 +82,28 @@ pub async fn get(
     verify(path.as_str());
     let public_key = pubky.public_key();
 
-    if params.contains_key("list") {
+    let path = path.as_str();
+
+    if path.ends_with('/') {
+        let txn = state.db.env.read_txn()?;
+
+        let path = format!("{public_key}/{path}");
+
+        if !state.db.contains_directory(&txn, &path)? {
+            return Err(Error::new(
+                StatusCode::NOT_FOUND,
+                "Directory Not Found".into(),
+            ));
+        }
+
         // Handle listing
         let vec = state.db.list(
-            public_key,
-            path.as_str(),
+            &txn,
+            &path,
             params.contains_key("reverse"),
             params.get("limit").and_then(|l| l.parse::<u16>().ok()),
             params.get("cursor").map(|cursor| cursor.into()),
+            params.contains_key("shallow"),
         )?;
 
         return Ok(Response::builder()
@@ -101,10 +115,10 @@ pub async fn get(
 
     // TODO: Enable streaming
 
-    match state.db.get_blob(public_key, path.as_str()) {
+    match state.db.get_blob(public_key, path) {
         Err(error) => Err(error)?,
         Ok(Some(bytes)) => Ok(Response::builder().body(Body::from(bytes)).unwrap()),
-        Ok(None) => Err(Error::with_status(StatusCode::NOT_FOUND)),
+        Ok(None) => Err(Error::new(StatusCode::NOT_FOUND, "File Not Found".into())),
     }
 }
 

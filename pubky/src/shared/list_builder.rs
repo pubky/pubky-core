@@ -52,8 +52,17 @@ impl<'a> ListBuilder<'a> {
     pub async fn send(self) -> Result<Vec<String>> {
         let mut url = self.client.pubky_to_http(self.url).await?;
 
+        if !url.path().ends_with('/') {
+            let path = url.path().to_string();
+            let mut parts = path.split('/').collect::<Vec<&str>>();
+            parts.pop();
+
+            let path = format!("{}/", parts.join("/"));
+
+            url.set_path(&path)
+        }
+
         let mut query = url.query_pairs_mut();
-        query.append_key_only("list");
 
         if self.reverse {
             query.append_key_only("reverse");

@@ -5,7 +5,7 @@ use std::{borrow::Cow, fmt::Result, time::SystemTime};
 
 use heed::{
     types::{Bytes, Str},
-    BoxedError, BytesDecode, BytesEncode, Database,
+    BoxedError, BytesDecode, BytesEncode, Database, RoTxn,
 };
 
 use pubky_common::{
@@ -82,32 +82,31 @@ impl DB {
         Ok(deleted)
     }
 
+    pub fn contains_directory(&self, txn: &RoTxn, path: &str) -> anyhow::Result<bool> {
+        Ok(self.tables.entries.get_greater_than(txn, path)?.is_some())
+    }
+
     /// Return a list of pubky urls.
     ///
     /// - limit defaults to and capped by [MAX_LIST_LIMIT]
     pub fn list(
         &self,
-        public_key: &PublicKey,
-        prefix: &str,
+        txn: &RoTxn,
+        path: &str,
         reverse: bool,
         limit: Option<u16>,
         cursor: Option<String>,
+        shallow: bool,
     ) -> anyhow::Result<Vec<String>> {
-        let db = self.tables.entries;
-        let txn = self.env.read_txn()?;
+        // Remove directories from the cursor;
+        let cursor = cursor
+            .as_deref()
+            .and_then(|mut cursor| cursor.rsplit('/').next())
+            .unwrap_or(if reverse { "~" } else { "" });
 
-        let prefix = format!("{public_key}/{prefix}");
-        // Normalized cursor
-        let cursor = cursor.map(|mut cursor| {
-            if cursor.starts_with("pubky://") {
-                cursor = cursor[8..].into();
-            }
-            if cursor.starts_with(&prefix) {
-                cursor
-            } else {
-                format!("{prefix}{cursor}")
-            }
-        });
+        let cursor = format!("{path}{cursor}");
+        let mut cursor = cursor.as_str();
+
         let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
 
         // Vector to store results
@@ -115,37 +114,19 @@ impl DB {
 
         // Fetch data based on direction
         if reverse {
-            if let Some(x) = &cursor {
-                let mut cursor = cursor.unwrap_or(prefix.to_string());
-                let mut cursor = cursor.as_str();
-
-                for _ in 0..limit {
-                    if let Some((key, _)) = self.tables.entries.get_lower_than(&txn, cursor)? {
-                        if !key.starts_with(&prefix) {
-                            break;
-                        }
-                        cursor = key;
-                        results.push(format!("pubky://{}", key))
-                    };
-                }
-            } else {
-                // TODO: find a way to avoid this special case.
-
-                let mut iter = self.tables.entries.rev_prefix_iter(&txn, &prefix)?;
-
-                for _ in 0..limit {
-                    if let Some((key, _)) = iter.next().transpose()? {
-                        results.push(format!("pubky://{}", key))
-                    };
-                }
+            for _ in 0..limit {
+                if let Some((key, _)) = self.tables.entries.get_lower_than(txn, cursor)? {
+                    if !key.starts_with(path) {
+                        break;
+                    }
+                    cursor = key;
+                    results.push(format!("pubky://{}", key))
+                };
             }
         } else {
-            let mut cursor = cursor.unwrap_or(prefix.to_string());
-            let mut cursor = cursor.as_str();
-
             for _ in 0..limit {
-                if let Some((key, _)) = self.tables.entries.get_greater_than(&txn, cursor)? {
-                    if !key.starts_with(&prefix) {
+                if let Some((key, _)) = self.tables.entries.get_greater_than(txn, cursor)? {
+                    if !key.starts_with(path) {
                         break;
                     }
                     cursor = key;
