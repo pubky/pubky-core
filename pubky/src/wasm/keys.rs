@@ -15,11 +15,20 @@ impl Keypair {
 
     /// Generate a [Keypair] from a secret key.
     #[wasm_bindgen(js_name = "fromSecretKey")]
-    pub fn from_secret_key(secret_key: js_sys::Uint8Array) -> Self {
+    pub fn from_secret_key(secret_key: js_sys::Uint8Array) -> Result<Keypair, JsValue> {
+        if !js_sys::Uint8Array::instanceof(&secret_key) {
+            return Err("Expected secret_key to be an instance of Uint8Array".into());
+        }
+
+        let len = secret_key.byte_length();
+        if (len != 32) {
+            return Err(format!("Expected secret_key to be 32 bytes, got {len}"))?;
+        }
+
         let mut bytes = [0; 32];
         secret_key.copy_to(&mut bytes);
 
-        Self(pkarr::Keypair::from_secret_key(&bytes))
+        Ok(Self(pkarr::Keypair::from_secret_key(&bytes)))
     }
 
     /// Returns the secret key of this keypair.
@@ -67,9 +76,9 @@ impl PublicKey {
     #[wasm_bindgen(js_name = "from")]
     /// @throws
     pub fn try_from(value: JsValue) -> Result<PublicKey, JsValue> {
-        let string = value.as_string().ok_or(Error::Generic(
-            "Couldn't create a PublicKey from this type of value".to_string(),
-        ))?;
+        let string = value
+            .as_string()
+            .ok_or("Couldn't create a PublicKey from this type of value")?;
 
         Ok(PublicKey(
             pkarr::PublicKey::try_from(string).map_err(Error::Pkarr)?,
