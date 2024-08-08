@@ -15,7 +15,7 @@ pub struct ListBuilder<'a> {
 
 impl<'a> ListBuilder<'a> {
     /// Create a new List request builder
-    pub fn new(client: &'a PubkyClient, url: Url) -> Self {
+    pub(crate) fn new(client: &'a PubkyClient, url: Url) -> Self {
         Self {
             client,
             url,
@@ -40,7 +40,8 @@ impl<'a> ListBuilder<'a> {
 
     /// Set the `cursor` value.
     ///
-    /// usually the last url from previous responses.
+    /// Either a full `pubky://` Url (from previous list response),
+    /// or a path (to a file or directory) relative to the `url`
     pub fn cursor(mut self, cursor: &'a str) -> Self {
         self.cursor = cursor.into();
         self

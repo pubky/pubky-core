@@ -154,10 +154,14 @@ impl PubkyClient {
         self.inner_delete(url).await.map_err(|e| e.into())
     }
 
-    /// Returns a list of Pubky URLs of the files within the `url` path,
-    /// respecting the `cursor`, `reverse` and `limit` options.
+    /// Returns a list of Pubky urls (as strings).
     ///
-    /// `cursor` is usually the last url from previous responses.
+    /// - `url`:     The Pubky url (string) to the directory you want to list its content.
+    /// - `cursor`:  Either a full `pubky://` Url (from previous list response),
+    ///                 or a path (to a file or directory) relative to the `url`
+    /// - `reverse`: List in reverse order
+    /// - `limit`    Limit the number of urls in the response
+    /// - `shallow`: List directories and files, instead of flat list of files.
     #[wasm_bindgen]
     pub async fn list(
         &self,

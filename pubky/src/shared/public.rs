@@ -12,7 +12,7 @@ use crate::{
 use super::{list_builder::ListBuilder, pkarr::Endpoint};
 
 impl PubkyClient {
-    pub async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
+    pub(crate) async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
         let url = self.pubky_to_http(url).await?;
 
         let response = self
@@ -26,7 +26,7 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub async fn inner_get<T: TryInto<Url>>(&self, url: T) -> Result<Option<Bytes>> {
+    pub(crate) async fn inner_get<T: TryInto<Url>>(&self, url: T) -> Result<Option<Bytes>> {
         let url = self.pubky_to_http(url).await?;
 
         let response = self.request(Method::GET, url).send().await?;
@@ -43,7 +43,7 @@ impl PubkyClient {
         Ok(Some(bytes))
     }
 
-    pub async fn inner_delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
+    pub(crate) async fn inner_delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
         let url = self.pubky_to_http(url).await?;
 
         let response = self.request(Method::DELETE, url).send().await?;
@@ -53,7 +53,7 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub fn inner_list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
+    pub(crate) fn inner_list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
         Ok(ListBuilder::new(
             self,
             url.try_into().map_err(|_| Error::InvalidUrl)?,
