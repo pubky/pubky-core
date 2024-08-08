@@ -103,83 +103,91 @@ impl DB {
 
         let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
 
-        // Remove directories from the cursor;
-        let cursor = cursor
+        // TODO: make this more performant than split and allocations?
+        let mut threshold = cursor
             .as_deref()
-            .and_then(|mut cursor| cursor.rsplit('/').next())
-            .unwrap_or(if reverse { "~" } else { "" });
+            .map(|mut cursor| {
+                // Get the name of the file or directory
+                // Similar to Path::new(cursor).file_name
+                let is_directory = cursor.ends_with('/');
 
-        let mut cursor = format!("{path}{cursor}");
+                let mut split = cursor.rsplit('/');
 
-        // Fetch data based on direction
-        if reverse {
-            for _ in 0..limit {
-                if let Some((key, _)) = self.tables.entries.get_lower_than(txn, &cursor)? {
-                    if !key.starts_with(path) {
-                        break;
-                    }
+                if is_directory {
+                    // Move one step back
+                    split.next();
+                }
 
-                    if shallow {
-                        let mut split = key[path.len()..].split('/');
-                        let item = split.next().expect("should not be reachable");
+                let file_or_directory = split.next().expect("should not be reachable");
 
-                        let is_directory = split.next().is_some();
+                next_threshold(path, file_or_directory, is_directory, reverse, shallow)
+            })
+            .unwrap_or(next_threshold(path, "", false, reverse, shallow));
 
-                        cursor = format!(
-                            "{}{}",
-                            &key[..(path.len() + item.len())],
-                            // `.` is immediately lower than `/`
-                            if is_directory { "." } else { "" }
-                        );
+        for _ in 0..limit {
+            if let Some((key, _)) = (if reverse {
+                self.tables.entries.get_lower_than(txn, &threshold)?
+            } else {
+                self.tables.entries.get_greater_than(txn, &threshold)?
+            }) {
+                if !key.starts_with(path) {
+                    break;
+                }
 
-                        let url = format!(
-                            "pubky://{path}{item}{}",
-                            if is_directory { "/" } else { "" }
-                        );
+                if shallow {
+                    let mut split = key[path.len()..].split('/');
+                    let file_or_directory = split.next().expect("should not be reachable");
 
-                        results.push(url);
-                    } else {
-                        cursor = key.to_string();
-                        results.push(format!("pubky://{}", key))
-                    }
-                };
-            }
-        } else {
-            for _ in 0..limit {
-                if let Some((key, _)) = self.tables.entries.get_greater_than(txn, &cursor)? {
-                    if !key.starts_with(path) {
-                        break;
-                    }
+                    let is_directory = split.next().is_some();
 
-                    if shallow {
-                        let mut split = key[path.len()..].split('/');
-                        let item = split.next().expect("should not be reachable");
+                    threshold =
+                        next_threshold(path, file_or_directory, is_directory, reverse, shallow);
 
-                        let is_directory = split.next().is_some();
-
-                        cursor = format!(
-                            "{}{}",
-                            &key[..(path.len() + item.len())],
-                            // `0` is immediately higher than `/`
-                            if is_directory { "0" } else { "" }
-                        );
-
-                        let url = format!(
-                            "pubky://{path}{item}{}",
-                            if is_directory { "/" } else { "" }
-                        );
-
-                        results.push(url);
-                    } else {
-                        cursor = key.to_string();
-                        results.push(format!("pubky://{}", key))
-                    }
-                };
-            }
-        };
+                    results.push(format!(
+                        "pubky://{path}{file_or_directory}{}",
+                        if is_directory { "/" } else { "" }
+                    ));
+                } else {
+                    threshold = key.to_string();
+                    results.push(format!("pubky://{}", key))
+                }
+            };
+        }
 
         Ok(results)
     }
+}
+
+/// Calculate the next threshold, only for flat (non-`shallow`) listing
+fn next_threshold(
+    path: &str,
+    file_or_directory: &str,
+    is_directory: bool,
+    reverse: bool,
+    shallow: bool,
+) -> String {
+    format!(
+        "{path}{file_or_directory}{}",
+        if file_or_directory.is_empty() {
+            // No file_or_directory, early return
+            if reverse {
+                // `path/to/dir/\x7f` to catch all paths than `path/to/dir/`
+                "\x7f"
+            } else {
+                ""
+            }
+        } else if shallow & is_directory {
+            if reverse {
+                // threshold = `path/to/dir\x2e`, since `\x2e` is lower   than `/`
+                "\x2e"
+            } else {
+                //threshold = `path/to/dir\x7f`, since `\x7f` is greater than `/`
+                "\x7f"
+            }
+        } else {
+            ""
+        }
+    )
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
