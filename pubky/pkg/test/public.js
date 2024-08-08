@@ -294,6 +294,36 @@ test('list shallow', async (t) => {
   }
 
   {
+    let list = await client.list(url, null, false, 3, true);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/a.com/`,
+        `pubky://${pubky}/pub/example.com/`,
+        `pubky://${pubky}/pub/example.con`,
+      ],
+      "normal list shallow with limit"
+    );
+  }
+
+  {
+    let list = await client.list(url, `example.com/`, false, null, true);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.con/`,
+        `pubky://${pubky}/pub/file`,
+        `pubky://${pubky}/pub/file2`,
+        `pubky://${pubky}/pub/z.com/`,
+      ],
+      "normal list shallow with cursor"
+    );
+  }
+
+  {
     let list = await client.list(url, null, true, null, true);
 
     t.deepEqual(
@@ -308,6 +338,20 @@ test('list shallow', async (t) => {
         `pubky://${pubky}/pub/a.com/`,
       ],
       "normal list shallow"
+    );
+  }
+
+  {
+    let list = await client.list(url, null, true, 3, true);
+
+    t.deepEqual(
+      list,
+      [
+        `pubky://${pubky}/pub/z.com/`,
+        `pubky://${pubky}/pub/file2`,
+        `pubky://${pubky}/pub/file`,
+      ],
+      "normal list shallow with limit"
     );
   }
 })
