@@ -345,6 +345,26 @@ mod tests {
             let list = client
                 .list(url)
                 .unwrap()
+                .limit(2)
+                .cursor("/a.txt")
+                .send()
+                .await
+                .unwrap();
+
+            assert_eq!(
+                list,
+                vec![
+                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                ],
+                "normal list with limit and a leading / cursor"
+            );
+        }
+
+        {
+            let list = client
+                .list(url)
+                .unwrap()
                 .reverse(true)
                 .send()
                 .await

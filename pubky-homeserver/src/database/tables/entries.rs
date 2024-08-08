@@ -2,6 +2,7 @@ use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, fmt::Result, time::SystemTime};
+use tracing::{debug, instrument};
 
 use heed::{
     types::{Bytes, Str},
@@ -104,23 +105,23 @@ impl DB {
         let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
 
         // TODO: make this more performant than split and allocations?
+
         let mut threshold = cursor
-            .as_deref()
-            .map(|mut cursor| {
-                // Get the name of the file or directory
-                // Similar to Path::new(cursor).file_name
-                let is_directory = cursor.ends_with('/');
+            .map(|cursor| {
+                // Removing leading forward slashes
+                let mut file_or_directory = cursor.trim_start_matches('/');
 
-                let mut split = cursor.rsplit('/');
+                if cursor.starts_with("pubky://") {
+                    file_or_directory = cursor.split(path).last().expect("should not be reachable")
+                };
 
-                if is_directory {
-                    // Move one step back
-                    split.next();
-                }
-
-                let file_or_directory = split.next().expect("should not be reachable");
-
-                next_threshold(path, file_or_directory, is_directory, reverse, shallow)
+                next_threshold(
+                    path,
+                    file_or_directory,
+                    file_or_directory.ends_with('/'),
+                    reverse,
+                    shallow,
+                )
             })
             .unwrap_or(next_threshold(path, "", false, reverse, shallow));
 
@@ -158,7 +159,8 @@ impl DB {
     }
 }
 
-/// Calculate the next threshold, only for flat (non-`shallow`) listing
+/// Calculate the next threshold
+#[instrument]
 fn next_threshold(
     path: &str,
     file_or_directory: &str,
@@ -166,6 +168,8 @@ fn next_threshold(
     reverse: bool,
     shallow: bool,
 ) -> String {
+    debug!("Fuck me!");
+
     format!(
         "{path}{file_or_directory}{}",
         if file_or_directory.is_empty() {
