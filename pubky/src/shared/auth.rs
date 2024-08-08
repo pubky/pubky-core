@@ -74,7 +74,7 @@ impl PubkyClient {
     }
 
     /// Signout from a homeserver.
-    pub async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
+    pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
         let Endpoint {
             public_key,
             mut url,
@@ -90,7 +90,7 @@ impl PubkyClient {
     }
 
     /// Signin to a homeserver.
-    pub async fn inner_signin(&self, keypair: &Keypair) -> Result<()> {
+    pub(crate) async fn inner_signin(&self, keypair: &Keypair) -> Result<()> {
         let pubky = keypair.public_key();
 
         let Endpoint {
