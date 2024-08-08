@@ -11,3 +11,11 @@ test('generate keys from a seed', async (t) => {
 
   t.is(publicKey.z32(), 'gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o')
 })
+
+test('fromSecretKey error', async (t) => {
+  const secretkey = Buffer.from('5aa93b299a343aa2691739771f2b5b', 'hex')
+
+
+  t.throws(() => Keypair.fromSecretKey(null), /Expected secret_key to be an instance of Uint8Array/)
+  t.throws(() => Keypair.fromSecretKey(secretkey), /Expected secret_key to be 32 bytes, got 15/)
+})
