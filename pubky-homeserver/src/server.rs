@@ -1,15 +1,13 @@
-use std::{
-    collections::HashMap, future::IntoFuture, net::SocketAddr, num::NonZeroUsize, sync::Arc,
-};
+use std::{future::IntoFuture, net::SocketAddr};
 
 use anyhow::{Error, Result};
 use pubky_common::auth::AuthnVerifier;
-use tokio::{net::TcpListener, signal, sync::Mutex, task::JoinSet};
+use tokio::{net::TcpListener, signal, task::JoinSet};
 use tracing::{debug, info, warn};
 
 use pkarr::{
     mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PkarrClientAsync, PublicKey, Settings, SignedPacket,
+    PkarrClient, PkarrClientAsync, PublicKey, Settings,
 };
 
 use crate::{config::Config, database::DB, pkarr::publish_server_packet};

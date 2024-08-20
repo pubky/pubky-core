@@ -1,21 +1,14 @@
 use axum::{
     debug_handler,
-    extract::{Request, State},
-    http::{uri::Scheme, HeaderMap, StatusCode, Uri},
+    extract::State,
+    http::{uri::Scheme, StatusCode, Uri},
     response::IntoResponse,
-    Router,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
 use bytes::Bytes;
-use heed::BytesEncode;
-use postcard::to_allocvec;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
-use pubky_common::{
-    crypto::{random_bytes, random_hash},
-    session::Session,
-    timestamp::Timestamp,
-};
+use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
 use crate::{
     database::tables::{
@@ -43,7 +36,6 @@ pub async fn signup(
 
 pub async fn session(
     State(state): State<AppState>,
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
     cookies: Cookies,
     pubky: Pubky,
 ) -> Result<impl IntoResponse> {

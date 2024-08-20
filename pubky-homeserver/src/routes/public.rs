@@ -2,27 +2,15 @@ use std::collections::HashMap;
 
 use axum::{
     body::{Body, Bytes},
-    debug_handler,
-    extract::{Path, Query, State},
+    extract::{Query, State},
     http::{header, Response, StatusCode},
     response::IntoResponse,
-    RequestExt, Router,
 };
-use axum_extra::body::AsyncReadBody;
 use futures_util::stream::StreamExt;
 use pkarr::PublicKey;
-use serde::Deserialize;
 use tower_cookies::Cookies;
 
-use tracing::debug;
-
-use pubky_common::crypto::Hasher;
-
 use crate::{
-    database::tables::{
-        blobs::{BlobsTable, BLOBS_TABLE},
-        entries::{EntriesTable, Entry, ENTRIES_TABLE},
-    },
     error::{Error, Result},
     extractors::{EntryPath, Pubky},
     server::AppState,
@@ -33,7 +21,7 @@ pub async fn put(
     pubky: Pubky,
     path: EntryPath,
     cookies: Cookies,
-    mut body: Body,
+    body: Body,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
     let path = path.as_str();
@@ -54,7 +42,7 @@ pub async fn put(
         // to stream this to filesystem, and keep track of any failed
         // writes to GC these files later.
 
-        state.db.put_entry(&public_key, &path, rx);
+        state.db.put_entry(&public_key, &path, rx)?;
 
         Ok(())
     });
@@ -62,7 +50,7 @@ pub async fn put(
     while let Some(next) = stream.next().await {
         let chunk = next?;
 
-        tx.send(chunk);
+        tx.send(chunk)?;
     }
 
     drop(tx);
@@ -79,7 +67,7 @@ pub async fn get(
     path: EntryPath,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse> {
-    verify(path.as_str());
+    verify(path.as_str())?;
     let public_key = pubky.public_key();
 
     let path = path.as_str();
@@ -127,7 +115,6 @@ pub async fn delete(
     pubky: Pubky,
     path: EntryPath,
     cookies: Cookies,
-    mut body: Body,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
     let path = path.as_str();
@@ -151,13 +138,13 @@ fn authorize(
     state: &mut AppState,
     cookies: Cookies,
     public_key: &PublicKey,
-    path: &str,
+    _: &str,
 ) -> Result<()> {
     // TODO: can we move this logic to the extractor or a layer
     // to perform this validation?
-    let session = state
+    let _ = state
         .db
-        .get_session(cookies, public_key, path)?
+        .get_session(cookies, public_key)?
         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
     Ok(())

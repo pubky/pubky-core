@@ -2,18 +2,12 @@ use std::fs;
 
 use std::path::Path;
 
-use bytes::Bytes;
-use heed::{types::Str, Database, Env, EnvOpenOptions, RwTxn};
+use heed::{Env, EnvOpenOptions};
 
 mod migrations;
 pub mod tables;
 
-use pubky_common::crypto::Hasher;
-
-use tables::{entries::Entry, Tables, TABLES_COUNT};
-
-use pkarr::PublicKey;
-use tables::blobs::{BlobsTable, BLOBS_TABLE};
+use tables::{Tables, TABLES_COUNT};
 
 #[derive(Debug, Clone)]
 pub struct DB {
@@ -37,12 +31,11 @@ impl DB {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use pkarr::Keypair;
     use pubky_common::timestamp::Timestamp;
 
-    use crate::config::Config;
-
-    use super::{Bytes, DB};
+    use super::DB;
 
     #[tokio::test]
     async fn entries() {
@@ -61,13 +54,15 @@ mod tests {
         let cloned_keypair = keypair.clone();
 
         let done = tokio::task::spawn_blocking(move || {
-            cloned.put_entry(&cloned_keypair.public_key(), path, rx);
+            cloned
+                .put_entry(&cloned_keypair.public_key(), path, rx)
+                .unwrap();
         });
 
-        tx.send(vec![1, 2, 3, 4, 5].into());
+        tx.send(vec![1, 2, 3, 4, 5].into()).unwrap();
         drop(tx);
 
-        done.await;
+        done.await.unwrap();
 
         let blob = db.get_blob(&keypair.public_key(), path).unwrap().unwrap();
 

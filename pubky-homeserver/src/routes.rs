@@ -1,16 +1,10 @@
-use std::sync::Arc;
-
 use axum::{
     extract::DefaultBodyLimit,
-    http::Method,
     routing::{delete, get, post, put},
     Router,
 };
 use tower_cookies::CookieManagerLayer;
-use tower_http::{
-    cors::{self, CorsLayer},
-    trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::server::AppState;
 
