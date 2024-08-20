@@ -2,12 +2,8 @@ use reqwest::{Method, StatusCode};
 
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{auth::AuthnSignature, session::Session};
-use url::Url;
 
-use crate::{
-    error::{Error, Result},
-    PubkyClient,
-};
+use crate::{error::Result, PubkyClient};
 
 use super::pkarr::Endpoint;
 
@@ -75,10 +71,7 @@ impl PubkyClient {
 
     /// Signout from a homeserver.
     pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        let Endpoint {
-            public_key,
-            mut url,
-        } = self.resolve_pubky_homeserver(pubky).await?;
+        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
 
         url.set_path(&format!("/{}/session", pubky));
 
@@ -115,14 +108,11 @@ impl PubkyClient {
 #[cfg(test)]
 mod tests {
 
-    use std::time::Duration;
-
     use crate::*;
 
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_common::session::Session;
     use pubky_homeserver::Homeserver;
-    use tokio::time::sleep;
 
     #[tokio::test]
     async fn basic_authn() {

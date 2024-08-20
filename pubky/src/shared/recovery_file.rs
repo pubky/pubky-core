@@ -2,10 +2,7 @@ use argon2::Argon2;
 use pkarr::Keypair;
 use pubky_common::crypto::{decrypt, encrypt};
 
-use crate::{
-    error::{Error, Result},
-    PubkyClient,
-};
+use crate::error::{Error, Result};
 
 static SPEC_NAME: &str = "recovery";
 static SPEC_LINE: &str = "pubky.org/recovery";
@@ -67,6 +64,8 @@ fn recovery_file_encryption_key_from_passphrase(passphrase: &str) -> Result<[u8;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::PubkyClient;
 
     #[test]
     fn encrypt_decrypt_recovery_file() {
