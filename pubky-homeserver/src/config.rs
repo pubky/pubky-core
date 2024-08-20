@@ -1,7 +1,7 @@
 //! Configuration for the server
 
 use anyhow::{anyhow, Result};
-use pkarr::{mainline::dht::DhtSettings, Keypair};
+use pkarr::Keypair;
 // use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 

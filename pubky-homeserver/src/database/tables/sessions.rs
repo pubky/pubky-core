@@ -1,12 +1,9 @@
-use std::{borrow::Cow, time::SystemTime};
-
 use heed::{
     types::{Bytes, Str},
-    BoxedError, BytesDecode, BytesEncode, Database,
+    Database,
 };
 use pkarr::PublicKey;
 use pubky_common::session::Session;
-use serde::Deserialize;
 use tower_cookies::Cookies;
 
 use crate::database::DB;
@@ -21,9 +18,8 @@ impl DB {
         &mut self,
         cookies: Cookies,
         public_key: &PublicKey,
-        path: &str,
     ) -> anyhow::Result<Option<Session>> {
-        if let Some(bytes) = self.get_session_bytes(cookies, public_key, path)? {
+        if let Some(bytes) = self.get_session_bytes(cookies, public_key)? {
             return Ok(Some(Session::deserialize(&bytes)?));
         };
 
@@ -34,7 +30,6 @@ impl DB {
         &mut self,
         cookies: Cookies,
         public_key: &PublicKey,
-        path: &str,
     ) -> anyhow::Result<Option<Vec<u8>>> {
         if let Some(cookie) = cookies.get(&public_key.to_string()) {
             let rtxn = self.env.read_txn()?;

@@ -52,10 +52,6 @@ impl EntryPath {
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
 }
 
 #[async_trait]

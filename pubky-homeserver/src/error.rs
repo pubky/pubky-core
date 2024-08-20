@@ -6,7 +6,6 @@ use axum::{
     response::IntoResponse,
 };
 use pubky_common::auth::AuthnSignatureError;
-use tracing::debug;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -70,6 +69,22 @@ impl From<PathRejection> for Error {
     }
 }
 
+// === Pubky specific errors ===
+
+impl From<AuthnSignatureError> for Error {
+    fn from(error: AuthnSignatureError) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
+    }
+}
+
+impl From<pkarr::Error> for Error {
+    fn from(error: pkarr::Error) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
+    }
+}
+
+// === INTERNAL_SERVER_ERROR ===
+
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
@@ -100,16 +115,8 @@ impl From<axum::Error> for Error {
     }
 }
 
-// === Pubky specific errors ===
-
-impl From<AuthnSignatureError> for Error {
-    fn from(error: AuthnSignatureError) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(error))
-    }
-}
-
-impl From<pkarr::Error> for Error {
-    fn from(error: pkarr::Error) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(error))
+impl<T> From<flume::SendError<T>> for Error {
+    fn from(error: flume::SendError<T>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
