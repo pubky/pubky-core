@@ -9,6 +9,8 @@ pub mod tables;
 
 use tables::{Tables, TABLES_COUNT};
 
+pub const MAX_LIST_LIMIT: u16 = 100;
+
 #[derive(Debug, Clone)]
 pub struct DB {
     pub(crate) env: Env,
@@ -43,7 +45,7 @@ mod tests {
             .join(Timestamp::now().to_string())
             .join("pubky");
 
-        let mut db = DB::open(&storage).unwrap();
+        let db = DB::open(&storage).unwrap();
 
         let keypair = Keypair::random();
         let path = "/pub/foo.txt";
