@@ -87,6 +87,21 @@ impl DB {
 
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
 
+            // create DELETE event
+            if path.starts_with("pub/") {
+                let url = format!("pubky://{key}");
+
+                let event = Event::put(&url);
+                let value = event.serialize();
+
+                let key = entry.timestamp.to_string();
+
+                self.tables.events.put(&mut wtxn, &key, &value)?;
+
+                // TODO: delete older events.
+                // TODO: move to events.rs
+            }
+
             deleted_entry & deleted_blobs
         } else {
             false
