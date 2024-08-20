@@ -13,14 +13,14 @@ use pubky_common::{
     timestamp::Timestamp,
 };
 
-use crate::database::DB;
+use crate::database::{DB, MAX_LIST_LIMIT};
+
+use super::events::Event;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Str, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
-
-const MAX_LIST_LIMIT: u16 = 100;
 
 impl DB {
     pub fn put_entry(
@@ -55,6 +55,19 @@ impl DB {
         self.tables
             .entries
             .put(&mut wtxn, &key, &entry.serialize())?;
+
+        if path.starts_with("pub/") {
+            let url = format!("pubky://{key}");
+            let event = Event::put(&url);
+            let value = event.serialize();
+
+            let key = entry.timestamp.to_string();
+
+            self.tables.events.put(&mut wtxn, &key, &value)?;
+
+            // TODO: delete older events.
+            // TODO: move to events.rs
+        }
 
         wtxn.commit()?;
 
