@@ -1,9 +1,4 @@
-use std::{borrow::Cow, time::SystemTime};
-
-use heed::{
-    types::{Bytes, Str},
-    BoxedError, BytesDecode, BytesEncode, Database,
-};
+use heed::{types::Bytes, Database};
 use pkarr::PublicKey;
 
 use crate::database::DB;
@@ -36,7 +31,7 @@ impl DB {
             None
         };
 
-        rtxn.commit();
+        rtxn.commit()?;
 
         Ok(result)
     }
