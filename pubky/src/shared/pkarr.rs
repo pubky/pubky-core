@@ -1,4 +1,4 @@
-use url::{Origin, Url};
+use url::Url;
 
 use pkarr::{
     dns::{rdata::SVCB, Packet},
@@ -128,7 +128,7 @@ impl PubkyClient {
         }
 
         if let Some(public_key) = homeserver_public_key {
-            let mut url = Url::parse(&format!(
+            let url = Url::parse(&format!(
                 "{}://{}",
                 if origin.starts_with("localhost") {
                     "http"
@@ -156,7 +156,7 @@ mod tests {
 
     use pkarr::{
         dns::{rdata::SVCB, Packet},
-        mainline::{dht::DhtSettings, Dht, Testnet},
+        mainline::{dht::DhtSettings, Testnet},
         Keypair, PkarrClient, Settings, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
@@ -183,7 +183,7 @@ mod tests {
 
         let server_tld = server.public_key().to_string();
 
-        let mut svcb = SVCB::new(0, server_tld.as_str().try_into().unwrap());
+        let svcb = SVCB::new(0, server_tld.as_str().try_into().unwrap());
 
         packet.answers.push(pkarr::dns::ResourceRecord::new(
             "pubky".try_into().unwrap(),

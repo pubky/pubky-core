@@ -1,4 +1,4 @@
-use reqwest::{Method, Response, StatusCode};
+use reqwest::Method;
 use url::Url;
 
 use crate::{error::Result, PubkyClient};

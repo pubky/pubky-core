@@ -1,4 +1,4 @@
-use heed::{types::Str, Database, Env, RwTxn};
+use heed::{Env, RwTxn};
 
 use crate::database::tables::{blobs, entries, sessions, users};
 

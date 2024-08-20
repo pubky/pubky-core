@@ -1,5 +1,3 @@
-use std::{collections::HashMap, sync::RwLock};
-
 use axum::{
     body::{Body, Bytes},
     extract::State,
@@ -10,8 +8,7 @@ use axum::{
 };
 use futures_util::stream::StreamExt;
 
-use pkarr::{PublicKey, SignedPacket};
-use tracing::debug;
+use pkarr::SignedPacket;
 
 use crate::{
     error::{Error, Result},
@@ -31,7 +28,7 @@ pub fn pkarr_router(state: AppState) -> Router {
 }
 
 pub async fn pkarr_put(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     pubky: Pubky,
     body: Body,
 ) -> Result<impl IntoResponse> {

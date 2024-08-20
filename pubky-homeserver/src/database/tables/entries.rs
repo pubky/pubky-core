@@ -1,12 +1,11 @@
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, fmt::Result, time::SystemTime};
 use tracing::{debug, instrument};
 
 use heed::{
     types::{Bytes, Str},
-    BoxedError, BytesDecode, BytesEncode, Database, RoTxn,
+    Database, RoTxn,
 };
 
 use pubky_common::{
@@ -53,7 +52,9 @@ impl DB {
 
         let key = format!("{public_key}/{path}");
 
-        self.tables.entries.put(&mut wtxn, &key, &entry.serialize());
+        self.tables
+            .entries
+            .put(&mut wtxn, &key, &entry.serialize())?;
 
         wtxn.commit()?;
 
@@ -126,11 +127,11 @@ impl DB {
             .unwrap_or(next_threshold(path, "", false, reverse, shallow));
 
         for _ in 0..limit {
-            if let Some((key, _)) = (if reverse {
+            if let Some((key, _)) = if reverse {
                 self.tables.entries.get_lower_than(txn, &threshold)?
             } else {
                 self.tables.entries.get_greater_than(txn, &threshold)?
-            }) {
+            } {
                 if !key.starts_with(path) {
                     break;
                 }
@@ -228,23 +229,10 @@ impl Entry {
         self
     }
 
-    pub fn set_content_type(&mut self, content_type: &str) -> &mut Self {
-        self.content_type = content_type.to_string();
-        self
-    }
-
     // === Getters ===
 
     pub fn content_hash(&self) -> &[u8; 32] {
         &self.content_hash
-    }
-
-    pub fn content_length(&self) -> usize {
-        self.content_length
-    }
-
-    pub fn content_type(&self) -> &str {
-        &self.content_type
     }
 
     // === Public Method ===
