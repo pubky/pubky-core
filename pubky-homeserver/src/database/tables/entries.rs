@@ -200,7 +200,7 @@ pub struct Entry {
     /// Encoding version
     version: usize,
     /// Modified at
-    timestamp: u64,
+    timestamp: Timestamp,
     content_hash: [u8; 32],
     content_length: usize,
     content_type: String,
@@ -211,10 +211,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new() -> Self {
-        Self {
-            timestamp: Timestamp::now().into_inner(),
-            ..Default::default()
-        }
+        Default::default()
     }
 
     // === Setters ===
