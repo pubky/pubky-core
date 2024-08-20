@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 mod error;
 mod shared;
 
