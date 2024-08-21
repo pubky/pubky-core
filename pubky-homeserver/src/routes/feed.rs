@@ -30,15 +30,21 @@ pub async fn feed(
         .map(|c| c.as_str())
         .unwrap_or("0000000000000");
 
+    // Guard against bad cursor
     if cursor.len() < 13 {
         cursor = "0000000000000"
     }
 
     let mut result: Vec<String> = vec![];
-    let mut next_cursor = "".to_string();
+    let mut next_cursor = cursor.to_string();
 
     for _ in 0..limit {
-        match state.db.tables.events.get_greater_than(&txn, cursor)? {
+        match state
+            .db
+            .tables
+            .events
+            .get_greater_than(&txn, &next_cursor)?
+        {
             Some((timestamp, event_bytes)) => {
                 let event = Event::deserialize(event_bytes)?;
 

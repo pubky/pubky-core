@@ -101,7 +101,7 @@ mod tests {
 
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_homeserver::Homeserver;
-    use reqwest::StatusCode;
+    use reqwest::{Method, StatusCode};
 
     #[tokio::test]
     async fn put_get_delete() {
@@ -625,6 +625,110 @@ mod tests {
                 ],
                 "reverse list shallow with limit and a directory cursor"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn list_events() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let urls = vec![
+            format!("pubky://{}/pub/a.com/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.con/d.txt", keypair.public_key()),
+            format!("pubky://{}/pub/example.con", keypair.public_key()),
+            format!("pubky://{}/pub/file", keypair.public_key()),
+            format!("pubky://{}/pub/file2", keypair.public_key()),
+            format!("pubky://{}/pub/z.com/a.txt", keypair.public_key()),
+        ];
+
+        for url in urls {
+            client.put(url.as_str(), &[0]).await.unwrap();
+            client.delete(url.as_str()).await.unwrap();
+        }
+
+        let feed_url = format!("http://localhost:{}/events/", server.port());
+        let feed_url = feed_url.as_str();
+
+        let client = PubkyClient::test(&testnet);
+
+        let cursor;
+
+        {
+            let response = client
+                .request(
+                    Method::GET,
+                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
+                )
+                .send()
+                .await
+                .unwrap();
+
+            let text = response.text().await.unwrap();
+            let lines = text.split('\n').collect::<Vec<_>>();
+
+            cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
+
+            assert_eq!(
+                lines,
+                vec![
+                    format!("PUT pubky://{}/pub/a.com/a.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/a.com/a.txt", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("cursor: {cursor}",)
+                ]
+            );
+        }
+
+        {
+            let response = client
+                .request(
+                    Method::GET,
+                    format!("{feed_url}?limit=10&cursor={cursor}")
+                        .as_str()
+                        .try_into()
+                        .unwrap(),
+                )
+                .send()
+                .await
+                .unwrap();
+
+            let text = response.text().await.unwrap();
+            let lines = text.split('\n').collect::<Vec<_>>();
+
+            assert_eq!(
+                lines,
+                vec![
+                    format!("PUT pubky://{}/pub/example.con/d.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/example.con/d.txt", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/example.con", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/example.con", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/file", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/file", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/file2", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/file2", keypair.public_key()),
+                    format!("PUT pubky://{}/pub/z.com/a.txt", keypair.public_key()),
+                    format!("DEL pubky://{}/pub/z.com/a.txt", keypair.public_key()),
+                    lines.last().unwrap().to_string()
+                ]
+            )
         }
     }
 }

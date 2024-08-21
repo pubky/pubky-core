@@ -26,6 +26,10 @@ impl Event {
         Self::Put(url.to_string())
     }
 
+    pub fn delete(url: &str) -> Self {
+        Self::Delete(url.to_string())
+    }
+
     pub fn serialize(&self) -> Vec<u8> {
         to_allocvec(self).expect("Session::serialize")
     }
