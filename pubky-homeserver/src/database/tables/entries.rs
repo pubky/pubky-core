@@ -91,10 +91,10 @@ impl DB {
             if path.starts_with("pub/") {
                 let url = format!("pubky://{key}");
 
-                let event = Event::put(&url);
+                let event = Event::delete(&url);
                 let value = event.serialize();
 
-                let key = entry.timestamp.to_string();
+                let key = Timestamp::now().to_string();
 
                 self.tables.events.put(&mut wtxn, &key, &value)?;
 
