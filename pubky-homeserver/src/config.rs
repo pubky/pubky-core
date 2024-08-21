@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use pkarr::Keypair;
+use tracing::info;
 // use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
@@ -41,6 +42,7 @@ impl Config {
     /// Testnet configurations
     pub fn testnet() -> Self {
         let testnet = pkarr::mainline::Testnet::new(10);
+        info!(?testnet.bootstrap, "Testnet Config");
 
         let bootstrap = Some(testnet.bootstrap.to_owned());
         let storage = Some(
