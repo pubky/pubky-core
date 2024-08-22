@@ -10,30 +10,33 @@ static SPEC_LINE: &str = "pubky.org/recovery";
 pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair> {
     let encryption_key = recovery_file_encryption_key_from_passphrase(passphrase)?;
 
-    let mut split = recovery_file.split(|byte| byte == &10);
+    let newline_index = recovery_file
+        .iter()
+        .position(|&r| r == 10)
+        .ok_or(())
+        .map_err(|_| Error::RecoveryFileMissingSpecLine)?;
 
-    match split.next() {
-        Some(bytes) => {
-            if !(bytes.starts_with(SPEC_LINE.as_bytes())
-                || bytes.starts_with(b"pkarr.org/recovery"))
-            {
-                return Err(Error::RecoveryFileVersionNotSupported);
-            }
-        }
-        None => return Err(Error::RecoveryFileMissingSpecLine),
+    let spec_line = &recovery_file[..newline_index];
+
+    if !(spec_line.starts_with(SPEC_LINE.as_bytes())
+        || spec_line.starts_with(b"pkarr.org/recovery"))
+    {
+        return Err(Error::RecoveryFileVersionNotSupported);
+    }
+
+    let encrypted = &recovery_file[newline_index + 1..];
+
+    if encrypted.is_empty() {
+        return Err(Error::RecoverFileMissingEncryptedSecretKey);
     };
 
-    if let Some(encrypted) = split.next() {
-        let decrypted = decrypt(encrypted, &encryption_key)?;
-        let length = decrypted.len();
-        let secret_key: [u8; 32] = decrypted
-            .try_into()
-            .map_err(|_| Error::RecoverFileInvalidSecretKeyLength(length))?;
+    let decrypted = decrypt(encrypted, &encryption_key)?;
+    let length = decrypted.len();
+    let secret_key: [u8; 32] = decrypted
+        .try_into()
+        .map_err(|_| Error::RecoverFileInvalidSecretKeyLength(length))?;
 
-        return Ok(Keypair::from_secret_key(&secret_key));
-    };
-
-    Err(Error::RecoverFileMissingEncryptedSecretKey)
+    Ok(Keypair::from_secret_key(&secret_key))
 }
 
 pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>> {
