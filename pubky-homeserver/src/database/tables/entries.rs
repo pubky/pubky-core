@@ -1,7 +1,7 @@
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, instrument};
+use tracing::instrument;
 
 use heed::{
     types::{Bytes, Str},
@@ -169,8 +169,6 @@ fn next_threshold(
     reverse: bool,
     shallow: bool,
 ) -> String {
-    debug!("Fuck me!");
-
     format!(
         "{path}{file_or_directory}{}",
         if file_or_directory.is_empty() {
