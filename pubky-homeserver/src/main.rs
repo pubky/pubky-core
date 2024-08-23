@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use pubky_homeserver::{config::Config, Homeserver};
 
@@ -8,8 +10,14 @@ struct Cli {
     /// [tracing_subscriber::EnvFilter]
     #[clap(short, long)]
     tracing_env_filter: Option<String>,
+
+    /// Run Homeserver in a local testnet
     #[clap(long)]
     testnet: bool,
+
+    /// Optional Path to config file.
+    #[clap(short, long)]
+    config: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -25,8 +33,10 @@ async fn main() -> Result<()> {
 
     let server = Homeserver::start(if args.testnet {
         Config::testnet()
+    } else if let Some(config_path) = args.config {
+        Config::load(config_path).await?
     } else {
-        Default::default()
+        Config::default()
     })
     .await?;
 
