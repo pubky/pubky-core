@@ -10,7 +10,7 @@ use crate::{
     PubkyClient,
 };
 
-const MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION: u8 = 3;
+const MAX_ENDPOINT_RESOLUTION_RECURSION: u8 = 3;
 
 impl PubkyClient {
     /// Publish the SVCB record for `_pubky.<public_key>`.
@@ -56,24 +56,28 @@ impl PubkyClient {
             .map_err(|_| Error::Generic("Could not resolve homeserver".to_string()))
     }
 
-    /// Resolve a service's public_key and clearnet url from a Pubky domain
+    /// Resolve a service's public_key and "non-pkarr url" from a Pubky domain
+    ///
+    /// "non-pkarr" url is any URL where the hostname isn't a 52 z-base32 character,
+    /// usually an IPv4, IPv6 or ICANN domain, but could also be any other unknown hostname.
+    ///
+    /// Recursively resolve SVCB and HTTPS endpoints, with [MAX_ENDPOINT_RESOLUTION_RECURSION] limit.
     pub(crate) async fn resolve_endpoint(&self, target: &str) -> Result<Endpoint> {
         let original_target = target;
         // TODO: cache the result of this function?
 
         let mut target = target.to_string();
 
-        let mut homeserver_public_key = None;
+        let mut endpoint_public_key = None;
         let mut origin = target.clone();
 
         let mut step = 0;
 
         // PublicKey is very good at extracting the Pkarr TLD from a string.
         while let Ok(public_key) = PublicKey::try_from(target.clone()) {
-            if step >= MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION {
+            if step >= MAX_ENDPOINT_RESOLUTION_RECURSION {
                 break;
             };
-
             step += 1;
 
             if let Some(signed_packet) = self
@@ -85,8 +89,12 @@ impl PubkyClient {
                 let svcb = signed_packet.resource_records(&target).fold(
                     None,
                     |prev: Option<SVCB>, answer| {
-                        if let pkarr::dns::rdata::RData::SVCB(curr) = &answer.rdata {
-                            let curr = curr.clone();
+                        if let Some(svcb) = match &answer.rdata {
+                            pkarr::dns::rdata::RData::SVCB(svcb) => Some(svcb),
+                            pkarr::dns::rdata::RData::HTTPS(curr) => Some(&curr.0),
+                            _ => None,
+                        } {
+                            let curr = svcb.clone();
 
                             if curr.priority == 0 {
                                 return Some(curr);
@@ -106,7 +114,7 @@ impl PubkyClient {
                 );
 
                 if let Some(svcb) = svcb {
-                    homeserver_public_key = Some(public_key.clone());
+                    endpoint_public_key = Some(public_key.clone());
                     target = svcb.target.to_string();
 
                     if let Some(port) = svcb.get_param(pkarr::dns::rdata::SVCB::PORT) {
@@ -120,14 +128,14 @@ impl PubkyClient {
                         origin.clone_from(&target);
                     };
 
-                    if step >= MAX_RECURSIVE_PUBKY_HOMESERVER_RESOLUTION {
+                    if step >= MAX_ENDPOINT_RESOLUTION_RECURSION {
                         continue;
                     };
                 }
             }
         }
 
-        if let Some(public_key) = homeserver_public_key {
+        if let Some(public_key) = endpoint_public_key {
             let url = Url::parse(&format!(
                 "{}://{}",
                 if origin.starts_with("localhost") {
@@ -145,6 +153,7 @@ impl PubkyClient {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Endpoint {
     pub public_key: PublicKey,
     pub url: Url,
@@ -155,11 +164,103 @@ mod tests {
     use super::*;
 
     use pkarr::{
-        dns::{rdata::SVCB, Packet},
+        dns::{
+            rdata::{HTTPS, SVCB},
+            Packet,
+        },
         mainline::{dht::DhtSettings, Testnet},
         Keypair, PkarrClient, Settings, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
+
+    #[tokio::test]
+    async fn resolve_endpoint_https() {
+        let testnet = Testnet::new(10);
+
+        let pkarr_client = PkarrClient::new(Settings {
+            dht: DhtSettings {
+                bootstrap: Some(testnet.bootstrap.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .unwrap()
+        .as_async();
+
+        let domain = "example.com";
+        let mut target;
+
+        // Server
+        {
+            let keypair = Keypair::random();
+
+            let https = HTTPS(SVCB::new(0, domain.try_into().unwrap()));
+
+            let mut packet = Packet::new_reply(0);
+
+            packet.answers.push(pkarr::dns::ResourceRecord::new(
+                "foo".try_into().unwrap(),
+                pkarr::dns::CLASS::IN,
+                60 * 60,
+                pkarr::dns::rdata::RData::HTTPS(https),
+            ));
+
+            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+            pkarr_client.publish(&signed_packet).await.unwrap();
+
+            target = format!("foo.{}", keypair.public_key());
+        }
+
+        // intermediate
+        {
+            let keypair = Keypair::random();
+
+            let svcb = SVCB::new(0, target.as_str().try_into().unwrap());
+
+            let mut packet = Packet::new_reply(0);
+
+            packet.answers.push(pkarr::dns::ResourceRecord::new(
+                "bar".try_into().unwrap(),
+                pkarr::dns::CLASS::IN,
+                60 * 60,
+                pkarr::dns::rdata::RData::SVCB(svcb),
+            ));
+
+            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+            pkarr_client.publish(&signed_packet).await.unwrap();
+
+            target = format!("bar.{}", keypair.public_key())
+        }
+
+        {
+            let keypair = Keypair::random();
+
+            let svcb = SVCB::new(0, target.as_str().try_into().unwrap());
+
+            let mut packet = Packet::new_reply(0);
+
+            packet.answers.push(pkarr::dns::ResourceRecord::new(
+                "pubky".try_into().unwrap(),
+                pkarr::dns::CLASS::IN,
+                60 * 60,
+                pkarr::dns::rdata::RData::SVCB(svcb),
+            ));
+
+            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+            pkarr_client.publish(&signed_packet).await.unwrap();
+
+            target = format!("pubky.{}", keypair.public_key())
+        }
+
+        let client = PubkyClient::test(&testnet);
+
+        let endpoint = client.resolve_endpoint(&target).await.unwrap();
+
+        assert_eq!(endpoint.url.host_str().unwrap(), domain);
+    }
 
     #[tokio::test]
     async fn resolve_homeserver() {
