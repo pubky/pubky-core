@@ -1,10 +1,14 @@
 //! Configuration for the server
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use pkarr::Keypair;
+use serde::{Deserialize, Deserializer, Serialize};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tracing::info;
-// use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, path::PathBuf, time::Duration};
 
 use pubky_common::timestamp::Timestamp;
 
@@ -12,10 +16,7 @@ const DEFAULT_HOMESERVER_PORT: u16 = 6287;
 const DEFAULT_STORAGE_DIR: &str = "pubky";
 
 /// Server configuration
-#[derive(
-    // Serialize, Deserialize,
-    Clone,
-)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     port: Option<u16>,
     bootstrap: Option<Vec<String>>,
@@ -24,20 +25,22 @@ pub struct Config {
     ///
     /// Defaults to a directory in the OS data directory
     storage: Option<PathBuf>,
-    keypair: Keypair,
+    #[serde(deserialize_with = "secret_key_deserialize")]
+    secret_key: Option<[u8; 32]>,
 
     dht_request_timeout: Option<Duration>,
 }
 
 impl Config {
-    // /// Load the config from a file.
-    // pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
-    //     let s = tokio::fs::read_to_string(path.as_ref())
-    //         .await
-    //         .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
-    //     let config: Config = toml::from_str(&s)?;
-    //     Ok(config)
-    // }
+    /// Load the config from a file.
+    pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
+        let s = tokio::fs::read_to_string(path.as_ref())
+            .await
+            .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
+
+        let config: Config = toml::from_str(&s)?;
+        Ok(config)
+    }
 
     /// Testnet configurations
     pub fn testnet() -> Self {
@@ -55,7 +58,6 @@ impl Config {
             bootstrap,
             storage,
             port: Some(15411),
-            keypair: Keypair::from_secret_key(&[0_u8; 32]),
             dht_request_timeout: Some(Duration::from_millis(10)),
             ..Default::default()
         }
@@ -103,8 +105,8 @@ impl Config {
         Ok(dir.join("homeserver"))
     }
 
-    pub fn keypair(&self) -> &Keypair {
-        &self.keypair
+    pub fn keypair(&self) -> Keypair {
+        Keypair::from_secret_key(&self.secret_key.unwrap_or_default())
     }
 
     pub(crate) fn dht_request_timeout(&self) -> Option<Duration> {
@@ -119,9 +121,31 @@ impl Default for Config {
             bootstrap: None,
             domain: "localhost".to_string(),
             storage: None,
-            keypair: Keypair::random(),
+            secret_key: None,
             dht_request_timeout: None,
         }
+    }
+}
+
+fn secret_key_deserialize<'de, D>(deserializer: D) -> Result<Option<[u8; 32]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+
+    match opt {
+        Some(s) => {
+            let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
+
+            if bytes.len() != 32 {
+                return Err(serde::de::Error::custom("Expected a 32-byte array"));
+            }
+
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            Ok(Some(arr))
+        }
+        None => Ok(None),
     }
 }
 

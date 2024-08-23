@@ -11,6 +11,8 @@ pub async fn publish_server_packet(
     domain: &str,
     port: u16,
 ) -> anyhow::Result<()> {
+    // TODO: Try to resolve first before publishing.
+
     let mut packet = Packet::new_reply(0);
 
     let mut svcb = SVCB::new(0, domain.try_into()?);
