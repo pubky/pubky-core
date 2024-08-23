@@ -18,6 +18,7 @@ const DEFAULT_STORAGE_DIR: &str = "pubky";
 /// Server configuration
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
+    testnet: bool,
     port: Option<u16>,
     bootstrap: Option<Vec<String>>,
     domain: String,
@@ -39,13 +40,23 @@ impl Config {
             .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
 
         let config: Config = toml::from_str(&s)?;
+
+        if config.testnet {
+            let testnet_config = Config::testnet();
+
+            return Ok(Config {
+                bootstrap: testnet_config.bootstrap,
+                ..config
+            });
+        }
+
         Ok(config)
     }
 
     /// Testnet configurations
     pub fn testnet() -> Self {
         let testnet = pkarr::mainline::Testnet::new(10);
-        info!(?testnet.bootstrap, "Testnet Config");
+        info!(?testnet.bootstrap, "Testnet bootstrap nodes");
 
         let bootstrap = Some(testnet.bootstrap.to_owned());
         let storage = Some(
@@ -117,6 +128,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            testnet: false,
             port: Some(0),
             bootstrap: None,
             domain: "localhost".to_string(),
@@ -152,6 +164,7 @@ where
 impl Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
+            .entry(&"testnet", &self.testnet)
             .entry(&"port", &self.port())
             .entry(&"storage", &self.storage())
             .entry(&"public_key", &self.keypair().public_key())
