@@ -27,6 +27,33 @@ impl Default for PubkyClient {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct PubkyClientBuilder {
+    pkarr_settings: Option<pkarr::Settings>,
+}
+
+impl PubkyClientBuilder {
+    /// Set Pkarr client [pkarr::Settings].
+    pub fn pkarr_settings(mut self, settings: pkarr::Settings) -> Self {
+        self.pkarr_settings = settings.into();
+        self
+    }
+
+    /// Build [PubkyClient]
+    pub fn build(self) -> PubkyClient {
+        PubkyClient {
+            http: reqwest::Client::builder()
+                .cookie_store(true)
+                .user_agent(DEFAULT_USER_AGENT)
+                .build()
+                .unwrap(),
+            pkarr: PkarrClient::new(self.pkarr_settings.unwrap_or_default())
+                .unwrap()
+                .as_async(),
+        }
+    }
+}
+
 // === Public API ===
 
 impl PubkyClient {
@@ -37,9 +64,13 @@ impl PubkyClient {
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
-            #[cfg(not(target_arch = "wasm32"))]
             pkarr: PkarrClient::new(Default::default()).unwrap().as_async(),
         }
+    }
+
+    /// Returns a builder to edit settings before creating [PubkyClient].
+    pub fn builder() -> PubkyClientBuilder {
+        PubkyClientBuilder::default()
     }
 
     pub fn test(testnet: &Testnet) -> Self {
