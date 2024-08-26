@@ -14,8 +14,19 @@ pkarr = "2.1.0"
 rand = "0.8.5"
 thiserror = "1.0.60"
 postcard = { version = "1.0.8", features = ["alloc"] }
-serde = { version = "1.0.204", features = ["derive"] }
 crypto_secretbox = { version = "0.1.1", features = ["std"] }
+
+serde = { version = "1.0.204", features = ["derive"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.69"
+
+[dev-dependencies]
+postcard = "1.0.8"
+
+[features]
+
+serde = ["dep:serde", "ed25519-dalek/serde"]
+full = ['serde']
+
+default = ['full']
