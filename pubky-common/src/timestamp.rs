@@ -6,6 +6,12 @@ use std::{
     sync::Mutex,
 };
 
+use serde::{
+    de::{SeqAccess, Visitor},
+    ser::SerializeTuple,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
+
 use once_cell::sync::Lazy;
 use rand::Rng;
 
@@ -173,6 +179,58 @@ pub fn system_time() -> u64 {
     * 1000
 }
 
+// === Serde ===
+
+impl Serialize for Timestamp {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Convert u64 to 8 bytes in Big-Endian format
+        let mut tup = serializer.serialize_tuple(8)?;
+
+        for byte in self.to_bytes() {
+            tup.serialize_element(&byte)?;
+        }
+
+        tup.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TimestampVisitor;
+
+        impl<'de> Visitor<'de> for TimestampVisitor {
+            type Value = Timestamp;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a tuple of 8 bytes")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 8];
+
+                for i in 0..8 {
+                    bytes[i] = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                }
+
+                Ok(Timestamp::from(bytes))
+            }
+        }
+
+        deserializer.deserialize_tuple(8, TimestampVisitor)
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum TimestampError {
     #[error("Invalid bytes length, Timestamp should be encoded as 8 bytes, got {0}")]
@@ -236,5 +294,18 @@ mod tests {
         let decoded: Timestamp = string.try_into().unwrap();
 
         assert_eq!(decoded, timestamp)
+    }
+
+    #[test]
+    fn serde() {
+        let timestamp = Timestamp::now();
+
+        let serialized = postcard::to_allocvec(&timestamp).unwrap();
+
+        assert_eq!(serialized, timestamp.to_bytes());
+
+        let deserialized: Timestamp = postcard::from_bytes(&serialized).unwrap();
+
+        assert_eq!(deserialized, timestamp);
     }
 }
