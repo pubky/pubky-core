@@ -100,7 +100,7 @@ mod tests {
 
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_homeserver::Homeserver;
-    use reqwest::StatusCode;
+    use reqwest::{Method, StatusCode};
 
     #[tokio::test]
     async fn put_get_delete() {
@@ -206,25 +206,24 @@ mod tests {
 
         client.signup(&keypair, &server.public_key()).await.unwrap();
 
+        let pubky = keypair.public_key();
+
         let urls = vec![
-            format!("pubky://{}/pub/a.wrong/a.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-            format!(
-                "pubky://{}/pub/example.com/cc-nested/z.txt",
-                keypair.public_key()
-            ),
-            format!("pubky://{}/pub/example.wrong/a.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
-            format!("pubky://{}/pub/z.wrong/a.txt", keypair.public_key()),
+            format!("pubky://{pubky}/pub/a.wrong/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/b.txt"),
+            format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+            format!("pubky://{pubky}/pub/example.wrong/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/c.txt"),
+            format!("pubky://{pubky}/pub/example.com/d.txt"),
+            format!("pubky://{pubky}/pub/z.wrong/a.txt"),
         ];
 
         for url in urls {
             client.put(url.as_str(), &[0]).await.unwrap();
         }
 
-        let url = format!("pubky://{}/pub/example.com/extra", keypair.public_key());
+        let url = format!("pubky://{pubky}/pub/example.com/extra");
         let url = url.as_str();
 
         {
@@ -233,14 +232,11 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
-                    format!(
-                        "pubky://{}/pub/example.com/cc-nested/z.txt",
-                        keypair.public_key()
-                    ),
-                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/a.txt"),
+                    format!("pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("pubky://{pubky}/pub/example.com/c.txt"),
+                    format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                    format!("pubky://{pubky}/pub/example.com/d.txt"),
                 ],
                 "normal list with no limit or cursor"
             );
@@ -252,8 +248,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/a.txt"),
+                    format!("pubky://{pubky}/pub/example.com/b.txt"),
                 ],
                 "normal list with limit but no cursor"
             );
@@ -272,8 +268,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("pubky://{pubky}/pub/example.com/c.txt"),
                 ],
                 "normal list with limit and a file cursor"
             );
@@ -292,11 +288,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!(
-                        "pubky://{}/pub/example.com/cc-nested/z.txt",
-                        keypair.public_key()
-                    ),
-                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                    format!("pubky://{pubky}/pub/example.com/d.txt"),
                 ],
                 "normal list with limit and a directory cursor"
             );
@@ -307,10 +300,7 @@ mod tests {
                 .list(url)
                 .unwrap()
                 .limit(2)
-                .cursor(&format!(
-                    "pubky://{}/pub/example.com/a.txt",
-                    keypair.public_key()
-                ))
+                .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
                 .send()
                 .await
                 .unwrap();
@@ -318,8 +308,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("pubky://{pubky}/pub/example.com/c.txt"),
                 ],
                 "normal list with limit and a full url cursor"
             );
@@ -338,8 +328,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("pubky://{pubky}/pub/example.com/c.txt"),
                 ],
                 "normal list with limit and a leading / cursor"
             );
@@ -357,14 +347,11 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
-                    format!(
-                        "pubky://{}/pub/example.com/cc-nested/z.txt",
-                        keypair.public_key()
-                    ),
-                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/d.txt"),
+                    format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                    format!("pubky://{pubky}/pub/example.com/c.txt"),
+                    format!("pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("pubky://{pubky}/pub/example.com/a.txt"),
                 ],
                 "reverse list with no limit or cursor"
             );
@@ -383,11 +370,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
-                    format!(
-                        "pubky://{}/pub/example.com/cc-nested/z.txt",
-                        keypair.public_key()
-                    ),
+                    format!("pubky://{pubky}/pub/example.com/d.txt"),
+                    format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
                 ],
                 "reverse list with limit but no cursor"
             );
@@ -407,11 +391,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!(
-                        "pubky://{}/pub/example.com/cc-nested/z.txt",
-                        keypair.public_key()
-                    ),
-                    format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                    format!("pubky://{pubky}/pub/example.com/c.txt"),
                 ],
                 "reverse list with limit and cursor"
             );
@@ -429,24 +410,26 @@ mod tests {
 
         client.signup(&keypair, &server.public_key()).await.unwrap();
 
+        let pubky = keypair.public_key();
+
         let urls = vec![
-            format!("pubky://{}/pub/a.com/a.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/a.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/b.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/c.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.com/d.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.con/d.txt", keypair.public_key()),
-            format!("pubky://{}/pub/example.con", keypair.public_key()),
-            format!("pubky://{}/pub/file", keypair.public_key()),
-            format!("pubky://{}/pub/file2", keypair.public_key()),
-            format!("pubky://{}/pub/z.com/a.txt", keypair.public_key()),
+            format!("pubky://{pubky}/pub/a.com/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/b.txt"),
+            format!("pubky://{pubky}/pub/example.com/c.txt"),
+            format!("pubky://{pubky}/pub/example.com/d.txt"),
+            format!("pubky://{pubky}/pub/example.con/d.txt"),
+            format!("pubky://{pubky}/pub/example.con"),
+            format!("pubky://{pubky}/pub/file"),
+            format!("pubky://{pubky}/pub/file2"),
+            format!("pubky://{pubky}/pub/z.com/a.txt"),
         ];
 
         for url in urls {
             client.put(url.as_str(), &[0]).await.unwrap();
         }
 
-        let url = format!("pubky://{}/pub/", keypair.public_key());
+        let url = format!("pubky://{pubky}/pub/");
         let url = url.as_str();
 
         {
@@ -461,13 +444,13 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/a.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con/", keypair.public_key()),
-                    format!("pubky://{}/pub/file", keypair.public_key()),
-                    format!("pubky://{}/pub/file2", keypair.public_key()),
-                    format!("pubky://{}/pub/z.com/", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/a.com/"),
+                    format!("pubky://{pubky}/pub/example.com/"),
+                    format!("pubky://{pubky}/pub/example.con"),
+                    format!("pubky://{pubky}/pub/example.con/"),
+                    format!("pubky://{pubky}/pub/file"),
+                    format!("pubky://{pubky}/pub/file2"),
+                    format!("pubky://{pubky}/pub/z.com/"),
                 ],
                 "normal list shallow"
             );
@@ -486,8 +469,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/a.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/a.com/"),
+                    format!("pubky://{pubky}/pub/example.com/"),
                 ],
                 "normal list shallow with limit but no cursor"
             );
@@ -507,8 +490,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.com/"),
+                    format!("pubky://{pubky}/pub/example.con"),
                 ],
                 "normal list shallow with limit and a file cursor"
             );
@@ -528,9 +511,9 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.con", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con/", keypair.public_key()),
-                    format!("pubky://{}/pub/file", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.con"),
+                    format!("pubky://{pubky}/pub/example.con/"),
+                    format!("pubky://{pubky}/pub/file"),
                 ],
                 "normal list shallow with limit and a directory cursor"
             );
@@ -549,13 +532,13 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/z.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/file2", keypair.public_key()),
-                    format!("pubky://{}/pub/file", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con/", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/a.com/", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/z.com/"),
+                    format!("pubky://{pubky}/pub/file2"),
+                    format!("pubky://{pubky}/pub/file"),
+                    format!("pubky://{pubky}/pub/example.con/"),
+                    format!("pubky://{pubky}/pub/example.con"),
+                    format!("pubky://{pubky}/pub/example.com/"),
+                    format!("pubky://{pubky}/pub/a.com/"),
                 ],
                 "reverse list shallow"
             );
@@ -575,8 +558,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/z.com/", keypair.public_key()),
-                    format!("pubky://{}/pub/file2", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/z.com/"),
+                    format!("pubky://{pubky}/pub/file2"),
                 ],
                 "reverse list shallow with limit but no cursor"
             );
@@ -597,8 +580,8 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/file", keypair.public_key()),
-                    format!("pubky://{}/pub/example.con/", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/file"),
+                    format!("pubky://{pubky}/pub/example.con/"),
                 ],
                 "reverse list shallow with limit and a file cursor"
             );
@@ -619,11 +602,117 @@ mod tests {
             assert_eq!(
                 list,
                 vec![
-                    format!("pubky://{}/pub/example.con", keypair.public_key()),
-                    format!("pubky://{}/pub/example.com/", keypair.public_key()),
+                    format!("pubky://{pubky}/pub/example.con"),
+                    format!("pubky://{pubky}/pub/example.com/"),
                 ],
                 "reverse list shallow with limit and a directory cursor"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn list_events() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let pubky = keypair.public_key();
+
+        let urls = vec![
+            format!("pubky://{pubky}/pub/a.com/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/a.txt"),
+            format!("pubky://{pubky}/pub/example.com/b.txt"),
+            format!("pubky://{pubky}/pub/example.com/c.txt"),
+            format!("pubky://{pubky}/pub/example.com/d.txt"),
+            format!("pubky://{pubky}/pub/example.con/d.txt"),
+            format!("pubky://{pubky}/pub/example.con"),
+            format!("pubky://{pubky}/pub/file"),
+            format!("pubky://{pubky}/pub/file2"),
+            format!("pubky://{pubky}/pub/z.com/a.txt"),
+        ];
+
+        for url in urls {
+            client.put(url.as_str(), &[0]).await.unwrap();
+            client.delete(url.as_str()).await.unwrap();
+        }
+
+        let feed_url = format!("http://localhost:{}/events/", server.port());
+        let feed_url = feed_url.as_str();
+
+        let client = PubkyClient::test(&testnet);
+
+        let cursor;
+
+        {
+            let response = client
+                .request(
+                    Method::GET,
+                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
+                )
+                .send()
+                .await
+                .unwrap();
+
+            let text = response.text().await.unwrap();
+            let lines = text.split('\n').collect::<Vec<_>>();
+
+            cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
+
+            assert_eq!(
+                lines,
+                vec![
+                    format!("PUT pubky://{pubky}/pub/a.com/a.txt"),
+                    format!("DEL pubky://{pubky}/pub/a.com/a.txt"),
+                    format!("PUT pubky://{pubky}/pub/example.com/a.txt"),
+                    format!("DEL pubky://{pubky}/pub/example.com/a.txt"),
+                    format!("PUT pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("DEL pubky://{pubky}/pub/example.com/b.txt"),
+                    format!("PUT pubky://{pubky}/pub/example.com/c.txt"),
+                    format!("DEL pubky://{pubky}/pub/example.com/c.txt"),
+                    format!("PUT pubky://{pubky}/pub/example.com/d.txt"),
+                    format!("DEL pubky://{pubky}/pub/example.com/d.txt"),
+                    format!("cursor: {cursor}",)
+                ]
+            );
+        }
+
+        {
+            let response = client
+                .request(
+                    Method::GET,
+                    format!("{feed_url}?limit=10&cursor={cursor}")
+                        .as_str()
+                        .try_into()
+                        .unwrap(),
+                )
+                .send()
+                .await
+                .unwrap();
+
+            let text = response.text().await.unwrap();
+            let lines = text.split('\n').collect::<Vec<_>>();
+
+            assert_eq!(
+                lines,
+                vec![
+                    format!("PUT pubky://{pubky}/pub/example.con/d.txt"),
+                    format!("DEL pubky://{pubky}/pub/example.con/d.txt"),
+                    format!("PUT pubky://{pubky}/pub/example.con"),
+                    format!("DEL pubky://{pubky}/pub/example.con"),
+                    format!("PUT pubky://{pubky}/pub/file"),
+                    format!("DEL pubky://{pubky}/pub/file"),
+                    format!("PUT pubky://{pubky}/pub/file2"),
+                    format!("DEL pubky://{pubky}/pub/file2"),
+                    format!("PUT pubky://{pubky}/pub/z.com/a.txt"),
+                    format!("DEL pubky://{pubky}/pub/z.com/a.txt"),
+                    lines.last().unwrap().to_string()
+                ]
+            )
         }
     }
 }
