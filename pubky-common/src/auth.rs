@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use ed25519_dalek::ed25519::SignatureBytes;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     crypto::{random_hash, Keypair, PublicKey, Signature},
@@ -12,8 +13,183 @@ use crate::{
 // 30 seconds
 const TIME_INTERVAL: u64 = 30 * 1_000_000;
 
+const CURRENT_VERSION: u8 = 0;
+// 45 seconds in the past or the future
+const TIMESTAMP_WINDOW: i64 = 45 * 1_000_000;
+
 #[derive(Debug, PartialEq)]
 pub struct AuthnSignature(Box<[u8]>);
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct AuthToken {
+    /// Version of the [AuthToken].
+    ///
+    /// Version 0: Signer is implicitly the same as the [AuthToken::subject]
+    version: u8,
+    /// The Pubky of the party verifying the [AuthToken], for example a web server.
+    audience: PublicKey,
+    /// Timestamp
+    timestamp: Timestamp,
+    /// The [PublicKey] of the owner of the resources being accessed by this token.
+    subject: PublicKey,
+    /// Signature over the token.
+    signature: Signature,
+    // Variable length scopes
+    scopes: Vec<String>,
+}
+
+impl AuthToken {
+    pub fn new(signer: &Keypair, audience: &PublicKey, scopes: Vec<String>) -> Self {
+        let timestamp = Timestamp::now();
+
+        let signature = signer.sign(&AuthToken::signable(audience, &timestamp, &scopes));
+
+        Self {
+            version: 0,
+            subject: signer.public_key(),
+            audience: audience.to_owned(),
+            timestamp,
+            scopes,
+            signature,
+        }
+    }
+
+    fn verify(audience: &PublicKey, bytes: &[u8]) -> Result<Self, Error> {
+        if bytes[0] > CURRENT_VERSION {
+            return Err(Error::UnknownVersion);
+        }
+
+        let token: AuthToken = postcard::from_bytes(bytes)?;
+
+        let now = Timestamp::now();
+
+        match token.version {
+            0 => {
+                if &token.audience != audience {
+                    return Err(Error::InvalidAudience(
+                        audience.to_string(),
+                        token.audience.to_string(),
+                    ));
+                }
+
+                // Chcek timestamp;
+                let diff = token.timestamp.difference(&now);
+                if diff > TIMESTAMP_WINDOW {
+                    return Err(Error::TooFarInTheFuture);
+                }
+                if diff < -TIMESTAMP_WINDOW {
+                    return Err(Error::Expired);
+                }
+
+                token
+                    .subject
+                    .verify(
+                        &AuthToken::signable(&token.audience, &token.timestamp, &token.scopes),
+                        &token.signature,
+                    )
+                    .map_err(|_| Error::InvalidSignature)?;
+
+                Ok(token)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn signable(audience: &PublicKey, timestamp: &Timestamp, scopes: &Vec<String>) -> Vec<u8> {
+        let serialized_scopes = &postcard::to_allocvec(&scopes).unwrap();
+
+        let mut signable = Vec::with_capacity(1 + 32 + 8 + serialized_scopes.len());
+
+        signable.extend_from_slice(&[CURRENT_VERSION]);
+        signable.extend_from_slice(audience.as_bytes());
+        signable.extend_from_slice(&timestamp.to_bytes());
+        signable.extend_from_slice(serialized_scopes);
+
+        signable
+    }
+
+    /// A unique ID for this [AuthToken], which is a concatenation of
+    /// [AuthToken::subject] and [AuthToken::timestamp].
+    ///
+    /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::subject].
+    pub fn id(&self) -> [u8; 40] {
+        let mut id = [0u8; 40];
+        id[0..32].copy_from_slice(&self.subject.to_bytes());
+        id[32..].copy_from_slice(&self.timestamp.to_bytes());
+
+        id
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_allocvec(self)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthVerifier {
+    audience: PublicKey,
+    seen: Arc<Mutex<Vec<[u8; 40]>>>,
+}
+
+impl AuthVerifier {
+    pub fn new(audience: PublicKey) -> Self {
+        Self {
+            audience,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn verify(&self, bytes: &[u8]) -> Result<AuthToken, Error> {
+        self.gc();
+
+        let token = AuthToken::verify(&self.audience, bytes)?;
+
+        // Err(AuthnSignatureError::AlreadyUsed) => return Err(AuthnSignatureError::AlreadyUsed),
+
+        let mut seen = self.seen.lock().unwrap();
+
+        let id = token.id();
+
+        match seen.binary_search_by(|element| element.cmp(&id)) {
+            Ok(index) | Err(index) => {
+                seen.insert(index, id);
+            }
+        };
+
+        Ok(token)
+    }
+
+    // === Private Methods ===
+
+    /// Remove all tokens older than two time intervals in the past.
+    fn gc(&self) {
+        let threshold = ((Timestamp::now().into_inner() / TIME_INTERVAL) - 2).to_be_bytes();
+
+        let mut inner = self.seen.lock().unwrap();
+
+        match inner.binary_search_by(|element| element[0..8].cmp(&threshold)) {
+            Ok(index) | Err(index) => {
+                inner.drain(0..index);
+            }
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum Error {
+    #[error("Unknown version")]
+    UnknownVersion,
+    #[error("Invalid audience. Expected {0}, got {1}")]
+    InvalidAudience(String, String),
+    #[error("AuthToken has a timestamp that is more than 45 seconds in the future")]
+    TooFarInTheFuture,
+    #[error("AuthToken has a timestamp that is more than 45 seconds in the past")]
+    Expired,
+    #[error("Invalid Signature")]
+    InvalidSignature,
+    #[error(transparent)]
+    Postcard(#[from] postcard::Error),
+}
 
 impl AuthnSignature {
     pub fn new(signer: &Keypair, audience: &PublicKey, token: Option<&[u8]>) -> Self {
@@ -183,38 +359,51 @@ pub enum AuthnSignatureError {
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::Keypair;
+    use crate::{auth::TIMESTAMP_WINDOW, crypto::Keypair, timestamp::Timestamp};
 
-    use super::{AuthnSignature, AuthnVerifier};
+    use super::{AuthToken, AuthVerifier, Error};
 
     #[test]
     fn sign_verify() {
-        let keypair = Keypair::random();
-        let signer = keypair.public_key();
+        let signer = Keypair::random();
         let audience = Keypair::random().public_key();
+        let scopes = vec!["*:*".to_string()];
 
-        let verifier = AuthnVerifier::new(audience.clone());
+        let verifier = AuthVerifier::new(audience.clone());
 
-        let authn_signature = AuthnSignature::generate(&keypair, &audience);
+        let token = AuthToken::new(&signer, &audience, scopes.clone());
 
-        verifier
-            .verify(authn_signature.as_bytes(), &signer)
-            .unwrap();
+        verifier.verify(&token.serialize().unwrap()).unwrap();
 
-        {
-            // Invalid signable
-            let mut invalid = authn_signature.as_bytes().to_vec();
-            invalid[64..].copy_from_slice(&[0; 32]);
+        assert_eq!(token.scopes, scopes)
+    }
 
-            assert!(verifier.verify(&invalid, &signer).is_err())
-        }
+    #[test]
+    fn expired() {
+        let signer = Keypair::random();
+        let audience = Keypair::random().public_key();
+        let scopes = vec!["*:*".to_string()];
 
-        {
-            // Invalid signer
-            let mut invalid = authn_signature.as_bytes().to_vec();
-            invalid[0..32].copy_from_slice(&[0; 32]);
+        let verifier = AuthVerifier::new(audience.clone());
 
-            assert!(verifier.verify(&invalid, &signer).is_err())
-        }
+        let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
+
+        let signable = AuthToken::signable(&audience, &timestamp, &scopes);
+        let signature = signer.sign(&signable);
+
+        let token = AuthToken {
+            version: 0,
+            subject: signer.public_key(),
+            audience,
+            timestamp,
+            signature,
+            scopes,
+        };
+
+        let serialized = token.serialize().unwrap();
+
+        let result = verifier.verify(&serialized);
+
+        assert_eq!(result, Err(Error::Expired));
     }
 }
