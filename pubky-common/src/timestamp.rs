@@ -75,8 +75,8 @@ impl Timestamp {
         self.0.to_be_bytes()
     }
 
-    pub fn difference(&self, rhs: &Timestamp) -> u64 {
-        self.0.abs_diff(rhs.0)
+    pub fn difference(&self, rhs: &Timestamp) -> i64 {
+        (self.0 as i64) - (rhs.0 as i64)
     }
 
     pub fn into_inner(&self) -> u64 {
