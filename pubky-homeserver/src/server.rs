@@ -1,7 +1,7 @@
 use std::{future::IntoFuture, net::SocketAddr};
 
 use anyhow::{Error, Result};
-use pubky_common::auth::AuthnVerifier;
+use pubky_common::auth::AuthVerifier;
 use tokio::{net::TcpListener, signal, task::JoinSet};
 use tracing::{debug, info, warn};
 
@@ -21,7 +21,7 @@ pub struct Homeserver {
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
-    pub verifier: AuthnVerifier,
+    pub verifier: AuthVerifier,
     pub db: DB,
     pub pkarr_client: PkarrClientAsync,
 }
@@ -46,7 +46,7 @@ impl Homeserver {
         .as_async();
 
         let state = AppState {
-            verifier: AuthnVerifier::new(public_key.clone()),
+            verifier: AuthVerifier::new(public_key.clone()),
             db,
             pkarr_client: pkarr_client.clone(),
         };

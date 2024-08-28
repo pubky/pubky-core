@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 
 use pkarr::{Keypair, PublicKey};
-use pubky_common::{auth::AuthnSignature, session::Session};
+use pubky_common::{auth::AuthToken, session::Session};
 
 use crate::{error::Result, PubkyClient};
 
@@ -19,21 +19,17 @@ impl PubkyClient {
     ) -> Result<()> {
         let homeserver = homeserver.to_string();
 
-        let public_key = &keypair.public_key();
-
         let Endpoint {
             public_key: audience,
             mut url,
         } = self.resolve_endpoint(&homeserver).await?;
 
-        url.set_path(&format!("/{}", public_key));
+        url.set_path(&format!("/signup"));
 
-        let body = AuthnSignature::generate(keypair, &audience)
-            .as_bytes()
-            .to_owned();
+        let body = AuthToken::sign(keypair, &audience, vec![]).serialize();
 
         let response = self
-            .request(Method::PUT, url.clone())
+            .request(Method::POST, url.clone())
             .body(body)
             .send()
             .await?;
@@ -91,11 +87,9 @@ impl PubkyClient {
             mut url,
         } = self.resolve_pubky_homeserver(&pubky).await?;
 
-        url.set_path(&format!("/{}/session", &pubky));
+        url.set_path(&format!("/session"));
 
-        let body = AuthnSignature::generate(keypair, &audience)
-            .as_bytes()
-            .to_owned();
+        let body = AuthToken::sign(keypair, &audience, vec![]).serialize();
 
         let response = self.request(Method::POST, url).body(body).send().await?;
 
