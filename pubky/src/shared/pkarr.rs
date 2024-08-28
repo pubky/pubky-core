@@ -132,6 +132,8 @@ impl PubkyClient {
                         continue;
                     };
                 }
+            } else {
+                break;
             }
         }
 
