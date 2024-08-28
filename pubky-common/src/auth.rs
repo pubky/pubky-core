@@ -26,32 +26,36 @@ pub struct AuthToken {
     ///
     /// Version 0: Signer is implicitly the same as the [AuthToken::subject]
     version: u8,
-    /// The Pubky of the party verifying the [AuthToken], for example a web server.
-    audience: PublicKey,
+    /// Signature over the token.
+    signature: Signature,
     /// Timestamp
     timestamp: Timestamp,
     /// The [PublicKey] of the owner of the resources being accessed by this token.
     subject: PublicKey,
-    /// Signature over the token.
-    signature: Signature,
+    /// The Pubky of the party verifying the [AuthToken], for example a web server.
+    audience: PublicKey,
     // Variable length scopes
     scopes: Vec<String>,
 }
 
 impl AuthToken {
-    pub fn new(signer: &Keypair, audience: &PublicKey, scopes: Vec<String>) -> Self {
+    pub fn sign(signer: &Keypair, audience: &PublicKey, scopes: Vec<String>) -> Self {
         let timestamp = Timestamp::now();
 
-        let signature = signer.sign(&AuthToken::signable(audience, &timestamp, &scopes));
-
-        Self {
+        let mut token = Self {
             version: 0,
             subject: signer.public_key(),
             audience: audience.to_owned(),
             timestamp,
             scopes,
-            signature,
-        }
+            signature: Signature::from_bytes(&[0; 64]),
+        };
+
+        let serialized = token.serialize();
+
+        token.signature = signer.sign(&serialized[65..]);
+
+        token
     }
 
     fn verify(audience: &PublicKey, bytes: &[u8]) -> Result<Self, Error> {
@@ -61,10 +65,10 @@ impl AuthToken {
 
         let token: AuthToken = postcard::from_bytes(bytes)?;
 
-        let now = Timestamp::now();
-
         match token.version {
             0 => {
+                let now = Timestamp::now();
+
                 if &token.audience != audience {
                     return Err(Error::InvalidAudience(
                         audience.to_string(),
@@ -83,10 +87,7 @@ impl AuthToken {
 
                 token
                     .subject
-                    .verify(
-                        &AuthToken::signable(&token.audience, &token.timestamp, &token.scopes),
-                        &token.signature,
-                    )
+                    .verify(AuthToken::signable(token.version, bytes), &token.signature)
                     .map_err(|_| Error::InvalidSignature)?;
 
                 Ok(token)
@@ -95,40 +96,33 @@ impl AuthToken {
         }
     }
 
-    fn signable(audience: &PublicKey, timestamp: &Timestamp, scopes: &Vec<String>) -> Vec<u8> {
-        let serialized_scopes = &postcard::to_allocvec(&scopes).unwrap();
-
-        let mut signable = Vec::with_capacity(1 + 32 + 8 + serialized_scopes.len());
-
-        signable.extend_from_slice(&[CURRENT_VERSION]);
-        signable.extend_from_slice(audience.as_bytes());
-        signable.extend_from_slice(&timestamp.to_bytes());
-        signable.extend_from_slice(serialized_scopes);
-
-        signable
+    pub fn serialize(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).unwrap()
     }
 
     /// A unique ID for this [AuthToken], which is a concatenation of
     /// [AuthToken::subject] and [AuthToken::timestamp].
     ///
     /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::subject].
-    pub fn id(&self) -> [u8; 40] {
-        let mut id = [0u8; 40];
-        id[0..32].copy_from_slice(&self.subject.to_bytes());
-        id[32..].copy_from_slice(&self.timestamp.to_bytes());
-
-        id
+    fn id(version: u8, bytes: &[u8]) -> Box<[u8]> {
+        match version {
+            0 => bytes[65..105].into(),
+            _ => unreachable!(),
+        }
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, postcard::Error> {
-        postcard::to_allocvec(self)
+    fn signable(version: u8, bytes: &[u8]) -> &[u8] {
+        match version {
+            0 => bytes[65..].into(),
+            _ => unreachable!(),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AuthVerifier {
     audience: PublicKey,
-    seen: Arc<Mutex<Vec<[u8; 40]>>>,
+    seen: Arc<Mutex<Vec<Box<[u8]>>>>,
 }
 
 impl AuthVerifier {
@@ -144,19 +138,17 @@ impl AuthVerifier {
 
         let token = AuthToken::verify(&self.audience, bytes)?;
 
-        // Err(AuthnSignatureError::AlreadyUsed) => return Err(AuthnSignatureError::AlreadyUsed),
-
         let mut seen = self.seen.lock().unwrap();
 
-        let id = token.id();
+        let id = AuthToken::id(token.version, bytes);
 
         match seen.binary_search_by(|element| element.cmp(&id)) {
-            Ok(index) | Err(index) => {
-                seen.insert(index, id);
+            Ok(_) => Err(Error::AlreadyUsed),
+            Err(index) => {
+                seen.insert(index, id.into());
+                Ok(token)
             }
-        };
-
-        Ok(token)
+        }
     }
 
     // === Private Methods ===
@@ -189,6 +181,8 @@ pub enum Error {
     InvalidSignature,
     #[error(transparent)]
     Postcard(#[from] postcard::Error),
+    #[error("AuthToken already used")]
+    AlreadyUsed,
 }
 
 impl AuthnSignature {
@@ -337,8 +331,8 @@ fn signable(
     let mut arr = [0; 115];
 
     arr[..11].copy_from_slice(crate::namespaces::PUBKY_AUTHN);
-    arr[11..19].copy_from_slice(time_step_bytes);
     arr[19..51].copy_from_slice(signer.as_bytes());
+    arr[11..19].copy_from_slice(time_step_bytes);
     arr[51..83].copy_from_slice(audience.as_bytes());
     arr[83..].copy_from_slice(token_hash);
 
@@ -364,6 +358,27 @@ mod tests {
     use super::{AuthToken, AuthVerifier, Error};
 
     #[test]
+    fn v0_id_signable() {
+        let signer = Keypair::random();
+        let audience = Keypair::random().public_key();
+        let scopes = vec!["*:*".to_string()];
+
+        let token = AuthToken::sign(&signer, &audience, scopes.clone());
+
+        let serialized = &token.serialize();
+
+        assert_eq!(
+            AuthToken::id(token.version, serialized),
+            serialized[65..105].into()
+        );
+
+        assert_eq!(
+            AuthToken::signable(token.version, serialized),
+            &serialized[65..]
+        )
+    }
+
+    #[test]
     fn sign_verify() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
@@ -371,11 +386,13 @@ mod tests {
 
         let verifier = AuthVerifier::new(audience.clone());
 
-        let token = AuthToken::new(&signer, &audience, scopes.clone());
+        let token = AuthToken::sign(&signer, &audience, scopes.clone());
 
-        verifier.verify(&token.serialize().unwrap()).unwrap();
+        let serialized = &token.serialize();
 
-        assert_eq!(token.scopes, scopes)
+        verifier.verify(serialized).unwrap();
+
+        assert_eq!(token.scopes, scopes);
     }
 
     #[test]
@@ -388,7 +405,11 @@ mod tests {
 
         let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
 
-        let signable = AuthToken::signable(&audience, &timestamp, &scopes);
+        let mut signable = vec![];
+        signable.extend_from_slice(signer.public_key().as_bytes());
+        signable.extend_from_slice(audience.as_bytes());
+        signable.extend_from_slice(&postcard::to_allocvec(&scopes).unwrap());
+
         let signature = signer.sign(&signable);
 
         let token = AuthToken {
@@ -400,7 +421,7 @@ mod tests {
             scopes,
         };
 
-        let serialized = token.serialize().unwrap();
+        let serialized = token.serialize();
 
         let result = verifier.verify(&serialized);
 
