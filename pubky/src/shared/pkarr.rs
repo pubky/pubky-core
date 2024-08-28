@@ -137,6 +137,10 @@ impl PubkyClient {
             }
         }
 
+        if PublicKey::try_from(origin.as_str()).is_ok() {
+            return Err(Error::ResolveEndpoint(original_target.into()));
+        }
+
         if let Some(public_key) = endpoint_public_key {
             let url = Url::parse(&format!(
                 "{}://{}",
