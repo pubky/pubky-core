@@ -25,13 +25,12 @@ pub async fn signup(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    pubky: Pubky,
     uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
-    signin(State(state), user_agent, cookies, pubky, uri, body).await
+    signin(State(state), user_agent, cookies, uri, body).await
 }
 
 pub async fn session(
@@ -90,13 +89,12 @@ pub async fn signin(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    pubky: Pubky,
     uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
-    let public_key = pubky.public_key();
+    let token = state.verifier.verify(&body)?;
 
-    state.verifier.verify(&body, public_key)?;
+    let public_key = token.subject();
 
     let mut wtxn = state.db.env.write_txn()?;
     let users: UsersTable = state

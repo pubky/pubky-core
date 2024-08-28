@@ -5,7 +5,6 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use pubky_common::auth::AuthnSignatureError;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -71,8 +70,8 @@ impl From<PathRejection> for Error {
 
 // === Pubky specific errors ===
 
-impl From<AuthnSignatureError> for Error {
-    fn from(error: AuthnSignatureError) -> Self {
+impl From<pubky_common::auth::Error> for Error {
+    fn from(error: pubky_common::auth::Error) -> Self {
         Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }
