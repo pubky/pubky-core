@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 
 use pkarr::{Keypair, PublicKey};
-use pubky_common::{auth::AuthToken, session::Session};
+use pubky_common::{auth::AuthToken, capabilities::Capability, session::Session};
 
 use crate::{error::Result, PubkyClient};
 
@@ -24,9 +24,9 @@ impl PubkyClient {
             mut url,
         } = self.resolve_endpoint(&homeserver).await?;
 
-        url.set_path(&format!("/signup"));
+        url.set_path("/signup");
 
-        let body = AuthToken::sign(keypair, &audience, vec![]).serialize();
+        let body = AuthToken::sign(keypair, &audience, vec![Capability::pubky_root()]).serialize();
 
         let response = self
             .request(Method::POST, url.clone())
@@ -87,9 +87,9 @@ impl PubkyClient {
             mut url,
         } = self.resolve_pubky_homeserver(&pubky).await?;
 
-        url.set_path(&format!("/session"));
+        url.set_path("/session");
 
-        let body = AuthToken::sign(keypair, &audience, vec![]).serialize();
+        let body = AuthToken::sign(keypair, &audience, vec![Capability::pubky_root()]).serialize();
 
         let response = self.request(Method::POST, url).body(body).send().await?;
 
@@ -105,7 +105,7 @@ mod tests {
     use crate::*;
 
     use pkarr::{mainline::Testnet, Keypair};
-    use pubky_common::session::Session;
+    use pubky_common::capabilities::Capability;
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
@@ -125,7 +125,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(session, Session { ..session.clone() });
+        assert!(session.capabilities.contains(&Capability::pubky_root()));
 
         client.signout(&keypair.public_key()).await.unwrap();
 
@@ -144,7 +144,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(session, Session { ..session.clone() });
+            assert!(session.capabilities.contains(&Capability::pubky_root()));
         }
     }
 }
