@@ -13,7 +13,7 @@ use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp}
 use crate::{
     database::tables::{
         sessions::{SessionsTable, SESSIONS_TABLE},
-        users::{User, UsersTable, USERS_TABLE},
+        users::User,
     },
     error::{Error, Result},
     extractors::Pubky,
@@ -97,12 +97,8 @@ pub async fn signin(
     let public_key = token.subject();
 
     let mut wtxn = state.db.env.write_txn()?;
-    let users: UsersTable = state
-        .db
-        .env
-        .open_database(&wtxn, Some(USERS_TABLE))?
-        .expect("Users table already created");
 
+    let users = state.db.tables.users;
     if let Some(existing) = users.get(&wtxn, public_key)? {
         users.put(&mut wtxn, public_key, &existing)?;
     } else {
@@ -117,21 +113,14 @@ pub async fn signin(
 
     let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
 
-    let sessions: SessionsTable = state
-        .db
-        .env
-        .open_database(&wtxn, Some(SESSIONS_TABLE))?
-        .expect("Sessions table already created");
-
-    let mut session = Session::new();
-
-    if let Some(user_agent) = user_agent {
-        session.set_user_agent(user_agent.to_string());
-    }
-
-    sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
+    state.db.tables.sessions.put(
+        &mut wtxn,
+        &session_secret,
+        &Session::new(&token, user_agent.map(|ua| ua.to_string())).serialize(),
+    )?;
 
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
+
     cookie.set_path("/");
     if *uri.scheme().unwrap_or(&Scheme::HTTP) == Scheme::HTTPS {
         cookie.set_secure(true);

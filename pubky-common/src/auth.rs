@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    capabilities::Capability,
     crypto::{Keypair, PublicKey, Signature},
     timestamp::Timestamp,
 };
@@ -30,12 +31,12 @@ pub struct AuthToken {
     subject: PublicKey,
     /// The Pubky of the party verifying the [AuthToken], for example a web server.
     audience: PublicKey,
-    // Variable length scopes
-    scopes: Vec<String>,
+    // Variable length capabilities
+    capabilities: Vec<Capability>,
 }
 
 impl AuthToken {
-    pub fn sign(signer: &Keypair, audience: &PublicKey, scopes: Vec<String>) -> Self {
+    pub fn sign(signer: &Keypair, audience: &PublicKey, capabilities: Vec<Capability>) -> Self {
         let timestamp = Timestamp::now();
 
         let mut token = Self {
@@ -43,7 +44,7 @@ impl AuthToken {
             subject: signer.public_key(),
             audience: audience.to_owned(),
             timestamp,
-            scopes,
+            capabilities,
             signature: Signature::from_bytes(&[0; 64]),
         };
 
@@ -52,6 +53,10 @@ impl AuthToken {
         token.signature = signer.sign(&serialized[65..]);
 
         token
+    }
+
+    pub fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
     }
 
     /// Authenticate signer to an audience directly with [] capailities.
@@ -150,7 +155,7 @@ impl AuthVerifier {
         match seen.binary_search_by(|element| element.cmp(&id)) {
             Ok(_) => Err(Error::AlreadyUsed),
             Err(index) => {
-                seen.insert(index, id.into());
+                seen.insert(index, id);
                 Ok(token)
             }
         }
@@ -192,7 +197,9 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use crate::{auth::TIMESTAMP_WINDOW, crypto::Keypair, timestamp::Timestamp};
+    use crate::{
+        auth::TIMESTAMP_WINDOW, capabilities::Capability, crypto::Keypair, timestamp::Timestamp,
+    };
 
     use super::{AuthToken, AuthVerifier, Error};
 
@@ -200,9 +207,9 @@ mod tests {
     fn v0_id_signable() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let scopes = vec!["*:*".to_string()];
+        let capabilities = vec![Capability::pubky_root()];
 
-        let token = AuthToken::sign(&signer, &audience, scopes.clone());
+        let token = AuthToken::sign(&signer, &audience, capabilities.clone());
 
         let serialized = &token.serialize();
 
@@ -221,24 +228,24 @@ mod tests {
     fn sign_verify() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let scopes = vec!["*:*".to_string()];
+        let capabilities = vec![Capability::pubky_root()];
 
         let verifier = AuthVerifier::new(audience.clone());
 
-        let token = AuthToken::sign(&signer, &audience, scopes.clone());
+        let token = AuthToken::sign(&signer, &audience, capabilities.clone());
 
         let serialized = &token.serialize();
 
         verifier.verify(serialized).unwrap();
 
-        assert_eq!(token.scopes, scopes);
+        assert_eq!(token.capabilities, capabilities);
     }
 
     #[test]
     fn expired() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let scopes = vec!["*:*".to_string()];
+        let capabilities = vec![Capability::pubky_root()];
 
         let verifier = AuthVerifier::new(audience.clone());
 
@@ -247,7 +254,7 @@ mod tests {
         let mut signable = vec![];
         signable.extend_from_slice(signer.public_key().as_bytes());
         signable.extend_from_slice(audience.as_bytes());
-        signable.extend_from_slice(&postcard::to_allocvec(&scopes).unwrap());
+        signable.extend_from_slice(&postcard::to_allocvec(&capabilities).unwrap());
 
         let signature = signer.sign(&signable);
 
@@ -257,7 +264,7 @@ mod tests {
             audience,
             timestamp,
             signature,
-            scopes,
+            capabilities,
         };
 
         let serialized = token.serialize();
@@ -271,17 +278,17 @@ mod tests {
     fn already_used() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let scopes = vec!["*:*".to_string()];
+        let capabilities = vec![Capability::pubky_root()];
 
         let verifier = AuthVerifier::new(audience.clone());
 
-        let token = AuthToken::sign(&signer, &audience, scopes.clone());
+        let token = AuthToken::sign(&signer, &audience, capabilities.clone());
 
         let serialized = &token.serialize();
 
         verifier.verify(serialized).unwrap();
 
-        assert_eq!(token.scopes, scopes);
+        assert_eq!(token.capabilities, capabilities);
 
         assert_eq!(verifier.verify(serialized), Err(Error::AlreadyUsed));
     }
