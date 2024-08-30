@@ -62,7 +62,7 @@ pub async fn put(
 }
 
 pub async fn get(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     pubky: Pubky,
     path: EntryPath,
     Query(params): Query<HashMap<String, String>>,
@@ -96,7 +96,7 @@ pub async fn get(
 
         return Ok(Response::builder()
             .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_TYPE, "text/plain")
             .body(Body::from(vec.join("\n")))
             .unwrap());
     }
