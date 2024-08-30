@@ -12,7 +12,7 @@ pub const BLOBS_TABLE: &str = "blobs";
 
 impl DB {
     pub fn get_blob(
-        &mut self,
+        &self,
         public_key: &PublicKey,
         path: &str,
     ) -> anyhow::Result<Option<bytes::Bytes>> {
