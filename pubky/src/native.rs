@@ -76,7 +76,7 @@ impl PubkyClient {
     pub fn test(testnet: &Testnet) -> Self {
         let pkarr = PkarrClient::builder()
             .dht_settings(DhtSettings {
-                request_timeout: Some(Duration::from_millis(100)),
+                request_timeout: Some(Duration::from_millis(500)),
                 bootstrap: Some(testnet.bootstrap.to_owned()),
                 ..DhtSettings::default()
             })
