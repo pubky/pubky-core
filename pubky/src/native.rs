@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ::pkarr::{
     mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PublicKey, Settings, SignedPacket,
+    PkarrClient, PublicKey, SignedPacket,
 };
 use bytes::Bytes;
 use pkarr::Keypair;
@@ -74,23 +74,24 @@ impl PubkyClient {
     }
 
     pub fn test(testnet: &Testnet) -> Self {
-        Self {
-            http: reqwest::Client::builder()
-                .cookie_store(true)
-                .user_agent(DEFAULT_USER_AGENT)
-                .build()
-                .unwrap(),
-            pkarr: PkarrClient::new(Settings {
-                dht: DhtSettings {
-                    request_timeout: Some(Duration::from_millis(100)),
-                    bootstrap: Some(testnet.bootstrap.to_owned()),
-                    ..DhtSettings::default()
-                },
-                ..Settings::default()
+        let pkarr = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                request_timeout: Some(Duration::from_millis(100)),
+                bootstrap: Some(testnet.bootstrap.to_owned()),
+                ..DhtSettings::default()
             })
+            .resolvers(testnet.bootstrap.clone().into())
+            .build()
             .unwrap()
-            .as_async(),
-        }
+            .as_async();
+
+        let http = reqwest::Client::builder()
+            .cookie_store(true)
+            .user_agent(DEFAULT_USER_AGENT)
+            .build()
+            .unwrap();
+
+        Self { http, pkarr }
     }
 
     // === Auth ===
