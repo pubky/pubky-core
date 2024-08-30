@@ -2,14 +2,26 @@ import { LitElement, css, html } from 'lit'
 import { createRef, ref } from 'lit/directives/ref.js';
 import QRCode from 'qrcode'
 
+const DEFAULT_HTTP_RELAY = "https://demo.httprelay.io/link"
+
 /**
- * An example element.
- *
- * @csspart button - The button
  */
 export class PubkyAuthWidget extends LitElement {
   static get properties() {
     return {
+      /**
+       * Relay endpoint for the widget to receive Pubky AuthTokens
+       *
+       * Internally, a random channel ID will be generated and a
+       * GET request made for `${realy url}/${channelID}`
+       *
+       * If no relay is passed, the widget will use a default relay:
+       * https://demo.httprelay.io/link
+       */
+      relay: { type: String },
+      /**
+       * Widget's state (open or closed)
+       */
       open: { type: Boolean },
     }
   }
@@ -17,10 +29,32 @@ export class PubkyAuthWidget extends LitElement {
   canvasRef = createRef();
 
   constructor() {
+    // TODO: show error if the PubkyClient is not available!
     super()
     this.open = false;
-    this.authUrl = "pubky:auth?cb=https://demo.httprelay.io/link/rxfa6k2k5";
+  }
 
+  connectedCallback() {
+    super.connectedCallback()
+
+    // Verify it is a valid URL
+    const callbackUrl = this.relay ?
+      new URL(
+        // Remove trailing '/'
+        this.relay.endsWith("/")
+          ? this.relay.slice(0, this.relay.length - 1)
+          : this.relay
+      )
+      : DEFAULT_HTTP_RELAY
+
+    const channel = Math.random().toString(32).slice(2);
+    callbackUrl.pathname = callbackUrl.pathname + "/" + channel
+
+    this.authUrl = `pubky:auth?cb=${callbackUrl.toString()}`;
+
+    fetch(callbackUrl)
+      .catch(console.log)
+      .then(this._onCallback)
   }
 
   render() {
@@ -36,18 +70,16 @@ export class PubkyAuthWidget extends LitElement {
             <div class="card">
               <canvas id="qr" ${ref(this._setQr)}></canvas>
             </div>
-            <a class="card url" href=${this.authUrl}>
+            <button class="card url" href=${this.authUrl}>
               <p>${this.authUrl}</p>
               <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
-            </a>
+            </button>
         </div>
       </div>
     `
   }
 
   _setQr(canvas) {
-    console.log(canvas, this.authUrl);
-
     QRCode.toCanvas(canvas, this.authUrl, {
       margin: 2,
       scale: 8,
@@ -61,6 +93,25 @@ export class PubkyAuthWidget extends LitElement {
 
   _switchOpen() {
     this.open = !this.open
+  }
+
+  async _onCallback(response) {
+    try {
+      // Check if the response is ok (status code 200-299)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Convert the response to an ArrayBuffer
+      const arrayBuffer = await response.arrayBuffer();
+
+      // Create a Uint8Array from the ArrayBuffer
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      console.log({ uint8Array })
+    } catch (error) {
+      console.error('Failed to fetch and convert the API response:', error);
+    }
   }
 
   static get styles() {
@@ -111,7 +162,7 @@ export class PubkyAuthWidget extends LitElement {
 
         will-change: height,width;
         transition-property: height, width;
-        transition-duration: 200ms;
+        transition-duration: 80ms;
         transition-timing-function: ease-in;
       }
 
@@ -162,6 +213,7 @@ export class PubkyAuthWidget extends LitElement {
       .card.url {
         padding: .625rem;
         justify-content: space-between;
+        max-width:100%;
       }
 
       .url p {
