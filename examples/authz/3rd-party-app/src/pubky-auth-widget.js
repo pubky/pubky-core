@@ -65,6 +65,16 @@ export class PubkyAuthWidget extends LitElement {
 
   static get styles() {
     return css`
+      * {
+        box-sizing: border-box;
+      }
+
+      :host {
+        --full-width: 22rem;
+        --full-height: 31rem;
+        --header-height: 3rem; 
+      }
+
       button {
         background: none;
         border: none;
@@ -79,7 +89,6 @@ export class PubkyAuthWidget extends LitElement {
       /** End reset */
 
       #widget {
-        font-size: 10px;
         color: white;
 
         position: fixed;
@@ -97,8 +106,8 @@ export class PubkyAuthWidget extends LitElement {
         -webkit-backdrop-filter: blur(8px);
         backdrop-filter: blur(8px);
 
-        width: 10em;
-        height: 4em;
+        width: 7rem;
+        height: var(--header-height);
 
         will-change: height,width;
         transition-property: height, width;
@@ -107,40 +116,52 @@ export class PubkyAuthWidget extends LitElement {
       }
 
       #widget.open{
-        width: 35em;
-        height: 47em;
+        width: var(--full-width);
+        height: var(--full-height);
       }
 
       .header {
         width: 100%;
-        padding: 1em;
+        height: var(--header-height);
+        display: flex;
+        justify-content: center;
+        align-items: center;
       }
 
       #widget-content{
-        padding: 1.6em
+        width: var(--full-width);
+        padding: 0 1rem
       }
 
       #widget p {
-        font-size: 1.4em;
-        line-height: 1em;
+        font-size: .87rem;
+        line-height: 1rem;
         text-align: center;
         color: #fff;
         opacity: .3;
+
+        /* Fix flash wrap in open animation */
+        text-wrap: nowrap;
       }
 
       #qr {
-        width: 30em !important;
-        height: 30em !important;
+        width: 18em !important;
+        height: 18em !important;
       }
 
       .card {
         background: #3b3b3b;
         border-radius: 5px;
-        padding: 1em;
-        margin-top: 1em;
+        padding: 1rem;
+        margin-top: 1rem;
         display: flex;
         justify-content: center;
         align-items: center;
+      }
+
+      .card.url {
+        padding: .625rem;
+        justify-content: space-between;
       }
 
       .url p {
@@ -158,6 +179,7 @@ export class PubkyAuthWidget extends LitElement {
         height: 1px;
         background-color: #3b3b3b;
         flex: 1 1;
+        margin-bottom: 1rem;
       }
     `
   }
