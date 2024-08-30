@@ -1,33 +1,19 @@
 {
   "name": "pubky-auth-3rd-party",
-  "description": "Demo 3rd party app to show case Pubky Authorization",
+  "private": true,
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "start": "npm run dev",
     "dev": "vite --host --open",
-    "lint": "eslint --ext .js ./",
-    "lint:fix": "eslint --fix --ext .js ./",
-    "format": "prettier --write \"./**/*.{js,jsx,json,css}\"",
     "build": "vite build",
-    "preview": "vite preview --open",
-    "buildpreview": "vite build && vite preview --open"
-  },
-  "devDependencies": {
-    "autoprefixer": "^10.4.20",
-    "cssnano": "^7.0.5",
-    "eslint": "^8.57.0",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-prettier": "^5.2.1",
-    "postcss": "^8.4.41",
-    "postcss-nesting": "^13.0.0",
-    "prettier": "^3.3.3",
-    "vite": "5.4.2",
-    "vite-plugin-eslint": "^1.8.1"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "qrcode": "^1.5.4",
-    "the-new-css-reset": "^1.11.3"
+    "lit": "^3.2.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "vite": "^5.4.2"
   }
 }
