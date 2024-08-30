@@ -13,14 +13,14 @@ use pubky_common::{
     timestamp::Timestamp,
 };
 
-use crate::database::DB;
+use crate::database::{DB, MAX_LIST_LIMIT};
+
+use super::events::Event;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Str, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
-
-const MAX_LIST_LIMIT: u16 = 100;
 
 impl DB {
     pub fn put_entry(
@@ -56,6 +56,19 @@ impl DB {
             .entries
             .put(&mut wtxn, &key, &entry.serialize())?;
 
+        if path.starts_with("pub/") {
+            let url = format!("pubky://{key}");
+            let event = Event::put(&url);
+            let value = event.serialize();
+
+            let key = entry.timestamp.to_string();
+
+            self.tables.events.put(&mut wtxn, &key, &value)?;
+
+            // TODO: delete older events.
+            // TODO: move to events.rs
+        }
+
         wtxn.commit()?;
 
         Ok(())
@@ -73,6 +86,21 @@ impl DB {
             let deleted_blobs = self.tables.blobs.delete(&mut wtxn, entry.content_hash())?;
 
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
+
+            // create DELETE event
+            if path.starts_with("pub/") {
+                let url = format!("pubky://{key}");
+
+                let event = Event::delete(&url);
+                let value = event.serialize();
+
+                let key = Timestamp::now().to_string();
+
+                self.tables.events.put(&mut wtxn, &key, &value)?;
+
+                // TODO: delete older events.
+                // TODO: move to events.rs
+            }
 
             deleted_entry & deleted_blobs
         } else {
@@ -198,7 +226,7 @@ pub struct Entry {
     /// Encoding version
     version: usize,
     /// Modified at
-    timestamp: u64,
+    timestamp: Timestamp,
     content_hash: [u8; 32],
     content_length: usize,
     content_type: String,
@@ -209,10 +237,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new() -> Self {
-        Self {
-            timestamp: Timestamp::now().into_inner(),
-            ..Default::default()
-        }
+        Default::default()
     }
 
     // === Setters ===
