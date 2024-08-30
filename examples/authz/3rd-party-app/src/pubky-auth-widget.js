@@ -20,6 +20,10 @@ export class PubkyAuthWidget extends LitElement {
        */
       relay: { type: String },
       /**
+       * Capabilities requested or this application encoded as a string.
+       */
+      caps: { type: String },
+      /**
        * Widget's state (open or closed)
        */
       open: { type: Boolean },
@@ -50,10 +54,10 @@ export class PubkyAuthWidget extends LitElement {
     const channel = Math.random().toString(32).slice(2);
     callbackUrl.pathname = callbackUrl.pathname + "/" + channel
 
-    this.authUrl = `pubky:auth?cb=${callbackUrl.toString()}`;
+    this.authUrl = `pubkyauth:///?cb=${callbackUrl.toString()}&caps=${this.caps}`;
 
     fetch(callbackUrl)
-      .catch(console.log)
+      .catch(error => console.error("PubkyAuthWidget: Failed to subscribe to http relay channel", error))
       .then(this._onCallback)
   }
 
@@ -63,17 +67,22 @@ export class PubkyAuthWidget extends LitElement {
           id="widget"
           class=${this.open ? "open" : ""} 
       >
-        <button class="header" @click=${this._switchOpen}>Pubky Auth</button>
+        <button class="header" @click=${this._switchOpen}>
+          <svg id="pubky-icon" version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1511 1511"><path fill-rule="evenodd" d="m636.3 1066.7 14.9-59.7c50.5-27.7 90.8-71.7 113.7-124.9-47.3 51.3-115.2 83.4-190.6 83.4-51.9 0-100.1-15.1-140.5-41.2L394 1066.7H193.9L356.4 447H567l-.1.1q3.7-.1 7.4-.1c77.7 0 147.3 34 194.8 88l22-88h202.1l-47 180.9L1130 447h249l-323 332.8 224 286.9H989L872.4 912l-40.3 154.7H636.3z" style="fill:#fff"/></svg>
+          <span class="text">
+            Pubky Auth
+          </span>
+        </button>
         <div class="line"></div>
         <div id="widget-content">
             <p>Scan or copy Pubky auth URL</p>
             <div class="card">
               <canvas id="qr" ${ref(this._setQr)}></canvas>
             </div>
-            <button class="card url" href=${this.authUrl}>
+            <a class="card url" href=${this.authUrl}>
               <p>${this.authUrl}</p>
               <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
-            </button>
+            </a>
         </div>
       </div>
     `
@@ -110,7 +119,7 @@ export class PubkyAuthWidget extends LitElement {
 
       console.log({ uint8Array })
     } catch (error) {
-      console.error('Failed to fetch and convert the API response:', error);
+      console.error('PubkyAuthWidget: Failed to read incoming AuthToken', error);
     }
   }
 
@@ -124,6 +133,11 @@ export class PubkyAuthWidget extends LitElement {
         --full-width: 22rem;
         --full-height: 31rem;
         --header-height: 3rem; 
+        --closed-width: 3rem;
+      }
+
+      a {
+        text-decoration: none;
       }
 
       button {
@@ -157,7 +171,7 @@ export class PubkyAuthWidget extends LitElement {
         -webkit-backdrop-filter: blur(8px);
         backdrop-filter: blur(8px);
 
-        width: 7rem;
+        width: var(--closed-width);
         height: var(--header-height);
 
         will-change: height,width;
@@ -172,11 +186,37 @@ export class PubkyAuthWidget extends LitElement {
       }
 
       .header {
-        width: 100%;
         height: var(--header-height);
         display: flex;
         justify-content: center;
         align-items: center;
+      }
+
+      #widget
+      .header .text {
+        display: none;
+        font-weight: bold;
+      }
+      #widget.open
+      .header .text {
+        display: block
+      }
+
+      #widget.open 
+      .header {
+        width: var(--full-width);
+        justify-content: center;
+      }
+
+      #pubky-icon {
+        height: 100%;
+        width: 100%;
+      }
+
+      #widget.open 
+      #pubky-icon {
+        width: var(--header-height);
+        height: 74%;
       }
 
       #widget-content{

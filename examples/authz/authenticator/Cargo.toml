@@ -1,0 +1,13 @@
+[package]
+name = "authenticator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+keyring = { version = "3.2.0", features = ["linux-native", "apple-native", "windows-native"] }
+pubky = { version = "0.1.0", path = "../../../pubky" }
+pubky-common = { version = "0.1.0", path = "../../../pubky-common" }
+rpassword = "7.3.1"
+
+[workspace]
