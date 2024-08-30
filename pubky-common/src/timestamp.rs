@@ -1,5 +1,6 @@
 //! Monotonic unix timestamp in microseconds
 
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::{
     ops::{Add, Sub},
@@ -83,6 +84,12 @@ impl Timestamp {
     }
 }
 
+impl Default for Timestamp {
+    fn default() -> Self {
+        Timestamp::now()
+    }
+}
+
 impl Display for Timestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let bytes: [u8; 8] = self.into();
@@ -152,6 +159,26 @@ impl Sub<u64> for &Timestamp {
 
     fn sub(self, rhs: u64) -> Self::Output {
         Timestamp(self.0 - rhs)
+    }
+}
+
+impl Serialize for Timestamp {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        bytes.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: [u8; 8] = Deserialize::deserialize(deserializer)?;
+        Ok(Timestamp(u64::from_be_bytes(bytes)))
     }
 }
 
