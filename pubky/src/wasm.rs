@@ -6,13 +6,9 @@ use std::{
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
-use reqwest::{IntoUrl, Method, RequestBuilder, Response};
-use url::Url;
+use pubky_common::recovery_file::{create_recovery_file, decrypt_recovery_file};
 
-use crate::{
-    shared::recovery_file::{create_recovery_file, decrypt_recovery_file},
-    PubkyClient,
-};
+use crate::{error::Error, PubkyClient};
 
 mod http;
 mod keys;
@@ -62,7 +58,7 @@ impl PubkyClient {
     ) -> Result<Uint8Array, JsValue> {
         create_recovery_file(keypair.as_inner(), passphrase)
             .map(|b| b.as_slice().into())
-            .map_err(|e| e.into())
+            .map_err(|e| Error::from(e).into())
     }
 
     /// Create a recovery file of the `keypair`, containing the secret key encrypted
@@ -74,7 +70,7 @@ impl PubkyClient {
     ) -> Result<Keypair, JsValue> {
         decrypt_recovery_file(recovery_file, passphrase)
             .map(Keypair::from)
-            .map_err(|e| e.into())
+            .map_err(|e| Error::from(e).into())
     }
 
     /// Set Pkarr relays used for publishing and resolving Pkarr packets.

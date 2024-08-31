@@ -21,7 +21,7 @@ impl Keypair {
         }
 
         let len = secret_key.byte_length();
-        if (len != 32) {
+        if len != 32 {
             return Err(format!("Expected secret_key to be 32 bytes, got {len}"))?;
         }
 
