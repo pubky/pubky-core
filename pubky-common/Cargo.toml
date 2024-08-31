@@ -15,6 +15,7 @@ rand = "0.8.5"
 thiserror = "1.0.60"
 postcard = { version = "1.0.8", features = ["alloc"] }
 crypto_secretbox = { version = "0.1.1", features = ["std"] }
+argon2 = { version = "0.5.3", features = ["std"] }
 
 serde = { workspace = true, optional = true }
 

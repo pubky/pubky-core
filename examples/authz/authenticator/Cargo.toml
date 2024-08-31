@@ -5,13 +5,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
-clap = "4.5.16"
-dialoguer = "0.11.0"
-dirs-next = "2.0.0"
-keyring = { version = "3.2.0", features = ["linux-native", "apple-native", "windows-native"] }
-keyring-search = "1.2.1"
+clap = { version = "4.5.16", features = ["derive"] }
 pubky = { version = "0.1.0", path = "../../../pubky" }
 pubky-common = { version = "0.1.0", path = "../../../pubky-common" }
 rpassword = "7.3.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+url = "2.5.2"

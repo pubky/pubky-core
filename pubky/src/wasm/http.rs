@@ -3,8 +3,6 @@ use crate::PubkyClient;
 use reqwest::{Method, RequestBuilder, Response};
 use url::Url;
 
-use ::pkarr::PublicKey;
-
 impl PubkyClient {
     pub(crate) fn request(&self, method: Method, url: Url) -> RequestBuilder {
         let mut request = self.http.request(method, url).fetch_credentials_include();

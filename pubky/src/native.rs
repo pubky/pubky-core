@@ -6,18 +6,14 @@ use ::pkarr::{
 };
 use bytes::Bytes;
 use pkarr::Keypair;
-use pubky_common::session::Session;
+use pubky_common::{
+    recovery_file::{create_recovery_file, decrypt_recovery_file},
+    session::Session,
+};
 use reqwest::{RequestBuilder, Response};
 use url::Url;
 
-use crate::{
-    error::Result,
-    shared::{
-        list_builder::ListBuilder,
-        recovery_file::{create_recovery_file, decrypt_recovery_file},
-    },
-    PubkyClient,
-};
+use crate::{error::Result, shared::list_builder::ListBuilder, PubkyClient};
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -151,12 +147,12 @@ impl PubkyClient {
     /// Create a recovery file of the `keypair`, containing the secret key encrypted
     /// using the `passphrase`.
     pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>> {
-        create_recovery_file(keypair, passphrase)
+        Ok(create_recovery_file(keypair, passphrase)?)
     }
 
     /// Recover a keypair from a recovery file by decrypting the secret key using `passphrase`.
     pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair> {
-        decrypt_recovery_file(recovery_file, passphrase)
+        Ok(decrypt_recovery_file(recovery_file, passphrase)?)
     }
 }
 
