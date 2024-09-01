@@ -67,22 +67,6 @@ await client.delete(url);
 let client = new PubkyClient()
 ```
 
-#### createRecoveryFile
-```js
-let recoveryFile = PubkyClient.createRecoveryFile(keypair, passphrase)
-```
-- keypair: An instance of [Keypair](#keypair).
-- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
-- Returns: A recovery file with a spec line and an encrypted secret key.
-
-#### createRecoveryFile
-```js
-let keypair = PubkyClient.decryptRecoveryfile(recoveryFile, passphrase)
-```
-- recoveryFile: An instance of Uint8Array containing the recovery file blob.
-- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
-- Returns: An instance of [Keypair](#keypair).
-
 #### signup
 ```js
 await client.signup(keypair, homeserver)
@@ -171,6 +155,40 @@ let publicKey = PublicKey.from(string);
 let pubky = publicKey.z32();
 ```
 Returns: The z-base-32 encoded string representation of the PublicKey.
+
+### Helper functions
+
+#### createRecoveryFile
+```js
+let recoveryFile = createRecoveryFile(keypair, passphrase)
+```
+- keypair: An instance of [Keypair](#keypair).
+- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
+- Returns: A recovery file with a spec line and an encrypted secret key.
+
+#### createRecoveryFile
+```js
+let keypair = decryptRecoveryfile(recoveryFile, passphrase)
+```
+- recoveryFile: An instance of Uint8Array containing the recovery file blob.
+- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
+- Returns: An instance of [Keypair](#keypair).
+
+#### randomBytes
+```js
+let bytes =  randomBytes(size)
+```
+Generates random bytes
+
+- size: The number of random bytes to be generated
+
+### hash
+```js
+let hash = hash(input)
+```
+Creates a Blake3 hash of the input.
+
+- input: A Uint8Array input to be hashed.
 
 ## Test and Development
 

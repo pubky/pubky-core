@@ -33,9 +33,16 @@ export class PubkyAuthWidget extends LitElement {
   canvasRef = createRef();
 
   constructor() {
-    // TODO: show error if the PubkyClient is not available!
+    if (!window.pubky) {
+      throw new Error("window.pubky is unavailable, make sure to import `@synonymdev/pubky` before this web component.")
+    }
+
     super()
+
     this.open = false;
+
+    this.secret = window.pubky.randomBytes(32)
+    this.channelId = base64url(window.pubky.hash(this.secret))
   }
 
   connectedCallback() {
@@ -51,10 +58,10 @@ export class PubkyAuthWidget extends LitElement {
       )
       : DEFAULT_HTTP_RELAY
 
-    const channel = Math.random().toString(32).slice(2);
-    callbackUrl.pathname = callbackUrl.pathname + "/" + channel
+    callbackUrl.pathname = callbackUrl.pathname + "/" + this.channelId
 
-    this.authUrl = `pubkyauth:///?cb=${callbackUrl.toString()}&caps=${this.caps}`;
+    this.authUrl = `pubkyauth://${callbackUrl.hostname + callbackUrl.pathname}?capabilities=${this.caps}&secret=${base64url(this.secret)}`;
+    console.log({ url: this.authUrl });
 
     fetch(callbackUrl)
       .catch(error => console.error("PubkyAuthWidget: Failed to subscribe to http relay channel", error))
@@ -278,3 +285,16 @@ export class PubkyAuthWidget extends LitElement {
 }
 
 window.customElements.define('pubky-auth-widget', PubkyAuthWidget)
+
+function base64url(input) {
+  // Convert Uint8Array to a binary string
+  let binaryString = '';
+  for (let i = 0; i < input.length; i++) {
+    binaryString += String.fromCharCode(input[i]);
+  }
+
+  return btoa(binaryString)
+    .replace(/\+/g, '-') // Replace + with -
+    .replace(/\//g, '_') // Replace / with _
+    .replace(/=+$/, '') // Remove padding (i.e., =)
+}

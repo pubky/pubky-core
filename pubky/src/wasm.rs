@@ -8,6 +8,7 @@ use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 use crate::PubkyClient;
 
+mod crypto;
 mod http;
 mod keys;
 mod pkarr;
