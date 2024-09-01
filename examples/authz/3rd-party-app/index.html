@@ -6,12 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + Lit</title>
     <link rel="stylesheet" href="./src/index.css" />
+    <script type="module">
+      import "@synonymdev/pubky"
+    </script>
     <script type="module" src="/src/pubky-auth-widget.js"></script>
   </head>
   <body>
     <pubky-auth-widget 
       relay="https://demo.httprelay.io/link/"
-      caps="/pub/pubky.app/:rw"
+      caps="/pub/pubky.app/:rw,/pub/example.com/nested:rw"
     >
     </pubky-auth-widget>
 

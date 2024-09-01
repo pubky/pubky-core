@@ -1,11 +1,11 @@
 import test from 'tape'
 
-import { PubkyClient, Keypair } from '../index.cjs'
+import { Keypair, createRecoveryFile, decryptRecoveryFile } from '../index.cjs'
 
 test('recovery', async (t) => {
   const keypair = Keypair.random();
 
-  const recoveryFile = PubkyClient.createRecoveryFile(keypair, 'very secure password');
+  const recoveryFile = createRecoveryFile(keypair, 'very secure password');
 
   t.is(recoveryFile.length, 91)
   t.deepEqual(
@@ -13,7 +13,7 @@ test('recovery', async (t) => {
     [112, 117, 98, 107, 121, 46, 111, 114, 103, 47, 114, 101, 99, 111, 118, 101, 114, 121, 10]
   )
 
-  const recovered = PubkyClient.decryptRecoveryFile(recoveryFile, 'very secure password')
+  const recovered = decryptRecoveryFile(recoveryFile, 'very secure password')
 
   t.is(recovered.publicKey().z32(), keypair.publicKey().z32())
 })

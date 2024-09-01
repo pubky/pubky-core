@@ -20,17 +20,15 @@ const patched = content
   .replace("require(`util`)", "globalThis")
   // attach to `imports` instead of module.exports
   .replace("= module.exports", "= imports")
-
-  // add suffix Class
-  .replace(/\nclass (.*?) \{/g, "\nclass $1Class {")
-  .replace(/\nmodule\.exports\.(.*?) = (.*?);/g, "\nexport const $1 = imports.$1 = $1Class")
-
-  // quick and dirty fix for a bug caused by the previous replace
-  .replace(/__wasmClass/g, "wasm")
-
-  .replace(/\nmodule\.exports\.(.*?)\s+/g, "\nexport const $1 = imports.$1 ")
+  // Export classes
+  .replace(/\nclass (.*?) \{/g, "\n export class $1 {")
+  // Export functions
+  .replace(/\nmodule.exports.(.*?) = function/g, "\nimports.$1 = $1;\nexport function $1")
+  // Add exports to 'imports'
+  .replace(/\nmodule\.exports\.(.*?)\s+/g, "\nimports.$1")
+  // Export default
   .replace(/$/, 'export default imports')
-  // inline bytes Uint8Array
+  // inline wasm bytes
   .replace(
     /\nconst path.*\nconst bytes.*\n/,
     `
@@ -56,7 +54,7 @@ const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `.
 `,
   );
 
-await writeFile(path.join(__dirname, `../../pkg/browser.js`), patched);
+await writeFile(path.join(__dirname, `../../pkg/browser.js`), patched + "\nglobalThis['pubky'] = imports");
 
 // Move outside of nodejs
 
