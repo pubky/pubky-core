@@ -1,7 +1,8 @@
 use reqwest::{Method, StatusCode};
 
 use pkarr::{Keypair, PublicKey};
-use pubky_common::{auth::AuthToken, capabilities::Capability, session::Session};
+use pubky_common::{auth::AuthToken, capabilities::Capability, crypto::encrypt, session::Session};
+use url::Url;
 
 use crate::{error::Result, PubkyClient};
 
@@ -20,13 +21,13 @@ impl PubkyClient {
         let homeserver = homeserver.to_string();
 
         let Endpoint {
-            public_key: audience,
+            public_key: server,
             mut url,
         } = self.resolve_endpoint(&homeserver).await?;
 
         url.set_path("/signup");
 
-        let body = AuthToken::sign(keypair, &audience, vec![Capability::root()]).serialize();
+        let body = AuthToken::sign(keypair, &server, vec![Capability::root()]).serialize();
 
         let response = self
             .request(Method::POST, url.clone())
@@ -83,17 +84,50 @@ impl PubkyClient {
         let pubky = keypair.public_key();
 
         let Endpoint {
-            public_key: audience,
+            public_key: homeserver,
             mut url,
         } = self.resolve_pubky_homeserver(&pubky).await?;
 
         url.set_path("/session");
 
-        let body = AuthToken::sign(keypair, &audience, vec![Capability::root()]).serialize();
+        let body = AuthToken::sign(keypair, &homeserver, vec![Capability::root()]).serialize();
 
         let response = self.request(Method::POST, url).body(body).send().await?;
 
         self.store_session(response);
+
+        Ok(())
+    }
+
+    pub async fn authorize(
+        &self,
+        keypair: &Keypair,
+        capabilities: Vec<Capability>,
+        client_secret: [u8; 32],
+        relay: &str,
+    ) -> Result<()> {
+        let pubky = keypair.public_key();
+        let Endpoint {
+            public_key: homeserver,
+            ..
+        } = self.resolve_pubky_homeserver(&pubky).await?;
+
+        let token = AuthToken::sign(keypair, &homeserver, capabilities);
+
+        let encrypted_token = encrypt(&token.serialize(), &client_secret)?;
+
+        let mut callback = Url::parse(relay)?;
+        let mut path_segments = callback.path_segments_mut().unwrap();
+        path_segments.push("8Y69yafXgEMafLJKoJ_Ht5zPOVMWuZx_HfKY03U4MTI");
+
+        drop(path_segments);
+
+        dbg!(callback.to_string());
+
+        self.request(Method::POST, callback)
+            .body(encrypted_token)
+            .send()
+            .await?;
 
         Ok(())
     }
