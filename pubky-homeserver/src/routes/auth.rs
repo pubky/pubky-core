@@ -94,7 +94,7 @@ pub async fn signin(
 ) -> Result<impl IntoResponse> {
     let token = state.verifier.verify(&body)?;
 
-    let public_key = token.subject();
+    let public_key = token.pubky();
 
     let mut wtxn = state.db.env.write_txn()?;
 

@@ -21,28 +21,29 @@ const TIMESTAMP_WINDOW: i64 = 45 * 1_000_000;
 pub struct AuthToken {
     /// Version of the [AuthToken].
     ///
-    /// Version 0: Signer is implicitly the same as the [AuthToken::subject]
+    /// Version 0: Signer is implicitly the same as the root keypair for
+    ///     the [AuthToken::pubky], without any delegation.
     version: u8,
     /// Signature over the token.
     signature: Signature,
     /// Timestamp
     timestamp: Timestamp,
     /// The [PublicKey] of the owner of the resources being accessed by this token.
-    subject: PublicKey,
+    pubky: PublicKey,
     /// The Pubky of the party verifying the [AuthToken], for example a web server.
-    audience: PublicKey,
+    homeserver: PublicKey,
     // Variable length capabilities
     capabilities: Vec<Capability>,
 }
 
 impl AuthToken {
-    pub fn sign(signer: &Keypair, audience: &PublicKey, capabilities: Vec<Capability>) -> Self {
+    pub fn sign(keypair: &Keypair, homeserver: &PublicKey, capabilities: Vec<Capability>) -> Self {
         let timestamp = Timestamp::now();
 
         let mut token = Self {
             version: 0,
-            subject: signer.public_key(),
-            audience: audience.to_owned(),
+            pubky: keypair.public_key(),
+            homeserver: homeserver.to_owned(),
             timestamp,
             capabilities,
             signature: Signature::from_bytes(&[0; 64]),
@@ -50,7 +51,7 @@ impl AuthToken {
 
         let serialized = token.serialize();
 
-        token.signature = signer.sign(&serialized[65..]);
+        token.signature = keypair.sign(&serialized[65..]);
 
         token
     }
@@ -59,12 +60,7 @@ impl AuthToken {
         &self.capabilities
     }
 
-    /// Authenticate signer to an audience directly with [] capailities.
-    ///
-    ///
-    // pub fn authn(signer: &Keypair, audience: &PublicKey) -> Self {}
-
-    fn verify(audience: &PublicKey, bytes: &[u8]) -> Result<Self, Error> {
+    fn verify(homeserver: &PublicKey, bytes: &[u8]) -> Result<Self, Error> {
         if bytes[0] > CURRENT_VERSION {
             return Err(Error::UnknownVersion);
         }
@@ -75,10 +71,10 @@ impl AuthToken {
             0 => {
                 let now = Timestamp::now();
 
-                if &token.audience != audience {
-                    return Err(Error::InvalidAudience(
-                        audience.to_string(),
-                        token.audience.to_string(),
+                if &token.homeserver != homeserver {
+                    return Err(Error::InvalidHomeserver(
+                        homeserver.to_string(),
+                        token.homeserver.to_string(),
                     ));
                 }
 
@@ -92,7 +88,7 @@ impl AuthToken {
                 }
 
                 token
-                    .subject
+                    .pubky
                     .verify(AuthToken::signable(token.version, bytes), &token.signature)
                     .map_err(|_| Error::InvalidSignature)?;
 
@@ -106,8 +102,8 @@ impl AuthToken {
         postcard::to_allocvec(self).unwrap()
     }
 
-    pub fn subject(&self) -> &PublicKey {
-        &self.subject
+    pub fn pubky(&self) -> &PublicKey {
+        &self.pubky
     }
 
     /// A unique ID for this [AuthToken], which is a concatenation of
@@ -131,14 +127,14 @@ impl AuthToken {
 
 #[derive(Debug, Clone)]
 pub struct AuthVerifier {
-    audience: PublicKey,
+    homeserver: PublicKey,
     seen: Arc<Mutex<Vec<Box<[u8]>>>>,
 }
 
 impl AuthVerifier {
-    pub fn new(audience: PublicKey) -> Self {
+    pub fn new(homeserver: PublicKey) -> Self {
         Self {
-            audience,
+            homeserver,
             seen: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -146,7 +142,7 @@ impl AuthVerifier {
     pub fn verify(&self, bytes: &[u8]) -> Result<AuthToken, Error> {
         self.gc();
 
-        let token = AuthToken::verify(&self.audience, bytes)?;
+        let token = AuthToken::verify(&self.homeserver, bytes)?;
 
         let mut seen = self.seen.lock().unwrap();
 
@@ -181,8 +177,8 @@ impl AuthVerifier {
 pub enum Error {
     #[error("Unknown version")]
     UnknownVersion,
-    #[error("Invalid audience. Expected {0}, got {1}")]
-    InvalidAudience(String, String),
+    #[error("Invalid homeserver. Expected {0}, got {1}")]
+    InvalidHomeserver(String, String),
     #[error("AuthToken has a timestamp that is more than 45 seconds in the future")]
     TooFarInTheFuture,
     #[error("AuthToken has a timestamp that is more than 45 seconds in the past")]
@@ -206,10 +202,10 @@ mod tests {
     #[test]
     fn v0_id_signable() {
         let signer = Keypair::random();
-        let audience = Keypair::random().public_key();
+        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let token = AuthToken::sign(&signer, &audience, capabilities.clone());
+        let token = AuthToken::sign(&signer, &homeserver, capabilities.clone());
 
         let serialized = &token.serialize();
 
@@ -227,12 +223,12 @@ mod tests {
     #[test]
     fn sign_verify() {
         let signer = Keypair::random();
-        let audience = Keypair::random().public_key();
+        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let verifier = AuthVerifier::new(audience.clone());
+        let verifier = AuthVerifier::new(homeserver.clone());
 
-        let token = AuthToken::sign(&signer, &audience, capabilities.clone());
+        let token = AuthToken::sign(&signer, &homeserver, capabilities.clone());
 
         let serialized = &token.serialize();
 
@@ -244,24 +240,24 @@ mod tests {
     #[test]
     fn expired() {
         let signer = Keypair::random();
-        let audience = Keypair::random().public_key();
+        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let verifier = AuthVerifier::new(audience.clone());
+        let verifier = AuthVerifier::new(homeserver.clone());
 
         let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
 
         let mut signable = vec![];
         signable.extend_from_slice(signer.public_key().as_bytes());
-        signable.extend_from_slice(audience.as_bytes());
+        signable.extend_from_slice(homeserver.as_bytes());
         signable.extend_from_slice(&postcard::to_allocvec(&capabilities).unwrap());
 
         let signature = signer.sign(&signable);
 
         let token = AuthToken {
             version: 0,
-            subject: signer.public_key(),
-            audience,
+            pubky: signer.public_key(),
+            homeserver,
             timestamp,
             signature,
             capabilities,
@@ -277,12 +273,12 @@ mod tests {
     #[test]
     fn already_used() {
         let signer = Keypair::random();
-        let audience = Keypair::random().public_key();
+        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let verifier = AuthVerifier::new(audience.clone());
+        let verifier = AuthVerifier::new(homeserver.clone());
 
-        let token = AuthToken::sign(&signer, &audience, capabilities.clone());
+        let token = AuthToken::sign(&signer, &homeserver, capabilities.clone());
 
         let serialized = &token.serialize();
 
