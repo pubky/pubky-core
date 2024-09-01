@@ -27,6 +27,10 @@ export class PubkyAuthWidget extends LitElement {
        * Widget's state (open or closed)
        */
       open: { type: Boolean },
+      /**
+       * Show "copied to clipboard" note
+       */
+      showCopied: { type: Boolean },
     }
   }
 
@@ -58,10 +62,10 @@ export class PubkyAuthWidget extends LitElement {
       )
       : DEFAULT_HTTP_RELAY
 
-    callbackUrl.pathname = callbackUrl.pathname + "/" + this.channelId
 
-    this.authUrl = `pubkyauth://${callbackUrl.hostname + callbackUrl.pathname}?capabilities=${this.caps}&secret=${base64url(this.secret)}`;
-    console.log({ url: this.authUrl });
+    this.authUrl = `pubkyauth:///?relay=${callbackUrl.toString()}&capabilities=${this.caps}&secret=${base64url(this.secret)}`;
+
+    callbackUrl.pathname = callbackUrl.pathname + "/" + this.channelId
 
     fetch(callbackUrl)
       .catch(error => console.error("PubkyAuthWidget: Failed to subscribe to http relay channel", error))
@@ -86,10 +90,11 @@ export class PubkyAuthWidget extends LitElement {
             <div class="card">
               <canvas id="qr" ${ref(this._setQr)}></canvas>
             </div>
-            <a class="card url" href=${this.authUrl}>
+            <button class="card url" @click=${this._copyToClipboard}>
+              <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
               <p>${this.authUrl}</p>
               <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
-            </a>
+            </button>
         </div>
       </div>
     `
@@ -130,6 +135,16 @@ export class PubkyAuthWidget extends LitElement {
     }
   }
 
+  async _copyToClipboard() {
+    try {
+      await navigator.clipboard.writeText(this.authUrl);
+      this.showCopied = true;
+      setTimeout(() => { this.showCopied = false }, 1000)
+    } catch (error) {
+      console.error('Failed to copy text: ', error);
+    }
+  }
+
   static get styles() {
     return css`
       * {
@@ -148,6 +163,7 @@ export class PubkyAuthWidget extends LitElement {
       }
 
       button {
+        padding: 0;
         background: none;
         border: none;
         color: inherit;
@@ -236,7 +252,7 @@ export class PubkyAuthWidget extends LitElement {
         line-height: 1rem;
         text-align: center;
         color: #fff;
-        opacity: .3;
+        opacity: .5;
 
         /* Fix flash wrap in open animation */
         text-wrap: nowrap;
@@ -248,6 +264,7 @@ export class PubkyAuthWidget extends LitElement {
       }
 
       .card {
+        position: relative;
         background: #3b3b3b;
         border-radius: 5px;
         padding: 1rem;
@@ -268,7 +285,7 @@ export class PubkyAuthWidget extends LitElement {
         align-items: center;
 
         line-height: 1!important;
-        width: 90%;
+        width: 93%;
         overflow: hidden;
         text-overflow: ellipsis;
         text-wrap: nowrap;
@@ -279,6 +296,28 @@ export class PubkyAuthWidget extends LitElement {
         background-color: #3b3b3b;
         flex: 1 1;
         margin-bottom: 1rem;
+      }
+
+      .copied {
+        will-change: opacity;
+        transition-property: opacity;
+        transition-duration: 80ms;
+        transition-timing-function: ease-in;
+
+        opacity: 0;
+
+        position: absolute;
+        right: 0;
+        top: -1.6rem;
+        font-size: 0.9em;
+        background: rgb(43 43 43 / 98%);
+        padding: .5rem;
+        border-radius: .3rem;
+        color: #ddd;
+      }
+
+      .copied.show {
+        opacity:1
       }
     `
   }
