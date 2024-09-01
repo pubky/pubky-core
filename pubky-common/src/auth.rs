@@ -207,7 +207,7 @@ mod tests {
     fn v0_id_signable() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let capabilities = vec![Capability::pubky_root()];
+        let capabilities = vec![Capability::root()];
 
         let token = AuthToken::sign(&signer, &audience, capabilities.clone());
 
@@ -228,7 +228,7 @@ mod tests {
     fn sign_verify() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let capabilities = vec![Capability::pubky_root()];
+        let capabilities = vec![Capability::root()];
 
         let verifier = AuthVerifier::new(audience.clone());
 
@@ -245,7 +245,7 @@ mod tests {
     fn expired() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let capabilities = vec![Capability::pubky_root()];
+        let capabilities = vec![Capability::root()];
 
         let verifier = AuthVerifier::new(audience.clone());
 
@@ -278,7 +278,7 @@ mod tests {
     fn already_used() {
         let signer = Keypair::random();
         let audience = Keypair::random().public_key();
-        let capabilities = vec![Capability::pubky_root()];
+        let capabilities = vec![Capability::root()];
 
         let verifier = AuthVerifier::new(audience.clone());
 

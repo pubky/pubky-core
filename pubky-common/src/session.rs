@@ -66,6 +66,8 @@ impl Session {
 
         Ok(from_bytes(bytes)?)
     }
+
+    // TODO: add `can_read()`, `can_write()` and `is_root()` methods
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -86,7 +88,7 @@ mod tests {
     fn serialize() {
         let session = Session {
             user_agent: "foo".to_string(),
-            capabilities: vec![Capability::pubky_root()],
+            capabilities: vec![Capability::root()],
             ..Default::default()
         };
 
@@ -94,7 +96,7 @@ mod tests {
 
         assert_eq!(
             serialized,
-            [0, 0, 0, 3, 102, 111, 111, 1, 7, 112, 107, 33, 47, 58, 114, 119]
+            [0, 0, 0, 3, 102, 111, 111, 1, 4, 47, 58, 114, 119]
         );
 
         let deseiralized = Session::deserialize(&serialized).unwrap();
