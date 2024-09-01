@@ -111,7 +111,7 @@ pub async fn signin(
         )?;
     }
 
-    let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
+    let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes(16));
 
     state.db.tables.sessions.put(
         &mut wtxn,
