@@ -26,7 +26,7 @@ impl PubkyClient {
 
         url.set_path("/signup");
 
-        let body = AuthToken::sign(keypair, &audience, vec![Capability::pubky_root()]).serialize();
+        let body = AuthToken::sign(keypair, &audience, vec![Capability::root()]).serialize();
 
         let response = self
             .request(Method::POST, url.clone())
@@ -89,7 +89,7 @@ impl PubkyClient {
 
         url.set_path("/session");
 
-        let body = AuthToken::sign(keypair, &audience, vec![Capability::pubky_root()]).serialize();
+        let body = AuthToken::sign(keypair, &audience, vec![Capability::root()]).serialize();
 
         let response = self.request(Method::POST, url).body(body).send().await?;
 
@@ -125,7 +125,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert!(session.capabilities.contains(&Capability::pubky_root()));
+        assert!(session.capabilities.contains(&Capability::root()));
 
         client.signout(&keypair.public_key()).await.unwrap();
 
@@ -144,7 +144,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert!(session.capabilities.contains(&Capability::pubky_root()));
+            assert!(session.capabilities.contains(&Capability::root()));
         }
     }
 }
