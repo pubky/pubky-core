@@ -69,6 +69,13 @@ impl PubkyClient {
         PubkyClientBuilder::default()
     }
 
+    pub fn testnet() -> Self {
+        Self::test(&Testnet {
+            bootstrap: vec!["localhost:6881".to_string()],
+            nodes: vec![],
+        })
+    }
+
     pub fn test(testnet: &Testnet) -> Self {
         let pkarr = PkarrClient::builder()
             .dht_settings(DhtSettings {
