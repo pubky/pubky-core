@@ -47,6 +47,10 @@ export class PubkyAuthWidget extends LitElement {
 
     this.secret = window.pubky.randomBytes(32)
     this.channelId = base64url(window.pubky.hash(this.secret))
+
+    // TODO: allow using mainnet
+    /** @type {import("@synonymdev/pubky").PubkyClient} */
+    this.pubkyClient = window.pubky.PubkyClient.testnet();
   }
 
   connectedCallback() {
@@ -69,7 +73,7 @@ export class PubkyAuthWidget extends LitElement {
 
     fetch(callbackUrl)
       .catch(error => console.error("PubkyAuthWidget: Failed to subscribe to http relay channel", error))
-      .then(this._onCallback)
+      .then(this._onCallback.bind(this))
   }
 
   render() {
@@ -127,9 +131,13 @@ export class PubkyAuthWidget extends LitElement {
       const arrayBuffer = await response.arrayBuffer();
 
       // Create a Uint8Array from the ArrayBuffer
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const authToken = new Uint8Array(arrayBuffer);
 
-      console.log({ uint8Array })
+      this.pubkyClient.thirdPartySignin(authToken, this.secret)
+
+      let session = await this.pubkyClient.session();
+
+      console.log({ session })
     } catch (error) {
       console.error('PubkyAuthWidget: Failed to read incoming AuthToken', error);
     }
@@ -143,6 +151,36 @@ export class PubkyAuthWidget extends LitElement {
     } catch (error) {
       console.error('Failed to copy text: ', error);
     }
+  }
+
+
+
+  render() {
+    return html`
+      <div
+          id="widget"
+          class=${this.open ? "open" : ""} 
+      >
+        <button class="header" @click=${this._switchOpen}>
+          <svg id="pubky-icon" version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1511 1511"><path fill-rule="evenodd" d="m636.3 1066.7 14.9-59.7c50.5-27.7 90.8-71.7 113.7-124.9-47.3 51.3-115.2 83.4-190.6 83.4-51.9 0-100.1-15.1-140.5-41.2L394 1066.7H193.9L356.4 447H567l-.1.1q3.7-.1 7.4-.1c77.7 0 147.3 34 194.8 88l22-88h202.1l-47 180.9L1130 447h249l-323 332.8 224 286.9H989L872.4 912l-40.3 154.7H636.3z" style="fill:#fff"/></svg>
+          <span class="text">
+            Pubky Auth
+          </span>
+        </button>
+        <div class="line"></div>
+        <div id="widget-content">
+            <p>Scan or copy Pubky auth URL</p>
+            <div class="card">
+              <canvas id="qr" ${ref(this._setQr)}></canvas>
+            </div>
+            <button class="card url" @click=${this._copyToClipboard}>
+              <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
+              <p>${this.authUrl}</p>
+              <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
+            </button>
+        </div>
+      </div>
+    `
   }
 
   static get styles() {

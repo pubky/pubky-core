@@ -1,8 +1,9 @@
 use anyhow::Result;
+use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
 use clap::Parser;
 use pubky::PubkyClient;
-use pubky_common::{auth::AuthToken, capabilities::Capability, crypto::PublicKey};
-use std::path::PathBuf;
+use pubky_common::{capabilities::Capability, crypto::PublicKey};
+use std::{collections::HashMap, path::PathBuf};
 use url::Url;
 
 /// local testnet HOMESERVER
@@ -22,33 +23,46 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    let recovery_file = std::fs::read(&cli.recovery_file)?;
+    println!("\nSuccessfully opened recovery file");
+
     let url = cli.url;
 
-    let mut required_capabilities = vec![];
-    let mut relay = "".to_string();
-    let client_secret: [u8; 32];
+    let query_params: HashMap<String, String> = url.query_pairs().into_owned().collect();
 
-    for (name, value) in url.query_pairs() {
-        if name == "relay" {
-            relay = value.to_string();
-        }
-        if name == "secret" {
-            // client_secret = value.to_string();
-        }
-        if name == "capabilities" {
-            println!("\nRequired Capabilities:");
+    let relay = query_params
+        .get("relay")
+        .map(|r| url::Url::parse(r).expect("Relay query param to be valid URL"))
+        .expect("Missing relay query param");
 
-            for cap_str in value.split(',') {
-                if let Ok(cap) = Capability::try_from(cap_str) {
-                    println!("    {} : {:?}", cap.resource, cap.abilities);
-                    required_capabilities.push(cap)
-                };
-            }
-        }
+    let client_secret = query_params
+        .get("secret")
+        .map(|s| {
+            let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
+            let bytes = engine.decode(s).expect("invalid client_secret");
+            let arr: [u8; 32] = bytes.try_into().expect("invalid client_secret");
+
+            arr
+        })
+        .expect("Missing client secret");
+
+    let required_capabilities = query_params
+        .get("capabilities")
+        .map(|caps_string| {
+            caps_string
+                .split(',')
+                .filter_map(|cap| Capability::try_from(cap).ok())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !required_capabilities.is_empty() {
+        println!("\nRequired Capabilities:");
     }
 
-    let recovery_file = std::fs::read(&cli.recovery_file)?;
-    // println!("\nSuccessfully opened recovery file");
+    for cap in &required_capabilities {
+        println!("    {} : {:?}", cap.resource, cap.abilities);
+    }
 
     // === Consent form ===
 
@@ -70,7 +84,7 @@ async fn main() -> Result<()> {
     };
 
     client
-        .authorize(&keypair, required_capabilities, [0; 32], &relay)
+        .authorize(&keypair, required_capabilities, client_secret, &relay)
         .await?;
 
     println!("Sending AuthToken to the client...");

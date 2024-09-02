@@ -39,6 +39,9 @@ pub enum Error {
 
     #[error(transparent)]
     RecoveryFile(#[from] pubky_common::recovery_file::Error),
+
+    #[error(transparent)]
+    AuthToken(#[from] pubky_common::auth::Error),
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -28,3 +28,7 @@ test('auth', async (t) => {
     t.ok(session, "signin")
   }
 })
+
+// TODO: test end to end
+// TODO: test invalid inputs
+test.skip("3rd party signin")

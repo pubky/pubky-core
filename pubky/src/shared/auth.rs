@@ -1,7 +1,13 @@
 use reqwest::{Method, StatusCode};
 
+use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
 use pkarr::{Keypair, PublicKey};
-use pubky_common::{auth::AuthToken, capabilities::Capability, crypto::encrypt, session::Session};
+use pubky_common::{
+    auth::AuthToken,
+    capabilities::Capability,
+    crypto::{decrypt, encrypt, hash},
+    session::Session,
+};
 use url::Url;
 
 use crate::{error::Result, PubkyClient};
@@ -90,9 +96,13 @@ impl PubkyClient {
 
         url.set_path("/session");
 
-        let body = AuthToken::sign(keypair, &homeserver, vec![Capability::root()]).serialize();
+        let token = AuthToken::sign(keypair, &homeserver, vec![Capability::root()]);
 
-        let response = self.request(Method::POST, url).body(body).send().await?;
+        let response = self
+            .request(Method::POST, url)
+            .body(token.serialize())
+            .send()
+            .await?;
 
         self.store_session(response);
 
@@ -104,7 +114,7 @@ impl PubkyClient {
         keypair: &Keypair,
         capabilities: Vec<Capability>,
         client_secret: [u8; 32],
-        relay: &str,
+        relay: &Url,
     ) -> Result<()> {
         let pubky = keypair.public_key();
         let Endpoint {
@@ -116,9 +126,13 @@ impl PubkyClient {
 
         let encrypted_token = encrypt(&token.serialize(), &client_secret)?;
 
-        let mut callback = Url::parse(relay)?;
+        let channel_id = hash(&client_secret);
+        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
+        let channel_id = engine.encode(channel_id.as_bytes());
+
+        let mut callback = relay.clone();
         let mut path_segments = callback.path_segments_mut().unwrap();
-        path_segments.push("8Y69yafXgEMafLJKoJ_Ht5zPOVMWuZx_HfKY03U4MTI");
+        path_segments.push(&channel_id);
 
         drop(path_segments);
 
@@ -128,6 +142,31 @@ impl PubkyClient {
             .body(encrypted_token)
             .send()
             .await?;
+
+        Ok(())
+    }
+
+    pub async fn inner_third_party_signin(
+        &self,
+        encrypted_token: &[u8],
+        client_secret: &[u8; 32],
+    ) -> Result<()> {
+        let decrypted = decrypt(encrypted_token, client_secret)?;
+        let token = AuthToken::deserialize(&decrypted)?;
+
+        let pubky = token.pubky();
+
+        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
+
+        url.set_path("/session");
+
+        let response = self
+            .request(Method::POST, url)
+            .body(token.serialize())
+            .send()
+            .await?;
+
+        self.store_session(response);
 
         Ok(())
     }

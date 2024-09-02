@@ -140,6 +140,7 @@ name = "authenticator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "pubky",
  "pubky-common",
@@ -1511,6 +1512,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 name = "pubky"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "js-sys",
  "pkarr",
