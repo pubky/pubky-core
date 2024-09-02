@@ -4,7 +4,7 @@ use std::{
 };
 
 use js_sys::{Array, Uint8Array};
-use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
+use wasm_bindgen::prelude::*;
 
 use crate::PubkyClient;
 
@@ -95,10 +95,34 @@ impl PubkyClient {
             .map_err(|e| e.into())
     }
 
-    /// Signin to a homeserver.
+    /// Signin to a homeserver using the root Keypair.
     #[wasm_bindgen]
     pub async fn signin(&self, keypair: &Keypair) -> Result<(), JsValue> {
         self.inner_signin(keypair.as_inner())
+            .await
+            .map_err(|e| e.into())
+    }
+
+    /// Signin to a homeserver using an AuthToken received from an Authenticator app
+    #[wasm_bindgen(js_name = "thirdPartySignin")]
+    pub async fn third_party_signin(
+        &self,
+        auth_token: &[u8],
+        client_secret: js_sys::Uint8Array,
+    ) -> Result<(), JsValue> {
+        if !js_sys::Uint8Array::instanceof(&client_secret) {
+            return Err("Expected client_secret to be an instance of Uint8Array".into());
+        }
+
+        let len = client_secret.byte_length();
+        if len != 32 {
+            return Err(format!("Expected client_secret to be 32 bytes, got {len}"))?;
+        }
+
+        let mut client_secret_bytes = [0; 32];
+        client_secret.copy_to(&mut client_secret_bytes);
+
+        self.inner_third_party_signin(auth_token, &client_secret_bytes)
             .await
             .map_err(|e| e.into())
     }

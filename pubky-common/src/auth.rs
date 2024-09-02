@@ -65,7 +65,7 @@ impl AuthToken {
             return Err(Error::UnknownVersion);
         }
 
-        let token: AuthToken = postcard::from_bytes(bytes)?;
+        let token = AuthToken::deserialize(bytes)?;
 
         match token.version {
             0 => {
@@ -102,14 +102,18 @@ impl AuthToken {
         postcard::to_allocvec(self).unwrap()
     }
 
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(postcard::from_bytes(bytes)?)
+    }
+
     pub fn pubky(&self) -> &PublicKey {
         &self.pubky
     }
 
     /// A unique ID for this [AuthToken], which is a concatenation of
-    /// [AuthToken::subject] and [AuthToken::timestamp].
+    /// [AuthToken::pubky] and [AuthToken::timestamp].
     ///
-    /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::subject].
+    /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::pubky].
     fn id(version: u8, bytes: &[u8]) -> Box<[u8]> {
         match version {
             0 => bytes[65..105].into(),

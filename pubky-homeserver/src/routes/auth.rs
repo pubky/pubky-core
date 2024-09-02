@@ -132,5 +132,7 @@ pub async fn signin(
 
     wtxn.commit()?;
 
+    // TODO: return session to save extra call?
+
     Ok(())
 }
