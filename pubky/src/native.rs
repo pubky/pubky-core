@@ -1,9 +1,6 @@
 use std::time::Duration;
 
-use ::pkarr::{
-    mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PublicKey, SignedPacket,
-};
+use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
 use bytes::Bytes;
 use pkarr::Keypair;
 use pubky_common::session::Session;
@@ -21,21 +18,30 @@ use crate::{
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
-impl Default for PubkyClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct PubkyClientBuilder {
-    pkarr_settings: Option<pkarr::Settings>,
+    pkarr_settings: pkarr::Settings,
 }
 
 impl PubkyClientBuilder {
     /// Set Pkarr client [pkarr::Settings].
     pub fn pkarr_settings(mut self, settings: pkarr::Settings) -> Self {
-        self.pkarr_settings = settings.into();
+        self.pkarr_settings = settings;
+        self
+    }
+
+    /// Use the bootstrap nodes of a testnet, useful mostly in unit tests.
+    pub fn testnet(self, testnet: &Testnet) -> Self {
+        self.bootstrap(testnet.bootstrap.to_vec())
+    }
+
+    pub fn dht_request_timeout(mut self, timeout: Duration) -> Self {
+        self.pkarr_settings.dht.request_timeout = timeout.into();
+        self
+    }
+
+    pub fn bootstrap(mut self, bootstrap: Vec<String>) -> Self {
+        self.pkarr_settings.dht.bootstrap = bootstrap.into();
         self
     }
 
@@ -47,51 +53,38 @@ impl PubkyClientBuilder {
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
-            pkarr: PkarrClient::new(self.pkarr_settings.unwrap_or_default())
-                .unwrap()
-                .as_async(),
+            pkarr: PkarrClient::new(self.pkarr_settings).unwrap().as_async(),
         }
+    }
+}
+
+impl Default for PubkyClient {
+    fn default() -> Self {
+        PubkyClient::builder().build()
     }
 }
 
 // === Public API ===
 
 impl PubkyClient {
-    pub fn new() -> Self {
-        Self {
-            http: reqwest::Client::builder()
-                .cookie_store(true)
-                .user_agent(DEFAULT_USER_AGENT)
-                .build()
-                .unwrap(),
-            pkarr: PkarrClient::new(Default::default()).unwrap().as_async(),
-        }
-    }
-
     /// Returns a builder to edit settings before creating [PubkyClient].
     pub fn builder() -> PubkyClientBuilder {
         PubkyClientBuilder::default()
     }
 
-    pub fn test(testnet: &Testnet) -> Self {
-        let pkarr = PkarrClient::builder()
-            .dht_settings(DhtSettings {
-                request_timeout: Some(Duration::from_millis(500)),
-                bootstrap: Some(testnet.bootstrap.to_owned()),
-                ..DhtSettings::default()
-            })
-            .resolvers(testnet.bootstrap.clone().into())
-            .build()
-            .unwrap()
-            .as_async();
+    /// Creates a [PubkyClient] with:
+    /// - DHT bootstrap nodes set to the `testnet` bootstrap nodes.
+    /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default)
+    ///
+    /// For more control, you can use [PubkyClientBuilder::testnet]
+    pub fn test(testnet: &Testnet) -> PubkyClient {
+        let mut builder = PubkyClient::builder().testnet(testnet);
 
-        let http = reqwest::Client::builder()
-            .cookie_store(true)
-            .user_agent(DEFAULT_USER_AGENT)
-            .build()
-            .unwrap();
+        if std::env::var("CI").is_err() {
+            builder = builder.dht_request_timeout(Duration::from_millis(100));
+        }
 
-        Self { http, pkarr }
+        builder.build()
     }
 
     // === Auth ===
