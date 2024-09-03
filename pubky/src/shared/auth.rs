@@ -136,8 +136,6 @@ impl PubkyClient {
 
         drop(path_segments);
 
-        dbg!(callback.to_string());
-
         self.request(Method::POST, callback)
             .body(encrypted_token)
             .send()
@@ -150,7 +148,7 @@ impl PubkyClient {
         &self,
         encrypted_token: &[u8],
         client_secret: &[u8; 32],
-    ) -> Result<()> {
+    ) -> Result<PublicKey> {
         let decrypted = decrypt(encrypted_token, client_secret)?;
         let token = AuthToken::deserialize(&decrypted)?;
 
@@ -168,7 +166,7 @@ impl PubkyClient {
 
         self.store_session(response);
 
-        Ok(())
+        Ok(pubky.to_owned())
     }
 }
 
