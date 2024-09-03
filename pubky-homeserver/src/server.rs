@@ -31,7 +31,6 @@ impl Homeserver {
         debug!(?config);
 
         let keypair = config.keypair();
-        let public_key = keypair.public_key();
 
         let db = DB::open(&config.storage()?)?;
 
@@ -46,7 +45,7 @@ impl Homeserver {
         .as_async();
 
         let state = AppState {
-            verifier: AuthVerifier::new(public_key.clone()),
+            verifier: AuthVerifier::default(),
             db,
             pkarr_client: pkarr_client.clone(),
         };
@@ -75,7 +74,7 @@ impl Homeserver {
 
         publish_server_packet(pkarr_client, &keypair, config.domain(), port).await?;
 
-        info!("Homeserver listening on pubky://{public_key}");
+        info!("Homeserver listening on pubky://{}", keypair.public_key());
 
         Ok(Self {
             tasks,

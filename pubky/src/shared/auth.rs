@@ -26,14 +26,11 @@ impl PubkyClient {
     ) -> Result<()> {
         let homeserver = homeserver.to_string();
 
-        let Endpoint {
-            public_key: server,
-            mut url,
-        } = self.resolve_endpoint(&homeserver).await?;
+        let Endpoint { mut url, .. } = self.resolve_endpoint(&homeserver).await?;
 
         url.set_path("/signup");
 
-        let body = AuthToken::sign(keypair, &server, vec![Capability::root()]).serialize();
+        let body = AuthToken::sign(keypair, vec![Capability::root()]).serialize();
 
         let response = self
             .request(Method::POST, url.clone())
@@ -89,14 +86,11 @@ impl PubkyClient {
     pub(crate) async fn inner_signin(&self, keypair: &Keypair) -> Result<()> {
         let pubky = keypair.public_key();
 
-        let Endpoint {
-            public_key: homeserver,
-            mut url,
-        } = self.resolve_pubky_homeserver(&pubky).await?;
+        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(&pubky).await?;
 
         url.set_path("/session");
 
-        let token = AuthToken::sign(keypair, &homeserver, vec![Capability::root()]);
+        let token = AuthToken::sign(keypair, vec![Capability::root()]);
 
         let response = self
             .request(Method::POST, url)
@@ -116,13 +110,7 @@ impl PubkyClient {
         client_secret: [u8; 32],
         relay: &Url,
     ) -> Result<()> {
-        let pubky = keypair.public_key();
-        let Endpoint {
-            public_key: homeserver,
-            ..
-        } = self.resolve_pubky_homeserver(&pubky).await?;
-
-        let token = AuthToken::sign(keypair, &homeserver, capabilities);
+        let token = AuthToken::sign(keypair, capabilities);
 
         let encrypted_token = encrypt(&token.serialize(), &client_secret)?;
 

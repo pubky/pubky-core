@@ -161,6 +161,7 @@ impl PubkyClient {
 
 #[derive(Debug)]
 pub(crate) struct Endpoint {
+    // TODO: we don't use this at all?
     pub public_key: PublicKey,
     pub url: Url,
 }
