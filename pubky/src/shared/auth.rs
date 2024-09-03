@@ -84,23 +84,9 @@ impl PubkyClient {
 
     /// Signin to a homeserver.
     pub(crate) async fn inner_signin(&self, keypair: &Keypair) -> Result<()> {
-        let pubky = keypair.public_key();
-
-        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(&pubky).await?;
-
-        url.set_path("/session");
-
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
 
-        let response = self
-            .request(Method::POST, url)
-            .body(token.serialize())
-            .send()
-            .await?;
-
-        self.store_session(response);
-
-        Ok(())
+        self.signin_with_authtoken(&token).await
     }
 
     pub async fn authorize(
@@ -140,9 +126,13 @@ impl PubkyClient {
         let decrypted = decrypt(encrypted_token, client_secret)?;
         let token = AuthToken::deserialize(&decrypted)?;
 
-        let pubky = token.pubky();
+        self.signin_with_authtoken(&token).await?;
 
-        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
+        Ok(token.pubky().to_owned())
+    }
+
+    async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<()> {
+        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(token.pubky()).await?;
 
         url.set_path("/session");
 
@@ -154,7 +144,7 @@ impl PubkyClient {
 
         self.store_session(response);
 
-        Ok(pubky.to_owned())
+        Ok(())
     }
 }
 
