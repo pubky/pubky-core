@@ -72,6 +72,7 @@ async fn main() -> Result<()> {
     let keypair = pubky_common::recovery_file::decrypt_recovery_file(&recovery_file, &passphrase)?;
 
     println!("Successfully decrypted recovery file...");
+    println!("PublicKey: {}", keypair.public_key());
 
     let client = PubkyClient::testnet();
 
@@ -83,11 +84,11 @@ async fn main() -> Result<()> {
             .await?;
     };
 
+    println!("Sending AuthToken to the 3rd party app...");
+
     client
         .authorize(&keypair, required_capabilities, client_secret, &relay)
         .await?;
-
-    println!("Sending AuthToken to the client...");
 
     Ok(())
 }

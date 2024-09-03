@@ -133,11 +133,11 @@ export class PubkyAuthWidget extends LitElement {
       // Create a Uint8Array from the ArrayBuffer
       const authToken = new Uint8Array(arrayBuffer);
 
-      this.pubkyClient.thirdPartySignin(authToken, this.secret)
+      let publicKey = await this.pubkyClient.thirdPartySignin(authToken, this.secret)
 
-      let session = await this.pubkyClient.session();
+      let session = await this.pubkyClient.session(publicKey);
 
-      console.log({ session })
+      alert(`Succssfully signed in as ${publicKey.z32()}`)
     } catch (error) {
       console.error('PubkyAuthWidget: Failed to read incoming AuthToken', error);
     }

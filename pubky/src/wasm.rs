@@ -109,7 +109,7 @@ impl PubkyClient {
         &self,
         auth_token: &[u8],
         client_secret: js_sys::Uint8Array,
-    ) -> Result<(), JsValue> {
+    ) -> Result<PublicKey, JsValue> {
         if !js_sys::Uint8Array::instanceof(&client_secret) {
             return Err("Expected client_secret to be an instance of Uint8Array".into());
         }
@@ -124,6 +124,7 @@ impl PubkyClient {
 
         self.inner_third_party_signin(auth_token, &client_secret_bytes)
             .await
+            .map(|p| PublicKey(p))
             .map_err(|e| e.into())
     }
 
