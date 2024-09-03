@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     capabilities::Capability,
     crypto::{Keypair, PublicKey, Signature},
+    namespaces::PUBKY_AUTH,
     timestamp::Timestamp,
 };
 
@@ -19,34 +20,37 @@ const TIMESTAMP_WINDOW: i64 = 45 * 1_000_000;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct AuthToken {
-    /// Version of the [AuthToken].
-    ///
-    /// Version 0: Signer is implicitly the same as the root keypair for
-    ///     the [AuthToken::pubky], without any delegation.
-    version: u8,
     /// Signature over the token.
     signature: Signature,
+    /// A namespace to ensure this signature can't be used for any
+    /// other purposes that share the same message structurea by accident.
+    namespace: [u8; 10],
+    /// Version of the [AuthToken], in case we need to upgrade it to support unforseen usecases.
+    ///
+    /// Version 0:
+    /// - Signer is implicitly the same as the root keypair for
+    ///     the [AuthToken::pubky], without any delegation.
+    /// - Capabilities are only meant for resoucres on the homeserver.
+    version: u8,
     /// Timestamp
     timestamp: Timestamp,
     /// The [PublicKey] of the owner of the resources being accessed by this token.
     pubky: PublicKey,
-    /// The Pubky of the party verifying the [AuthToken], for example a web server.
-    homeserver: PublicKey,
     // Variable length capabilities
     capabilities: Vec<Capability>,
 }
 
 impl AuthToken {
-    pub fn sign(keypair: &Keypair, homeserver: &PublicKey, capabilities: Vec<Capability>) -> Self {
+    pub fn sign(keypair: &Keypair, capabilities: Vec<Capability>) -> Self {
         let timestamp = Timestamp::now();
 
         let mut token = Self {
-            version: 0,
-            pubky: keypair.public_key(),
-            homeserver: homeserver.to_owned(),
-            timestamp,
-            capabilities,
             signature: Signature::from_bytes(&[0; 64]),
+            namespace: *PUBKY_AUTH,
+            version: 0,
+            timestamp,
+            pubky: keypair.public_key(),
+            capabilities,
         };
 
         let serialized = token.serialize();
@@ -60,8 +64,8 @@ impl AuthToken {
         &self.capabilities
     }
 
-    fn verify(homeserver: &PublicKey, bytes: &[u8]) -> Result<Self, Error> {
-        if bytes[0] > CURRENT_VERSION {
+    fn verify(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes[75] > CURRENT_VERSION {
             return Err(Error::UnknownVersion);
         }
 
@@ -70,13 +74,6 @@ impl AuthToken {
         match token.version {
             0 => {
                 let now = Timestamp::now();
-
-                if &token.homeserver != homeserver {
-                    return Err(Error::InvalidHomeserver(
-                        homeserver.to_string(),
-                        token.homeserver.to_string(),
-                    ));
-                }
 
                 // Chcek timestamp;
                 let diff = token.timestamp.difference(&now);
@@ -116,7 +113,7 @@ impl AuthToken {
     /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::pubky].
     fn id(version: u8, bytes: &[u8]) -> Box<[u8]> {
         match version {
-            0 => bytes[65..105].into(),
+            0 => bytes[75..115].into(),
             _ => unreachable!(),
         }
     }
@@ -129,24 +126,17 @@ impl AuthToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
+/// Keeps track of used AuthToken until they expire.
 pub struct AuthVerifier {
-    homeserver: PublicKey,
     seen: Arc<Mutex<Vec<Box<[u8]>>>>,
 }
 
 impl AuthVerifier {
-    pub fn new(homeserver: PublicKey) -> Self {
-        Self {
-            homeserver,
-            seen: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
     pub fn verify(&self, bytes: &[u8]) -> Result<AuthToken, Error> {
         self.gc();
 
-        let token = AuthToken::verify(&self.homeserver, bytes)?;
+        let token = AuthToken::verify(bytes)?;
 
         let mut seen = self.seen.lock().unwrap();
 
@@ -181,8 +171,6 @@ impl AuthVerifier {
 pub enum Error {
     #[error("Unknown version")]
     UnknownVersion,
-    #[error("Invalid homeserver. Expected {0}, got {1}")]
-    InvalidHomeserver(String, String),
     #[error("AuthToken has a timestamp that is more than 45 seconds in the future")]
     TooFarInTheFuture,
     #[error("AuthToken has a timestamp that is more than 45 seconds in the past")]
@@ -201,22 +189,22 @@ mod tests {
         auth::TIMESTAMP_WINDOW, capabilities::Capability, crypto::Keypair, timestamp::Timestamp,
     };
 
-    use super::{AuthToken, AuthVerifier, Error};
+    use super::*;
 
     #[test]
     fn v0_id_signable() {
         let signer = Keypair::random();
-        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let token = AuthToken::sign(&signer, &homeserver, capabilities.clone());
+        let token = AuthToken::sign(&signer, capabilities.clone());
 
         let serialized = &token.serialize();
 
-        assert_eq!(
-            AuthToken::id(token.version, serialized),
-            serialized[65..105].into()
-        );
+        let mut id = vec![];
+        id.extend_from_slice(&token.timestamp.to_bytes());
+        id.extend_from_slice(signer.public_key().as_bytes());
+
+        assert_eq!(AuthToken::id(token.version, serialized), id.into());
 
         assert_eq!(
             AuthToken::signable(token.version, serialized),
@@ -227,12 +215,11 @@ mod tests {
     #[test]
     fn sign_verify() {
         let signer = Keypair::random();
-        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let verifier = AuthVerifier::new(homeserver.clone());
+        let verifier = AuthVerifier::default();
 
-        let token = AuthToken::sign(&signer, &homeserver, capabilities.clone());
+        let token = AuthToken::sign(&signer, capabilities.clone());
 
         let serialized = &token.serialize();
 
@@ -244,26 +231,24 @@ mod tests {
     #[test]
     fn expired() {
         let signer = Keypair::random();
-        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let verifier = AuthVerifier::new(homeserver.clone());
+        let verifier = AuthVerifier::default();
 
         let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
 
         let mut signable = vec![];
         signable.extend_from_slice(signer.public_key().as_bytes());
-        signable.extend_from_slice(homeserver.as_bytes());
         signable.extend_from_slice(&postcard::to_allocvec(&capabilities).unwrap());
 
         let signature = signer.sign(&signable);
 
         let token = AuthToken {
-            version: 0,
-            pubky: signer.public_key(),
-            homeserver,
-            timestamp,
             signature,
+            namespace: *PUBKY_AUTH,
+            version: 0,
+            timestamp,
+            pubky: signer.public_key(),
             capabilities,
         };
 
@@ -277,12 +262,11 @@ mod tests {
     #[test]
     fn already_used() {
         let signer = Keypair::random();
-        let homeserver = Keypair::random().public_key();
         let capabilities = vec![Capability::root()];
 
-        let verifier = AuthVerifier::new(homeserver.clone());
+        let verifier = AuthVerifier::default();
 
-        let token = AuthToken::sign(&signer, &homeserver, capabilities.clone());
+        let token = AuthToken::sign(&signer, capabilities.clone());
 
         let serialized = &token.serialize();
 
