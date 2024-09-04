@@ -74,14 +74,14 @@ impl PubkyClient {
 
     /// Creates a [PubkyClient] with:
     /// - DHT bootstrap nodes set to the `testnet` bootstrap nodes.
-    /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default)
+    /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default 2000)
     ///
     /// For more control, you can use [PubkyClientBuilder::testnet]
     pub fn test(testnet: &Testnet) -> PubkyClient {
         let mut builder = PubkyClient::builder().testnet(testnet);
 
         if std::env::var("CI").is_err() {
-            builder = builder.dht_request_timeout(Duration::from_millis(100));
+            builder = builder.dht_request_timeout(Duration::from_millis(500));
         }
 
         builder.build()
