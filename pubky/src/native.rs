@@ -1,3 +1,4 @@
+use std::net::ToSocketAddrs;
 use std::time::Duration;
 
 use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
@@ -26,18 +27,29 @@ impl PubkyClientBuilder {
         self
     }
 
-    /// Use the bootstrap nodes of a testnet, useful mostly in unit tests.
-    pub fn testnet(self, testnet: &Testnet) -> Self {
-        self.bootstrap(testnet.bootstrap.to_vec())
-    }
+    /// Use the bootstrap nodes of a testnet, as the bootstrap nodes and
+    /// resolvers in the internal Pkarr client.
+    pub fn testnet(mut self, testnet: &Testnet) -> Self {
+        self.pkarr_settings.dht.bootstrap = testnet.bootstrap.to_vec().into();
 
-    pub fn dht_request_timeout(mut self, timeout: Duration) -> Self {
-        self.pkarr_settings.dht.request_timeout = timeout.into();
+        self.pkarr_settings.resolvers = testnet
+            .bootstrap
+            .iter()
+            .flat_map(|resolver| resolver.to_socket_addrs())
+            .flatten()
+            .collect::<Vec<_>>()
+            .into();
+
         self
     }
 
-    pub fn bootstrap(mut self, bootstrap: Vec<String>) -> Self {
-        self.pkarr_settings.dht.bootstrap = bootstrap.into();
+    /// Set the request_timeout of the UDP socket in the Mainline DHT client in
+    /// the internal Pkarr client.
+    ///
+    /// Useful to speed unit tests.
+    /// Defaults to 2 seconds.
+    pub fn dht_request_timeout(mut self, timeout: Duration) -> Self {
+        self.pkarr_settings.dht.request_timeout = timeout.into();
         self
     }
 
@@ -79,14 +91,14 @@ impl PubkyClient {
 
     /// Creates a [PubkyClient] with:
     /// - DHT bootstrap nodes set to the `testnet` bootstrap nodes.
-    /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default)
+    /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default 2000)
     ///
     /// For more control, you can use [PubkyClientBuilder::testnet]
     pub fn test(testnet: &Testnet) -> PubkyClient {
         let mut builder = PubkyClient::builder().testnet(testnet);
 
         if std::env::var("CI").is_err() {
-            builder = builder.dht_request_timeout(Duration::from_millis(100));
+            builder = builder.dht_request_timeout(Duration::from_millis(500));
         }
 
         builder.build()
