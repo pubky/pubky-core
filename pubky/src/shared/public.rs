@@ -715,4 +715,54 @@ mod tests {
             )
         }
     }
+
+    #[tokio::test]
+    async fn read_after_event() {
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let pubky = keypair.public_key();
+
+        let url = format!("pubky://{pubky}/pub/a.com/a.txt");
+
+        client.put(url.as_str(), &[0]).await.unwrap();
+
+        let feed_url = format!("http://localhost:{}/events/", server.port());
+        let feed_url = feed_url.as_str();
+
+        let client = PubkyClient::test(&testnet);
+
+        {
+            let response = client
+                .request(
+                    Method::GET,
+                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
+                )
+                .send()
+                .await
+                .unwrap();
+
+            let text = response.text().await.unwrap();
+            let lines = text.split('\n').collect::<Vec<_>>();
+
+            let cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
+
+            assert_eq!(
+                lines,
+                vec![
+                    format!("PUT pubky://{pubky}/pub/a.com/a.txt"),
+                    format!("cursor: {cursor}",)
+                ]
+            );
+        }
+
+        let get = client.get(url.as_str()).await.unwrap();
+        dbg!(get);
+    }
 }
