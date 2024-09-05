@@ -50,14 +50,6 @@ impl TryFrom<char> for Ability {
     }
 }
 
-impl TryFrom<String> for Capability {
-    type Error = Error;
-
-    fn try_from(value: String) -> Result<Self, Error> {
-        value.as_str().try_into()
-    }
-}
-
 impl Display for Capability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -66,6 +58,14 @@ impl Display for Capability {
             self.resource,
             self.abilities.iter().map(char::from).collect::<String>()
         )
+    }
+}
+
+impl TryFrom<String> for Capability {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self, Error> {
+        value.as_str().try_into()
     }
 }
 
@@ -105,16 +105,6 @@ impl TryFrom<&str> for Capability {
     }
 }
 
-#[derive(thiserror::Error, Debug, PartialEq, Eq)]
-pub enum Error {
-    #[error("Capability: Invalid resource path: does not start with `/`")]
-    InvalidResource,
-    #[error("Capability: Invalid format should be <resource>:<abilities>")]
-    InvalidFormat,
-    #[error("Capability: Invalid Ability")]
-    InvalidAbility,
-}
-
 impl Serialize for Capability {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -134,6 +124,74 @@ impl<'de> Deserialize<'de> for Capability {
         let string: String = Deserialize::deserialize(deserializer)?;
 
         string.try_into().map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum Error {
+    #[error("Capability: Invalid resource path: does not start with `/`")]
+    InvalidResource,
+    #[error("Capability: Invalid format should be <resource>:<abilities>")]
+    InvalidFormat,
+    #[error("Capability: Invalid Ability")]
+    InvalidAbility,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+/// A wrapper around `Vec<Capability>` to enable serialization without
+/// a varint. Useful when [Capabilities] are at the end of a struct.
+pub struct Capabilities(pub Vec<Capability>);
+
+impl Capabilities {
+    pub fn contains(&self, capability: &Capability) -> bool {
+        self.0.contains(capability)
+    }
+}
+
+impl From<Vec<Capability>> for Capabilities {
+    fn from(value: Vec<Capability>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Capabilities> for Vec<Capability> {
+    fn from(value: Capabilities) -> Self {
+        value.0
+    }
+}
+
+impl Serialize for Capabilities {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let string = self
+            .0
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        string.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Capabilities {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let string: String = Deserialize::deserialize(deserializer)?;
+
+        let mut caps = vec![];
+
+        for s in string.split(',') {
+            if let Ok(cap) = Capability::try_from(s) {
+                caps.push(cap);
+            };
+        }
+
+        Ok(Capabilities(caps))
     }
 }
 

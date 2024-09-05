@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    capabilities::Capability,
+    capabilities::{Capabilities, Capability},
     crypto::{Keypair, PublicKey, Signature},
     namespaces::PUBKY_AUTH,
     timestamp::Timestamp,
@@ -37,11 +37,11 @@ pub struct AuthToken {
     /// The [PublicKey] of the owner of the resources being accessed by this token.
     pubky: PublicKey,
     // Variable length capabilities
-    capabilities: Vec<Capability>,
+    capabilities: Capabilities,
 }
 
 impl AuthToken {
-    pub fn sign(keypair: &Keypair, capabilities: Vec<Capability>) -> Self {
+    pub fn sign(keypair: &Keypair, capabilities: impl Into<Capabilities>) -> Self {
         let timestamp = Timestamp::now();
 
         let mut token = Self {
@@ -50,7 +50,7 @@ impl AuthToken {
             version: 0,
             timestamp,
             pubky: keypair.public_key(),
-            capabilities,
+            capabilities: capabilities.into(),
         };
 
         let serialized = token.serialize();
@@ -61,7 +61,7 @@ impl AuthToken {
     }
 
     pub fn capabilities(&self) -> &[Capability] {
-        &self.capabilities
+        &self.capabilities.0
     }
 
     fn verify(bytes: &[u8]) -> Result<Self, Error> {
@@ -225,13 +225,13 @@ mod tests {
 
         verifier.verify(serialized).unwrap();
 
-        assert_eq!(token.capabilities, capabilities);
+        assert_eq!(token.capabilities, capabilities.into());
     }
 
     #[test]
     fn expired() {
         let signer = Keypair::random();
-        let capabilities = vec![Capability::root()];
+        let capabilities = Capabilities(vec![Capability::root()]);
 
         let verifier = AuthVerifier::default();
 
@@ -272,7 +272,7 @@ mod tests {
 
         verifier.verify(serialized).unwrap();
 
-        assert_eq!(token.capabilities, capabilities);
+        assert_eq!(token.capabilities, capabilities.into());
 
         assert_eq!(verifier.verify(serialized), Err(Error::AlreadyUsed));
     }
