@@ -113,11 +113,13 @@ pub async fn signin(
 
     let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes(16));
 
-    state.db.tables.sessions.put(
-        &mut wtxn,
-        &session_secret,
-        &Session::new(&token, user_agent.map(|ua| ua.to_string())).serialize(),
-    )?;
+    let session = Session::new(&token, user_agent.map(|ua| ua.to_string())).serialize();
+
+    state
+        .db
+        .tables
+        .sessions
+        .put(&mut wtxn, &session_secret, &session)?;
 
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
 
@@ -132,7 +134,5 @@ pub async fn signin(
 
     wtxn.commit()?;
 
-    // TODO: return session to save extra call?
-
-    Ok(())
+    Ok(session)
 }

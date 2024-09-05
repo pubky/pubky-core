@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     }
 
     for cap in &required_capabilities {
-        println!("    {} : {:?}", cap.resource, cap.abilities);
+        println!("    {} : {:?}", cap.scope, cap.abilities);
     }
 
     // === Consent form ===
