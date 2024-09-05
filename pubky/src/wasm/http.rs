@@ -16,7 +16,7 @@ impl PubkyClient {
 
     // Support cookies for nodejs
 
-    pub(crate) fn store_session(&self, response: Response) {
+    pub(crate) fn store_session(&self, response: &Response) {
         if let Some(cookie) = response
             .headers()
             .get("set-cookie")

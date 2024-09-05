@@ -128,7 +128,7 @@ impl PubkyClient {
     }
 
     /// Signin to a homeserver.
-    pub async fn signin(&self, keypair: &Keypair) -> Result<()> {
+    pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
         self.inner_signin(keypair).await
     }
 
@@ -192,6 +192,6 @@ impl PubkyClient {
         self.http.request(method, url)
     }
 
-    pub(crate) fn store_session(&self, _: Response) {}
+    pub(crate) fn store_session(&self, _: &Response) {}
     pub(crate) fn remove_session(&self, _: &PublicKey) {}
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capability {
-    pub resource: String,
+    pub scope: String,
     pub abilities: Vec<Ability>,
 }
 
@@ -12,7 +12,7 @@ impl Capability {
     /// Create a root [Capability] at the `/` path with all the available [PubkyAbility]
     pub fn root() -> Self {
         Capability {
-            resource: "/".to_string(),
+            scope: "/".to_string(),
             abilities: vec![Ability::Read, Ability::Write],
         }
     }
@@ -20,9 +20,9 @@ impl Capability {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ability {
-    /// Can read the resource at the specified path (GET requests).
+    /// Can read the scope at the specified path (GET requests).
     Read,
-    /// Can write to the resource at the specified path (PUT/POST/DELETE requests).
+    /// Can write to the scope at the specified path (PUT/POST/DELETE requests).
     Write,
     /// Unknown ability
     Unknown(char),
@@ -55,7 +55,7 @@ impl Display for Capability {
         write!(
             f,
             "{}:{}",
-            self.resource,
+            self.scope,
             self.abilities.iter().map(char::from).collect::<String>()
         )
     }
@@ -78,7 +78,7 @@ impl TryFrom<&str> for Capability {
         }
 
         if !value.starts_with('/') {
-            return Err(Error::InvalidResource);
+            return Err(Error::InvalidScope);
         }
 
         let abilities_str = value.rsplit(':').next().unwrap_or("");
@@ -96,12 +96,9 @@ impl TryFrom<&str> for Capability {
             }
         }
 
-        let resource = value[0..value.len() - abilities_str.len() - 1].to_string();
+        let scope = value[0..value.len() - abilities_str.len() - 1].to_string();
 
-        Ok(Capability {
-            resource,
-            abilities,
-        })
+        Ok(Capability { scope, abilities })
     }
 }
 
@@ -129,12 +126,14 @@ impl<'de> Deserialize<'de> for Capability {
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum Error {
-    #[error("Capability: Invalid resource path: does not start with `/`")]
-    InvalidResource,
-    #[error("Capability: Invalid format should be <resource>:<abilities>")]
+    #[error("Capability: Invalid scope: does not start with `/`")]
+    InvalidScope,
+    #[error("Capability: Invalid format should be <scope>:<abilities>")]
     InvalidFormat,
     #[error("Capability: Invalid Ability")]
     InvalidAbility,
+    #[error("Capabilities: Invalid capabilities format")]
+    InvalidCapabilities,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
@@ -160,11 +159,24 @@ impl From<Capabilities> for Vec<Capability> {
     }
 }
 
-impl Serialize for Capabilities {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+impl TryFrom<&str> for Capabilities {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut caps = vec![];
+
+        for s in value.split(',') {
+            if let Ok(cap) = Capability::try_from(s) {
+                caps.push(cap);
+            };
+        }
+
+        Ok(Capabilities(caps))
+    }
+}
+
+impl Display for Capabilities {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let string = self
             .0
             .iter()
@@ -172,7 +184,16 @@ impl Serialize for Capabilities {
             .collect::<Vec<_>>()
             .join(",");
 
-        string.serialize(serializer)
+        write!(f, "{}", string)
+    }
+}
+
+impl Serialize for Capabilities {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
     }
 }
 
@@ -202,7 +223,7 @@ mod tests {
     #[test]
     fn pubky_caps() {
         let cap = Capability {
-            resource: "/pub/pubky.app/".to_string(),
+            scope: "/pub/pubky.app/".to_string(),
             abilities: vec![Ability::Read, Ability::Write],
         };
 

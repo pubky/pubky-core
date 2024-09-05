@@ -64,7 +64,7 @@ impl AuthToken {
         &self.capabilities.0
     }
 
-    fn verify(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn verify(bytes: &[u8]) -> Result<Self, Error> {
         if bytes[75] > CURRENT_VERSION {
             return Err(Error::UnknownVersion);
         }

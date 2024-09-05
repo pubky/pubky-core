@@ -1,3 +1,4 @@
+use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
@@ -9,9 +10,10 @@ use crate::{auth::AuthToken, capabilities::Capability, timestamp::Timestamp};
 // TODO: add IP address?
 // TODO: use https://crates.io/crates/user-agent-parser to parse the session
 // and get more informations from the user-agent.
-#[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Session {
     pub version: usize,
+    pub pubky: PublicKey,
     pub created_at: u64,
     /// User specified name, defaults to the user-agent.
     pub name: String,
@@ -21,18 +23,14 @@ pub struct Session {
 
 impl Session {
     pub fn new(token: &AuthToken, user_agent: Option<String>) -> Self {
-        let mut session = Self {
+        Self {
+            version: 0,
+            pubky: token.pubky().to_owned(),
             created_at: Timestamp::now().into_inner(),
-            ..Default::default()
-        };
-
-        session.set_capabilities(token.capabilities().to_vec());
-
-        if let Some(user_agent) = user_agent {
-            session.set_user_agent(user_agent);
+            capabilities: token.capabilities().to_vec(),
+            user_agent: user_agent.as_deref().unwrap_or("").to_string(),
+            name: user_agent.as_deref().unwrap_or("").to_string(),
         }
-
-        session
     }
 
     // === Setters ===
@@ -82,21 +80,33 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
+    use crate::crypto::Keypair;
+
     use super::*;
 
     #[test]
     fn serialize() {
+        let keypair = Keypair::from_secret_key(&[0; 32]);
+        let pubky = keypair.public_key();
+
         let session = Session {
             user_agent: "foo".to_string(),
             capabilities: vec![Capability::root()],
-            ..Default::default()
+            created_at: 0,
+            pubky,
+            version: 0,
+            name: "".to_string(),
         };
 
         let serialized = session.serialize();
 
         assert_eq!(
             serialized,
-            [0, 0, 0, 3, 102, 111, 111, 1, 4, 47, 58, 114, 119]
+            [
+                0, 59, 106, 39, 188, 206, 182, 164, 45, 98, 163, 168, 208, 42, 111, 13, 115, 101,
+                50, 21, 119, 29, 226, 67, 166, 58, 192, 72, 161, 139, 89, 218, 41, 0, 0, 3, 102,
+                111, 111, 1, 4, 47, 58, 114, 119
+            ]
         );
 
         let deseiralized = Session::deserialize(&serialized).unwrap();
