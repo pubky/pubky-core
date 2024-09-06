@@ -19,15 +19,14 @@ pub fn random_hash() -> Hash {
     Hash::from_bytes(rng.gen())
 }
 
-pub fn random_bytes(size: usize) -> Vec<u8> {
+pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut rng = rand::thread_rng();
-    let mut arr = vec![0u8; size];
+    let mut arr = [0u8; N];
 
     #[allow(clippy::needless_range_loop)]
-    for i in 0..size {
+    for i in 0..N {
         arr[i] = rng.gen();
     }
-
     arr
 }
 

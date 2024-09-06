@@ -94,42 +94,13 @@ impl PubkyClient {
         self.signin_with_authtoken(&token).await
     }
 
-    pub(crate) async fn authorize(
+    pub(crate) async fn inner_send_auth_token(
         &self,
         keypair: &Keypair,
-        capabilities: Vec<Capability>,
-        client_secret: [u8; 32],
-        relay: &Url,
+        pubkyauth_url: Url,
     ) -> Result<()> {
-        let token = AuthToken::sign(keypair, capabilities);
-
-        let encrypted_token = encrypt(&token.serialize(), &client_secret)?;
-
-        let channel_id = hash(&client_secret);
-        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-        let channel_id = engine.encode(channel_id.as_bytes());
-
-        let mut callback = relay.clone();
-        let mut path_segments = callback.path_segments_mut().unwrap();
-        path_segments.push(&channel_id);
-        drop(path_segments);
-
-        self.request(Method::POST, callback)
-            .body(encrypted_token)
-            .send()
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn send_auth_token<T: TryInto<Url>>(
-        &self,
-        keypair: &Keypair,
-        pubkyauth_url: T,
-    ) -> Result<()> {
-        let url: Url = pubkyauth_url.try_into().map_err(|_| Error::InvalidUrl)?;
-
-        let query_params: HashMap<String, String> = url.query_pairs().into_owned().collect();
+        let query_params: HashMap<String, String> =
+            pubkyauth_url.query_pairs().into_owned().collect();
 
         let relay = query_params
             .get("relay")
@@ -157,8 +128,25 @@ impl PubkyClient {
             })
             .unwrap_or_default();
 
-        self.authorize(keypair, capabilities, client_secret, &relay)
-            .await
+        let token = AuthToken::sign(keypair, capabilities);
+
+        let encrypted_token = encrypt(&token.serialize(), &client_secret)?;
+
+        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
+
+        let mut callback = relay.clone();
+        let mut path_segments = callback.path_segments_mut().unwrap();
+        path_segments.pop_if_empty();
+        let channel_id = engine.encode(hash(&client_secret).as_bytes());
+        path_segments.push(&channel_id);
+        drop(path_segments);
+
+        self.request(Method::POST, callback)
+            .body(encrypted_token)
+            .send()
+            .await?;
+
+        Ok(())
     }
 
     pub async fn inner_third_party_signin(
@@ -174,7 +162,7 @@ impl PubkyClient {
         Ok(token.pubky().to_owned())
     }
 
-    pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
+    pub async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let mut url = Url::parse(&format!("https://{}/session", token.pubky()))?;
 
         self.resolve_url(&mut url).await?;
@@ -199,16 +187,18 @@ impl PubkyClient {
     ) -> Result<(Url, [u8; 32])> {
         let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
 
-        let client_secret: [u8; 32] = random_bytes(32).try_into().unwrap();
+        let client_secret: [u8; 32] = random_bytes::<32>();
 
         let pubkyauth_url = Url::parse(&format!(
             "pubkyauth:///?caps={capabilities}&secret={}&relay={relay}",
             engine.encode(client_secret)
         ))?;
 
-        let mut segments = relay.path_segments_mut().map_err(|_| {
-            Error::Generic("Could not add channel_id to http relay base url".into())
-        })?;
+        let mut segments = relay
+            .path_segments_mut()
+            .map_err(|_| Error::Generic("Invalid relay".into()))?;
+        // remove trailing slash if any.
+        segments.pop_if_empty();
         let channel_id = &engine.encode(hash(&client_secret).as_bytes());
         segments.push(channel_id);
         drop(segments);
@@ -223,7 +213,7 @@ impl PubkyClient {
     ) -> Result<Option<Session>> {
         let response = self.http.request(Method::GET, relay).send().await?;
         let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, &client_secret)?;
+        let token_bytes = decrypt(&encrypted_token, client_secret)?;
         let token = AuthToken::verify(&token_bytes)?;
 
         if token.capabilities().is_empty() {
