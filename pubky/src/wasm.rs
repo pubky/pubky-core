@@ -6,9 +6,13 @@ use std::{
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 
+use url::Url;
+
+use pubky_common::capabilities::Capabilities;
+
+use crate::error::Error;
 use crate::PubkyClient;
 
-mod crypto;
 mod http;
 mod keys;
 mod pkarr;
@@ -104,30 +108,59 @@ impl PubkyClient {
             .map_err(|e| e.into())
     }
 
-    /// Signin to a homeserver using an AuthToken received from an Authenticator app
-    #[wasm_bindgen(js_name = "thirdPartySignin")]
-    pub async fn third_party_signin(
-        &self,
-        auth_token: &[u8],
-        client_secret: js_sys::Uint8Array,
-    ) -> Result<PublicKey, JsValue> {
-        if !js_sys::Uint8Array::instanceof(&client_secret) {
-            return Err("Expected client_secret to be an instance of Uint8Array".into());
-        }
+    /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
+    /// verifying that AuthToken, and if capabilities were requested, signing in to
+    /// the Pubky's homeserver and returning the [Session] information.
+    ///
+    /// Returns a tuple of [pubkyAuthUrl, Promise<Session>]
+    #[wasm_bindgen(js_name = "authRequest")]
+    pub fn auth_request(&self, relay: &str, capabilities: &str) -> Result<js_sys::Array, JsValue> {
+        let mut relay: Url = relay
+            .try_into()
+            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
 
-        let len = client_secret.byte_length();
-        if len != 32 {
-            return Err(format!("Expected client_secret to be 32 bytes, got {len}"))?;
-        }
+        let (pubkyauth_url, client_secret) = self.create_auth_request(
+            &mut relay,
+            &Capabilities::try_from(capabilities).map_err(|_| "Invalid capaiblities")?,
+        )?;
 
-        let mut client_secret_bytes = [0; 32];
-        client_secret.copy_to(&mut client_secret_bytes);
+        let this = self.clone();
 
-        self.inner_third_party_signin(auth_token, &client_secret_bytes)
-            .await
-            .map(|p| PublicKey(p))
-            .map_err(|e| e.into())
+        let future = async move {
+            this.subscribe_to_auth_response(relay, &client_secret)
+                .await
+                .map(|_| JsValue::from_str("something"))
+                .map_err(|err| JsValue::from_str(&format!("{:?}", err)))
+        };
+
+        let promise = wasm_bindgen_futures::future_to_promise(future);
+
+        // Return the URL and the promise
+        let js_tuple = js_sys::Array::new();
+        js_tuple.push(&JsValue::from_str(pubkyauth_url.as_ref()));
+        js_tuple.push(&promise);
+
+        Ok(js_tuple)
     }
+
+    // TODO: allow send_auth_token in wasm
+    // /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
+    // /// source of the pubkyauth request url.
+    // #[wasm_bindgen(js_name = "sendAuthToken")]
+    // pub async fn send_auth_token(
+    //     &self,
+    //     keypair: &Keypair,
+    //     pubkyauth_url: &str,
+    // ) -> Result<(), JsValue> {
+    //     let pubkyauth_url: Url = pubkyauth_url
+    //         .try_into()
+    //         .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+    //
+    //     self.inner_send_auth_token(keypair.as_inner(), pubkyauth_url)
+    //         .await?;
+    //
+    //     Ok(())
+    // }
 
     // === Public data ===
 

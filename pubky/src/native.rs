@@ -208,6 +208,20 @@ impl PubkyClient {
 
         Ok((pubkyauth_url, rx))
     }
+
+    /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
+    /// source of the pubkyauth request url.
+    pub async fn send_auth_token<T: TryInto<Url>>(
+        &self,
+        keypair: &Keypair,
+        pubkyauth_url: T,
+    ) -> Result<()> {
+        let url: Url = pubkyauth_url.try_into().map_err(|_| Error::InvalidUrl)?;
+
+        self.inner_send_auth_token(keypair, url).await?;
+
+        Ok(())
+    }
 }
 
 // === Internals ===

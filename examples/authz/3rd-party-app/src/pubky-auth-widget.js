@@ -45,9 +45,6 @@ export class PubkyAuthWidget extends LitElement {
 
     this.open = false;
 
-    this.secret = window.pubky.randomBytes(32)
-    this.channelId = base64url(window.pubky.hash(this.secret))
-
     // TODO: allow using mainnet
     /** @type {import("@synonymdev/pubky").PubkyClient} */
     this.pubkyClient = window.pubky.PubkyClient.testnet();
@@ -56,24 +53,15 @@ export class PubkyAuthWidget extends LitElement {
   connectedCallback() {
     super.connectedCallback()
 
-    // Verify it is a valid URL
-    const callbackUrl = this.relay ?
-      new URL(
-        // Remove trailing '/'
-        this.relay.endsWith("/")
-          ? this.relay.slice(0, this.relay.length - 1)
-          : this.relay
-      )
-      : DEFAULT_HTTP_RELAY
+    let [url, promise] = this.pubkyClient.authRequest(this.relay || DEFAULT_HTTP_RELAY, this.caps);
 
+    promise.then(x => {
+      console.log({ x })
+    }).catch(e => {
+      console.error(e)
+    })
 
-    this.authUrl = `pubkyauth:///?relay=${callbackUrl.toString()}&capabilities=${this.caps}&secret=${base64url(this.secret)}`;
-
-    callbackUrl.pathname = callbackUrl.pathname + "/" + this.channelId
-
-    fetch(callbackUrl)
-      .catch(error => console.error("PubkyAuthWidget: Failed to subscribe to http relay channel", error))
-      .then(this._onCallback.bind(this))
+    this.authUrl = url
   }
 
   render() {
@@ -362,16 +350,3 @@ export class PubkyAuthWidget extends LitElement {
 }
 
 window.customElements.define('pubky-auth-widget', PubkyAuthWidget)
-
-function base64url(input) {
-  // Convert Uint8Array to a binary string
-  let binaryString = '';
-  for (let i = 0; i < input.length; i++) {
-    binaryString += String.fromCharCode(input[i]);
-  }
-
-  return btoa(binaryString)
-    .replace(/\+/g, '-') // Replace + with -
-    .replace(/\//g, '_') // Replace / with _
-    .replace(/=+$/, '') // Remove padding (i.e., =)
-}
