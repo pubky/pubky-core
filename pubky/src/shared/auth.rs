@@ -256,7 +256,7 @@ mod tests {
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_homeserver::Homeserver;
-    use url::Url;
+    use reqwest::StatusCode;
 
     #[tokio::test]
     async fn basic_authn() {
@@ -294,6 +294,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
+            assert_eq!(session.pubky, keypair.public_key());
             assert!(session.capabilities.contains(&Capability::root()));
         }
     }
@@ -304,11 +305,11 @@ mod tests {
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let keypair = Keypair::random();
+        let pubky = keypair.public_key();
 
         // Third party app side
-        let capabilities: Capabilities = "/pub/pubky.app/:rw,/prv/foo.bar/file:rw"
-            .try_into()
-            .unwrap();
+        let capabilities: Capabilities =
+            "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
         let client = PubkyClient::test(&testnet);
         let (pubkyauth_url, pubkyauth_response) = client
             .auth_request("https://demo.httprelay.io/link", &capabilities)
@@ -328,7 +329,36 @@ mod tests {
 
         let session = pubkyauth_response.await.unwrap().unwrap();
 
+        assert_eq!(session.pubky, pubky);
         assert_eq!(session.capabilities, capabilities.0);
-        assert_eq!(session.pubky, keypair.public_key());
+
+        // Test access control enforcement
+
+        client
+            .put(format!("pubky://{pubky}/pub/pubky.app/foo").as_str(), &[])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            client
+                .put(format!("pubky://{pubky}/pub/pubky.app").as_str(), &[])
+                .await
+                .map_err(|e| match e {
+                    crate::Error::Reqwest(e) => e.status(),
+                    _ => None,
+                }),
+            Err(Some(StatusCode::FORBIDDEN))
+        );
+
+        assert_eq!(
+            client
+                .put(format!("pubky://{pubky}/pub/foo.bar/file").as_str(), &[])
+                .await
+                .map_err(|e| match e {
+                    crate::Error::Reqwest(e) => e.status(),
+                    _ => None,
+                }),
+            Err(Some(StatusCode::FORBIDDEN))
+        );
     }
 }
