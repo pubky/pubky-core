@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use reqwest::{Method, StatusCode};
-
 use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
+use reqwest::{Method, StatusCode};
+use url::Url;
+
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{
     auth::AuthToken,
@@ -10,8 +11,6 @@ use pubky_common::{
     crypto::{decrypt, encrypt, hash, random_bytes},
     session::Session,
 };
-use tokio::sync::oneshot;
-use url::Url;
 
 use crate::{
     error::{Error, Result},
@@ -95,61 +94,7 @@ impl PubkyClient {
         self.signin_with_authtoken(&token).await
     }
 
-    /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
-    /// verifying that AuthToken, and if capabilities were requested, signing in to
-    /// the Pubky's homeserver and returning the [Session] information.
-    pub fn auth_request(
-        &self,
-        relay: impl TryInto<Url>,
-        capabilities: &Capabilities,
-    ) -> Result<(Url, tokio::sync::oneshot::Receiver<Option<Session>>)> {
-        let mut relay: Url = relay
-            .try_into()
-            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
-
-        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-
-        let client_secret: [u8; 32] = random_bytes(32).try_into().unwrap();
-
-        let pubkyauth_url = Url::parse(&format!(
-            "pubkyauth:///?caps={capabilities}&secret={}&relay={relay}",
-            engine.encode(client_secret)
-        ))?;
-
-        // Add channel id
-        let mut segments = relay.path_segments_mut().map_err(|_| {
-            Error::Generic("Could not add channel_id to http relay base url".into())
-        })?;
-        segments.push(&engine.encode(hash(&client_secret).as_bytes()));
-        drop(segments);
-
-        let (tx, rx) = oneshot::channel::<Option<Session>>();
-
-        let this = self.clone();
-
-        tokio::spawn(async move {
-            let response = this.http.request(Method::GET, relay).send().await?;
-            let encrypted_token = response.bytes().await?;
-            let token_bytes = decrypt(&encrypted_token, &client_secret)?;
-            let token = AuthToken::verify(&token_bytes)?;
-
-            let to_send = if token.capabilities().is_empty() {
-                None
-            } else {
-                let session = this.signin_with_authtoken(&token).await?;
-                Some(session)
-            };
-
-            tx.send(to_send)
-                .map_err(|_| Error::Generic("Failed to send the session after signing in with token, since the receiver is dropped".into()))?;
-
-            Ok::<(), Error>(())
-        });
-
-        Ok((pubkyauth_url, rx))
-    }
-
-    pub async fn authorize(
+    pub(crate) async fn authorize(
         &self,
         keypair: &Keypair,
         capabilities: Vec<Capability>,
@@ -229,7 +174,7 @@ impl PubkyClient {
         Ok(token.pubky().to_owned())
     }
 
-    async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
+    pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let mut url = Url::parse(&format!("https://{}/session", token.pubky()))?;
 
         self.resolve_url(&mut url).await?;
@@ -245,6 +190,48 @@ impl PubkyClient {
         let bytes = response.bytes().await?;
 
         Ok(Session::deserialize(&bytes)?)
+    }
+
+    pub(crate) fn create_auth_request(
+        &self,
+        relay: &mut Url,
+        capabilities: &Capabilities,
+    ) -> Result<(Url, [u8; 32])> {
+        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
+
+        let client_secret: [u8; 32] = random_bytes(32).try_into().unwrap();
+
+        let pubkyauth_url = Url::parse(&format!(
+            "pubkyauth:///?caps={capabilities}&secret={}&relay={relay}",
+            engine.encode(client_secret)
+        ))?;
+
+        let mut segments = relay.path_segments_mut().map_err(|_| {
+            Error::Generic("Could not add channel_id to http relay base url".into())
+        })?;
+        let channel_id = &engine.encode(hash(&client_secret).as_bytes());
+        segments.push(channel_id);
+        drop(segments);
+
+        Ok((pubkyauth_url, client_secret))
+    }
+
+    pub(crate) async fn subscribe_to_auth_response(
+        &self,
+        relay: Url,
+        client_secret: &[u8; 32],
+    ) -> Result<Option<Session>> {
+        let response = self.http.request(Method::GET, relay).send().await?;
+        let encrypted_token = response.bytes().await?;
+        let token_bytes = decrypt(&encrypted_token, &client_secret)?;
+        let token = AuthToken::verify(&token_bytes)?;
+
+        if token.capabilities().is_empty() {
+            Ok(None)
+        } else {
+            let session = self.signin_with_authtoken(&token).await?;
+            Ok(Some(session))
+        }
     }
 }
 

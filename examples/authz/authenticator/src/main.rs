@@ -1,10 +1,10 @@
 use anyhow::Result;
-use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
 use clap::Parser;
 use pubky::PubkyClient;
-use pubky_common::{capabilities::Capability, crypto::PublicKey};
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 use url::Url;
+
+use pubky_common::{capabilities::Capability, crypto::PublicKey};
 
 /// local testnet HOMESERVER
 const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
@@ -28,39 +28,27 @@ async fn main() -> Result<()> {
 
     let url = cli.url;
 
-    let query_params: HashMap<String, String> = url.query_pairs().into_owned().collect();
-
-    let relay = query_params
-        .get("relay")
-        .map(|r| url::Url::parse(r).expect("Relay query param to be valid URL"))
-        .expect("Missing relay query param");
-
-    let client_secret = query_params
-        .get("secret")
-        .map(|s| {
-            let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-            let bytes = engine.decode(s).expect("invalid client_secret");
-            let arr: [u8; 32] = bytes.try_into().expect("invalid client_secret");
-
-            arr
+    let caps = url
+        .query_pairs()
+        .filter_map(|(key, value)| {
+            if key == "caps" {
+                return Some(
+                    value
+                        .split(',')
+                        .filter_map(|cap| Capability::try_from(cap).ok())
+                        .collect::<Vec<_>>(),
+                );
+            };
+            None
         })
-        .expect("Missing client secret");
-
-    let required_capabilities = query_params
-        .get("capabilities")
-        .map(|caps_string| {
-            caps_string
-                .split(',')
-                .filter_map(|cap| Capability::try_from(cap).ok())
-                .collect::<Vec<_>>()
-        })
+        .next()
         .unwrap_or_default();
 
-    if !required_capabilities.is_empty() {
+    if !caps.is_empty() {
         println!("\nRequired Capabilities:");
     }
 
-    for cap in &required_capabilities {
+    for cap in &caps {
         println!("    {} : {:?}", cap.scope, cap.abilities);
     }
 
@@ -86,9 +74,7 @@ async fn main() -> Result<()> {
 
     println!("Sending AuthToken to the 3rd party app...");
 
-    client
-        .authorize(&keypair, required_capabilities, client_secret, &relay)
-        .await?;
+    client.send_auth_token(&keypair, url).await?;
 
     Ok(())
 }

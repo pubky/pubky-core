@@ -100,6 +100,7 @@ impl PubkyClient {
     pub async fn signin(&self, keypair: &Keypair) -> Result<(), JsValue> {
         self.inner_signin(keypair.as_inner())
             .await
+            .map(|_| ())
             .map_err(|e| e.into())
     }
 
