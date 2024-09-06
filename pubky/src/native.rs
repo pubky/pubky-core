@@ -1,17 +1,25 @@
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
-use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
 use bytes::Bytes;
-use pkarr::Keypair;
 use pubky_common::{
+    capabilities::Capabilities,
     recovery_file::{create_recovery_file, decrypt_recovery_file},
     session::Session,
 };
 use reqwest::{RequestBuilder, Response};
+use tokio::sync::oneshot;
 use url::Url;
 
-use crate::{error::Result, shared::list_builder::ListBuilder, PubkyClient};
+use pkarr::Keypair;
+
+use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
+
+use crate::{
+    error::{Error, Result},
+    shared::list_builder::ListBuilder,
+    PubkyClient,
+};
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -167,6 +175,38 @@ impl PubkyClient {
     /// Recover a keypair from a recovery file by decrypting the secret key using `passphrase`.
     pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair> {
         Ok(decrypt_recovery_file(recovery_file, passphrase)?)
+    }
+
+    /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
+    /// verifying that AuthToken, and if capabilities were requested, signing in to
+    /// the Pubky's homeserver and returning the [Session] information.
+    pub fn auth_request(
+        &self,
+        relay: impl TryInto<Url>,
+        capabilities: &Capabilities,
+    ) -> Result<(Url, tokio::sync::oneshot::Receiver<Option<Session>>)> {
+        let mut relay: Url = relay
+            .try_into()
+            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+
+        let (pubkyauth_url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
+
+        let (tx, rx) = oneshot::channel::<Option<Session>>();
+
+        let this = self.clone();
+
+        tokio::spawn(async move {
+            let to_send = this
+                .subscribe_to_auth_response(relay, &client_secret)
+                .await?;
+
+            tx.send(to_send)
+                .map_err(|_| Error::Generic("Failed to send the session after signing in with token, since the receiver is dropped".into()))?;
+
+            Ok::<(), Error>(())
+        });
+
+        Ok((pubkyauth_url, rx))
     }
 }
 
