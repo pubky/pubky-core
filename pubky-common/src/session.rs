@@ -12,13 +12,13 @@ use crate::{auth::AuthToken, capabilities::Capability, timestamp::Timestamp};
 // and get more informations from the user-agent.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Session {
-    pub version: usize,
-    pub pubky: PublicKey,
-    pub created_at: u64,
+    version: usize,
+    pubky: PublicKey,
+    created_at: u64,
     /// User specified name, defaults to the user-agent.
-    pub name: String,
-    pub user_agent: String,
-    pub capabilities: Vec<Capability>,
+    name: String,
+    user_agent: String,
+    capabilities: Vec<Capability>,
 }
 
 impl Session {
@@ -31,6 +31,16 @@ impl Session {
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }
+    }
+
+    // === Getters ===
+
+    pub fn pubky(&self) -> &PublicKey {
+        &self.pubky
+    }
+
+    pub fn capabilities(&self) -> &Vec<Capability> {
+        &self.capabilities
     }
 
     // === Setters ===

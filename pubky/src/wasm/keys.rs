@@ -91,3 +91,9 @@ impl PublicKey {
         &self.0
     }
 }
+
+impl From<pkarr::PublicKey> for PublicKey {
+    fn from(value: pkarr::PublicKey) -> Self {
+        PublicKey(value)
+    }
+}

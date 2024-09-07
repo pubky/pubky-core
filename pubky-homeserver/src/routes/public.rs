@@ -148,8 +148,8 @@ fn authorize(
         .get_session(cookies, public_key)?
         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
-    if session.pubky == *public_key
-        && session.capabilities.iter().any(|cap| {
+    if session.pubky() == public_key
+        && session.capabilities().iter().any(|cap| {
             path.starts_with(&cap.scope[1..])
                 && cap
                     .abilities

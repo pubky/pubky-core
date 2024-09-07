@@ -28,7 +28,7 @@ impl PubkyClient {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
-    ) -> Result<()> {
+    ) -> Result<Session> {
         let homeserver = homeserver.to_string();
 
         let Endpoint { mut url, .. } = self.resolve_endpoint(&homeserver).await?;
@@ -47,7 +47,9 @@ impl PubkyClient {
 
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
-        Ok(())
+        let bytes = response.bytes().await?;
+
+        Ok(Session::deserialize(&bytes)?)
     }
 
     /// Check the current sesison for a given Pubky in its homeserver.
@@ -252,7 +254,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert!(session.capabilities.contains(&Capability::root()));
+        assert!(session.capabilities().contains(&Capability::root()));
 
         client.signout(&keypair.public_key()).await.unwrap();
 
@@ -271,8 +273,8 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert_eq!(session.pubky, keypair.public_key());
-            assert!(session.capabilities.contains(&Capability::root()));
+            assert_eq!(session.pubky(), &keypair.public_key());
+            assert!(session.capabilities().contains(&Capability::root()));
         }
     }
 
@@ -306,8 +308,8 @@ mod tests {
 
         let session = pubkyauth_response.await.unwrap().unwrap();
 
-        assert_eq!(session.pubky, pubky);
-        assert_eq!(session.capabilities, capabilities.0);
+        assert_eq!(session.pubky(), &pubky);
+        assert_eq!(session.capabilities(), &capabilities.0);
 
         // Test access control enforcement
 

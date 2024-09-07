@@ -73,10 +73,16 @@ impl PubkyClient {
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
     #[wasm_bindgen]
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<(), JsValue> {
-        self.inner_signup(keypair.as_inner(), homeserver.as_inner())
-            .await
-            .map_err(|e| e.into())
+    pub async fn signup(
+        &self,
+        keypair: &Keypair,
+        homeserver: &PublicKey,
+    ) -> Result<Session, JsValue> {
+        Ok(Session(
+            self.inner_signup(keypair.as_inner(), homeserver.as_inner())
+                .await
+                .map_err(|e| JsValue::from(e))?,
+        ))
     }
 
     /// Check the current sesison for a given Pubky in its homeserver.
@@ -129,7 +135,12 @@ impl PubkyClient {
         let future = async move {
             this.subscribe_to_auth_response(relay, &client_secret)
                 .await
-                .map(|_| JsValue::from_str("something"))
+                .map(|opt| {
+                    opt.map_or_else(
+                        || JsValue::NULL, // Convert `None` to `JsValue::NULL`
+                        |session| JsValue::from(Session(session)),
+                    )
+                })
                 .map_err(|err| JsValue::from_str(&format!("{:?}", err)))
         };
 
@@ -143,24 +154,23 @@ impl PubkyClient {
         Ok(js_tuple)
     }
 
-    // TODO: allow send_auth_token in wasm
-    // /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
-    // /// source of the pubkyauth request url.
-    // #[wasm_bindgen(js_name = "sendAuthToken")]
-    // pub async fn send_auth_token(
-    //     &self,
-    //     keypair: &Keypair,
-    //     pubkyauth_url: &str,
-    // ) -> Result<(), JsValue> {
-    //     let pubkyauth_url: Url = pubkyauth_url
-    //         .try_into()
-    //         .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
-    //
-    //     self.inner_send_auth_token(keypair.as_inner(), pubkyauth_url)
-    //         .await?;
-    //
-    //     Ok(())
-    // }
+    /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
+    /// source of the pubkyauth request url.
+    #[wasm_bindgen(js_name = "sendAuthToken")]
+    pub async fn send_auth_token(
+        &self,
+        keypair: &Keypair,
+        pubkyauth_url: &str,
+    ) -> Result<(), JsValue> {
+        let pubkyauth_url: Url = pubkyauth_url
+            .try_into()
+            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+
+        self.inner_send_auth_token(keypair.as_inner(), pubkyauth_url)
+            .await?;
+
+        Ok(())
+    }
 
     // === Public data ===
 
