@@ -15,19 +15,6 @@ pub enum Error {
     #[error("Could not resolve endpoint for {0}")]
     ResolveEndpoint(String),
 
-    // === Recovery file ==
-    #[error("Recovery file should start with a spec line, followed by a new line character")]
-    RecoveryFileMissingSpecLine,
-
-    #[error("Recovery file should start with a spec line, followed by a new line character")]
-    RecoveryFileVersionNotSupported,
-
-    #[error("Recovery file should contain an encrypted secret key after the new line character")]
-    RecoverFileMissingEncryptedSecretKey,
-
-    #[error("Recovery file encrypted secret key should be 32 bytes, got {0}")]
-    RecoverFileInvalidSecretKeyLength(usize),
-
     #[error("Could not convert the passed type into a Url")]
     InvalidUrl,
 
@@ -51,7 +38,10 @@ pub enum Error {
     Crypto(#[from] pubky_common::crypto::Error),
 
     #[error(transparent)]
-    Argon(#[from] argon2::Error),
+    RecoveryFile(#[from] pubky_common::recovery_file::Error),
+
+    #[error(transparent)]
+    AuthToken(#[from] pubky_common::auth::Error),
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -2,104 +2,153 @@
 
 use std::sync::{Arc, Mutex};
 
-use ed25519_dalek::ed25519::SignatureBytes;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    crypto::{random_hash, Keypair, PublicKey, Signature},
+    capabilities::{Capabilities, Capability},
+    crypto::{Keypair, PublicKey, Signature},
+    namespaces::PUBKY_AUTH,
     timestamp::Timestamp,
 };
 
 // 30 seconds
 const TIME_INTERVAL: u64 = 30 * 1_000_000;
 
-#[derive(Debug, PartialEq)]
-pub struct AuthnSignature(Box<[u8]>);
+const CURRENT_VERSION: u8 = 0;
+// 45 seconds in the past or the future
+const TIMESTAMP_WINDOW: i64 = 45 * 1_000_000;
 
-impl AuthnSignature {
-    pub fn new(signer: &Keypair, audience: &PublicKey, token: Option<&[u8]>) -> Self {
-        let mut bytes = Vec::with_capacity(96);
-
-        let time: u64 = Timestamp::now().into();
-        let time_step = time / TIME_INTERVAL;
-
-        let token_hash = token.map_or(random_hash(), crate::crypto::hash);
-
-        let signature = signer
-            .sign(&signable(
-                &time_step.to_be_bytes(),
-                &signer.public_key(),
-                audience,
-                token_hash.as_bytes(),
-            ))
-            .to_bytes();
-
-        bytes.extend_from_slice(&signature);
-        bytes.extend_from_slice(token_hash.as_bytes());
-
-        Self(bytes.into())
-    }
-
-    /// Sign a randomly generated nonce
-    pub fn generate(keypair: &Keypair, audience: &PublicKey) -> Self {
-        AuthnSignature::new(keypair, audience, None)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct AuthToken {
+    /// Signature over the token.
+    signature: Signature,
+    /// A namespace to ensure this signature can't be used for any
+    /// other purposes that share the same message structurea by accident.
+    namespace: [u8; 10],
+    /// Version of the [AuthToken], in case we need to upgrade it to support unforseen usecases.
+    ///
+    /// Version 0:
+    /// - Signer is implicitly the same as the root keypair for
+    ///     the [AuthToken::pubky], without any delegation.
+    /// - Capabilities are only meant for resoucres on the homeserver.
+    version: u8,
+    /// Timestamp
+    timestamp: Timestamp,
+    /// The [PublicKey] of the owner of the resources being accessed by this token.
+    pubky: PublicKey,
+    // Variable length capabilities
+    capabilities: Capabilities,
 }
 
-#[derive(Debug, Clone)]
-pub struct AuthnVerifier {
-    audience: PublicKey,
-    inner: Arc<Mutex<Vec<[u8; 40]>>>,
-    // TODO: Support permisisons
-    // token_hashes: HashSet<[u8; 32]>,
-}
+impl AuthToken {
+    pub fn sign(keypair: &Keypair, capabilities: impl Into<Capabilities>) -> Self {
+        let timestamp = Timestamp::now();
 
-impl AuthnVerifier {
-    pub fn new(audience: PublicKey) -> Self {
-        Self {
-            audience,
-            inner: Arc::new(Mutex::new(Vec::new())),
+        let mut token = Self {
+            signature: Signature::from_bytes(&[0; 64]),
+            namespace: *PUBKY_AUTH,
+            version: 0,
+            timestamp,
+            pubky: keypair.public_key(),
+            capabilities: capabilities.into(),
+        };
+
+        let serialized = token.serialize();
+
+        token.signature = keypair.sign(&serialized[65..]);
+
+        token
+    }
+
+    pub fn capabilities(&self) -> &[Capability] {
+        &self.capabilities.0
+    }
+
+    pub fn verify(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes[75] > CURRENT_VERSION {
+            return Err(Error::UnknownVersion);
+        }
+
+        let token = AuthToken::deserialize(bytes)?;
+
+        match token.version {
+            0 => {
+                let now = Timestamp::now();
+
+                // Chcek timestamp;
+                let diff = token.timestamp.difference(&now);
+                if diff > TIMESTAMP_WINDOW {
+                    return Err(Error::TooFarInTheFuture);
+                }
+                if diff < -TIMESTAMP_WINDOW {
+                    return Err(Error::Expired);
+                }
+
+                token
+                    .pubky
+                    .verify(AuthToken::signable(token.version, bytes), &token.signature)
+                    .map_err(|_| Error::InvalidSignature)?;
+
+                Ok(token)
+            }
+            _ => unreachable!(),
         }
     }
 
-    pub fn verify(&self, bytes: &[u8], signer: &PublicKey) -> Result<(), AuthnSignatureError> {
+    pub fn serialize(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).unwrap()
+    }
+
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(postcard::from_bytes(bytes)?)
+    }
+
+    pub fn pubky(&self) -> &PublicKey {
+        &self.pubky
+    }
+
+    /// A unique ID for this [AuthToken], which is a concatenation of
+    /// [AuthToken::pubky] and [AuthToken::timestamp].
+    ///
+    /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::pubky].
+    fn id(version: u8, bytes: &[u8]) -> Box<[u8]> {
+        match version {
+            0 => bytes[75..115].into(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn signable(version: u8, bytes: &[u8]) -> &[u8] {
+        match version {
+            0 => bytes[65..].into(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+/// Keeps track of used AuthToken until they expire.
+pub struct AuthVerifier {
+    seen: Arc<Mutex<Vec<Box<[u8]>>>>,
+}
+
+impl AuthVerifier {
+    pub fn verify(&self, bytes: &[u8]) -> Result<AuthToken, Error> {
         self.gc();
 
-        if bytes.len() != 96 {
-            return Err(AuthnSignatureError::InvalidLength(bytes.len()));
+        let token = AuthToken::verify(bytes)?;
+
+        let mut seen = self.seen.lock().unwrap();
+
+        let id = AuthToken::id(token.version, bytes);
+
+        match seen.binary_search_by(|element| element.cmp(&id)) {
+            Ok(_) => Err(Error::AlreadyUsed),
+            Err(index) => {
+                seen.insert(index, id);
+                Ok(token)
+            }
         }
-
-        let signature_bytes: SignatureBytes = bytes[0..64]
-            .try_into()
-            .expect("validate token length on instantiating");
-        let signature = Signature::from(signature_bytes);
-
-        let token_hash: [u8; 32] = bytes[64..].try_into().expect("should not be reachable");
-
-        let now = Timestamp::now().into_inner();
-        let past = now - TIME_INTERVAL;
-        let future = now + TIME_INTERVAL;
-
-        let result = verify_at(now, self, &signature, signer, &token_hash);
-
-        match result {
-            Ok(_) => return Ok(()),
-            Err(AuthnSignatureError::AlreadyUsed) => return Err(AuthnSignatureError::AlreadyUsed),
-            _ => {}
-        }
-
-        let result = verify_at(past, self, &signature, signer, &token_hash);
-
-        match result {
-            Ok(_) => return Ok(()),
-            Err(AuthnSignatureError::AlreadyUsed) => return Err(AuthnSignatureError::AlreadyUsed),
-            _ => {}
-        }
-
-        verify_at(future, self, &signature, signer, &token_hash)
     }
 
     // === Private Methods ===
@@ -108,7 +157,7 @@ impl AuthnVerifier {
     fn gc(&self) {
         let threshold = ((Timestamp::now().into_inner() / TIME_INTERVAL) - 2).to_be_bytes();
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.seen.lock().unwrap();
 
         match inner.binary_search_by(|element| element[0..8].cmp(&threshold)) {
             Ok(index) | Err(index) => {
@@ -118,103 +167,113 @@ impl AuthnVerifier {
     }
 }
 
-fn verify_at(
-    time: u64,
-    verifier: &AuthnVerifier,
-    signature: &Signature,
-    signer: &PublicKey,
-    token_hash: &[u8; 32],
-) -> Result<(), AuthnSignatureError> {
-    let time_step = time / TIME_INTERVAL;
-    let time_step_bytes = time_step.to_be_bytes();
-
-    let result = signer.verify(
-        &signable(&time_step_bytes, signer, &verifier.audience, token_hash),
-        signature,
-    );
-
-    if result.is_ok() {
-        let mut inner = verifier.inner.lock().unwrap();
-
-        let mut candidate = [0_u8; 40];
-        candidate[..8].copy_from_slice(&time_step_bytes);
-        candidate[8..].copy_from_slice(token_hash);
-
-        match inner.binary_search_by(|element| element.cmp(&candidate)) {
-            Ok(index) | Err(index) => {
-                inner.insert(index, candidate);
-            }
-        };
-
-        return Ok(());
-    }
-
-    Err(AuthnSignatureError::InvalidSignature)
-}
-
-fn signable(
-    time_step_bytes: &[u8; 8],
-    signer: &PublicKey,
-    audience: &PublicKey,
-    token_hash: &[u8; 32],
-) -> [u8; 115] {
-    let mut arr = [0; 115];
-
-    arr[..11].copy_from_slice(crate::namespaces::PUBKY_AUTHN);
-    arr[11..19].copy_from_slice(time_step_bytes);
-    arr[19..51].copy_from_slice(signer.as_bytes());
-    arr[51..83].copy_from_slice(audience.as_bytes());
-    arr[83..].copy_from_slice(token_hash);
-
-    arr
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum AuthnSignatureError {
-    #[error("AuthnSignature should be 96 bytes long, got {0} bytes instead")]
-    InvalidLength(usize),
-
-    #[error("Invalid signature")]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum Error {
+    #[error("Unknown version")]
+    UnknownVersion,
+    #[error("AuthToken has a timestamp that is more than 45 seconds in the future")]
+    TooFarInTheFuture,
+    #[error("AuthToken has a timestamp that is more than 45 seconds in the past")]
+    Expired,
+    #[error("Invalid Signature")]
     InvalidSignature,
-
-    #[error("Authn signature already used")]
+    #[error(transparent)]
+    Postcard(#[from] postcard::Error),
+    #[error("AuthToken already used")]
     AlreadyUsed,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::Keypair;
+    use crate::{
+        auth::TIMESTAMP_WINDOW, capabilities::Capability, crypto::Keypair, timestamp::Timestamp,
+    };
 
-    use super::{AuthnSignature, AuthnVerifier};
+    use super::*;
+
+    #[test]
+    fn v0_id_signable() {
+        let signer = Keypair::random();
+        let capabilities = vec![Capability::root()];
+
+        let token = AuthToken::sign(&signer, capabilities.clone());
+
+        let serialized = &token.serialize();
+
+        let mut id = vec![];
+        id.extend_from_slice(&token.timestamp.to_bytes());
+        id.extend_from_slice(signer.public_key().as_bytes());
+
+        assert_eq!(AuthToken::id(token.version, serialized), id.into());
+
+        assert_eq!(
+            AuthToken::signable(token.version, serialized),
+            &serialized[65..]
+        )
+    }
 
     #[test]
     fn sign_verify() {
-        let keypair = Keypair::random();
-        let signer = keypair.public_key();
-        let audience = Keypair::random().public_key();
+        let signer = Keypair::random();
+        let capabilities = vec![Capability::root()];
 
-        let verifier = AuthnVerifier::new(audience.clone());
+        let verifier = AuthVerifier::default();
 
-        let authn_signature = AuthnSignature::generate(&keypair, &audience);
+        let token = AuthToken::sign(&signer, capabilities.clone());
 
-        verifier
-            .verify(authn_signature.as_bytes(), &signer)
-            .unwrap();
+        let serialized = &token.serialize();
 
-        {
-            // Invalid signable
-            let mut invalid = authn_signature.as_bytes().to_vec();
-            invalid[64..].copy_from_slice(&[0; 32]);
+        verifier.verify(serialized).unwrap();
 
-            assert!(verifier.verify(&invalid, &signer).is_err())
-        }
+        assert_eq!(token.capabilities, capabilities.into());
+    }
 
-        {
-            // Invalid signer
-            let mut invalid = authn_signature.as_bytes().to_vec();
-            invalid[0..32].copy_from_slice(&[0; 32]);
+    #[test]
+    fn expired() {
+        let signer = Keypair::random();
+        let capabilities = Capabilities(vec![Capability::root()]);
 
-            assert!(verifier.verify(&invalid, &signer).is_err())
-        }
+        let verifier = AuthVerifier::default();
+
+        let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
+
+        let mut signable = vec![];
+        signable.extend_from_slice(signer.public_key().as_bytes());
+        signable.extend_from_slice(&postcard::to_allocvec(&capabilities).unwrap());
+
+        let signature = signer.sign(&signable);
+
+        let token = AuthToken {
+            signature,
+            namespace: *PUBKY_AUTH,
+            version: 0,
+            timestamp,
+            pubky: signer.public_key(),
+            capabilities,
+        };
+
+        let serialized = token.serialize();
+
+        let result = verifier.verify(&serialized);
+
+        assert_eq!(result, Err(Error::Expired));
+    }
+
+    #[test]
+    fn already_used() {
+        let signer = Keypair::random();
+        let capabilities = vec![Capability::root()];
+
+        let verifier = AuthVerifier::default();
+
+        let token = AuthToken::sign(&signer, capabilities.clone());
+
+        let serialized = &token.serialize();
+
+        verifier.verify(serialized).unwrap();
+
+        assert_eq!(token.capabilities, capabilities.into());
+
+        assert_eq!(verifier.verify(serialized), Err(Error::AlreadyUsed));
     }
 }

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/pubky.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pubky Auth Demo</title>
+    <link rel="stylesheet" href="./src/index.css" />
+    <script type="module">
+      import "@synonymdev/pubky"
+    </script>
+    <script type="module" src="/src/pubky-auth-widget.js"></script>
+  </head>
+  <body>
+    <pubky-auth-widget 
+      relay="https://demo.httprelay.io/link/"
+      caps="/pub/pubky.app/:rw,/pub/example.com/nested:rw"
+    >
+    </pubky-auth-widget>
+
+    <main>
+      <h1>Third Party app!</h1>
+      <p>this is a demo for using Pubky Auth in an unhosted (no backend) app.</p>
+    </main>
+  </body>
+</html>

@@ -1,19 +1,23 @@
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
-use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
 use bytes::Bytes;
-use pkarr::Keypair;
-use pubky_common::session::Session;
+use pubky_common::{
+    capabilities::Capabilities,
+    recovery_file::{create_recovery_file, decrypt_recovery_file},
+    session::Session,
+};
 use reqwest::{RequestBuilder, Response};
+use tokio::sync::oneshot;
 use url::Url;
 
+use pkarr::Keypair;
+
+use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
+
 use crate::{
-    error::Result,
-    shared::{
-        list_builder::ListBuilder,
-        recovery_file::{create_recovery_file, decrypt_recovery_file},
-    },
+    error::{Error, Result},
+    shared::list_builder::ListBuilder,
     PubkyClient,
 };
 
@@ -84,6 +88,15 @@ impl PubkyClient {
         PubkyClientBuilder::default()
     }
 
+    /// Create a client connected to the local network
+    /// with the bootstrapping node: `localhost:6881`
+    pub fn testnet() -> Self {
+        Self::test(&Testnet {
+            bootstrap: vec!["localhost:6881".to_string()],
+            nodes: vec![],
+        })
+    }
+
     /// Creates a [PubkyClient] with:
     /// - DHT bootstrap nodes set to the `testnet` bootstrap nodes.
     /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default 2000)
@@ -105,7 +118,7 @@ impl PubkyClient {
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<()> {
+    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<Session> {
         self.inner_signup(keypair, homeserver).await
     }
 
@@ -123,7 +136,7 @@ impl PubkyClient {
     }
 
     /// Signin to a homeserver.
-    pub async fn signin(&self, keypair: &Keypair) -> Result<()> {
+    pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
         self.inner_signin(keypair).await
     }
 
@@ -156,12 +169,58 @@ impl PubkyClient {
     /// Create a recovery file of the `keypair`, containing the secret key encrypted
     /// using the `passphrase`.
     pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>> {
-        create_recovery_file(keypair, passphrase)
+        Ok(create_recovery_file(keypair, passphrase)?)
     }
 
     /// Recover a keypair from a recovery file by decrypting the secret key using `passphrase`.
     pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair> {
-        decrypt_recovery_file(recovery_file, passphrase)
+        Ok(decrypt_recovery_file(recovery_file, passphrase)?)
+    }
+
+    /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
+    /// verifying that AuthToken, and if capabilities were requested, signing in to
+    /// the Pubky's homeserver and returning the [Session] information.
+    pub fn auth_request(
+        &self,
+        relay: impl TryInto<Url>,
+        capabilities: &Capabilities,
+    ) -> Result<(Url, tokio::sync::oneshot::Receiver<Option<Session>>)> {
+        let mut relay: Url = relay
+            .try_into()
+            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+
+        let (pubkyauth_url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
+
+        let (tx, rx) = oneshot::channel::<Option<Session>>();
+
+        let this = self.clone();
+
+        tokio::spawn(async move {
+            let to_send = this
+                .subscribe_to_auth_response(relay, &client_secret)
+                .await?;
+
+            tx.send(to_send)
+                .map_err(|_| Error::Generic("Failed to send the session after signing in with token, since the receiver is dropped".into()))?;
+
+            Ok::<(), Error>(())
+        });
+
+        Ok((pubkyauth_url, rx))
+    }
+
+    /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
+    /// source of the pubkyauth request url.
+    pub async fn send_auth_token<T: TryInto<Url>>(
+        &self,
+        keypair: &Keypair,
+        pubkyauth_url: T,
+    ) -> Result<()> {
+        let url: Url = pubkyauth_url.try_into().map_err(|_| Error::InvalidUrl)?;
+
+        self.inner_send_auth_token(keypair, url).await?;
+
+        Ok(())
     }
 }
 
@@ -187,6 +246,6 @@ impl PubkyClient {
         self.http.request(method, url)
     }
 
-    pub(crate) fn store_session(&self, _: Response) {}
+    pub(crate) fn store_session(&self, _: &Response) {}
     pub(crate) fn remove_session(&self, _: &PublicKey) {}
 }

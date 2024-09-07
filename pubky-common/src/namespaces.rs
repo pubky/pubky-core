@@ -1,1 +1,1 @@
-pub const PUBKY_AUTHN: &[u8; 11] = b"PUBKY:AUTHN";
+pub const PUBKY_AUTH: &[u8; 10] = b"PUBKY:AUTH";

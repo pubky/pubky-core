@@ -21,7 +21,7 @@ impl Keypair {
         }
 
         let len = secret_key.byte_length();
-        if (len != 32) {
+        if len != 32 {
             return Err(format!("Expected secret_key to be 32 bytes, got {len}"))?;
         }
 
@@ -57,7 +57,7 @@ impl From<pkarr::Keypair> for Keypair {
 }
 
 #[wasm_bindgen]
-pub struct PublicKey(pkarr::PublicKey);
+pub struct PublicKey(pub(crate) pkarr::PublicKey);
 
 #[wasm_bindgen]
 impl PublicKey {
@@ -89,5 +89,11 @@ impl PublicKey {
 impl PublicKey {
     pub fn as_inner(&self) -> &pkarr::PublicKey {
         &self.0
+    }
+}
+
+impl From<pkarr::PublicKey> for PublicKey {
+    fn from(value: pkarr::PublicKey) -> Self {
+        PublicKey(value)
     }
 }

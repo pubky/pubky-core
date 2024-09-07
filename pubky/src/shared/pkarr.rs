@@ -132,7 +132,13 @@ impl PubkyClient {
                         continue;
                     };
                 }
+            } else {
+                break;
             }
+        }
+
+        if PublicKey::try_from(origin.as_str()).is_ok() {
+            return Err(Error::ResolveEndpoint(original_target.into()));
         }
 
         if let Some(public_key) = endpoint_public_key {
@@ -151,10 +157,23 @@ impl PubkyClient {
 
         Err(Error::ResolveEndpoint(original_target.into()))
     }
+
+    pub(crate) async fn resolve_url(&self, url: &mut Url) -> Result<()> {
+        if let Some(Ok(pubky)) = url.host_str().map(PublicKey::try_from) {
+            let Endpoint { url: x, .. } = self.resolve_endpoint(&format!("_pubky.{pubky}")).await?;
+
+            url.set_host(x.host_str())?;
+            url.set_port(x.port()).expect("should work!");
+            url.set_scheme(x.scheme()).expect("should work!");
+        };
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct Endpoint {
+    // TODO: we don't use this at all?
     pub public_key: PublicKey,
     pub url: Url,
 }

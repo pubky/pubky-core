@@ -19,9 +19,9 @@ mod root;
 fn base(state: AppState) -> Router {
     Router::new()
         .route("/", get(root::handler))
-        .route("/:pubky", put(auth::signup))
+        .route("/signup", post(auth::signup))
+        .route("/session", post(auth::signin))
         .route("/:pubky/session", get(auth::session))
-        .route("/:pubky/session", post(auth::signin))
         .route("/:pubky/session", delete(auth::signout))
         .route("/:pubky/*path", put(public::put))
         .route("/:pubky/*path", get(public::get))
