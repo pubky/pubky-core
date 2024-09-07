@@ -152,8 +152,8 @@ fn authorize(
         && session.capabilities().iter().any(|cap| {
             path.starts_with(&cap.scope[1..])
                 && cap
-                    .abilities
-                    .contains(&pubky_common::capabilities::Ability::Write)
+                    .actions
+                    .contains(&pubky_common::capabilities::Action::Write)
         })
     {
         return Ok(());

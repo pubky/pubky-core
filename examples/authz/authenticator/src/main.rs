@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     }
 
     for cap in &caps {
-        println!("    {} : {:?}", cap.scope, cap.abilities);
+        println!("    {} : {:?}", cap.scope, cap.actions);
     }
 
     // === Consent form ===
