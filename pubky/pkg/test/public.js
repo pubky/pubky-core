@@ -2,13 +2,14 @@ import test from 'tape'
 
 import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
 
+const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
+
 test('public: put/get', async (t) => {
   const client = PubkyClient.testnet();
 
   const keypair = Keypair.random();
 
-  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
-  await client.signup(keypair, homeserver);
+  await client.signup(keypair, Homeserver);
 
   const publicKey = keypair.publicKey();
 
@@ -46,8 +47,7 @@ test("not found", async (t) => {
 
   const keypair = Keypair.random();
 
-  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
-  await client.signup(keypair, homeserver);
+  await client.signup(keypair, Homeserver);
 
   const publicKey = keypair.publicKey();
 
@@ -64,8 +64,7 @@ test("unauthorized", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
-  await client.signup(keypair, homeserver)
+  await client.signup(keypair, Homeserver)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -92,8 +91,7 @@ test("forbidden", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
-  await client.signup(keypair, homeserver)
+  await client.signup(keypair, Homeserver)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -119,8 +117,7 @@ test("list", async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
-  await client.signup(keypair, homeserver)
+  await client.signup(keypair, Homeserver)
 
 
 
@@ -251,10 +248,7 @@ test('list shallow', async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  const homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
-  await client.signup(keypair, homeserver)
-
-
+  await client.signup(keypair, Homeserver)
 
   let urls = [
     `pubky://${pubky}/pub/a.com/a.txt`,

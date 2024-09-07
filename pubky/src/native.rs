@@ -118,7 +118,7 @@ impl PubkyClient {
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<()> {
+    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<Session> {
         self.inner_signup(keypair, homeserver).await
     }
 

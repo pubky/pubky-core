@@ -84,7 +84,7 @@ let session = await client.signin(keypair)
 - keypair: An instance of [Keypair](#keypair).
 
 Returns:
-- session: An instance of [Session](#session).
+- An instance of [Session](#session).
 
 #### signout
 ```js
@@ -102,8 +102,7 @@ let session = await sessionPromise;
 ```
 
 Sign in to a user's Homeserver, without access to their [Keypair](#keypair), nor even [PublicKey](#publickey),
-instead request permissions (showing the user pubkyauthUrl), and await a Session
-after the user consenting to that request.
+instead request permissions (showing the user pubkyauthUrl), and await a Session after the user consenting to that request.
 
 - relay: A URL to an [HTTP relay](https://httprelay.io/features/link/) endpoint.
 - capabilities: A list of capabilities required for the app for example `/pub/pubky.app/:rw,/pub/example.com/:r`.
@@ -112,12 +111,21 @@ Returns:
 - pubkyauthUrl: A url to show to the user to scan or paste into an Authenticator app holding the user [Keypair](#keypair)
 - sessionPromise: A promise that resolves into a [Session](#session) on success.
 
-#### session
+#### sendAuthToken
+```js
+await client.sendAuthToken(keypair, pubkyauthUrl);
+```
+Consenting to authentication or authorization according to the required capabilities in the `pubkyauthUrl` , and sign and send an auth token to the requester.
+
+- keypair: An instance of [KeyPair](#keypair)
+- pubkyauthUrl: A string `pubkyauth://` url
+
+#### session {#session-method}
 ```js
 let session = await client.session(publicKey)
 ```
 - publicKey: An instance of [PublicKey](#publickey).
-- Returns: A session object if signed in, or undefined if not.
+- Returns: A [Session](#session) object if signed in, or undefined if not.
 
 #### put
 ```js
@@ -166,7 +174,7 @@ let keypair = Keypair.fromSecretKey(secretKey)
 - Returns: A new Keypair.
 
 
-#### publicKey
+#### publicKey {#publickey-method}
 ```js
 let publicKey = keypair.publicKey()
 ```
@@ -193,6 +201,20 @@ let publicKey = PublicKey.from(string);
 let pubky = publicKey.z32();
 ```
 Returns: The z-base-32 encoded string representation of the PublicKey.
+
+### Session 
+
+#### pubky
+```js
+let pubky = session.pubky();
+```
+Returns an instance of [PublicKey](#publickey)
+
+#### capabilities
+```js
+let capabilities = session.capabilities();
+```
+Returns an array of capabilities, for example `["/pub/pubky.app/:rw"]`
 
 ### Helper functions
 

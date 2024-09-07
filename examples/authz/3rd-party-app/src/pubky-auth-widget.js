@@ -55,11 +55,18 @@ export class PubkyAuthWidget extends LitElement {
 
     let [url, promise] = this.pubkyClient.authRequest(this.relay || DEFAULT_HTTP_RELAY, this.caps);
 
-    promise.then(x => {
-      console.log({ x })
+    promise.then(session => {
+      console.log({ id: session.pubky().z32(), capabilities: session.capabilities() })
+      alert(`Successfully signed in to ${session.pubky().z32()} with capabilities: ${session.capabilities().join(",")}`)
     }).catch(e => {
       console.error(e)
     })
+
+    // let keypair = pubky.Keypair.random();
+    // const Homeserver = pubky.PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+    // this.pubkyClient.signup(keypair, Homeserver).then(() => {
+    //   this.pubkyClient.sendAuthToken(keypair, url)
+    // })
 
     this.authUrl = url
   }
@@ -106,29 +113,6 @@ export class PubkyAuthWidget extends LitElement {
 
   _switchOpen() {
     this.open = !this.open
-  }
-
-  async _onCallback(response) {
-    try {
-      // Check if the response is ok (status code 200-299)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Convert the response to an ArrayBuffer
-      const arrayBuffer = await response.arrayBuffer();
-
-      // Create a Uint8Array from the ArrayBuffer
-      const authToken = new Uint8Array(arrayBuffer);
-
-      let publicKey = await this.pubkyClient.thirdPartySignin(authToken, this.secret)
-
-      let session = await this.pubkyClient.session(publicKey);
-
-      alert(`Succssfully signed in as ${publicKey.z32()}`)
-    } catch (error) {
-      console.error('PubkyAuthWidget: Failed to read incoming AuthToken', error);
-    }
   }
 
   async _copyToClipboard() {
