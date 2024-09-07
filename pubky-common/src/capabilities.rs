@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capability {
     pub scope: String,
-    pub abilities: Vec<Ability>,
+    pub actions: Vec<Action>,
 }
 
 impl Capability {
@@ -13,13 +13,13 @@ impl Capability {
     pub fn root() -> Self {
         Capability {
             scope: "/".to_string(),
-            abilities: vec![Ability::Read, Ability::Write],
+            actions: vec![Action::Read, Action::Write],
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Ability {
+pub enum Action {
     /// Can read the scope at the specified path (GET requests).
     Read,
     /// Can write to the scope at the specified path (PUT/POST/DELETE requests).
@@ -28,24 +28,24 @@ pub enum Ability {
     Unknown(char),
 }
 
-impl From<&Ability> for char {
-    fn from(value: &Ability) -> Self {
+impl From<&Action> for char {
+    fn from(value: &Action) -> Self {
         match value {
-            Ability::Read => 'r',
-            Ability::Write => 'w',
-            Ability::Unknown(char) => char.to_owned(),
+            Action::Read => 'r',
+            Action::Write => 'w',
+            Action::Unknown(char) => char.to_owned(),
         }
     }
 }
 
-impl TryFrom<char> for Ability {
+impl TryFrom<char> for Action {
     type Error = Error;
 
     fn try_from(value: char) -> Result<Self, Error> {
         match value {
             'r' => Ok(Self::Read),
             'w' => Ok(Self::Write),
-            _ => Err(Error::InvalidAbility),
+            _ => Err(Error::InvalidAction),
         }
     }
 }
@@ -56,7 +56,7 @@ impl Display for Capability {
             f,
             "{}:{}",
             self.scope,
-            self.abilities.iter().map(char::from).collect::<String>()
+            self.actions.iter().map(char::from).collect::<String>()
         )
     }
 }
@@ -81,24 +81,24 @@ impl TryFrom<&str> for Capability {
             return Err(Error::InvalidScope);
         }
 
-        let abilities_str = value.rsplit(':').next().unwrap_or("");
+        let actions_str = value.rsplit(':').next().unwrap_or("");
 
-        let mut abilities = Vec::new();
+        let mut actions = Vec::new();
 
-        for char in abilities_str.chars() {
-            let ability = Ability::try_from(char)?;
+        for char in actions_str.chars() {
+            let ability = Action::try_from(char)?;
 
-            match abilities.binary_search_by(|element| char::from(element).cmp(&char)) {
+            match actions.binary_search_by(|element| char::from(element).cmp(&char)) {
                 Ok(_) => {}
                 Err(index) => {
-                    abilities.insert(index, ability);
+                    actions.insert(index, ability);
                 }
             }
         }
 
-        let scope = value[0..value.len() - abilities_str.len() - 1].to_string();
+        let scope = value[0..value.len() - actions_str.len() - 1].to_string();
 
-        Ok(Capability { scope, abilities })
+        Ok(Capability { scope, actions })
     }
 }
 
@@ -130,8 +130,8 @@ pub enum Error {
     InvalidScope,
     #[error("Capability: Invalid format should be <scope>:<abilities>")]
     InvalidFormat,
-    #[error("Capability: Invalid Ability")]
-    InvalidAbility,
+    #[error("Capability: Invalid Action")]
+    InvalidAction,
     #[error("Capabilities: Invalid capabilities format")]
     InvalidCapabilities,
 }
@@ -224,7 +224,7 @@ mod tests {
     fn pubky_caps() {
         let cap = Capability {
             scope: "/pub/pubky.app/".to_string(),
-            abilities: vec![Ability::Read, Ability::Write],
+            actions: vec![Action::Read, Action::Write],
         };
 
         // Read and write withing directory `/pub/pubky.app/`.
