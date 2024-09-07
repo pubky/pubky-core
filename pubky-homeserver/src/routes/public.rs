@@ -26,8 +26,8 @@ pub async fn put(
     let public_key = pubky.public_key().clone();
     let path = path.as_str();
 
-    authorize(&mut state, cookies, &public_key, path)?;
     verify(path)?;
+    authorize(&mut state, cookies, &public_key, path)?;
 
     let mut stream = body.into_data_stream();
 
@@ -134,20 +134,32 @@ pub async fn delete(
     Ok(())
 }
 
+/// Authorize write (PUT or DELETE) for Public paths.
 fn authorize(
     state: &mut AppState,
     cookies: Cookies,
     public_key: &PublicKey,
-    _: &str,
+    path: &str,
 ) -> Result<()> {
     // TODO: can we move this logic to the extractor or a layer
     // to perform this validation?
-    let _ = state
+    let session = state
         .db
         .get_session(cookies, public_key)?
         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
-    Ok(())
+    if session.pubky() == public_key
+        && session.capabilities().iter().any(|cap| {
+            path.starts_with(&cap.scope[1..])
+                && cap
+                    .actions
+                    .contains(&pubky_common::capabilities::Action::Write)
+        })
+    {
+        return Ok(());
+    }
+
+    Err(Error::with_status(StatusCode::FORBIDDEN))
 }
 
 fn verify(path: &str) -> Result<()> {

@@ -13,7 +13,7 @@ use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp}
 use crate::{
     database::tables::{
         sessions::{SessionsTable, SESSIONS_TABLE},
-        users::{User, UsersTable, USERS_TABLE},
+        users::User,
     },
     error::{Error, Result},
     extractors::Pubky,
@@ -25,13 +25,12 @@ pub async fn signup(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    pubky: Pubky,
     uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
-    signin(State(state), user_agent, cookies, pubky, uri, body).await
+    signin(State(state), user_agent, cookies, uri, body).await
 }
 
 pub async fn session(
@@ -90,21 +89,16 @@ pub async fn signin(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    pubky: Pubky,
     uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
-    let public_key = pubky.public_key();
+    let token = state.verifier.verify(&body)?;
 
-    state.verifier.verify(&body, public_key)?;
+    let public_key = token.pubky();
 
     let mut wtxn = state.db.env.write_txn()?;
-    let users: UsersTable = state
-        .db
-        .env
-        .open_database(&wtxn, Some(USERS_TABLE))?
-        .expect("Users table already created");
 
+    let users = state.db.tables.users;
     if let Some(existing) = users.get(&wtxn, public_key)? {
         users.put(&mut wtxn, public_key, &existing)?;
     } else {
@@ -119,21 +113,16 @@ pub async fn signin(
 
     let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
 
-    let sessions: SessionsTable = state
+    let session = Session::new(&token, user_agent.map(|ua| ua.to_string())).serialize();
+
+    state
         .db
-        .env
-        .open_database(&wtxn, Some(SESSIONS_TABLE))?
-        .expect("Sessions table already created");
-
-    let mut session = Session::new();
-
-    if let Some(user_agent) = user_agent {
-        session.set_user_agent(user_agent.to_string());
-    }
-
-    sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
+        .tables
+        .sessions
+        .put(&mut wtxn, &session_secret, &session)?;
 
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
+
     cookie.set_path("/");
     if *uri.scheme().unwrap_or(&Scheme::HTTP) == Scheme::HTTPS {
         cookie.set_secure(true);
@@ -145,5 +134,5 @@ pub async fn signin(
 
     wtxn.commit()?;
 
-    Ok(())
+    Ok(session)
 }

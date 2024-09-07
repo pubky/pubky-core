@@ -75,8 +75,8 @@ impl Timestamp {
         self.0.to_be_bytes()
     }
 
-    pub fn difference(&self, rhs: &Timestamp) -> u64 {
-        self.0.abs_diff(rhs.0)
+    pub fn difference(&self, rhs: &Timestamp) -> i64 {
+        (self.0 as i64) - (rhs.0 as i64)
     }
 
     pub fn into_inner(&self) -> u64 {
@@ -263,5 +263,18 @@ mod tests {
         let decoded: Timestamp = string.try_into().unwrap();
 
         assert_eq!(decoded, timestamp)
+    }
+
+    #[test]
+    fn serde() {
+        let timestamp = Timestamp::now();
+
+        let serialized = postcard::to_allocvec(&timestamp).unwrap();
+
+        assert_eq!(serialized, timestamp.to_bytes());
+
+        let deserialized: Timestamp = postcard::from_bytes(&serialized).unwrap();
+
+        assert_eq!(deserialized, timestamp);
     }
 }
