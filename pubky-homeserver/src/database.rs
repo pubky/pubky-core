@@ -1,16 +1,20 @@
 use std::fs;
+
 use std::path::Path;
 
-use heed::{types::Str, Database, Env, EnvOpenOptions, RwTxn};
+use heed::{Env, EnvOpenOptions};
 
 mod migrations;
 pub mod tables;
 
-use migrations::TABLES_COUNT;
+use tables::{Tables, TABLES_COUNT};
+
+pub const MAX_LIST_LIMIT: u16 = 100;
 
 #[derive(Debug, Clone)]
 pub struct DB {
     pub(crate) env: Env,
+    pub(crate) tables: Tables,
 }
 
 impl DB {
@@ -19,21 +23,51 @@ impl DB {
 
         let env = unsafe { EnvOpenOptions::new().max_dbs(TABLES_COUNT).open(storage) }?;
 
-        let db = DB { env };
+        let tables = migrations::run(&env)?;
 
-        db.run_migrations();
+        let db = DB { env, tables };
 
         Ok(db)
     }
+}
 
-    fn run_migrations(&self) -> anyhow::Result<()> {
-        let mut wtxn = self.env.write_txn()?;
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use pkarr::Keypair;
+    use pubky_common::timestamp::Timestamp;
 
-        migrations::create_users_table(&self.env, &mut wtxn);
-        migrations::create_sessions_table(&self.env, &mut wtxn);
+    use super::DB;
 
-        wtxn.commit()?;
+    #[tokio::test]
+    async fn entries() {
+        let storage = std::env::temp_dir()
+            .join(Timestamp::now().to_string())
+            .join("pubky");
 
-        Ok(())
+        let db = DB::open(&storage).unwrap();
+
+        let keypair = Keypair::random();
+        let path = "/pub/foo.txt";
+
+        let (tx, rx) = flume::bounded::<Bytes>(0);
+
+        let mut cloned = db.clone();
+        let cloned_keypair = keypair.clone();
+
+        let done = tokio::task::spawn_blocking(move || {
+            cloned
+                .put_entry(&cloned_keypair.public_key(), path, rx)
+                .unwrap();
+        });
+
+        tx.send(vec![1, 2, 3, 4, 5].into()).unwrap();
+        drop(tx);
+
+        done.await.unwrap();
+
+        let blob = db.get_blob(&keypair.public_key(), path).unwrap().unwrap();
+
+        assert_eq!(blob, Bytes::from(vec![1, 2, 3, 4, 5]));
     }
 }

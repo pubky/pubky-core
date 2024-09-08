@@ -1,0 +1,10 @@
+# Use testnet network (local DHT) for testing.
+testnet = false
+# Secret key (in hex) to generate the Homeserver's Keypair
+secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
+# Domain to be published in Pkarr records for this server to be accessible by.
+domain = "localhost"
+# Port for the Homeserver to listen on.
+port = 6287
+# Storage directory Defaults to <System's Data Directory>
+# storage = ""

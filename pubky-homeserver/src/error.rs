@@ -5,8 +5,6 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use pubky_common::auth::AuthnSignatureError;
-use tracing::debug;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -54,32 +52,26 @@ impl IntoResponse for Error {
 
 impl From<QueryRejection> for Error {
     fn from(error: QueryRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(error))
+        Self::new(StatusCode::BAD_REQUEST, error.into())
     }
 }
 
 impl From<ExtensionRejection> for Error {
     fn from(error: ExtensionRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(error))
+        Self::new(StatusCode::BAD_REQUEST, error.into())
     }
 }
 
 impl From<PathRejection> for Error {
     fn from(error: PathRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(error))
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(error: std::io::Error) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
+        Self::new(StatusCode::BAD_REQUEST, error.into())
     }
 }
 
 // === Pubky specific errors ===
 
-impl From<AuthnSignatureError> for Error {
-    fn from(error: AuthnSignatureError) -> Self {
+impl From<pubky_common::auth::Error> for Error {
+    fn from(error: pubky_common::auth::Error) -> Self {
         Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }
@@ -90,10 +82,40 @@ impl From<pkarr::Error> for Error {
     }
 }
 
+// === INTERNAL_SERVER_ERROR ===
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
 impl From<heed::Error> for Error {
     fn from(error: heed::Error) -> Self {
-        debug!(?error);
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
 
-        Self::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+impl From<anyhow::Error> for Error {
+    fn from(error: anyhow::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
+impl From<postcard::Error> for Error {
+    fn from(error: postcard::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
+impl From<axum::Error> for Error {
+    fn from(error: axum::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
+impl<T> From<flume::SendError<T>> for Error {
+    fn from(error: flume::SendError<T>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }

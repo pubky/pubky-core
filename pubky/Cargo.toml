@@ -2,21 +2,43 @@
 name = "pubky"
 version = "0.1.0"
 edition = "2021"
+description = "Pubky client"
+license = "MIT"
+repository = "https://github.com/pubky/pubky"
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pubky-common = { version = "0.1.0", path = "../pubky-common" }
-
-pkarr = "2.1.0"
-ureq = { version = "2.10.0", features = ["cookies"] }
 thiserror = "1.0.62"
+wasm-bindgen = "0.2.92"
 url = "2.5.2"
-flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
+bytes = "^1.7.1"
+base64 = "0.22.1"
+
+pubky-common = { version = "0.1.0", path = "../pubky-common" }
+pkarr = { workspace = true, features = ["async"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12.5", features = ["cookies", "rustls-tls"], default-features = false }
+tokio = { version = "1.37.0", features = ["full"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "0.12.5", default-features = false }
+
+js-sys = "0.3.69"
+wasm-bindgen = "0.2.92"
+wasm-bindgen-futures = "0.4.42"
 
 [dev-dependencies]
 pubky_homeserver = { path = "../pubky-homeserver" }
 tokio = "1.37.0"
 
 [features]
-async = ["flume/async"]
 
-default = ["async"]
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-g', '-O']

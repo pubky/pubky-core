@@ -1,13 +1,13 @@
 use std::{future::IntoFuture, net::SocketAddr};
 
 use anyhow::{Error, Result};
-use pubky_common::auth::AuthnVerifier;
+use pubky_common::auth::AuthVerifier;
 use tokio::{net::TcpListener, signal, task::JoinSet};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use pkarr::{
     mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PublicKey, Settings,
+    PkarrClient, PkarrClientAsync, PublicKey, Settings,
 };
 
 use crate::{config::Config, database::DB, pkarr::publish_server_packet};
@@ -21,19 +21,33 @@ pub struct Homeserver {
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
-    pub verifier: AuthnVerifier,
+    pub verifier: AuthVerifier,
     pub db: DB,
+    pub pkarr_client: PkarrClientAsync,
 }
 
 impl Homeserver {
     pub async fn start(config: Config) -> Result<Self> {
-        let public_key = config.keypair().public_key();
+        debug!(?config);
+
+        let keypair = config.keypair();
 
         let db = DB::open(&config.storage()?)?;
 
+        let pkarr_client = PkarrClient::new(Settings {
+            dht: DhtSettings {
+                bootstrap: config.bootstsrap(),
+                request_timeout: config.dht_request_timeout(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })?
+        .as_async();
+
         let state = AppState {
-            verifier: AuthnVerifier::new(public_key.clone()),
+            verifier: AuthVerifier::default(),
             db,
+            pkarr_client: pkarr_client.clone(),
         };
 
         let app = crate::routes::create_app(state);
@@ -58,18 +72,9 @@ impl Homeserver {
 
         info!("Homeserver listening on http://localhost:{port}");
 
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: config.bootstsrap(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })?
-        .as_async();
+        publish_server_packet(pkarr_client, &keypair, config.domain(), port).await?;
 
-        publish_server_packet(pkarr_client, config.keypair(), config.domain(), port).await?;
-
-        info!("Homeserver listening on pubky://{public_key}");
+        info!("Homeserver listening on pubky://{}", keypair.public_key());
 
         Ok(Self {
             tasks,
@@ -80,6 +85,8 @@ impl Homeserver {
 
     /// Test version of [Homeserver::start], using mainline Testnet, and a temporary storage.
     pub async fn start_test(testnet: &Testnet) -> Result<Self> {
+        info!("Running testnet..");
+
         Homeserver::start(Config::test(testnet)).await
     }
 
