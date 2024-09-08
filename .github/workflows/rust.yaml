@@ -73,3 +73,48 @@ jobs:
 
     - name: Run docs
       run: cargo doc --workspace --all-features --no-deps --document-private-items --verbose
+
+
+    - name: Cache mdbook installation
+      uses: actions/cache@v2
+      with:
+        path: ~/.cargo/bin/mdbook
+        key: ${{ runner.os }}-mdbook
+
+    - name: Cache mdbook-mermaid installation
+      uses: actions/cache@v2
+      with:
+        path: ~/.cargo/bin/mdbook
+        key: ${{ runner.os }}-mdbook-mermaid
+
+    - name: Install mdBook if not installed already
+      run: |
+        if [ ! -f ~/.cargo/bin/mdbook ]; then
+          cargo install mdbook
+        fi
+
+    - name: Install mdBook-mermaid if not installed already
+      run: |
+        if [ ! -f ~/.cargo/bin/mdbook-mermaid ]; then
+          cargo install mdbook-mermaid
+        fi
+
+    - name: Cache mdBook build
+      id: mdbook-build-cache
+      uses: actions/cache@v3
+      with:
+        path: ./docs/book/
+        key: ${{ runner.os }}-mdbook-${{ hashFiles('./docs/**') }}
+        restore-keys: |
+          ${{ runner.os }}-mdbook-
+
+    - name: Build the book
+      if: steps.mdbook-build-cache.outputs.cache-hit != 'true'
+      run: mdbook build ./docs/
+
+    - name: Deploy book to GitHub Pages
+      if: github.ref == 'refs/heads/main' # Deploy only when PR is merged to main
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/book/
