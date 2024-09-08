@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 pub mod config;
 mod database;
 mod error;

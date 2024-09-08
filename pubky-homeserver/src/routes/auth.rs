@@ -1,47 +1,40 @@
 use axum::{
-    extract::{Request, State},
-    http::{HeaderMap, StatusCode},
+    debug_handler,
+    extract::State,
+    http::{uri::Scheme, StatusCode, Uri},
     response::IntoResponse,
-    routing::get,
-    Router,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
 use bytes::Bytes;
-use heed::BytesEncode;
-use postcard::to_allocvec;
-use tower_cookies::{Cookie, Cookies};
+use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
-use pubky_common::{
-    crypto::{random_bytes, random_hash},
-    session::Session,
-    timestamp::Timestamp,
-};
+use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
 use crate::{
     database::tables::{
         sessions::{SessionsTable, SESSIONS_TABLE},
-        users::{User, UsersTable, USERS_TABLE},
+        users::User,
     },
     error::{Error, Result},
     extractors::Pubky,
     server::AppState,
 };
 
+#[debug_handler]
 pub async fn signup(
     State(state): State<AppState>,
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
+    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    pubky: Pubky,
+    uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
-    signin(State(state), TypedHeader(user_agent), cookies, pubky, body).await
+    signin(State(state), user_agent, cookies, uri, body).await
 }
 
 pub async fn session(
     State(state): State<AppState>,
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
     cookies: Cookies,
     pubky: Pubky,
 ) -> Result<impl IntoResponse> {
@@ -58,6 +51,7 @@ pub async fn session(
             let session = session.to_owned();
             rtxn.commit()?;
 
+            // TODO: add content-type
             return Ok(session);
         };
 
@@ -93,18 +87,18 @@ pub async fn signout(
 
 pub async fn signin(
     State(state): State<AppState>,
-    TypedHeader(user_agent): TypedHeader<UserAgent>,
+    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    pubky: Pubky,
+    uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
-    let public_key = pubky.public_key();
+    let token = state.verifier.verify(&body)?;
 
-    state.verifier.verify(&body, public_key)?;
+    let public_key = token.pubky();
 
     let mut wtxn = state.db.env.write_txn()?;
-    let users: UsersTable = state.db.env.create_database(&mut wtxn, Some(USERS_TABLE))?;
 
+    let users = state.db.tables.users;
     if let Some(existing) = users.get(&wtxn, public_key)? {
         users.put(&mut wtxn, public_key, &existing)?;
     } else {
@@ -119,22 +113,26 @@ pub async fn signin(
 
     let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
 
-    let sessions: SessionsTable = state
+    let session = Session::new(&token, user_agent.map(|ua| ua.to_string())).serialize();
+
+    state
         .db
-        .env
-        .open_database(&wtxn, Some(SESSIONS_TABLE))?
-        .expect("Sessions table already created");
+        .tables
+        .sessions
+        .put(&mut wtxn, &session_secret, &session)?;
 
-    // TODO: handle not having a user agent?
-    let mut session = Session::new();
+    let mut cookie = Cookie::new(public_key.to_string(), session_secret);
 
-    session.set_user_agent(user_agent.to_string());
+    cookie.set_path("/");
+    if *uri.scheme().unwrap_or(&Scheme::HTTP) == Scheme::HTTPS {
+        cookie.set_secure(true);
+        cookie.set_same_site(SameSite::None);
+    }
+    cookie.set_http_only(true);
 
-    sessions.put(&mut wtxn, &session_secret, &session.serialize())?;
-
-    cookies.add(Cookie::new(public_key.to_string(), session_secret));
+    cookies.add(cookie);
 
     wtxn.commit()?;
 
-    Ok(())
+    Ok(session)
 }

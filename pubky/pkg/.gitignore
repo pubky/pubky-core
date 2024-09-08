@@ -1,0 +1,6 @@
+index.cjs
+browser.js
+coverage
+node_modules
+package-lock.json
+pubky*

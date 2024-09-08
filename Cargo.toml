@@ -1,5 +1,18 @@
 [workspace]
-members = [ "pubky","pubky-*"]
+members = [
+  "pubky",
+  "pubky-*", 
+
+  "examples/authz/authenticator"
+]
 
 # See: https://github.com/rust-lang/rust/issues/90148#issuecomment-949194352
 resolver = "2"
+
+[workspace.dependencies]
+pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr", features = ["async"] }
+serde = { version = "^1.0.209", features = ["derive"] }
+
+[profile.release]
+lto = true
+opt-level = 'z'

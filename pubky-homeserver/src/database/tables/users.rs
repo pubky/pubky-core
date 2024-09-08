@@ -1,14 +1,12 @@
-use std::{borrow::Cow, time::SystemTime};
+use std::borrow::Cow;
 
 use postcard::{from_bytes, to_allocvec};
-use pubky_common::timestamp::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use heed::{types::Str, BoxedError, BytesDecode, BytesEncode, Database};
+use heed::{BoxedError, BytesDecode, BytesEncode, Database};
 use pkarr::PublicKey;
 
 extern crate alloc;
-use alloc::vec::Vec;
 
 /// PublicKey => User.
 pub type UsersTable = Database<PublicKeyCodec, User>;

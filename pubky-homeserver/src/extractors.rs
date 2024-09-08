@@ -45,3 +45,32 @@ where
         Ok(Pubky(public_key))
     }
 }
+
+pub struct EntryPath(pub(crate) String);
+
+impl EntryPath {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for EntryPath
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let params: Path<HashMap<String, String>> =
+            parts.extract().await.map_err(IntoResponse::into_response)?;
+
+        // TODO: enforce path limits like no trailing '/'
+
+        let path = params
+            .get("path")
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "entry path missing").into_response())?;
+
+        Ok(EntryPath(path.to_string()))
+    }
+}

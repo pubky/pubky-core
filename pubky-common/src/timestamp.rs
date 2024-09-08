@@ -1,7 +1,7 @@
 //! Monotonic unix timestamp in microseconds
 
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use std::time::SystemTime;
 use std::{
     ops::{Add, Sub},
     sync::Mutex,
@@ -9,6 +9,9 @@ use std::{
 
 use once_cell::sync::Lazy;
 use rand::Rng;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::SystemTime;
 
 /// ~4% chance of none of 10 clocks have matching id.
 const CLOCK_MASK: u64 = (1 << 8) - 1;
@@ -72,12 +75,18 @@ impl Timestamp {
         self.0.to_be_bytes()
     }
 
-    pub fn difference(&self, rhs: &Timestamp) -> u64 {
-        self.0.abs_diff(rhs.0)
+    pub fn difference(&self, rhs: &Timestamp) -> i64 {
+        (self.0 as i64) - (rhs.0 as i64)
     }
 
     pub fn into_inner(&self) -> u64 {
         self.0
+    }
+}
+
+impl Default for Timestamp {
+    fn default() -> Self {
+        Timestamp::now()
     }
 }
 
@@ -153,6 +162,26 @@ impl Sub<u64> for &Timestamp {
     }
 }
 
+impl Serialize for Timestamp {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        bytes.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: [u8; 8] = Deserialize::deserialize(deserializer)?;
+        Ok(Timestamp(u64::from_be_bytes(bytes)))
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 /// Return the number of microseconds since [SystemTime::UNIX_EPOCH]
 fn system_time() -> u64 {
@@ -160,6 +189,15 @@ fn system_time() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("time drift")
         .as_micros() as u64
+}
+
+#[cfg(target_arch = "wasm32")]
+/// Return the number of microseconds since [SystemTime::UNIX_EPOCH]
+pub fn system_time() -> u64 {
+    // Won't be an issue for more than 5000 years!
+    (js_sys::Date::now() as u64 )
+    // Turn miliseconds to microseconds
+    * 1000
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -225,5 +263,18 @@ mod tests {
         let decoded: Timestamp = string.try_into().unwrap();
 
         assert_eq!(decoded, timestamp)
+    }
+
+    #[test]
+    fn serde() {
+        let timestamp = Timestamp::now();
+
+        let serialized = postcard::to_allocvec(&timestamp).unwrap();
+
+        assert_eq!(serialized, timestamp.to_bytes());
+
+        let deserialized: Timestamp = postcard::from_bytes(&serialized).unwrap();
+
+        assert_eq!(deserialized, timestamp);
     }
 }
