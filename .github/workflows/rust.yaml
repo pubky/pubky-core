@@ -73,3 +73,21 @@ jobs:
 
     - name: Run docs
       run: cargo doc --workspace --all-features --no-deps --document-private-items --verbose
+
+    - name: Install mdBook and mdBook-Mermaid
+      run: |
+        cargo install mdbook
+        cargo install mdbook-mermaid
+        mdbook-mermaid install ./docs/
+
+    - name: Cache mdBook build
+      id: cache-mdbook
+      uses: actions/cache@v3
+      with:
+        path: path/to/your/book/book-output
+        key: ${{ runner.os }}-mdbook-${{ hashFiles('path/to/your/book/**') }}
+        restore-keys: |
+          ${{ runner.os }}-mdbook-
+
+    - name: Build the book
+      run: mdbook build /docs/
