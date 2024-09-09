@@ -1,0 +1,356 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Pubky</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="overview.html"><strong aria-hidden="true">1.</strong> Overview</a></li><li class="chapter-item expanded "><a href="concepts/index.html"><strong aria-hidden="true">2.</strong> Concepts</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="concepts/rootkey.html"><strong aria-hidden="true">2.1.</strong> Root key</a></li><li class="chapter-item expanded "><a href="concepts/homeserver.html"><strong aria-hidden="true">2.2.</strong> Homeserver</a></li></ol></li><li class="chapter-item expanded "><a href="spec/index.html"><strong aria-hidden="true">3.</strong> Specifications</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="spec/auth.html"><strong aria-hidden="true">3.1.</strong> Auth</a></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Pubky</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="overview"><a class="header" href="#overview">Overview</a></h1>
+<p>This book is an iterative documentation of concepts, user guides and specifications for Pubky.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="concepts"><a class="header" href="#concepts">Concepts</a></h1>
+<ul>
+<li><a href="concepts/./rootkey.html">Root key</a></li>
+<li><a href="concepts/./homeserver.html">Homeserver</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="root-key"><a class="header" href="#root-key">Root key</a></h1>
+<p>A Root key is an Ed25519 public key, that represents the root of an identity in Pubky.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="homeserver"><a class="header" href="#homeserver">Homeserver</a></h1>
+<p>A Homeserver is the agent that acts on behalf of the user in most interactions in Pubky,
+and offers:</p>
+<ol>
+<li>Data availability</li>
+<li>Access control</li>
+</ol>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="specifications"><a class="header" href="#specifications">Specifications</a></h1>
+<p>Detail specifications of various aspects of the protocol.</p>
+<ul>
+<li><a href="spec/./auth.html">Auth</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="pubky-auth"><a class="header" href="#pubky-auth">Pubky Auth</a></h1>
+<p>Pubky Auth is a protocol for using user's <a href="spec/../concepts/rootkey.html">root key</a>,
+to authenticate themselves to a 3rd party app, and or authorize that app to access
+resources on the user's <a href="spec/../concepts/homeserver.html">Homeserver</a>.</p>
+<h3 id="glossary"><a class="header" href="#glossary">glossary</a></h3>
+<ol>
+<li><strong>Authenticator</strong>: an application holding the Keypair used in authentication.</li>
+<li><strong>Pubky</strong>: the public key (pubky) identifying the user.</li>
+<li><strong>Homeserver</strong>: the public key (pubky) identifying the receiver of the authentication request, usually a server.</li>
+<li><strong>3rd Party App</strong>: an application trying to get authorized to access some resources belonging to the <strong>Pubky</strong>.</li>
+<li><strong>Capabilities</strong>: a list of strings specifying scopes and the actions that can be performed on them.</li>
+<li><strong>HTTP relay</strong>: an independent HTTP relay (or the backend of the 3rd Party App) forwarding the AuthToken to the frontend.</li>
+</ol>
+<h2 id="flow"><a class="header" href="#flow">Flow</a></h2>
+<pre class="mermaid">sequenceDiagram
+    participant User
+    participant Authenticator
+    participant 3rd Party App 
+    participant HTTP Relay
+    participant Homeserver
+
+    autonumber
+    
+    3rd Party App --&gt;&gt;3rd Party App : Generate a unique secret
+    3rd Party App -&gt;&gt;+HTTP Relay: Subscribe
+    note over 3rd Party App ,HTTP Relay: channel Id = hash(client secret)
+    3rd Party App -&gt;&gt;Authenticator: Show QR code
+    note over 3rd Party App ,Authenticator: required Capabilities,&lt;br/&gt;relay url, and client secret
+    Authenticator--&gt;&gt;User: Display consent form
+    User --&gt;&gt;Authenticator: Confirm consent
+    Authenticator--&gt;&gt;Authenticator: Sign AuthToken &amp; encrypt with client secret
+    Authenticator-&gt;&gt;HTTP Relay: Send encrypted AuthToken
+    note over Authenticator ,HTTP Relay: channel Id = hash(client secret)
+    HTTP Relay-&gt;&gt;3rd Party App : Forward Encrypted AuthToken
+    HTTP Relay-&gt;&gt;-Authenticator: Ok
+    3rd Party App --&gt;&gt;3rd Party App : Decrypt AuthToken &amp; Resolve user's homeserver
+    3rd Party App -&gt;&gt;+Homeserver: Send AuthToken
+    Homeserver--&gt;&gt;Homeserver: Verify AuthToken
+    Homeserver-&gt;&gt;-3rd Party App : Return SessionId
+    3rd Party App -&gt;&gt;+Homeserver: Request resources
+    Homeserver--&gt;&gt;Homeserver: Check Session capabilities
+    Homeserver -&gt;&gt;-3rd Party App: Ok
+</pre>
+<ol>
+<li><code>3rd Party App</code> generates a unique (32 bytes) <code>cleint_secret</code>.</li>
+<li><code>3rd Party App</code> uses the <code>base64url(hash(client_secret))</code> as a <code>channlen_id</code> and subscribe to that channel on the <code>HTTP Relay</code> it is using.</li>
+<li><code>3rd Party App</code> formats a Pubky Auth url</li>
+</ol>
+<pre><code>pubkyauth:///
+   ?relay=&lt;HTTP Relay base (without channel_id)&gt;
+   &amp;caps=&lt;required capabilities&gt;
+   &amp;secret=&lt;base64url(client_secret)&gt;
+</code></pre>
+<p>for example</p>
+<pre><code>pubkyauth:///
+ ?relay=https://demo.httprelay.io/link
+ &amp;caps=/pub/pubky.app/:rw,/pub/example.com/nested:rw
+ &amp;secret=mAa8kGmlrynGzQLteDVW6-WeUGnfvHTpEmbNerbWfPI
+</code></pre>
+<p>and finally show that URL as a QR code to the user.
+4. The <code>Authenticator</code> app scans that QR code, parse the URL, and show a consent form for the user..
+5. The user decides whether or not to grant these capabilities to the <code>3rd Party App</code>.
+6. If the user approves, the <code>Authenticator</code> then uses their Keypair, to sign an <a href="spec/auth.html#authtoken">AuthToken</a>, then encrypt that token with the <code>client_secret</code>, then calculate the <code>channel_id</code> by hashing that secret, and send that encrypted token to the callback url, which is the <code>relay</code> + <code>channel_id</code>.
+7. <code>HTTP Relay</code> forwards the encrypted AuthToken to the <code>3rd Party App</code> frontend.
+8. And confirms the delivery with the <code>Authenticator</code>
+9. <code>3rd Party App</code> decrypts the AuthToken using its <code>client_secret</code>, read the <code>pubky</code> in it, and send it to their <code>homeserver</code> to obtain a session.
+10. <code>Homeserver</code> verifies the session and stores the corresponding <code>capabilities</code>.
+11. <code>Homeserver</code> returns a session Id to the frontend to use in subsequent requests.
+12. <code>3rd Party App</code> uses the session Id to access some resource at the Homeserver.
+13. <code>Homeserver</code> checks the session capabilities to see if it is allowed to access that resource.
+14. <code>Homeserver</code> responds to the <code>3rd Party App</code> with the resource.</p>
+<h2 id="authtoken-encoding"><a class="header" href="#authtoken-encoding">AuthToken encoding</a></h2>
+<pre><code class="language-abnf">```abnf
+AuthToken   = signature namespace version timestamp pubky capabilities
+
+signature      = 64OCTET ; ed25519 signature over encoded DNS packet
+namespace      = %x50.55.42.4b.59.3a.41.55.54.48 ; "PUBKY:AUTH" in UTF-8 (10 bytes)
+version        = 1*OCTET ; Version of the AuthToken for future proofing.
+timestamp      = 8OCTET ; Big-endian UNIX timestamp in microseconds
+pubky          = 32OCTET ; ed25519 public key of the user
+capabilities   = *(capability *( "," capability ))
+
+capability     = scope ":" actions ; Formatted as `/path/to/resource:rw`
+
+scope          = absolute-path ; Absolute path, see RFC 3986
+absolute-path  = 1*( "/" segment )
+segment        = &lt;segment, see [URI], Section 3.3&gt;
+
+actions      = 1*action
+action        = "r" / "w" ; Read or write (more actions can be specified later)
+</code></pre>
+<h2 id="authtoken-verification"><a class="header" href="#authtoken-verification">AuthToken verification</a></h2>
+<p>To verify a token, the <code>homeserver</code> should:</p>
+<ol>
+<li>Check the 75th byte (version) and make sure it is <code>0</code> for this spec.</li>
+<li>Deserialize the token</li>
+<li>Verify that the <code>timestamp</code> is within a window from the local time, the default should be 45 seconds in the past, and 45 seconds in the future to handle latency and drifts.</li>
+<li>Verify that the <code>pubky</code> is the signer of the <code>signature</code> over the rest of the serialized token after the signature (<code>serialized_token[65..]</code>).</li>
+<li>To avoid reuse of the token, the <code>homeserver</code> should consider the <code>timestamp</code> and <code>pubky</code>  (<code>serialized_token[75..115]</code>) as a unique sortable ID, and store it in a sortable key value store, rejecting any token that has that same ID, and removing all IDs that start with a timestamp that is older than the window mentioned in step 4.</li>
+</ol>
+<h2 id="unhosted"><a class="header" href="#unhosted">Unhosted</a></h2>
+<p>Callback URLs work fine for full-stack applications, but there are many cases where you would want to develop and application without a backend, yet you still would like to let users sign in and bring their own backend, that is not a new concept, in fact <a href="https://unhosted.org/">unhosted</a> applications is one of the main reasons we are developing Homeservers.</p>
+<p>These applications will still need some <a href="https://httprelay.io/">relay</a> to receive the <code>AuthToken</code> through when the <code>Authenticator</code> sends it to the callback URL, but since the <code>AuthToken</code> is a bearer token, these relays can intercept it and use it before the unhosted app.</p>
+<p>That is why we need to encrypt the <code>AuthToken</code> with a key that the relay doesn't have access to, and only shared between the app and the <code>Authenticator</code></p>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<h3 id="no-delegation"><a class="header" href="#no-delegation">No delegation</a></h3>
+<p>In version zero, the <code>pubky</code> IS the <code>issuer</code>, meaning that the <code>AuthToken</code> is signed by the same key of the <code>pubky</code>. This is to simplify the spec, until we have a reason to keep the <code>issuer</code> keys even more secure than being in a mobile app used rarely to authenticate a browser session once in a while.</p>
+<p>Having an <code>issuer</code> that isn't exactly the <code>pubky</code> means the <code>issuer</code> themselves need a certificate of delegation signed by the <code>pubky</code>. The problem with that, is that you can either lookup that certificate on the Homeserver (making the verification process async and possibly taking too long to timeout) or do what most TLS apps do right now, and send the certificates chain with the token, but then you have to deal with the eternal problem of revocation, which basically also forces you to go lookup somewhere making the the verification process async and possibly taking too long to timeout.</p>
+<h3 id="expiration-is-out-of-scope"><a class="header" href="#expiration-is-out-of-scope">Expiration is out of scope</a></h3>
+<p>While the token itself can only be used for very brief period, it is immediately exchanged for another authentication mechanism (usually a session ID) and deciding the expiration date of that authentication, if any, is out of the scope of this spec.</p>
+<p>The assumption here is that we are authorizing a session to the Homeserver, so the user can always access all active sessions and revoke any session that they don't like, from the <code>Authenticator</code> app.</p>
+<p>Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is a JWT or a Session with or without expiration and are free to allow the user to manage sessions the way they see fit.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="mermaid.min.js"></script>
+        <script src="mermaid-init.js"></script>
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+    </div>
+    </body>
+</html>
