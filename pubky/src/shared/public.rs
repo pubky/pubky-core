@@ -765,4 +765,37 @@ mod tests {
         let get = client.get(url.as_str()).await.unwrap();
         dbg!(get);
     }
+
+    #[tokio::test]
+    async fn dont_delete_shared_blobs() {
+        let testnet = Testnet::new(10);
+        let homeserver = Homeserver::start_test(&testnet).await.unwrap();
+        let client = PubkyClient::test(&testnet);
+
+        // Step 1: Create first user (follower)
+        let keypair = Keypair::random();
+
+        let user_id = keypair.public_key().to_z32();
+        client
+            .signup(&keypair, &homeserver.public_key())
+            .await
+            .unwrap();
+
+        // Both files are identical, leads to error
+        let file_1 = vec![1];
+        let file_2 = vec![1];
+
+        let url_1 = format!("pubky://{}/pub/pubky.app/file/file_1", user_id);
+        let url_2 = format!("pubky://{}/pub/pubky.app/file/file_1", user_id);
+
+        client.put(url_1.as_str(), &file_1).await.unwrap();
+        client.put(url_2.as_str(), &file_2).await.unwrap();
+
+        // Delete file 1
+        client.delete(url_1.as_str()).await.unwrap();
+
+        let blob = client.get(url_2.as_str()).await.unwrap().unwrap();
+
+        assert_eq!(blob, vec![1])
+    }
 }
