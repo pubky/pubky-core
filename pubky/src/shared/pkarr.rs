@@ -1,7 +1,10 @@
 use url::Url;
 
 use pkarr::{
-    dns::{rdata::SVCB, Packet},
+    dns::{
+        rdata::{HTTPS, SVCB},
+        Name, Packet,
+    },
     Keypair, PublicKey, SignedPacket,
 };
 
@@ -19,7 +22,9 @@ impl PubkyClient {
         keypair: &Keypair,
         host: &str,
     ) -> Result<()> {
-        let existing = self.pkarr_resolve(&keypair.public_key()).await?;
+        let pubky = keypair.public_key();
+
+        let existing = self.pkarr_resolve(&pubky).await?;
 
         let mut packet = Packet::new_reply(0);
 
@@ -38,6 +43,26 @@ impl PubkyClient {
             pkarr::dns::CLASS::IN,
             60 * 60,
             pkarr::dns::rdata::RData::SVCB(svcb),
+        ));
+
+        let user_account = format!("{pubky}.{host}");
+
+        let https = HTTPS(SVCB::new(0, user_account.as_str().try_into()?));
+
+        packet.answers.push(pkarr::dns::ResourceRecord::new(
+            "pubky".try_into().unwrap(),
+            pkarr::dns::CLASS::IN,
+            60 * 60,
+            pkarr::dns::rdata::RData::HTTPS(https),
+        ));
+
+        let https = HTTPS(SVCB::new(0, "pubky.".try_into()?));
+
+        packet.answers.push(pkarr::dns::ResourceRecord::new(
+            ".".try_into().unwrap(),
+            pkarr::dns::CLASS::IN,
+            60 * 60,
+            pkarr::dns::rdata::RData::HTTPS(https),
         ));
 
         let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
@@ -169,6 +194,94 @@ impl PubkyClient {
 
         Ok(())
     }
+
+    pub(crate) fn resolve_target(&self, target: &str) -> Result<Endpoint2> {
+        // TODO: cache the result of this function?
+
+        let mut step = 0;
+        let mut svcb: Option<Endpoint2> = None;
+
+        loop {
+            let current = svcb.clone().map_or(target.to_string(), |s| s.target);
+            if let Ok(tld) = PublicKey::try_from(current.clone()) {
+                if let Ok(Some(signed_packet)) = self.pkarr.resolve(&tld) {
+                    if step >= MAX_ENDPOINT_RESOLUTION_RECURSION {
+                        break;
+                    };
+                    step += 1;
+
+                    // Choose most prior SVCB record
+                    svcb = getx(&signed_packet, &current);
+
+                    // Try wildcards
+                    if svcb.is_none() {
+                        let parts: Vec<&str> = current.split('.').collect();
+
+                        for i in 1..parts.len() {
+                            let xx = format!("*.{}", parts[i..].join("."));
+
+                            svcb = getx(&signed_packet, &xx);
+
+                            if svcb.is_some() {
+                                break;
+                            }
+                        }
+                    }
+
+                    if step >= MAX_ENDPOINT_RESOLUTION_RECURSION {
+                        break;
+                    };
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        if let Some(svcb) = svcb {
+            if PublicKey::try_from(svcb.target.as_str()).is_err() {
+                return Ok(svcb.clone());
+            }
+        }
+
+        Err(Error::ResolveEndpoint(target.into()))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Endpoint2 {
+    target: String,
+}
+
+fn getx(signed_packet: &SignedPacket, target: &str) -> Option<Endpoint2> {
+    signed_packet
+        .resource_records(target)
+        .fold(None, |prev: Option<SVCB>, answer| {
+            if let Some(svcb) = match &answer.rdata {
+                pkarr::dns::rdata::RData::SVCB(svcb) => Some(svcb),
+                pkarr::dns::rdata::RData::HTTPS(curr) => Some(&curr.0),
+                _ => None,
+            } {
+                let curr = svcb.clone();
+
+                if curr.priority == 0 {
+                    return Some(curr);
+                }
+                if let Some(prev) = &prev {
+                    if curr.priority >= prev.priority {
+                        return Some(curr);
+                    }
+                } else {
+                    return Some(curr);
+                }
+            }
+
+            prev
+        })
+        .map(|s| Endpoint2 {
+            target: s.target.to_string(),
+        })
 }
 
 #[derive(Debug)]
@@ -335,5 +448,98 @@ mod tests {
             assert_eq!(url.host_str(), Some("localhost"));
             assert_eq!(url.port(), Some(server.port()));
         }
+    }
+
+    #[tokio::test]
+    async fn resolve_endpoint_wildcard() {
+        let testnet = Testnet::new(10);
+
+        let pkarr_client = PkarrClient::new(Settings {
+            dht: DhtSettings {
+                bootstrap: Some(testnet.bootstrap.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .unwrap()
+        .as_async();
+
+        let domain = "example.com";
+        let target;
+        let mut prev;
+
+        // Server
+        {
+            let keypair = Keypair::random();
+            dbg!(keypair.public_key());
+
+            let https = HTTPS(SVCB::new(0, domain.try_into().unwrap()));
+
+            let mut packet = Packet::new_reply(0);
+
+            packet.answers.push(pkarr::dns::ResourceRecord::new(
+                ".".try_into().unwrap(),
+                pkarr::dns::CLASS::IN,
+                60 * 60,
+                pkarr::dns::rdata::RData::HTTPS(https),
+            ));
+
+            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+            pkarr_client.publish(&signed_packet).await.unwrap();
+
+            prev = keypair.public_key();
+        }
+
+        // intermediate
+        {
+            let keypair = Keypair::random();
+
+            let domain = prev.to_string();
+            let https = HTTPS(SVCB::new(0, domain.as_str().try_into().unwrap()));
+
+            let mut packet = Packet::new_reply(0);
+
+            packet.answers.push(pkarr::dns::ResourceRecord::new(
+                "*.homeserver".try_into().unwrap(),
+                pkarr::dns::CLASS::IN,
+                60 * 60,
+                pkarr::dns::rdata::RData::HTTPS(https),
+            ));
+
+            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+            pkarr_client.publish(&signed_packet).await.unwrap();
+
+            prev = keypair.public_key()
+        }
+
+        {
+            let keypair = Keypair::random();
+
+            let domain = format!("{}.homeserver.{}", keypair.public_key(), prev);
+            let https = HTTPS(SVCB::new(0, domain.as_str().try_into().unwrap()));
+
+            let mut packet = Packet::new_reply(0);
+
+            packet.answers.push(pkarr::dns::ResourceRecord::new(
+                "pubky".try_into().unwrap(),
+                pkarr::dns::CLASS::IN,
+                60 * 60,
+                pkarr::dns::rdata::RData::HTTPS(https),
+            ));
+
+            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+            pkarr_client.publish(&signed_packet).await.unwrap();
+
+            target = format!("pubky.{}", keypair.public_key())
+        }
+
+        let client = PubkyClient::test(&testnet);
+
+        let endpoint = client.resolve_target(&target).unwrap();
+
+        assert_eq!(endpoint.target, domain);
     }
 }
