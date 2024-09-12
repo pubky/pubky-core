@@ -26,7 +26,7 @@ impl DB {
             self.tables
                 .blobs
                 .get(&rtxn, entry.content_hash())?
-                .map(|blob| bytes::Bytes::from(blob.to_vec()))
+                .map(|blob| bytes::Bytes::from(blob[8..].to_vec()))
         } else {
             None
         };
