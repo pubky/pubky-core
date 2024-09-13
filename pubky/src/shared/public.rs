@@ -772,30 +772,53 @@ mod tests {
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
         let client = PubkyClient::test(&testnet);
 
-        // Step 1: Create first user (follower)
-        let keypair = Keypair::random();
+        let homeserver_pubky = homeserver.public_key();
 
-        let user_id = keypair.public_key().to_z32();
-        client
-            .signup(&keypair, &homeserver.public_key())
-            .await
-            .unwrap();
+        let user_1 = Keypair::random();
+        let user_2 = Keypair::random();
 
-        // Both files are identical, leads to error
-        let file_1 = vec![1];
-        let file_2 = vec![1];
+        client.signup(&user_1, &homeserver_pubky).await.unwrap();
+        client.signup(&user_2, &homeserver_pubky).await.unwrap();
 
-        let url_1 = format!("pubky://{}/pub/pubky.app/file/file_1", user_id);
-        let url_2 = format!("pubky://{}/pub/pubky.app/file/file_1", user_id);
+        let user_1_id = user_1.public_key();
+        let user_2_id = user_2.public_key();
 
-        client.put(url_1.as_str(), &file_1).await.unwrap();
-        client.put(url_2.as_str(), &file_2).await.unwrap();
+        let url_1 = format!("pubky://{user_1_id}/pub/pubky.app/file/file_1");
+        let url_2 = format!("pubky://{user_2_id}/pub/pubky.app/file/file_1");
+
+        let file = vec![1];
+        client.put(url_1.as_str(), &file).await.unwrap();
+        client.put(url_2.as_str(), &file).await.unwrap();
 
         // Delete file 1
         client.delete(url_1.as_str()).await.unwrap();
 
         let blob = client.get(url_2.as_str()).await.unwrap().unwrap();
 
-        assert_eq!(blob, vec![1])
+        assert_eq!(blob, file);
+
+        let feed_url = format!("http://localhost:{}/events/", homeserver.port());
+
+        let response = client
+            .request(
+                Method::GET,
+                format!("{feed_url}").as_str().try_into().unwrap(),
+            )
+            .send()
+            .await
+            .unwrap();
+
+        let text = response.text().await.unwrap();
+        let lines = text.split('\n').collect::<Vec<_>>();
+
+        assert_eq!(
+            lines,
+            vec![
+                format!("PUT pubky://{user_1_id}/pub/pubky.app/file/file_1",),
+                format!("PUT pubky://{user_2_id}/pub/pubky.app/file/file_1",),
+                format!("DEL pubky://{user_1_id}/pub/pubky.app/file/file_1",),
+                lines.last().unwrap().to_string()
+            ]
+        )
     }
 }
