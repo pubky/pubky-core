@@ -43,7 +43,26 @@ impl DB {
 
         let hash = hasher.finalize();
 
-        self.tables.blobs.put(&mut wtxn, hash.as_bytes(), &bytes)?;
+        let key = hash.as_bytes();
+
+        let mut bytes_with_ref_count = Vec::with_capacity(bytes.len() + 8);
+        bytes_with_ref_count.extend_from_slice(&u64::to_be_bytes(0));
+        bytes_with_ref_count.extend_from_slice(&bytes);
+
+        // TODO: For now, we set the first 8 bytes to a reference counter
+        let exists = self
+            .tables
+            .blobs
+            .get(&wtxn, key)?
+            .unwrap_or(bytes_with_ref_count.as_slice());
+
+        let new_count = u64::from_be_bytes(exists[0..8].try_into().unwrap()) + 1;
+
+        bytes_with_ref_count[0..8].copy_from_slice(&u64::to_be_bytes(new_count));
+
+        self.tables
+            .blobs
+            .put(&mut wtxn, hash.as_bytes(), &bytes_with_ref_count)?;
 
         let mut entry = Entry::new();
 
@@ -82,8 +101,28 @@ impl DB {
         let deleted = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
             let entry = Entry::deserialize(bytes)?;
 
-            // TODO: reference counting of blobs
-            let deleted_blobs = self.tables.blobs.delete(&mut wtxn, entry.content_hash())?;
+            let mut bytes_with_ref_count = self
+                .tables
+                .blobs
+                .get(&wtxn, entry.content_hash())?
+                .map_or(vec![], |s| s.to_vec());
+
+            let arr: [u8; 8] = bytes_with_ref_count[0..8].try_into().unwrap_or([0; 8]);
+            let reference_count = u64::from_be_bytes(arr);
+
+            let deleted_blobs = if reference_count > 1 {
+                // decrement reference count
+
+                bytes_with_ref_count[0..8].copy_from_slice(&(reference_count - 1).to_be_bytes());
+
+                self.tables
+                    .blobs
+                    .put(&mut wtxn, entry.content_hash(), &bytes_with_ref_count)?;
+
+                true
+            } else {
+                self.tables.blobs.delete(&mut wtxn, entry.content_hash())?
+            };
 
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
 
@@ -102,7 +141,7 @@ impl DB {
                 // TODO: move to events.rs
             }
 
-            deleted_entry & deleted_blobs
+            deleted_entry && deleted_blobs
         } else {
             false
         };
