@@ -110,7 +110,7 @@ impl DB {
             let arr: [u8; 8] = bytes_with_ref_count[0..8].try_into().unwrap_or([0; 8]);
             let reference_count = u64::from_be_bytes(arr);
 
-            if reference_count > 1 {
+            let deleted_blobs = if reference_count > 1 {
                 // decrement reference count
 
                 bytes_with_ref_count[0..8].copy_from_slice(&(reference_count - 1).to_be_bytes());
@@ -119,13 +119,10 @@ impl DB {
                     .blobs
                     .put(&mut wtxn, entry.content_hash(), &bytes_with_ref_count)?;
 
-                let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
-
-                return Ok(deleted_entry);
-            }
-
-            // TODO: reference counting of blobs
-            let deleted_blobs = self.tables.blobs.delete(&mut wtxn, entry.content_hash())?;
+                true
+            } else {
+                self.tables.blobs.delete(&mut wtxn, entry.content_hash())?
+            };
 
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
 
@@ -144,7 +141,7 @@ impl DB {
                 // TODO: move to events.rs
             }
 
-            deleted_entry & deleted_blobs
+            deleted_entry && deleted_blobs
         } else {
             false
         };
