@@ -1,4 +1,4 @@
-//! Monotonic unix timestamp in microseconds
+//! Strictly monotonic unix timestamp in microseconds
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -31,7 +31,7 @@ impl TimestampFactory {
     }
 
     pub fn now(&mut self) -> Timestamp {
-        // Ensure monotonicity.
+        // Ensure strict monotonicity.
         self.last_time = (system_time() & TIME_MASK).max(self.last_time + CLOCK_MASK + 1);
 
         // Add clock_id to the end of the timestamp
@@ -48,13 +48,13 @@ impl Default for TimestampFactory {
 static DEFAULT_FACTORY: Lazy<Mutex<TimestampFactory>> =
     Lazy::new(|| Mutex::new(TimestampFactory::default()));
 
-/// Monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64.
+/// STrictly monotonic timestamp since [SystemTime::UNIX_EPOCH] in microseconds as u64.
 ///
 /// The purpose of this timestamp is to unique per "user", not globally,
 /// it achieves this by:
 ///     1. Override the last byte with a random `clock_id`, reducing the probability
 ///         of two matching timestamps across multiple machines/threads.
-///     2. Gurantee that the remaining 3 bytes are ever increasing (monotonic) within
+///     2. Gurantee that the remaining 3 bytes are ever increasing (strictly monotonic) within
 ///         the same thread regardless of the wall clock value
 ///
 /// This timestamp is also serialized as BE bytes to remain sortable.
@@ -215,7 +215,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn monotonic() {
+    fn strictly_monotonic() {
         const COUNT: usize = 100;
 
         let mut set = HashSet::with_capacity(COUNT);
