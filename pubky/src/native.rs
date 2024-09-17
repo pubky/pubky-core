@@ -184,14 +184,14 @@ impl PubkyClient {
         &self,
         relay: impl TryInto<Url>,
         capabilities: &Capabilities,
-    ) -> Result<(Url, tokio::sync::oneshot::Receiver<Option<Session>>)> {
+    ) -> Result<(Url, tokio::sync::oneshot::Receiver<PublicKey>)> {
         let mut relay: Url = relay
             .try_into()
             .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
 
         let (pubkyauth_url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
 
-        let (tx, rx) = oneshot::channel::<Option<Session>>();
+        let (tx, rx) = oneshot::channel::<PublicKey>();
 
         let this = self.clone();
 

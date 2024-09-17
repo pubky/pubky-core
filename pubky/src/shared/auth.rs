@@ -212,18 +212,17 @@ impl PubkyClient {
         &self,
         relay: Url,
         client_secret: &[u8; 32],
-    ) -> Result<Option<Session>> {
+    ) -> Result<PublicKey> {
         let response = self.http.request(Method::GET, relay).send().await?;
         let encrypted_token = response.bytes().await?;
         let token_bytes = decrypt(&encrypted_token, client_secret)?;
         let token = AuthToken::verify(&token_bytes)?;
 
-        if token.capabilities().is_empty() {
-            Ok(None)
-        } else {
-            let session = self.signin_with_authtoken(&token).await?;
-            Ok(Some(session))
+        if !token.capabilities().is_empty() {
+            self.signin_with_authtoken(&token).await?;
         }
+
+        Ok(token.pubky().clone())
     }
 }
 

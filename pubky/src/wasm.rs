@@ -81,7 +81,7 @@ impl PubkyClient {
         Ok(Session(
             self.inner_signup(keypair.as_inner(), homeserver.as_inner())
                 .await
-                .map_err(|e| JsValue::from(e))?,
+                .map_err(JsValue::from)?,
         ))
     }
 
@@ -135,12 +135,7 @@ impl PubkyClient {
         let future = async move {
             this.subscribe_to_auth_response(relay, &client_secret)
                 .await
-                .map(|opt| {
-                    opt.map_or_else(
-                        || JsValue::NULL, // Convert `None` to `JsValue::NULL`
-                        |session| JsValue::from(Session(session)),
-                    )
-                })
+                .map(|pubky| JsValue::from(PublicKey(pubky)))
                 .map_err(|err| JsValue::from_str(&format!("{:?}", err)))
         };
 

@@ -98,7 +98,7 @@ let [pubkyauthUrl, sessionPromise] = client.authRequest(relay, capabilities);
 
 showQr(pubkyauthUrl);
 
-let session = await sessionPromise;
+let pubky = await sessionPromise;
 ```
 
 Sign in to a user's Homeserver, without access to their [Keypair](#keypair), nor even [PublicKey](#publickey),
@@ -109,7 +109,7 @@ instead request permissions (showing the user pubkyauthUrl), and await a Session
 
 Returns: 
 - pubkyauthUrl: A url to show to the user to scan or paste into an Authenticator app holding the user [Keypair](#keypair)
-- sessionPromise: A promise that resolves into a [Session](#session) on success.
+- sessionPromise: A promise that resolves into a [PublicKey](#publickey) on success, which you can use in `client.session(pubky)` to resolve more information about the Session.
 
 #### sendAuthToken
 ```js

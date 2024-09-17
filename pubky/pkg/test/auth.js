@@ -56,8 +56,10 @@ test("3rd party signin", async (t) => {
     await client.sendAuthToken(keypair, pubkyauth_url)
   }
 
-  let session = await pubkyauthResponse;
+  let authedPubky = await pubkyauthResponse;
 
-  t.is(session.pubky().z32(), pubky)
+  t.is(authedPubky.z32(), pubky);
+
+  let session = await client.session(authedPubky);
   t.deepEqual(session.capabilities(), capabilities.split(','))
 })
