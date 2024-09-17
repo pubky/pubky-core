@@ -139,7 +139,7 @@ let response = await client.put(url, body);
 let response = await client.get(url)
 ```
 - url: A string representing the Pubky URL.
-- Returns: A response object containing the requested data.
+- Returns: A Uint8Array object containing the requested data, or `undefined` if `NOT_FOUND`.
 
 ### delete
 
