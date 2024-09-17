@@ -141,7 +141,7 @@ impl PubkyClient {
             return Err(Error::ResolveEndpoint(original_target.into()));
         }
 
-        if let Some(public_key) = endpoint_public_key {
+        if endpoint_public_key.is_some() {
             let url = Url::parse(&format!(
                 "{}://{}",
                 if origin.starts_with("localhost") {
@@ -152,7 +152,7 @@ impl PubkyClient {
                 origin
             ))?;
 
-            return Ok(Endpoint { public_key, url });
+            return Ok(Endpoint { url });
         }
 
         Err(Error::ResolveEndpoint(original_target.into()))
@@ -173,8 +173,6 @@ impl PubkyClient {
 
 #[derive(Debug)]
 pub(crate) struct Endpoint {
-    // TODO: we don't use this at all?
-    pub public_key: PublicKey,
     pub url: Url,
 }
 
@@ -326,12 +324,11 @@ mod tests {
                 .await
                 .unwrap();
 
-            let Endpoint { public_key, url } = client
+            let Endpoint { url, .. } = client
                 .resolve_pubky_homeserver(&pubky.public_key())
                 .await
                 .unwrap();
 
-            assert_eq!(public_key, server.public_key());
             assert_eq!(url.host_str(), Some("localhost"));
             assert_eq!(url.port(), Some(server.port()));
         }
