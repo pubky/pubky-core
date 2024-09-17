@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@synonymdev/pubky": "file:../../../pubky/pkg",
+    "@synonymdev/pubky": "^0.1.16",
     "lit": "^3.2.0",
     "qrcode": "^1.5.4"
   },
