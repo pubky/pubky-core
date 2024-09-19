@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 use crate::error::Error;
 
-use super::keys::Keypair;
+use crate::wasm::wrappers::keys::Keypair;
 
 /// Create a recovery file of the `keypair`, containing the secret key encrypted
 /// using the `passphrase`.
