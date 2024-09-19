@@ -74,7 +74,7 @@ impl Homeserver {
 
         publish_server_packet(pkarr_client, &keypair, config.domain(), port).await?;
 
-        info!("Homeserver listening on pubky://{}", keypair.public_key());
+        info!("Homeserver listening on http://{}", keypair.public_key());
 
         Ok(Self {
             tasks,

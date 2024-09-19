@@ -28,15 +28,14 @@ pub async fn publish_server_packet(
         // svcb.set_param(key, value)
     };
 
-    // TODO: announce A/AAAA records as well for Noise connections?
-    // Or maybe Iroh's magic socket
-
     packet.answers.push(pkarr::dns::ResourceRecord::new(
         "@".try_into().unwrap(),
         pkarr::dns::CLASS::IN,
         60 * 60,
-        pkarr::dns::rdata::RData::SVCB(svcb),
+        pkarr::dns::rdata::RData::HTTPS(svcb.clone().into()),
     ));
+
+    // TODO: announce A/AAAA records as well for TLS connections?
 
     let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
 
