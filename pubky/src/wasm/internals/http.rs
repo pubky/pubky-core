@@ -4,7 +4,7 @@ use reqwest::{Method, RequestBuilder, Response};
 use url::Url;
 
 impl PubkyClient {
-    pub(crate) fn request(&self, method: Method, url: Url) -> RequestBuilder {
+    pub(crate) fn inner_request(&self, method: Method, url: Url) -> RequestBuilder {
         let mut request = self.http.request(method, url).fetch_credentials_include();
 
         for cookie in self.session_cookies.read().unwrap().iter() {

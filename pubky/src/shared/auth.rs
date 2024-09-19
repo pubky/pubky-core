@@ -38,7 +38,7 @@ impl PubkyClient {
         let body = AuthToken::sign(keypair, vec![Capability::root()]).serialize();
 
         let response = self
-            .request(Method::POST, url.clone())
+            .inner_request(Method::POST, url.clone())
             .body(body)
             .send()
             .await?;
@@ -61,7 +61,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{}/session", pubky));
 
-        let res = self.request(Method::GET, url).send().await?;
+        let res = self.inner_request(Method::GET, url).send().await?;
 
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -82,7 +82,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{}/session", pubky));
 
-        self.request(Method::DELETE, url).send().await?;
+        self.inner_request(Method::DELETE, url).send().await?;
 
         self.remove_session(pubky);
 
@@ -143,7 +143,7 @@ impl PubkyClient {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        self.request(Method::POST, callback)
+        self.inner_request(Method::POST, callback)
             .body(encrypted_token)
             .send()
             .await?;
@@ -170,7 +170,7 @@ impl PubkyClient {
         self.resolve_url(&mut url).await?;
 
         let response = self
-            .request(Method::POST, url)
+            .inner_request(Method::POST, url)
             .body(token.serialize())
             .send()
             .await?;

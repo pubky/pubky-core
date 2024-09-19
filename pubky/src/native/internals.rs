@@ -6,6 +6,8 @@ use url::Url;
 use crate::error::Result;
 use crate::PubkyClient;
 
+pub mod endpoints;
+
 impl PubkyClient {
     // === Pkarr ===
 
@@ -22,7 +24,7 @@ impl PubkyClient {
 
     // === HTTP ===
 
-    pub(crate) fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
+    pub(crate) fn inner_request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
         self.http.request(method, url)
     }
 

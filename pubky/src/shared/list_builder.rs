@@ -90,7 +90,7 @@ impl<'a> ListBuilder<'a> {
 
         drop(query);
 
-        let response = self.client.request(Method::GET, url).send().await?;
+        let response = self.client.inner_request(Method::GET, url).send().await?;
 
         response.error_for_status_ref()?;
 

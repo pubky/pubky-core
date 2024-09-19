@@ -1,5 +1,5 @@
-use std::net::ToSocketAddrs;
 use std::time::Duration;
+use std::{net::ToSocketAddrs, sync::Arc};
 
 use ::pkarr::{mainline::dht::Testnet, PkarrClient};
 
@@ -7,6 +7,8 @@ use crate::PubkyClient;
 
 mod api;
 mod internals;
+
+use internals::endpoints::PkarrResolver;
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -50,13 +52,19 @@ impl PubkyClientBuilder {
 
     /// Build [PubkyClient]
     pub fn build(self) -> PubkyClient {
+        // TODO: convert to Result<PubkyClient>
+
+        let pkarr = PkarrClient::new(self.pkarr_settings).unwrap().as_async();
+        let dns_resolver = PkarrResolver::new(pkarr.clone());
+
         PubkyClient {
             http: reqwest::Client::builder()
                 .cookie_store(true)
+                .dns_resolver(Arc::new(dns_resolver))
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
-            pkarr: PkarrClient::new(self.pkarr_settings).unwrap().as_async(),
+            pkarr,
         }
     }
 }
