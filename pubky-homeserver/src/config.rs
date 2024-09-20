@@ -21,7 +21,7 @@ pub struct Config {
     testnet: bool,
     port: Option<u16>,
     bootstrap: Option<Vec<String>>,
-    domain: String,
+    domain: Option<String>,
     /// Path to the storage directory
     ///
     /// Defaults to a directory in the OS data directory
@@ -98,8 +98,8 @@ impl Config {
         self.bootstrap.to_owned()
     }
 
-    pub fn domain(&self) -> &str {
-        &self.domain
+    pub fn domain(&self) -> Option<&String> {
+        self.domain.as_ref()
     }
 
     /// Get the path to the storage directory
@@ -131,7 +131,7 @@ impl Default for Config {
             testnet: false,
             port: Some(0),
             bootstrap: None,
-            domain: "localhost".to_string(),
+            domain: None,
             storage: None,
             secret_key: None,
             dht_request_timeout: None,
@@ -168,6 +168,7 @@ impl Debug for Config {
             .entry(&"port", &self.port())
             .entry(&"storage", &self.storage())
             .entry(&"public_key", &self.keypair().public_key())
+            .entry(&"domain", &self.domain())
             .finish()
     }
 }
