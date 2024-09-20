@@ -8,7 +8,7 @@ use crate::PubkyClient;
 mod api;
 mod internals;
 
-use internals::endpoints::PkarrResolver;
+use internals::resolver::PkarrResolver;
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -55,7 +55,7 @@ impl PubkyClientBuilder {
         // TODO: convert to Result<PubkyClient>
 
         let pkarr = PkarrClient::new(self.pkarr_settings).unwrap().as_async();
-        let dns_resolver = PkarrResolver::new(pkarr.clone());
+        let dns_resolver: PkarrResolver = pkarr.clone().into();
 
         PubkyClient {
             http: reqwest::Client::builder()

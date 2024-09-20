@@ -1,162 +1,130 @@
-use std::net::ToSocketAddrs;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 
 use pkarr::dns::rdata::{RData, SVCB};
-use pkarr::{PkarrClientAsync, PublicKey, SignedPacket};
-use reqwest::dns::{Addrs, Resolve};
-
-use crate::error::{Error, Result};
-
-const MAX_CHAIN_LENGTH: u8 = 3;
+use pkarr::dns::ResourceRecord;
+use pkarr::SignedPacket;
+use pubky_common::timestamp::Timestamp;
 
 #[derive(Debug, Clone)]
-pub struct PkarrResolver {
-    pkarr: PkarrClientAsync,
-}
-
-impl PkarrResolver {
-    pub fn new(pkarr: PkarrClientAsync) -> Self {
-        Self { pkarr }
-    }
-
-    /// Resolve a `qname` to an alternative [Endpoint] as defined in [RFC9460](https://www.rfc-editor.org/rfc/rfc9460#name-terminology).
-    ///
-    /// A `qname` is can be either a regular domain name for HTTPS endpoints,
-    /// or it could use Attrleaf naming pattern for cusotm protcol. For example:
-    /// `_foo.example.com` for `foo://example.com`.
-    async fn resolve_endpoint(&self, qname: &str) -> Result<Endpoint> {
-        let target = qname;
-        // TODO: cache the result of this function?
-
-        let is_svcb = target.starts_with('_');
-
-        let mut step = 0;
-        let mut svcb: Option<Endpoint> = None;
-
-        loop {
-            let current = svcb.clone().map_or(target.to_string(), |s| s.target);
-            if let Ok(tld) = PublicKey::try_from(current.clone()) {
-                if let Ok(Some(signed_packet)) = self.pkarr.resolve(&tld).await {
-                    if step >= MAX_CHAIN_LENGTH {
-                        break;
-                    };
-                    step += 1;
-
-                    // Choose most prior SVCB record
-                    svcb = get_endpoint(&signed_packet, &current, is_svcb);
-
-                    // TODO: support wildcard?
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        if let Some(svcb) = svcb {
-            if PublicKey::try_from(svcb.target.as_str()).is_err() {
-                return Ok(svcb);
-            }
-        }
-
-        Err(Error::ResolveEndpoint(target.into()))
-    }
-}
-
-impl Resolve for PkarrResolver {
-    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
-        let client = self.clone();
-
-        Box::pin(async move {
-            let name = name.as_str();
-
-            if PublicKey::try_from(name).is_ok() {
-                let x = client.resolve_endpoint(name).await?;
-
-                let addrs = format!("{}:{}", x.target, x.port).to_socket_addrs()?;
-
-                let addrs: Addrs = Box::new(addrs);
-
-                return Ok(addrs);
-            };
-
-            Ok(Box::new(format!("{name}:0").to_socket_addrs().unwrap()))
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Endpoint {
-    target: String,
+pub struct Endpoint {
+    pub(crate) target: String,
     // public_key: PublicKey,
-    port: u16,
+    pub(crate) port: u16,
+    pub(crate) addrs: Vec<IpAddr>,
 }
 
-fn get_endpoint(signed_packet: &SignedPacket, target: &str, is_svcb: bool) -> Option<Endpoint> {
-    signed_packet
-        .resource_records(target)
-        .fold(None, |prev: Option<SVCB>, answer| {
-            if let Some(svcb) = match &answer.rdata {
-                RData::SVCB(svcb) => {
-                    if is_svcb {
-                        Some(svcb)
-                    } else {
-                        None
-                    }
-                }
-                RData::HTTPS(curr) => {
-                    if is_svcb {
-                        None
-                    } else {
-                        Some(&curr.0)
-                    }
-                }
-                _ => None,
-            } {
-                let curr = svcb.clone();
+impl Endpoint {
+    /// 1. Find the SVCB or HTTPS records with the lowest priority
+    /// 2. Choose a random one of the list of the above
+    /// 3. If the target is `.`, check A and AAAA records (https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
+    pub(crate) fn find(
+        signed_packet: &SignedPacket,
+        target: &str,
+        is_svcb: bool,
+    ) -> Option<Endpoint> {
+        let mut lowest_priority = u16::MAX;
+        let mut lowest_priority_index = 0;
+        let mut records = vec![];
 
-                if curr.priority == 0 {
-                    return Some(curr);
-                }
-                if let Some(prev) = &prev {
-                    if curr.priority >= prev.priority {
-                        return Some(curr);
+        for record in signed_packet.resource_records(target) {
+            if let Some(svcb) = get_svcb(record, is_svcb) {
+                match svcb.priority.cmp(&lowest_priority) {
+                    std::cmp::Ordering::Equal => records.push(svcb),
+                    std::cmp::Ordering::Less => {
+                        lowest_priority_index = records.len();
+                        lowest_priority = svcb.priority;
+                        records.push(svcb)
                     }
-                } else {
-                    return Some(curr);
+                    _ => {}
+                }
+            }
+        }
+
+        // Good enough random selection
+        let now = Timestamp::now();
+        let slice = &records[lowest_priority_index..];
+        let index = if slice.is_empty() {
+            0
+        } else {
+            (now.into_inner() as usize) % slice.len()
+        };
+
+        slice.get(index).map(|s| {
+            let target = s.target.to_string();
+
+            let mut addrs: Vec<IpAddr> = vec![];
+
+            if &target == "." {
+                for record in signed_packet.resource_records("@") {
+                    match &record.rdata {
+                        RData::A(ip) => addrs.push(IpAddr::V4(ip.address.into())),
+                        RData::AAAA(ip) => addrs.push(IpAddr::V6(ip.address.into())),
+                        _ => {}
+                    }
                 }
             }
 
-            prev
+            Endpoint {
+                target,
+                // public_key: signed_packet.public_key(),
+                port: u16::from_be_bytes(
+                    s.get_param(SVCB::PORT)
+                        .unwrap_or_default()
+                        .try_into()
+                        .unwrap_or([0, 0]),
+                ),
+                addrs,
+            }
         })
-        .map(|s| Endpoint {
-            target: s.target.to_string(),
-            // public_key: signed_packet.public_key(),
-            port: u16::from_be_bytes(
-                s.get_param(SVCB::PORT)
-                    .unwrap_or_default()
-                    .try_into()
-                    .unwrap_or([0, 0]),
-            ),
-        })
+    }
+
+    pub fn to_socket_addrs(&self) -> std::io::Result<std::vec::IntoIter<SocketAddr>> {
+        if self.target == "." {
+            let port = self.port;
+            return Ok(self
+                .addrs
+                .iter()
+                .map(|addr| SocketAddr::from((*addr, port)))
+                .collect::<Vec<_>>()
+                .into_iter());
+        }
+
+        format!("{}:{}", self.target, self.port).to_socket_addrs()
+    }
+}
+
+fn get_svcb<'a>(record: &'a ResourceRecord, is_svcb: bool) -> Option<&'a SVCB<'a>> {
+    match &record.rdata {
+        RData::SVCB(svcb) => {
+            if is_svcb {
+                Some(svcb)
+            } else {
+                None
+            }
+        }
+
+        RData::HTTPS(curr) => {
+            if is_svcb {
+                None
+            } else {
+                Some(&curr.0)
+            }
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::str::FromStr;
+
     use super::*;
-    use pkarr::dns::{self, rdata::RData};
-    use pkarr::PkarrClient;
-    use pkarr::{mainline::Testnet, Keypair};
+
+    use pkarr::{dns, Keypair};
 
     #[tokio::test]
-    async fn resolve_direct_endpoint() {
-        let testnet = Testnet::new(3);
-        let pkarr = PkarrClient::builder()
-            .testnet(&testnet)
-            .build()
-            .unwrap()
-            .as_async();
-
+    async fn endpoint_target() {
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
             dns::Name::new("foo").unwrap(),
@@ -185,83 +153,61 @@ mod tests {
             RData::SVCB(SVCB::new(0, "protocol.example.com".try_into().unwrap())),
         ));
         let keypair = Keypair::random();
-        let inter_signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        pkarr.publish(&inter_signed_packet).await.unwrap();
-
-        let resolver = PkarrResolver { pkarr };
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         let tld = keypair.public_key();
 
         // Follow foo.tld HTTPS records
-        let endpoint = resolver
-            .resolve_endpoint(&format!("foo.{tld}"))
-            .await
-            .unwrap();
+        let endpoint = Endpoint::find(&signed_packet, &format!("foo.{tld}"), false).unwrap();
         assert_eq!(endpoint.target, "https.example.com");
 
         // Follow _foo.tld SVCB records
-        let endpoint = resolver
-            .resolve_endpoint(&format!("_foo.{tld}"))
-            .await
-            .unwrap();
+        let endpoint = Endpoint::find(&signed_packet, &format!("_foo.{tld}"), true).unwrap();
         assert_eq!(endpoint.target, "protocol.example.com");
     }
 
-    #[tokio::test]
-    async fn resolve_endpoint_with_intermediate_pubky() {
-        let testnet = Testnet::new(3);
-        let pkarr = PkarrClient::builder()
-            .testnet(&testnet)
-            .build()
-            .unwrap()
-            .as_async();
-
-        // USER        => Server Owner           => Server
-        // pubky.<tld> => pubky-homeserver.<tld> => @.<tld>
-
+    #[test]
+    fn endpoint_to_socket_addrs() {
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
             dns::Name::new("@").unwrap(),
             dns::CLASS::IN,
             3600,
-            RData::HTTPS(SVCB::new(0, "example.com".try_into().unwrap()).into()),
+            RData::A(Ipv4Addr::from_str("209.151.148.15").unwrap().into()),
         ));
-        let keypair = Keypair::random();
-        let inter_signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        pkarr.publish(&inter_signed_packet).await.unwrap();
-
-        let end_target = format!("{}", keypair.public_key());
-        let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("pubky-homeserver.").unwrap(),
+            dns::Name::new("@").unwrap(),
             dns::CLASS::IN,
             3600,
-            RData::HTTPS(SVCB::new(0, end_target.as_str().try_into().unwrap()).into()),
+            RData::AAAA(Ipv6Addr::from_str("2a05:d014:275:6201::64").unwrap().into()),
         ));
-        let keypair = Keypair::random();
-        let inter_signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        pkarr.publish(&inter_signed_packet).await.unwrap();
 
-        let inter_target = format!("pubky-homeserver.{}", keypair.public_key());
-        let mut packet = dns::Packet::new_reply(0);
+        let mut svcb = SVCB::new(1, ".".try_into().unwrap());
+        svcb.set_port(6881);
+
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("pubky.").unwrap(),
+            dns::Name::new("@").unwrap(),
             dns::CLASS::IN,
             3600,
-            RData::HTTPS(SVCB::new(0, inter_target.as_str().try_into().unwrap()).into()),
+            RData::HTTPS(svcb.into()),
         ));
         let keypair = Keypair::random();
-        let inter_signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        pkarr.publish(&inter_signed_packet).await.unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let resolver = PkarrResolver { pkarr };
+        // Follow foo.tld HTTPS records
+        let endpoint = Endpoint::find(
+            &signed_packet,
+            &signed_packet.public_key().to_string(),
+            false,
+        )
+        .unwrap();
 
-        let tld = keypair.public_key();
+        assert_eq!(endpoint.target, ".");
 
-        let endpoint = resolver
-            .resolve_endpoint(&format!("pubky.{tld}"))
-            .await
-            .unwrap();
-        assert_eq!(endpoint.target, "example.com");
+        let addrs = endpoint.to_socket_addrs().unwrap();
+        assert_eq!(
+            addrs.map(|s| s.to_string()).collect::<Vec<_>>(),
+            vec!["209.151.148.15:6881", "[2a05:d014:275:6201::64]:6881"]
+        )
     }
 }

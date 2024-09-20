@@ -6,7 +6,8 @@ use url::Url;
 use crate::error::Result;
 use crate::PubkyClient;
 
-pub mod endpoints;
+mod endpoints;
+pub mod resolver;
 
 impl PubkyClient {
     // === Pkarr ===
