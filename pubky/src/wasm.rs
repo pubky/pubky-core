@@ -12,7 +12,6 @@ impl Default for PubkyClient {
     }
 }
 
-static DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
 static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/pkarr"];
 
 #[wasm_bindgen]
@@ -21,7 +20,8 @@ impl PubkyClient {
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
-            pkarr_relays: DEFAULT_RELAYS.into_iter().map(|s| s.to_string()).collect(),
+            pkarr: pkarr::Client::builder().build().unwrap(),
+            pkarr_relays: vec!["https://relay.pkarr.org".to_string()],
         }
     }
 
@@ -31,6 +31,10 @@ impl PubkyClient {
     pub fn testnet() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
+            pkarr: pkarr::Client::builder()
+                .relays(TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect())
+                .build()
+                .unwrap(),
             pkarr_relays: TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect(),
         }
     }

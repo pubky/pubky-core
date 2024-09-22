@@ -1591,7 +1591,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pkarr"
 version = "3.0.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#d0be23324bcf706f5a359236d2945944abbb40f8"
+source = "git+https://github.com/Pubky/pkarr?branch=v3#445c0db448b9e70f2a63a5b91e6d84f1ef466aeb"
 dependencies = [
  "base32",
  "bytes",
