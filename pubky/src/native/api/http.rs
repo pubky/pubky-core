@@ -33,7 +33,7 @@ mod tests {
 
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::testnet();
+        let client = PubkyClient::builder().testnet(&testnet).build();
 
         let url = format!("http://{}/", homeserver.public_key());
 

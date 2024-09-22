@@ -185,8 +185,8 @@ mod tests {
             rdata::{HTTPS, SVCB},
             Packet,
         },
-        mainline::{dht::DhtSettings, Testnet},
-        Keypair, PkarrClient, Settings, SignedPacket,
+        mainline::Testnet,
+        Keypair, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
 
@@ -194,15 +194,7 @@ mod tests {
     async fn resolve_endpoint_https() {
         let testnet = Testnet::new(10);
 
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: Some(testnet.bootstrap.clone()),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .unwrap()
-        .as_async();
+        let pkarr_client = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let domain = "example.com";
         let mut target;
@@ -285,15 +277,7 @@ mod tests {
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         // Publish an intermediate controller of the homeserver
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: Some(testnet.bootstrap.clone()),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .unwrap()
-        .as_async();
+        let pkarr_client = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let intermediate = Keypair::random();
 
