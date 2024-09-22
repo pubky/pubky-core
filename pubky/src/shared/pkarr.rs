@@ -19,7 +19,7 @@ impl PubkyClient {
         keypair: &Keypair,
         host: &str,
     ) -> Result<()> {
-        let existing = self.pkarr_resolve(&keypair.public_key()).await?;
+        let existing = self.pkarr.resolve(&keypair.public_key()).await?;
 
         let mut packet = Packet::new_reply(0);
 
@@ -42,7 +42,7 @@ impl PubkyClient {
 
         let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
 
-        self.pkarr_publish(&signed_packet).await?;
+        self.pkarr.publish(&signed_packet).await?;
 
         Ok(())
     }
@@ -81,7 +81,8 @@ impl PubkyClient {
             step += 1;
 
             if let Some(signed_packet) = self
-                .pkarr_resolve(&public_key)
+                .pkarr
+                .resolve(&public_key)
                 .await
                 .map_err(|_| Error::ResolveEndpoint(original_target.into()))?
             {
