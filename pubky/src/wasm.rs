@@ -1,8 +1,3 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, RwLock},
-};
-
 use wasm_bindgen::prelude::*;
 
 use crate::PubkyClient;
@@ -26,7 +21,6 @@ impl PubkyClient {
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
-            session_cookies: Arc::new(RwLock::new(HashSet::new())),
             pkarr_relays: DEFAULT_RELAYS.into_iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -37,7 +31,6 @@ impl PubkyClient {
     pub fn testnet() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
-            session_cookies: Arc::new(RwLock::new(HashSet::new())),
             pkarr_relays: TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect(),
         }
     }
