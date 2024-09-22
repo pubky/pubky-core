@@ -7,11 +7,11 @@ use pkarr::{
         rdata::{RData, A, SVCB},
         Packet,
     },
-    Keypair, PkarrClientAsync, SignedPacket,
+    Keypair, SignedPacket,
 };
 
 pub async fn publish_server_packet(
-    pkarr_client: PkarrClientAsync,
+    pkarr_client: pkarr::Client,
     keypair: &Keypair,
     domain: Option<&String>,
     port: u16,

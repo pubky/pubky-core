@@ -14,9 +14,6 @@ use std::{
 
 use wasm_bindgen::prelude::*;
 
-#[cfg(not(target_arch = "wasm32"))]
-use ::pkarr::PkarrClientAsync;
-
 pub use error::Error;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -27,7 +24,7 @@ pub use crate::shared::list_builder::ListBuilder;
 pub struct PubkyClient {
     http: reqwest::Client,
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) pkarr: PkarrClientAsync,
+    pub(crate) pkarr: pkarr::Client,
     /// A cookie jar for nodejs fetch.
     #[cfg(target_arch = "wasm32")]
     pub(crate) session_cookies: Arc<RwLock<HashSet<String>>>,

@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::{net::ToSocketAddrs, sync::Arc};
 
-use ::pkarr::{mainline::dht::Testnet, PkarrClient};
+use ::pkarr::mainline::dht::Testnet;
 
 use crate::PubkyClient;
 
@@ -54,7 +54,7 @@ impl PubkyClientBuilder {
     pub fn build(self) -> PubkyClient {
         // TODO: convert to Result<PubkyClient>
 
-        let pkarr = PkarrClient::new(self.pkarr_settings).unwrap().as_async();
+        let pkarr = pkarr::Client::new(self.pkarr_settings).unwrap();
         let dns_resolver: PkarrResolver = pkarr.clone().into();
 
         PubkyClient {

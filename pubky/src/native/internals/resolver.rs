@@ -1,6 +1,6 @@
 use std::net::ToSocketAddrs;
 
-use pkarr::{PkarrClientAsync, PublicKey};
+use pkarr::PublicKey;
 use reqwest::dns::{Addrs, Resolve};
 
 use crate::error::{Error, Result};
@@ -11,12 +11,12 @@ const DEFAULT_MAX_CHAIN_LENGTH: u8 = 3;
 
 #[derive(Debug, Clone)]
 pub struct PkarrResolver {
-    pkarr: PkarrClientAsync,
+    pkarr: pkarr::Client,
     max_chain_length: u8,
 }
 
 impl PkarrResolver {
-    pub fn new(pkarr: PkarrClientAsync, max_chain_length: u8) -> Self {
+    pub fn new(pkarr: pkarr::Client, max_chain_length: u8) -> Self {
         PkarrResolver {
             pkarr,
             max_chain_length,
@@ -90,14 +90,14 @@ impl Resolve for PkarrResolver {
     }
 }
 
-impl From<&PkarrClientAsync> for PkarrResolver {
-    fn from(pkarr: &PkarrClientAsync) -> Self {
+impl From<&pkarr::Client> for PkarrResolver {
+    fn from(pkarr: &pkarr::Client) -> Self {
         pkarr.clone().into()
     }
 }
 
-impl From<PkarrClientAsync> for PkarrResolver {
-    fn from(pkarr: PkarrClientAsync) -> Self {
+impl From<pkarr::Client> for PkarrResolver {
+    fn from(pkarr: pkarr::Client) -> Self {
         Self::new(pkarr, DEFAULT_MAX_CHAIN_LENGTH)
     }
 }
@@ -107,14 +107,14 @@ mod tests {
     use super::*;
     use pkarr::dns::rdata::{A, SVCB};
     use pkarr::dns::{self, rdata::RData};
+    use pkarr::SignedPacket;
     use pkarr::{mainline::Testnet, Keypair};
-    use pkarr::{PkarrClient, SignedPacket};
 
     use std::future::Future;
     use std::pin::Pin;
 
     fn generate_subtree(
-        client: PkarrClientAsync,
+        client: pkarr::Client,
         depth: u8,
         branching: u8,
         domain: Option<String>,
@@ -169,7 +169,7 @@ mod tests {
     }
 
     fn generate(
-        client: PkarrClientAsync,
+        client: pkarr::Client,
         depth: u8,
         branching: u8,
         domain: Option<String>,
@@ -180,11 +180,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_endpoints() {
         let testnet = Testnet::new(3);
-        let pkarr = PkarrClient::builder()
-            .testnet(&testnet)
-            .build()
-            .unwrap()
-            .as_async();
+        let pkarr = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let resolver: PkarrResolver = (&pkarr).into();
         let tld = generate(pkarr, 3, 3, Some("example.com".to_string())).await;
@@ -196,11 +192,7 @@ mod tests {
     #[tokio::test]
     async fn max_chain_exceeded() {
         let testnet = Testnet::new(3);
-        let pkarr = PkarrClient::builder()
-            .testnet(&testnet)
-            .build()
-            .unwrap()
-            .as_async();
+        let pkarr = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let resolver: PkarrResolver = (&pkarr).into();
 
@@ -220,11 +212,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_addresses() {
         let testnet = Testnet::new(3);
-        let pkarr = PkarrClient::builder()
-            .testnet(&testnet)
-            .build()
-            .unwrap()
-            .as_async();
+        let pkarr = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let resolver: PkarrResolver = (&pkarr).into();
         let tld = generate(pkarr, 3, 3, None).await;
