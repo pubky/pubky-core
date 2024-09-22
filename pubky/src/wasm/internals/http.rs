@@ -1,6 +1,6 @@
 use crate::PubkyClient;
 
-use reqwest::{Method, RequestBuilder, Response};
+use reqwest::{Method, RequestBuilder};
 use url::Url;
 
 impl PubkyClient {
@@ -12,29 +12,5 @@ impl PubkyClient {
         }
 
         request
-    }
-
-    // Support cookies for nodejs
-
-    pub(crate) fn store_session(&self, response: &Response) {
-        if let Some(cookie) = response
-            .headers()
-            .get("set-cookie")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| s.split(';').next())
-        {
-            self.session_cookies
-                .write()
-                .unwrap()
-                .insert(cookie.to_string());
-        }
-    }
-    pub(crate) fn remove_session(&self, pubky: &pkarr::PublicKey) {
-        let key = pubky.to_string();
-
-        self.session_cookies
-            .write()
-            .unwrap()
-            .retain(|cookie| !cookie.starts_with(&key));
     }
 }
