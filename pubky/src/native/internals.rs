@@ -1,6 +1,6 @@
 use pkarr::SignedPacket;
 use pubky_common::crypto::PublicKey;
-use reqwest::{RequestBuilder, Response};
+use reqwest::RequestBuilder;
 use url::Url;
 
 use crate::error::Result;
@@ -28,7 +28,4 @@ impl PubkyClient {
     pub(crate) fn inner_request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
         self.http.request(method, url)
     }
-
-    pub(crate) fn store_session(&self, _: &Response) {}
-    pub(crate) fn remove_session(&self, _: &PublicKey) {}
 }

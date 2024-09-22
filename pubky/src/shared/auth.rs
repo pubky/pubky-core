@@ -43,8 +43,6 @@ impl PubkyClient {
             .send()
             .await?;
 
-        self.store_session(&response);
-
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
         let bytes = response.bytes().await?;
@@ -83,8 +81,6 @@ impl PubkyClient {
         url.set_path(&format!("/{}/session", pubky));
 
         self.inner_request(Method::DELETE, url).send().await?;
-
-        self.remove_session(pubky);
 
         Ok(())
     }
@@ -174,8 +170,6 @@ impl PubkyClient {
             .body(token.serialize())
             .send()
             .await?;
-
-        self.store_session(&response);
 
         let bytes = response.bytes().await?;
 
