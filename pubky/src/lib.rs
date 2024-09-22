@@ -19,6 +19,4 @@ pub use crate::shared::list_builder::ListBuilder;
 pub struct PubkyClient {
     http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) pkarr_relays: Vec<String>,
 }

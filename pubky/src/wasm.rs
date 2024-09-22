@@ -21,7 +21,6 @@ impl PubkyClient {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
             pkarr: pkarr::Client::builder().build().unwrap(),
-            pkarr_relays: vec!["https://relay.pkarr.org".to_string()],
         }
     }
 
@@ -35,22 +34,6 @@ impl PubkyClient {
                 .relays(TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect())
                 .build()
                 .unwrap(),
-            pkarr_relays: TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect(),
         }
-    }
-
-    /// Set Pkarr relays used for publishing and resolving Pkarr packets.
-    ///
-    /// By default, [PubkyClient] will use `["https://relay.pkarr.org"]`
-    #[wasm_bindgen(js_name = "setPkarrRelays")]
-    pub fn set_pkarr_relays(mut self, relays: Vec<String>) -> Self {
-        self.pkarr_relays = relays;
-        self
-    }
-
-    // Read the set of pkarr relays used by this client.
-    #[wasm_bindgen(js_name = "getPkarrRelays")]
-    pub fn get_pkarr_relays(&self) -> Vec<String> {
-        self.pkarr_relays.clone()
     }
 }
