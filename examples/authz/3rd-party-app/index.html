@@ -13,14 +13,22 @@
   </head>
   <body>
     <pubky-auth-widget 
+      id="widget"
       relay="https://demo.httprelay.io/link/"
-      caps="/pub/pubky.app/:rw,/pub/example.com/nested:rw"
     >
     </pubky-auth-widget>
 
     <main>
       <h1>Third Party app!</h1>
       <p>this is a demo for using Pubky Auth in an unhosted (no backend) app.</p>
+      <form>
+        <label style="display:block">
+        <input type="checkbox" onChange="document.getElementById('widget').switchTestnet()">testnet (use local test network)</input>
+        </label>
+        <label style="display:block">
+        <input type="checkbox" onChange="let w = document.getElementById('widget'); w.caps.length > 0 ? w.setCapabilities(null) : w.setCapabilities('/pub/pubky.app/:rw,/pub/example.com/nested:rw')">Authz (Authorization, set if your pubky has an account on a Homeserver)</input>
+        </label>
+      </form>
     </main>
   </body>
 </html>
