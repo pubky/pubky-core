@@ -7,8 +7,11 @@ const DEFAULT_HTTP_RELAY = "https://demo.httprelay.io/link"
 /**
  */
 export class PubkyAuthWidget extends LitElement {
+
   static get properties() {
     return {
+      // === Config ===
+
       /**
        * Relay endpoint for the widget to receive Pubky AuthTokens
        *
@@ -23,6 +26,9 @@ export class PubkyAuthWidget extends LitElement {
        * Capabilities requested or this application encoded as a string.
        */
       caps: { type: String },
+
+      // === State ===
+
       /**
        * Widget's state (open or closed)
        */
@@ -31,6 +37,10 @@ export class PubkyAuthWidget extends LitElement {
        * Show "copied to clipboard" note
        */
       showCopied: { type: Boolean },
+
+      // === Internal ===
+      testnet: { type: Boolean },
+      pubky: { type: Object }
     }
   }
 
@@ -43,63 +53,67 @@ export class PubkyAuthWidget extends LitElement {
 
     super()
 
+    this.testnet = false;
     this.open = false;
 
-    // TODO: allow using mainnet
     /** @type {import("@synonymdev/pubky").PubkyClient} */
-    this.pubkyClient = window.pubky.PubkyClient.testnet();
+    this.pubkyClient = new window.pubky.PubkyClient();
+
+    this.caps = this.caps || ""
   }
 
   connectedCallback() {
     super.connectedCallback()
 
+    this._generateURL()
+  }
+
+  switchTestnet() {
+    this.testnet = !this.testnet;
+
+    console.debug("Switching testnet");
+
+    if (this.testnet) {
+      this.pubkyClient = window.pubky.PubkyClient.testnet()
+    } else {
+      this.pubkyClient = new window.pubky.PubkyClient();
+    }
+
+    console.debug("Pkarr Relays: " + this.pubkyClient.getPkarrRelays())
+
+    this._generateURL()
+  }
+
+  setCapabilities(caps) {
+    this.caps = caps || ""
+
+    this._generateURL(this.caps);
+    console.debug("Updated capabilities");
+  }
+
+
+  _generateURL() {
     let [url, promise] = this.pubkyClient.authRequest(this.relay || DEFAULT_HTTP_RELAY, this.caps);
 
-    promise.then(session => {
-      console.log({ id: session.pubky().z32(), capabilities: session.capabilities() })
-      alert(`Successfully signed in to ${session.pubky().z32()} with capabilities: ${session.capabilities().join(",")}`)
+    promise.then(pubky => {
+      this.pubky = pubky.z32();
     }).catch(e => {
       console.error(e)
     })
 
-    // let keypair = pubky.Keypair.random();
-    // const Homeserver = pubky.PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
-    // this.pubkyClient.signup(keypair, Homeserver).then(() => {
-    //   this.pubkyClient.sendAuthToken(keypair, url)
-    // })
-
     this.authUrl = url
+
+    this._updateQr();
   }
 
-  render() {
-    return html`
-      <div
-          id="widget"
-          class=${this.open ? "open" : ""} 
-      >
-        <button class="header" @click=${this._switchOpen}>
-          <svg id="pubky-icon" version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1511 1511"><path fill-rule="evenodd" d="m636.3 1066.7 14.9-59.7c50.5-27.7 90.8-71.7 113.7-124.9-47.3 51.3-115.2 83.4-190.6 83.4-51.9 0-100.1-15.1-140.5-41.2L394 1066.7H193.9L356.4 447H567l-.1.1q3.7-.1 7.4-.1c77.7 0 147.3 34 194.8 88l22-88h202.1l-47 180.9L1130 447h249l-323 332.8 224 286.9H989L872.4 912l-40.3 154.7H636.3z" style="fill:#fff"/></svg>
-          <span class="text">
-            Pubky Auth
-          </span>
-        </button>
-        <div class="line"></div>
-        <div id="widget-content">
-            <p>Scan or copy Pubky auth URL</p>
-            <div class="card">
-              <canvas id="qr" ${ref(this._setQr)}></canvas>
-            </div>
-            <button class="card url" @click=${this._copyToClipboard}>
-              <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
-              <p>${this.authUrl}</p>
-              <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
-            </button>
-        </div>
-      </div>
-    `
+  _updateQr() {
+    if (this.canvas) {
+      this._setQr(this.canvas);
+    }
   }
 
   _setQr(canvas) {
+    this.canvas = canvas
     QRCode.toCanvas(canvas, this.authUrl, {
       margin: 2,
       scale: 8,
@@ -113,6 +127,7 @@ export class PubkyAuthWidget extends LitElement {
 
   _switchOpen() {
     this.open = !this.open
+    setTimeout(() => { this.pubky = null }, 80)
   }
 
   async _copyToClipboard() {
@@ -134,26 +149,58 @@ export class PubkyAuthWidget extends LitElement {
           class=${this.open ? "open" : ""} 
       >
         <button class="header" @click=${this._switchOpen}>
-          <svg id="pubky-icon" version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1511 1511"><path fill-rule="evenodd" d="m636.3 1066.7 14.9-59.7c50.5-27.7 90.8-71.7 113.7-124.9-47.3 51.3-115.2 83.4-190.6 83.4-51.9 0-100.1-15.1-140.5-41.2L394 1066.7H193.9L356.4 447H567l-.1.1q3.7-.1 7.4-.1c77.7 0 147.3 34 194.8 88l22-88h202.1l-47 180.9L1130 447h249l-323 332.8 224 286.9H989L872.4 912l-40.3 154.7H636.3z" style="fill:#fff"/></svg>
-          <span class="text">
-            Pubky Auth
-          </span>
+          <div class="header-content">
+            <svg id="pubky-icon" xmlns="http://www.w3.org/2000/svg" version="1.2" viewBox="0 0 452 690">
+              <style>
+                path { fill: black; }
+                @media (prefers-color-scheme: dark) {
+                  path { fill: white; }
+                }
+              </style>
+              <path fill-rule="evenodd" class="a" d="m0.1 84.7l80.5 17.1 15.8-74.5 73.8 44.2 54.7-71.5 55.2 71.5 70.3-44.2 19.4 74.5 81.6-17.1-74.5 121.5c-40.5-35.3-93.5-56.6-151.4-56.6-57.8 0-110.7 21.3-151.2 56.4zm398.4 293.8c0 40.6-14 78-37.4 107.4l67 203.8h-403.1l66.2-202.3c-24.1-29.7-38.6-67.6-38.6-108.9 0-95.5 77.4-172.8 173-172.8 95.5 0 172.9 77.3 172.9 172.8zm-212.9 82.4l-48.2 147.3h178.1l-48.6-148 2.9-1.6c28.2-15.6 47.3-45.6 47.3-80.1 0-50.5-41-91.4-91.5-91.4-50.6 0-91.6 40.9-91.6 91.4 0 35 19.7 65.4 48.6 80.8z"/>
+            </svg>
+            <span class="text">
+              Pubky Auth
+            </span>
+          </div>
         </button>
         <div class="line"></div>
         <div id="widget-content">
-            <p>Scan or copy Pubky auth URL</p>
-            <div class="card">
-              <canvas id="qr" ${ref(this._setQr)}></canvas>
-            </div>
-            <button class="card url" @click=${this._copyToClipboard}>
-              <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
-              <p>${this.authUrl}</p>
-              <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
-            </button>
+        ${this.pubky
+        ? this.caps.length > 0
+          ? html`
+                  <p>Successfully authorized: </p>
+                  <p>${this.pubky}</p>
+                  <p>With capabilities</p>
+                  ${this.caps.split(",").map(cap => html`
+                      <p>${cap}</p>
+                    `)
+            }
+              `
+          : html`
+                  <p>Successfully authenticated to: </p>
+                  <p>${this.pubky}</p>
+              `
+        : html`
+                  <p>Scan or copy Pubky auth URL</p>
+                  <div class="card">
+                    <canvas id="qr" ${ref(this._setQr)}></canvas>
+                  </div>
+                  <button class="card url" @click=${this._copyToClipboard}>
+                    <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
+                    <p>${this.authUrl}</p>
+                    <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
+                  </button>
+              `
+      }
         </div>
       </div>
     `
   }
+
+  _renderWidgetContentBase() {
+  }
+
 
   static get styles() {
     return css`
@@ -219,16 +266,25 @@ export class PubkyAuthWidget extends LitElement {
       }
 
       .header {
+        width: 100%;
         height: var(--header-height);
         display: flex;
         justify-content: center;
-        align-items: center;
+        align-items:center;
+      }
+
+      .header-content {
+        display: flex;
+        justify-content: center;
+        align-items: baseline;
+        column-gap: .5rem;
       }
 
       #widget
       .header .text {
         display: none;
         font-weight: bold;
+        font-size: 1.5rem;
       }
       #widget.open
       .header .text {
@@ -242,14 +298,13 @@ export class PubkyAuthWidget extends LitElement {
       }
 
       #pubky-icon {
-        height: 100%;
+        height: 1.5rem;
         width: 100%;
       }
 
       #widget.open 
       #pubky-icon {
-        width: var(--header-height);
-        height: 74%;
+        width: auto;
       }
 
       #widget-content{
