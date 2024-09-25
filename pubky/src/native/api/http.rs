@@ -28,7 +28,7 @@ mod tests {
     use crate::*;
 
     #[tokio::test]
-    async fn http_get() {
+    async fn http_get_pubky() {
         let testnet = Testnet::new(10);
 
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
@@ -44,5 +44,22 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), 200)
+    }
+
+    #[tokio::test]
+    async fn http_get_icann() {
+        let testnet = Testnet::new(10);
+
+        let client = PubkyClient::builder().testnet(&testnet).build();
+
+        let url = format!("http://example.com/");
+
+        let response = client
+            .request(Default::default(), url)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), 200);
     }
 }
