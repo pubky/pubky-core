@@ -39,6 +39,7 @@ impl PubkyClient {
 
         let response = self
             .inner_request(Method::POST, url.clone())
+            .await
             .body(body)
             .send()
             .await?;
@@ -59,7 +60,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{}/session", pubky));
 
-        let res = self.inner_request(Method::GET, url).send().await?;
+        let res = self.inner_request(Method::GET, url).await.send().await?;
 
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -80,7 +81,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{}/session", pubky));
 
-        self.inner_request(Method::DELETE, url).send().await?;
+        self.inner_request(Method::DELETE, url).await.send().await?;
 
         Ok(())
     }
@@ -140,6 +141,7 @@ impl PubkyClient {
         drop(path_segments);
 
         self.inner_request(Method::POST, callback)
+            .await
             .body(encrypted_token)
             .send()
             .await?;
@@ -167,6 +169,7 @@ impl PubkyClient {
 
         let response = self
             .inner_request(Method::POST, url)
+            .await
             .body(token.serialize())
             .send()
             .await?;

@@ -1,5 +1,3 @@
-//! Public API modules
-
 pub mod http;
 pub mod recovery_file;
 

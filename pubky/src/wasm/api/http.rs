@@ -7,6 +7,8 @@ use reqwest::Url;
 
 use crate::PubkyClient;
 
+use super::super::internals::resolve;
+
 #[wasm_bindgen]
 impl PubkyClient {
     #[wasm_bindgen]
@@ -19,7 +21,9 @@ impl PubkyClient {
             JsValue::from_str(&format!("PubkyClient::fetch(): Invalid `url`; {:?}", err))
         })?;
 
-        self.resolve_url(&mut url).await.map_err(JsValue::from)?;
+        resolve(&self.pkarr, &mut url)
+            .await
+            .map_err(|err| JsValue::from_str(&format!("PubkyClient::fetch(): {:?}", err)))?;
 
         let js_req =
             web_sys::Request::new_with_str_and_init(url.as_str(), init).map_err(|err| {

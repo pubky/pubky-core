@@ -16,6 +16,3 @@ serde = { version = "^1.0.209", features = ["derive"] }
 [profile.release]
 lto = true
 opt-level = 'z'
-
-[patch.crates-io]
-hyper-util = { git = "https://github.com/hyperium/hyper-util.git" }
