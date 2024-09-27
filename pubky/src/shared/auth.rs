@@ -305,10 +305,9 @@ mod tests {
                 .unwrap();
         }
 
-        let session = pubkyauth_response.await.unwrap().unwrap();
+        let public_key = pubkyauth_response.await.unwrap();
 
-        assert_eq!(session.pubky(), &pubky);
-        assert_eq!(session.capabilities(), &capabilities.0);
+        assert_eq!(&public_key, &pubky);
 
         // Test access control enforcement
 
