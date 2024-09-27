@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use pkarr::Keypair;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     path::{Path, PathBuf},
@@ -18,20 +18,41 @@ const DEFAULT_STORAGE_DIR: &str = "pubky";
 pub const DEFAULT_LIST_LIMIT: u16 = 100;
 pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 
-/// Server configuration
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Config {
-    testnet: bool,
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+struct ConfigToml {
+    testnet: Option<bool>,
     port: Option<u16>,
     bootstrap: Option<Vec<String>>,
-    domain: String,
-    /// Path to the storage directory
+    domain: Option<String>,
+    storage: Option<PathBuf>,
+    secret_key: Option<String>,
+    dht_request_timeout: Option<Duration>,
+    default_list_limit: Option<u16>,
+    max_list_limit: Option<u16>,
+}
+
+/// Server configuration
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// Whether or not this server is running in a testnet.
+    testnet: bool,
+    /// The configured port for this server.
+    port: Option<u16>,
+    /// Bootstrapping DHT nodes.
+    ///
+    /// Helpful to run the server locally or in testnet.
+    bootstrap: Option<Vec<String>>,
+    /// A public domain for this server
+    /// necessary for web browsers running in https environment.
+    domain: Option<String>,
+    /// Path to the storage directory.
     ///
     /// Defaults to a directory in the OS data directory
-    storage: Option<PathBuf>,
-    #[serde(deserialize_with = "secret_key_deserialize")]
-    secret_key: Option<[u8; 32]>,
-
+    storage: PathBuf,
+    /// Server keypair.
+    ///
+    /// Defaults to a random keypair.
+    keypair: Keypair,
     dht_request_timeout: Option<Duration>,
     /// The default limit of a list api if no `limit` query parameter is provided.
     ///
@@ -44,13 +65,42 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load the config from a file.
-    pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
-        let s = tokio::fs::read_to_string(path.as_ref())
-            .await
-            .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
+    fn try_from_str(value: &str) -> Result<Self> {
+        let config_toml: ConfigToml = toml::from_str(value)?;
 
-        let config: Config = toml::from_str(&s)?;
+        let keypair = if let Some(secret_key) = config_toml.secret_key {
+            let secret_key = deserialize_secret_key(secret_key)?;
+            Keypair::from_secret_key(&secret_key)
+        } else {
+            Keypair::random()
+        };
+
+        let storage = {
+            let dir = if let Some(storage) = config_toml.storage {
+                storage
+            } else {
+                let path = dirs_next::data_dir().ok_or_else(|| {
+                    anyhow!("operating environment provides no directory for application data")
+                })?;
+                path.join(DEFAULT_STORAGE_DIR)
+            };
+
+            dir.join("homeserver")
+        };
+
+        let config = Config {
+            testnet: config_toml.testnet.unwrap_or(false),
+            port: config_toml.port,
+            bootstrap: config_toml.bootstrap,
+            domain: config_toml.domain,
+            keypair,
+            storage,
+            dht_request_timeout: config_toml.dht_request_timeout,
+            default_list_limit: config_toml.default_list_limit.unwrap_or(DEFAULT_LIST_LIMIT),
+            max_list_limit: config_toml
+                .default_list_limit
+                .unwrap_or(DEFAULT_MAX_LIST_LIMIT),
+        };
 
         if config.testnet {
             let testnet_config = Config::testnet();
@@ -64,17 +114,24 @@ impl Config {
         Ok(config)
     }
 
+    /// Load the config from a file.
+    pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
+        let s = tokio::fs::read_to_string(path.as_ref())
+            .await
+            .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
+
+        Config::try_from_str(&s)
+    }
+
     /// Testnet configurations
     pub fn testnet() -> Self {
         let testnet = pkarr::mainline::Testnet::new(10);
         info!(?testnet.bootstrap, "Testnet bootstrap nodes");
 
         let bootstrap = Some(testnet.bootstrap.to_owned());
-        let storage = Some(
-            std::env::temp_dir()
-                .join(Timestamp::now().to_string())
-                .join(DEFAULT_STORAGE_DIR),
-        );
+        let storage = std::env::temp_dir()
+            .join(Timestamp::now().to_string())
+            .join(DEFAULT_STORAGE_DIR);
 
         Self {
             bootstrap,
@@ -88,11 +145,9 @@ impl Config {
     /// Test configurations
     pub fn test(testnet: &pkarr::mainline::Testnet) -> Self {
         let bootstrap = Some(testnet.bootstrap.to_owned());
-        let storage = Some(
-            std::env::temp_dir()
-                .join(Timestamp::now().to_string())
-                .join(DEFAULT_STORAGE_DIR),
-        );
+        let storage = std::env::temp_dir()
+            .join(Timestamp::now().to_string())
+            .join(DEFAULT_STORAGE_DIR);
 
         Self {
             bootstrap,
@@ -109,12 +164,12 @@ impl Config {
         self.bootstrap.to_owned()
     }
 
-    pub fn domain(&self) -> &str {
+    pub fn domain(&self) -> &Option<String> {
         &self.domain
     }
 
-    pub fn keypair(&self) -> Keypair {
-        Keypair::from_secret_key(&self.secret_key.unwrap_or_default())
+    pub fn keypair(&self) -> &Keypair {
+        &self.keypair
     }
 
     pub fn default_list_limit(&self) -> u16 {
@@ -126,17 +181,8 @@ impl Config {
     }
 
     /// Get the path to the storage directory
-    pub fn storage(&self) -> Result<PathBuf> {
-        let dir = if let Some(storage) = &self.storage {
-            PathBuf::from(storage)
-        } else {
-            let path = dirs_next::data_dir().ok_or_else(|| {
-                anyhow!("operating environment provides no directory for application data")
-            })?;
-            path.join(DEFAULT_STORAGE_DIR)
-        };
-
-        Ok(dir.join("homeserver"))
+    pub fn storage(&self) -> &PathBuf {
+        &self.storage
     }
 
     pub(crate) fn dht_request_timeout(&self) -> Option<Duration> {
@@ -150,9 +196,10 @@ impl Default for Config {
             testnet: false,
             port: Some(0),
             bootstrap: None,
-            domain: "localhost".to_string(),
-            storage: None,
-            secret_key: None,
+            domain: None,
+            storage: storage(None)
+                .expect("operating environment provides no directory for application data"),
+            keypair: Keypair::random(),
             dht_request_timeout: None,
             default_list_limit: DEFAULT_LIST_LIMIT,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
@@ -160,35 +207,42 @@ impl Default for Config {
     }
 }
 
-fn secret_key_deserialize<'de, D>(deserializer: D) -> Result<Option<[u8; 32]>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt: Option<String> = Option::deserialize(deserializer)?;
+fn deserialize_secret_key(s: String) -> anyhow::Result<[u8; 32]> {
+    let bytes =
+        hex::decode(s).map_err(|_| anyhow!("secret_key in config.toml should hex encoded"))?;
 
-    match opt {
-        Some(s) => {
-            let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-
-            if bytes.len() != 32 {
-                return Err(serde::de::Error::custom("Expected a 32-byte array"));
-            }
-
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
-            Ok(Some(arr))
-        }
-        None => Ok(None),
+    if bytes.len() != 32 {
+        return Err(anyhow!(format!(
+            "secret_key in config.toml should be 32 bytes in hex (64 characters), got: {}",
+            bytes.len()
+        )));
     }
+
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+
+    Ok(arr)
 }
 
-impl Debug for Config {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_map()
-            .entry(&"testnet", &self.testnet)
-            .entry(&"port", &self.port())
-            .entry(&"storage", &self.storage())
-            .entry(&"public_key", &self.keypair().public_key())
-            .finish()
+fn storage(storage: Option<String>) -> Result<PathBuf> {
+    let dir = if let Some(storage) = storage {
+        PathBuf::from(storage)
+    } else {
+        let path = dirs_next::data_dir().ok_or_else(|| {
+            anyhow!("operating environment provides no directory for application data")
+        })?;
+        path.join(DEFAULT_STORAGE_DIR)
+    };
+
+    Ok(dir.join("homeserver"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_empty() {
+        Config::try_from_str("").unwrap();
     }
 }
