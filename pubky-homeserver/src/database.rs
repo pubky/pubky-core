@@ -10,6 +10,7 @@ pub mod tables;
 use tables::{Tables, TABLES_COUNT};
 
 pub const MAX_LIST_LIMIT: u16 = 100;
+pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
 
 #[derive(Debug, Clone)]
 pub struct DB {
@@ -21,7 +22,13 @@ impl DB {
     pub fn open(storage: &Path) -> anyhow::Result<Self> {
         fs::create_dir_all(storage).unwrap();
 
-        let env = unsafe { EnvOpenOptions::new().max_dbs(TABLES_COUNT).open(storage) }?;
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .max_dbs(TABLES_COUNT)
+                // TODO: Add a configuration option?
+                .map_size(DEFAULT_MAP_SIZE)
+                .open(storage)
+        }?;
 
         let tables = migrations::run(&env)?;
 
