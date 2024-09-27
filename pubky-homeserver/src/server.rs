@@ -14,16 +14,17 @@ use crate::{config::Config, database::DB, pkarr::publish_server_packet};
 
 #[derive(Debug)]
 pub struct Homeserver {
-    port: u16,
-    config: Config,
+    state: AppState,
     tasks: JoinSet<std::io::Result<()>>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
-    pub verifier: AuthVerifier,
-    pub db: DB,
-    pub pkarr_client: PkarrClientAsync,
+    pub(crate) verifier: AuthVerifier,
+    pub(crate) db: DB,
+    pub(crate) pkarr_client: PkarrClientAsync,
+    pub(crate) config: Config,
+    pub(crate) port: u16,
 }
 
 impl Homeserver {
@@ -32,7 +33,7 @@ impl Homeserver {
 
         let keypair = config.keypair();
 
-        let db = DB::open(&config.storage()?)?;
+        let db = DB::open(config.clone())?;
 
         let pkarr_client = PkarrClient::new(Settings {
             dht: DhtSettings {
@@ -44,21 +45,21 @@ impl Homeserver {
         })?
         .as_async();
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            db,
-            pkarr_client: pkarr_client.clone(),
-        };
-
-        let app = crate::routes::create_app(state);
-
         let mut tasks = JoinSet::new();
-
-        let app = app.clone();
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port()))).await?;
 
         let port = listener.local_addr()?.port();
+
+        let state = AppState {
+            verifier: AuthVerifier::default(),
+            db,
+            pkarr_client,
+            config,
+            port,
+        };
+
+        let app = crate::routes::create_app(state.clone());
 
         // Spawn http server task
         tasks.spawn(
@@ -72,15 +73,11 @@ impl Homeserver {
 
         info!("Homeserver listening on http://localhost:{port}");
 
-        publish_server_packet(pkarr_client, &keypair, config.domain(), port).await?;
+        publish_server_packet(&state.pkarr_client, &keypair, state.config.domain(), port).await?;
 
         info!("Homeserver listening on pubky://{}", keypair.public_key());
 
-        Ok(Self {
-            tasks,
-            config,
-            port,
-        })
+        Ok(Self { tasks, state })
     }
 
     /// Test version of [Homeserver::start], using mainline Testnet, and a temporary storage.
@@ -93,11 +90,11 @@ impl Homeserver {
     // === Getters ===
 
     pub fn port(&self) -> u16 {
-        self.port
+        self.state.port
     }
 
     pub fn public_key(&self) -> PublicKey {
-        self.config.keypair().public_key()
+        self.state.config.keypair().public_key()
     }
 
     // === Public Methods ===

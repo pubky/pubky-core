@@ -15,6 +15,9 @@ use pubky_common::timestamp::Timestamp;
 const DEFAULT_HOMESERVER_PORT: u16 = 6287;
 const DEFAULT_STORAGE_DIR: &str = "pubky";
 
+pub const DEFAULT_LIST_LIMIT: u16 = 100;
+pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
+
 /// Server configuration
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -30,6 +33,14 @@ pub struct Config {
     secret_key: Option<[u8; 32]>,
 
     dht_request_timeout: Option<Duration>,
+    /// The default limit of a list api if no `limit` query parameter is provided.
+    ///
+    /// Defaults to `100`
+    default_list_limit: u16,
+    /// The maximum limit of a list api, even if a `limit` query parameter is provided.
+    ///
+    /// Defaults to `1000`
+    max_list_limit: u16,
 }
 
 impl Config {
@@ -102,6 +113,18 @@ impl Config {
         &self.domain
     }
 
+    pub fn keypair(&self) -> Keypair {
+        Keypair::from_secret_key(&self.secret_key.unwrap_or_default())
+    }
+
+    pub fn default_list_limit(&self) -> u16 {
+        self.default_list_limit
+    }
+
+    pub fn max_list_limit(&self) -> u16 {
+        self.max_list_limit
+    }
+
     /// Get the path to the storage directory
     pub fn storage(&self) -> Result<PathBuf> {
         let dir = if let Some(storage) = &self.storage {
@@ -114,10 +137,6 @@ impl Config {
         };
 
         Ok(dir.join("homeserver"))
-    }
-
-    pub fn keypair(&self) -> Keypair {
-        Keypair::from_secret_key(&self.secret_key.unwrap_or_default())
     }
 
     pub(crate) fn dht_request_timeout(&self) -> Option<Duration> {
@@ -135,6 +154,8 @@ impl Default for Config {
             storage: None,
             secret_key: None,
             dht_request_timeout: None,
+            default_list_limit: DEFAULT_LIST_LIMIT,
+            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
         }
     }
 }
