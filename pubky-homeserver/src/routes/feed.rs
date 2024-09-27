@@ -7,61 +7,16 @@ use axum::{
     response::IntoResponse,
 };
 
-use crate::{
-    database::{tables::events::Event, MAX_LIST_LIMIT},
-    error::Result,
-    server::AppState,
-};
+use crate::{error::Result, server::AppState};
 
 pub async fn feed(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse> {
-    let txn = state.db.env.read_txn()?;
+    let limit = params.get("limit").and_then(|l| l.parse::<u16>().ok());
+    let cursor = params.get("cursor").map(|c| c.as_str());
 
-    let limit = params
-        .get("limit")
-        .and_then(|l| l.parse::<u16>().ok())
-        .unwrap_or(MAX_LIST_LIMIT)
-        .min(MAX_LIST_LIMIT);
-
-    let mut cursor = params
-        .get("cursor")
-        .map(|c| c.as_str())
-        .unwrap_or("0000000000000");
-
-    // Guard against bad cursor
-    if cursor.len() < 13 {
-        cursor = "0000000000000"
-    }
-
-    let mut result: Vec<String> = vec![];
-    let mut next_cursor = cursor.to_string();
-
-    for _ in 0..limit {
-        match state
-            .db
-            .tables
-            .events
-            .get_greater_than(&txn, &next_cursor)?
-        {
-            Some((timestamp, event_bytes)) => {
-                let event = Event::deserialize(event_bytes)?;
-
-                let line = format!("{} {}", event.operation(), event.url());
-                next_cursor = timestamp.to_string();
-
-                result.push(line);
-            }
-            None => break,
-        };
-    }
-
-    if !result.is_empty() {
-        result.push(format!("cursor: {next_cursor}"))
-    }
-
-    txn.commit()?;
+    let result = state.db.list_events(limit, cursor)?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)

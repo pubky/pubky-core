@@ -9,7 +9,6 @@ pub mod tables;
 
 use tables::{Tables, TABLES_COUNT};
 
-pub const MAX_LIST_LIMIT: u16 = 100;
 pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
 
 #[derive(Debug, Clone)]
