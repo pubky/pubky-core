@@ -31,8 +31,6 @@ impl Homeserver {
     pub async fn start(config: Config) -> Result<Self> {
         debug!(?config);
 
-        let keypair = config.keypair();
-
         let db = DB::open(config.clone())?;
 
         let pkarr_client = PkarrClient::new(Settings {
@@ -55,7 +53,7 @@ impl Homeserver {
             verifier: AuthVerifier::default(),
             db,
             pkarr_client,
-            config,
+            config: config.clone(),
             port,
         };
 
@@ -73,9 +71,22 @@ impl Homeserver {
 
         info!("Homeserver listening on http://localhost:{port}");
 
-        publish_server_packet(&state.pkarr_client, &keypair, state.config.domain(), port).await?;
+        publish_server_packet(
+            &state.pkarr_client,
+            config.keypair(),
+            &state
+                .config
+                .domain()
+                .clone()
+                .unwrap_or("localhost".to_string()),
+            port,
+        )
+        .await?;
 
-        info!("Homeserver listening on pubky://{}", keypair.public_key());
+        info!(
+            "Homeserver listening on pubky://{}",
+            config.keypair().public_key()
+        );
 
         Ok(Self { tasks, state })
     }

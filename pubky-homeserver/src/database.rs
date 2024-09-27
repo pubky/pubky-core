@@ -20,16 +20,14 @@ pub struct DB {
 
 impl DB {
     pub fn open(config: Config) -> anyhow::Result<Self> {
-        let storage = config.storage()?;
-
-        fs::create_dir_all(&storage).unwrap();
+        fs::create_dir_all(config.storage())?;
 
         let env = unsafe {
             EnvOpenOptions::new()
                 .max_dbs(TABLES_COUNT)
                 // TODO: Add a configuration option?
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(storage)
+                .open(config.storage())
         }?;
 
         let tables = migrations::run(&env)?;
