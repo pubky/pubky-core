@@ -59,10 +59,11 @@ impl Event {
     }
 }
 
-const MAX_LIST_LIMIT: u16 = 1000;
-const DEFAULT_LIST_LIMIT: u16 = 100;
-
 impl DB {
+    /// Returns a list of events formatted as `<OP> <url>`.
+    ///
+    /// - limit defaults to [Config::default_list_limit] and capped by [Config::max_list_limit]
+    /// - cursor is a 13 character string encoding of a timestamp
     pub fn list_events(
         &self,
         limit: Option<u16>,
@@ -70,15 +71,11 @@ impl DB {
     ) -> anyhow::Result<Vec<String>> {
         let txn = self.env.read_txn()?;
 
-        let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).min(MAX_LIST_LIMIT);
+        let limit = limit
+            .unwrap_or(self.config.default_list_limit())
+            .min(self.config.max_list_limit());
 
-        let mut cursor = cursor.unwrap_or("0000000000000");
-
-        // Cursor smaller than 13 character is invalid
-        // TODO: should we send an error instead?
-        if cursor.len() < 13 {
-            cursor = "0000000000000"
-        }
+        let cursor = cursor.unwrap_or("0000000000000");
 
         let mut result: Vec<String> = vec![];
         let mut next_cursor = cursor.to_string();

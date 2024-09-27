@@ -5,8 +5,8 @@ use pkarr::{
     Keypair, PkarrClientAsync, SignedPacket,
 };
 
-pub async fn publish_server_packet(
-    pkarr_client: PkarrClientAsync,
+pub(crate) async fn publish_server_packet(
+    pkarr_client: &PkarrClientAsync,
     keypair: &Keypair,
     domain: &str,
     port: u16,
