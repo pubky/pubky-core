@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use tracing::debug;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
@@ -86,36 +87,42 @@ impl From<pkarr::Error> for Error {
 
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
+        debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
 
 impl From<heed::Error> for Error {
     fn from(error: heed::Error) -> Self {
+        debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
 
 impl From<anyhow::Error> for Error {
     fn from(error: anyhow::Error) -> Self {
+        debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
 
 impl From<postcard::Error> for Error {
     fn from(error: postcard::Error) -> Self {
+        debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
 
 impl From<axum::Error> for Error {
     fn from(error: axum::Error) -> Self {
+        debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
 
 impl<T> From<flume::SendError<T>> for Error {
     fn from(error: flume::SendError<T>) -> Self {
+        debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }
 }
