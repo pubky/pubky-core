@@ -11,7 +11,7 @@ use reqwest::{RequestBuilder, Response};
 use tokio::sync::oneshot;
 use url::Url;
 
-use pkarr::Keypair;
+use pkarr::{Keypair, PkarrClientAsync};
 
 use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
 
@@ -110,6 +110,13 @@ impl PubkyClient {
         }
 
         builder.build()
+    }
+
+    // === Getters ===
+
+    /// Returns a reference to the internal [pkarr] Client.
+    pub fn pkarr(&self) -> &PkarrClientAsync {
+        &self.pkarr
     }
 
     // === Auth ===
