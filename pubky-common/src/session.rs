@@ -84,7 +84,7 @@ impl Session {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum Error {
     #[error("Empty payload")]
     EmptyPayload,
@@ -132,6 +132,8 @@ mod tests {
 
     #[test]
     fn deserialize() {
-        let deseiralized = Session::deserialize(&[]).unwrap();
+        let result = Session::deserialize(&[]);
+
+        assert_eq!(result, Err(Error::EmptyPayload));
     }
 }

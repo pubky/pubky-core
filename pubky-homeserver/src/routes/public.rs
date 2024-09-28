@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use axum::{
     body::{Body, Bytes},
-    extract::{Query, State},
+    extract::State,
     http::{header, Response, StatusCode},
     response::IntoResponse,
 };
@@ -12,7 +10,7 @@ use tower_cookies::Cookies;
 
 use crate::{
     error::{Error, Result},
-    extractors::{EntryPath, Pubky},
+    extractors::{EntryPath, ListQueryParams, Pubky},
     server::AppState,
 };
 
@@ -65,7 +63,7 @@ pub async fn get(
     State(state): State<AppState>,
     pubky: Pubky,
     path: EntryPath,
-    Query(params): Query<HashMap<String, String>>,
+    params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     verify(path.as_str())?;
     let public_key = pubky.public_key();
@@ -88,10 +86,10 @@ pub async fn get(
         let vec = state.db.list(
             &txn,
             &path,
-            params.contains_key("reverse"),
-            params.get("limit").and_then(|l| l.parse::<u16>().ok()),
-            params.get("cursor").map(|cursor| cursor.into()),
-            params.contains_key("shallow"),
+            params.reverse,
+            params.limit,
+            params.cursor,
+            params.shallow,
         )?;
 
         return Ok(Response::builder()
