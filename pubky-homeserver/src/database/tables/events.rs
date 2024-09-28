@@ -67,7 +67,7 @@ impl DB {
     pub fn list_events(
         &self,
         limit: Option<u16>,
-        cursor: Option<&str>,
+        cursor: Option<String>,
     ) -> anyhow::Result<Vec<String>> {
         let txn = self.env.read_txn()?;
 
@@ -75,7 +75,7 @@ impl DB {
             .unwrap_or(self.config.default_list_limit())
             .min(self.config.max_list_limit());
 
-        let cursor = cursor.unwrap_or("0000000000000");
+        let cursor = cursor.unwrap_or("0000000000000".to_string());
 
         let mut result: Vec<String> = vec![];
         let mut next_cursor = cursor.to_string();

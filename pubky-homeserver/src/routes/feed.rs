@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::State,
     http::{header, Response, StatusCode},
     response::IntoResponse,
 };
@@ -10,17 +8,15 @@ use pubky_common::timestamp::{Timestamp, TimestampError};
 
 use crate::{
     error::{Error, Result},
+    extractors::ListQueryParams,
     server::AppState,
 };
 
 pub async fn feed(
     State(state): State<AppState>,
-    Query(params): Query<HashMap<String, String>>,
+    params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
-    let limit = params.get("limit").and_then(|l| l.parse::<u16>().ok());
-    let cursor = params.get("cursor").map(|c| c.as_str());
-
-    if let Some(cursor) = cursor {
+    if let Some(ref cursor) = params.cursor {
         if let Err(timestmap_error) = Timestamp::try_from(cursor.to_string()) {
             let cause = match timestmap_error {
                 TimestampError::InvalidEncoding => {
@@ -35,7 +31,7 @@ pub async fn feed(
         }
     }
 
-    let result = state.db.list_events(limit, cursor)?;
+    let result = state.db.list_events(params.limit, params.cursor)?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
