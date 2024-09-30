@@ -9,8 +9,6 @@ use crate::config::Config;
 
 use tables::{Tables, TABLES_COUNT};
 
-pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
-
 #[derive(Debug, Clone)]
 pub struct DB {
     pub(crate) env: Env,
@@ -25,8 +23,7 @@ impl DB {
         let env = unsafe {
             EnvOpenOptions::new()
                 .max_dbs(TABLES_COUNT)
-                // TODO: Add a configuration option?
-                .map_size(DEFAULT_MAP_SIZE)
+                .map_size(config.db_map_size())
                 .open(config.storage())
         }?;
 
