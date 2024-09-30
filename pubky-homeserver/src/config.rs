@@ -12,9 +12,11 @@ use tracing::info;
 
 use pubky_common::timestamp::Timestamp;
 
-const DEFAULT_HOMESERVER_PORT: u16 = 6287;
+// === Database ===
 const DEFAULT_STORAGE_DIR: &str = "pubky";
+pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
 
+// === Server ==
 pub const DEFAULT_LIST_LIMIT: u16 = 100;
 pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 
@@ -29,15 +31,16 @@ struct ConfigToml {
     dht_request_timeout: Option<Duration>,
     default_list_limit: Option<u16>,
     max_list_limit: Option<u16>,
+    db_map_size: Option<usize>,
 }
 
 /// Server configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Whether or not this server is running in a testnet.
     testnet: bool,
     /// The configured port for this server.
-    port: Option<u16>,
+    port: u16,
     /// Bootstrapping DHT nodes.
     ///
     /// Helpful to run the server locally or in testnet.
@@ -62,6 +65,9 @@ pub struct Config {
     ///
     /// Defaults to `1000`
     max_list_limit: u16,
+
+    // === Database params ===
+    db_map_size: usize,
 }
 
 impl Config {
@@ -90,7 +96,7 @@ impl Config {
 
         let config = Config {
             testnet: config_toml.testnet.unwrap_or(false),
-            port: config_toml.port,
+            port: config_toml.port.unwrap_or(0),
             bootstrap: config_toml.bootstrap,
             domain: config_toml.domain,
             keypair,
@@ -100,6 +106,7 @@ impl Config {
             max_list_limit: config_toml
                 .default_list_limit
                 .unwrap_or(DEFAULT_MAX_LIST_LIMIT),
+            db_map_size: config_toml.db_map_size.unwrap_or(DEFAULT_MAP_SIZE),
         };
 
         if config.testnet {
@@ -128,17 +135,11 @@ impl Config {
         let testnet = pkarr::mainline::Testnet::new(10);
         info!(?testnet.bootstrap, "Testnet bootstrap nodes");
 
-        let bootstrap = Some(testnet.bootstrap.to_owned());
-        let storage = std::env::temp_dir()
-            .join(Timestamp::now().to_string())
-            .join(DEFAULT_STORAGE_DIR);
-
-        Self {
-            bootstrap,
-            storage,
-            port: Some(15411),
-            dht_request_timeout: Some(Duration::from_millis(10)),
-            ..Default::default()
+        Config {
+            port: 15411,
+            dht_request_timeout: None,
+            db_map_size: DEFAULT_MAP_SIZE,
+            ..Self::test(&testnet)
         }
     }
 
@@ -150,14 +151,17 @@ impl Config {
             .join(DEFAULT_STORAGE_DIR);
 
         Self {
+            testnet: true,
             bootstrap,
             storage,
+            db_map_size: 10485760,
+            dht_request_timeout: Some(Duration::from_millis(10)),
             ..Default::default()
         }
     }
 
     pub fn port(&self) -> u16 {
-        self.port.unwrap_or(DEFAULT_HOMESERVER_PORT)
+        self.port
     }
 
     pub fn bootstsrap(&self) -> Option<Vec<String>> {
@@ -188,13 +192,17 @@ impl Config {
     pub(crate) fn dht_request_timeout(&self) -> Option<Duration> {
         self.dht_request_timeout
     }
+
+    pub(crate) fn db_map_size(&self) -> usize {
+        self.db_map_size
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             testnet: false,
-            port: Some(0),
+            port: 0,
             bootstrap: None,
             domain: None,
             storage: storage(None)
@@ -203,6 +211,7 @@ impl Default for Config {
             dht_request_timeout: None,
             default_list_limit: DEFAULT_LIST_LIMIT,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
+            db_map_size: DEFAULT_MAP_SIZE,
         }
     }
 }
@@ -239,10 +248,58 @@ fn storage(storage: Option<String>) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use pkarr::mainline::Testnet;
+
     use super::*;
 
     #[test]
     fn parse_empty() {
-        Config::try_from_str("").unwrap();
+        let config = Config::try_from_str("").unwrap();
+
+        assert_eq!(
+            config,
+            Config {
+                keypair: config.keypair.clone(),
+                ..Default::default()
+            }
+        )
+    }
+
+    #[test]
+    fn config_test() {
+        let testnet = Testnet::new(3);
+        let config = Config::test(&testnet);
+
+        assert_eq!(
+            config,
+            Config {
+                testnet: true,
+                bootstrap: testnet.bootstrap.into(),
+                db_map_size: 10485760,
+                dht_request_timeout: Some(Duration::from_millis(10)),
+
+                storage: config.storage.clone(),
+                keypair: config.keypair.clone(),
+                ..Default::default()
+            }
+        )
+    }
+
+    #[test]
+    fn config_testnet() {
+        let config = Config::testnet();
+
+        assert_eq!(
+            config,
+            Config {
+                testnet: true,
+                port: 15411,
+
+                bootstrap: config.bootstrap.clone(),
+                storage: config.storage.clone(),
+                keypair: config.keypair.clone(),
+                ..Default::default()
+            }
+        )
     }
 }
