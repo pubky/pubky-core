@@ -55,7 +55,7 @@ impl Config {
 
     /// Testnet configurations
     pub fn testnet() -> Self {
-        let testnet = pkarr::mainline::Testnet::new(10);
+        let testnet = pkarr::mainline::Testnet::new(10).unwrap();
         info!(?testnet.bootstrap, "Testnet bootstrap nodes");
 
         let bootstrap = Some(testnet.bootstrap.to_owned());

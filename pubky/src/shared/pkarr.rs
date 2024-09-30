@@ -186,23 +186,22 @@ mod tests {
             Packet,
         },
         mainline::{dht::DhtSettings, Testnet},
-        Keypair, PkarrClient, Settings, SignedPacket,
+        Keypair, Settings, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
     async fn resolve_endpoint_https() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
-        let pkarr_client = PkarrClient::new(Settings {
+        let pkarr_client = pkarr::Client::new(Settings {
             dht: DhtSettings {
                 bootstrap: Some(testnet.bootstrap.clone()),
                 ..Default::default()
             },
             ..Default::default()
         })
-        .unwrap()
-        .as_async();
+        .unwrap();
 
         let domain = "example.com";
         let mut target;
@@ -281,19 +280,18 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_homeserver() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         // Publish an intermediate controller of the homeserver
-        let pkarr_client = PkarrClient::new(Settings {
+        let pkarr_client = pkarr::Client::new(Settings {
             dht: DhtSettings {
                 bootstrap: Some(testnet.bootstrap.clone()),
                 ..Default::default()
             },
             ..Default::default()
         })
-        .unwrap()
-        .as_async();
+        .unwrap();
 
         let intermediate = Keypair::random();
 

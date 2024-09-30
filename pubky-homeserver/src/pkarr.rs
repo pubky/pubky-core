@@ -2,11 +2,11 @@
 
 use pkarr::{
     dns::{rdata::SVCB, Packet},
-    Keypair, PkarrClientAsync, SignedPacket,
+    Keypair, SignedPacket,
 };
 
 pub async fn publish_server_packet(
-    pkarr_client: PkarrClientAsync,
+    pkarr_client: pkarr::Client,
     keypair: &Keypair,
     domain: &str,
     port: u16,
