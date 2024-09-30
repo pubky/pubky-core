@@ -155,7 +155,6 @@ impl Config {
             bootstrap,
             storage,
             db_map_size: 10485760,
-            dht_request_timeout: Some(Duration::from_millis(10)),
             ..Default::default()
         }
     }
@@ -276,7 +275,6 @@ mod tests {
                 testnet: true,
                 bootstrap: testnet.bootstrap.into(),
                 db_map_size: 10485760,
-                dht_request_timeout: Some(Duration::from_millis(10)),
 
                 storage: config.storage.clone(),
                 keypair: config.keypair.clone(),
