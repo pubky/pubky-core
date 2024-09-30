@@ -13,7 +13,7 @@ use url::Url;
 
 use pkarr::Keypair;
 
-use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
+use ::pkarr::{mainline::dht::Testnet, PublicKey, SignedPacket};
 
 use crate::{
     error::{Error, Result},
@@ -69,7 +69,7 @@ impl PubkyClientBuilder {
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
-            pkarr: PkarrClient::new(self.pkarr_settings).unwrap().as_async(),
+            pkarr: pkarr::Client::new(self.pkarr_settings).unwrap(),
         }
     }
 }

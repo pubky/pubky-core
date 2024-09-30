@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 
 use pkarr::{
     mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PkarrClientAsync, PublicKey, Settings,
+    PublicKey, Settings,
 };
 
 use crate::{config::Config, database::DB, pkarr::publish_server_packet};
@@ -23,7 +23,7 @@ pub struct Homeserver {
 pub(crate) struct AppState {
     pub verifier: AuthVerifier,
     pub db: DB,
-    pub pkarr_client: PkarrClientAsync,
+    pub pkarr_client: pkarr::Client,
 }
 
 impl Homeserver {
@@ -34,15 +34,14 @@ impl Homeserver {
 
         let db = DB::open(&config.storage()?)?;
 
-        let pkarr_client = PkarrClient::new(Settings {
+        let pkarr_client = pkarr::Client::new(Settings {
             dht: DhtSettings {
                 bootstrap: config.bootstsrap(),
                 request_timeout: config.dht_request_timeout(),
                 ..Default::default()
             },
             ..Default::default()
-        })?
-        .as_async();
+        })?;
 
         let state = AppState {
             verifier: AuthVerifier::default(),

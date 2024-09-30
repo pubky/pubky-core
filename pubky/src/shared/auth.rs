@@ -238,7 +238,7 @@ mod tests {
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -279,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn authz() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let keypair = Keypair::random();
@@ -305,10 +305,9 @@ mod tests {
                 .unwrap();
         }
 
-        let session = pubkyauth_response.await.unwrap().unwrap();
+        let response = pubkyauth_response.await.unwrap();
 
-        assert_eq!(session.pubky(), &pubky);
-        assert_eq!(session.capabilities(), &capabilities.0);
+        assert_eq!(&response, &pubky);
 
         // Test access control enforcement
 
