@@ -79,7 +79,7 @@ pubkyauth:///
 ```abnf
 AuthToken   = signature namespace version timestamp pubky capabilities
 
-signature      = 64OCTET ; ed25519 signature over encoded DNS packet
+signature      = 64OCTET ; ed25519 signature over the rest of the token.
 namespace      = %x50.55.42.4b.59.3a.41.55.54.48 ; "PUBKY:AUTH" in UTF-8 (10 bytes)
 version        = 1*OCTET ; Version of the AuthToken for future proofing.
 timestamp      = 8OCTET ; Big-endian UNIX timestamp in microseconds

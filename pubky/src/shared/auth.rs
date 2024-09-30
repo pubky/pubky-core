@@ -305,9 +305,9 @@ mod tests {
                 .unwrap();
         }
 
-        let response = pubkyauth_response.await.unwrap();
+        let public_key = pubkyauth_response.await.unwrap();
 
-        assert_eq!(&response, &pubky);
+        assert_eq!(&public_key, &pubky);
 
         // Test access control enforcement
 

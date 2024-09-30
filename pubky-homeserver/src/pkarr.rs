@@ -6,7 +6,7 @@ use pkarr::{
 };
 
 pub async fn publish_server_packet(
-    pkarr_client: pkarr::Client,
+    pkarr_client: &pkarr::Client,
     keypair: &Keypair,
     domain: &str,
     port: u16,

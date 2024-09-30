@@ -112,6 +112,13 @@ impl PubkyClient {
         builder.build()
     }
 
+    // === Getters ===
+
+    /// Returns a reference to the internal [pkarr] Client.
+    pub fn pkarr(&self) -> &pkarr::Client {
+        &self.pkarr
+    }
+
     // === Auth ===
 
     /// Signup to a homeserver and update Pkarr accordingly.
