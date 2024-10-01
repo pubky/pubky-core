@@ -235,7 +235,7 @@ mod tests {
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -276,7 +276,7 @@ mod tests {
 
     #[tokio::test]
     async fn authz() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let keypair = Keypair::random();

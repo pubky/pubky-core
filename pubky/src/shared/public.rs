@@ -105,7 +105,7 @@ mod tests {
 
     #[tokio::test]
     async fn put_get_delete() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -132,7 +132,7 @@ mod tests {
 
     #[tokio::test]
     async fn unauthorized_put_delete() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -198,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn list() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -402,7 +402,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_shallow() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -613,7 +613,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_events() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -710,7 +710,7 @@ mod tests {
 
     #[tokio::test]
     async fn read_after_event() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);
@@ -758,7 +758,7 @@ mod tests {
 
     #[tokio::test]
     async fn dont_delete_shared_blobs() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
         let client = PubkyClient::test(&testnet);
 

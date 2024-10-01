@@ -13,7 +13,7 @@ use pubky_common::{
     timestamp::Timestamp,
 };
 
-use crate::database::{DB, MAX_LIST_LIMIT};
+use crate::database::DB;
 
 use super::events::Event;
 
@@ -157,7 +157,7 @@ impl DB {
 
     /// Return a list of pubky urls.
     ///
-    /// - limit defaults to and capped by [MAX_LIST_LIMIT]
+    /// - limit defaults to [Config::default_list_limit] and capped by [Config::max_list_limit]
     pub fn list(
         &self,
         txn: &RoTxn,
@@ -170,7 +170,9 @@ impl DB {
         // Vector to store results
         let mut results = Vec::new();
 
-        let limit = limit.unwrap_or(MAX_LIST_LIMIT).min(MAX_LIST_LIMIT);
+        let limit = limit
+            .unwrap_or(self.config.default_list_limit())
+            .min(self.config.max_list_limit());
 
         // TODO: make this more performant than split and allocations?
 

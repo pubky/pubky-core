@@ -68,6 +68,10 @@ impl Session {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self> {
+        if bytes.is_empty() {
+            return Err(Error::EmptyPayload);
+        }
+
         if bytes[0] > 0 {
             return Err(Error::UnknownVersion);
         }
@@ -80,8 +84,10 @@ impl Session {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum Error {
+    #[error("Empty payload")]
+    EmptyPayload,
     #[error("Unknown version")]
     UnknownVersion,
     #[error(transparent)]
@@ -122,5 +128,12 @@ mod tests {
         let deseiralized = Session::deserialize(&serialized).unwrap();
 
         assert_eq!(deseiralized, session)
+    }
+
+    #[test]
+    fn deserialize() {
+        let result = Session::deserialize(&[]);
+
+        assert_eq!(result, Err(Error::EmptyPayload));
     }
 }

@@ -18,7 +18,7 @@ bytes = "^1.7.1"
 base64 = "0.22.1"
 
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
-pkarr = { workspace = true }
+pkarr = { workspace = true, features = ["endpoints"] }
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
