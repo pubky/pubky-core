@@ -16,7 +16,8 @@ impl PubkyClient {
         let url = self.pubky_to_http(url).await?;
 
         let response = self
-            .request(Method::PUT, url)
+            .inner_request(Method::PUT, url)
+            .await
             .body(content.to_owned())
             .send()
             .await?;
@@ -29,7 +30,7 @@ impl PubkyClient {
     pub(crate) async fn inner_get<T: TryInto<Url>>(&self, url: T) -> Result<Option<Bytes>> {
         let url = self.pubky_to_http(url).await?;
 
-        let response = self.request(Method::GET, url).send().await?;
+        let response = self.inner_request(Method::GET, url).await.send().await?;
 
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -46,7 +47,7 @@ impl PubkyClient {
     pub(crate) async fn inner_delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
         let url = self.pubky_to_http(url).await?;
 
-        let response = self.request(Method::DELETE, url).send().await?;
+        let response = self.inner_request(Method::DELETE, url).await.send().await?;
 
         response.error_for_status_ref()?;
 
@@ -650,10 +651,7 @@ mod tests {
 
         {
             let response = client
-                .request(
-                    Method::GET,
-                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
-                )
+                .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
                 .await
                 .unwrap();
@@ -683,13 +681,7 @@ mod tests {
 
         {
             let response = client
-                .request(
-                    Method::GET,
-                    format!("{feed_url}?limit=10&cursor={cursor}")
-                        .as_str()
-                        .try_into()
-                        .unwrap(),
-                )
+                .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
                 .send()
                 .await
                 .unwrap();
@@ -740,10 +732,7 @@ mod tests {
 
         {
             let response = client
-                .request(
-                    Method::GET,
-                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
-                )
+                .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
                 .await
                 .unwrap();
@@ -762,8 +751,9 @@ mod tests {
             );
         }
 
-        let get = client.get(url.as_str()).await.unwrap();
-        dbg!(get);
+        let get = client.get(url.as_str()).await.unwrap().unwrap();
+
+        assert_eq!(get.as_ref(), &[0]);
     }
 
     #[tokio::test]
@@ -800,10 +790,7 @@ mod tests {
         let feed_url = format!("http://localhost:{}/events/", homeserver.port());
 
         let response = client
-            .request(
-                Method::GET,
-                format!("{feed_url}").as_str().try_into().unwrap(),
-            )
+            .request(Method::GET, format!("{feed_url}"))
             .send()
             .await
             .unwrap();

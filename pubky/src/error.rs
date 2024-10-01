@@ -12,9 +12,6 @@ pub enum Error {
     #[error("Generic error: {0}")]
     Generic(String),
 
-    #[error("Could not resolve endpoint for {0}")]
-    ResolveEndpoint(String),
-
     #[error("Could not convert the passed type into a Url")]
     InvalidUrl,
 
@@ -42,6 +39,9 @@ pub enum Error {
 
     #[error(transparent)]
     AuthToken(#[from] pubky_common::auth::Error),
+
+    #[error("Could not resolve Endpoint for domain: {0}")]
+    ResolveEndpoint(String),
 }
 
 #[cfg(target_arch = "wasm32")]

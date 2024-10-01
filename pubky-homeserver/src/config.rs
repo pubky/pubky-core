@@ -168,8 +168,8 @@ impl Config {
         self.bootstrap.to_owned()
     }
 
-    pub fn domain(&self) -> &Option<String> {
-        &self.domain
+    pub fn domain(&self) -> Option<&String> {
+        self.domain.as_ref()
     }
 
     pub fn keypair(&self) -> &Keypair {
