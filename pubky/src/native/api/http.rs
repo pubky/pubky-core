@@ -29,7 +29,7 @@ mod tests {
 
     #[tokio::test]
     async fn http_get_pubky() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
 
@@ -48,7 +48,7 @@ mod tests {
 
     #[tokio::test]
     async fn http_get_icann() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let client = PubkyClient::builder().testnet(&testnet).build();
 

@@ -1,67 +1,37 @@
-use std::collections::HashMap;
-
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::State,
     http::{header, Response, StatusCode},
     response::IntoResponse,
 };
+use pubky_common::timestamp::{Timestamp, TimestampError};
 
 use crate::{
-    database::{tables::events::Event, MAX_LIST_LIMIT},
-    error::Result,
+    error::{Error, Result},
+    extractors::ListQueryParams,
     server::AppState,
 };
 
 pub async fn feed(
     State(state): State<AppState>,
-    Query(params): Query<HashMap<String, String>>,
+    params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
-    let txn = state.db.env.read_txn()?;
+    if let Some(ref cursor) = params.cursor {
+        if let Err(timestmap_error) = Timestamp::try_from(cursor.to_string()) {
+            let cause = match timestmap_error {
+                TimestampError::InvalidEncoding => {
+                    "Cursor should be valid base32 Crockford encoding of a timestamp"
+                }
+                TimestampError::InvalidBytesLength(size) => {
+                    &format!("Cursor should be 13 characters long, got: {size}")
+                }
+            };
 
-    let limit = params
-        .get("limit")
-        .and_then(|l| l.parse::<u16>().ok())
-        .unwrap_or(MAX_LIST_LIMIT)
-        .min(MAX_LIST_LIMIT);
-
-    let mut cursor = params
-        .get("cursor")
-        .map(|c| c.as_str())
-        .unwrap_or("0000000000000");
-
-    // Guard against bad cursor
-    if cursor.len() < 13 {
-        cursor = "0000000000000"
+            Err(Error::new(StatusCode::BAD_REQUEST, cause.into()))?
+        }
     }
 
-    let mut result: Vec<String> = vec![];
-    let mut next_cursor = cursor.to_string();
-
-    for _ in 0..limit {
-        match state
-            .db
-            .tables
-            .events
-            .get_greater_than(&txn, &next_cursor)?
-        {
-            Some((timestamp, event_bytes)) => {
-                let event = Event::deserialize(event_bytes)?;
-
-                let line = format!("{} {}", event.operation(), event.url());
-                next_cursor = timestamp.to_string();
-
-                result.push(line);
-            }
-            None => break,
-        };
-    }
-
-    if !result.is_empty() {
-        result.push(format!("cursor: {next_cursor}"))
-    }
-
-    txn.commit()?;
+    let result = state.db.list_events(params.limit, params.cursor)?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)

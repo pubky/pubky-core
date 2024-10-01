@@ -193,7 +193,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_endpoint_https() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let pkarr_client = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
@@ -274,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_homeserver() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         // Publish an intermediate controller of the homeserver

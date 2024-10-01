@@ -7,13 +7,14 @@ use pkarr::{
         rdata::{RData, A, SVCB},
         Packet,
     },
-    Keypair, SignedPacket,
+    SignedPacket,
 };
 
+use crate::config::Config;
+
 pub async fn publish_server_packet(
-    pkarr_client: pkarr::Client,
-    keypair: &Keypair,
-    domain: Option<&String>,
+    pkarr_client: &pkarr::Client,
+    config: &Config,
     port: u16,
 ) -> anyhow::Result<()> {
     // TODO: Try to resolve first before publishing.
@@ -21,7 +22,7 @@ pub async fn publish_server_packet(
     let mut packet = Packet::new_reply(0);
 
     let default = ".".to_string();
-    let target = domain.unwrap_or(&default);
+    let target = config.domain().unwrap_or(&default);
     let mut svcb = SVCB::new(0, target.as_str().try_into()?);
 
     svcb.priority = 1;
@@ -34,7 +35,7 @@ pub async fn publish_server_packet(
         RData::HTTPS(svcb.clone().into()),
     ));
 
-    if domain.is_none() {
+    if config.domain().is_none() {
         // TODO: remove after remvoing Pubky shared/public
         // and add local host IP address instead.
         svcb.target = "localhost".try_into().unwrap();
@@ -56,7 +57,7 @@ pub async fn publish_server_packet(
 
     // TODO: announce A/AAAA records as well for TLS connections?
 
-    let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
+    let signed_packet = SignedPacket::from_packet(config.keypair(), &packet)?;
 
     pkarr_client.publish(&signed_packet).await?;
 
