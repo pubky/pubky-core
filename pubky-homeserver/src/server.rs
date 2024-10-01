@@ -51,7 +51,7 @@ impl Homeserver {
         let state = AppState {
             verifier: AuthVerifier::default(),
             db,
-            pkarr_client,
+            pkarr_client: pkarr_client.clone(),
             config: config.clone(),
             port,
         };
@@ -70,20 +70,10 @@ impl Homeserver {
 
         info!("Homeserver listening on http://localhost:{port}");
 
-        publish_server_packet(
-            &state.pkarr_client,
-            config.keypair(),
-            &state
-                .config
-                .domain()
-                .clone()
-                .unwrap_or("localhost".to_string()),
-            port,
-        )
-        .await?;
+        publish_server_packet(&pkarr_client, &config, port).await?;
 
         info!(
-            "Homeserver listening on pubky://{}",
+            "Homeserver listening on http://{}",
             config.keypair().public_key()
         );
 
