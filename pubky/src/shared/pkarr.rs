@@ -19,7 +19,7 @@ impl PubkyClient {
         keypair: &Keypair,
         host: &str,
     ) -> Result<()> {
-        let existing = self.pkarr_resolve(&keypair.public_key()).await?;
+        let existing = self.pkarr.resolve(&keypair.public_key()).await?;
 
         let mut packet = Packet::new_reply(0);
 
@@ -42,7 +42,7 @@ impl PubkyClient {
 
         let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
 
-        self.pkarr_publish(&signed_packet).await?;
+        self.pkarr.publish(&signed_packet).await?;
 
         Ok(())
     }
@@ -81,7 +81,8 @@ impl PubkyClient {
             step += 1;
 
             if let Some(signed_packet) = self
-                .pkarr_resolve(&public_key)
+                .pkarr
+                .resolve(&public_key)
                 .await
                 .map_err(|_| Error::ResolveEndpoint(original_target.into()))?
             {
@@ -185,24 +186,16 @@ mod tests {
             rdata::{HTTPS, SVCB},
             Packet,
         },
-        mainline::{dht::DhtSettings, Testnet},
-        Keypair, PkarrClient, Settings, SignedPacket,
+        mainline::Testnet,
+        Keypair, SignedPacket,
     };
     use pubky_homeserver::Homeserver;
 
     #[tokio::test]
     async fn resolve_endpoint_https() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: Some(testnet.bootstrap.clone()),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .unwrap()
-        .as_async();
+        let pkarr_client = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let domain = "example.com";
         let mut target;
@@ -281,19 +274,11 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_homeserver() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         // Publish an intermediate controller of the homeserver
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: Some(testnet.bootstrap.clone()),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .unwrap()
-        .as_async();
+        let pkarr_client = pkarr::Client::builder().testnet(&testnet).build().unwrap();
 
         let intermediate = Keypair::random();
 

@@ -50,7 +50,7 @@ mod tests {
 
     #[tokio::test]
     async fn entries() {
-        let db = DB::open(Config::test(&Testnet::new(0))).unwrap();
+        let db = DB::open(Config::test(&Testnet::new(0).unwrap())).unwrap();
 
         let keypair = Keypair::random();
         let path = "/pub/foo.txt";

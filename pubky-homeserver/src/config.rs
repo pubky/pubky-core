@@ -132,7 +132,7 @@ impl Config {
 
     /// Testnet configurations
     pub fn testnet() -> Self {
-        let testnet = pkarr::mainline::Testnet::new(10);
+        let testnet = pkarr::mainline::Testnet::new(10).unwrap();
         info!(?testnet.bootstrap, "Testnet bootstrap nodes");
 
         Config {
@@ -167,8 +167,8 @@ impl Config {
         self.bootstrap.to_owned()
     }
 
-    pub fn domain(&self) -> &Option<String> {
-        &self.domain
+    pub fn domain(&self) -> Option<&String> {
+        self.domain.as_ref()
     }
 
     pub fn keypair(&self) -> &Keypair {
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn config_test() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
         let config = Config::test(&testnet);
 
         assert_eq!(

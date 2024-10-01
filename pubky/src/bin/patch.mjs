@@ -55,12 +55,3 @@ const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `.
   );
 
 await writeFile(path.join(__dirname, `../../pkg/browser.js`), patched + "\nglobalThis['pubky'] = imports");
-
-// Move outside of nodejs
-
-await Promise.all([".js", ".d.ts", "_bg.wasm"].map(suffix =>
-  rename(
-    path.join(__dirname, `../../pkg/nodejs/${name}${suffix}`),
-    path.join(__dirname, `../../pkg/${suffix === '.js' ? "index.cjs" : (name + suffix)}`),
-  ))
-)
