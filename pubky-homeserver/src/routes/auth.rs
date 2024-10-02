@@ -124,7 +124,7 @@ pub async fn signin(
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
 
     cookie.set_path("/");
-    if *uri.scheme().unwrap_or(&Scheme::HTTP) == Scheme::HTTPS {
+    if state.config.domain().is_some() {
         cookie.set_secure(true);
         cookie.set_same_site(SameSite::None);
     }
