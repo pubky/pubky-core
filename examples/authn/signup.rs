@@ -3,7 +3,7 @@ use clap::Parser;
 use pubky::PubkyClient;
 use std::path::PathBuf;
 
-use pubky_common::{crypto::PublicKey};
+use pubky_common::crypto::PublicKey;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     let homeserver = cli.homeserver;
 
-    let client = PubkyClient::builder().build() ;
+    let client = PubkyClient::builder().build();
 
     println!("Enter your recovery_file's passphrase to signup:");
     let passphrase = rpassword::read_password()?;
@@ -33,9 +33,9 @@ async fn main() -> Result<()> {
 
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
-        client
-            .signup(&keypair, &PublicKey::try_from(homeserver).unwrap())
-            .await?;
+    client
+        .signup(&keypair, &PublicKey::try_from(homeserver).unwrap())
+        .await?;
 
     println!("Successfully signed up. Checking session:");
 
