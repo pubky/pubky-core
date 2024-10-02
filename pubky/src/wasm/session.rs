@@ -24,4 +24,10 @@ impl Session {
             .map(|c| c.to_string())
             .collect()
     }
+
+    // Serialize session for storage.
+    #[wasm_bindgen]
+    pub fn serialize(&self) -> Vec<String> {
+        String::from(self.0.serialize())
+    }
 }
