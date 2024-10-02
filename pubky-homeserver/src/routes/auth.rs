@@ -1,7 +1,7 @@
 use axum::{
     debug_handler,
     extract::State,
-    http::{uri::Scheme, StatusCode, Uri},
+    http::{StatusCode, Uri},
     response::IntoResponse,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
@@ -89,7 +89,7 @@ pub async fn signin(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    uri: Uri,
+    _uri: Uri,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     let token = state.verifier.verify(&body)?;
