@@ -136,7 +136,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "authenticator"
+name = "authn"
 version = "0.1.0"
 dependencies = [
  "anyhow",
