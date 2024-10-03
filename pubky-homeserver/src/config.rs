@@ -139,6 +139,7 @@ impl Config {
             port: 15411,
             dht_request_timeout: None,
             db_map_size: DEFAULT_MAP_SIZE,
+            keypair: Keypair::from_secret_key(&[0; 32]),
             ..Self::test(&testnet)
         }
     }
