@@ -1,7 +1,7 @@
 use axum::{
     debug_handler,
-    extract::State,
-    http::{uri::Scheme, StatusCode, Uri},
+    extract::{Host, State},
+    http::StatusCode,
     response::IntoResponse,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
@@ -25,12 +25,12 @@ pub async fn signup(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    uri: Uri,
+    host: Host,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
-    signin(State(state), user_agent, cookies, uri, body).await
+    signin(State(state), user_agent, cookies, host, body).await
 }
 
 pub async fn session(
@@ -89,7 +89,7 @@ pub async fn signin(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    uri: Uri,
+    Host(host): Host,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
     let token = state.verifier.verify(&body)?;
@@ -124,7 +124,8 @@ pub async fn signin(
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
 
     cookie.set_path("/");
-    if *uri.scheme().unwrap_or(&Scheme::HTTP) == Scheme::HTTPS {
+
+    if is_secure(&host) {
         cookie.set_secure(true);
         cookie.set_same_site(SameSite::None);
     }
@@ -135,4 +136,38 @@ pub async fn signin(
     wtxn.commit()?;
 
     Ok(session)
+}
+
+/// Assuming that if the server is addressed by anything other than
+/// localhost, or IP addresses, it is not addressed from a browser in an
+/// secure (HTTPs) window, thus it no need to `secure` and `same_site=none` to cookies
+fn is_secure(host: &str) -> bool {
+    url::Host::parse(host)
+        .map(|host| match host {
+            url::Host::Domain(domain) => domain != "localhost",
+            _ => false,
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use pkarr::Keypair;
+
+    use super::*;
+
+    #[test]
+    fn test_is_secure() {
+        assert_eq!(is_secure(""), false);
+        assert_eq!(is_secure("127.0.0.1"), false);
+        assert_eq!(is_secure("167.86.102.121"), false);
+        assert_eq!(
+            is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"),
+            false
+        );
+        assert_eq!(is_secure("localhost"), false);
+        assert_eq!(is_secure("localhost:23423"), false);
+        assert_eq!(is_secure(&Keypair::random().public_key().to_string()), true);
+        assert_eq!(is_secure("example.com"), true);
+    }
 }
