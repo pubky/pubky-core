@@ -25,3 +25,4 @@ tower-cookies = "0.10.0"
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+url = "2.5.2"
