@@ -37,7 +37,7 @@ impl PubkyClient {
             "_pubky".try_into().unwrap(),
             pkarr::dns::CLASS::IN,
             60 * 60,
-            pkarr::dns::rdata::RData::SVCB(svcb),
+            pkarr::dns::rdata::RData::HTTPS(svcb.into()),
         ));
 
         let signed_packet = SignedPacket::from_packet(keypair, &packet)?;
