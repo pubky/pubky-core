@@ -800,10 +800,7 @@ mod tests {
         let feed_url = format!("http://localhost:{}/events/", homeserver.port());
 
         let response = client
-            .request(
-                Method::GET,
-                format!("{feed_url}").as_str().try_into().unwrap(),
-            )
+            .request(Method::GET, feed_url.as_str().try_into().unwrap())
             .send()
             .await
             .unwrap();
