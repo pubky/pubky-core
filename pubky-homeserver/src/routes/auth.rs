@@ -158,16 +158,13 @@ mod tests {
 
     #[test]
     fn test_is_secure() {
-        assert_eq!(is_secure(""), false);
-        assert_eq!(is_secure("127.0.0.1"), false);
-        assert_eq!(is_secure("167.86.102.121"), false);
-        assert_eq!(
-            is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"),
-            false
-        );
-        assert_eq!(is_secure("localhost"), false);
-        assert_eq!(is_secure("localhost:23423"), false);
-        assert_eq!(is_secure(&Keypair::random().public_key().to_string()), true);
-        assert_eq!(is_secure("example.com"), true);
+        assert!(!is_secure(""));
+        assert!(!is_secure("127.0.0.1"));
+        assert!(!is_secure("167.86.102.121"));
+        assert!(!is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"));
+        assert!(!is_secure("localhost"));
+        assert!(!is_secure("localhost:23423"));
+        assert!(is_secure(&Keypair::random().public_key().to_string()));
+        assert!(is_secure("example.com"));
     }
 }
