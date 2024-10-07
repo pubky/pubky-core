@@ -11,7 +11,7 @@ use reqwest::{RequestBuilder, Response};
 use tokio::sync::oneshot;
 use url::Url;
 
-use pkarr::{Keypair, PkarrClientAsync};
+use pkarr::{mainline::MutableItem, Keypair, PkarrClientAsync};
 
 use ::pkarr::{mainline::dht::Testnet, PkarrClient, PublicKey, SignedPacket};
 
@@ -240,7 +240,10 @@ impl PubkyClient {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>> {
-        Ok(self.pkarr.resolve(public_key).await?)
+        Ok(self.pkarr.resolve(public_key).await?.or(self
+            .pkarr
+            .cache()
+            .get(&MutableItem::target_from_key(public_key.as_bytes(), &None))))
     }
 
     pub(crate) async fn pkarr_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
