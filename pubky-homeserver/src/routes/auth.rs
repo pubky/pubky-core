@@ -6,7 +6,13 @@ use axum::{
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
 use bytes::Bytes;
-use tower_cookies::{cookie::SameSite, Cookie, Cookies};
+use tower_cookies::{
+    cookie::{
+        time::{Duration, OffsetDateTime},
+        SameSite,
+    },
+    Cookie, Cookies,
+};
 
 use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
@@ -124,6 +130,7 @@ pub async fn signin(
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
 
     cookie.set_path("/");
+    cookie.set_expires(OffsetDateTime::now_utc() + Duration::weeks(104));
 
     if is_secure(&host) {
         cookie.set_secure(true);
