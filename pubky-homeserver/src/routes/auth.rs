@@ -15,6 +15,7 @@ use tower_cookies::{
 };
 
 use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
+use tracing::debug;
 
 use crate::{
     database::tables::{
@@ -137,6 +138,8 @@ pub async fn signin(
         cookie.set_same_site(SameSite::None);
     }
     cookie.set_http_only(true);
+
+    debug!(?cookie, "Created, saved and sending a new Session cookie");
 
     cookies.add(cookie);
 
