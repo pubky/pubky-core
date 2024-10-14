@@ -30,7 +30,7 @@ fn base(state: AppState) -> Router {
         .layer(CookieManagerLayer::new())
         // TODO: revisit if we enable streaming big payloads
         // TODO: maybe add to a separate router (drive router?).
-        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .with_state(state)
 }
 
