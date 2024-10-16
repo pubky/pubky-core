@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use tokio::task::JoinError;
 use tracing::debug;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -122,6 +123,27 @@ impl From<axum::Error> for Error {
 
 impl<T> From<flume::SendError<T>> for Error {
     fn from(error: flume::SendError<T>) -> Self {
+        debug!(?error);
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
+impl From<flume::RecvError> for Error {
+    fn from(error: flume::RecvError) -> Self {
+        debug!(?error);
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
+impl From<JoinError> for Error {
+    fn from(error: JoinError) -> Self {
+        debug!(?error);
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+    }
+}
+
+impl From<axum::http::Error> for Error {
+    fn from(error: axum::http::Error) -> Self {
         debug!(?error);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
     }

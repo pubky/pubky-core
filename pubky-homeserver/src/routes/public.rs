@@ -1,14 +1,16 @@
 use axum::{
-    body::{Body, Bytes},
+    body::Body,
     extract::State,
     http::{header, Response, StatusCode},
     response::IntoResponse,
 };
 use futures_util::stream::StreamExt;
 use pkarr::PublicKey;
+use std::io::Write;
 use tower_cookies::Cookies;
 
 use crate::{
+    database::tables::entries::Entry,
     error::{Error, Result},
     extractors::{EntryPath, ListQueryParams, Pubky},
     server::AppState,
@@ -22,37 +24,20 @@ pub async fn put(
     body: Body,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
-    let path = path.as_str();
+    let path = path.as_str().to_string();
 
-    verify(path)?;
-    authorize(&mut state, cookies, &public_key, path)?;
+    verify(&path)?;
+    authorize(&mut state, cookies, &public_key, &path)?;
+
+    let mut entry_writer = state.db.write_entry(&public_key, &path)?;
 
     let mut stream = body.into_data_stream();
-
-    let (tx, rx) = flume::bounded::<Bytes>(1);
-
-    let path = path.to_string();
-
-    // TODO: refactor Database to clean up this scope.
-    let done = tokio::task::spawn_blocking(move || -> Result<()> {
-        // TODO: this is a blocking operation, which is ok for small
-        // payloads (we have 16 kb limit for now) but later we need
-        // to stream this to filesystem, and keep track of any failed
-        // writes to GC these files later.
-
-        state.db.put_entry(&public_key, &path, rx)?;
-
-        Ok(())
-    });
-
     while let Some(next) = stream.next().await {
         let chunk = next?;
-
-        tx.send(chunk)?;
+        entry_writer.write_all(&chunk)?;
     }
 
-    drop(tx);
-    done.await.expect("join error")?;
+    let _entry = entry_writer.commit()?;
 
     // TODO: return relevant headers, like Etag?
 
@@ -66,9 +51,8 @@ pub async fn get(
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     verify(path.as_str())?;
-    let public_key = pubky.public_key();
-
-    let path = path.as_str();
+    let public_key = pubky.public_key().clone();
+    let path = path.as_str().to_string();
 
     if path.ends_with('/') {
         let txn = state.db.env.read_txn()?;
@@ -95,16 +79,49 @@ pub async fn get(
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/plain")
-            .body(Body::from(vec.join("\n")))
-            .unwrap());
+            .body(Body::from(vec.join("\n")))?);
     }
 
-    // TODO: Enable streaming
+    let (entry_tx, entry_rx) = flume::bounded::<Option<Entry>>(1);
+    let (chunks_tx, chunks_rx) = flume::unbounded::<std::result::Result<Vec<u8>, heed::Error>>();
 
-    match state.db.get_blob(public_key, path) {
-        Err(error) => Err(error)?,
-        Ok(Some(bytes)) => Ok(Response::builder().body(Body::from(bytes)).unwrap()),
-        Ok(None) => Err(Error::new(StatusCode::NOT_FOUND, "File Not Found".into())),
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let rtxn = state.db.env.read_txn()?;
+
+        let option = state.db.get_entry(&rtxn, &public_key, &path)?;
+
+        if let Some(entry) = option {
+            let iter = entry.read_content(&state.db, &rtxn)?;
+
+            entry_tx.send(Some(entry))?;
+
+            for next in iter {
+                chunks_tx.send(next.map(|b| b.to_vec()))?;
+            }
+        };
+
+        entry_tx.send(None)?;
+
+        Ok(())
+    });
+
+    if let Some(entry) = entry_rx.recv_async().await? {
+        // TODO: add HEAD endpoint
+        // TODO: Enable seek API (range requests)
+        // TODO: Gzip? or brotli?
+
+        Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_LENGTH, entry.content_length())
+            .header(header::CONTENT_TYPE, entry.content_type())
+            .header(
+                header::ETAG,
+                format!("\"{}\"", entry.content_hash().to_hex()),
+            )
+            .body(Body::from_stream(chunks_rx.into_stream()))
+            .unwrap())
+    } else {
+        Err(Error::with_status(StatusCode::NOT_FOUND))?
     }
 }
 
@@ -120,14 +137,13 @@ pub async fn delete(
     authorize(&mut state, cookies, &public_key, path)?;
     verify(path)?;
 
+    // TODO: should we wrap this with `tokio::task::spawn_blocking` in case it takes too long?
     let deleted = state.db.delete_entry(&public_key, path)?;
 
     if !deleted {
         // TODO: if the path ends with `/` return a `CONFLICT` error?
         return Err(Error::with_status(StatusCode::NOT_FOUND));
-    }
-
-    // TODO: return relevant headers, like Etag?
+    };
 
     Ok(())
 }
