@@ -518,6 +518,10 @@ mod tests {
 
         assert_eq!(blob, vec![0; 1024 * 1024]);
 
+        let stats = db.tables.blobs.stat(&rtxn).unwrap();
+        assert_eq!(stats.overflow_pages, 0);
+        assert_eq!(stats.leaf_pages, 128);
+
         rtxn.commit().unwrap();
     }
 }
