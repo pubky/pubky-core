@@ -55,9 +55,9 @@ fn max_chunk_size() -> usize {
 
     // - 16 bytes Header  per page (LMDB)
     // - Each page has to contain 2 records
-    // - 8 bytes per record (LMDB)
+    // - 8 bytes per record (LMDB) (imperically, it seems to be 10 not 8)
     // - 12 bytes key:
     //      - timestamp : 8 bytes
     //      - chunk index: 4 bytes
-    ((page_size - 16) / 2) - 8 - 12
+    ((page_size - 16) / 2) - (8 + 2) - 12
 }
