@@ -93,7 +93,7 @@ pub async fn get(
         let option = state.db.get_entry(&rtxn, &public_key, &path)?;
 
         if let Some(entry) = option {
-            let iter = state.db.get_blob(&rtxn, entry.timestamp())?;
+            let iter = entry.read_content(&state.db, &rtxn)?;
 
             entry_tx.send(Some(entry))?;
 

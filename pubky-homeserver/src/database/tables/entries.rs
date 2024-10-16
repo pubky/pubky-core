@@ -291,6 +291,14 @@ impl Entry {
 
     // === Public Method ===
 
+    pub fn read_content<'txn>(
+        &self,
+        db: &'txn DB,
+        rtxn: &'txn RoTxn,
+    ) -> anyhow::Result<impl Iterator<Item = Result<&'txn [u8], heed::Error>> + 'txn> {
+        db.read_entry_content(rtxn, self)
+    }
+
     pub fn serialize(&self) -> Vec<u8> {
         to_allocvec(self).expect("Session::serialize")
     }
@@ -464,7 +472,7 @@ mod tests {
         let mut blob = vec![];
 
         {
-            let mut iter = db.get_blob(&rtxn, entry.timestamp()).unwrap();
+            let mut iter = entry.read_content(&db, &rtxn).unwrap();
 
             while let Some(Ok(chunk)) = iter.next() {
                 blob.extend_from_slice(&chunk);
@@ -504,7 +512,7 @@ mod tests {
         let mut blob = vec![];
 
         {
-            let mut iter = db.get_blob(&rtxn, entry.timestamp()).unwrap();
+            let mut iter = entry.read_content(&db, &rtxn).unwrap();
 
             while let Some(Ok(chunk)) = iter.next() {
                 blob.extend_from_slice(&chunk);
