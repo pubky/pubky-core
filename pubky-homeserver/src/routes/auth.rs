@@ -1,5 +1,4 @@
 use axum::{
-    debug_handler,
     extract::{Host, State},
     http::StatusCode,
     response::IntoResponse,
@@ -20,7 +19,6 @@ use crate::{
     server::AppState,
 };
 
-#[debug_handler]
 pub async fn signup(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
