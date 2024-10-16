@@ -98,6 +98,7 @@ mod tests {
 
     use crate::*;
 
+    use bytes::Bytes;
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_homeserver::Homeserver;
     use reqwest::{Method, StatusCode};
@@ -762,8 +763,9 @@ mod tests {
             );
         }
 
-        let get = client.get(url.as_str()).await.unwrap();
-        dbg!(get);
+        let resolved = client.get(url.as_str()).await.unwrap().unwrap();
+
+        assert_eq!(&resolved[..], &[0]);
     }
 
     #[tokio::test]
@@ -817,5 +819,36 @@ mod tests {
                 lines.last().unwrap().to_string()
             ]
         )
+    }
+
+    #[tokio::test]
+    async fn stream() {
+        // TODO: test better streaming API
+
+        let testnet = Testnet::new(10);
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = PubkyClient::test(&testnet);
+
+        let keypair = Keypair::random();
+
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+
+        let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
+        let url = url.as_str();
+
+        let bytes = Bytes::from(vec![0; 1024 * 1024]);
+
+        client.put(url, &bytes).await.unwrap();
+
+        let response = client.get(url).await.unwrap().unwrap();
+
+        assert_eq!(response, bytes);
+
+        client.delete(url).await.unwrap();
+
+        let response = client.get(url).await.unwrap();
+
+        assert_eq!(response, None);
     }
 }
