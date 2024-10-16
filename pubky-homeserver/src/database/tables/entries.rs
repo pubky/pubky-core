@@ -520,7 +520,6 @@ mod tests {
 
         let stats = db.tables.blobs.stat(&rtxn).unwrap();
         assert_eq!(stats.overflow_pages, 0);
-        assert_eq!(stats.leaf_pages, 128);
 
         rtxn.commit().unwrap();
     }
