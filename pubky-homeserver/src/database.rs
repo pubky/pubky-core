@@ -15,6 +15,7 @@ pub struct DB {
     pub(crate) tables: Tables,
     pub(crate) config: Config,
     pub(crate) buffers_dir: PathBuf,
+    pub(crate) max_chunk_size: usize,
 }
 
 impl DB {
@@ -39,8 +40,24 @@ impl DB {
             tables,
             config,
             buffers_dir,
+            max_chunk_size: max_chunk_size(),
         };
 
         Ok(db)
     }
+}
+
+/// calculate optimal chunk size:
+/// - https://lmdb.readthedocs.io/en/release/#storage-efficiency-limits
+/// - https://github.com/lmdbjava/benchmarks/blob/master/results/20160710/README.md#test-2-determine-24816-kb-byte-values
+fn max_chunk_size() -> usize {
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+
+    // - 16 bytes Header  per page (LMDB)
+    // - Each page has to contain 2 records
+    // - 8 bytes per record (LMDB)
+    // - 12 bytes key:
+    //      - timestamp : 8 bytes
+    //      - chunk index: 4 bytes
+    ((page_size - 16) / 2) - 8 - 12
 }

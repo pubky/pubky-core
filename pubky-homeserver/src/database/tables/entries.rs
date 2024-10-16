@@ -350,9 +350,6 @@ impl<'db> EntryWriter<'db> {
     pub fn commit(&self) -> anyhow::Result<Entry> {
         let hash = self.hasher.finalize();
 
-        // TODO: get the chunk size from the OS's page size
-        let chunk_size: usize = 2000;
-
         let mut buffer = File::open(&self.buffer_path)?;
 
         let mut wtxn = self.db.env.write_txn()?;
@@ -363,7 +360,7 @@ impl<'db> EntryWriter<'db> {
         let mut chunk_index: u32 = 0;
 
         loop {
-            let mut chunk = vec![0_u8; chunk_size];
+            let mut chunk = vec![0_u8; self.db.max_chunk_size];
 
             let bytes_read = buffer.read(&mut chunk)?;
 
