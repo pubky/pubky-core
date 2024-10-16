@@ -762,8 +762,9 @@ mod tests {
             );
         }
 
-        let get = client.get(url.as_str()).await.unwrap();
-        dbg!(get);
+        let resolved = client.get(url.as_str()).await.unwrap().unwrap();
+
+        assert_eq!(&resolved[..], &[0]);
     }
 
     #[tokio::test]

@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use heed::{Env, EnvOpenOptions};
 
@@ -14,11 +14,16 @@ pub struct DB {
     pub(crate) env: Env,
     pub(crate) tables: Tables,
     pub(crate) config: Config,
+    pub(crate) buffers_dir: PathBuf,
 }
 
 impl DB {
     pub fn open(config: Config) -> anyhow::Result<Self> {
-        fs::create_dir_all(config.storage())?;
+        let buffers_dir = config.storage().clone().join("buffers");
+
+        // Cleanup buffers.
+        let _ = fs::remove_dir(&buffers_dir);
+        fs::create_dir_all(&buffers_dir)?;
 
         let env = unsafe {
             EnvOpenOptions::new()
@@ -33,46 +38,9 @@ impl DB {
             env,
             tables,
             config,
+            buffers_dir,
         };
 
         Ok(db)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bytes::Bytes;
-    use pkarr::{mainline::Testnet, Keypair};
-
-    use crate::config::Config;
-
-    use super::DB;
-
-    #[tokio::test]
-    async fn entries() {
-        let db = DB::open(Config::test(&Testnet::new(0))).unwrap();
-
-        let keypair = Keypair::random();
-        let path = "/pub/foo.txt";
-
-        let (tx, rx) = flume::bounded::<Bytes>(0);
-
-        let mut cloned = db.clone();
-        let cloned_keypair = keypair.clone();
-
-        let done = tokio::task::spawn_blocking(move || {
-            cloned
-                .put_entry(&cloned_keypair.public_key(), path, rx)
-                .unwrap();
-        });
-
-        tx.send(vec![1, 2, 3, 4, 5].into()).unwrap();
-        drop(tx);
-
-        done.await.unwrap();
-
-        let blob = db.get_blob(&keypair.public_key(), path).unwrap().unwrap();
-
-        assert_eq!(blob, Bytes::from(vec![1, 2, 3, 4, 5]));
     }
 }
