@@ -1,6 +1,5 @@
 use axum::{
     body::Body,
-    debug_handler,
     extract::State,
     http::{header, Response, StatusCode},
     response::IntoResponse,
@@ -17,7 +16,6 @@ use crate::{
     server::AppState,
 };
 
-#[debug_handler]
 pub async fn put(
     State(mut state): State<AppState>,
     pubky: Pubky,
