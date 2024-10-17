@@ -159,6 +159,22 @@ pub fn get_entry(
             }
         };
 
+        // Handle IF_NONE_MATCH
+        if let Some(str) = headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|h| h.to_str().ok())
+        {
+            let etag = format!("\"{}\"", entry.content_hash());
+            if str
+                .trim()
+                .split(',')
+                .collect::<Vec<_>>()
+                .contains(&etag.as_str())
+            {
+                *response.status_mut() = StatusCode::NOT_MODIFIED;
+            };
+        }
+
         if let Some(body) = body {
             *response.body_mut() = body;
         };
@@ -307,6 +323,52 @@ mod tests {
             .header(
                 header::IF_MODIFIED_SINCE,
                 response.headers().get(header::LAST_MODIFIED).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn if_none_match() -> anyhow::Result<()> {
+        let testnet = Testnet::new(3);
+        let mut server = Homeserver::start_test(&testnet).await?;
+
+        let public_key = Keypair::random().public_key();
+
+        let data = &[1, 2, 3, 4, 5];
+
+        server
+            .database_mut()
+            .write_entry(&public_key, "pub/foo")?
+            .update(data)?
+            .commit()?;
+
+        let client = reqwest::Client::builder().build()?;
+
+        let url = format!("http://localhost:{}/{public_key}/pub/foo", server.port());
+
+        let response = client.request(Method::GET, &url).send().await?;
+
+        let response = client
+            .request(Method::GET, &url)
+            .header(
+                header::IF_NONE_MATCH,
+                response.headers().get(header::ETAG).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        let response = client
+            .request(Method::HEAD, &url)
+            .header(
+                header::IF_NONE_MATCH,
+                response.headers().get(header::ETAG).unwrap(),
             )
             .send()
             .await?;
