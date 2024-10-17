@@ -18,7 +18,7 @@ crypto_secretbox = { version = "0.1.1", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["std"] }
 
 serde = { workspace = true, optional = true }
-pubky-timestamp = { version = "0.1.0", features = ["full"] }
+pubky-timestamp = { version = "0.2.0", features = ["full"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.69"

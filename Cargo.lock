@@ -1704,9 +1704,9 @@ dependencies = [
 
 [[package]]
 name = "pubky-timestamp"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "982d018cd110531645acddc6493bb9f07d1f4869205d53ceea69f2331d5ff7af"
+checksum = "084b6e5bfcc186781b71257d636b660f20e94bb588c3ba52393fd9faf7a7bfda"
 dependencies = [
  "base32",
  "document-features",
