@@ -1,5 +1,6 @@
 use axum::{
     body::Body,
+    debug_handler,
     extract::State,
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
@@ -45,6 +46,7 @@ pub async fn put(
     Ok(())
 }
 
+#[debug_handler]
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -107,7 +109,38 @@ pub async fn get(
         Ok(())
     });
 
-    if let Some(entry) = entry_rx.recv_async().await? {
+    get_entry(
+        headers,
+        entry_rx.recv_async().await?,
+        Some(Body::from_stream(chunks_rx.into_stream())),
+    )
+}
+
+pub async fn head(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    pubky: Pubky,
+    path: EntryPath,
+) -> Result<impl IntoResponse> {
+    verify(path.as_str())?;
+
+    let rtxn = state.db.env.read_txn()?;
+
+    get_entry(
+        headers,
+        state
+            .db
+            .get_entry(&rtxn, pubky.public_key(), path.as_str())?,
+        None,
+    )
+}
+
+pub fn get_entry(
+    headers: HeaderMap,
+    entry: Option<Entry>,
+    body: Option<Body>,
+) -> Result<Response<Body>> {
+    if let Some(entry) = entry {
         // TODO: Enable seek API (range requests)
         // TODO: Gzip? or brotli?
 
@@ -124,33 +157,15 @@ pub async fn get(
             if condition_http_date >= entry_http_date {
                 *response.status_mut() = StatusCode::NOT_MODIFIED;
             }
-        } else {
-            *response.body_mut() = Body::from_stream(chunks_rx.into_stream());
+        };
+
+        if let Some(body) = body {
+            *response.body_mut() = body;
         };
 
         Ok(response)
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))?
-    }
-}
-
-pub async fn head(
-    State(state): State<AppState>,
-    pubky: Pubky,
-    path: EntryPath,
-) -> Result<impl IntoResponse> {
-    verify(path.as_str())?;
-
-    let rtxn = state.db.env.read_txn()?;
-
-    match state
-        .db
-        .get_entry(&rtxn, pubky.public_key(), path.as_str())?
-        .as_ref()
-        .map(HeaderMap::from)
-    {
-        Some(headers) => Ok(headers),
-        None => Err(Error::with_status(StatusCode::NOT_FOUND)),
     }
 }
 
@@ -278,6 +293,17 @@ mod tests {
 
         let response = client
             .request(Method::GET, &url)
+            .header(
+                header::IF_MODIFIED_SINCE,
+                response.headers().get(header::LAST_MODIFIED).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        let response = client
+            .request(Method::HEAD, &url)
             .header(
                 header::IF_MODIFIED_SINCE,
                 response.headers().get(header::LAST_MODIFIED).unwrap(),
