@@ -5,8 +5,9 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::stream::StreamExt;
+use httpdate::HttpDate;
 use pkarr::PublicKey;
-use std::io::Write;
+use std::{io::Write, str::FromStr};
 use tower_cookies::Cookies;
 
 use crate::{
@@ -46,6 +47,7 @@ pub async fn put(
 
 pub async fn get(
     State(state): State<AppState>,
+    headers: HeaderMap,
     pubky: Pubky,
     path: EntryPath,
     params: ListQueryParams,
@@ -106,20 +108,27 @@ pub async fn get(
     });
 
     if let Some(entry) = entry_rx.recv_async().await? {
-        // TODO: add HEAD endpoint
         // TODO: Enable seek API (range requests)
         // TODO: Gzip? or brotli?
 
-        Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_LENGTH, entry.content_length())
-            .header(header::CONTENT_TYPE, entry.content_type())
-            .header(
-                header::ETAG,
-                format!("\"{}\"", entry.content_hash().to_hex()),
-            )
-            .body(Body::from_stream(chunks_rx.into_stream()))
-            .unwrap())
+        let mut response = HeaderMap::from(&entry).into_response();
+
+        // Handle IF_MODIFIED_SINCE
+        if let Some(condition_http_date) = headers
+            .get(header::IF_MODIFIED_SINCE)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| HttpDate::from_str(s).ok())
+        {
+            let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+
+            if condition_http_date >= entry_http_date {
+                *response.status_mut() = StatusCode::NOT_MODIFIED;
+            }
+        } else {
+            *response.body_mut() = Body::from_stream(chunks_rx.into_stream());
+        };
+
+        Ok(response)
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))?
     }
@@ -235,5 +244,49 @@ impl From<&Entry> for HeaderMap {
         );
 
         headers
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::header;
+    use pkarr::{mainline::Testnet, Keypair};
+    use reqwest::{self, Method, StatusCode};
+
+    use crate::Homeserver;
+
+    #[tokio::test]
+    async fn if_last_modified() -> anyhow::Result<()> {
+        let testnet = Testnet::new(3);
+        let mut server = Homeserver::start_test(&testnet).await?;
+
+        let public_key = Keypair::random().public_key();
+
+        let data = &[1, 2, 3, 4, 5];
+
+        server
+            .database_mut()
+            .write_entry(&public_key, "pub/foo")?
+            .update(data)?
+            .commit()?;
+
+        let client = reqwest::Client::builder().build()?;
+
+        let url = format!("http://localhost:{}/{public_key}/pub/foo", server.port());
+
+        let response = client.request(Method::GET, &url).send().await?;
+
+        let response = client
+            .request(Method::GET, &url)
+            .header(
+                header::IF_MODIFIED_SINCE,
+                response.headers().get(header::LAST_MODIFIED).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        Ok(())
     }
 }

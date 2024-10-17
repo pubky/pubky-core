@@ -1,7 +1,11 @@
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Read, path::PathBuf};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 use tracing::instrument;
 
 use heed::{
@@ -345,6 +349,14 @@ impl<'db> EntryWriter<'db> {
         })
     }
 
+    /// Same ase [EntryWriter::write_all] but returns a Result of a mutable reference of itself
+    /// to enable chaining with [Self::commit].
+    pub fn update(&mut self, chunk: &[u8]) -> Result<&mut Self, std::io::Error> {
+        self.write_all(chunk)?;
+
+        Ok(self)
+    }
+
     /// Commit blob from the filesystem buffer to LMDB,
     /// write the [Entry], and commit the write transaction.
     pub fn commit(&self) -> anyhow::Result<Entry> {
@@ -432,8 +444,6 @@ impl<'db> std::io::Write for EntryWriter<'db> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use bytes::Bytes;
     use pkarr::{mainline::Testnet, Keypair};
 
@@ -442,7 +452,7 @@ mod tests {
     use super::DB;
 
     #[tokio::test]
-    async fn entries() {
+    async fn entries() -> anyhow::Result<()> {
         let mut db = DB::open(Config::test(&Testnet::new(0))).unwrap();
 
         let keypair = Keypair::random();
@@ -451,9 +461,9 @@ mod tests {
 
         let chunk = Bytes::from(vec![1, 2, 3, 4, 5]);
 
-        let mut entry_writer = db.write_entry(&public_key, path).unwrap();
-        entry_writer.write_all(&chunk).unwrap();
-        entry_writer.commit().unwrap();
+        db.write_entry(&public_key, path)?
+            .update(&chunk)?
+            .commit()?;
 
         let rtxn = db.env.read_txn().unwrap();
         let entry = db.get_entry(&rtxn, &public_key, path).unwrap().unwrap();
@@ -479,10 +489,12 @@ mod tests {
         assert_eq!(blob, vec![1, 2, 3, 4, 5]);
 
         rtxn.commit().unwrap();
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn chunked_entry() {
+    async fn chunked_entry() -> anyhow::Result<()> {
         let mut db = DB::open(Config::test(&Testnet::new(0))).unwrap();
 
         let keypair = Keypair::random();
@@ -491,9 +503,9 @@ mod tests {
 
         let chunk = Bytes::from(vec![0; 1024 * 1024]);
 
-        let mut entry_writer = db.write_entry(&public_key, path).unwrap();
-        entry_writer.write_all(&chunk).unwrap();
-        entry_writer.commit().unwrap();
+        db.write_entry(&public_key, path)?
+            .update(&chunk)?
+            .commit()?;
 
         let rtxn = db.env.read_txn().unwrap();
         let entry = db.get_entry(&rtxn, &public_key, path).unwrap().unwrap();
@@ -522,5 +534,7 @@ mod tests {
         assert_eq!(stats.overflow_pages, 0);
 
         rtxn.commit().unwrap();
+
+        Ok(())
     }
 }
