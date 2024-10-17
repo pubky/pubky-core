@@ -26,7 +26,7 @@ impl Session {
         Self {
             version: 0,
             pubky: token.pubky().to_owned(),
-            created_at: Timestamp::now().into_inner(),
+            created_at: Timestamp::now().as_u64(),
             capabilities: token.capabilities().to_vec(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),

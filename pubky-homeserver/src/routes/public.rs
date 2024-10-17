@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{header, Response, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
 };
 use futures_util::stream::StreamExt;
@@ -125,6 +125,26 @@ pub async fn get(
     }
 }
 
+pub async fn head(
+    State(state): State<AppState>,
+    pubky: Pubky,
+    path: EntryPath,
+) -> Result<impl IntoResponse> {
+    verify(path.as_str())?;
+
+    let rtxn = state.db.env.read_txn()?;
+
+    match state
+        .db
+        .get_entry(&rtxn, pubky.public_key(), path.as_str())?
+        .as_ref()
+        .map(HeaderMap::from)
+    {
+        Some(headers) => Ok(headers),
+        None => Err(Error::with_status(StatusCode::NOT_FOUND)),
+    }
+}
+
 pub async fn delete(
     State(mut state): State<AppState>,
     pubky: Pubky,
@@ -187,4 +207,33 @@ fn verify(path: &str) -> Result<()> {
     // TODO: should we forbid paths ending with `/`?
 
     Ok(())
+}
+
+impl From<&Entry> for HeaderMap {
+    fn from(entry: &Entry) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_LENGTH, entry.content_length().into());
+        headers.insert(
+            header::LAST_MODIFIED,
+            HeaderValue::from_str(&entry.timestamp().format_http_date())
+                .expect("http date is valid header value"),
+        );
+        headers.insert(
+            header::CONTENT_TYPE,
+            // TODO: when setting content type from user input, we should validate it as a HeaderValue
+            entry
+                .content_type()
+                .try_into()
+                .or(HeaderValue::from_str(""))
+                .expect("valid header value"),
+        );
+        headers.insert(
+            header::ETAG,
+            format!("\"{}\"", entry.content_hash())
+                .try_into()
+                .expect("hex string is valid"),
+        );
+
+        headers
+    }
 }
