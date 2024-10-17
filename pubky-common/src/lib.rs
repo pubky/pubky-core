@@ -4,4 +4,7 @@ pub mod crypto;
 pub mod namespaces;
 pub mod recovery_file;
 pub mod session;
-pub mod timestamp;
+
+mod timestamp {
+    pub use pubky_timestamp::*;
+}

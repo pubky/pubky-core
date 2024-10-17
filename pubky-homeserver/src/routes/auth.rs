@@ -104,7 +104,7 @@ pub async fn signin(
             &mut wtxn,
             public_key,
             &User {
-                created_at: Timestamp::now().into_inner(),
+                created_at: Timestamp::now().as_u64(),
             },
         )?;
     }
