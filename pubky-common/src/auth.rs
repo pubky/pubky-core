@@ -76,7 +76,7 @@ impl AuthToken {
                 let now = Timestamp::now();
 
                 // Chcek timestamp;
-                let diff = (token.timestamp.as_u64() - now.as_u64()) as i64;
+                let diff = token.timestamp.as_u64() as i64 - now.as_u64() as i64;
                 if diff > TIMESTAMP_WINDOW {
                     return Err(Error::TooFarInTheFuture);
                 }
@@ -235,7 +235,7 @@ mod tests {
 
         let verifier = AuthVerifier::default();
 
-        let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
+        let timestamp = (Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
 
         let mut signable = vec![];
         signable.extend_from_slice(signer.public_key().as_bytes());

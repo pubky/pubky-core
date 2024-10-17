@@ -5,6 +5,6 @@ pub mod namespaces;
 pub mod recovery_file;
 pub mod session;
 
-mod timestamp {
+pub mod timestamp {
     pub use pubky_timestamp::*;
 }

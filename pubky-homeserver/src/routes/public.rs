@@ -213,7 +213,11 @@ impl From<&Entry> for HeaderMap {
     fn from(entry: &Entry) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_LENGTH, entry.content_length().into());
-        headers.insert(header::LAST_MODIFIED, entry.timestamp().format_http_date());
+        headers.insert(
+            header::LAST_MODIFIED,
+            HeaderValue::from_str(&entry.timestamp().format_http_date())
+                .expect("http date is valid header value"),
+        );
         headers.insert(
             header::CONTENT_TYPE,
             // TODO: when setting content type from user input, we should validate it as a HeaderValue
