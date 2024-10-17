@@ -4,7 +4,7 @@ use axum::{
     http::{header, Response, StatusCode},
     response::IntoResponse,
 };
-use pubky_common::timestamp::{Timestamp, TimestampError};
+use pubky_common::timestamp::Timestamp;
 
 use crate::{
     error::{Error, Result},
@@ -17,17 +17,11 @@ pub async fn feed(
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     if let Some(ref cursor) = params.cursor {
-        if let Err(timestmap_error) = Timestamp::try_from(cursor.to_string()) {
-            let cause = match timestmap_error {
-                TimestampError::InvalidEncoding => {
-                    "Cursor should be valid base32 Crockford encoding of a timestamp"
-                }
-                TimestampError::InvalidBytesLength(size) => {
-                    &format!("Cursor should be 13 characters long, got: {size}")
-                }
-            };
-
-            Err(Error::new(StatusCode::BAD_REQUEST, cause.into()))?
+        if Timestamp::try_from(cursor.to_string()).is_err() {
+            Err(Error::new(
+                StatusCode::BAD_REQUEST,
+                "Cursor should be valid base32 Crockford encoding of a timestamp".into(),
+            ))?
         }
     }
 

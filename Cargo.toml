@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-pkarr = { git = "https://github.com/Pubky/pkarr", branch = "serde", package = "pkarr", features = ["async"] }
+pkarr = { git = "https://github.com/Pubky/pkarr", branch = "serde", package = "pkarr", features = ["async", "serde"] }
 serde = { version = "^1.0.209", features = ["derive"] }
 
 [profile.release]

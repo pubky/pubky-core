@@ -76,7 +76,7 @@ impl AuthToken {
                 let now = Timestamp::now();
 
                 // Chcek timestamp;
-                let diff = token.timestamp.difference(&now);
+                let diff = token.timestamp.as_u64() as i64 - now.as_u64() as i64;
                 if diff > TIMESTAMP_WINDOW {
                     return Err(Error::TooFarInTheFuture);
                 }
@@ -155,7 +155,7 @@ impl AuthVerifier {
 
     /// Remove all tokens older than two time intervals in the past.
     fn gc(&self) {
-        let threshold = ((Timestamp::now().into_inner() / TIME_INTERVAL) - 2).to_be_bytes();
+        let threshold = ((Timestamp::now().as_u64() / TIME_INTERVAL) - 2).to_be_bytes();
 
         let mut inner = self.seen.lock().unwrap();
 
@@ -235,7 +235,7 @@ mod tests {
 
         let verifier = AuthVerifier::default();
 
-        let timestamp = (&Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
+        let timestamp = (Timestamp::now()) - (TIMESTAMP_WINDOW as u64);
 
         let mut signable = vec![];
         signable.extend_from_slice(signer.public_key().as_bytes());
