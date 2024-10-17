@@ -1,12 +1,14 @@
 use axum::{
     body::Body,
+    debug_handler,
     extract::State,
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
 };
 use futures_util::stream::StreamExt;
+use httpdate::HttpDate;
 use pkarr::PublicKey;
-use std::io::Write;
+use std::{io::Write, str::FromStr};
 use tower_cookies::Cookies;
 
 use crate::{
@@ -44,8 +46,10 @@ pub async fn put(
     Ok(())
 }
 
+#[debug_handler]
 pub async fn get(
     State(state): State<AppState>,
+    headers: HeaderMap,
     pubky: Pubky,
     path: EntryPath,
     params: ListQueryParams,
@@ -105,28 +109,16 @@ pub async fn get(
         Ok(())
     });
 
-    if let Some(entry) = entry_rx.recv_async().await? {
-        // TODO: add HEAD endpoint
-        // TODO: Enable seek API (range requests)
-        // TODO: Gzip? or brotli?
-
-        Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_LENGTH, entry.content_length())
-            .header(header::CONTENT_TYPE, entry.content_type())
-            .header(
-                header::ETAG,
-                format!("\"{}\"", entry.content_hash().to_hex()),
-            )
-            .body(Body::from_stream(chunks_rx.into_stream()))
-            .unwrap())
-    } else {
-        Err(Error::with_status(StatusCode::NOT_FOUND))?
-    }
+    get_entry(
+        headers,
+        entry_rx.recv_async().await?,
+        Some(Body::from_stream(chunks_rx.into_stream())),
+    )
 }
 
 pub async fn head(
     State(state): State<AppState>,
+    headers: HeaderMap,
     pubky: Pubky,
     path: EntryPath,
 ) -> Result<impl IntoResponse> {
@@ -134,14 +126,62 @@ pub async fn head(
 
     let rtxn = state.db.env.read_txn()?;
 
-    match state
-        .db
-        .get_entry(&rtxn, pubky.public_key(), path.as_str())?
-        .as_ref()
-        .map(HeaderMap::from)
-    {
-        Some(headers) => Ok(headers),
-        None => Err(Error::with_status(StatusCode::NOT_FOUND)),
+    get_entry(
+        headers,
+        state
+            .db
+            .get_entry(&rtxn, pubky.public_key(), path.as_str())?,
+        None,
+    )
+}
+
+pub fn get_entry(
+    headers: HeaderMap,
+    entry: Option<Entry>,
+    body: Option<Body>,
+) -> Result<Response<Body>> {
+    if let Some(entry) = entry {
+        // TODO: Enable seek API (range requests)
+        // TODO: Gzip? or brotli?
+
+        let mut response = HeaderMap::from(&entry).into_response();
+
+        // Handle IF_MODIFIED_SINCE
+        if let Some(condition_http_date) = headers
+            .get(header::IF_MODIFIED_SINCE)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| HttpDate::from_str(s).ok())
+        {
+            let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+
+            if condition_http_date >= entry_http_date {
+                *response.status_mut() = StatusCode::NOT_MODIFIED;
+            }
+        };
+
+        // Handle IF_NONE_MATCH
+        if let Some(str) = headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|h| h.to_str().ok())
+        {
+            let etag = format!("\"{}\"", entry.content_hash());
+            if str
+                .trim()
+                .split(',')
+                .collect::<Vec<_>>()
+                .contains(&etag.as_str())
+            {
+                *response.status_mut() = StatusCode::NOT_MODIFIED;
+            };
+        }
+
+        if let Some(body) = body {
+            *response.body_mut() = body;
+        };
+
+        Ok(response)
+    } else {
+        Err(Error::with_status(StatusCode::NOT_FOUND))?
     }
 }
 
@@ -235,5 +275,106 @@ impl From<&Entry> for HeaderMap {
         );
 
         headers
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::header;
+    use pkarr::{mainline::Testnet, Keypair};
+    use reqwest::{self, Method, StatusCode};
+
+    use crate::Homeserver;
+
+    #[tokio::test]
+    async fn if_last_modified() -> anyhow::Result<()> {
+        let testnet = Testnet::new(3);
+        let mut server = Homeserver::start_test(&testnet).await?;
+
+        let public_key = Keypair::random().public_key();
+
+        let data = &[1, 2, 3, 4, 5];
+
+        server
+            .database_mut()
+            .write_entry(&public_key, "pub/foo")?
+            .update(data)?
+            .commit()?;
+
+        let client = reqwest::Client::builder().build()?;
+
+        let url = format!("http://localhost:{}/{public_key}/pub/foo", server.port());
+
+        let response = client.request(Method::GET, &url).send().await?;
+
+        let response = client
+            .request(Method::GET, &url)
+            .header(
+                header::IF_MODIFIED_SINCE,
+                response.headers().get(header::LAST_MODIFIED).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        let response = client
+            .request(Method::HEAD, &url)
+            .header(
+                header::IF_MODIFIED_SINCE,
+                response.headers().get(header::LAST_MODIFIED).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn if_none_match() -> anyhow::Result<()> {
+        let testnet = Testnet::new(3);
+        let mut server = Homeserver::start_test(&testnet).await?;
+
+        let public_key = Keypair::random().public_key();
+
+        let data = &[1, 2, 3, 4, 5];
+
+        server
+            .database_mut()
+            .write_entry(&public_key, "pub/foo")?
+            .update(data)?
+            .commit()?;
+
+        let client = reqwest::Client::builder().build()?;
+
+        let url = format!("http://localhost:{}/{public_key}/pub/foo", server.port());
+
+        let response = client.request(Method::GET, &url).send().await?;
+
+        let response = client
+            .request(Method::GET, &url)
+            .header(
+                header::IF_NONE_MATCH,
+                response.headers().get(header::ETAG).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        let response = client
+            .request(Method::HEAD, &url)
+            .header(
+                header::IF_NONE_MATCH,
+                response.headers().get(header::ETAG).unwrap(),
+            )
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        Ok(())
     }
 }
