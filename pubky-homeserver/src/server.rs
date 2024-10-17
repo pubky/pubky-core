@@ -108,6 +108,11 @@ impl Homeserver {
         self.state.config.keypair().public_key()
     }
 
+    #[cfg(test)]
+    pub(crate) fn database_mut(&mut self) -> &mut DB {
+        &mut self.state.db
+    }
+
     // === Public Methods ===
 
     /// Shutdown the server and wait for all tasks to complete.
