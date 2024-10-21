@@ -13,28 +13,25 @@ Pubky Homeserver is a core component of the Pubky ecosystem, built to manage dec
 
 ## Architecture Diagram
 Below is a high-level architecture diagram of the Pubky Homeserver, showing its integration with Pubky Core, PKARR, and end-user devices:
-
 ```mermaid
-direction LR
-subgraph homeserverhub["Homeserver (accounts)"]
-    User1["User1"]
-    User2["User2,3..."]
-end
-subgraph Pubky_App_Backend["Pubky-App Backend PUT/DEL"]
-    key_value_db["Key-value DB
-cache, expected queries, notifications, etc"]
-    graphdb["GraphDB
-social data"]
-end
-subgraph Pubky_App_Frontend["Pubky-App Frontend"]
-    client_frontend["Client Frontend"]
-    backend_frontend["Backend of Frontend"]
-end
-homeserverhub -- PING update/add entries --> mainline_dht["Mainline DHT PKARR publicKey, homeserver IP"]
-homeserverhub -- REST --> Pubky_App_Backend
-Pubky_App_Backend -- REST --> Pubky_App_Frontend
-Pubky_App_Frontend -- PING update/add entries --> mainline_dht
-client_frontend <--> backend_frontend
+graph LR
+    subgraph homeserverhub["Homeserver (accounts)"]
+        User1["User1"]
+        User2["User2,3..."]
+    end
+    subgraph Pubky_App_Backend["Pubky-App Backend PUT/DEL"]
+        key_value_db["Key-value DB\ncache, expected queries, notifications, etc"]
+        graphdb["GraphDB\nsocial data"]
+    end
+    subgraph Pubky_App_Frontend["Pubky-App Frontend"]
+        client_frontend["Client Frontend"]
+        backend_frontend["Backend of Frontend"]
+    end
+    homeserverhub -- PING update/add entries --> mainline_dht["Mainline DHT PKARR publicKey, homeserver IP"]
+    homeserverhub -- REST --> Pubky_App_Backend
+    Pubky_App_Backend -- REST --> Pubky_App_Frontend
+    Pubky_App_Frontend -- PING update/add entries --> mainline_dht
+    client_frontend <--> backend_frontend
 ```
 
 The diagram illustrates how the homeserver communicates with user devices and the Pubky Core, ensuring consistent and decentralized data management.
