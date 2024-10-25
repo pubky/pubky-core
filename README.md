@@ -33,7 +33,7 @@ Pubky-core combines a [censorship resistant public-key based alternative to DNS]
 ## Features
 - Public key based authentication.
 - Public key based 3rd party authorization.
-- Key-value store through PUT/GET/DELET HTTP API + pagination.
+- Key-value store through PUT/GET/DELETE HTTP API + pagination.
 
 ## Getting started
 
