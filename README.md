@@ -1,4 +1,3 @@
-
 <h1 align="center"><a href="https://pubky.org/"><img alt="pubky" src="./.svg/pubky-core-logo.svg" width="200" /></a></h1>
 
 <h3 align="center">
@@ -17,6 +16,10 @@
     <span> | </span>
     <a href="https://github.com/pubky/pubky-core/releases">
       Releases
+    </a>
+    <span> | </span>
+    <a href="https://www.npmjs.com/package/@synonymdev/pubky">
+      JS bindings 
     </a>
   </h3>
 </div>
