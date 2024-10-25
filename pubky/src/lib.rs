@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+//!
+
 mod error;
 mod shared;
 
@@ -22,6 +25,7 @@ pub use error::Error;
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::shared::list_builder::ListBuilder;
 
+/// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
 #[derive(Debug, Clone)]
 #[wasm_bindgen]
 pub struct PubkyClient {
