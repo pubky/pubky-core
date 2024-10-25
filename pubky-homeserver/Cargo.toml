@@ -17,10 +17,10 @@ heed = "0.20.3"
 hex = "0.4.3"
 httpdate = "1.0.3"
 libc = "0.2.159"
-pkarr = { workspace = true }
 postcard = { version = "1.0.8", features = ["alloc"] }
+pkarr = { version = "2.2.1-alpha.2", features = ["serde", "async"]  }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
-serde = { workspace = true }
+serde = { version = "1.0.213", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
 toml = "0.8.19"
 tower-cookies = "0.10.0"
