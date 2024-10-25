@@ -1,4 +1,4 @@
-# Pubky
+<h1 align="center"><a href="https://pubky.org/"><img alt="pubky" src="./.img/pubky-logo.svg" width="100" /></a></h1>
 
 > The Web, long centralized, must decentralize; Long decentralized, must centralize.
 
