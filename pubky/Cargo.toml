@@ -1,6 +1,6 @@
 [package]
 name = "pubky"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Pubky core client"
 license = "MIT"
@@ -18,7 +18,7 @@ bytes = "^1.7.1"
 base64 = "0.22.1"
 
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
-pkarr = { workspace = true, features = ["async"] }
+pkarr = { git = "https://github.com/Pubky/pkarr", branch = "serde", package = "pkarr", features = ["async", "serde"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 reqwest = { version = "0.12.5", features = ["cookies", "rustls-tls"], default-features = false }
