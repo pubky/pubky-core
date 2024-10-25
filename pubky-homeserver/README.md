@@ -1,5 +1,7 @@
 # Pubky Homeserver
 
+A pubky-core homeserver that acts as users' agent on the Internet, providing data availability and more.more.more.more.
+
 ## Usage
 
 Use `cargo run`
