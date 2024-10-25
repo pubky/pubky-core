@@ -149,7 +149,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "pubky",
- "pubky-common",
+ "pubky-common 0.1.0",
  "reqwest",
  "rpassword",
  "tokio",
@@ -1673,7 +1673,7 @@ dependencies = [
  "bytes",
  "js-sys",
  "pkarr",
- "pubky-common",
+ "pubky-common 0.1.0 (git+https://github.com/pubky/pubky-core)",
  "pubky_homeserver",
  "reqwest",
  "thiserror",
@@ -1686,6 +1686,26 @@ dependencies = [
 [[package]]
 name = "pubky-common"
 version = "0.1.0"
+dependencies = [
+ "argon2",
+ "base32",
+ "blake3",
+ "crypto_secretbox",
+ "ed25519-dalek",
+ "js-sys",
+ "once_cell",
+ "pkarr",
+ "postcard",
+ "pubky-timestamp",
+ "rand",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "pubky-common"
+version = "0.1.0"
+source = "git+https://github.com/pubky/pubky-core#60c5cf10c13c17ff7e88c7e478011cdaaadff2f8"
 dependencies = [
  "argon2",
  "base32",
@@ -1736,7 +1756,7 @@ dependencies = [
  "libc",
  "pkarr",
  "postcard",
- "pubky-common",
+ "pubky-common 0.1.0",
  "reqwest",
  "serde",
  "tokio",

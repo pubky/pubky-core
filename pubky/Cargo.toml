@@ -17,8 +17,8 @@ url = "2.5.2"
 bytes = "^1.7.1"
 base64 = "0.22.1"
 
-pubky-common = { version = "0.1.0", path = "../pubky-common" }
 pkarr = { workspace = true, features = ["async"] }
+pubky-common = { git = "https://github.com/pubky/pubky-core", version = "0.1.0" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 reqwest = { version = "0.12.5", features = ["cookies", "rustls-tls"], default-features = false }
