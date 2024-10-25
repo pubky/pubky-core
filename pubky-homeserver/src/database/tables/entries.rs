@@ -261,7 +261,7 @@ impl Entry {
     // === Setters ===
 
     pub fn set_timestamp(&mut self, timestamp: &Timestamp) -> &mut Self {
-        self.timestamp = timestamp.clone();
+        self.timestamp = *timestamp;
         self
     }
 

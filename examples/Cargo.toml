@@ -19,7 +19,7 @@ path = "./request/main.rs"
 anyhow = "1.0.86"
 base64 = "0.22.1"
 clap = { version = "4.5.16", features = ["derive"] }
-pubky = { version = "0.1.0", path = "../pubky" }
+pubky = { path = "../pubky" }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 reqwest = "0.12.8"
 rpassword = "7.3.1"

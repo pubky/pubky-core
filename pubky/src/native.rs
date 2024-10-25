@@ -101,7 +101,7 @@ impl PubkyClient {
     /// - DHT bootstrap nodes set to the `testnet` bootstrap nodes.
     /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default 2000)
     ///
-    /// For more control, you can use [PubkyClientBuilder::testnet]
+    /// For more control, you can use [PubkyClient::builder] testnet option.
     pub fn test(testnet: &Testnet) -> PubkyClient {
         let mut builder = PubkyClient::builder().testnet(testnet);
 
@@ -184,7 +184,7 @@ impl PubkyClient {
         Ok(decrypt_recovery_file(recovery_file, passphrase)?)
     }
 
-    /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
+    /// Return `pubkyauth://` url and wait for the incoming [pubky_common::auth::AuthToken]
     /// verifying that AuthToken, and if capabilities were requested, signing in to
     /// the Pubky's homeserver and returning the [Session] information.
     pub fn auth_request(
