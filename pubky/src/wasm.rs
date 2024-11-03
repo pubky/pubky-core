@@ -17,6 +17,7 @@ static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/pkarr"];
 #[wasm_bindgen]
 impl PubkyClient {
     #[wasm_bindgen(constructor)]
+    /// Create PubkyClient with default Settings including default relays
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),

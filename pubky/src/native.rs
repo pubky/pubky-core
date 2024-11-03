@@ -13,11 +13,11 @@ use internals::PkarrResolver;
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Debug, Default)]
-pub struct PubkyClientBuilder {
+pub struct Settings {
     pkarr_settings: pkarr::Settings,
 }
 
-impl PubkyClientBuilder {
+impl Settings {
     /// Set Pkarr client [pkarr::Settings].
     pub fn pkarr_settings(mut self, settings: pkarr::Settings) -> Self {
         self.pkarr_settings = settings;
@@ -77,8 +77,8 @@ impl Default for PubkyClient {
 
 impl PubkyClient {
     /// Returns a builder to edit settings before creating [PubkyClient].
-    pub fn builder() -> PubkyClientBuilder {
-        PubkyClientBuilder::default()
+    pub fn builder() -> Settings {
+        Settings::default()
     }
 
     /// Create a client connected to the local network
