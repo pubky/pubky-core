@@ -29,6 +29,7 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 url = "2.5.2"
 tokio-stream = { version = "0.1.16", features = ["sync"] }
+futures = "0.3.31"
 
 [dev-dependencies]
 reqwest = "0.12.8"

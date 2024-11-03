@@ -1730,6 +1730,7 @@ dependencies = [
  "clap",
  "dirs-next",
  "flume",
+ "futures",
  "futures-util",
  "heed",
  "hex",

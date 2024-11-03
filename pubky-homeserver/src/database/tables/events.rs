@@ -58,7 +58,7 @@ impl Event {
         }
     }
 
-    pub fn into_event_line(self) -> String {
+    pub fn to_event_line(&self) -> String {
         format!("{} {}", self.operation(), self.url())
     }
 }
@@ -72,7 +72,7 @@ impl DB {
         &self,
         limit: Option<u16>,
         cursor: Option<String>,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<(String, Event)>> {
         let txn = self.env.read_txn()?;
 
         let limit = limit
@@ -81,7 +81,7 @@ impl DB {
 
         let cursor = cursor.unwrap_or("0000000000000".to_string());
 
-        let mut result: Vec<String> = vec![];
+        let mut result: Vec<(String, Event)> = vec![];
         let mut next_cursor = cursor.to_string();
 
         for _ in 0..limit {
@@ -91,14 +91,10 @@ impl DB {
 
                     next_cursor = timestamp.to_string();
 
-                    result.push(event.into_event_line());
+                    result.push((timestamp.to_string(), event));
                 }
                 None => break,
             };
-        }
-
-        if !result.is_empty() {
-            result.push(format!("cursor: {next_cursor}"))
         }
 
         txn.commit()?;
