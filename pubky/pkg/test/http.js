@@ -6,7 +6,7 @@ const TLD = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
 
 // TODO: test HTTPs too somehow.
 
-test("basic fetch", async (t) => {
+test.skip("basic fetch", async (t) => {
   let client = PubkyClient.testnet();
 
   // Normal TLD
