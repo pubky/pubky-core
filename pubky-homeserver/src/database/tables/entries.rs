@@ -36,12 +36,16 @@ impl DB {
         EntryWriter::new(self, public_key, path)
     }
 
-    pub fn delete_entry(&mut self, public_key: &PublicKey, path: &str) -> anyhow::Result<bool> {
+    pub fn delete_entry(
+        &mut self,
+        public_key: &PublicKey,
+        path: &str,
+    ) -> anyhow::Result<(bool, Option<(Timestamp, Event)>)> {
         let mut wtxn = self.env.write_txn()?;
 
         let key = format!("{public_key}/{path}");
 
-        let deleted = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
+        let tuple = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
             let entry = Entry::deserialize(bytes)?;
 
             let mut deleted_chunks = false;
@@ -62,28 +66,33 @@ impl DB {
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
 
             // create DELETE event
-            if path.starts_with("pub/") {
+            let sse_event = if path.starts_with("pub/") {
                 let url = format!("pubky://{key}");
 
                 let event = Event::delete(&url);
                 let value = event.serialize();
 
-                let key = Timestamp::now().to_string();
+                let timestamp = Timestamp::now();
+                let key = timestamp.to_string();
 
                 self.tables.events.put(&mut wtxn, &key, &value)?;
 
                 // TODO: delete events older than a threshold.
                 // TODO: move to events.rs
-            }
+                //
+                Some((timestamp, event))
+            } else {
+                None
+            };
 
-            deleted_entry && deleted_chunks
+            (deleted_entry && deleted_chunks, sse_event)
         } else {
-            false
+            (false, None)
         };
 
         wtxn.commit()?;
 
-        Ok(deleted)
+        Ok(tuple)
     }
 
     pub fn get_entry(
@@ -359,7 +368,7 @@ impl<'db> EntryWriter<'db> {
 
     /// Commit blob from the filesystem buffer to LMDB,
     /// write the [Entry], and commit the write transaction.
-    pub fn commit(&self) -> anyhow::Result<Entry> {
+    pub fn commit(&self) -> anyhow::Result<(Entry, Option<(Timestamp, Event)>)> {
         let hash = self.hasher.finalize();
 
         let mut buffer = File::open(&self.buffer_path)?;
@@ -404,7 +413,7 @@ impl<'db> EntryWriter<'db> {
             .put(&mut wtxn, &self.entry_key, &entry.serialize())?;
 
         // Write a public [Event].
-        if self.is_public {
+        let sse_event = if self.is_public {
             let url = format!("pubky://{}", self.entry_key);
             let event = Event::put(&url);
             let value = event.serialize();
@@ -415,13 +424,17 @@ impl<'db> EntryWriter<'db> {
 
             // TODO: delete events older than a threshold.
             // TODO: move to events.rs
-        }
+
+            Some((entry.timestamp, event))
+        } else {
+            None
+        };
 
         wtxn.commit()?;
 
         std::fs::remove_file(&self.buffer_path)?;
 
-        Ok(entry)
+        Ok((entry, sse_event))
     }
 }
 

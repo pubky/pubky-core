@@ -39,7 +39,11 @@ pub async fn put(
         entry_writer.write_all(&chunk)?;
     }
 
-    let _entry = entry_writer.commit()?;
+    let (_entry, sse_event) = entry_writer.commit()?;
+
+    if let Some(sse_event) = sse_event {
+        let _ = state.events.send(sse_event);
+    }
 
     // TODO: return relevant headers, like Etag?
 
@@ -198,12 +202,16 @@ pub async fn delete(
     verify(path)?;
 
     // TODO: should we wrap this with `tokio::task::spawn_blocking` in case it takes too long?
-    let deleted = state.db.delete_entry(&public_key, path)?;
+    let (deleted, sse_event) = state.db.delete_entry(&public_key, path)?;
 
     if !deleted {
         // TODO: if the path ends with `/` return a `CONFLICT` error?
         return Err(Error::with_status(StatusCode::NOT_FOUND));
     };
+
+    if let Some(event) = sse_event {
+        let _ = state.events.send(event);
+    }
 
     Ok(())
 }

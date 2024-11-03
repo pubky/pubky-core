@@ -1,8 +1,8 @@
 use std::{future::IntoFuture, net::SocketAddr};
 
 use anyhow::{Error, Result};
-use pubky_common::auth::AuthVerifier;
-use tokio::{net::TcpListener, signal, task::JoinSet};
+use pubky_common::{auth::AuthVerifier, timestamp::Timestamp};
+use tokio::{net::TcpListener, signal, sync::broadcast, task::JoinSet};
 use tracing::{debug, info, warn};
 
 use pkarr::{
@@ -10,7 +10,11 @@ use pkarr::{
     PkarrClient, PkarrClientAsync, PublicKey, Settings,
 };
 
-use crate::{config::Config, database::DB, pkarr::publish_server_packet};
+use crate::{
+    config::Config,
+    database::{tables::events::Event, DB},
+    pkarr::publish_server_packet,
+};
 
 #[derive(Debug)]
 pub struct Homeserver {
@@ -25,6 +29,7 @@ pub(crate) struct AppState {
     pub(crate) pkarr_client: PkarrClientAsync,
     pub(crate) config: Config,
     pub(crate) port: u16,
+    pub(crate) events: broadcast::Sender<(Timestamp, Event)>,
 }
 
 impl Homeserver {
@@ -49,12 +54,15 @@ impl Homeserver {
 
         let port = listener.local_addr()?.port();
 
+        let (tx, _) = broadcast::channel(1024);
+
         let state = AppState {
             verifier: AuthVerifier::default(),
             db,
             pkarr_client,
             config: config.clone(),
             port,
+            events: tx,
         };
 
         let app = crate::routes::create_app(state.clone());

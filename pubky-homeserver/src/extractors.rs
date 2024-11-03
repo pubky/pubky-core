@@ -81,6 +81,7 @@ pub struct ListQueryParams {
     pub cursor: Option<String>,
     pub reverse: bool,
     pub shallow: bool,
+    pub subscribe: bool,
 }
 
 #[async_trait]
@@ -112,12 +113,14 @@ where
                     Some(c.to_string())
                 }
             });
+        let subscribe = params.contains_key("subscribe");
 
         Ok(ListQueryParams {
             reverse,
             shallow,
             limit,
             cursor,
+            subscribe,
         })
     }
 }

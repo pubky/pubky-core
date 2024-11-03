@@ -33,7 +33,7 @@ impl Event {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        to_allocvec(self).expect("Session::serialize")
+        to_allocvec(self).expect("Event::serialize")
     }
 
     pub fn deserialize(bytes: &[u8]) -> core::result::Result<Self, postcard::Error> {
@@ -56,6 +56,10 @@ impl Event {
             Event::Put(_) => "PUT",
             Event::Delete(_) => "DEL",
         }
+    }
+
+    pub fn into_event_line(self) -> String {
+        format!("{} {}", self.operation(), self.url())
     }
 }
 
@@ -85,10 +89,9 @@ impl DB {
                 Some((timestamp, event_bytes)) => {
                     let event = Event::deserialize(event_bytes)?;
 
-                    let line = format!("{} {}", event.operation(), event.url());
                     next_cursor = timestamp.to_string();
 
-                    result.push(line);
+                    result.push(event.into_event_line());
                 }
                 None => break,
             };
