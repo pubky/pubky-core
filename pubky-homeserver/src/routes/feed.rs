@@ -39,6 +39,8 @@ pub async fn feed(
             .and_then(|h| h.to_str().ok().map(|s| s.to_string()))
             .or(params.cursor);
 
+        let keep_alive = stream::once(async { Ok(Event::default().comment("keep-alive")) });
+
         let initial_events = stream::iter(if let Some(cursor) = cursor {
             state
                 .db
@@ -66,7 +68,7 @@ pub async fn feed(
                 Err(_) => None,
             });
 
-        let combined_stream = initial_events.chain(live_events);
+        let combined_stream = keep_alive.chain(initial_events).chain(live_events);
 
         return Ok(Sse::new(combined_stream)
             .keep_alive(Default::default())
