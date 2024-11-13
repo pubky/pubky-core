@@ -15,12 +15,18 @@ path = "./authz/authenticator.rs"
 name = "request"
 path = "./request/main.rs"
 
+[[bin]]
+name = "testnet"
+path = "./testnet/main.rs"
+
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.22.1"
+bytes = "1.8.0"
 clap = { version = "4.5.16", features = ["derive"] }
 pubky = { path = "../pubky" }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
+pubky-homeserver = { version = "0.1.0", path = "../pubky-homeserver" }
 reqwest = "0.12.8"
 rpassword = "7.3.1"
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
