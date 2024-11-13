@@ -114,6 +114,8 @@ impl Config {
 
             return Ok(Config {
                 bootstrap: testnet_config.bootstrap,
+                port: testnet_config.port,
+                keypair: testnet_config.keypair,
                 ..config
             });
         }
@@ -300,5 +302,36 @@ mod tests {
                 ..Default::default()
             }
         )
+    }
+
+    #[test]
+    fn parse_with_testnet_flag() {
+        let config = Config::try_from_str(
+            r#"
+            # Secret key (in hex) to generate the Homeserver's Keypair
+            secret_key = "0123000000000000000000000000000000000000000000000000000000000000"
+            # Domain to be published in Pkarr records for this server to be accessible by.
+            domain = "localhost"
+            # Port for the Homeserver to listen on.
+            port = 6287
+            # Storage directory Defaults to <System's Data Directory>
+            storage = "/homeserver"
+            testnet = true
+
+            bootstrap = ["foo", "bar"]
+
+            # event stream
+            default_list_limit = 500
+            max_list_limit = 10000
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.keypair, Keypair::from_secret_key(&[0; 32]));
+        assert_eq!(config.port, 15411);
+        assert_ne!(
+            config.bootstrap,
+            Some(vec!["foo".to_string(), "bar".to_string()])
+        );
     }
 }
