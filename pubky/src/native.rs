@@ -252,7 +252,8 @@ impl PubkyClient {
 
     // === HTTP ===
 
-    pub(crate) fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
+    /// Make an HTTP(s) request to a URL with a Pkarr TLD
+    pub fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
         self.http.request(method, url)
     }
 
