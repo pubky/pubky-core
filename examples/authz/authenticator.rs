@@ -17,6 +17,9 @@ struct Cli {
 
     /// Pubky Auth url
     url: Url,
+
+    // Whether or not to use testnet Dht network (local testing)
+    testnet: Option<bool>,
 }
 
 #[tokio::main]
@@ -62,14 +65,20 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted recovery file...");
     println!("PublicKey: {}", keypair.public_key());
 
-    let client = PubkyClient::testnet();
+    let client = if cli.testnet.unwrap_or_default() {
+        let client = PubkyClient::testnet();
 
-    // For the purposes of this demo, we need to make sure
-    // the user has an account on the local homeserver.
-    if client.signin(&keypair).await.is_err() {
+        // For the purposes of this demo, we need to make sure
+        // the user has an account on the local homeserver.
+        if client.signin(&keypair).await.is_err() {
+            client
+                .signup(&keypair, &PublicKey::try_from(HOMESERVER).unwrap())
+                .await?;
+        };
+
         client
-            .signup(&keypair, &PublicKey::try_from(HOMESERVER).unwrap())
-            .await?;
+    } else {
+        PubkyClient::builder().build()
     };
 
     println!("Sending AuthToken to the 3rd party app...");

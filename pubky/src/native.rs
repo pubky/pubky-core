@@ -1,14 +1,11 @@
 use std::time::Duration;
-use std::{net::ToSocketAddrs, sync::Arc};
 
-use ::pkarr::mainline::dht::Testnet;
+use pkarr::mainline::Testnet;
 
 use crate::PubkyClient;
 
 mod api;
 mod internals;
-
-use internals::PkarrResolver;
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -55,12 +52,11 @@ impl Settings {
         // TODO: convert to Result<PubkyClient>
 
         let pkarr = pkarr::Client::new(self.pkarr_settings).unwrap();
-        let dns_resolver: PkarrResolver = (&pkarr).into();
 
         PubkyClient {
             http: reqwest::Client::builder()
                 .cookie_store(true)
-                .dns_resolver(Arc::new(dns_resolver))
+                // .dns_resolver(Arc::new(dns_resolver))
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
@@ -94,7 +90,7 @@ impl PubkyClient {
     /// - DHT bootstrap nodes set to the `testnet` bootstrap nodes.
     /// - DHT request timout set to 500 milliseconds. (unless in CI, then it is left as default 2000)
     ///
-    /// For more control, you can use [PubkyClientBuilder::testnet]
+    /// For more control, you can use [PubkyClient::builder] testnet option.
     pub fn test(testnet: &Testnet) -> PubkyClient {
         let mut builder = PubkyClient::builder().testnet(testnet);
 

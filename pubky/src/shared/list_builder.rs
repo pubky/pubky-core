@@ -3,6 +3,7 @@ use url::Url;
 
 use crate::{error::Result, PubkyClient};
 
+/// Helper struct to edit Pubky homeserver's list API options before sending them.
 #[derive(Debug)]
 pub struct ListBuilder<'a> {
     url: Url,

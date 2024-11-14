@@ -9,7 +9,7 @@ pub struct Capability {
 }
 
 impl Capability {
-    /// Create a root [Capability] at the `/` path with all the available [PubkyAbility]
+    /// Create a root [Capability] at the `/` path with all the available [Action]s
     pub fn root() -> Self {
         Capability {
             scope: "/".to_string(),

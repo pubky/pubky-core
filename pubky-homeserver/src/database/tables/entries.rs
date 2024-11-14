@@ -1,6 +1,11 @@
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 use tracing::instrument;
 
 use heed::{
@@ -23,74 +28,12 @@ pub type EntriesTable = Database<Str, Bytes>;
 pub const ENTRIES_TABLE: &str = "entries";
 
 impl DB {
-    pub fn put_entry(
+    pub fn write_entry(
         &mut self,
         public_key: &PublicKey,
         path: &str,
-        rx: flume::Receiver<bytes::Bytes>,
-    ) -> anyhow::Result<()> {
-        let mut wtxn = self.env.write_txn()?;
-
-        let mut hasher = Hasher::new();
-        let mut bytes = vec![];
-        let mut length = 0;
-
-        while let Ok(chunk) = rx.recv() {
-            hasher.update(&chunk);
-            bytes.extend_from_slice(&chunk);
-            length += chunk.len();
-        }
-
-        let hash = hasher.finalize();
-
-        let key = hash.as_bytes();
-
-        let mut bytes_with_ref_count = Vec::with_capacity(bytes.len() + 8);
-        bytes_with_ref_count.extend_from_slice(&u64::to_be_bytes(0));
-        bytes_with_ref_count.extend_from_slice(&bytes);
-
-        // TODO: For now, we set the first 8 bytes to a reference counter
-        let exists = self
-            .tables
-            .blobs
-            .get(&wtxn, key)?
-            .unwrap_or(bytes_with_ref_count.as_slice());
-
-        let new_count = u64::from_be_bytes(exists[0..8].try_into().unwrap()) + 1;
-
-        bytes_with_ref_count[0..8].copy_from_slice(&u64::to_be_bytes(new_count));
-
-        self.tables
-            .blobs
-            .put(&mut wtxn, hash.as_bytes(), &bytes_with_ref_count)?;
-
-        let mut entry = Entry::new();
-
-        entry.set_content_hash(hash);
-        entry.set_content_length(length);
-
-        let key = format!("{public_key}/{path}");
-
-        self.tables
-            .entries
-            .put(&mut wtxn, &key, &entry.serialize())?;
-
-        if path.starts_with("pub/") {
-            let url = format!("pubky://{key}");
-            let event = Event::put(&url);
-            let value = event.serialize();
-
-            let key = entry.timestamp.to_string();
-
-            self.tables.events.put(&mut wtxn, &key, &value)?;
-
-            // TODO: delete older events.
-            // TODO: move to events.rs
-        }
-
-        wtxn.commit()?;
-
-        Ok(())
+    ) -> anyhow::Result<EntryWriter> {
+        EntryWriter::new(self, public_key, path)
     }
 
     pub fn delete_entry(&mut self, public_key: &PublicKey, path: &str) -> anyhow::Result<bool> {
@@ -101,28 +44,20 @@ impl DB {
         let deleted = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
             let entry = Entry::deserialize(bytes)?;
 
-            let mut bytes_with_ref_count = self
-                .tables
-                .blobs
-                .get(&wtxn, entry.content_hash())?
-                .map_or(vec![], |s| s.to_vec());
+            let mut deleted_chunks = false;
 
-            let arr: [u8; 8] = bytes_with_ref_count[0..8].try_into().unwrap_or([0; 8]);
-            let reference_count = u64::from_be_bytes(arr);
-
-            let deleted_blobs = if reference_count > 1 {
-                // decrement reference count
-
-                bytes_with_ref_count[0..8].copy_from_slice(&(reference_count - 1).to_be_bytes());
-
-                self.tables
+            {
+                let mut iter = self
+                    .tables
                     .blobs
-                    .put(&mut wtxn, entry.content_hash(), &bytes_with_ref_count)?;
+                    .prefix_iter_mut(&mut wtxn, &entry.timestamp.to_bytes())?;
 
-                true
-            } else {
-                self.tables.blobs.delete(&mut wtxn, entry.content_hash())?
-            };
+                while iter.next().is_some() {
+                    unsafe {
+                        deleted_chunks = iter.del_current()?;
+                    }
+                }
+            }
 
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
 
@@ -137,11 +72,11 @@ impl DB {
 
                 self.tables.events.put(&mut wtxn, &key, &value)?;
 
-                // TODO: delete older events.
+                // TODO: delete events older than a threshold.
                 // TODO: move to events.rs
             }
 
-            deleted_entry && deleted_blobs
+            deleted_entry && deleted_chunks
         } else {
             false
         };
@@ -149,6 +84,21 @@ impl DB {
         wtxn.commit()?;
 
         Ok(deleted)
+    }
+
+    pub fn get_entry(
+        &self,
+        txn: &RoTxn,
+        public_key: &PublicKey,
+        path: &str,
+    ) -> anyhow::Result<Option<Entry>> {
+        let key = format!("{public_key}/{path}");
+
+        if let Some(bytes) = self.tables.entries.get(txn, &key)? {
+            return Ok(Some(Entry::deserialize(bytes)?));
+        }
+
+        Ok(None)
     }
 
     pub fn contains_directory(&self, txn: &RoTxn, path: &str) -> anyhow::Result<bool> {
@@ -268,13 +218,40 @@ pub struct Entry {
     version: usize,
     /// Modified at
     timestamp: Timestamp,
-    content_hash: [u8; 32],
+    content_hash: EntryHash,
     content_length: usize,
     content_type: String,
     // user_metadata: ?
 }
 
-// TODO: get headers like Etag
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EntryHash(Hash);
+
+impl Default for EntryHash {
+    fn default() -> Self {
+        Self(Hash::from_bytes([0; 32]))
+    }
+}
+
+impl Serialize for EntryHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.0.as_bytes();
+        bytes.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for EntryHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: [u8; 32] = Deserialize::deserialize(deserializer)?;
+        Ok(Self(Hash::from_bytes(bytes)))
+    }
+}
 
 impl Entry {
     pub fn new() -> Self {
@@ -283,8 +260,13 @@ impl Entry {
 
     // === Setters ===
 
+    pub fn set_timestamp(&mut self, timestamp: &Timestamp) -> &mut Self {
+        self.timestamp = *timestamp;
+        self
+    }
+
     pub fn set_content_hash(&mut self, content_hash: Hash) -> &mut Self {
-        content_hash.as_bytes().clone_into(&mut self.content_hash);
+        EntryHash(content_hash).clone_into(&mut self.content_hash);
         self
     }
 
@@ -295,11 +277,31 @@ impl Entry {
 
     // === Getters ===
 
-    pub fn content_hash(&self) -> &[u8; 32] {
-        &self.content_hash
+    pub fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
+    }
+
+    pub fn content_hash(&self) -> &Hash {
+        &self.content_hash.0
+    }
+
+    pub fn content_length(&self) -> usize {
+        self.content_length
+    }
+
+    pub fn content_type(&self) -> &str {
+        &self.content_type
     }
 
     // === Public Method ===
+
+    pub fn read_content<'txn>(
+        &self,
+        db: &'txn DB,
+        rtxn: &'txn RoTxn,
+    ) -> anyhow::Result<impl Iterator<Item = Result<&'txn [u8], heed::Error>> + 'txn> {
+        db.read_entry_content(rtxn, self)
+    }
 
     pub fn serialize(&self) -> Vec<u8> {
         to_allocvec(self).expect("Session::serialize")
@@ -311,5 +313,228 @@ impl Entry {
         }
 
         from_bytes(bytes)
+    }
+}
+
+pub struct EntryWriter<'db> {
+    db: &'db DB,
+    buffer: File,
+    hasher: Hasher,
+    buffer_path: PathBuf,
+    entry_key: String,
+    timestamp: Timestamp,
+    is_public: bool,
+}
+
+impl<'db> EntryWriter<'db> {
+    pub fn new(db: &'db DB, public_key: &PublicKey, path: &str) -> anyhow::Result<Self> {
+        let hasher = Hasher::new();
+
+        let timestamp = Timestamp::now();
+
+        let buffer_path = db.buffers_dir.join(timestamp.to_string());
+
+        let buffer = File::create(&buffer_path)?;
+
+        let entry_key = format!("{public_key}/{path}");
+
+        Ok(Self {
+            db,
+            buffer,
+            hasher,
+            buffer_path,
+            entry_key,
+            timestamp,
+            is_public: path.starts_with("pub/"),
+        })
+    }
+
+    /// Same ase [EntryWriter::write_all] but returns a Result of a mutable reference of itself
+    /// to enable chaining with [Self::commit].
+    pub fn update(&mut self, chunk: &[u8]) -> Result<&mut Self, std::io::Error> {
+        self.write_all(chunk)?;
+
+        Ok(self)
+    }
+
+    /// Commit blob from the filesystem buffer to LMDB,
+    /// write the [Entry], and commit the write transaction.
+    pub fn commit(&self) -> anyhow::Result<Entry> {
+        let hash = self.hasher.finalize();
+
+        let mut buffer = File::open(&self.buffer_path)?;
+
+        let mut wtxn = self.db.env.write_txn()?;
+
+        let mut chunk_key = [0; 12];
+        chunk_key[0..8].copy_from_slice(&self.timestamp.to_bytes());
+
+        let mut chunk_index: u32 = 0;
+
+        loop {
+            let mut chunk = vec![0_u8; self.db.max_chunk_size];
+
+            let bytes_read = buffer.read(&mut chunk)?;
+
+            if bytes_read == 0 {
+                break; // EOF reached
+            }
+
+            chunk_key[8..].copy_from_slice(&chunk_index.to_be_bytes());
+
+            self.db
+                .tables
+                .blobs
+                .put(&mut wtxn, &chunk_key, &chunk[..bytes_read])?;
+
+            chunk_index += 1;
+        }
+
+        let mut entry = Entry::new();
+        entry.set_timestamp(&self.timestamp);
+
+        entry.set_content_hash(hash);
+
+        let length = buffer.metadata()?.len();
+        entry.set_content_length(length as usize);
+
+        self.db
+            .tables
+            .entries
+            .put(&mut wtxn, &self.entry_key, &entry.serialize())?;
+
+        // Write a public [Event].
+        if self.is_public {
+            let url = format!("pubky://{}", self.entry_key);
+            let event = Event::put(&url);
+            let value = event.serialize();
+
+            let key = entry.timestamp.to_string();
+
+            self.db.tables.events.put(&mut wtxn, &key, &value)?;
+
+            // TODO: delete events older than a threshold.
+            // TODO: move to events.rs
+        }
+
+        wtxn.commit()?;
+
+        std::fs::remove_file(&self.buffer_path)?;
+
+        Ok(entry)
+    }
+}
+
+impl<'db> std::io::Write for EntryWriter<'db> {
+    /// Write a chunk to a Filesystem based buffer.
+    #[inline]
+    fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
+        self.hasher.update(chunk);
+        self.buffer.write_all(chunk)?;
+
+        Ok(chunk.len())
+    }
+
+    /// Does not do anything, you need to call [Self::commit]
+    #[inline]
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use pkarr::{mainline::Testnet, Keypair};
+
+    use crate::config::Config;
+
+    use super::DB;
+
+    #[tokio::test]
+    async fn entries() -> anyhow::Result<()> {
+        let mut db = DB::open(Config::test(&Testnet::new(0))).unwrap();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let path = "/pub/foo.txt";
+
+        let chunk = Bytes::from(vec![1, 2, 3, 4, 5]);
+
+        db.write_entry(&public_key, path)?
+            .update(&chunk)?
+            .commit()?;
+
+        let rtxn = db.env.read_txn().unwrap();
+        let entry = db.get_entry(&rtxn, &public_key, path).unwrap().unwrap();
+
+        assert_eq!(
+            entry.content_hash(),
+            &[
+                2, 79, 103, 192, 66, 90, 61, 192, 47, 186, 245, 140, 185, 61, 229, 19, 46, 61, 117,
+                197, 25, 250, 160, 186, 218, 33, 73, 29, 136, 201, 112, 87
+            ]
+        );
+
+        let mut blob = vec![];
+
+        {
+            let mut iter = entry.read_content(&db, &rtxn).unwrap();
+
+            while let Some(Ok(chunk)) = iter.next() {
+                blob.extend_from_slice(&chunk);
+            }
+        }
+
+        assert_eq!(blob, vec![1, 2, 3, 4, 5]);
+
+        rtxn.commit().unwrap();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn chunked_entry() -> anyhow::Result<()> {
+        let mut db = DB::open(Config::test(&Testnet::new(0))).unwrap();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let path = "/pub/foo.txt";
+
+        let chunk = Bytes::from(vec![0; 1024 * 1024]);
+
+        db.write_entry(&public_key, path)?
+            .update(&chunk)?
+            .commit()?;
+
+        let rtxn = db.env.read_txn().unwrap();
+        let entry = db.get_entry(&rtxn, &public_key, path).unwrap().unwrap();
+
+        assert_eq!(
+            entry.content_hash(),
+            &[
+                72, 141, 226, 2, 247, 59, 217, 118, 222, 78, 112, 72, 244, 225, 243, 154, 119, 109,
+                134, 213, 130, 183, 52, 143, 245, 59, 244, 50, 185, 135, 252, 168
+            ]
+        );
+
+        let mut blob = vec![];
+
+        {
+            let mut iter = entry.read_content(&db, &rtxn).unwrap();
+
+            while let Some(Ok(chunk)) = iter.next() {
+                blob.extend_from_slice(&chunk);
+            }
+        }
+
+        assert_eq!(blob, vec![0; 1024 * 1024]);
+
+        let stats = db.tables.blobs.stat(&rtxn).unwrap();
+        assert_eq!(stats.overflow_pages, 0);
+
+        rtxn.commit().unwrap();
+
+        Ok(())
     }
 }
