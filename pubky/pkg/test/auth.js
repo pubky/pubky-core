@@ -1,11 +1,11 @@
 import test from 'tape'
 
-import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey } from '../index.cjs'
 
 const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
 test('auth', async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -36,7 +36,7 @@ test("3rd party signin", async (t) => {
 
   // Third party app side
   let capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  let client = PubkyClient.testnet();
+  let client = Client.testnet();
   let [pubkyauth_url, pubkyauthResponse] = client
     .authRequest("https://demo.httprelay.io/link", capabilities);
 
@@ -49,7 +49,7 @@ test("3rd party signin", async (t) => {
 
   // Authenticator side
   {
-    let client = PubkyClient.testnet();
+    let client = Client.testnet();
 
     await client.signup(keypair, Homeserver);
 

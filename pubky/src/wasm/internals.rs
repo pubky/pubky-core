@@ -3,7 +3,7 @@ use url::Url;
 
 use pkarr::{EndpointResolver, PublicKey};
 
-use crate::{error::Result, PubkyClient};
+use crate::{error::Result, Client};
 
 // TODO: remove expect
 pub async fn resolve(pkarr: &pkarr::Client, url: &mut Url) -> Result<()> {
@@ -25,7 +25,7 @@ pub async fn resolve(pkarr: &pkarr::Client, url: &mut Url) -> Result<()> {
     Ok(())
 }
 
-impl PubkyClient {
+impl Client {
     /// A wrapper around [reqwest::Client::request], with the same signature between native and wasm.
     pub(crate) async fn inner_request(&self, method: Method, url: Url) -> RequestBuilder {
         self.http.request(method, url).fetch_credentials_include()

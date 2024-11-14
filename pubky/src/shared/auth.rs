@@ -14,12 +14,12 @@ use pubky_common::{
 
 use crate::{
     error::{Error, Result},
-    PubkyClient,
+    Client,
 };
 
 use super::pkarr::Endpoint;
 
-impl PubkyClient {
+impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
@@ -225,7 +225,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -272,14 +272,14 @@ mod tests {
         // Third party app side
         let capabilities: Capabilities =
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
         let (pubkyauth_url, pubkyauth_response) = client
             .auth_request("https://demo.httprelay.io/link", &capabilities)
             .unwrap();
 
         // Authenticator side
         {
-            let client = PubkyClient::test(&testnet);
+            let client = Client::test(&testnet);
 
             client.signup(&keypair, &server.public_key()).await.unwrap();
 

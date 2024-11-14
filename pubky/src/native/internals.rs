@@ -1,9 +1,9 @@
 use reqwest::RequestBuilder;
 use url::Url;
 
-use crate::PubkyClient;
+use crate::Client;
 
-impl PubkyClient {
+impl Client {
     // === HTTP ===
 
     /// A wrapper around [reqwest::Client::request], with the same signature between native and wasm.

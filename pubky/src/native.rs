@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use pkarr::mainline::Testnet;
 
-use crate::PubkyClient;
+use crate::Client;
 
 mod api;
 mod internals;
@@ -42,13 +42,11 @@ impl Settings {
         self
     }
 
-    /// Build [PubkyClient]
-    pub fn build(self) -> Result<PubkyClient, std::io::Error> {
-        // TODO: convert to Result<PubkyClient>
-
+    /// Build [Client]
+    pub fn build(self) -> Result<Client, std::io::Error> {
         let pkarr = pkarr::Client::new(self.pkarr_settings)?;
 
-        Ok(PubkyClient {
+        Ok(Client {
             http: reqwest::Client::builder()
                 .cookie_store(true)
                 // .dns_resolver(Arc::new(dns_resolver))
@@ -60,13 +58,13 @@ impl Settings {
     }
 }
 
-impl PubkyClient {
-    /// Create a new [PubkyClient] with default [Settings]
+impl Client {
+    /// Create a new [Client] with default [Settings]
     pub fn new() -> Result<Self, std::io::Error> {
         Self::builder().build()
     }
 
-    /// Returns a builder to edit settings before creating [PubkyClient].
+    /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> Settings {
         Settings::default()
     }
@@ -83,8 +81,8 @@ impl PubkyClient {
     }
 
     #[cfg(test)]
-    /// Alias to `PubkyClient::builder().testnet(testnet).build().unwrap()`
-    pub(crate) fn test(testnet: &Testnet) -> PubkyClient {
-        PubkyClient::builder().testnet(testnet).build().unwrap()
+    /// Alias to `pubky::Client::builder().testnet(testnet).build().unwrap()`
+    pub(crate) fn test(testnet: &Testnet) -> Client {
+        Client::builder().testnet(testnet).build().unwrap()
     }
 }

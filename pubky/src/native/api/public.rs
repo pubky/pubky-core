@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use url::Url;
 
-use crate::{error::Result, shared::list_builder::ListBuilder, PubkyClient};
+use crate::{error::Result, shared::list_builder::ListBuilder, Client};
 
-impl PubkyClient {
+impl Client {
     /// Upload a small payload to a given path.
     pub async fn put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
         self.inner_put(url, content).await

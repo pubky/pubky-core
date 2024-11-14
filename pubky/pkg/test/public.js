@@ -1,11 +1,11 @@
 import test from 'tape'
 
-import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey } from '../index.cjs'
 
 const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
 
 test('public: put/get', async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random();
 
@@ -20,7 +20,7 @@ test('public: put/get', async (t) => {
   // PUT public data, by authorized client
   await client.put(url, body);
 
-  const otherClient = PubkyClient.testnet();
+  const otherClient = Client.testnet();
 
   // GET public data without signup or signin
   {
@@ -42,7 +42,7 @@ test('public: put/get', async (t) => {
 })
 
 test("not found", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
 
   const keypair = Keypair.random();
@@ -59,7 +59,7 @@ test("not found", async (t) => {
 })
 
 test("unauthorized", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -86,7 +86,7 @@ test("unauthorized", async (t) => {
 })
 
 test("forbidden", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -111,7 +111,7 @@ test("forbidden", async (t) => {
 })
 
 test("list", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -242,7 +242,7 @@ test("list", async (t) => {
 })
 
 test('list shallow', async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()

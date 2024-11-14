@@ -7,12 +7,12 @@ use pkarr::{
 
 use crate::{
     error::{Error, Result},
-    PubkyClient,
+    Client,
 };
 
 const MAX_ENDPOINT_RESOLUTION_RECURSION: u8 = 3;
 
-impl PubkyClient {
+impl Client {
     /// Publish the SVCB record for `_pubky.<public_key>`.
     pub(crate) async fn publish_pubky_homeserver(
         &self,
@@ -265,7 +265,7 @@ mod tests {
             target = format!("pubky.{}", keypair.public_key())
         }
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let endpoint = client.resolve_endpoint(&target).await.unwrap();
 
@@ -300,7 +300,7 @@ mod tests {
         pkarr_client.publish(&signed_packet).await.unwrap();
 
         {
-            let client = PubkyClient::test(&testnet);
+            let client = Client::test(&testnet);
 
             let pubky = Keypair::random();
 
