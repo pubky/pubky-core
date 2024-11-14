@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     let homeserver = cli.homeserver;
 
-    let client = PubkyClient::builder().build();
+    let client = PubkyClient::new()?;
 
     println!("Enter your recovery_file's passphrase to signup:");
     let passphrase = rpassword::read_password()?;
