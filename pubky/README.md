@@ -19,7 +19,7 @@ async fn main () {
   let client = PubkyClient::test(&testnet);
 
   // Uncomment the following line instead if you are not just testing.
-  // let client PubkyClient::builder().build(); 
+  // let client PubkyClient::new().unwrap(); 
 
   // Generate a keypair
   let keypair = Keypair::random();

@@ -43,12 +43,12 @@ impl Settings {
     }
 
     /// Build [PubkyClient]
-    pub fn build(self) -> PubkyClient {
+    pub fn build(self) -> Result<PubkyClient, std::io::Error> {
         // TODO: convert to Result<PubkyClient>
 
-        let pkarr = pkarr::Client::new(self.pkarr_settings).unwrap();
+        let pkarr = pkarr::Client::new(self.pkarr_settings)?;
 
-        PubkyClient {
+        Ok(PubkyClient {
             http: reqwest::Client::builder()
                 .cookie_store(true)
                 // .dns_resolver(Arc::new(dns_resolver))
@@ -56,17 +56,16 @@ impl Settings {
                 .build()
                 .unwrap(),
             pkarr,
-        }
-    }
-}
-
-impl Default for PubkyClient {
-    fn default() -> Self {
-        PubkyClient::builder().build()
+        })
     }
 }
 
 impl PubkyClient {
+    /// Create a new [PubkyClient] with default [Settings]
+    pub fn new() -> Result<Self, std::io::Error> {
+        Self::builder().build()
+    }
+
     /// Returns a builder to edit settings before creating [PubkyClient].
     pub fn builder() -> Settings {
         Settings::default()
@@ -74,15 +73,18 @@ impl PubkyClient {
 
     /// Create a client connected to the local network
     /// with the bootstrapping node: `localhost:6881`
-    pub fn testnet() -> Self {
-        Self::test(&Testnet {
-            bootstrap: vec!["localhost:6881".to_string()],
-            nodes: vec![],
-        })
+    pub fn testnet() -> Result<Self, std::io::Error> {
+        Self::builder()
+            .testnet(&Testnet {
+                bootstrap: vec!["localhost:6881".to_string()],
+                nodes: vec![],
+            })
+            .build()
     }
 
-    /// Alias to `PubkyClient::builder().testnet(testnet).build()`
-    pub fn test(testnet: &Testnet) -> PubkyClient {
-        PubkyClient::builder().testnet(testnet).build()
+    #[cfg(test)]
+    /// Alias to `PubkyClient::builder().testnet(testnet).build().unwrap()`
+    pub(crate) fn test(testnet: &Testnet) -> PubkyClient {
+        PubkyClient::builder().testnet(testnet).build().unwrap()
     }
 }

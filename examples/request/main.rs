@@ -18,14 +18,14 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let client = PubkyClient::builder().build();
+    let client = PubkyClient::new()?;
 
     match cli.url.scheme() {
         "https" => {
             unimplemented!();
         }
         "pubky" => {
-            let response = client.get(cli.url).await.unwrap();
+            let response = client.get(cli.url).await?;
 
             println!("Got a response: \n {:?}", response);
         }

@@ -33,7 +33,7 @@ mod tests {
 
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::builder().testnet(&testnet).build();
+        let client = PubkyClient::test(&testnet);
 
         let url = format!("http://{}/", homeserver.public_key());
 
@@ -50,7 +50,7 @@ mod tests {
     async fn http_get_icann() {
         let testnet = Testnet::new(10).unwrap();
 
-        let client = PubkyClient::builder().testnet(&testnet).build();
+        let client = PubkyClient::test(&testnet);
 
         let url = format!("http://example.com/");
 
