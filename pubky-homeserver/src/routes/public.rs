@@ -288,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn if_last_modified() -> anyhow::Result<()> {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
         let mut server = Homeserver::start_test(&testnet).await?;
 
         let public_key = Keypair::random().public_key();
@@ -334,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn if_none_match() -> anyhow::Result<()> {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
         let mut server = Homeserver::start_test(&testnet).await?;
 
         let public_key = Keypair::random().public_key();

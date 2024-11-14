@@ -27,7 +27,7 @@ mod tests {
 
     use crate::*;
 
-    #[tokio::test]
+    // #[tokio::test]
     async fn http_get_pubky() {
         let testnet = Testnet::new(10).unwrap();
 

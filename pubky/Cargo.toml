@@ -17,7 +17,7 @@ url = "2.5.2"
 bytes = "^1.7.1"
 base64 = "0.22.1"
 
-pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr" }
+pkarr = { workspace = true }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 
 # Native dependencies
