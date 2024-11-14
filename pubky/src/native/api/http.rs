@@ -8,9 +8,12 @@ impl Client {
     /// Returns a `RequestBuilder`, which will allow setting headers and
     /// the request body before sending.
     ///
-    /// Differs from [reqwest::Client::request], in that it can make requests
-    /// to URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    /// corresponding endpoints, and verifying TLS certificates accordingly.
+    /// Differs from [reqwest::Client::request], in that it can make requests to:
+    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    ///     corresponding endpoints, and verifying TLS certificates accordingly.
+    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
@@ -27,7 +30,7 @@ mod tests {
 
     use crate::Client;
 
-    // #[tokio::test]
+    #[tokio::test]
     async fn http_get_pubky() {
         let testnet = Testnet::new(10).unwrap();
 

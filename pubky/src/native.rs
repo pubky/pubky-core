@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use pkarr::mainline::Testnet;
 
@@ -49,7 +49,7 @@ impl Settings {
         Ok(Client {
             http: reqwest::Client::builder()
                 .cookie_store(true)
-                // .dns_resolver(Arc::new(dns_resolver))
+                .dns_resolver(Arc::new(pkarr.clone()))
                 .user_agent(DEFAULT_USER_AGENT)
                 .build()
                 .unwrap(),
