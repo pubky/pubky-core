@@ -2,8 +2,8 @@ use url::Url;
 
 use pubky_common::capabilities::Capabilities;
 
+use crate::Client;
 use crate::Error;
-use crate::PubkyClient;
 
 use crate::wasm::wrappers::keys::{Keypair, PublicKey};
 use crate::wasm::wrappers::session::Session;
@@ -11,7 +11,7 @@ use crate::wasm::wrappers::session::Session;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-impl PubkyClient {
+impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key

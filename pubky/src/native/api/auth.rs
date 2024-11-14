@@ -8,9 +8,9 @@ use pkarr::PublicKey;
 use pubky_common::capabilities::Capabilities;
 
 use crate::error::{Error, Result};
-use crate::PubkyClient;
+use crate::Client;
 
-impl PubkyClient {
+impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key

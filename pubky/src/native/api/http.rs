@@ -1,8 +1,8 @@
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
-use crate::PubkyClient;
+use crate::Client;
 
-impl PubkyClient {
+impl Client {
     /// Start building a `Request` with the `Method` and `Url`.
     ///
     /// Returns a `RequestBuilder`, which will allow setting headers and
@@ -25,7 +25,7 @@ mod tests {
     use pkarr::mainline::Testnet;
     use pubky_homeserver::Homeserver;
 
-    use crate::*;
+    use crate::Client;
 
     // #[tokio::test]
     async fn http_get_pubky() {
@@ -33,7 +33,7 @@ mod tests {
 
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let url = format!("http://{}/", homeserver.public_key());
 
@@ -50,7 +50,7 @@ mod tests {
     async fn http_get_icann() {
         let testnet = Testnet::new(10).unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let url = format!("http://example.com/");
 

@@ -2,11 +2,11 @@
   "name": "@synonymdev/pubky",
   "type": "module",
   "description": "Pubky client",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pubky/pubky"
+    "url": "git+https://github.com/pubky/pubky-core.git"
   },
   "scripts": {
     "testnet": "cargo run -p pubky_homeserver -- --testnet",

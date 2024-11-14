@@ -20,7 +20,7 @@ pub use crate::shared::list_builder::ListBuilder;
 /// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
 #[derive(Debug, Clone)]
 #[wasm_bindgen]
-pub struct PubkyClient {
+pub struct Client {
     http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
 }

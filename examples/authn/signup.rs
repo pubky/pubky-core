@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::PubkyClient;
+use pubky::Client;
 use std::path::PathBuf;
 
 use pubky_common::crypto::PublicKey;
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     let homeserver = cli.homeserver;
 
-    let client = PubkyClient::new()?;
+    let client = Client::new()?;
 
     println!("Enter your recovery_file's passphrase to signup:");
     let passphrase = rpassword::read_password()?;

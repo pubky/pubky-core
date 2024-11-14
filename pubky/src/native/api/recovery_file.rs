@@ -3,9 +3,9 @@ use pubky_common::{
     recovery_file::{create_recovery_file, decrypt_recovery_file},
 };
 
-use crate::{error::Result, PubkyClient};
+use crate::{error::Result, Client};
 
-impl PubkyClient {
+impl Client {
     /// Create a recovery file of the `keypair`, containing the secret key encrypted
     /// using the `passphrase`.
     pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>> {

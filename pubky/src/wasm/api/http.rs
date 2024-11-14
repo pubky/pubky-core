@@ -5,12 +5,12 @@ use wasm_bindgen::prelude::*;
 
 use reqwest::Url;
 
-use crate::PubkyClient;
+use crate::Client;
 
 use super::super::internals::resolve;
 
 #[wasm_bindgen]
-impl PubkyClient {
+impl Client {
     #[wasm_bindgen]
     pub async fn fetch(
         &self,
@@ -18,16 +18,19 @@ impl PubkyClient {
         init: &web_sys::RequestInit,
     ) -> Result<js_sys::Promise, JsValue> {
         let mut url: Url = url.try_into().map_err(|err| {
-            JsValue::from_str(&format!("PubkyClient::fetch(): Invalid `url`; {:?}", err))
+            JsValue::from_str(&format!("pubky::Client::fetch(): Invalid `url`; {:?}", err))
         })?;
 
         resolve(&self.pkarr, &mut url)
             .await
-            .map_err(|err| JsValue::from_str(&format!("PubkyClient::fetch(): {:?}", err)))?;
+            .map_err(|err| JsValue::from_str(&format!("pubky::Client::fetch(): {:?}", err)))?;
 
         let js_req =
             web_sys::Request::new_with_str_and_init(url.as_str(), init).map_err(|err| {
-                JsValue::from_str(&format!("PubkyClient::fetch(): Invalid `init`; {:?}", err))
+                JsValue::from_str(&format!(
+                    "pubky::Client::fetch(): Invalid `init`; {:?}",
+                    err
+                ))
             })?;
 
         Ok(js_fetch(&js_req))

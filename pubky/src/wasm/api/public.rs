@@ -2,10 +2,10 @@ use wasm_bindgen::prelude::*;
 
 use js_sys::{Array, Uint8Array};
 
-use crate::PubkyClient;
+use crate::Client;
 
 #[wasm_bindgen]
-impl PubkyClient {
+impl Client {
     #[wasm_bindgen]
     /// Upload a small payload to a given path.
     pub async fn put(&self, url: &str, content: &[u8]) -> Result<(), JsValue> {

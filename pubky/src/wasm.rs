@@ -1,12 +1,12 @@
 use wasm_bindgen::prelude::*;
 
-use crate::PubkyClient;
+use crate::Client;
 
 mod api;
 mod internals;
 mod wrappers;
 
-impl Default for PubkyClient {
+impl Default for Client {
     fn default() -> Self {
         Self::new()
     }
@@ -15,9 +15,9 @@ impl Default for PubkyClient {
 static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/pkarr"];
 
 #[wasm_bindgen]
-impl PubkyClient {
+impl Client {
     #[wasm_bindgen(constructor)]
-    /// Create PubkyClient with default Settings including default relays
+    /// Create Client with default Settings including default relays
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),

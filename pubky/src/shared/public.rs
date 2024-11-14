@@ -6,12 +6,12 @@ use url::Url;
 
 use crate::{
     error::{Error, Result},
-    PubkyClient,
+    Client,
 };
 
 use super::{list_builder::ListBuilder, pkarr::Endpoint};
 
-impl PubkyClient {
+impl Client {
     pub(crate) async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
         let url = self.pubky_to_http(url).await?;
 
@@ -109,7 +109,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -136,7 +136,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -147,7 +147,7 @@ mod tests {
         let url = format!("pubky://{public_key}/pub/foo.txt");
         let url = url.as_str();
 
-        let other_client = PubkyClient::test(&testnet);
+        let other_client = Client::test(&testnet);
         {
             let other = Keypair::random();
 
@@ -202,7 +202,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -406,7 +406,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -617,7 +617,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -646,7 +646,7 @@ mod tests {
         let feed_url = format!("http://localhost:{}/events/", server.port());
         let feed_url = feed_url.as_str();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let cursor;
 
@@ -714,7 +714,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -730,7 +730,7 @@ mod tests {
         let feed_url = format!("http://localhost:{}/events/", server.port());
         let feed_url = feed_url.as_str();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         {
             let response = client
@@ -762,7 +762,7 @@ mod tests {
     async fn dont_delete_shared_blobs() {
         let testnet = Testnet::new(10).unwrap();
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let homeserver_pubky = homeserver.public_key();
 
@@ -818,7 +818,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
