@@ -6,7 +6,7 @@ use pkarr::dns::SimpleDnsError;
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(thiserror::Error, Debug)]
-/// Pk common Error
+/// Pubky crate's common Error enum
 pub enum Error {
     /// For starter, to remove as code matures.
     #[error("Generic error: {0}")]

@@ -1,6 +1,6 @@
 # Pubky
 
-JavaScript implementation of [Pubky](https://github.com/pubky/pubky).
+JavaScript implementation of [Pubky](https://github.com/pubky/pubky-core) client.
 
 ## Table of Contents
 - [Install](#install)

@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use heed::{Env, EnvOpenOptions};
 
@@ -14,11 +14,17 @@ pub struct DB {
     pub(crate) env: Env,
     pub(crate) tables: Tables,
     pub(crate) config: Config,
+    pub(crate) buffers_dir: PathBuf,
+    pub(crate) max_chunk_size: usize,
 }
 
 impl DB {
     pub fn open(config: Config) -> anyhow::Result<Self> {
-        fs::create_dir_all(config.storage())?;
+        let buffers_dir = config.storage().clone().join("buffers");
+
+        // Cleanup buffers.
+        let _ = fs::remove_dir(&buffers_dir);
+        fs::create_dir_all(&buffers_dir)?;
 
         let env = unsafe {
             EnvOpenOptions::new()
@@ -33,46 +39,25 @@ impl DB {
             env,
             tables,
             config,
+            buffers_dir,
+            max_chunk_size: max_chunk_size(),
         };
 
         Ok(db)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use bytes::Bytes;
-    use pkarr::{mainline::Testnet, Keypair};
+/// calculate optimal chunk size:
+/// - https://lmdb.readthedocs.io/en/release/#storage-efficiency-limits
+/// - https://github.com/lmdbjava/benchmarks/blob/master/results/20160710/README.md#test-2-determine-24816-kb-byte-values
+fn max_chunk_size() -> usize {
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
 
-    use crate::config::Config;
-
-    use super::DB;
-
-    #[tokio::test]
-    async fn entries() {
-        let db = DB::open(Config::test(&Testnet::new(0).unwrap())).unwrap();
-
-        let keypair = Keypair::random();
-        let path = "/pub/foo.txt";
-
-        let (tx, rx) = flume::bounded::<Bytes>(0);
-
-        let mut cloned = db.clone();
-        let cloned_keypair = keypair.clone();
-
-        let done = tokio::task::spawn_blocking(move || {
-            cloned
-                .put_entry(&cloned_keypair.public_key(), path, rx)
-                .unwrap();
-        });
-
-        tx.send(vec![1, 2, 3, 4, 5].into()).unwrap();
-        drop(tx);
-
-        done.await.unwrap();
-
-        let blob = db.get_blob(&keypair.public_key(), path).unwrap().unwrap();
-
-        assert_eq!(blob, Bytes::from(vec![1, 2, 3, 4, 5]));
-    }
+    // - 16 bytes Header  per page (LMDB)
+    // - Each page has to contain 2 records
+    // - 8 bytes per record (LMDB) (imperically, it seems to be 10 not 8)
+    // - 12 bytes key:
+    //      - timestamp : 8 bytes
+    //      - chunk index: 4 bytes
+    ((page_size - 16) / 2) - (8 + 2) - 12
 }

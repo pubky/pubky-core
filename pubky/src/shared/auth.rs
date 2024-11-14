@@ -149,20 +149,7 @@ impl PubkyClient {
         Ok(())
     }
 
-    pub async fn inner_third_party_signin(
-        &self,
-        encrypted_token: &[u8],
-        client_secret: &[u8; 32],
-    ) -> Result<PublicKey> {
-        let decrypted = decrypt(encrypted_token, client_secret)?;
-        let token = AuthToken::deserialize(&decrypted)?;
-
-        self.signin_with_authtoken(&token).await?;
-
-        Ok(token.pubky().to_owned())
-    }
-
-    pub async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
+    pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let mut url = Url::parse(&format!("https://{}/session", token.pubky()))?;
 
         self.resolve_url(&mut url).await?;

@@ -1,8 +1,8 @@
 [package]
 name = "pubky"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
-description = "Pubky client"
+description = "Pubky core client"
 license = "MIT"
 repository = "https://github.com/pubky/pubky"
 keywords = ["web", "dht", "dns", "decentralized", "identity"]
@@ -17,8 +17,8 @@ url = "2.5.2"
 bytes = "^1.7.1"
 base64 = "0.22.1"
 
+pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr" }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
-pkarr = { workspace = true, features = ["endpoints"] }
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -36,7 +36,7 @@ js-sys = "0.3.69"
 web-sys = "0.3.70"
 
 [dev-dependencies]
-pubky_homeserver = { path = "../pubky-homeserver" }
+pubky-homeserver = { path = "../pubky-homeserver" }
 tokio = "1.37.0"
 
 [features]
