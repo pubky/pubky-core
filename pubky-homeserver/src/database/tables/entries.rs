@@ -453,7 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn entries() -> anyhow::Result<()> {
-        let mut db = DB::open(Config::test(&Testnet::new(0))).unwrap();
+        let mut db = DB::open(Config::test(&Testnet::new(0).unwrap())).unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
@@ -495,7 +495,7 @@ mod tests {
 
     #[tokio::test]
     async fn chunked_entry() -> anyhow::Result<()> {
-        let mut db = DB::open(Config::test(&Testnet::new(0))).unwrap();
+        let mut db = DB::open(Config::test(&Testnet::new(0).unwrap())).unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();

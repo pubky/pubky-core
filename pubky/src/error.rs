@@ -20,7 +20,16 @@ pub enum Error {
     Dns(#[from] SimpleDnsError),
 
     #[error(transparent)]
-    Pkarr(#[from] pkarr::Error),
+    PublicKeyError(#[from] pkarr::errors::PublicKeyError),
+
+    #[error(transparent)]
+    PkarrPublishError(#[from] pkarr::errors::PublishError),
+
+    #[error(transparent)]
+    SignedPacketError(#[from] pkarr::errors::SignedPacketError),
+
+    #[error(transparent)]
+    PkarrClientWasShutdown(#[from] pkarr::errors::ClientWasShutdown),
 
     #[error(transparent)]
     Url(#[from] url::ParseError),

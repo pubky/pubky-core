@@ -5,10 +5,7 @@ use pubky_common::auth::AuthVerifier;
 use tokio::{net::TcpListener, signal, task::JoinSet};
 use tracing::{debug, info, warn};
 
-use pkarr::{
-    mainline::dht::{DhtSettings, Testnet},
-    PublicKey, Settings,
-};
+use pkarr::{mainline::Testnet, PublicKey};
 
 use crate::{config::Config, database::DB, pkarr::publish_server_packet};
 
@@ -33,14 +30,18 @@ impl Homeserver {
 
         let db = DB::open(config.clone())?;
 
-        let pkarr_client = pkarr::Client::new(Settings {
-            dht: DhtSettings {
-                bootstrap: config.bootstsrap(),
-                request_timeout: config.dht_request_timeout(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })?;
+        let mut dht_settings = pkarr::mainline::Settings::default();
+
+        if let Some(bootstrap) = config.bootstrap() {
+            dht_settings = dht_settings.bootstrap(&bootstrap);
+        }
+        if let Some(request_timeout) = config.dht_request_timeout() {
+            dht_settings = dht_settings.request_timeout(request_timeout);
+        }
+
+        let pkarr_client = pkarr::Client::builder()
+            .dht_settings(dht_settings)
+            .build()?;
 
         let mut tasks = JoinSet::new();
 

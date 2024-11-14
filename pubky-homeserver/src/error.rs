@@ -78,8 +78,26 @@ impl From<pubky_common::auth::Error> for Error {
     }
 }
 
-impl From<pkarr::Error> for Error {
-    fn from(error: pkarr::Error) -> Self {
+impl From<pkarr::errors::SignedPacketError> for Error {
+    fn from(error: pkarr::errors::SignedPacketError) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
+    }
+}
+
+impl From<pkarr::errors::PublishError> for Error {
+    fn from(error: pkarr::errors::PublishError) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
+    }
+}
+
+impl From<pkarr::errors::ClientWasShutdown> for Error {
+    fn from(error: pkarr::errors::ClientWasShutdown) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, Some(error))
+    }
+}
+
+impl From<pkarr::errors::PublicKeyError> for Error {
+    fn from(error: pkarr::errors::PublicKeyError) -> Self {
         Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }

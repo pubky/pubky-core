@@ -723,8 +723,9 @@ mod tests {
         let pubky = keypair.public_key();
 
         let url = format!("pubky://{pubky}/pub/a.com/a.txt");
+        let url = url.as_str();
 
-        client.put(url.as_str(), &[0]).await.unwrap();
+        client.put(url, &[0]).await.unwrap();
 
         let feed_url = format!("http://localhost:{}/events/", server.port());
         let feed_url = feed_url.as_str();
@@ -814,7 +815,7 @@ mod tests {
     async fn stream() {
         // TODO: test better streaming API
 
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = PubkyClient::test(&testnet);

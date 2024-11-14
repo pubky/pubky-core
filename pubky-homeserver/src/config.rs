@@ -166,7 +166,7 @@ impl Config {
         self.port
     }
 
-    pub fn bootstsrap(&self) -> Option<Vec<String>> {
+    pub fn bootstrap(&self) -> Option<Vec<String>> {
         self.bootstrap.to_owned()
     }
 
