@@ -62,17 +62,18 @@ pubkyauth:///
   &secret=mAa8kGmlrynGzQLteDVW6-WeUGnfvHTpEmbNerbWfPI
  ```
  and finally show that URL as a QR code to the user.
+ 
 4. The `Authenticator` app scans that QR code, parse the URL, and show a consent form for the user..
 5. The user decides whether or not to grant these capabilities to the `3rd Party App`.
-6. If the user approves, the `Authenticator` then uses their Keypair, to sign an [AuthToken](#authtoken), then encrypt that token with the `client_secret`, then calculate the `channel_id` by hashing that secret, and send that encrypted token to the callback url, which is the `relay` + `channel_id`.
-7. `HTTP Relay` forwards the encrypted AuthToken to the `3rd Party App` frontend.
-8. And confirms the delivery with the `Authenticator`
-9. `3rd Party App` decrypts the AuthToken using its `client_secret`, read the `pubky` in it, and send it to their `homeserver` to obtain a session.
-10. `Homeserver` verifies the session and stores the corresponding `capabilities`.
-11. `Homeserver` returns a session Id to the frontend to use in subsequent requests.
-12. `3rd Party App` uses the session Id to access some resource at the Homeserver.
-13. `Homeserver` checks the session capabilities to see if it is allowed to access that resource.
-14. `Homeserver` responds to the `3rd Party App` with the resource.
+7. If the user approves, the `Authenticator` then uses their Keypair, to sign an [AuthToken](#authtoken), then encrypt that token with the `client_secret`, then calculate the `channel_id` by hashing that secret, and send that encrypted token to the callback url, which is the `relay` + `channel_id`.
+8. `HTTP Relay` forwards the encrypted AuthToken to the `3rd Party App` frontend.
+9. And confirms the delivery with the `Authenticator`
+10. `3rd Party App` decrypts the AuthToken using its `client_secret`, read the `pubky` in it, and send it to their `homeserver` to obtain a session.
+11. `Homeserver` verifies the session and stores the corresponding `capabilities`.
+12. `Homeserver` returns a session Id to the frontend to use in subsequent requests.
+13. `3rd Party App` uses the session Id to access some resource at the Homeserver.
+14. `Homeserver` checks the session capabilities to see if it is allowed to access that resource.
+15. `Homeserver` responds to the `3rd Party App` with the resource.
 
 ## AuthToken encoding
 ```abnf
