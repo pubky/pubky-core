@@ -254,18 +254,20 @@ resources on the user's <a href="spec/../concepts/homeserver.html">Homeserver</a
  &amp;caps=/pub/pubky.app/:rw,/pub/example.com/nested:rw
  &amp;secret=mAa8kGmlrynGzQLteDVW6-WeUGnfvHTpEmbNerbWfPI
 </code></pre>
-<p>and finally show that URL as a QR code to the user.
-4. The <code>Authenticator</code> app scans that QR code, parse the URL, and show a consent form for the user..
-5. The user decides whether or not to grant these capabilities to the <code>3rd Party App</code>.
-6. If the user approves, the <code>Authenticator</code> then uses their Keypair, to sign an <a href="spec/auth.html#authtoken">AuthToken</a>, then encrypt that token with the <code>client_secret</code>, then calculate the <code>channel_id</code> by hashing that secret, and send that encrypted token to the callback url, which is the <code>relay</code> + <code>channel_id</code>.
-7. <code>HTTP Relay</code> forwards the encrypted AuthToken to the <code>3rd Party App</code> frontend.
-8. And confirms the delivery with the <code>Authenticator</code>
-9. <code>3rd Party App</code> decrypts the AuthToken using its <code>client_secret</code>, read the <code>pubky</code> in it, and send it to their <code>homeserver</code> to obtain a session.
-10. <code>Homeserver</code> verifies the session and stores the corresponding <code>capabilities</code>.
-11. <code>Homeserver</code> returns a session Id to the frontend to use in subsequent requests.
-12. <code>3rd Party App</code> uses the session Id to access some resource at the Homeserver.
-13. <code>Homeserver</code> checks the session capabilities to see if it is allowed to access that resource.
-14. <code>Homeserver</code> responds to the <code>3rd Party App</code> with the resource.</p>
+<p>and finally show that URL as a QR code to the user.</p>
+<ol start="4">
+<li>The <code>Authenticator</code> app scans that QR code, parse the URL, and show a consent form for the user..</li>
+<li>The user decides whether or not to grant these capabilities to the <code>3rd Party App</code>.</li>
+<li>If the user approves, the <code>Authenticator</code> then uses their Keypair, to sign an <a href="spec/auth.html#authtoken">AuthToken</a>, then encrypt that token with the <code>client_secret</code>, then calculate the <code>channel_id</code> by hashing that secret, and send that encrypted token to the callback url, which is the <code>relay</code> + <code>channel_id</code>.</li>
+<li><code>HTTP Relay</code> forwards the encrypted AuthToken to the <code>3rd Party App</code> frontend.</li>
+<li>And confirms the delivery with the <code>Authenticator</code></li>
+<li><code>3rd Party App</code> decrypts the AuthToken using its <code>client_secret</code>, read the <code>pubky</code> in it, and send it to their <code>homeserver</code> to obtain a session.</li>
+<li><code>Homeserver</code> verifies the session and stores the corresponding <code>capabilities</code>.</li>
+<li><code>Homeserver</code> returns a session Id to the frontend to use in subsequent requests.</li>
+<li><code>3rd Party App</code> uses the session Id to access some resource at the Homeserver.</li>
+<li><code>Homeserver</code> checks the session capabilities to see if it is allowed to access that resource.</li>
+<li><code>Homeserver</code> responds to the <code>3rd Party App</code> with the resource.</li>
+</ol>
 <h2 id="authtoken-encoding"><a class="header" href="#authtoken-encoding">AuthToken encoding</a></h2>
 <pre><code class="language-abnf">```abnf
 AuthToken   = signature namespace version timestamp pubky capabilities
