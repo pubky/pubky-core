@@ -30,10 +30,10 @@ COPY Cargo.toml Cargo.lock ./
 COPY . .
 
 # Build the project in release mode for the MUSL target
-RUN cargo build --release --bin pubky_homeserver --target x86_64-unknown-linux-musl
+RUN cargo build --release --bin pubky-homeserver --target x86_64-unknown-linux-musl
 
 # Strip the binary to reduce size
-RUN strip target/x86_64-unknown-linux-musl/release/pubky_homeserver
+RUN strip target/x86_64-unknown-linux-musl/release/pubky-homeserver
 
 # ========================
 # Runtime Stage
@@ -44,7 +44,7 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/pubky_homeserver /usr/local/bin/homeserver
+COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/pubky-homeserver /usr/local/bin/homeserver
 
 # Set the working directory
 WORKDIR /usr/local/bin
