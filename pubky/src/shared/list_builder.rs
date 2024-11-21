@@ -1,7 +1,7 @@
 use reqwest::Method;
 use url::Url;
 
-use crate::{error::Result, PubkyClient};
+use crate::{error::Result, Client};
 
 /// Helper struct to edit Pubky homeserver's list API options before sending them.
 #[derive(Debug)]
@@ -10,13 +10,13 @@ pub struct ListBuilder<'a> {
     reverse: bool,
     limit: Option<u16>,
     cursor: Option<&'a str>,
-    client: &'a PubkyClient,
+    client: &'a Client,
     shallow: bool,
 }
 
 impl<'a> ListBuilder<'a> {
     /// Create a new List request builder
-    pub(crate) fn new(client: &'a PubkyClient, url: Url) -> Self {
+    pub(crate) fn new(client: &'a Client, url: Url) -> Self {
         Self {
             client,
             url,
@@ -91,7 +91,12 @@ impl<'a> ListBuilder<'a> {
 
         drop(query);
 
-        let response = self.client.request(Method::GET, url).send().await?;
+        let response = self
+            .client
+            .inner_request(Method::GET, url)
+            .await
+            .send()
+            .await?;
 
         response.error_for_status_ref()?;
 

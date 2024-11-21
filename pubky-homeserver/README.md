@@ -21,5 +21,5 @@ cargo build --release
 Run with an optional config file
 
 ```bash
-../target/release/pubky_homeserver --config=./src/config.toml
+../target/release/pubky-homeserver --config=./src/config.toml
 ```

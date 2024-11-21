@@ -6,17 +6,18 @@ use url::Url;
 
 use crate::{
     error::{Error, Result},
-    PubkyClient,
+    Client,
 };
 
 use super::{list_builder::ListBuilder, pkarr::Endpoint};
 
-impl PubkyClient {
+impl Client {
     pub(crate) async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
         let url = self.pubky_to_http(url).await?;
 
         let response = self
-            .request(Method::PUT, url)
+            .inner_request(Method::PUT, url)
+            .await
             .body(content.to_owned())
             .send()
             .await?;
@@ -29,7 +30,7 @@ impl PubkyClient {
     pub(crate) async fn inner_get<T: TryInto<Url>>(&self, url: T) -> Result<Option<Bytes>> {
         let url = self.pubky_to_http(url).await?;
 
-        let response = self.request(Method::GET, url).send().await?;
+        let response = self.inner_request(Method::GET, url).await.send().await?;
 
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -46,7 +47,7 @@ impl PubkyClient {
     pub(crate) async fn inner_delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
         let url = self.pubky_to_http(url).await?;
 
-        let response = self.request(Method::DELETE, url).send().await?;
+        let response = self.inner_request(Method::DELETE, url).await.send().await?;
 
         response.error_for_status_ref()?;
 
@@ -105,10 +106,10 @@ mod tests {
 
     #[tokio::test]
     async fn put_get_delete() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -132,10 +133,10 @@ mod tests {
 
     #[tokio::test]
     async fn unauthorized_put_delete() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -146,7 +147,7 @@ mod tests {
         let url = format!("pubky://{public_key}/pub/foo.txt");
         let url = url.as_str();
 
-        let other_client = PubkyClient::test(&testnet);
+        let other_client = Client::test(&testnet);
         {
             let other = Keypair::random();
 
@@ -198,10 +199,10 @@ mod tests {
 
     #[tokio::test]
     async fn list() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -402,10 +403,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_shallow() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -613,10 +614,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_events() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -645,16 +646,13 @@ mod tests {
         let feed_url = format!("http://localhost:{}/events/", server.port());
         let feed_url = feed_url.as_str();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let cursor;
 
         {
             let response = client
-                .request(
-                    Method::GET,
-                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
-                )
+                .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
                 .await
                 .unwrap();
@@ -684,13 +682,7 @@ mod tests {
 
         {
             let response = client
-                .request(
-                    Method::GET,
-                    format!("{feed_url}?limit=10&cursor={cursor}")
-                        .as_str()
-                        .try_into()
-                        .unwrap(),
-                )
+                .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
                 .send()
                 .await
                 .unwrap();
@@ -719,10 +711,10 @@ mod tests {
 
     #[tokio::test]
     async fn read_after_event() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -731,20 +723,18 @@ mod tests {
         let pubky = keypair.public_key();
 
         let url = format!("pubky://{pubky}/pub/a.com/a.txt");
+        let url = url.as_str();
 
-        client.put(url.as_str(), &[0]).await.unwrap();
+        client.put(url, &[0]).await.unwrap();
 
         let feed_url = format!("http://localhost:{}/events/", server.port());
         let feed_url = feed_url.as_str();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         {
             let response = client
-                .request(
-                    Method::GET,
-                    format!("{feed_url}?limit=10").as_str().try_into().unwrap(),
-                )
+                .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
                 .await
                 .unwrap();
@@ -763,16 +753,16 @@ mod tests {
             );
         }
 
-        let resolved = client.get(url.as_str()).await.unwrap().unwrap();
+        let get = client.get(url).await.unwrap().unwrap();
 
-        assert_eq!(&resolved[..], &[0]);
+        assert_eq!(get.as_ref(), &[0]);
     }
 
     #[tokio::test]
     async fn dont_delete_shared_blobs() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let homeserver = Homeserver::start_test(&testnet).await.unwrap();
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let homeserver_pubky = homeserver.public_key();
 
@@ -802,7 +792,7 @@ mod tests {
         let feed_url = format!("http://localhost:{}/events/", homeserver.port());
 
         let response = client
-            .request(Method::GET, feed_url.as_str().try_into().unwrap())
+            .request(Method::GET, format!("{feed_url}"))
             .send()
             .await
             .unwrap();
@@ -825,10 +815,10 @@ mod tests {
     async fn stream() {
         // TODO: test better streaming API
 
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 

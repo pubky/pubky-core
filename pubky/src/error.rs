@@ -12,9 +12,6 @@ pub enum Error {
     #[error("Generic error: {0}")]
     Generic(String),
 
-    #[error("Could not resolve endpoint for {0}")]
-    ResolveEndpoint(String),
-
     #[error("Could not convert the passed type into a Url")]
     InvalidUrl,
 
@@ -23,7 +20,16 @@ pub enum Error {
     Dns(#[from] SimpleDnsError),
 
     #[error(transparent)]
-    Pkarr(#[from] pkarr::Error),
+    PublicKeyError(#[from] pkarr::errors::PublicKeyError),
+
+    #[error(transparent)]
+    PkarrPublishError(#[from] pkarr::errors::PublishError),
+
+    #[error(transparent)]
+    SignedPacketError(#[from] pkarr::errors::SignedPacketError),
+
+    #[error(transparent)]
+    PkarrClientWasShutdown(#[from] pkarr::errors::ClientWasShutdown),
 
     #[error(transparent)]
     Url(#[from] url::ParseError),
@@ -42,6 +48,9 @@ pub enum Error {
 
     #[error(transparent)]
     AuthToken(#[from] pubky_common::auth::Error),
+
+    #[error("Could not resolve Endpoint for domain: {0}")]
+    ResolveEndpoint(String),
 }
 
 #[cfg(target_arch = "wasm32")]

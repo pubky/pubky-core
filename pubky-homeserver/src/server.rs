@@ -5,10 +5,7 @@ use pubky_common::auth::AuthVerifier;
 use tokio::{net::TcpListener, signal, task::JoinSet};
 use tracing::{debug, info, warn};
 
-use pkarr::{
-    mainline::dht::{DhtSettings, Testnet},
-    PkarrClient, PkarrClientAsync, PublicKey, Settings,
-};
+use pkarr::{mainline::Testnet, PublicKey};
 
 use crate::{config::Config, database::DB, pkarr::publish_server_packet};
 
@@ -22,7 +19,7 @@ pub struct Homeserver {
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: DB,
-    pub(crate) pkarr_client: PkarrClientAsync,
+    pub(crate) pkarr_client: pkarr::Client,
     pub(crate) config: Config,
     pub(crate) port: u16,
 }
@@ -33,15 +30,18 @@ impl Homeserver {
 
         let db = DB::open(config.clone())?;
 
-        let pkarr_client = PkarrClient::new(Settings {
-            dht: DhtSettings {
-                bootstrap: config.bootstsrap(),
-                request_timeout: config.dht_request_timeout(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })?
-        .as_async();
+        let mut dht_settings = pkarr::mainline::Settings::default();
+
+        if let Some(bootstrap) = config.bootstrap() {
+            dht_settings = dht_settings.bootstrap(&bootstrap);
+        }
+        if let Some(request_timeout) = config.dht_request_timeout() {
+            dht_settings = dht_settings.request_timeout(request_timeout);
+        }
+
+        let pkarr_client = pkarr::Client::builder()
+            .dht_settings(dht_settings)
+            .build()?;
 
         let mut tasks = JoinSet::new();
 
@@ -52,7 +52,7 @@ impl Homeserver {
         let state = AppState {
             verifier: AuthVerifier::default(),
             db,
-            pkarr_client,
+            pkarr_client: pkarr_client.clone(),
             config: config.clone(),
             port,
         };
@@ -71,20 +71,10 @@ impl Homeserver {
 
         info!("Homeserver listening on http://localhost:{port}");
 
-        publish_server_packet(
-            &state.pkarr_client,
-            config.keypair(),
-            &state
-                .config
-                .domain()
-                .clone()
-                .unwrap_or("localhost".to_string()),
-            port,
-        )
-        .await?;
+        publish_server_packet(&pkarr_client, &config, port).await?;
 
         info!(
-            "Homeserver listening on pubky://{}",
+            "Homeserver listening on http://{}",
             config.keypair().public_key()
         );
 

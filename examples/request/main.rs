@@ -3,7 +3,7 @@ use clap::Parser;
 use reqwest::Method;
 use url::Url;
 
-use pubky::PubkyClient;
+use pubky::Client;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -18,14 +18,14 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let client = PubkyClient::builder().build();
+    let client = Client::new()?;
 
     match cli.url.scheme() {
         "https" => {
             unimplemented!();
         }
         "pubky" => {
-            let response = client.get(cli.url).await.unwrap();
+            let response = client.get(cli.url).await?;
 
             println!("Got a response: \n {:?}", response);
         }

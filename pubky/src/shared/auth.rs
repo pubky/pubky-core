@@ -14,12 +14,12 @@ use pubky_common::{
 
 use crate::{
     error::{Error, Result},
-    PubkyClient,
+    Client,
 };
 
 use super::pkarr::Endpoint;
 
-impl PubkyClient {
+impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
@@ -38,12 +38,11 @@ impl PubkyClient {
         let body = AuthToken::sign(keypair, vec![Capability::root()]).serialize();
 
         let response = self
-            .request(Method::POST, url.clone())
+            .inner_request(Method::POST, url.clone())
+            .await
             .body(body)
             .send()
             .await?;
-
-        self.store_session(&response);
 
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
@@ -61,7 +60,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{}/session", pubky));
 
-        let res = self.request(Method::GET, url).send().await?;
+        let res = self.inner_request(Method::GET, url).await.send().await?;
 
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -82,9 +81,7 @@ impl PubkyClient {
 
         url.set_path(&format!("/{}/session", pubky));
 
-        self.request(Method::DELETE, url).send().await?;
-
-        self.remove_session(pubky);
+        self.inner_request(Method::DELETE, url).await.send().await?;
 
         Ok(())
     }
@@ -143,7 +140,8 @@ impl PubkyClient {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        self.request(Method::POST, callback)
+        self.inner_request(Method::POST, callback)
+            .await
             .body(encrypted_token)
             .send()
             .await?;
@@ -157,12 +155,11 @@ impl PubkyClient {
         self.resolve_url(&mut url).await?;
 
         let response = self
-            .request(Method::POST, url)
+            .inner_request(Method::POST, url)
+            .await
             .body(token.serialize())
             .send()
             .await?;
-
-        self.store_session(&response);
 
         let bytes = response.bytes().await?;
 
@@ -225,10 +222,10 @@ mod tests {
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -266,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn authz() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let keypair = Keypair::random();
@@ -275,14 +272,14 @@ mod tests {
         // Third party app side
         let capabilities: Capabilities =
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
         let (pubkyauth_url, pubkyauth_response) = client
             .auth_request("https://demo.httprelay.io/link", &capabilities)
             .unwrap();
 
         // Authenticator side
         {
-            let client = PubkyClient::test(&testnet);
+            let client = Client::test(&testnet);
 
             client.signup(&keypair, &server.public_key()).await.unwrap();
 
@@ -295,6 +292,9 @@ mod tests {
         let public_key = pubkyauth_response.await.unwrap();
 
         assert_eq!(&public_key, &pubky);
+
+        let session = client.session(&pubky).await.unwrap().unwrap();
+        assert_eq!(session.capabilities(), &capabilities.0);
 
         // Test access control enforcement
 

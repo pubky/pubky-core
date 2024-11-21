@@ -21,10 +21,10 @@ For Nodejs, you need Node v20 or later.
 ## Getting started
 
 ```js
-import { PubkyClient, Keypair, PublicKey } from '../index.js'
+import { Client, Keypair, PublicKey } from '../index.js'
 
-// Initialize PubkyClient with Pkarr relay(s).
-let client = new PubkyClient();
+// Initialize Client with Pkarr relay(s).
+let client = new Client();
 
 // Generate a keypair
 let keypair = Keypair.random();
@@ -49,7 +49,7 @@ await client.put(url, body);
 
 // GET public data without signup or signin
 {
-    const client = new PubkyClient();
+    const client = new Client();
 
     let response = await client.get(url);
 }
@@ -60,11 +60,11 @@ await client.delete(url);
 
 ## API
 
-### PubkyClient
+### Client
 
 #### constructor
 ```js
-let client = new PubkyClient()
+let client = new Client()
 ```
 
 #### signup
@@ -257,10 +257,10 @@ Run the local testnet server
 npm run testnet
 ```
 
-Use the logged addresses as inputs to `PubkyClient`
+Use the logged addresses as inputs to `Client`
 
 ```js
-import { PubkyClient } from '../index.js'
+import { Client } from '../index.js'
 
-const client = PubkyClient().testnet();
+const client = Client().testnet();
 ```
