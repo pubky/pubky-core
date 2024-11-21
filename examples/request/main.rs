@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
             unimplemented!();
         }
         "pubky" => {
-            let response = client.get(cli.url).await?;
+            let response = client.get(cli.url).send().await?.bytes().await?;
 
             println!("Got a response: \n {:?}", response);
         }

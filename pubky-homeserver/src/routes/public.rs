@@ -1,6 +1,5 @@
 use axum::{
     body::Body,
-    debug_handler,
     extract::State,
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
@@ -46,7 +45,6 @@ pub async fn put(
     Ok(())
 }
 
-#[debug_handler]
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -54,9 +52,55 @@ pub async fn get(
     path: EntryPath,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
+    Ok(get_common(state, headers, pubky, path.as_str(), params).await?)
+}
+
+pub async fn get_subdomain(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    pubky: Pubky,
+    path: EntryPath,
+    params: ListQueryParams,
+) -> Result<impl IntoResponse> {
+    Ok(get_common(
+        state,
+        headers,
+        pubky,
+        &format!("pub/{}", path.as_str()),
+        params,
+    )
+    .await?)
+}
+
+pub async fn head(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    pubky: Pubky,
+    path: EntryPath,
+) -> Result<impl IntoResponse> {
     verify(path.as_str())?;
+
+    let rtxn = state.db.env.read_txn()?;
+
+    get_entry(
+        headers,
+        state
+            .db
+            .get_entry(&rtxn, pubky.public_key(), path.as_str())?,
+        None,
+    )
+}
+
+async fn get_common(
+    state: AppState,
+    headers: HeaderMap,
+    pubky: Pubky,
+    path: &str,
+    params: ListQueryParams,
+) -> Result<impl IntoResponse> {
+    verify(path)?;
     let public_key = pubky.public_key().clone();
-    let path = path.as_str().to_string();
+    let path = path.to_string();
 
     if path.ends_with('/') {
         let txn = state.db.env.read_txn()?;
@@ -113,25 +157,6 @@ pub async fn get(
         headers,
         entry_rx.recv_async().await?,
         Some(Body::from_stream(chunks_rx.into_stream())),
-    )
-}
-
-pub async fn head(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    pubky: Pubky,
-    path: EntryPath,
-) -> Result<impl IntoResponse> {
-    verify(path.as_str())?;
-
-    let rtxn = state.db.env.read_txn()?;
-
-    get_entry(
-        headers,
-        state
-            .db
-            .get_entry(&rtxn, pubky.public_key(), path.as_str())?,
-        None,
     )
 }
 

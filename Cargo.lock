@@ -856,7 +856,10 @@ version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cef40d21ae2c515b51041df9ed313ed21e572df340ea58a922a0aefe7e8891a1"
 dependencies = [
+ "fastrand",
  "futures-core",
+ "futures-io",
+ "parking",
  "pin-project-lite",
 ]
 
@@ -1456,7 +1459,7 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "3.0.1"
-source = "git+https://github.com/pubky/mainline#ce935827349341d2130589486a40e6411c8c790e"
+source = "git+https://github.com/pubky/mainline#5ff1391ce3e3aeb44752cdfb962e3d7895029b27"
 dependencies = [
  "bytes",
  "crc",
@@ -1645,6 +1648,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "parking"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
+
+[[package]]
 name = "parking_lot"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1741,7 +1750,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pkarr"
 version = "3.0.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#54732ea14bb652e137547dda1ed295ebf1d7aa57"
+source = "git+https://github.com/Pubky/pkarr?branch=v3#3eda7808eafd6641049f30cd7b32fee8fe9550ea"
 dependencies = [
  "base32",
  "byteorder",
@@ -1763,6 +1772,8 @@ dependencies = [
  "pubky-timestamp",
  "rand",
  "reqwest",
+ "rustls",
+ "rustls-webpki",
  "self_cell",
  "serde",
  "sha1_smol",
@@ -1847,6 +1858,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 name = "pubky"
 version = "0.3.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "bytes",
  "js-sys",

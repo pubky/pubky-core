@@ -21,6 +21,9 @@ fn base(state: AppState) -> Router {
         .route("/", get(root::handler))
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
+        // Pub
+        .route("/pub/*path", get(public::get_subdomain))
+        //
         .route("/:pubky/session", get(auth::session))
         .route("/:pubky/session", delete(auth::signout))
         .route("/:pubky/*path", put(public::put))

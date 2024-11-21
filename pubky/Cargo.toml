@@ -36,6 +36,7 @@ js-sys = "0.3.69"
 web-sys = "0.3.70"
 
 [dev-dependencies]
+anyhow = "1.0.93"
 pubky-homeserver = { path = "../pubky-homeserver" }
 tokio = "1.37.0"
 
