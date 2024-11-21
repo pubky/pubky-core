@@ -29,6 +29,15 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(host) = parts.headers.get("host") {
+            if let Ok(host_str) = host.to_str() {
+                let domain = host_str.split(':').next().unwrap_or_default();
+                if let Ok(public_key) = PublicKey::try_from(domain) {
+                    return Ok(Pubky(public_key));
+                }
+            }
+        }
+
         let params: Path<HashMap<String, String>> =
             parts.extract().await.map_err(IntoResponse::into_response)?;
 
