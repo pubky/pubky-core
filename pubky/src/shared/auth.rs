@@ -38,13 +38,20 @@ impl Client {
         let body = AuthToken::sign(keypair, vec![Capability::root()]).serialize();
 
         let response = self
-            .inner_request(Method::POST, url.clone())
-            .await
+            .http
+            .request(Method::POST, url.clone())
             .body(body)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
+
+        self.cookie_store.set_cookies(
+            &mut response.headers().values(),
+            &url::Url::parse(&format!("http://_pubky.{}", keypair.public_key()))
+                .expect("url from keypair doesn't fail"),
+        );
 
         let bytes = response.bytes().await?;
 
@@ -144,22 +151,19 @@ impl Client {
             .await
             .body(encrypted_token)
             .send()
-            .await?;
+            .await?
+            .error_for_status();
 
         Ok(())
     }
 
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
-        let mut url = Url::parse(&format!("https://{}/session", token.pubky()))?;
-
-        self.resolve_url(&mut url).await?;
-
         let response = self
-            .inner_request(Method::POST, url)
-            .await
+            .request(Method::POST, format!("pubky://{}/session", token.pubky()))
             .body(token.serialize())
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         let bytes = response.bytes().await?;
 
@@ -262,7 +266,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authz() {
+    async fn authz() -> anyhow::Result<()> {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
@@ -299,30 +303,32 @@ mod tests {
         // Test access control enforcement
 
         client
-            .put(format!("pubky://{pubky}/pub/pubky.app/foo").as_str(), &[])
-            .await
-            .unwrap();
+            .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
+            .body(vec![])
+            .send()
+            .await?
+            .error_for_status()?;
 
         assert_eq!(
             client
-                .put(format!("pubky://{pubky}/pub/pubky.app").as_str(), &[])
-                .await
-                .map_err(|e| match e {
-                    crate::Error::Reqwest(e) => e.status(),
-                    _ => None,
-                }),
-            Err(Some(StatusCode::FORBIDDEN))
+                .put(format!("pubky://{pubky}/pub/pubky.app"))
+                .body(vec![])
+                .send()
+                .await?
+                .status(),
+            StatusCode::FORBIDDEN
         );
 
         assert_eq!(
             client
-                .put(format!("pubky://{pubky}/pub/foo.bar/file").as_str(), &[])
-                .await
-                .map_err(|e| match e {
-                    crate::Error::Reqwest(e) => e.status(),
-                    _ => None,
-                }),
-            Err(Some(StatusCode::FORBIDDEN))
+                .put(format!("pubky://{pubky}/pub/foo.bar/file"))
+                .body(vec![])
+                .send()
+                .await?
+                .status(),
+            StatusCode::FORBIDDEN
         );
+
+        Ok(())
     }
 }

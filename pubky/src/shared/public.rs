@@ -1,7 +1,4 @@
-use bytes::Bytes;
-
 use pkarr::PublicKey;
-use reqwest::{Method, StatusCode};
 use url::Url;
 
 use crate::{
@@ -12,31 +9,6 @@ use crate::{
 use super::{list_builder::ListBuilder, pkarr::Endpoint};
 
 impl Client {
-    pub(crate) async fn inner_put<T: TryInto<Url>>(&self, url: T, content: &[u8]) -> Result<()> {
-        let url = self.pubky_to_http(url).await?;
-
-        let response = self
-            .inner_request(Method::PUT, url)
-            .await
-            .body(content.to_owned())
-            .send()
-            .await?;
-
-        response.error_for_status()?;
-
-        Ok(())
-    }
-
-    pub(crate) async fn inner_delete<T: TryInto<Url>>(&self, url: T) -> Result<()> {
-        let url = self.pubky_to_http(url).await?;
-
-        let response = self.inner_request(Method::DELETE, url).await.send().await?;
-
-        response.error_for_status_ref()?;
-
-        Ok(())
-    }
-
     pub(crate) fn inner_list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
         Ok(ListBuilder::new(
             self,
@@ -78,8 +50,6 @@ impl Client {
 #[cfg(test)]
 mod tests {
 
-    use core::panic;
-
     use crate::*;
 
     use bytes::Bytes;
@@ -101,13 +71,18 @@ mod tests {
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
         let url = url.as_str();
 
-        client.put(url, &[0, 1, 2, 3, 4]).await?;
+        client
+            .put(url)
+            .body(vec![0, 1, 2, 3, 4])
+            .send()
+            .await?
+            .error_for_status()?;
 
         let response = client.get(url).send().await?.bytes().await?;
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-        client.delete(url).await.unwrap();
+        client.delete(url).send().await?.error_for_status()?;
 
         let response = client.get(url).send().await?;
 
@@ -139,19 +114,18 @@ mod tests {
             // TODO: remove extra client after switching to subdomains.
             other_client.signup(&other, &server.public_key()).await?;
 
-            let response = other_client.put(url, &[0, 1, 2, 3, 4]).await;
-
-            match response {
-                Err(Error::Reqwest(error)) => {
-                    assert!(error.status() == Some(StatusCode::UNAUTHORIZED))
-                }
-                _ => {
-                    panic!("expected error StatusCode::UNAUTHORIZED")
-                }
-            }
+            assert_eq!(
+                other_client
+                    .put(url)
+                    .body(vec![0, 1, 2, 3, 4])
+                    .send()
+                    .await?
+                    .status(),
+                StatusCode::UNAUTHORIZED
+            );
         }
 
-        client.put(url, &[0, 1, 2, 3, 4]).await?;
+        client.put(url).body(vec![0, 1, 2, 3, 4]).send().await?;
 
         {
             let other = Keypair::random();
@@ -159,16 +133,10 @@ mod tests {
             // TODO: remove extra client after switching to subdomains.
             other_client.signup(&other, &server.public_key()).await?;
 
-            let response = other_client.delete(url).await;
-
-            match response {
-                Err(Error::Reqwest(error)) => {
-                    assert!(error.status() == Some(StatusCode::UNAUTHORIZED))
-                }
-                _ => {
-                    panic!("expected error StatusCode::UNAUTHORIZED")
-                }
-            }
+            assert_eq!(
+                other_client.delete(url).send().await?.status(),
+                StatusCode::UNAUTHORIZED
+            );
         }
 
         let response = client.get(url).send().await?.bytes().await?;
@@ -203,7 +171,7 @@ mod tests {
         ];
 
         for url in urls {
-            client.put(url.as_str(), &[0]).await?;
+            client.put(url).body(vec![0]).send().await?;
         }
 
         let url = format!("pubky://{pubky}/pub/example.com/extra");
@@ -378,20 +346,14 @@ mod tests {
         ];
 
         for url in urls {
-            client.put(url.as_str(), &[0]).await.unwrap();
+            client.put(url).body(vec![0]).send().await?;
         }
 
         let url = format!("pubky://{pubky}/pub/");
         let url = url.as_str();
 
         {
-            let list = client
-                .list(url)
-                .unwrap()
-                .shallow(true)
-                .send()
-                .await
-                .unwrap();
+            let list = client.list(url)?.shallow(true).send().await?;
 
             assert_eq!(
                 list,
@@ -409,14 +371,7 @@ mod tests {
         }
 
         {
-            let list = client
-                .list(url)
-                .unwrap()
-                .shallow(true)
-                .limit(2)
-                .send()
-                .await
-                .unwrap();
+            let list = client.list(url)?.shallow(true).limit(2).send().await?;
 
             assert_eq!(
                 list,
@@ -430,14 +385,12 @@ mod tests {
 
         {
             let list = client
-                .list(url)
-                .unwrap()
+                .list(url)?
                 .shallow(true)
                 .limit(2)
                 .cursor("example.com/a.txt")
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
             assert_eq!(
                 list,
@@ -451,14 +404,12 @@ mod tests {
 
         {
             let list = client
-                .list(url)
-                .unwrap()
+                .list(url)?
                 .shallow(true)
                 .limit(3)
                 .cursor("example.com/")
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
             assert_eq!(
                 list,
@@ -472,14 +423,7 @@ mod tests {
         }
 
         {
-            let list = client
-                .list(url)
-                .unwrap()
-                .reverse(true)
-                .shallow(true)
-                .send()
-                .await
-                .unwrap();
+            let list = client.list(url)?.reverse(true).shallow(true).send().await?;
 
             assert_eq!(
                 list,
@@ -498,14 +442,12 @@ mod tests {
 
         {
             let list = client
-                .list(url)
-                .unwrap()
+                .list(url)?
                 .reverse(true)
                 .shallow(true)
                 .limit(2)
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
             assert_eq!(
                 list,
@@ -519,15 +461,13 @@ mod tests {
 
         {
             let list = client
-                .list(url)
-                .unwrap()
+                .list(url)?
                 .shallow(true)
                 .reverse(true)
                 .limit(2)
                 .cursor("file2")
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
             assert_eq!(
                 list,
@@ -541,15 +481,13 @@ mod tests {
 
         {
             let list = client
-                .list(url)
-                .unwrap()
+                .list(url)?
                 .shallow(true)
                 .reverse(true)
                 .limit(2)
                 .cursor("example.con/")
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
             assert_eq!(
                 list,
@@ -566,14 +504,14 @@ mod tests {
 
     #[tokio::test]
     async fn list_events() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::new(10)?;
+        let server = Homeserver::start_test(&testnet).await?;
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client.signup(&keypair, &server.public_key()).await?;
 
         let pubky = keypair.public_key();
 
@@ -591,8 +529,8 @@ mod tests {
         ];
 
         for url in urls {
-            client.put(url.as_str(), &[0]).await.unwrap();
-            client.delete(url.as_str()).await.unwrap();
+            client.put(&url).body(vec![0]).send().await?;
+            client.delete(url).send().await?;
         }
 
         let feed_url = format!("http://localhost:{}/events/", server.port());
@@ -606,10 +544,9 @@ mod tests {
             let response = client
                 .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
-            let text = response.text().await.unwrap();
+            let text = response.text().await?;
             let lines = text.split('\n').collect::<Vec<_>>();
 
             cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
@@ -636,10 +573,9 @@ mod tests {
             let response = client
                 .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
-            let text = response.text().await.unwrap();
+            let text = response.text().await?;
             let lines = text.split('\n').collect::<Vec<_>>();
 
             assert_eq!(
@@ -665,21 +601,21 @@ mod tests {
 
     #[tokio::test]
     async fn read_after_event() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::new(10)?;
+        let server = Homeserver::start_test(&testnet).await?;
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client.signup(&keypair, &server.public_key()).await?;
 
         let pubky = keypair.public_key();
 
         let url = format!("pubky://{pubky}/pub/a.com/a.txt");
         let url = url.as_str();
 
-        client.put(url, &[0]).await.unwrap();
+        client.put(url).body(vec![0]).send().await?;
 
         let feed_url = format!("http://localhost:{}/events/", server.port());
         let feed_url = feed_url.as_str();
@@ -690,10 +626,9 @@ mod tests {
             let response = client
                 .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
-            let text = response.text().await.unwrap();
+            let text = response.text().await?;
             let lines = text.split('\n').collect::<Vec<_>>();
 
             let cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
@@ -716,8 +651,8 @@ mod tests {
 
     #[tokio::test]
     async fn dont_delete_shared_blobs() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10).unwrap();
-        let homeserver = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::new(10)?;
+        let homeserver = Homeserver::start_test(&testnet).await?;
         let client = Client::test(&testnet);
 
         let homeserver_pubky = homeserver.public_key();
@@ -725,8 +660,8 @@ mod tests {
         let user_1 = Keypair::random();
         let user_2 = Keypair::random();
 
-        client.signup(&user_1, &homeserver_pubky).await.unwrap();
-        client.signup(&user_2, &homeserver_pubky).await.unwrap();
+        client.signup(&user_1, &homeserver_pubky).await?;
+        client.signup(&user_2, &homeserver_pubky).await?;
 
         let user_1_id = user_1.public_key();
         let user_2_id = user_2.public_key();
@@ -735,13 +670,13 @@ mod tests {
         let url_2 = format!("pubky://{user_2_id}/pub/pubky.app/file/file_1");
 
         let file = vec![1];
-        client.put(url_1.as_str(), &file).await.unwrap();
-        client.put(url_2.as_str(), &file).await.unwrap();
+        client.put(&url_1).body(file.clone()).send().await?;
+        client.put(&url_2).body(file.clone()).send().await?;
 
         // Delete file 1
-        client.delete(url_1.as_str()).await.unwrap();
+        client.delete(url_1).send().await?.error_for_status()?;
 
-        let blob = client.get(url_2.as_str()).send().await?.bytes().await?;
+        let blob = client.get(url_2).send().await?.bytes().await?;
 
         assert_eq!(blob, file);
 
@@ -750,10 +685,9 @@ mod tests {
         let response = client
             .request(Method::GET, format!("{feed_url}"))
             .send()
-            .await
-            .unwrap();
+            .await?;
 
-        let text = response.text().await.unwrap();
+        let text = response.text().await?;
         let lines = text.split('\n').collect::<Vec<_>>();
 
         assert_eq!(
@@ -773,27 +707,27 @@ mod tests {
     async fn stream() -> anyhow::Result<()> {
         // TODO: test better streaming API
 
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::new(10)?;
+        let server = Homeserver::start_test(&testnet).await?;
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client.signup(&keypair, &server.public_key()).await?;
 
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
         let url = url.as_str();
 
         let bytes = Bytes::from(vec![0; 1024 * 1024]);
 
-        client.put(url, &bytes).await.unwrap();
+        client.put(url).body(bytes.clone()).send().await?;
 
         let response = client.get(url).send().await?.bytes().await?;
 
         assert_eq!(response, bytes);
 
-        client.delete(url).await.unwrap();
+        client.delete(url).send().await?;
 
         let response = client.get(url).send().await?;
 

@@ -10,6 +10,8 @@ mod native;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
+use std::{fmt::Debug, sync::Arc};
+
 use wasm_bindgen::prelude::*;
 
 pub use error::Error;
@@ -18,9 +20,16 @@ pub use error::Error;
 pub use crate::shared::list_builder::ListBuilder;
 
 /// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[wasm_bindgen]
 pub struct Client {
+    cookie_store: Arc<dyn reqwest::cookie::CookieStore + 'static>,
     http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
+}
+
+impl Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pubky Client").finish()
+    }
 }

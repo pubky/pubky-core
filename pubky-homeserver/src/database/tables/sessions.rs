@@ -31,7 +31,8 @@ impl DB {
         cookies: Cookies,
         public_key: &PublicKey,
     ) -> anyhow::Result<Option<Vec<u8>>> {
-        if let Some(cookie) = cookies.get(&public_key.to_string()) {
+        // TODO: support coookie for key in the path
+        if let Some(cookie) = cookies.get("session_id") {
             let rtxn = self.env.read_txn()?;
 
             let sessions: SessionsTable = self

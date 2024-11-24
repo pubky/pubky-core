@@ -21,15 +21,26 @@ fn base(state: AppState) -> Router {
         .route("/", get(root::handler))
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
-        // Pub
-        .route("/pub/*path", get(public::get_subdomain))
+        // Routes for Pubky in the Hostname.
         //
+        // The default and wortks with native Pubky client.
+        // - Data routes
+        .route("/pub/*path", get(public::read::get))
+        .route("/pub/*path", head(public::read::head))
+        .route("/pub/*path", put(public::write::put))
+        .route("/pub/*path", delete(public::write::delete))
+        // Pubky in the path.
+        //
+        // Important to support web browsers until they support Pkarr domains natively.
+        // - Session routes
         .route("/:pubky/session", get(auth::session))
         .route("/:pubky/session", delete(auth::signout))
-        .route("/:pubky/*path", put(public::put))
-        .route("/:pubky/*path", get(public::get))
-        .route("/:pubky/*path", head(public::head))
-        .route("/:pubky/*path", delete(public::delete))
+        // - Data routes
+        .route("/:pubky/*path", get(public::read::get))
+        .route("/:pubky/*path", head(public::read::head))
+        .route("/:pubky/*path", put(public::write::put))
+        .route("/:pubky/*path", delete(public::write::delete))
+        // Events
         .route("/events/", get(feed::feed))
         .layer(CookieManagerLayer::new())
         // TODO: revisit if we enable streaming big payloads

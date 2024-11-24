@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 use axum::{
     async_trait,
@@ -55,11 +55,26 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct EntryPath(pub(crate) String);
 
 impl EntryPath {
     pub fn as_str(&self) -> &str {
-        self.0.as_str()
+        self.as_ref()
+    }
+}
+
+impl std::fmt::Display for EntryPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
+impl Deref for EntryPath {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -80,7 +95,11 @@ where
             .get("path")
             .ok_or_else(|| (StatusCode::NOT_FOUND, "entry path missing").into_response())?;
 
-        Ok(EntryPath(path.to_string()))
+        if parts.uri.to_string().starts_with("/pub/") {
+            Ok(EntryPath(format!("pub/{}", path)))
+        } else {
+            Ok(EntryPath(path.to_string()))
+        }
     }
 }
 

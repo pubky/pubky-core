@@ -4,11 +4,8 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
 };
-use futures_util::stream::StreamExt;
 use httpdate::HttpDate;
-use pkarr::PublicKey;
-use std::{io::Write, str::FromStr};
-use tower_cookies::Cookies;
+use std::str::FromStr;
 
 use crate::{
     database::tables::entries::Entry,
@@ -17,65 +14,12 @@ use crate::{
     server::AppState,
 };
 
-pub async fn put(
-    State(mut state): State<AppState>,
-    pubky: Pubky,
-    path: EntryPath,
-    cookies: Cookies,
-    body: Body,
-) -> Result<impl IntoResponse> {
-    let public_key = pubky.public_key().clone();
-    let path = path.as_str().to_string();
-
-    verify(&path)?;
-    authorize(&mut state, cookies, &public_key, &path)?;
-
-    let mut entry_writer = state.db.write_entry(&public_key, &path)?;
-
-    let mut stream = body.into_data_stream();
-    while let Some(next) = stream.next().await {
-        let chunk = next?;
-        entry_writer.write_all(&chunk)?;
-    }
-
-    let _entry = entry_writer.commit()?;
-
-    // TODO: return relevant headers, like Etag?
-
-    Ok(())
-}
-
-pub async fn get(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    pubky: Pubky,
-    path: EntryPath,
-    params: ListQueryParams,
-) -> Result<impl IntoResponse> {
-    Ok(get_common(state, headers, pubky, path.as_str(), params).await?)
-}
-
-pub async fn get_subdomain(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    pubky: Pubky,
-    path: EntryPath,
-    params: ListQueryParams,
-) -> Result<impl IntoResponse> {
-    Ok(get_common(
-        state,
-        headers,
-        pubky,
-        &format!("pub/{}", path.as_str()),
-        params,
-    )
-    .await?)
-}
+use super::verify;
 
 pub async fn head(
     State(state): State<AppState>,
-    headers: HeaderMap,
     pubky: Pubky,
+    headers: HeaderMap,
     path: EntryPath,
 ) -> Result<impl IntoResponse> {
     verify(path.as_str())?;
@@ -91,18 +35,18 @@ pub async fn head(
     )
 }
 
-async fn get_common(
-    state: AppState,
+pub async fn get(
+    State(state): State<AppState>,
     headers: HeaderMap,
     pubky: Pubky,
-    path: &str,
+    path: EntryPath,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
-    verify(path)?;
-    let public_key = pubky.public_key().clone();
-    let path = path.to_string();
+    verify(&path)?;
 
-    if path.ends_with('/') {
+    let public_key = pubky.public_key().clone();
+
+    if path.as_str().ends_with('/') {
         let txn = state.db.env.read_txn()?;
 
         let path = format!("{public_key}/{path}");
@@ -208,70 +152,6 @@ pub fn get_entry(
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))?
     }
-}
-
-pub async fn delete(
-    State(mut state): State<AppState>,
-    pubky: Pubky,
-    path: EntryPath,
-    cookies: Cookies,
-) -> Result<impl IntoResponse> {
-    let public_key = pubky.public_key().clone();
-    let path = path.as_str();
-
-    authorize(&mut state, cookies, &public_key, path)?;
-    verify(path)?;
-
-    // TODO: should we wrap this with `tokio::task::spawn_blocking` in case it takes too long?
-    let deleted = state.db.delete_entry(&public_key, path)?;
-
-    if !deleted {
-        // TODO: if the path ends with `/` return a `CONFLICT` error?
-        return Err(Error::with_status(StatusCode::NOT_FOUND));
-    };
-
-    Ok(())
-}
-
-/// Authorize write (PUT or DELETE) for Public paths.
-fn authorize(
-    state: &mut AppState,
-    cookies: Cookies,
-    public_key: &PublicKey,
-    path: &str,
-) -> Result<()> {
-    // TODO: can we move this logic to the extractor or a layer
-    // to perform this validation?
-    let session = state
-        .db
-        .get_session(cookies, public_key)?
-        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
-
-    if session.pubky() == public_key
-        && session.capabilities().iter().any(|cap| {
-            path.starts_with(&cap.scope[1..])
-                && cap
-                    .actions
-                    .contains(&pubky_common::capabilities::Action::Write)
-        })
-    {
-        return Ok(());
-    }
-
-    Err(Error::with_status(StatusCode::FORBIDDEN))
-}
-
-fn verify(path: &str) -> Result<()> {
-    if !path.starts_with("pub/") {
-        return Err(Error::new(
-            StatusCode::FORBIDDEN,
-            "Writing to directories other than '/pub/' is forbidden".into(),
-        ));
-    }
-
-    // TODO: should we forbid paths ending with `/`?
-
-    Ok(())
 }
 
 impl From<&Entry> for HeaderMap {
