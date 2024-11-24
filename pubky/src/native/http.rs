@@ -1,3 +1,5 @@
+//! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
+
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
 use crate::Client;
@@ -67,9 +69,9 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    // pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
-    //     self.request(Method::PUT, url)
-    // }
+    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::PUT, url)
+    }
 
     /// Convenience method to make a `PATCH` request to a URL.
     ///
@@ -99,9 +101,9 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    // pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
-    //     self.request(Method::DELETE, url)
-    // }
+    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::DELETE, url)
+    }
 
     /// Convenience method to make a `HEAD` request to a URL.
     ///

@@ -119,7 +119,11 @@ pub async fn signin(
         .sessions
         .put(&mut wtxn, &session_secret, &session)?;
 
-    let mut cookie = Cookie::new(public_key.to_string(), session_secret);
+    let mut cookie = if true {
+        Cookie::new("session_id", session_secret)
+    } else {
+        Cookie::new(public_key.to_string(), session_secret)
+    };
 
     cookie.set_path("/");
 

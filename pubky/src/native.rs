@@ -5,6 +5,7 @@ use pkarr::mainline::Testnet;
 use crate::Client;
 
 mod api;
+mod http;
 mod internals;
 
 static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
@@ -46,13 +47,19 @@ impl Settings {
     pub fn build(self) -> Result<Client, std::io::Error> {
         let pkarr = pkarr::Client::new(self.pkarr_settings)?;
 
+        let cookie_store = Arc::new(reqwest::cookie::Jar::default());
+
+        let http = reqwest::Client::builder()
+            .cookie_provider(cookie_store.clone())
+            // TODO: use persistent cookie jar
+            .dns_resolver(Arc::new(pkarr.clone()))
+            .user_agent(DEFAULT_USER_AGENT)
+            .build()
+            .expect("config expected to not error");
+
         Ok(Client {
-            http: reqwest::Client::builder()
-                .cookie_store(true)
-                .dns_resolver(Arc::new(pkarr.clone()))
-                .user_agent(DEFAULT_USER_AGENT)
-                .build()
-                .unwrap(),
+            cookie_store,
+            http,
             pkarr,
         })
     }

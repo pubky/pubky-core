@@ -1,7 +1,7 @@
 use reqwest::{Method, RequestBuilder};
 use url::Url;
 
-use pkarr::{EndpointResolver, PublicKey};
+use pkarr::PublicKey;
 
 use crate::{error::Result, Client};
 
