@@ -10,10 +10,7 @@ use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
 use crate::{
-    database::tables::{
-        sessions::{SessionsTable, SESSIONS_TABLE},
-        users::User,
-    },
+    database::tables::users::User,
     error::{Error, Result},
     extractors::Pubky,
     server::AppState,
@@ -32,55 +29,27 @@ pub async fn signup(
 }
 
 pub async fn session(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     cookies: Cookies,
     pubky: Pubky,
 ) -> Result<impl IntoResponse> {
-    if let Some(cookie) = cookies.get(&pubky.public_key().to_string()) {
-        let rtxn = state.db.env.read_txn()?;
-
-        let sessions: SessionsTable = state
-            .db
-            .env
-            .open_database(&rtxn, Some(SESSIONS_TABLE))?
-            .expect("Session table already created");
-
-        if let Some(session) = sessions.get(&rtxn, cookie.value())? {
-            let session = session.to_owned();
-            rtxn.commit()?;
-
-            // TODO: add content-type
-            return Ok(session);
-        };
-
-        rtxn.commit()?;
+    if let Some(session) = state.db.get_session(cookies, pubky.public_key())? {
+        // TODO: add content-type
+        return Ok(session.serialize());
     };
 
     Err(Error::with_status(StatusCode::NOT_FOUND))
 }
 
 pub async fn signout(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     cookies: Cookies,
     pubky: Pubky,
 ) -> Result<impl IntoResponse> {
-    if let Some(cookie) = cookies.get(&pubky.public_key().to_string()) {
-        let mut wtxn = state.db.env.write_txn()?;
+    state.db.delete_session(cookies, pubky.public_key())?;
 
-        let sessions: SessionsTable = state
-            .db
-            .env
-            .open_database(&wtxn, Some(SESSIONS_TABLE))?
-            .expect("Session table already created");
-
-        let _ = sessions.delete(&mut wtxn, cookie.value());
-
-        wtxn.commit()?;
-
-        return Ok(());
-    };
-
-    Err(Error::with_status(StatusCode::UNAUTHORIZED))
+    // Idempotent Success Response (200 OK)
+    Ok(())
 }
 
 pub async fn signin(
@@ -119,6 +88,8 @@ pub async fn signin(
         .sessions
         .put(&mut wtxn, &session_secret, &session)?;
 
+    wtxn.commit()?;
+
     let mut cookie = if true {
         Cookie::new("session_id", session_secret)
     } else {
@@ -134,8 +105,6 @@ pub async fn signin(
     cookie.set_http_only(true);
 
     cookies.add(cookie);
-
-    wtxn.commit()?;
 
     Ok(session)
 }

@@ -29,18 +29,17 @@ impl DB {
     pub fn get_session_bytes(
         &mut self,
         cookies: Cookies,
-        public_key: &PublicKey,
+        _public_key: &PublicKey,
     ) -> anyhow::Result<Option<Vec<u8>>> {
         // TODO: support coookie for key in the path
         if let Some(cookie) = cookies.get("session_id") {
             let rtxn = self.env.read_txn()?;
 
-            let sessions: SessionsTable = self
-                .env
-                .open_database(&rtxn, Some(SESSIONS_TABLE))?
-                .expect("Session table already created");
-
-            let session = sessions.get(&rtxn, cookie.value())?.map(|s| s.to_vec());
+            let session = self
+                .tables
+                .sessions
+                .get(&rtxn, cookie.value())?
+                .map(|s| s.to_vec());
 
             rtxn.commit()?;
 
@@ -48,5 +47,24 @@ impl DB {
         };
 
         Ok(None)
+    }
+
+    pub fn delete_session(
+        &mut self,
+        cookies: Cookies,
+        _public_key: &PublicKey,
+    ) -> anyhow::Result<bool> {
+        // TODO: support coookie for key in the path
+        if let Some(cookie) = cookies.get("session_id") {
+            let mut wtxn = self.env.write_txn()?;
+
+            let deleted = self.tables.sessions.delete(&mut wtxn, cookie.value())?;
+
+            wtxn.commit()?;
+
+            return Ok(deleted);
+        };
+
+        Ok(false)
     }
 }

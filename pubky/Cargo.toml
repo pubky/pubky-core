@@ -19,6 +19,9 @@ base64 = "0.22.1"
 
 pkarr = { workspace = true }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
+cookie = "0.18.1"
+tracing = "0.1.40"
+cookie_store = { version = "0.21.1", default-features = false }
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -47,3 +50,6 @@ all-features = true
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ['-g', '-O']
+
+# [lints.clippy]
+unwrap_used = "deny"
