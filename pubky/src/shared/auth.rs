@@ -47,11 +47,9 @@ impl Client {
 
         self.publish_pubky_homeserver(keypair, &homeserver).await?;
 
-        self.cookie_store.set_cookies(
-            &mut response.headers().values(),
-            &url::Url::parse(&format!("http://_pubky.{}", keypair.public_key()))
-                .expect("url from keypair doesn't fail"),
-        );
+        // Store the cookie to the correct URL.
+        self.cookie_store
+            .store_session_after_signup(&response, keypair.public_key());
 
         let bytes = response.bytes().await?;
 
@@ -63,11 +61,10 @@ impl Client {
     /// Returns None  if not signed in, or [reqwest::Error]
     /// if the response has any other `>=404` status code.
     pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
-        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
-
-        url.set_path(&format!("/{}/session", pubky));
-
-        let res = self.inner_request(Method::GET, url).await.send().await?;
+        let res = self
+            .request(Method::GET, format!("pubky://{}/session", pubky))
+            .send()
+            .await?;
 
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -84,11 +81,12 @@ impl Client {
 
     /// Signout from a homeserver.
     pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
+        self.request(Method::DELETE, format!("pubky://{}/session", pubky))
+            .send()
+            .await?
+            .error_for_status()?;
 
-        url.set_path(&format!("/{}/session", pubky));
-
-        self.inner_request(Method::DELETE, url).await.send().await?;
+        self.cookie_store.delete_session_after_signout(pubky);
 
         Ok(())
     }
@@ -152,7 +150,7 @@ impl Client {
             .body(encrypted_token)
             .send()
             .await?
-            .error_for_status();
+            .error_for_status()?;
 
         Ok(())
     }
@@ -201,7 +199,8 @@ impl Client {
         relay: Url,
         client_secret: &[u8; 32],
     ) -> Result<PublicKey> {
-        let response = self.http.request(Method::GET, relay).send().await?;
+        // TODO: use a clearnet client.
+        let response = reqwest::get(relay).await?;
         let encrypted_token = response.bytes().await?;
         let token_bytes = decrypt(&encrypted_token, client_secret)?;
         let token = AuthToken::verify(&token_bytes)?;
@@ -225,25 +224,21 @@ mod tests {
     use reqwest::StatusCode;
 
     #[tokio::test]
-    async fn basic_authn() {
+    async fn basic_authn() -> anyhow::Result<()> {
         let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let server = Homeserver::start_test(&testnet).await?;
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client.signup(&keypair, &server.public_key()).await?;
 
-        let session = client
-            .session(&keypair.public_key())
-            .await
-            .unwrap()
-            .unwrap();
+        let session = client.session(&keypair.public_key()).await?.unwrap();
 
         assert!(session.capabilities().contains(&Capability::root()));
 
-        client.signout(&keypair.public_key()).await.unwrap();
+        client.signout(&keypair.public_key()).await?;
 
         {
             let session = client.session(&keypair.public_key()).await.unwrap();
@@ -254,15 +249,13 @@ mod tests {
         client.signin(&keypair).await.unwrap();
 
         {
-            let session = client
-                .session(&keypair.public_key())
-                .await
-                .unwrap()
-                .unwrap();
+            let session = client.session(&keypair.public_key()).await?.unwrap();
 
             assert_eq!(session.pubky(), &keypair.public_key());
             assert!(session.capabilities().contains(&Capability::root()));
         }
+
+        Ok(())
     }
 
     #[tokio::test]
@@ -297,7 +290,7 @@ mod tests {
 
         assert_eq!(&public_key, &pubky);
 
-        let session = client.session(&pubky).await.unwrap().unwrap();
+        let session = client.session(&pubky).await?.unwrap();
         assert_eq!(session.capabilities(), &capabilities.0);
 
         // Test access control enforcement

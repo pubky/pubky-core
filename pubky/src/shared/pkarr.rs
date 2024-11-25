@@ -158,18 +158,6 @@ impl Client {
 
         Err(Error::ResolveEndpoint(original_target.into()))
     }
-
-    pub(crate) async fn resolve_url(&self, url: &mut Url) -> Result<()> {
-        if let Some(Ok(pubky)) = url.host_str().map(PublicKey::try_from) {
-            let Endpoint { url: x, .. } = self.resolve_endpoint(&format!("_pubky.{pubky}")).await?;
-
-            url.set_host(x.host_str())?;
-            url.set_port(x.port()).expect("should work!");
-            url.set_scheme(x.scheme()).expect("should work!");
-        };
-
-        Ok(())
-    }
 }
 
 #[derive(Debug)]

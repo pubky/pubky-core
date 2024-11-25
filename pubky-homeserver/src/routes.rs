@@ -24,6 +24,9 @@ fn base(state: AppState) -> Router {
         // Routes for Pubky in the Hostname.
         //
         // The default and wortks with native Pubky client.
+        // - Session routes
+        .route("/session", get(auth::session))
+        .route("/session", delete(auth::signout))
         // - Data routes
         .route("/pub/*path", get(public::read::get))
         .route("/pub/*path", head(public::read::head))
