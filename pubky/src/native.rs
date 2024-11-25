@@ -108,22 +108,20 @@ pub struct CookieJar {
 impl CookieJar {
     pub(crate) fn store_session_after_signup(&self, response: &Response, pubky: PublicKey) {
         for (header_name, header_value) in response.headers() {
-            if header_name == "set-cookie" {
-                if header_value.as_ref().starts_with(b"session_id=") {
-                    if let Ok(Ok(cookie)) =
-                        std::str::from_utf8(header_value.as_bytes()).map(cookie::Cookie::parse)
-                    {
-                        if cookie.name() == "session_id" {
-                            let domain = format!("_pubky.{pubky}");
-                            tracing::debug!(?cookie, "Storing coookie after signup");
+            if header_name == "set-cookie" && header_value.as_ref().starts_with(b"session_id=") {
+                if let Ok(Ok(cookie)) =
+                    std::str::from_utf8(header_value.as_bytes()).map(cookie::Cookie::parse)
+                {
+                    if cookie.name() == "session_id" {
+                        let domain = format!("_pubky.{pubky}");
+                        tracing::debug!(?cookie, "Storing coookie after signup");
 
-                            self.pubky_sessions
-                                .write()
-                                .unwrap()
-                                .insert(domain, cookie.value().to_string());
-                        }
-                    };
-                }
+                        self.pubky_sessions
+                            .write()
+                            .unwrap()
+                            .insert(domain, cookie.value().to_string());
+                    }
+                };
             }
         }
     }
@@ -166,9 +164,7 @@ impl CookieStore for CookieJar {
                 .read()
                 .unwrap()
                 .get(url.host_str().unwrap())
-                .and_then(|secret| {
-                    Some(HeaderValue::try_from(format!("session_id={secret}")).unwrap())
-                });
+                .map(|secret| HeaderValue::try_from(format!("session_id={secret}")).unwrap());
         }
 
         HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
