@@ -10,10 +10,10 @@ use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
 use crate::{
+    core::AppState,
     database::tables::users::User,
     error::{Error, Result},
     extractors::Pubky,
-    server::AppState,
 };
 
 pub async fn signup(
@@ -67,6 +67,7 @@ pub async fn signin(
 
     let users = state.db.tables.users;
     if let Some(existing) = users.get(&wtxn, public_key)? {
+        // TODO: why do we need this?
         users.put(&mut wtxn, public_key, &existing)?;
     } else {
         users.put(
@@ -80,7 +81,12 @@ pub async fn signin(
 
     let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
 
-    let session = Session::new(&token, user_agent.map(|ua| ua.to_string())).serialize();
+    let session = Session::new(
+        token.pubky(),
+        token.capabilities(),
+        user_agent.map(|ua| ua.to_string()),
+    )
+    .serialize();
 
     state
         .db
@@ -98,6 +104,7 @@ pub async fn signin(
 
     cookie.set_path("/");
 
+    // TODO: do we even have insecure anymore?
     if is_secure(&host) {
         cookie.set_secure(true);
         cookie.set_same_site(SameSite::None);

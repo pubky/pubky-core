@@ -7,9 +7,9 @@ use axum::{
 use pubky_common::timestamp::Timestamp;
 
 use crate::{
+    core::AppState,
     error::{Error, Result},
     extractors::ListQueryParams,
-    server::AppState,
 };
 
 pub async fn feed(

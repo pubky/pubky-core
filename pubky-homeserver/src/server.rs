@@ -5,84 +5,61 @@ use std::{
 
 use anyhow::{Error, Result};
 use axum_server::tls_rustls::{RustlsAcceptor, RustlsConfig};
-use pubky_common::auth::AuthVerifier;
 use tokio::task::JoinSet;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use pkarr::{mainline::Testnet, PublicKey};
 
-use crate::{config::Config, database::DB, pkarr::publish_server_packet};
+use crate::{
+    config::Config,
+    core::{AppState, HomeserverCore},
+    pkarr::publish_server_packet,
+};
 
 #[derive(Debug)]
+/// Homeserver [Core][HomeserverCore] + http server.
 pub struct Homeserver {
     state: AppState,
     tasks: JoinSet<std::io::Result<()>>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct AppState {
-    pub(crate) verifier: AuthVerifier,
-    pub(crate) db: DB,
-    pub(crate) pkarr_client: pkarr::Client,
-    pub(crate) config: Config,
-    pub(crate) port: u16,
-}
-
 impl Homeserver {
     pub async fn start(config: Config) -> Result<Self> {
-        debug!(?config);
-
-        let db = DB::open(config.clone())?;
-
-        let mut dht_settings = pkarr::mainline::Settings::default();
-
-        if let Some(bootstrap) = config.bootstrap() {
-            dht_settings = dht_settings.bootstrap(&bootstrap);
-        }
-        if let Some(request_timeout) = config.dht_request_timeout() {
-            dht_settings = dht_settings.request_timeout(request_timeout);
-        }
-
-        let pkarr_client = pkarr::Client::builder()
-            .dht_settings(dht_settings)
-            .build()?;
-
         let mut tasks = JoinSet::new();
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port())))?;
 
         let port = listener.local_addr()?.port();
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            db,
-            pkarr_client: pkarr_client.clone(),
-            config: config.clone(),
-            port,
-        };
+        let keypair = config.keypair().clone();
+
+        let core = HomeserverCore::new(&config)?;
 
         let acceptor = RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
-            config.keypair().to_rpk_rustls_server_config(),
+            keypair.to_rpk_rustls_server_config(),
         )));
         let server = axum_server::from_tcp(listener).acceptor(acceptor);
 
-        let app = crate::routes::create_app(state.clone());
-
         // Spawn http server task
-        tasks.spawn(server.serve(app.into_make_service_with_connect_info::<SocketAddr>()));
+        tasks.spawn(
+            server.serve(
+                core.router
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            ),
+        );
 
         info!("Homeserver listening on http://localhost:{port}");
 
         info!("Publishing Pkarr packet..");
 
-        publish_server_packet(&pkarr_client, &config, port).await?;
+        publish_server_packet(&core.state.pkarr_client, &config, port).await?;
 
-        info!(
-            "Homeserver listening on https://{}",
-            config.keypair().public_key()
-        );
+        info!("Homeserver listening on https://{}", keypair.public_key());
 
-        Ok(Self { tasks, state })
+        Ok(Self {
+            tasks,
+            state: core.state,
+        })
     }
 
     /// Test version of [Homeserver::start], using mainline Testnet, and a temporary storage.
@@ -102,9 +79,9 @@ impl Homeserver {
         self.state.config.keypair().public_key()
     }
 
-    #[cfg(test)]
-    pub(crate) fn database_mut(&mut self) -> &mut DB {
-        &mut self.state.db
+    /// Return the `https://<server public key>` url
+    pub fn url(&self) -> url::Url {
+        url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
     }
 
     // === Public Methods ===

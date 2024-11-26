@@ -5,13 +5,14 @@ use axum::{
     response::IntoResponse,
 };
 use httpdate::HttpDate;
+use pkarr::PublicKey;
 use std::str::FromStr;
 
 use crate::{
+    core::AppState,
     database::tables::entries::Entry,
     error::{Error, Result},
     extractors::{EntryPath, ListQueryParams, Pubky},
-    server::AppState,
 };
 
 use super::verify;
@@ -35,6 +36,14 @@ pub async fn head(
     )
 }
 
+pub async fn list_root(
+    State(state): State<AppState>,
+    pubky: Pubky,
+    params: ListQueryParams,
+) -> Result<impl IntoResponse> {
+    list(state, pubky.public_key(), "pub/", params)
+}
+
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -47,31 +56,7 @@ pub async fn get(
     let public_key = pubky.public_key().clone();
 
     if path.as_str().ends_with('/') {
-        let txn = state.db.env.read_txn()?;
-
-        let path = format!("{public_key}/{path}");
-
-        if !state.db.contains_directory(&txn, &path)? {
-            return Err(Error::new(
-                StatusCode::NOT_FOUND,
-                "Directory Not Found".into(),
-            ));
-        }
-
-        // Handle listing
-        let vec = state.db.list(
-            &txn,
-            &path,
-            params.reverse,
-            params.limit,
-            params.cursor,
-            params.shallow,
-        )?;
-
-        return Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/plain")
-            .body(Body::from(vec.join("\n")))?);
+        return list(state, &public_key, &path, params);
     }
 
     let (entry_tx, entry_rx) = flume::bounded::<Option<Entry>>(1);
@@ -102,6 +87,39 @@ pub async fn get(
         entry_rx.recv_async().await?,
         Some(Body::from_stream(chunks_rx.into_stream())),
     )
+}
+
+pub fn list(
+    state: AppState,
+    public_key: &PublicKey,
+    path: &str,
+    params: ListQueryParams,
+) -> Result<Response<Body>> {
+    let txn = state.db.env.read_txn()?;
+
+    let path = format!("{public_key}/{path}");
+
+    if !state.db.contains_directory(&txn, &path)? {
+        return Err(Error::new(
+            StatusCode::NOT_FOUND,
+            "Directory Not Found".into(),
+        ));
+    }
+
+    // Handle listing
+    let vec = state.db.list(
+        &txn,
+        &path,
+        params.reverse,
+        params.limit,
+        params.cursor,
+        params.shallow,
+    )?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from(vec.join("\n")))?)
 }
 
 pub fn get_entry(
@@ -185,101 +203,121 @@ impl From<&Entry> for HeaderMap {
 
 #[cfg(test)]
 mod tests {
-    use axum::http::header;
-    use pkarr::{mainline::Testnet, Keypair};
-    use reqwest::{self, Method, StatusCode};
+    use axum::{
+        body::Body,
+        http::{header, Method, Request, StatusCode},
+    };
+    use pkarr::Keypair;
 
-    use crate::Homeserver;
+    use crate::core::HomeserverCore;
 
     #[tokio::test]
-    async fn if_last_modified() -> anyhow::Result<()> {
-        let testnet = Testnet::new(3).unwrap();
-        let mut server = Homeserver::start_test(&testnet).await?;
+    async fn if_last_modified() {
+        let mut server = HomeserverCore::test().unwrap();
 
         let public_key = Keypair::random().public_key();
+        let cookie = server.create_user(&public_key).unwrap();
+        let cookie = cookie.to_string();
 
-        let data = &[1, 2, 3, 4, 5];
+        let url = format!("/{public_key}/pub/foo");
 
-        server
-            .database_mut()
-            .write_entry(&public_key, "pub/foo")?
-            .update(data)?
-            .commit()?;
+        let data = vec![1_u8, 2, 3, 4, 5];
 
-        let client = reqwest::Client::builder().build()?;
-
-        let url = format!("http://localhost:{}/{public_key}/pub/foo", server.port());
-
-        let response = client.request(Method::GET, &url).send().await?;
-
-        let response = client
-            .request(Method::GET, &url)
-            .header(
-                header::IF_MODIFIED_SINCE,
-                response.headers().get(header::LAST_MODIFIED).unwrap(),
+        let response = server
+            .call(
+                Request::builder()
+                    .uri(&url)
+                    .method(Method::PUT)
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(data))
+                    .unwrap(),
             )
-            .send()
-            .await?;
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = server
+            .call(
+                Request::builder()
+                    .uri(&url)
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = server
+            .call(
+                Request::builder()
+                    .uri(&url)
+                    .method(Method::GET)
+                    .header(
+                        header::IF_MODIFIED_SINCE,
+                        response.headers().get(header::LAST_MODIFIED).unwrap(),
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
-
-        let response = client
-            .request(Method::HEAD, &url)
-            .header(
-                header::IF_MODIFIED_SINCE,
-                response.headers().get(header::LAST_MODIFIED).unwrap(),
-            )
-            .send()
-            .await?;
-
-        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn if_none_match() -> anyhow::Result<()> {
-        let testnet = Testnet::new(3).unwrap();
-        let mut server = Homeserver::start_test(&testnet).await?;
+    async fn if_none_match() {
+        let mut server = HomeserverCore::test().unwrap();
 
         let public_key = Keypair::random().public_key();
+        let cookie = server.create_user(&public_key).unwrap();
+        let cookie = cookie.to_string();
 
-        let data = &[1, 2, 3, 4, 5];
+        let url = format!("/{public_key}/pub/foo");
 
-        server
-            .database_mut()
-            .write_entry(&public_key, "pub/foo")?
-            .update(data)?
-            .commit()?;
+        let data = vec![1_u8, 2, 3, 4, 5];
 
-        let client = reqwest::Client::builder().build()?;
-
-        let url = format!("http://localhost:{}/{public_key}/pub/foo", server.port());
-
-        let response = client.request(Method::GET, &url).send().await?;
-
-        let response = client
-            .request(Method::GET, &url)
-            .header(
-                header::IF_NONE_MATCH,
-                response.headers().get(header::ETAG).unwrap(),
+        let response = server
+            .call(
+                Request::builder()
+                    .uri(&url)
+                    .method(Method::PUT)
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(data))
+                    .unwrap(),
             )
-            .send()
-            .await?;
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = server
+            .call(
+                Request::builder()
+                    .uri(&url)
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = server
+            .call(
+                Request::builder()
+                    .uri(&url)
+                    .method(Method::GET)
+                    .header(
+                        header::IF_NONE_MATCH,
+                        response.headers().get(header::ETAG).unwrap(),
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
-
-        let response = client
-            .request(Method::HEAD, &url)
-            .header(
-                header::IF_NONE_MATCH,
-                response.headers().get(header::ETAG).unwrap(),
-            )
-            .send()
-            .await?;
-
-        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
-
-        Ok(())
     }
 }

@@ -6,7 +6,7 @@ use axum::{
 use tower_cookies::CookieManagerLayer;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-use crate::server::AppState;
+use crate::core::AppState;
 
 use self::pkarr::pkarr_router;
 
@@ -28,6 +28,7 @@ fn base(state: AppState) -> Router {
         .route("/session", get(auth::session))
         .route("/session", delete(auth::signout))
         // - Data routes
+        .route("/pub/", get(public::read::list_root))
         .route("/pub/*path", get(public::read::get))
         .route("/pub/*path", head(public::read::head))
         .route("/pub/*path", put(public::write::put))
