@@ -28,7 +28,7 @@ impl Client {
         homeserver: &PublicKey,
     ) -> Result<Session> {
         let response = self
-            .post(format!("https://{}", homeserver))
+            .post(format!("https://{}/signup", homeserver))
             .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
             .send()
             .await?
