@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
-use reqwest::{Method, StatusCode};
+use reqwest::StatusCode;
 use url::Url;
 
 use pkarr::{Keypair, PublicKey};
@@ -17,8 +17,6 @@ use crate::{
     Client,
 };
 
-use super::pkarr::Endpoint;
-
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
@@ -29,27 +27,19 @@ impl Client {
         keypair: &Keypair,
         homeserver: &PublicKey,
     ) -> Result<Session> {
-        let homeserver = homeserver.to_string();
-
-        let Endpoint { mut url, .. } = self.resolve_endpoint(&homeserver).await?;
-
-        url.set_path("/signup");
-
-        let body = AuthToken::sign(keypair, vec![Capability::root()]).serialize();
-
         let response = self
-            .http
-            .request(Method::POST, url.clone())
-            .body(body)
+            .post(format!("https://{}", homeserver))
+            .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
             .send()
             .await?
             .error_for_status()?;
 
-        self.publish_pubky_homeserver(keypair, &homeserver).await?;
+        self.publish_pubky_homeserver(keypair, &homeserver.to_string())
+            .await?;
 
         // Store the cookie to the correct URL.
         self.cookie_store
-            .store_session_after_signup(&response, keypair.public_key());
+            .store_session_after_signup(&response, &keypair.public_key());
 
         let bytes = response.bytes().await?;
 
@@ -62,7 +52,7 @@ impl Client {
     /// if the response has any other `>=404` status code.
     pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         let res = self
-            .request(Method::GET, format!("pubky://{}/session", pubky))
+            .get(format!("pubky://{}/session", pubky))
             .send()
             .await?;
 
@@ -81,7 +71,7 @@ impl Client {
 
     /// Signout from a homeserver.
     pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        self.request(Method::DELETE, format!("pubky://{}/session", pubky))
+        self.delete(format!("pubky://{}/session", pubky))
             .send()
             .await?
             .error_for_status()?;
@@ -145,8 +135,7 @@ impl Client {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        self.inner_request(Method::POST, callback)
-            .await
+        self.post(callback)
             .body(encrypted_token)
             .send()
             .await?
@@ -157,7 +146,7 @@ impl Client {
 
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let response = self
-            .request(Method::POST, format!("pubky://{}/session", token.pubky()))
+            .post(format!("pubky://{}/session", token.pubky()))
             .body(token.serialize())
             .send()
             .await?

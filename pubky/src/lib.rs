@@ -12,7 +12,6 @@ mod wasm;
 
 use std::{fmt::Debug, sync::Arc};
 
-use native::CookieJar;
 use wasm_bindgen::prelude::*;
 
 pub use error::Error;
@@ -25,7 +24,7 @@ pub use crate::shared::list_builder::ListBuilder;
 #[wasm_bindgen]
 pub struct Client {
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie_store: Arc<CookieJar>,
+    pub(crate) cookie_store: Arc<native::CookieJar>,
     http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
 }
