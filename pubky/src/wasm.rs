@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use crate::Client;
 
 mod api;
+mod http;
 mod internals;
 mod wrappers;
 

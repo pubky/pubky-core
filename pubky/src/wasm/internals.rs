@@ -1,33 +1,53 @@
-use reqwest::{Method, RequestBuilder};
+//! Wasm specific implementation of methods used in the shared module
+//!
+
+use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
+use futures_lite::{pin, Stream, StreamExt};
+
+use pkarr::extra::endpoints::EndpointsResolver;
 use pkarr::PublicKey;
 
 use crate::{error::Result, Client};
 
-// TODO: remove expect
-pub async fn resolve(pkarr: &pkarr::Client, url: &mut Url) -> Result<()> {
-    let qname = url.host_str().expect("URL TO HAVE A HOST!").to_string();
-
-    // If http and has a Pubky TLD, switch to socket addresses.
-    if url.scheme() == "http" && PublicKey::try_from(qname.as_str()).is_ok() {
-        let endpoint = pkarr.resolve_endpoint(&qname).await?;
-
-        if let Some(socket_address) = endpoint.to_socket_addrs().into_iter().next() {
-            url.set_host(Some(&socket_address.to_string()))?;
-            let _ = url.set_port(Some(socket_address.port()));
-        } else if let Some(port) = endpoint.port() {
-            url.set_host(Some(endpoint.target()))?;
-            let _ = url.set_port(Some(port));
-        }
-    };
-
-    Ok(())
-}
-
 impl Client {
     /// A wrapper around [reqwest::Client::request], with the same signature between native and wasm.
-    pub(crate) async fn inner_request(&self, method: Method, url: Url) -> RequestBuilder {
+    pub(crate) async fn inner_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
+        let original_url = url.as_str();
+        let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
+
+        if url.scheme() == "pubky" {
+            url.set_scheme("https");
+        }
+
+        if PublicKey::try_from(original_url).is_ok() {
+            let stream = self
+                .pkarr
+                .resolve_https_endpoints(url.host_str().unwrap_or(""));
+
+            let mut so_far = None;
+
+            while let Some(endpoint) = stream.next().await {
+                if let Some(e) = so_far {
+                    if e.domain() == "." && endpoint.domain() != "." {
+                        so_far = Some(endpoint);
+                    }
+                } else {
+                    so_far = Some(endpoint)
+                }
+            }
+
+            if let Some(e) = so_far {
+                url.set_host(Some(e.domain()));
+                url.set_port(Some(e.port()));
+
+                return self.http.request(method, url).fetch_credentials_include();
+            } else {
+                // TODO: didn't find any domain, what to do?
+            }
+        }
+
         self.http.request(method, url).fetch_credentials_include()
     }
 }
