@@ -23,11 +23,13 @@ pub use crate::shared::list_builder::ListBuilder;
 #[derive(Clone)]
 #[wasm_bindgen]
 pub struct Client {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie_store: Arc<native::CookieJar>,
     http: reqwest::Client,
+    pkarr: pkarr::Client,
+
+    #[cfg(not(target_arch = "wasm32"))]
+    cookie_store: Arc<native::CookieJar>,
+    #[cfg(not(target_arch = "wasm32"))]
     icann_http: reqwest::Client,
-    pub(crate) pkarr: pkarr::Client,
 }
 
 impl Debug for Client {

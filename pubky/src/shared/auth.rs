@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
-use reqwest::StatusCode;
+use reqwest::{Method, StatusCode};
 use url::Url;
 
 use pkarr::{Keypair, PublicKey};
@@ -28,7 +28,8 @@ impl Client {
         homeserver: &PublicKey,
     ) -> Result<Session> {
         let response = self
-            .post(format!("https://{}/signup", homeserver))
+            .inner_request(Method::POST, format!("https://{}/signup", homeserver))
+            .await
             .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
             .send()
             .await?
@@ -38,6 +39,7 @@ impl Client {
             .await?;
 
         // Store the cookie to the correct URL.
+        #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
             .store_session_after_signup(&response, &keypair.public_key());
 
@@ -52,7 +54,8 @@ impl Client {
     /// if the response has any other `>=404` status code.
     pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         let res = self
-            .get(format!("pubky://{}/session", pubky))
+            .inner_request(Method::GET, format!("pubky://{}/session", pubky))
+            .await
             .send()
             .await?;
 
@@ -71,7 +74,8 @@ impl Client {
 
     /// Signout from a homeserver.
     pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        self.delete(format!("pubky://{}/session", pubky))
+        self.inner_request(Method::DELETE, format!("pubky://{}/session", pubky))
+            .await
             .send()
             .await?
             .error_for_status()?;
@@ -135,7 +139,8 @@ impl Client {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        self.post(callback)
+        self.inner_request(Method::POST, callback)
+            .await
             .body(encrypted_token)
             .send()
             .await?
@@ -146,7 +151,8 @@ impl Client {
 
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let response = self
-            .post(format!("pubky://{}/session", token.pubky()))
+            .inner_request(Method::POST, format!("pubky://{}/session", token.pubky()))
+            .await
             .body(token.serialize())
             .send()
             .await?

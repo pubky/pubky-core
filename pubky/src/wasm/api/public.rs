@@ -1,4 +1,8 @@
+//! Wasm bindings for the /pub/ api
+
 use wasm_bindgen::prelude::*;
+
+use reqwest::{Method, StatusCode};
 
 use js_sys::{Array, Uint8Array};
 
@@ -24,7 +28,11 @@ impl Client {
     /// Delete a file at a path relative to a pubky author.
     #[wasm_bindgen]
     pub async fn delete(&self, url: &str) -> Result<(), JsValue> {
-        self.inner_delete(url).await.map_err(|e| e.into())
+        self.inner_request(Method::DELETE, url)
+            .await
+            .send()
+            .await
+            .map_err(|e| e.into())
     }
 
     /// Returns a list of Pubky urls (as strings).

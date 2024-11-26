@@ -22,12 +22,14 @@ pub enum Error {
     #[error(transparent)]
     PublicKeyError(#[from] pkarr::errors::PublicKeyError),
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[error(transparent)]
     PkarrPublishError(#[from] pkarr::errors::PublishError),
 
     #[error(transparent)]
     SignedPacketError(#[from] pkarr::errors::SignedPacketError),
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[error(transparent)]
     PkarrClientWasShutdown(#[from] pkarr::errors::ClientWasShutdown),
 

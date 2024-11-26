@@ -81,7 +81,7 @@ impl PublicKey {
             .ok_or("Couldn't create a PublicKey from this type of value")?;
 
         Ok(PublicKey(
-            pkarr::PublicKey::try_from(string).map_err(Error::Pkarr)?,
+            pkarr::PublicKey::try_from(string).map_err(Error::PublicKeyError)?,
         ))
     }
 }

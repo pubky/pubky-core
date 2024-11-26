@@ -1,8 +1,11 @@
+//! Wasm bindings for the Auth api
+
 use url::Url;
 
 use pubky_common::capabilities::Capabilities;
 
 use crate::Client;
+
 use crate::Error;
 
 use crate::wasm::wrappers::keys::{Keypair, PublicKey};
