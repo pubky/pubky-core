@@ -11,9 +11,9 @@ use futures_util::stream::StreamExt;
 use pkarr::SignedPacket;
 
 use crate::{
+    core::AppState,
     error::{Error, Result},
     extractors::Pubky,
-    server::AppState,
 };
 
 /// Pkarr relay, helpful for testing.

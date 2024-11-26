@@ -3,8 +3,8 @@ use pkarr::PublicKey;
 use tower_cookies::Cookies;
 
 use crate::{
+    core::AppState,
     error::{Error, Result},
-    server::AppState,
 };
 
 pub mod read;

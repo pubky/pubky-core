@@ -6,9 +6,9 @@ use axum::{body::Body, extract::State, http::StatusCode, response::IntoResponse}
 use tower_cookies::Cookies;
 
 use crate::{
+    core::AppState,
     error::{Error, Result},
     extractors::{EntryPath, Pubky},
-    server::AppState,
 };
 
 use super::{authorize, verify};
