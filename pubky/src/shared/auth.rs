@@ -34,7 +34,7 @@ impl Client {
             .await?
             .error_for_status()?;
 
-        self.publish_pubky_homeserver(keypair, &homeserver.to_string())
+        self.publish_homeserver(keypair, &homeserver.to_string())
             .await?;
 
         // Store the cookie to the correct URL.
@@ -213,21 +213,25 @@ mod tests {
     use reqwest::StatusCode;
 
     #[tokio::test]
-    async fn basic_authn() -> anyhow::Result<()> {
+    async fn basic_authn() {
         let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await?;
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
-        let session = client.session(&keypair.public_key()).await?.unwrap();
+        let session = client
+            .session(&keypair.public_key())
+            .await
+            .unwrap()
+            .unwrap();
 
         assert!(session.capabilities().contains(&Capability::root()));
 
-        client.signout(&keypair.public_key()).await?;
+        client.signout(&keypair.public_key()).await.unwrap();
 
         {
             let session = client.session(&keypair.public_key()).await.unwrap();
@@ -238,17 +242,19 @@ mod tests {
         client.signin(&keypair).await.unwrap();
 
         {
-            let session = client.session(&keypair.public_key()).await?.unwrap();
+            let session = client
+                .session(&keypair.public_key())
+                .await
+                .unwrap()
+                .unwrap();
 
             assert_eq!(session.pubky(), &keypair.public_key());
             assert!(session.capabilities().contains(&Capability::root()));
         }
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn authz() -> anyhow::Result<()> {
+    async fn authz() {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
@@ -279,7 +285,7 @@ mod tests {
 
         assert_eq!(&public_key, &pubky);
 
-        let session = client.session(&pubky).await?.unwrap();
+        let session = client.session(&pubky).await.unwrap().unwrap();
         assert_eq!(session.capabilities(), &capabilities.0);
 
         // Test access control enforcement
@@ -288,15 +294,18 @@ mod tests {
             .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
             .body(vec![])
             .send()
-            .await?
-            .error_for_status()?;
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
 
         assert_eq!(
             client
                 .put(format!("pubky://{pubky}/pub/pubky.app"))
                 .body(vec![])
                 .send()
-                .await?
+                .await
+                .unwrap()
                 .status(),
             StatusCode::FORBIDDEN
         );
@@ -306,11 +315,10 @@ mod tests {
                 .put(format!("pubky://{pubky}/pub/foo.bar/file"))
                 .body(vec![])
                 .send()
-                .await?
+                .await
+                .unwrap()
                 .status(),
             StatusCode::FORBIDDEN
         );
-
-        Ok(())
     }
 }
