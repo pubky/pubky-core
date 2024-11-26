@@ -1,3 +1,5 @@
+use std::env;
+
 use anyhow::Result;
 use clap::Parser;
 use reqwest::Method;
@@ -16,22 +18,30 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let args = Cli::parse();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
+        .init();
 
     let client = Client::new()?;
 
-    match cli.url.scheme() {
-        "https" => {
-            unimplemented!();
-        }
-        "pubky" => {
-            let response = client.get(cli.url).send().await?.bytes().await?;
+    // Build the request
+    let response = client.get(args.url).send().await?;
 
-            println!("Got a response: \n {:?}", response);
+    println!("< Response:");
+    println!("< {:?} {}", response.version(), response.status());
+    for (name, value) in response.headers() {
+        if let Ok(v) = value.to_str() {
+            println!("< {name}: {v}");
         }
-        _ => {
-            panic!("Only https:// and pubky:// URL schemes are supported")
-        }
+    }
+
+    let bytes = response.bytes().await?;
+
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(string) => println!("<\n{}", string),
+        Err(_) => println!("<\n{:?}", bytes),
     }
 
     Ok(())

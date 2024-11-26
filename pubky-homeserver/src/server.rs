@@ -1,8 +1,12 @@
-use std::{future::IntoFuture, net::SocketAddr};
+use std::{
+    net::{SocketAddr, TcpListener},
+    sync::Arc,
+};
 
 use anyhow::{Error, Result};
+use axum_server::tls_rustls::{RustlsAcceptor, RustlsConfig};
 use pubky_common::auth::AuthVerifier;
-use tokio::{net::TcpListener, signal, task::JoinSet};
+use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
 use pkarr::{mainline::Testnet, PublicKey};
@@ -45,7 +49,7 @@ impl Homeserver {
 
         let mut tasks = JoinSet::new();
 
-        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port()))).await?;
+        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port())))?;
 
         let port = listener.local_addr()?.port();
 
@@ -57,24 +61,24 @@ impl Homeserver {
             port,
         };
 
+        let acceptor = RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
+            config.keypair().to_rpk_rustls_server_config(),
+        )));
+        let server = axum_server::from_tcp(listener).acceptor(acceptor);
+
         let app = crate::routes::create_app(state.clone());
 
         // Spawn http server task
-        tasks.spawn(
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(shutdown_signal())
-            .into_future(),
-        );
+        tasks.spawn(server.serve(app.into_make_service_with_connect_info::<SocketAddr>()));
 
         info!("Homeserver listening on http://localhost:{port}");
+
+        info!("Publishing Pkarr packet..");
 
         publish_server_packet(&pkarr_client, &config, port).await?;
 
         info!(
-            "Homeserver listening on http://{}",
+            "Homeserver listening on https://{}",
             config.keypair().public_key()
         );
 
@@ -132,33 +136,5 @@ impl Homeserver {
             }
         }
         final_res
-    }
-}
-
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    fn graceful_shutdown() {
-        info!("Gracefully Shutting down..");
-    }
-
-    tokio::select! {
-        _ = ctrl_c => graceful_shutdown(),
-        _ = terminate => graceful_shutdown(),
     }
 }

@@ -11,7 +11,7 @@ impl Client {
     /// the request body before sending.
     ///
     /// Differs from [reqwest::Client::request], in that it can make requests to:
-    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTPs URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///     corresponding endpoints, and verifying TLS certificates accordingly.
     ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -137,10 +137,8 @@ mod tests {
 
         let client = Client::test(&testnet);
 
-        let url = format!("http://{}/", homeserver.public_key());
-
         let response = client
-            .request(Default::default(), url)
+            .get(format!("https://{}/", homeserver.public_key()))
             .send()
             .await
             .unwrap();

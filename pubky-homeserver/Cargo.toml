@@ -28,6 +28,7 @@ tower-http = { version = "0.5.2", features = ["cors", "trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 url = "2.5.2"
+axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 
 [dev-dependencies]
 reqwest = "0.12.8"
