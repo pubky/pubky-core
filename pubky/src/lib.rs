@@ -26,6 +26,7 @@ pub struct Client {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) cookie_store: Arc<native::CookieJar>,
     http: reqwest::Client,
+    icann_http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
 }
 

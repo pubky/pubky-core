@@ -52,17 +52,26 @@ impl Settings {
 
         let cookie_store = Arc::new(CookieJar::default());
 
+        // TODO: allow custom user agent, but force a Pubky user agent information
+        let user_agent = DEFAULT_USER_AGENT;
+
         let http = reqwest::ClientBuilder::from(pkarr.clone())
             // TODO: use persistent cookie jar
             .cookie_provider(cookie_store.clone())
-            // TODO: allow custom user agent, but force a Pubky user agent information
-            .user_agent(DEFAULT_USER_AGENT)
+            .user_agent(user_agent)
+            .build()
+            .expect("config expected to not error");
+
+        let icann_http = reqwest::ClientBuilder::new()
+            .cookie_provider(cookie_store.clone())
+            .user_agent(user_agent)
             .build()
             .expect("config expected to not error");
 
         Ok(Client {
             cookie_store,
             http,
+            icann_http,
             pkarr,
         })
     }

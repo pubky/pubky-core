@@ -1,5 +1,6 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
+use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
 use crate::Client;
@@ -27,6 +28,8 @@ impl Client {
             let url = format!("https://_pubky.{}", url.split_at(8).1);
 
             return self.http.request(method, url);
+        } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
+            return self.icann_http.request(method, url);
         }
 
         self.http.request(method, url)
@@ -152,10 +155,8 @@ mod tests {
 
         let client = Client::test(&testnet);
 
-        let url = format!("http://example.com/");
-
         let response = client
-            .request(Default::default(), url)
+            .request(Default::default(), "https://example.com/")
             .send()
             .await
             .unwrap();
