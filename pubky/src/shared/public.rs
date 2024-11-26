@@ -1,55 +1,17 @@
-use pkarr::PublicKey;
-use url::Url;
+use reqwest::IntoUrl;
 
-use crate::{
-    error::{Error, Result},
-    Client,
-};
+use crate::{error::Result, Client};
 
-use super::{list_builder::ListBuilder, pkarr::Endpoint};
+use super::list_builder::ListBuilder;
 
 impl Client {
-    pub(crate) fn inner_list<T: TryInto<Url>>(&self, url: T) -> Result<ListBuilder> {
-        Ok(ListBuilder::new(
-            self,
-            url.try_into().map_err(|_| Error::InvalidUrl)?,
-        ))
-    }
-
-    pub(crate) async fn pubky_to_http<T: TryInto<Url>>(&self, url: T) -> Result<Url> {
-        let original_url: Url = url.try_into().map_err(|_| Error::InvalidUrl)?;
-
-        let pubky = original_url
-            .host_str()
-            .ok_or(Error::Generic("Missing Pubky Url host".to_string()))?;
-
-        if let Ok(public_key) = PublicKey::try_from(pubky) {
-            let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(&public_key).await?;
-
-            // TODO: remove if we move to subdomains instead of paths.
-            if original_url.scheme() == "pubky" {
-                let path = original_url.path_segments();
-
-                let mut split = url.path_segments_mut().unwrap();
-                split.push(pubky);
-                if let Some(segments) = path {
-                    for segment in segments {
-                        split.push(segment);
-                    }
-                }
-                drop(split);
-            }
-
-            return Ok(url);
-        }
-
-        Ok(original_url)
+    pub(crate) fn inner_list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
+        Ok(ListBuilder::new(self, url))
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use crate::*;
 
     use bytes::Bytes;
@@ -58,15 +20,15 @@ mod tests {
     use reqwest::{Method, StatusCode};
 
     #[tokio::test]
-    async fn put_get_delete() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+    async fn put_get_delete() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
         let url = url.as_str();
@@ -75,32 +37,38 @@ mod tests {
             .put(url)
             .body(vec![0, 1, 2, 3, 4])
             .send()
-            .await?
-            .error_for_status()?;
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
 
-        let response = client.get(url).send().await?.bytes().await?;
+        let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-        client.delete(url).send().await?.error_for_status()?;
+        client
+            .delete(url)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
 
-        let response = client.get(url).send().await?;
+        let response = client.get(url).send().await.unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn unauthorized_put_delete() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+    async fn unauthorized_put_delete() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let public_key = keypair.public_key();
 
@@ -112,50 +80,60 @@ mod tests {
             let other = Keypair::random();
 
             // TODO: remove extra client after switching to subdomains.
-            other_client.signup(&other, &server.public_key()).await?;
+            other_client
+                .signup(&other, &server.public_key())
+                .await
+                .unwrap();
 
             assert_eq!(
                 other_client
                     .put(url)
                     .body(vec![0, 1, 2, 3, 4])
                     .send()
-                    .await?
+                    .await
+                    .unwrap()
                     .status(),
                 StatusCode::UNAUTHORIZED
             );
         }
 
-        client.put(url).body(vec![0, 1, 2, 3, 4]).send().await?;
+        client
+            .put(url)
+            .body(vec![0, 1, 2, 3, 4])
+            .send()
+            .await
+            .unwrap();
 
         {
             let other = Keypair::random();
 
             // TODO: remove extra client after switching to subdomains.
-            other_client.signup(&other, &server.public_key()).await?;
+            other_client
+                .signup(&other, &server.public_key())
+                .await
+                .unwrap();
 
             assert_eq!(
-                other_client.delete(url).send().await?.status(),
+                other_client.delete(url).send().await.unwrap().status(),
                 StatusCode::UNAUTHORIZED
             );
         }
 
-        let response = client.get(url).send().await?.bytes().await?;
+        let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
 
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn list() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+    async fn list() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let pubky = keypair.public_key();
 
@@ -171,14 +149,13 @@ mod tests {
         ];
 
         for url in urls {
-            client.put(url).body(vec![0]).send().await?;
+            client.put(url).body(vec![0]).send().await.unwrap();
         }
 
         let url = format!("pubky://{pubky}/pub/example.com/extra");
-        let url = url.as_str();
 
         {
-            let list = client.list(url)?.send().await?;
+            let list = client.list(&url).unwrap().send().await.unwrap();
 
             assert_eq!(
                 list,
@@ -194,7 +171,7 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.limit(2).send().await?;
+            let list = client.list(&url).unwrap().limit(2).send().await.unwrap();
 
             assert_eq!(
                 list,
@@ -207,7 +184,14 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.limit(2).cursor("a.txt").send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .limit(2)
+                .cursor("a.txt")
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -221,11 +205,13 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .limit(2)
                 .cursor("cc-nested/")
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -239,11 +225,13 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .limit(2)
                 .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -256,7 +244,14 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.limit(2).cursor("/a.txt").send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .limit(2)
+                .cursor("/a.txt")
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -269,7 +264,13 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.reverse(true).send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .reverse(true)
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -285,7 +286,14 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.reverse(true).limit(2).send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .reverse(true)
+                .limit(2)
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -299,12 +307,14 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .reverse(true)
                 .limit(2)
                 .cursor("d.txt")
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -315,20 +325,18 @@ mod tests {
                 "reverse list with limit and cursor"
             );
         }
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn list_shallow() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+    async fn list_shallow() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let pubky = keypair.public_key();
 
@@ -346,14 +354,19 @@ mod tests {
         ];
 
         for url in urls {
-            client.put(url).body(vec![0]).send().await?;
+            client.put(url).body(vec![0]).send().await.unwrap();
         }
 
         let url = format!("pubky://{pubky}/pub/");
-        let url = url.as_str();
 
         {
-            let list = client.list(url)?.shallow(true).send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .shallow(true)
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -371,7 +384,14 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.shallow(true).limit(2).send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .shallow(true)
+                .limit(2)
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -385,12 +405,14 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .shallow(true)
                 .limit(2)
                 .cursor("example.com/a.txt")
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -404,12 +426,14 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .shallow(true)
                 .limit(3)
                 .cursor("example.com/")
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -423,7 +447,14 @@ mod tests {
         }
 
         {
-            let list = client.list(url)?.reverse(true).shallow(true).send().await?;
+            let list = client
+                .list(&url)
+                .unwrap()
+                .reverse(true)
+                .shallow(true)
+                .send()
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -442,12 +473,14 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .reverse(true)
                 .shallow(true)
                 .limit(2)
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -461,13 +494,15 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .shallow(true)
                 .reverse(true)
                 .limit(2)
                 .cursor("file2")
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -481,13 +516,15 @@ mod tests {
 
         {
             let list = client
-                .list(url)?
+                .list(&url)
+                .unwrap()
                 .shallow(true)
                 .reverse(true)
                 .limit(2)
                 .cursor("example.con/")
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
             assert_eq!(
                 list,
@@ -498,20 +535,18 @@ mod tests {
                 "reverse list shallow with limit and a directory cursor"
             );
         }
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn list_events() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+    async fn list_events() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let pubky = keypair.public_key();
 
@@ -529,12 +564,11 @@ mod tests {
         ];
 
         for url in urls {
-            client.put(&url).body(vec![0]).send().await?;
-            client.delete(url).send().await?;
+            client.put(&url).body(vec![0]).send().await.unwrap();
+            client.delete(url).send().await.unwrap();
         }
 
-        let feed_url = format!("http://localhost:{}/events/", server.port());
-        let feed_url = feed_url.as_str();
+        let feed_url = format!("https://{}/events/", server.public_key());
 
         let client = Client::test(&testnet);
 
@@ -544,9 +578,10 @@ mod tests {
             let response = client
                 .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
-            let text = response.text().await?;
+            let text = response.text().await.unwrap();
             let lines = text.split('\n').collect::<Vec<_>>();
 
             cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
@@ -573,9 +608,10 @@ mod tests {
             let response = client
                 .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
-            let text = response.text().await?;
+            let text = response.text().await.unwrap();
             let lines = text.split('\n').collect::<Vec<_>>();
 
             assert_eq!(
@@ -595,30 +631,26 @@ mod tests {
                 ]
             )
         }
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn read_after_event() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+    async fn read_after_event() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let pubky = keypair.public_key();
 
         let url = format!("pubky://{pubky}/pub/a.com/a.txt");
-        let url = url.as_str();
 
-        client.put(url).body(vec![0]).send().await?;
+        client.put(&url).body(vec![0]).send().await.unwrap();
 
-        let feed_url = format!("http://localhost:{}/events/", server.port());
-        let feed_url = feed_url.as_str();
+        let feed_url = format!("https://{}/events/", server.public_key());
 
         let client = Client::test(&testnet);
 
@@ -626,9 +658,10 @@ mod tests {
             let response = client
                 .request(Method::GET, format!("{feed_url}?limit=10"))
                 .send()
-                .await?;
+                .await
+                .unwrap();
 
-            let text = response.text().await?;
+            let text = response.text().await.unwrap();
             let lines = text.split('\n').collect::<Vec<_>>();
 
             let cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
@@ -642,17 +675,15 @@ mod tests {
             );
         }
 
-        let get = client.get(url).send().await?.bytes().await?;
+        let get = client.get(url).send().await.unwrap().bytes().await.unwrap();
 
         assert_eq!(get.as_ref(), &[0]);
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn dont_delete_shared_blobs() -> anyhow::Result<()> {
-        let testnet = Testnet::new(10)?;
-        let homeserver = Homeserver::start_test(&testnet).await?;
+    async fn dont_delete_shared_blobs() {
+        let testnet = Testnet::new(10).unwrap();
+        let homeserver = Homeserver::start_test(&testnet).await.unwrap();
         let client = Client::test(&testnet);
 
         let homeserver_pubky = homeserver.public_key();
@@ -660,8 +691,8 @@ mod tests {
         let user_1 = Keypair::random();
         let user_2 = Keypair::random();
 
-        client.signup(&user_1, &homeserver_pubky).await?;
-        client.signup(&user_2, &homeserver_pubky).await?;
+        client.signup(&user_1, &homeserver_pubky).await.unwrap();
+        client.signup(&user_2, &homeserver_pubky).await.unwrap();
 
         let user_1_id = user_1.public_key();
         let user_2_id = user_2.public_key();
@@ -670,24 +701,40 @@ mod tests {
         let url_2 = format!("pubky://{user_2_id}/pub/pubky.app/file/file_1");
 
         let file = vec![1];
-        client.put(&url_1).body(file.clone()).send().await?;
-        client.put(&url_2).body(file.clone()).send().await?;
+        client.put(&url_1).body(file.clone()).send().await.unwrap();
+        client.put(&url_2).body(file.clone()).send().await.unwrap();
 
         // Delete file 1
-        client.delete(url_1).send().await?.error_for_status()?;
+        client
+            .delete(url_1)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
 
-        let blob = client.get(url_2).send().await?.bytes().await?;
+        let blob = client
+            .get(url_2)
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
 
         assert_eq!(blob, file);
 
-        let feed_url = format!("http://localhost:{}/events/", homeserver.port());
+        let feed_url = format!("https://{}/events/", homeserver.public_key());
 
         let response = client
-            .request(Method::GET, format!("{feed_url}"))
+            .request(Method::GET, feed_url)
             .send()
-            .await?;
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
 
-        let text = response.text().await?;
+        let text = response.text().await.unwrap();
         let lines = text.split('\n').collect::<Vec<_>>();
 
         assert_eq!(
@@ -699,40 +746,36 @@ mod tests {
                 lines.last().unwrap().to_string()
             ]
         );
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn stream() -> anyhow::Result<()> {
+    async fn stream() {
         // TODO: test better streaming API
 
-        let testnet = Testnet::new(10)?;
-        let server = Homeserver::start_test(&testnet).await?;
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
 
         let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await?;
+        client.signup(&keypair, &server.public_key()).await.unwrap();
 
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
         let url = url.as_str();
 
         let bytes = Bytes::from(vec![0; 1024 * 1024]);
 
-        client.put(url).body(bytes.clone()).send().await?;
+        client.put(url).body(bytes.clone()).send().await.unwrap();
 
-        let response = client.get(url).send().await?.bytes().await?;
+        let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
 
         assert_eq!(response, bytes);
 
-        client.delete(url).send().await?;
+        client.delete(url).send().await.unwrap();
 
-        let response = client.get(url).send().await?;
+        let response = client.get(url).send().await.unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-        Ok(())
     }
 }
