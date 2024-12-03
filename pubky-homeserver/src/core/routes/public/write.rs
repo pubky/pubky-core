@@ -5,10 +5,10 @@ use futures_util::stream::StreamExt;
 use axum::{body::Body, extract::State, http::StatusCode, response::IntoResponse};
 use tower_cookies::Cookies;
 
-use crate::{
-    core::AppState,
+use crate::core::{
     error::{Error, Result},
     extractors::{EntryPath, Pubky},
+    AppState,
 };
 
 use super::{authorize, verify};

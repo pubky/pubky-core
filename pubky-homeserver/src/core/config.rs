@@ -162,6 +162,10 @@ impl Config {
         }
     }
 
+    pub fn is_testnet(&self) -> bool {
+        self.testnet
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }

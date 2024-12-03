@@ -6,7 +6,7 @@ use pkarr::PublicKey;
 use pubky_common::session::Session;
 use tower_cookies::Cookies;
 
-use crate::database::DB;
+use crate::core::database::DB;
 
 /// session secret => Session.
 pub type SessionsTable = Database<Str, Bytes>;

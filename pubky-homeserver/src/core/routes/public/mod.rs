@@ -2,9 +2,9 @@ use axum::http::StatusCode;
 use pkarr::PublicKey;
 use tower_cookies::Cookies;
 
-use crate::{
-    core::AppState,
+use crate::core::{
     error::{Error, Result},
+    AppState,
 };
 
 pub mod read;

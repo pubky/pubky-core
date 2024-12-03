@@ -10,7 +10,7 @@ use axum::{
 
 use pkarr::PublicKey;
 
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 
 #[derive(Debug)]
 pub struct Pubky(PublicKey);

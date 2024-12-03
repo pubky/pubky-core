@@ -9,11 +9,11 @@ use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
 use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
-use crate::{
-    core::AppState,
+use crate::core::{
     database::tables::users::User,
     error::{Error, Result},
     extractors::Pubky,
+    AppState,
 };
 
 pub async fn signup(

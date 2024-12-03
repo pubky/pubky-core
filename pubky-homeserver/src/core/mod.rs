@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{extract::Request, response::Response, Router};
-use pkarr::PublicKey;
+use pkarr::{Keypair, PublicKey};
 use pubky_common::{
     auth::AuthVerifier, capabilities::Capability, crypto::random_bytes, session::Session,
     timestamp::Timestamp,
@@ -8,22 +8,26 @@ use pubky_common::{
 use tower::ServiceExt;
 use tower_cookies::{cookie::SameSite, Cookie};
 
-use crate::{
-    config::Config,
-    database::{tables::users::User, DB},
-};
+mod config;
+mod database;
+mod error;
+mod extractors;
+mod routes;
+
+use database::{tables::users::User, DB};
+
+pub use config::Config;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: DB,
-    pub(crate) pkarr_client: pkarr::Client,
-    pub(crate) config: Config,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// An I/O-less Core of the [Homeserver].
 pub struct HomeserverCore {
+    pub(crate) config: Config,
     pub(crate) state: AppState,
     pub(crate) router: Router,
 }
@@ -32,33 +36,20 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which comes with some safety precautions.
     pub unsafe fn new(config: &Config) -> Result<Self> {
-        tracing::debug!(?config);
-
         let db = unsafe { DB::open(config.clone())? };
-
-        let mut dht_settings = pkarr::mainline::Settings::default();
-
-        if let Some(bootstrap) = config.bootstrap() {
-            dht_settings = dht_settings.bootstrap(&bootstrap);
-        }
-        if let Some(request_timeout) = config.dht_request_timeout() {
-            dht_settings = dht_settings.request_timeout(request_timeout);
-        }
-
-        let pkarr_client = pkarr::Client::builder()
-            .dht_settings(dht_settings)
-            .build()?;
 
         let state = AppState {
             verifier: AuthVerifier::default(),
             db,
-            pkarr_client: pkarr_client.clone(),
-            config: config.clone(),
         };
 
-        let router = crate::routes::create_app(state.clone());
+        let router = routes::create_app(state.clone());
 
-        Ok(Self { state, router })
+        Ok(Self {
+            state,
+            router,
+            config: config.clone(),
+        })
     }
 
     #[cfg(test)]
@@ -68,6 +59,18 @@ impl HomeserverCore {
 
         unsafe { HomeserverCore::new(&Config::test(&testnet)) }
     }
+
+    // === Getters ===
+
+    pub fn keypair(&self) -> &Keypair {
+        self.config.keypair()
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.config.keypair().public_key()
+    }
+
+    // === Public Methods ===
 
     // TODO: move this logic to a common place.
     pub fn create_user(&mut self, public_key: &PublicKey) -> Result<Cookie> {

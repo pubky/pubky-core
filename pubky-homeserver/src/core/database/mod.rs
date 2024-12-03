@@ -1,3 +1,5 @@
+//! Internal database in [crate::HomeserverCore]
+
 use std::{fs, path::PathBuf};
 
 use heed::{Env, EnvOpenOptions};
@@ -5,7 +7,7 @@ use heed::{Env, EnvOpenOptions};
 mod migrations;
 pub mod tables;
 
-use crate::config::Config;
+use crate::core::config::Config;
 
 use tables::{Tables, TABLES_COUNT};
 

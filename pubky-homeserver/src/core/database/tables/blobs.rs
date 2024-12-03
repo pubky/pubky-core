@@ -1,6 +1,6 @@
 use heed::{types::Bytes, Database, RoTxn};
 
-use crate::database::DB;
+use crate::core::database::DB;
 
 use super::entries::Entry;
 

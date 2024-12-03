@@ -1,6 +1,6 @@
 use heed::{Env, RwTxn};
 
-use crate::database::tables::{blobs, entries, events, sessions, users};
+use crate::core::database::tables::{blobs, entries, events, sessions, users};
 
 pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
     let _: users::UsersTable = env.create_database(wtxn, Some(users::USERS_TABLE))?;

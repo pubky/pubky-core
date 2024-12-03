@@ -8,11 +8,11 @@ use httpdate::HttpDate;
 use pkarr::PublicKey;
 use std::str::FromStr;
 
-use crate::{
-    core::AppState,
+use crate::core::{
     database::tables::entries::Entry,
     error::{Error, Result},
     extractors::{EntryPath, ListQueryParams, Pubky},
+    AppState,
 };
 
 use super::verify;

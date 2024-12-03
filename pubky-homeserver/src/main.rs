@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use pubky_homeserver::{config::Config, Homeserver};
+use pubky_homeserver::{Config, Homeserver};
 
 use clap::Parser;
 
@@ -42,7 +42,11 @@ async fn main() -> Result<()> {
         .await?
     };
 
-    server.run_until_done().await?;
+    tokio::signal::ctrl_c().await?;
+
+    tracing::info!("Shutting down Homeserver");
+
+    server.shutdown();
 
     Ok(())
 }

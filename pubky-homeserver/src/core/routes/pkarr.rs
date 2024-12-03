@@ -10,10 +10,10 @@ use futures_util::stream::StreamExt;
 
 use pkarr::SignedPacket;
 
-use crate::{
-    core::AppState,
+use crate::core::{
     error::{Error, Result},
     extractors::Pubky,
+    AppState,
 };
 
 /// Pkarr relay, helpful for testing.
