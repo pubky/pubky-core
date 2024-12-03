@@ -1,6 +1,6 @@
 use ::pkarr::{mainline::Testnet, PublicKey};
 use anyhow::Result;
-use axum_server::Handle;
+use http::HttpServers;
 use pkarr::PkarrServer;
 use tracing::info;
 
@@ -12,7 +12,7 @@ mod pkarr;
 #[derive(Debug)]
 /// Homeserver [Core][HomeserverCore] + I/O (http server and pkarr publishing).
 pub struct Homeserver {
-    handle: Handle,
+    http_servers: HttpServers,
     core: HomeserverCore,
 }
 
@@ -24,24 +24,23 @@ impl Homeserver {
 
         let core = unsafe { HomeserverCore::new(&config)? };
 
-        let handle = http::start(core.clone()).await?;
+        let http_servers = HttpServers::start(&core).await?;
 
-        let port = handle
-            .listening()
-            .await
-            .expect("Homeserver listening")
-            .port();
-
-        info!("Homeserver listening on http://localhost:{port}");
+        info!(
+            "Homeserver listening on http://localhost:{}",
+            http_servers.http_address().await?.port()
+        );
 
         info!("Publishing Pkarr packet..");
 
         let pkarr_server = PkarrServer::new(config)?;
-        pkarr_server.publish_server_packet(port).await?;
+        pkarr_server
+            .publish_server_packet(http_servers.https_address().await?.port())
+            .await?;
 
         info!("Homeserver listening on https://{}", core.public_key());
 
-        Ok(Self { handle, core })
+        Ok(Self { http_servers, core })
     }
 
     /// Test version of [Homeserver::start], using mainline Testnet, and a temporary storage.
@@ -66,6 +65,6 @@ impl Homeserver {
 
     /// Send a shutdown signal to all open resources
     pub fn shutdown(&self) {
-        self.handle.shutdown();
+        self.http_servers.shutdown();
     }
 }
