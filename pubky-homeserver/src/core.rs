@@ -19,7 +19,6 @@ pub(crate) struct AppState {
     pub(crate) db: DB,
     pub(crate) pkarr_client: pkarr::Client,
     pub(crate) config: Config,
-    pub(crate) port: u16,
 }
 
 #[derive(Debug)]
@@ -30,10 +29,12 @@ pub struct HomeserverCore {
 }
 
 impl HomeserverCore {
-    pub fn new(config: &Config) -> Result<Self> {
+    /// # Safety
+    /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which comes with some safety precautions.
+    pub unsafe fn new(config: &Config) -> Result<Self> {
         tracing::debug!(?config);
 
-        let db = DB::open(config.clone())?;
+        let db = unsafe { DB::open(config.clone())? };
 
         let mut dht_settings = pkarr::mainline::Settings::default();
 
@@ -53,7 +54,6 @@ impl HomeserverCore {
             db,
             pkarr_client: pkarr_client.clone(),
             config: config.clone(),
-            port: config.port(),
         };
 
         let router = crate::routes::create_app(state.clone());
@@ -66,7 +66,7 @@ impl HomeserverCore {
     pub fn test() -> Result<Self> {
         let testnet = pkarr::mainline::Testnet::new(0).expect("ignore");
 
-        HomeserverCore::new(&Config::test(&testnet))
+        unsafe { HomeserverCore::new(&Config::test(&testnet)) }
     }
 
     // TODO: move this logic to a common place.

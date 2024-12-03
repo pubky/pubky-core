@@ -19,7 +19,9 @@ pub struct DB {
 }
 
 impl DB {
-    pub fn open(config: Config) -> anyhow::Result<Self> {
+    /// # Safety
+    /// Opening [LMDB][heed::EnvOpenOptions::open] is backed by a memory map which comes with some safety precautions.
+    pub unsafe fn open(config: Config) -> anyhow::Result<Self> {
         let buffers_dir = config.storage().clone().join("buffers");
 
         // Cleanup buffers.
