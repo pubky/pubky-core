@@ -1,3 +1,5 @@
+//! The controller part of the [crate::HomeserverCore]
+
 use axum::{
     extract::DefaultBodyLimit,
     routing::{delete, get, head, post, put},
@@ -8,11 +10,11 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::core::AppState;
 
-use self::pkarr::pkarr_router;
+// use self::pkarr::pkarr_router;
 
 mod auth;
 mod feed;
-mod pkarr;
+// mod pkarr;
 mod public;
 mod root;
 
@@ -56,7 +58,7 @@ fn base(state: AppState) -> Router {
 pub fn create_app(state: AppState) -> Router {
     base(state.clone())
         // TODO: Only enable this for test environments?
-        .nest("/pkarr", pkarr_router(state))
+        // .nest("/pkarr", pkarr_router(state))
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
 }

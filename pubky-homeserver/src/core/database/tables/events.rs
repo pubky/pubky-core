@@ -10,7 +10,7 @@ use heed::{
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
-use crate::database::DB;
+use crate::core::database::DB;
 
 /// Event [Timestamp] base32 => Encoded event.
 pub type EventsTable = Database<Str, Bytes>;

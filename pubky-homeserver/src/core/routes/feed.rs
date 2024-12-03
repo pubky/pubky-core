@@ -6,10 +6,10 @@ use axum::{
 };
 use pubky_common::timestamp::Timestamp;
 
-use crate::{
-    core::AppState,
+use crate::core::{
     error::{Error, Result},
     extractors::ListQueryParams,
+    AppState,
 };
 
 pub async fn feed(
