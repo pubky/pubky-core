@@ -1,5 +1,3 @@
-use std::net::{SocketAddr, TcpListener};
-
 use anyhow::Result;
 use axum::{extract::Request, response::Response, Router};
 use pkarr::PublicKey;
@@ -50,16 +48,12 @@ impl HomeserverCore {
             .dht_settings(dht_settings)
             .build()?;
 
-        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port())))?;
-
-        let port = listener.local_addr()?.port();
-
         let state = AppState {
             verifier: AuthVerifier::default(),
             db,
             pkarr_client: pkarr_client.clone(),
             config: config.clone(),
-            port,
+            port: config.port(),
         };
 
         let router = crate::routes::create_app(state.clone());

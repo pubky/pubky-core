@@ -7,7 +7,7 @@ use pkarr::PublicKey;
 
 use pubky_common::capabilities::Capabilities;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::Client;
 
 impl Client {
@@ -47,7 +47,7 @@ impl Client {
     ) -> Result<(Url, tokio::sync::oneshot::Receiver<PublicKey>)> {
         let mut relay: Url = relay
             .try_into()
-            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+            .map_err(|_| anyhow::anyhow!("Invalid relay Url"))?;
 
         let (pubkyauth_url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
 
@@ -61,9 +61,9 @@ impl Client {
                 .await?;
 
             tx.send(to_send)
-                .map_err(|_| Error::Generic("Failed to send the session after signing in with token, since the receiver is dropped".into()))?;
+                .map_err(|_| anyhow::anyhow!("Failed to send the session after signing in with token, since the receiver is dropped"))?;
 
-            Ok::<(), Error>(())
+            Ok::<(), anyhow::Error>(())
         });
 
         Ok((pubkyauth_url, rx))
@@ -76,7 +76,9 @@ impl Client {
         keypair: &Keypair,
         pubkyauth_url: T,
     ) -> Result<()> {
-        let url: Url = pubkyauth_url.try_into().map_err(|_| Error::InvalidUrl)?;
+        let url: Url = pubkyauth_url
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid Url"))?;
 
         self.inner_send_auth_token(keypair, url).await?;
 

@@ -10,11 +10,9 @@ mod native;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use wasm_bindgen::prelude::*;
-
-pub use error::Error;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::shared::list_builder::ListBuilder;
@@ -27,7 +25,7 @@ pub struct Client {
     pkarr: pkarr::Client,
 
     #[cfg(not(target_arch = "wasm32"))]
-    cookie_store: Arc<native::CookieJar>,
+    cookie_store: std::sync::Arc<native::CookieJar>,
     #[cfg(not(target_arch = "wasm32"))]
     icann_http: reqwest::Client,
 }

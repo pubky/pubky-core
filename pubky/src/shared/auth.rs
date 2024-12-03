@@ -12,10 +12,7 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{
-    error::{Error, Result},
-    Client,
-};
+use crate::{error::Result, Client};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -80,6 +77,7 @@ impl Client {
             .await?
             .error_for_status()?;
 
+        #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store.delete_session_after_signout(pubky);
 
         Ok(())
@@ -179,7 +177,8 @@ impl Client {
 
         let mut segments = relay
             .path_segments_mut()
-            .map_err(|_| Error::Generic("Invalid relay".into()))?;
+            .map_err(|_| anyhow::anyhow!("Invalid relay"))?;
+
         // remove trailing slash if any.
         segments.pop_if_empty();
         let channel_id = &engine.encode(hash(&client_secret).as_bytes());

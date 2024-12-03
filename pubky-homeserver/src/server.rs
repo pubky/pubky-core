@@ -33,7 +33,10 @@ impl Homeserver {
 
         let keypair = config.keypair().clone();
 
-        let core = HomeserverCore::new(&config)?;
+        let mut core = HomeserverCore::new(&config)?;
+
+        // Update the port.
+        core.state.port = port;
 
         let acceptor = RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
             keypair.to_rpk_rustls_server_config(),
