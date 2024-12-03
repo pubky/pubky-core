@@ -1,14 +1,6 @@
 //! Pkarr related task
 
-use std::net::Ipv4Addr;
-
-use pkarr::{
-    dns::{
-        rdata::{RData, A, SVCB},
-        Packet,
-    },
-    SignedPacket,
-};
+use pkarr::{dns::rdata::SVCB, SignedPacket};
 
 use crate::config::Config;
 
@@ -19,8 +11,6 @@ pub async fn publish_server_packet(
 ) -> anyhow::Result<()> {
     // TODO: Try to resolve first before publishing.
 
-    let mut packet = Packet::new_reply(0);
-
     let default = ".".to_string();
     let target = config.domain().unwrap_or(&default);
     let mut svcb = SVCB::new(0, target.as_str().try_into()?);
@@ -28,36 +18,26 @@ pub async fn publish_server_packet(
     svcb.priority = 1;
     svcb.set_port(port);
 
-    packet.answers.push(pkarr::dns::ResourceRecord::new(
-        "@".try_into().unwrap(),
-        pkarr::dns::CLASS::IN,
-        60 * 60,
-        RData::HTTPS(svcb.clone().into()),
-    ));
+    let mut signed_packet_builder =
+        SignedPacket::builder().https(".".try_into().unwrap(), svcb.clone(), 60 * 60);
 
     if config.domain().is_none() {
         // TODO: remove after remvoing Pubky shared/public
         // and add local host IP address instead.
         svcb.target = "localhost".try_into().unwrap();
 
-        packet.answers.push(pkarr::dns::ResourceRecord::new(
-            "@".try_into().unwrap(),
-            pkarr::dns::CLASS::IN,
-            60 * 60,
-            RData::HTTPS(svcb.clone().into()),
-        ));
-
-        packet.answers.push(pkarr::dns::ResourceRecord::new(
-            "@".try_into().unwrap(),
-            pkarr::dns::CLASS::IN,
-            60 * 60,
-            RData::A(A::from(Ipv4Addr::from([127, 0, 0, 1]))),
-        ));
+        signed_packet_builder = signed_packet_builder
+            .https(".".try_into().unwrap(), svcb, 60 * 60)
+            .address(
+                ".".try_into().unwrap(),
+                "127.0.0.1".parse().unwrap(),
+                60 * 60,
+            );
     }
 
     // TODO: announce A/AAAA records as well for TLS connections?
 
-    let signed_packet = SignedPacket::from_packet(config.keypair(), &packet)?;
+    let signed_packet = signed_packet_builder.build(config.keypair())?;
 
     pkarr_client.publish(&signed_packet).await?;
 
