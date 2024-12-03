@@ -24,7 +24,9 @@ pub struct Homeserver {
 }
 
 impl Homeserver {
-    pub async fn start(config: Config) -> Result<Self> {
+    /// # Safety
+    /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which comes with some safety precautions.
+    pub async unsafe fn start(config: Config) -> Result<Self> {
         let mut tasks = JoinSet::new();
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.port())))?;
@@ -33,15 +35,12 @@ impl Homeserver {
 
         let keypair = config.keypair().clone();
 
-        let mut core = HomeserverCore::new(&config)?;
-
-        // Update the port.
-        core.state.port = port;
-
         let acceptor = RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
             keypair.to_rpk_rustls_server_config(),
         )));
         let server = axum_server::from_tcp(listener).acceptor(acceptor);
+
+        let core = unsafe { HomeserverCore::new(&config)? };
 
         // Spawn http server task
         tasks.spawn(
@@ -69,14 +68,10 @@ impl Homeserver {
     pub async fn start_test(testnet: &Testnet) -> Result<Self> {
         info!("Running testnet..");
 
-        Homeserver::start(Config::test(testnet)).await
+        unsafe { Homeserver::start(Config::test(testnet)).await }
     }
 
     // === Getters ===
-
-    pub fn port(&self) -> u16 {
-        self.state.port
-    }
 
     pub fn public_key(&self) -> PublicKey {
         self.state.config.keypair().public_key()

@@ -31,14 +31,16 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let server = Homeserver::start(if args.testnet {
-        Config::testnet()
-    } else if let Some(config_path) = args.config {
-        Config::load(config_path).await?
-    } else {
-        Config::default()
-    })
-    .await?;
+    let server = unsafe {
+        Homeserver::start(if args.testnet {
+            Config::testnet()
+        } else if let Some(config_path) = args.config {
+            Config::load(config_path).await?
+        } else {
+            Config::default()
+        })
+        .await?
+    };
 
     server.run_until_done().await?;
 
