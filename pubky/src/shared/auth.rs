@@ -143,10 +143,12 @@ impl PubkyClient {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        self.request(Method::POST, callback)
+        let response = self.request(Method::POST, callback)
             .body(encrypted_token)
             .send()
             .await?;
+
+        response.error_for_status()?;
 
         Ok(())
     }
