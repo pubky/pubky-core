@@ -4,30 +4,30 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.82"
-axum = { version = "0.7.5", features = ["macros"] }
-axum-extra = { version = "0.9.3", features = ["typed-header", "async-read-body"] }
+anyhow = "1.0.94"
+axum = { version = "0.7.9", features = ["macros"] }
+axum-extra = { version = "0.9.6", features = ["typed-header", "async-read-body"] }
 base32 = "0.5.1"
-bytes = "^1.7.1"
-clap = { version = "4.5.11", features = ["derive"] }
+bytes = "^1.9.0"
+clap = { version = "4.5.23", features = ["derive"] }
 dirs-next = "2.0.0"
-flume = "0.11.0"
-futures-util = "0.3.30"
-heed = "0.20.3"
+flume = "0.11.1"
+futures-util = "0.3.31"
+heed = "0.21.0"
 hex = "0.4.3"
 httpdate = "1.0.3"
-libc = "0.2.159"
-postcard = { version = "1.0.8", features = ["alloc"] }
+postcard = { version = "1.1.1", features = ["alloc"] }
 pkarr = { workspace = true }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
-serde = { version = "1.0.213", features = ["derive"] }
-tokio = { version = "1.37.0", features = ["full"] }
+serde = { version = "1.0.216", features = ["derive"] }
+tokio = { version = "1.42.0", features = ["full"] }
 toml = "0.8.19"
 tower-cookies = "0.10.0"
-tower-http = { version = "0.5.2", features = ["cors", "trace"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-url = "2.5.2"
+tower-http = { version = "0.6.2", features = ["cors", "trace"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+url = "2.5.4"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tower = "0.5.1"
+page_size = "0.6.0"
 

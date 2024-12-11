@@ -11,38 +11,38 @@ keywords = ["web", "dht", "dns", "decentralized", "identity"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-thiserror = "1.0.62"
-wasm-bindgen = "0.2.92"
-url = "2.5.2"
-bytes = "^1.7.1"
+thiserror = "2.0.6"
+wasm-bindgen = "0.2.99"
+url = "2.5.4"
+bytes = "^1.9.0"
 base64 = "0.22.1"
 
 pkarr = { workspace = true }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 cookie = "0.18.1"
-tracing = "0.1.40"
+tracing = "0.1.41"
 cookie_store = { version = "0.21.1", default-features = false }
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-reqwest = { version = "0.12.5", features = ["cookies", "rustls-tls"], default-features = false }
-tokio = { version = "1.37.0", features = ["full"] }
+reqwest = { version = "0.12.9", features = ["cookies", "rustls-tls"], default-features = false }
+tokio = { version = "1.42.0", features = ["full"] }
 
 # Wasm dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwest = { version = "0.12.5", default-features = false }
+reqwest = { version = "0.12.9", default-features = false }
 futures-lite = { version = "2.5.0", default-features = false }
-wasm-bindgen = "0.2.92"
-wasm-bindgen-futures = "0.4.42"
+wasm-bindgen = "0.2.99"
+wasm-bindgen-futures = "0.4.49"
 
-js-sys = "0.3.69"
-web-sys = "0.3.70"
+js-sys = "0.3.76"
+web-sys = "0.3.76"
 
 [dev-dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 pubky-homeserver = { path = "../pubky-homeserver" }
-tokio = "1.37.0"
+tokio = "1.42.0"
 
 [package.metadata.docs.rs]
 all-features = true
