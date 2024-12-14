@@ -1575,7 +1575,7 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "4.1.0"
-source = "git+https://github.com/pubky/mainline?branch=v5#2948896ac074cd5bf9728966dcd076de35e7e763"
+source = "git+https://github.com/pubky/mainline?branch=v5#c5e02270223bfa49a791a627a54348e0494762e5"
 dependencies = [
  "bytes",
  "crc",
@@ -1921,7 +1921,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pkarr"
 version = "3.0.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#c3510a82c5a3a496349d8dc030edd96f750f1471"
+source = "git+https://github.com/Pubky/pkarr?branch=v3#6821166474cd567a1e11f39e335b42c0029d4063"
 dependencies = [
  "base32",
  "byteorder",
@@ -1958,7 +1958,7 @@ dependencies = [
 [[package]]
 name = "pkarr-relay"
 version = "0.1.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#c3510a82c5a3a496349d8dc030edd96f750f1471"
+source = "git+https://github.com/Pubky/pkarr?branch=v3#6821166474cd567a1e11f39e335b42c0029d4063"
 dependencies = [
  "anyhow",
  "axum",
@@ -2063,11 +2063,14 @@ name = "pubky"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "axum-server",
  "base64 0.22.1",
  "bytes",
  "cookie",
  "cookie_store",
  "futures-lite",
+ "futures-util",
  "js-sys",
  "pkarr",
  "pubky-common",
