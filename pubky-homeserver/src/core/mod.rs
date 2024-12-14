@@ -25,16 +25,19 @@ pub(crate) struct AppState {
 }
 
 #[derive(Debug, Clone)]
-/// An I/O-less Core of the [Homeserver].
+/// A side-effect-free Core of the [Homeserver].
 pub struct HomeserverCore {
-    pub(crate) config: Config,
+    config: Config,
     pub(crate) state: AppState,
     pub(crate) router: Router,
 }
 
 impl HomeserverCore {
+    /// Create a side-effect-free Homeserver core.
+    ///
     /// # Safety
-    /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which comes with some safety precautions.
+    /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
+    /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub unsafe fn new(config: &Config) -> Result<Self> {
         let db = unsafe { DB::open(config.clone())? };
 
@@ -62,12 +65,16 @@ impl HomeserverCore {
 
     // === Getters ===
 
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
     pub fn keypair(&self) -> &Keypair {
-        self.config.keypair()
+        &self.config.keypair
     }
 
     pub fn public_key(&self) -> PublicKey {
-        self.config.keypair().public_key()
+        self.config.keypair.public_key()
     }
 
     // === Public Methods ===

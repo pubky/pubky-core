@@ -78,8 +78,8 @@ impl From<pubky_common::auth::Error> for Error {
     }
 }
 
-impl From<pkarr::errors::SignedPacketError> for Error {
-    fn from(error: pkarr::errors::SignedPacketError) -> Self {
+impl From<pkarr::errors::SignedPacketVerifyError> for Error {
+    fn from(error: pkarr::errors::SignedPacketVerifyError) -> Self {
         Self::new(StatusCode::BAD_REQUEST, Some(error))
     }
 }

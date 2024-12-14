@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::ToSocketAddrs, sync::Arc, time::Duration};
 
 use pkarr::mainline::Testnet;
 
@@ -15,13 +15,14 @@ static DEFAULT_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CAR
 
 #[derive(Debug, Default)]
 pub struct Settings {
-    pkarr_settings: pkarr::Settings,
+    pkarr_config: pkarr::Config,
 }
 
 impl Settings {
     /// Set Pkarr client [pkarr::Settings].
-    pub fn pkarr_settings(mut self, settings: pkarr::Settings) -> Self {
-        self.pkarr_settings = settings;
+    pub fn pkarr_config(mut self, settings: pkarr::Config) -> Self {
+        self.pkarr_config = settings;
+
         self
     }
 
@@ -32,23 +33,26 @@ impl Settings {
     pub fn testnet(mut self, testnet: &Testnet) -> Self {
         let bootstrap = testnet.bootstrap.clone();
 
-        let mut dht_settings = pkarr::mainline::Settings::default().bootstrap(&bootstrap);
+        self.pkarr_config.resolvers = Some(
+            bootstrap
+                .iter()
+                .flat_map(|resolver| resolver.to_socket_addrs())
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
+
+        self.pkarr_config.dht_config.bootstrap = bootstrap;
 
         if std::env::var("CI").is_err() {
-            dht_settings = dht_settings.request_timeout(Duration::from_millis(500));
+            self.pkarr_config.dht_config.request_timeout = Duration::from_millis(500);
         }
-
-        self.pkarr_settings = self
-            .pkarr_settings
-            .dht_settings(dht_settings)
-            .resolvers(Some(bootstrap));
 
         self
     }
 
     /// Build [Client]
     pub fn build(self) -> Result<Client, std::io::Error> {
-        let pkarr = pkarr::Client::new(self.pkarr_settings)?;
+        let pkarr = pkarr::Client::new(self.pkarr_config)?;
 
         let cookie_store = Arc::new(CookieJar::default());
 

@@ -10,6 +10,7 @@ use axum_server::{
     tls_rustls::{RustlsAcceptor, RustlsConfig},
     Handle,
 };
+use futures_util::TryFutureExt;
 
 use crate::core::HomeserverCore;
 
@@ -38,11 +39,12 @@ impl HttpServers {
                     core.router
                         .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
-                ),
+                )
+                .map_err(|error| tracing::error!(?error, "Homeserver http server error")),
         );
 
         let https_listener =
-            TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], core.config.port())))?;
+            TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], core.config().port)))?;
 
         let https_handle = Handle::new();
 
@@ -56,7 +58,8 @@ impl HttpServers {
                     core.router
                         .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
-                ),
+                )
+                .map_err(|error| tracing::error!(?error, "Homeserver https server error")),
         );
 
         // let mock_pkarr_relay_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 15411)))?;
@@ -81,6 +84,7 @@ impl HttpServers {
         }
     }
 
+    /// Shutdown all HTTP servers.
     pub fn shutdown(&self) {
         self.http_handle.shutdown();
         self.https_handle.shutdown();

@@ -107,7 +107,7 @@ impl DB {
 
     /// Return a list of pubky urls.
     ///
-    /// - limit defaults to [Config::default_list_limit] and capped by [Config::max_list_limit]
+    /// - limit defaults to [crate::Config::default_list_limit] and capped by [crate::Config::max_list_limit]
     pub fn list(
         &self,
         txn: &RoTxn,
@@ -121,8 +121,8 @@ impl DB {
         let mut results = Vec::new();
 
         let limit = limit
-            .unwrap_or(self.config.default_list_limit())
-            .min(self.config.max_list_limit());
+            .unwrap_or(self.config().default_list_limit)
+            .min(self.config().max_list_limit);
 
         // TODO: make this more performant than split and allocations?
 
