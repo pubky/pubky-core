@@ -1,6 +1,8 @@
 use reqwest::{IntoUrl, Method};
 
-use crate::{error::Result, Client};
+use anyhow::Result;
+
+use crate::Client;
 
 /// Helper struct to edit Pubky homeserver's list API options before sending them.
 #[derive(Debug)]

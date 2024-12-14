@@ -3,7 +3,9 @@ use pubky_common::{
     recovery_file::{create_recovery_file, decrypt_recovery_file},
 };
 
-use crate::{error::Result, Client};
+use anyhow::Result;
+
+use crate::Client;
 
 impl Client {
     /// Create a recovery file of the `keypair`, containing the secret key encrypted

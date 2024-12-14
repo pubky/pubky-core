@@ -8,7 +8,8 @@ use pkarr::PublicKey;
 
 use pubky_common::capabilities::Capabilities;
 
-use crate::error::Result;
+use anyhow::Result;
+
 use crate::Client;
 
 impl Client {

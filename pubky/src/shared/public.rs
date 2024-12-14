@@ -1,6 +1,8 @@
 use reqwest::IntoUrl;
 
-use crate::{error::Result, Client};
+use anyhow::Result;
+
+use crate::Client;
 
 use super::list_builder::ListBuilder;
 
