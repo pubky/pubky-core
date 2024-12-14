@@ -1,7 +1,5 @@
 use wasm_bindgen::prelude::*;
 
-use crate::Error;
-
 #[wasm_bindgen]
 pub struct Keypair(pkarr::Keypair);
 
@@ -80,9 +78,9 @@ impl PublicKey {
             .as_string()
             .ok_or("Couldn't create a PublicKey from this type of value")?;
 
-        Ok(PublicKey(
-            pkarr::PublicKey::try_from(string).map_err(Error::PublicKeyError)?,
-        ))
+        Ok(PublicKey(pkarr::PublicKey::try_from(string).map_err(
+            |_| "Couldn't create a PublicKey from this type of value",
+        )?))
     }
 }
 

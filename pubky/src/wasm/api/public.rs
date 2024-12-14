@@ -1,40 +1,12 @@
 //! Wasm bindings for the /pub/ api
 
+use js_sys::Array;
 use wasm_bindgen::prelude::*;
-
-use reqwest::{Method, StatusCode};
-
-use js_sys::{Array, Uint8Array};
 
 use crate::Client;
 
 #[wasm_bindgen]
 impl Client {
-    #[wasm_bindgen]
-    /// Upload a small payload to a given path.
-    pub async fn put(&self, url: &str, content: &[u8]) -> Result<(), JsValue> {
-        self.inner_put(url, content).await.map_err(|e| e.into())
-    }
-
-    /// Download a small payload from a given path relative to a pubky author.
-    #[wasm_bindgen]
-    pub async fn get(&self, url: &str) -> Result<Option<Uint8Array>, JsValue> {
-        self.inner_get(url)
-            .await
-            .map(|b| b.map(|b| (&*b).into()))
-            .map_err(|e| e.into())
-    }
-
-    /// Delete a file at a path relative to a pubky author.
-    #[wasm_bindgen]
-    pub async fn delete(&self, url: &str) -> Result<(), JsValue> {
-        self.inner_request(Method::DELETE, url)
-            .await
-            .send()
-            .await
-            .map_err(|e| e.into())
-    }
-
     /// Returns a list of Pubky urls (as strings).
     ///
     /// - `url`:     The Pubky url (string) to the directory you want to list its content.
@@ -56,7 +28,8 @@ impl Client {
 
         if let Some(cursor) = cursor {
             return self
-                .inner_list(url)?
+                .inner_list(url)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?
                 .reverse(reverse.unwrap_or(false))
                 .limit(limit.unwrap_or(u16::MAX))
                 .cursor(&cursor)
@@ -72,10 +45,11 @@ impl Client {
 
                     js_array
                 })
-                .map_err(|e| e.into());
+                .map_err(|e| JsValue::from_str(&e.to_string()));
         }
 
-        self.inner_list(url)?
+        self.inner_list(url)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?
             .reverse(reverse.unwrap_or(false))
             .limit(limit.unwrap_or(u16::MAX))
             .shallow(shallow.unwrap_or(false))
@@ -90,6 +64,6 @@ impl Client {
 
                 js_array
             })
-            .map_err(|e| e.into())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

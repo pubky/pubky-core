@@ -1,8 +1,6 @@
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
-use crate::error::Error;
-
 use crate::wasm::wrappers::keys::Keypair;
 
 /// Create a recovery file of the `keypair`, containing the secret key encrypted
@@ -11,7 +9,7 @@ use crate::wasm::wrappers::keys::Keypair;
 pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Uint8Array, JsValue> {
     pubky_common::recovery_file::create_recovery_file(keypair.as_inner(), passphrase)
         .map(|b| b.as_slice().into())
-        .map_err(|e| Error::from(e).into())
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Create a recovery file of the `keypair`, containing the secret key encrypted
@@ -20,5 +18,5 @@ pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Uint8
 pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair, JsValue> {
     pubky_common::recovery_file::decrypt_recovery_file(recovery_file, passphrase)
         .map(Keypair::from)
-        .map_err(|e| Error::from(e).into())
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }

@@ -6,8 +6,6 @@ use pubky_common::capabilities::Capabilities;
 
 use crate::Client;
 
-use crate::Error;
-
 use crate::wasm::wrappers::keys::{Keypair, PublicKey};
 use crate::wasm::wrappers::session::Session;
 
@@ -28,7 +26,7 @@ impl Client {
         Ok(Session(
             self.inner_signup(keypair.as_inner(), homeserver.as_inner())
                 .await
-                .map_err(JsValue::from)?,
+                .map_err(|e| JsValue::from_str(&e.to_string()))?,
         ))
     }
 
@@ -41,7 +39,7 @@ impl Client {
         self.inner_session(pubky.as_inner())
             .await
             .map(|s| s.map(Session))
-            .map_err(|e| e.into())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     /// Signout from a homeserver.
@@ -49,7 +47,7 @@ impl Client {
     pub async fn signout(&self, pubky: &PublicKey) -> Result<(), JsValue> {
         self.inner_signout(pubky.as_inner())
             .await
-            .map_err(|e| e.into())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     /// Signin to a homeserver using the root Keypair.
@@ -58,7 +56,7 @@ impl Client {
         self.inner_signin(keypair.as_inner())
             .await
             .map(|_| ())
-            .map_err(|e| e.into())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
@@ -68,14 +66,14 @@ impl Client {
     /// Returns a tuple of [pubkyAuthUrl, Promise<Session>]
     #[wasm_bindgen(js_name = "authRequest")]
     pub fn auth_request(&self, relay: &str, capabilities: &str) -> Result<js_sys::Array, JsValue> {
-        let mut relay: Url = relay
-            .try_into()
-            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+        let mut relay: Url = relay.try_into().map_err(|_| "Invalid relay Url")?;
 
-        let (pubkyauth_url, client_secret) = self.create_auth_request(
-            &mut relay,
-            &Capabilities::try_from(capabilities).map_err(|_| "Invalid capaiblities")?,
-        )?;
+        let (pubkyauth_url, client_secret) = self
+            .create_auth_request(
+                &mut relay,
+                &Capabilities::try_from(capabilities).map_err(|_| "Invalid capaiblities")?,
+            )
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         let this = self.clone();
 
@@ -83,7 +81,7 @@ impl Client {
             this.subscribe_to_auth_response(relay, &client_secret)
                 .await
                 .map(|pubky| JsValue::from(PublicKey(pubky)))
-                .map_err(|err| JsValue::from_str(&format!("{:?}", err)))
+                .map_err(|e| JsValue::from_str(&e.to_string()))
         };
 
         let promise = wasm_bindgen_futures::future_to_promise(future);
@@ -104,12 +102,11 @@ impl Client {
         keypair: &Keypair,
         pubkyauth_url: &str,
     ) -> Result<(), JsValue> {
-        let pubkyauth_url: Url = pubkyauth_url
-            .try_into()
-            .map_err(|_| Error::Generic("Invalid relay Url".into()))?;
+        let pubkyauth_url: Url = pubkyauth_url.try_into().map_err(|_| "Invalid relay Url")?;
 
         self.inner_send_auth_token(keypair.as_inner(), pubkyauth_url)
-            .await?;
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         Ok(())
     }
