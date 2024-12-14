@@ -1,5 +1,6 @@
 use pkarr::Keypair;
 use pubky_common::session::Session;
+use reqwest::IntoUrl;
 use tokio::sync::oneshot;
 use url::Url;
 
@@ -40,30 +41,21 @@ impl Client {
     /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
     /// verifying that AuthToken, and if capabilities were requested, signing in to
     /// the Pubky's homeserver and returning the [Session] information.
-    pub fn auth_request(
+    pub fn auth_request<T: IntoUrl>(
         &self,
-        relay: impl TryInto<Url>,
+        relay: T,
         capabilities: &Capabilities,
-    ) -> Result<(Url, tokio::sync::oneshot::Receiver<PublicKey>)> {
-        let mut relay: Url = relay
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid relay Url"))?;
+    ) -> Result<(Url, tokio::sync::oneshot::Receiver<Result<PublicKey>>)> {
+        let mut relay: Url = relay.into_url()?;
 
         let (pubkyauth_url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
 
-        let (tx, rx) = oneshot::channel::<PublicKey>();
+        let (tx, rx) = oneshot::channel::<Result<PublicKey>>();
 
         let this = self.clone();
 
         tokio::spawn(async move {
-            let to_send = this
-                .subscribe_to_auth_response(relay, &client_secret)
-                .await?;
-
-            tx.send(to_send)
-                .map_err(|_| anyhow::anyhow!("Failed to send the session after signing in with token, since the receiver is dropped"))?;
-
-            Ok::<(), anyhow::Error>(())
+            tx.send(this.subscribe_to_auth_response(relay, &client_secret).await)
         });
 
         Ok((pubkyauth_url, rx))
@@ -71,17 +63,11 @@ impl Client {
 
     /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
     /// source of the pubkyauth request url.
-    pub async fn send_auth_token<T: TryInto<Url>>(
+    pub async fn send_auth_token<T: IntoUrl>(
         &self,
         keypair: &Keypair,
         pubkyauth_url: T,
     ) -> Result<()> {
-        let url: Url = pubkyauth_url
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid Url"))?;
-
-        self.inner_send_auth_token(keypair, url).await?;
-
-        Ok(())
+        self.inner_send_auth_token(keypair, pubkyauth_url).await
     }
 }

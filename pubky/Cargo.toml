@@ -41,6 +41,9 @@ web-sys = "0.3.76"
 
 [dev-dependencies]
 anyhow = "1.0.94"
+axum = "0.7.9"
+axum-server = "0.7.1"
+futures-util = "0.3.31"
 pubky-homeserver = { path = "../pubky-homeserver" }
 tokio = "1.42.0"
 
