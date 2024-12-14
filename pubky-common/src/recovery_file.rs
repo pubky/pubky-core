@@ -82,7 +82,10 @@ pub enum Error {
     Argon(#[from] argon2::Error),
 
     #[error(transparent)]
-    Crypto(#[from] crate::crypto::Error),
+    DecryptError(#[from] crate::crypto::DecryptError),
+
+    #[error(transparent)]
+    EncryptError(#[from] crate::crypto::EncryptError),
 }
 
 #[cfg(test)]
