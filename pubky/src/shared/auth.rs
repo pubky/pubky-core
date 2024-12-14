@@ -12,7 +12,9 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{error::Result, Client};
+use anyhow::Result;
+
+use crate::Client;
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.

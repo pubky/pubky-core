@@ -1,6 +1,8 @@
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
 
-use crate::{error::Result, Client};
+use anyhow::Result;
+
+use crate::Client;
 
 impl Client {
     /// Publish the HTTPS record for `_pubky.<public_key>`.
