@@ -11,43 +11,57 @@ use crate::core::config::Config;
 
 use tables::{Tables, TABLES_COUNT};
 
-#[derive(Debug, Clone)]
-pub struct DB {
-    pub(crate) env: Env,
-    pub(crate) tables: Tables,
-    pub(crate) config: Config,
-    pub(crate) buffers_dir: PathBuf,
-    pub(crate) max_chunk_size: usize,
-}
+pub use protected::DB;
 
-impl DB {
-    /// # Safety
-    /// Opening [LMDB][heed::EnvOpenOptions::open] is backed by a memory map which comes with some safety precautions.
-    pub unsafe fn open(config: Config) -> anyhow::Result<Self> {
-        let buffers_dir = config.storage().clone().join("buffers");
+/// Protecting fields from being mutated by modules in crate::database
+mod protected {
+    use super::*;
 
-        // Cleanup buffers.
-        let _ = fs::remove_dir(&buffers_dir);
-        fs::create_dir_all(&buffers_dir)?;
+    #[derive(Debug, Clone)]
+    pub struct DB {
+        pub(crate) env: Env,
+        pub(crate) tables: Tables,
+        pub(crate) buffers_dir: PathBuf,
+        pub(crate) max_chunk_size: usize,
+        config: Config,
+    }
 
-        let env = unsafe {
-            EnvOpenOptions::new()
-                .max_dbs(TABLES_COUNT)
-                .map_size(config.db_map_size())
-                .open(config.storage())
-        }?;
+    impl DB {
+        /// # Safety
+        /// DB uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
+        /// because the possible Undefined Behavior (UB) if the lock file is broken.
+        pub unsafe fn open(config: Config) -> anyhow::Result<Self> {
+            let buffers_dir = config.storage.clone().join("buffers");
 
-        let tables = migrations::run(&env)?;
+            // Cleanup buffers.
+            let _ = fs::remove_dir(&buffers_dir);
+            fs::create_dir_all(&buffers_dir)?;
 
-        let db = DB {
-            env,
-            tables,
-            config,
-            buffers_dir,
-            max_chunk_size: max_chunk_size(),
-        };
+            let env = unsafe {
+                EnvOpenOptions::new()
+                    .max_dbs(TABLES_COUNT)
+                    .map_size(config.db_map_size)
+                    .open(&config.storage)
+            }?;
 
-        Ok(db)
+            let tables = migrations::run(&env)?;
+
+            let db = DB {
+                env,
+                tables,
+                config,
+                buffers_dir,
+                max_chunk_size: max_chunk_size(),
+            };
+
+            Ok(db)
+        }
+
+        // === Getters ===
+
+        pub fn config(&self) -> &Config {
+            &self.config
+        }
     }
 }
 
@@ -55,7 +69,7 @@ impl DB {
 /// - https://lmdb.readthedocs.io/en/release/#storage-efficiency-limits
 /// - https://github.com/lmdbjava/benchmarks/blob/master/results/20160710/README.md#test-2-determine-24816-kb-byte-values
 fn max_chunk_size() -> usize {
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+    let page_size = page_size::get();
 
     // - 16 bytes Header  per page (LMDB)
     // - Each page has to contain 2 records

@@ -9,7 +9,7 @@
     "url": "git+https://github.com/pubky/pubky-core.git"
   },
   "scripts": {
-    "testnet": "cargo run -p pubky_homeserver -- --testnet",
+    "testnet": "cargo run -p pubky-homeserver -- --testnet",
     "test": "npm run test-nodejs && npm run test-browser",
     "test-nodejs": "tape test/*.js -cov",
     "test-browser": "browserify test/*.js -p esmify | npx tape-run",

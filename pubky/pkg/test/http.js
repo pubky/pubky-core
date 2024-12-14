@@ -6,7 +6,7 @@ const TLD = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
 
 // TODO: test HTTPs too somehow.
 
-test.skip("basic fetch", async (t) => {
+test.only("basic fetch", async (t) => {
   let client = Client.testnet();
 
   // Normal TLD

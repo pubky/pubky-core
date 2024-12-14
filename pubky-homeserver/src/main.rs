@@ -32,14 +32,13 @@ async fn main() -> Result<()> {
         .init();
 
     let server = unsafe {
-        Homeserver::start(if args.testnet {
-            Config::testnet()
+        if args.testnet {
+            Homeserver::start_testnet().await?
         } else if let Some(config_path) = args.config {
-            Config::load(config_path).await?
+            Homeserver::start(Config::load(config_path).await?).await?
         } else {
-            Config::default()
-        })
-        .await?
+            Homeserver::builder().build().await?
+        }
     };
 
     tokio::signal::ctrl_c().await?;
