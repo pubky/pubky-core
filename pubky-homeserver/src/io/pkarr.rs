@@ -11,7 +11,7 @@ pub struct PkarrServer {
 }
 
 impl PkarrServer {
-    pub fn new(config: Config, port: u16) -> Result<Self> {
+    pub fn new(config: &Config, port: u16) -> Result<Self> {
         let mut dht_config = pkarr::mainline::Config::default();
 
         if let Some(bootstrap) = config.bootstrap.clone() {
@@ -41,7 +41,7 @@ impl PkarrServer {
     }
 }
 
-pub fn create_signed_packet(config: Config, port: u16) -> Result<SignedPacket> {
+pub fn create_signed_packet(config: &Config, port: u16) -> Result<SignedPacket> {
     // TODO: Try to resolve first before publishing.
 
     let default = ".".to_string();

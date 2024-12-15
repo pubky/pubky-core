@@ -13,7 +13,7 @@ impl Default for Client {
     }
 }
 
-static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/pkarr"];
+static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/"];
 
 #[wasm_bindgen]
 impl Client {
@@ -27,13 +27,18 @@ impl Client {
     }
 
     /// Create a client with with configurations appropriate for local testing:
-    /// - set Pkarr relays to `["http://localhost:15411/pkarr"]` instead of default relay.
+    /// - set Pkarr relays to `["http://localhost:15411"]` instead of default relay.
     #[wasm_bindgen]
     pub fn testnet() -> Self {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
             pkarr: pkarr::Client::builder()
-                .relays(TESTNET_RELAYS.into_iter().map(|s| s.to_string()).collect())
+                .relays(
+                    TESTNET_RELAYS
+                        .into_iter()
+                        .map(|s| url::Url::parse(s).expect("TESTNET_RELAYS should be valid urls"))
+                        .collect(),
+                )
                 .build()
                 .unwrap(),
         }
