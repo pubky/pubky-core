@@ -19,6 +19,8 @@ impl Client {
             JsValue::from_str(&format!("pubky::Client::fetch(): Invalid `url`; {:?}", err))
         })?;
 
+        self.transform_url(&mut url).await;
+
         let js_req =
             web_sys::Request::new_with_str_and_init(url.as_str(), init).map_err(|err| {
                 JsValue::from_str(&format!(

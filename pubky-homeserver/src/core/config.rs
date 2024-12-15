@@ -33,6 +33,8 @@ struct ConfigToml {
 /// Server configuration
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
+    /// Run in [testnet](crate::Homeserver::start_testnet) mode.
+    pub testnet: bool,
     /// The configured port for this server.
     pub port: u16,
     /// Bootstrapping DHT nodes.
@@ -99,6 +101,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            testnet: false,
             port: 0,
             bootstrap: None,
             domain: None,
@@ -138,6 +141,7 @@ impl TryFrom<ConfigToml> for Config {
         };
 
         Ok(Config {
+            testnet: false,
             port: value.port.unwrap_or(0),
             bootstrap: value.bootstrap,
             domain: value.domain,

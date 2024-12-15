@@ -11,7 +11,6 @@ test.only("basic fetch", async (t) => {
 
   // Normal TLD
   {
-
     let response = await client.fetch(`http://relay.pkarr.org/`);
 
     t.equal(response.status, 200);

@@ -4,12 +4,12 @@
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
-use futures_lite::{pin, Stream, StreamExt};
+use futures_lite::StreamExt;
 
-use pkarr::extra::endpoints::EndpointsResolver;
+use pkarr::extra::endpoints::{Endpoint, EndpointsResolver};
 use pkarr::PublicKey;
 
-use crate::{error::Result, Client};
+use crate::Client;
 
 impl Client {
     /// A wrapper around [reqwest::Client::request], with the same signature between native and wasm.
@@ -17,37 +17,45 @@ impl Client {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
 
+        self.transform_url(&mut url).await;
+
+        self.http.request(method, url).fetch_credentials_include()
+    }
+
+    pub(super) async fn transform_url(&self, url: &mut Url) {
         if url.scheme() == "pubky" {
-            url.set_scheme("https");
+            // TODO: use https for anything other than testnet
+            url.set_scheme("http")
+                .expect("couldn't replace pubky:// with http://");
+            url.set_host(Some(&format!("_pubky.{}", url.host_str().unwrap_or(""))))
+                .expect("couldn't map pubk://<pubky> to https://_pubky.<pubky>");
         }
 
-        if PublicKey::try_from(original_url).is_ok() {
-            let stream = self
-                .pkarr
-                .resolve_https_endpoints(url.host_str().unwrap_or(""));
+        let qname = url.host_str().unwrap_or("").to_string();
 
-            let mut so_far = None;
+        if PublicKey::try_from(qname.to_string()).is_ok() {
+            let mut stream = self.pkarr.resolve_https_endpoints(&qname);
 
-            while let Some(endpoint) = stream.next().await {
-                if let Some(e) = so_far {
-                    if e.domain() == "." && endpoint.domain() != "." {
+            let mut so_far: Option<Endpoint> = None;
+
+            // TODO: currently we return the first thing we can see,
+            // in the future we might want to failover to other endpoints
+            while so_far.is_none() {
+                while let Some(endpoint) = stream.next().await {
+                    if endpoint.domain() != "." {
                         so_far = Some(endpoint);
                     }
-                } else {
-                    so_far = Some(endpoint)
                 }
             }
 
             if let Some(e) = so_far {
-                url.set_host(Some(e.domain()));
-                url.set_port(Some(e.port()));
-
-                return self.http.request(method, url).fetch_credentials_include();
+                url.set_host(Some(e.domain()))
+                    .expect("coultdn't use the resolved endpoint's domain");
+                url.set_port(Some(e.port()))
+                    .expect("coultdn't use the resolved endpoint's port");
             } else {
                 // TODO: didn't find any domain, what to do?
             }
         }
-
-        self.http.request(method, url).fetch_credentials_include()
     }
 }
