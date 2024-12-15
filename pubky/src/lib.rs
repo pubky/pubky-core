@@ -27,6 +27,9 @@ pub struct Client {
     cookie_store: std::sync::Arc<native::CookieJar>,
     #[cfg(not(target_arch = "wasm32"))]
     icann_http: reqwest::Client,
+
+    #[cfg(target_arch = "wasm32")]
+    testnet: bool,
 }
 
 impl Debug for Client {
