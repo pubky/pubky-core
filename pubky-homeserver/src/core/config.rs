@@ -92,6 +92,7 @@ impl Config {
         Self {
             bootstrap,
             storage,
+            domain: Some("localhost".to_string()),
             db_map_size: 10485760,
             ..Default::default()
         }
@@ -217,6 +218,9 @@ mod tests {
 
                 storage: config.storage.clone(),
                 keypair: config.keypair.clone(),
+
+                domain: Some("localhost".to_string()),
+
                 ..Default::default()
             }
         )
