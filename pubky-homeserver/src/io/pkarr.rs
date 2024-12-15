@@ -54,10 +54,8 @@ pub fn create_signed_packet(config: &Config, port: u16) -> Result<SignedPacket> 
     let mut signed_packet_builder =
         SignedPacket::builder().https(".".try_into().unwrap(), svcb.clone(), 60 * 60);
 
-    if config.domain.is_none() {
-        // TODO: remove after remvoing Pubky shared/public
-        // and add local host IP address instead.
-        svcb.target = "localhost".try_into().unwrap();
+    if config.testnet {
+        svcb.target = "localhost".try_into().expect("localhost is valid dns name");
 
         signed_packet_builder = signed_packet_builder
             .https(".".try_into().unwrap(), svcb, 60 * 60)
@@ -66,9 +64,13 @@ pub fn create_signed_packet(config: &Config, port: u16) -> Result<SignedPacket> 
                 "127.0.0.1".parse().unwrap(),
                 60 * 60,
             );
+    } else if let Some(ref domain) = config.domain {
+        svcb.target = domain.as_str().try_into()?;
+
+        signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
     }
 
-    // TODO: announce A/AAAA records as well for TLS connections?
+    // TODO: announce public IP with A/AAAA records (need to add options in config)
 
     Ok(signed_packet_builder.build(&config.keypair)?)
 }
