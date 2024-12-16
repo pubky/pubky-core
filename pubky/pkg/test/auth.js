@@ -1,10 +1,12 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
 
 const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
-test('auth', async (t) => {
+test.only('auth', async (t) => {
+  setLogLevel("debug");
+
   const client = Client.testnet();
 
   const keypair = Keypair.random()

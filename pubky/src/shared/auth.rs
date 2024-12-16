@@ -62,9 +62,7 @@ impl Client {
             return Ok(None);
         }
 
-        if !res.status().is_success() {
-            res.error_for_status_ref()?;
-        };
+        res.error_for_status_ref()?;
 
         let bytes = res.bytes().await?;
 
