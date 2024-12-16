@@ -12,8 +12,13 @@ impl Client {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
 
+        let original_host = url.host_str().unwrap_or("").to_string();
+
         self.transform_url(&mut url).await;
 
-        self.http.request(method, url).fetch_credentials_include()
+        self.http
+            .request(method, url)
+            .header::<&str, &str>("pkarr-host", &original_host)
+            .fetch_credentials_include()
     }
 }

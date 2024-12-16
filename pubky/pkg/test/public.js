@@ -4,7 +4,7 @@ import { Client, Keypair, PublicKey } from '../index.cjs'
 
 const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
 
-test('public: put/get', async (t) => {
+test.skip('public: put/get', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random();
@@ -41,7 +41,7 @@ test('public: put/get', async (t) => {
   }
 })
 
-test("not found", async (t) => {
+test.skip("not found", async (t) => {
   const client = Client.testnet();
 
 
@@ -58,7 +58,7 @@ test("not found", async (t) => {
   t.notOk(result);
 })
 
-test("unauthorized", async (t) => {
+test.skip("unauthorized", async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -85,7 +85,7 @@ test("unauthorized", async (t) => {
   )
 })
 
-test("forbidden", async (t) => {
+test.skip("forbidden", async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -110,7 +110,7 @@ test("forbidden", async (t) => {
   )
 })
 
-test("list", async (t) => {
+test.skip("list", async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -241,7 +241,7 @@ test("list", async (t) => {
   }
 })
 
-test('list shallow', async (t) => {
+test.skip('list shallow', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()

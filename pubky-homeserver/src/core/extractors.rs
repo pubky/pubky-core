@@ -29,14 +29,19 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        if let Some(host) = parts.headers.get("host") {
-            if let Ok(host_str) = host.to_str() {
-                let domain = host_str.split(':').next().unwrap_or_default();
-                if let Ok(public_key) = PublicKey::try_from(domain) {
+        let headers_to_check = ["host", "pkarr-host"];
+
+        for header in headers_to_check {
+            if let Some(Ok(pubky_host)) = parts.headers.get(header).map(|h| h.to_str()) {
+                if let Ok(public_key) = PublicKey::try_from(pubky_host) {
+                    tracing::debug!(?pubky_host);
+
                     return Ok(Pubky(public_key));
                 }
             }
         }
+
+        // TODO: return an error and remove all param based routes
 
         let params: Path<HashMap<String, String>> =
             parts.extract().await.map_err(IntoResponse::into_response)?;

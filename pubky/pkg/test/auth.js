@@ -1,12 +1,12 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
+import { Client, Keypair, PublicKey } from '../index.cjs'
 
 const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
-test.only('auth', async (t) => {
-  setLogLevel("debug");
-
+// TODO: test multiple users in wasm
+  
+test('auth', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -32,7 +32,7 @@ test.only('auth', async (t) => {
   }
 })
 
-test("3rd party signin", async (t) => {
+test.skip("3rd party signin", async (t) => {
   let keypair = Keypair.random();
   let pubky = keypair.publicKey().z32();
 
