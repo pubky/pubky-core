@@ -1239,6 +1239,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-relay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "futures-util",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "httparse"
 version = "1.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2084,6 +2096,7 @@ dependencies = [
  "cookie_store",
  "futures-lite",
  "futures-util",
+ "http-relay",
  "js-sys",
  "log",
  "pkarr",

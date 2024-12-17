@@ -217,11 +217,9 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-
-    use std::net::SocketAddr;
-
     use crate::*;
 
+    use http_relay::HttpRelay;
     use pkarr::{mainline::Testnet, Keypair};
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_homeserver::Homeserver;
@@ -268,106 +266,13 @@ mod tests {
         }
     }
 
-    async fn http_relay_server() -> Option<SocketAddr> {
-        use axum::{
-            body::{Body, Bytes},
-            extract::{Path, State},
-            response::IntoResponse,
-            routing::get,
-            Router,
-        };
-        use axum_server::Handle;
-        use futures_util::stream::StreamExt;
-        use std::{
-            collections::HashMap,
-            net::SocketAddr,
-            sync::{Arc, Mutex},
-        };
-        use tokio::sync::Notify;
-
-        // Shared state to store GET requests and their notifications
-        type SharedState = Arc<Mutex<HashMap<String, (Vec<u8>, Arc<Notify>)>>>;
-        let shared_state: SharedState = Arc::new(Mutex::new(HashMap::new()));
-
-        // Handler for the GET endpoint
-        async fn subscribe(
-            Path(id): Path<String>,
-            State(state): State<SharedState>,
-        ) -> impl IntoResponse {
-            // Create a notification for this ID
-            let notify = Arc::new(Notify::new());
-
-            {
-                let mut map = state.lock().unwrap();
-
-                // Store the notification and return it when POST arrives
-                map.entry(id.clone())
-                    .or_insert_with(|| (vec![], notify.clone()));
-            }
-
-            notify.notified().await;
-
-            // Respond with the data stored for this ID
-            let map = state.lock().unwrap();
-            if let Some((data, _)) = map.get(&id) {
-                Bytes::from(data.clone()).into_response()
-            } else {
-                (axum::http::StatusCode::NOT_FOUND, "Not Found").into_response()
-            }
-        }
-
-        // Handler for the POST endpoint
-        async fn publish(
-            Path(id): Path<String>,
-            State(state): State<SharedState>,
-            body: Body,
-        ) -> impl IntoResponse {
-            // Aggregate the body into bytes
-            let mut stream = body.into_data_stream();
-            let mut bytes = vec![];
-            while let Some(next) = stream.next().await {
-                let chunk = next.map_err(|e| e.to_string()).unwrap();
-                bytes.extend_from_slice(&chunk);
-            }
-
-            // Notify any waiting GET request for this ID
-            let mut map = state.lock().unwrap();
-            if let Some((storage, notify)) = map.get_mut(&id) {
-                *storage = bytes;
-                notify.notify_one();
-                Ok(())
-            } else {
-                Err((
-                    axum::http::StatusCode::NOT_FOUND,
-                    "No waiting GET request for this ID",
-                ))
-            }
-        }
-
-        let app = Router::new()
-            .route("/:id", get(subscribe).post(publish))
-            .with_state(shared_state);
-
-        let handle = Handle::new();
-
-        let cloned = handle.clone();
-        tokio::spawn(async {
-            axum_server::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-                .handle(cloned)
-                .serve(app.into_make_service())
-                .await
-                .unwrap();
-        });
-
-        handle.listening().await
-    }
-
     #[tokio::test]
     async fn authz() {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let http_relay_url = http_relay_server().await.unwrap();
+        let http_relay = HttpRelay::start().await.unwrap();
+        let http_relay_url = http_relay.local_link_url().await.unwrap();
 
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
@@ -377,12 +282,8 @@ mod tests {
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
         let client = Client::test(&testnet);
 
-        let (pubkyauth_url, pubkyauth_response) = client
-            .auth_request(
-                &format!("http://{}", http_relay_url.to_string()),
-                &capabilities,
-            )
-            .unwrap();
+        let (pubkyauth_url, pubkyauth_response) =
+            client.auth_request(http_relay_url, &capabilities).unwrap();
 
         // Authenticator side
         {
