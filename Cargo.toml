@@ -3,6 +3,8 @@ members = [
   "pubky",
   "pubky-*", 
 
+  "http-relay",
+
   "examples"
 ]
 

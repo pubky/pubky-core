@@ -20,8 +20,6 @@ pub struct HttpServers {
     pub(crate) http_handle: Handle,
     /// Handle for the HTTPS server using Pkarr TLS
     pub(crate) https_handle: Handle,
-    // /// Handle for a mock relay used in testnet
-    // pub(crate) mock_pkarr_relay_handle: Handle,
 }
 
 impl HttpServers {
@@ -61,8 +59,6 @@ impl HttpServers {
                 )
                 .map_err(|error| tracing::error!(?error, "Homeserver https server error")),
         );
-
-        // let mock_pkarr_relay_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 15411)))?;
 
         Ok(Self {
             http_handle,

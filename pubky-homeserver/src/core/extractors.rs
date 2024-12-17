@@ -32,9 +32,9 @@ where
         let headers_to_check = ["host", "pkarr-host"];
 
         for header in headers_to_check {
-            if let Some(Ok(pubky_host)) = parts.headers.get(header).map(|h| h.to_str()) {
-                if let Ok(public_key) = PublicKey::try_from(pubky_host) {
-                    tracing::debug!(?pubky_host);
+            if let Some(Ok(pkarr_host)) = parts.headers.get(header).map(|h| h.to_str()) {
+                if let Ok(public_key) = PublicKey::try_from(pkarr_host) {
+                    tracing::debug!(?pkarr_host);
 
                     return Ok(Pubky(public_key));
                 }
