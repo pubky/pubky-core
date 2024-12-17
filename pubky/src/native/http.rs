@@ -123,6 +123,12 @@ impl Client {
     pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::HEAD, url)
     }
+
+    // === Private Methods ===
+
+    pub(crate) async fn inner_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
+        self.request(method, url)
+    }
 }
 
 #[cfg(test)]
