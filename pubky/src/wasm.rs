@@ -4,7 +4,6 @@ use crate::Client;
 
 mod api;
 mod http;
-mod internals;
 mod wrappers;
 
 impl Default for Client {

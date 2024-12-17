@@ -7,7 +7,6 @@ use crate::Client;
 mod api;
 mod cookies;
 mod http;
-mod internal;
 
 pub(crate) use cookies::CookieJar;
 

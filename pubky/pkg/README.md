@@ -42,20 +42,22 @@ let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 // Verify that you are signed in.
 const session = await client.session(publicKey)
 
-const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
-
 // PUT public data, by authorized client
-await client.put(url, body);
+await client.fetch(url, { 
+    method: "PUT",
+    body: JSON.stringify({foo: "bar"}),
+    credentials: "include"
+});
 
 // GET public data without signup or signin
 {
     const client = new Client();
 
-    let response = await client.get(url);
+    let response = await client.fetch(url);
 }
 
 // Delete public data, by authorized client
-await client.delete(url);
+await client.fetch(url, { method: "DELETE", credentials: "include "});
 ```
 
 ## API
@@ -66,6 +68,13 @@ await client.delete(url);
 ```js
 let client = new Client()
 ```
+
+#### fetch
+```js
+let response = await client.fetch(url, opts);
+```
+
+Just like normal Fetch API, but it can handle `pubky://` urls and `http(s)://` urls with Pkarr domains.
 
 #### signup
 ```js
@@ -126,27 +135,6 @@ let session = await client.session(publicKey)
 ```
 - publicKey: An instance of [PublicKey](#publickey).
 - Returns: A [Session](#session) object if signed in, or undefined if not.
-
-#### put
-```js
-let response = await client.put(url, body);
-```
-- url: A string representing the Pubky URL.
-- body: A Buffer containing the data to be stored.
-
-### get
-```js
-let response = await client.get(url)
-```
-- url: A string representing the Pubky URL.
-- Returns: A Uint8Array object containing the requested data, or `undefined` if `NOT_FOUND`.
-
-### delete
-
-```js
-let response = await client.delete(url);
-```
-- url: A string representing the Pubky URL.
 
 ### list
 ```js

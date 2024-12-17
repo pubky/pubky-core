@@ -1,10 +1,10 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey ,setLogLevel} from '../index.cjs'
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
-test.skip('public: put/get', async (t) => {
+test('public: put/get', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random();
@@ -15,33 +15,43 @@ test.skip('public: put/get', async (t) => {
 
   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
-  const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
+  const json = { foo: 'bar' }
 
   // PUT public data, by authorized client
-  await client.put(url, body);
+  await client.fetch(url, {
+    method:"PUT",
+    body: JSON.stringify(json), 
+    contentType: "json",
+    credentials: "include"
+  });
 
   const otherClient = Client.testnet();
 
   // GET public data without signup or signin
   {
-    let response = await otherClient.get(url);
+    let response = await otherClient.fetch(url)
 
-    t.ok(Buffer.from(response).equals(body))
+    t.is(response.status, 200);
+
+    t.deepEquals(await response.json(), {foo: "bar"})
   }
 
   // DELETE public data, by authorized client
-  await client.delete(url);
+  await client.fetch(url, {
+    method:"DELETE",
+    credentials: "include"
+  });
 
 
   // GET public data without signup or signin
   {
-    let response = await otherClient.get(url);
+    let response = await otherClient.fetch(url);
 
-    t.notOk(response)
+    t.is(response.status, 404)
   }
 })
 
-test.skip("not found", async (t) => {
+test("not found", async (t) => {
   const client = Client.testnet();
 
 
@@ -53,12 +63,12 @@ test.skip("not found", async (t) => {
 
   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
-  let result = await client.get(url).catch(e => e);
+  let result = await client.fetch(url);
 
-  t.notOk(result);
+  t.is(result.status, 404);
 })
 
-test.skip("unauthorized", async (t) => {
+test("unauthorized", async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -71,21 +81,20 @@ test.skip("unauthorized", async (t) => {
 
   await client.signout(publicKey)
 
-  const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
-
   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
   // PUT public data, by authorized client
-  let result = await client.put(url, body).catch(e => e);
+  let response = await client.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify({ foo: 'bar' }),
+    contentType: "json",
+    credentials: "include"
+  });
 
-  t.ok(result instanceof Error);
-  t.is(
-    result.message,
-    `HTTP status client error (401 Unauthorized) for url (http://localhost:15411/${publicKey.z32()}/pub/example.com/arbitrary)`
-  )
+  t.equals(response.status,401);
 })
 
-test.skip("forbidden", async (t) => {
+test("forbidden", async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -96,21 +105,22 @@ test.skip("forbidden", async (t) => {
   const session = await client.session(publicKey)
   t.ok(session, "signup")
 
-  const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
+  const body = (JSON.stringify({ foo: 'bar' }))
 
   let url = `pubky://${publicKey.z32()}/priv/example.com/arbitrary`;
 
   // PUT public data, by authorized client
-  let result = await client.put(url, body).catch(e => e);
+  let response = await client.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify({ foo: 'bar' }),
+    credentials: "include"
+  });
 
-  t.ok(result instanceof Error);
-  t.is(
-    result.message,
-    `HTTP status client error (403 Forbidden) for url (http://localhost:15411/${publicKey.z32()}/priv/example.com/arbitrary)`
-  )
+  t.is(response.status, 403)
+  t.is(await response.text(), 'Writing to directories other than \'/pub/\' is forbidden')
 })
 
-test.skip("list", async (t) => {
+test("list", async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -132,7 +142,11 @@ test.skip("list", async (t) => {
   ]
 
   for (let url of urls) {
-    await client.put(url, Buffer.from(""));
+    await client.fetch(url, {
+      method: "PUT",
+      body:Buffer.from(""), 
+      credentials: "include"
+    });
   }
 
   let url = `pubky://${pubky}/pub/example.com/`;
@@ -241,7 +255,7 @@ test.skip("list", async (t) => {
   }
 })
 
-test.skip('list shallow', async (t) => {
+test('list shallow', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -264,7 +278,11 @@ test.skip('list shallow', async (t) => {
   ]
 
   for (let url of urls) {
-    await client.put(url, Buffer.from(""));
+    await client.fetch(url, {
+      method: "PUT",
+      body: Buffer.from(""),
+      credentials: "include"
+    });
   }
 
   let url = `pubky://${pubky}/pub/`;
