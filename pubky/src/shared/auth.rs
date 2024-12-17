@@ -271,8 +271,8 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let http_relay = HttpRelay::start().await.unwrap();
-        let http_relay_url = http_relay.local_link_url().await.unwrap();
+        let http_relay = HttpRelay::builder().build().await.unwrap();
+        let http_relay_url = http_relay.local_link_url();
 
         let keypair = Keypair::random();
         let pubky = keypair.public_key();

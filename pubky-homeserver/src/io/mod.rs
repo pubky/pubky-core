@@ -78,7 +78,7 @@ impl Homeserver {
 
         info!(
             "Homeserver listening on http://localhost:{}",
-            http_servers.http_address().await?.port()
+            http_servers.http_address().port()
         );
 
         info!("Publishing Pkarr packet..");
@@ -86,9 +86,9 @@ impl Homeserver {
         let pkarr_server = PkarrServer::new(
             &config,
             if config.testnet {
-                http_servers.http_address().await?.port()
+                http_servers.http_address().port()
             } else {
-                http_servers.https_address().await?.port()
+                http_servers.https_address().port()
             },
         )?;
         pkarr_server.publish_server_packet().await?;
@@ -104,6 +104,7 @@ impl Homeserver {
     /// - Run a pkarr Relay on port `15411`
     /// - Use a temporary storage for the both homeserver and relay
     /// - Only publish http port (ignore https port or domain configurations)
+    /// - Run an HTTP relay on port `15412`
     ///
     /// # Safety
     /// See [Self::start]
@@ -113,19 +114,27 @@ impl Homeserver {
         let storage =
             std::env::temp_dir().join(pubky_common::timestamp::Timestamp::now().to_string());
 
-        let relay = unsafe {
+        let pkarr_relay = unsafe {
             let mut config = pkarr_relay::Config {
                 http_port: 15411,
                 cache_path: Some(storage.join("pkarr-relay")),
+                rate_limiter: None,
                 ..Default::default()
             };
+
             config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
             config.pkarr_config.resolvers = Some(vec![]);
 
             pkarr_relay::Relay::start(config).await?
         };
 
-        tracing::info!(relay_address=?relay.relay_address(), bootstrap=?relay.resolver_address(),"Running in Testnet mode");
+        let http_relay = http_relay::HttpRelay::builder()
+            .http_port(15412)
+            .build()
+            .await?;
+
+        tracing::info!(http_relay=?http_relay.local_link_url().as_str(), "Running http relay in Testnet mode");
+        tracing::info!(relay_address=?pkarr_relay.relay_address(), bootstrap=?pkarr_relay.resolver_address(),"Running pkarr relay in Testnet mode");
 
         unsafe {
             Homeserver::builder()
