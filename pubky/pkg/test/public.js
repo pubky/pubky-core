@@ -2,14 +2,14 @@ import test from 'tape'
 
 import { Client, Keypair, PublicKey } from '../index.cjs'
 
-const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
+const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
 test.skip('public: put/get', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, Homeserver);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY);
 
   const publicKey = keypair.publicKey();
 
@@ -47,7 +47,7 @@ test.skip("not found", async (t) => {
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, Homeserver);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY);
 
   const publicKey = keypair.publicKey();
 
@@ -64,7 +64,7 @@ test.skip("unauthorized", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -91,7 +91,7 @@ test.skip("forbidden", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -117,7 +117,7 @@ test.skip("list", async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
 
 
@@ -248,7 +248,7 @@ test.skip('list shallow', async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   let urls = [
     `pubky://${pubky}/pub/a.com/a.txt`,

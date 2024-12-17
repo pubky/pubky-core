@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{SocketAddr, TcpListener},
     sync::{Arc, Mutex},
 };
 
@@ -16,18 +16,45 @@ use axum::{
 use axum_server::Handle;
 use tokio::sync::Notify;
 
-use futures_util::stream::StreamExt;
+use futures_util::{stream::StreamExt, TryFutureExt};
 use url::Url;
 
 // Shared state to store GET requests and their notifications
 type SharedState = Arc<Mutex<HashMap<String, (Vec<u8>, Arc<Notify>)>>>;
 
+#[derive(Debug, Default)]
+pub struct Config {
+    pub http_port: u16,
+}
+
+#[derive(Debug, Default)]
+pub struct HttpRelayBuilder(Config);
+
+impl HttpRelayBuilder {
+    /// Configure the port used for HTTP server.
+    pub fn http_port(mut self, port: u16) -> Self {
+        self.0.http_port = port;
+
+        self
+    }
+
+    pub async fn build(self) -> Result<HttpRelay> {
+        HttpRelay::start(self.0).await
+    }
+}
+
 pub struct HttpRelay {
     pub(crate) http_handle: Handle,
+
+    http_address: SocketAddr,
 }
 
 impl HttpRelay {
-    pub async fn start() -> Result<Self> {
+    pub fn builder() -> HttpRelayBuilder {
+        HttpRelayBuilder::default()
+    }
+
+    pub async fn start(config: Config) -> Result<Self> {
         let shared_state: SharedState = Arc::new(Mutex::new(HashMap::new()));
 
         let app = Router::new()
@@ -36,36 +63,35 @@ impl HttpRelay {
 
         let http_handle = Handle::new();
 
-        let cloned = http_handle.clone();
-        tokio::spawn(async {
-            axum_server::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-                .handle(cloned)
-                .serve(app.into_make_service())
-                .await
-                .unwrap();
-        });
+        let http_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
+        let http_address = http_listener.local_addr()?;
 
-        Ok(Self { http_handle })
+        tokio::spawn(
+            axum_server::from_tcp(http_listener)
+                .handle(http_handle.clone())
+                .serve(app.into_make_service())
+                .map_err(|error| tracing::error!(?error, "HttpRelay http server error")),
+        );
+
+        Ok(Self {
+            http_handle,
+            http_address,
+        })
     }
 
-    pub async fn http_address(&self) -> Result<SocketAddr> {
-        match self.http_handle.listening().await {
-            Some(addr) => Ok(addr),
-            None => Err(anyhow::anyhow!("Failed to bind to http port")),
-        }
+    pub fn http_address(&self) -> SocketAddr {
+        self.http_address
     }
 
     /// Returns the localhost Url of this server.
-    pub async fn local_url(&self) -> Result<Url> {
-        match self.http_handle.listening().await {
-            Some(addr) => Ok(Url::parse(&format!("http://localhost:{}", addr.port()))?),
-            None => Err(anyhow::anyhow!("Failed to bind to http port")),
-        }
+    pub fn local_url(&self) -> Url {
+        Url::parse(&format!("http://localhost:{}", self.http_address.port()))
+            .expect("local_url should be formatted fine")
     }
 
     /// Returns the localhost URL of Link endpoints
-    pub async fn local_link_url(&self) -> Result<Url> {
-        let mut url = self.local_url().await?;
+    pub fn local_link_url(&self) -> Url {
+        let mut url = self.local_url();
 
         let mut segments = url
             .path_segments_mut()
@@ -75,7 +101,7 @@ impl HttpRelay {
 
         drop(segments);
 
-        Ok(url)
+        url
     }
 
     pub fn shutdown(&self) {

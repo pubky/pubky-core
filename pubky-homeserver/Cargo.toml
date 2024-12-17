@@ -32,3 +32,4 @@ tower = "0.5.1"
 page_size = "0.6.0"
 
 pkarr-relay = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr-relay" }
+http-relay = { version = "0.1.0", path = "../http-relay" }

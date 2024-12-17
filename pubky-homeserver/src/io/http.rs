@@ -20,6 +20,9 @@ pub struct HttpServers {
     pub(crate) http_handle: Handle,
     /// Handle for the HTTPS server using Pkarr TLS
     pub(crate) https_handle: Handle,
+
+    http_address: SocketAddr,
+    https_address: SocketAddr,
 }
 
 impl HttpServers {
@@ -27,6 +30,7 @@ impl HttpServers {
         let http_listener =
         // TODO: add config to http port
             TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 0)))?;
+        let http_address = http_listener.local_addr()?;
 
         let http_handle = Handle::new();
 
@@ -43,6 +47,7 @@ impl HttpServers {
 
         let https_listener =
             TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], core.config().port)))?;
+        let https_address = https_listener.local_addr()?;
 
         let https_handle = Handle::new();
 
@@ -63,21 +68,18 @@ impl HttpServers {
         Ok(Self {
             http_handle,
             https_handle,
+
+            http_address,
+            https_address,
         })
     }
 
-    pub async fn http_address(&self) -> Result<SocketAddr> {
-        match self.http_handle.listening().await {
-            Some(addr) => Ok(addr),
-            None => Err(anyhow::anyhow!("Failed to bind to http port")),
-        }
+    pub fn http_address(&self) -> SocketAddr {
+        self.http_address
     }
 
-    pub async fn https_address(&self) -> Result<SocketAddr> {
-        match self.https_handle.listening().await {
-            Some(addr) => Ok(addr),
-            None => Err(anyhow::anyhow!("Failed to bind to https port")),
-        }
+    pub fn https_address(&self) -> SocketAddr {
+        self.https_address
     }
 
     /// Shutdown all HTTP servers.

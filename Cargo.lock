@@ -1247,6 +1247,7 @@ dependencies = [
  "axum-server",
  "futures-util",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -1944,7 +1945,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pkarr"
 version = "3.0.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#aac62e74f3ab5d94b1a52cd00ff355d8d50e29e1"
+source = "git+https://github.com/Pubky/pkarr?branch=v3#492639796bac0fedf42de7bbd3c069506b77fd19"
 dependencies = [
  "base32",
  "byteorder",
@@ -1982,7 +1983,7 @@ dependencies = [
 [[package]]
 name = "pkarr-relay"
 version = "0.1.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#aac62e74f3ab5d94b1a52cd00ff355d8d50e29e1"
+source = "git+https://github.com/Pubky/pkarr?branch=v3#492639796bac0fedf42de7bbd3c069506b77fd19"
 dependencies = [
  "anyhow",
  "axum",
@@ -2147,6 +2148,7 @@ dependencies = [
  "futures-util",
  "heed 0.21.0",
  "hex",
+ "http-relay",
  "httpdate",
  "page_size",
  "pkarr",
