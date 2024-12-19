@@ -29,10 +29,11 @@ impl DB {
     pub fn get_session_bytes(
         &mut self,
         cookies: Cookies,
-        _public_key: &PublicKey,
+        public_key: &PublicKey,
     ) -> anyhow::Result<Option<Vec<u8>>> {
-        // TODO: support coookie for key in the path
-        if let Some(cookie) = cookies.get("session_id") {
+        if let Some(cookie) =
+            cookies.get(&public_key.to_string().chars().take(8).collect::<String>())
+        {
             let rtxn = self.env.read_txn()?;
 
             let session = self
@@ -52,10 +53,13 @@ impl DB {
     pub fn delete_session(
         &mut self,
         cookies: Cookies,
-        _public_key: &PublicKey,
+        public_key: &PublicKey,
     ) -> anyhow::Result<bool> {
-        // TODO: support coookie for key in the path
-        if let Some(cookie) = cookies.get("session_id") {
+        // TODO: Set expired cookie to delete the cookie on client side.
+
+        if let Some(cookie) =
+            cookies.get(&public_key.to_string().chars().take(8).collect::<String>())
+        {
             let mut wtxn = self.env.write_txn()?;
 
             let deleted = self.tables.sessions.delete(&mut wtxn, cookie.value())?;

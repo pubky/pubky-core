@@ -12,11 +12,15 @@ pub struct CookieJar {
 impl CookieJar {
     pub(crate) fn store_session_after_signup(&self, response: &Response, pubky: &PublicKey) {
         for (header_name, header_value) in response.headers() {
-            if header_name == "set-cookie" && header_value.as_ref().starts_with(b"session_id=") {
+            let cookie_name = &pubky.to_string().chars().take(8).collect::<String>();
+
+            if header_name == "set-cookie"
+                && header_value.as_ref().starts_with(cookie_name.as_bytes())
+            {
                 if let Ok(Ok(cookie)) =
                     std::str::from_utf8(header_value.as_bytes()).map(cookie::Cookie::parse)
                 {
-                    if cookie.name() == "session_id" {
+                    if cookie.name() == cookie_name {
                         let domain = format!("_pubky.{pubky}");
                         tracing::debug!(?cookie, "Storing coookie after signup");
 
@@ -62,13 +66,17 @@ impl CookieStore for CookieJar {
             .collect::<Vec<_>>()
             .join("; ");
 
+        // TODO: should we return if empty or just push?
         if s.is_empty() {
-            return self
-                .pubky_sessions
-                .read()
-                .unwrap()
-                .get(url.host_str().unwrap())
-                .map(|secret| HeaderValue::try_from(format!("session_id={secret}")).unwrap());
+            let host = url.host_str().unwrap_or("");
+
+            if let Ok(public_key) = PublicKey::try_from(host) {
+                let cookie_name = public_key.to_string().chars().take(8).collect::<String>();
+
+                return self.pubky_sessions.read().unwrap().get(host).map(|secret| {
+                    HeaderValue::try_from(format!("{cookie_name}={secret}")).unwrap()
+                });
+            }
         }
 
         HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
