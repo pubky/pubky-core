@@ -27,7 +27,7 @@ impl Client {
 
         let request_init = request_init.unwrap_or_default();
 
-        if let Some(pkarr_host) = self.prepare_request(&mut url).await {
+        if let Some(pubky_host) = self.prepare_request(&mut url).await {
             let headers = request_init.get_headers();
 
             let headers = if headers.is_null() || headers.is_undefined() {
@@ -36,7 +36,7 @@ impl Client {
                 Headers::from(headers)
             };
 
-            headers.append("pkarr-host", &pkarr_host)?;
+            headers.append("pubky-host", &pubky_host)?;
 
             request_init.set_headers(&headers.into());
         }
@@ -80,10 +80,10 @@ impl Client {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
 
-        if let Some(pkarr_host) = self.prepare_request(&mut url).await {
+        if let Some(pubky_host) = self.prepare_request(&mut url).await {
             self.http
                 .request(method, url.clone())
-                .header::<&str, &str>("pkarr-host", &pkarr_host)
+                .header::<&str, &str>("pubky-host", &pubky_host)
                 .fetch_credentials_include()
         } else {
             self.http
@@ -94,8 +94,10 @@ impl Client {
 
     /// - Transforms pubky:// url to http(s):// urls
     /// - Resolves a clearnet host to call with fetch
-    /// - Returns the `pkarr-host` value if available
+    /// - Returns the `pubky-host` value if available
     pub(super) async fn prepare_request(&self, url: &mut Url) -> Option<String> {
+        let host = url.host_str().unwrap_or("").to_string();
+
         if url.scheme() == "pubky" {
             *url = Url::parse(&format!("https{}", &url.as_str()[5..]))
                 .expect("couldn't replace pubky:// with https://");
@@ -103,23 +105,25 @@ impl Client {
                 .expect("couldn't map pubk://<pubky> to https://_pubky.<pubky>");
         }
 
-        // TODO: move at the begining of the method.
-        let host = url.host_str().unwrap_or("").to_string();
-
-        let mut pkarr_host = None;
+        let mut pubky_host = None;
 
         if PublicKey::try_from(host.clone()).is_ok() {
-            self.transform_url(url, &host).await;
+            self.transform_url(url).await;
 
-            pkarr_host = Some(host);
+            pubky_host = Some(host);
 
             log::debug!("Transformed URL to: {}", url.as_str());
         };
+        log::debug!("Prepare request");
 
-        pkarr_host
+        pubky_host
     }
 
-    pub async fn transform_url(&self, url: &mut Url, qname: &str) {
+    pub async fn transform_url(&self, url: &mut Url) {
+        let clone = url.clone();
+        let qname = clone.host_str().unwrap_or("");
+        log::debug!("Prepare request {}, {}", url.as_str(), qname);
+
         let mut stream = self.pkarr.resolve_https_endpoints(qname);
 
         let mut so_far: Option<Endpoint> = None;
