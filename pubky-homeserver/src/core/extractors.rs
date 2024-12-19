@@ -13,11 +13,17 @@ use pkarr::PublicKey;
 use crate::core::error::{Error, Result};
 
 #[derive(Debug)]
-pub struct Pubky(PublicKey);
+pub enum Pubky {
+    Host(PublicKey),
+    PubkyHost(PublicKey),
+}
 
 impl Pubky {
     pub fn public_key(&self) -> &PublicKey {
-        &self.0
+        match self {
+            Pubky::Host(p) => p,
+            Pubky::PubkyHost(p) => p,
+        }
     }
 }
 
@@ -29,34 +35,23 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let headers_to_check = ["host", "pkarr-host"];
+        let headers_to_check = ["host", "pubky-host"];
 
         for header in headers_to_check {
-            if let Some(Ok(pkarr_host)) = parts.headers.get(header).map(|h| h.to_str()) {
-                if let Ok(public_key) = PublicKey::try_from(pkarr_host) {
-                    tracing::debug!(?pkarr_host);
+            if let Some(Ok(pubky_host)) = parts.headers.get(header).map(|h| h.to_str()) {
+                if let Ok(public_key) = PublicKey::try_from(pubky_host) {
+                    tracing::debug!(?pubky_host);
 
-                    return Ok(Pubky(public_key));
+                    if header == "host" {
+                        return Ok(Pubky::Host(public_key));
+                    }
+
+                    return Ok(Pubky::PubkyHost(public_key));
                 }
             }
         }
 
-        // TODO: return an error and remove all param based routes
-
-        let params: Path<HashMap<String, String>> =
-            parts.extract().await.map_err(IntoResponse::into_response)?;
-
-        let pubky_id = params
-            .get("pubky")
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "pubky param missing").into_response())?;
-
-        let public_key = PublicKey::try_from(pubky_id.to_string())
-            .map_err(Error::try_from)
-            .map_err(IntoResponse::into_response)?;
-
-        // TODO: return 404 if the user doesn't exist, but exclude signups.
-
-        Ok(Pubky(public_key))
+        Err(Error::new(StatusCode::NOT_FOUND, "Pubky host not found".into()).into_response())
     }
 }
 
