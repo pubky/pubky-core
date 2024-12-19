@@ -219,14 +219,13 @@ mod tests {
         let cookie = server.create_user(&public_key).unwrap();
         let cookie = cookie.to_string();
 
-        let url = format!("/{public_key}/pub/foo");
-
         let data = vec![1_u8, 2, 3, 4, 5];
 
         let response = server
             .call(
                 Request::builder()
-                    .uri(&url)
+                    .header("host", public_key.to_string())
+                    .uri("/pub/foo")
                     .method(Method::PUT)
                     .header(header::COOKIE, cookie)
                     .body(Body::from(data))
@@ -240,7 +239,8 @@ mod tests {
         let response = server
             .call(
                 Request::builder()
-                    .uri(&url)
+                    .header("host", public_key.to_string())
+                    .uri("/pub/foo")
                     .method(Method::GET)
                     .body(Body::empty())
                     .unwrap(),
@@ -251,7 +251,8 @@ mod tests {
         let response = server
             .call(
                 Request::builder()
-                    .uri(&url)
+                    .header("host", public_key.to_string())
+                    .uri("/pub/foo")
                     .method(Method::GET)
                     .header(
                         header::IF_MODIFIED_SINCE,
@@ -274,14 +275,13 @@ mod tests {
         let cookie = server.create_user(&public_key).unwrap();
         let cookie = cookie.to_string();
 
-        let url = format!("/{public_key}/pub/foo");
-
         let data = vec![1_u8, 2, 3, 4, 5];
 
         let response = server
             .call(
                 Request::builder()
-                    .uri(&url)
+                    .uri("/pub/foo")
+                    .header("host", public_key.to_string())
                     .method(Method::PUT)
                     .header(header::COOKIE, cookie)
                     .body(Body::from(data))
@@ -295,7 +295,8 @@ mod tests {
         let response = server
             .call(
                 Request::builder()
-                    .uri(&url)
+                    .uri("/pub/foo")
+                    .header("host", public_key.to_string())
                     .method(Method::GET)
                     .body(Body::empty())
                     .unwrap(),
@@ -306,7 +307,8 @@ mod tests {
         let response = server
             .call(
                 Request::builder()
-                    .uri(&url)
+                    .uri("/pub/foo")
+                    .header("host", public_key.to_string())
                     .method(Method::GET)
                     .header(
                         header::IF_NONE_MATCH,

@@ -32,17 +32,6 @@ fn base(state: AppState) -> Router {
         .route("/pub/*path", head(public::read::head))
         .route("/pub/*path", put(public::write::put))
         .route("/pub/*path", delete(public::write::delete))
-        // Pubky in the path.
-        //
-        // Important to support web browsers until they support Pkarr domains natively.
-        // - Session routes
-        .route("/:pubky/session", get(auth::session))
-        .route("/:pubky/session", delete(auth::signout))
-        // - Data routes
-        .route("/:pubky/*path", get(public::read::get))
-        .route("/:pubky/*path", head(public::read::head))
-        .route("/:pubky/*path", put(public::write::put))
-        .route("/:pubky/*path", delete(public::write::delete))
         // Events
         .route("/events/", get(feed::feed))
         .layer(CookieManagerLayer::new())
