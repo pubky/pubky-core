@@ -677,9 +677,12 @@ mod tests {
             );
         }
 
-        let get = client.get(url).send().await.unwrap().bytes().await.unwrap();
+        let response = client.get(url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
 
-        assert_eq!(get.as_ref(), &[0]);
+        let body = response.bytes().await.unwrap();
+
+        assert_eq!(body.as_ref(), &[0]);
     }
 
     #[tokio::test]

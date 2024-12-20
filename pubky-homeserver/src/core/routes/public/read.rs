@@ -11,20 +11,16 @@ use std::str::FromStr;
 use crate::core::{
     database::tables::entries::Entry,
     error::{Error, Result},
-    extractors::{EntryPath, ListQueryParams, Pubky},
+    extractors::{EntryPath, ListQueryParams, PubkyHost},
     AppState,
 };
 
-use super::verify;
-
 pub async fn head(
     State(state): State<AppState>,
-    pubky: Pubky,
+    pubky: PubkyHost,
     headers: HeaderMap,
     path: EntryPath,
 ) -> Result<impl IntoResponse> {
-    verify(path.as_str())?;
-
     let rtxn = state.db.env.read_txn()?;
 
     get_entry(
@@ -38,7 +34,7 @@ pub async fn head(
 
 pub async fn list_root(
     State(state): State<AppState>,
-    pubky: Pubky,
+    pubky: PubkyHost,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     list(state, pubky.public_key(), "pub/", params)
@@ -47,12 +43,10 @@ pub async fn list_root(
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
-    pubky: Pubky,
+    pubky: PubkyHost,
     path: EntryPath,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
-    verify(&path)?;
-
     let public_key = pubky.public_key().clone();
 
     if path.as_str().ends_with('/') {
@@ -215,9 +209,9 @@ mod tests {
     async fn if_last_modified() {
         let mut server = HomeserverCore::test().unwrap();
 
-        let public_key = Keypair::random().public_key();
-        let cookie = server.create_user(&public_key).unwrap();
-        let cookie = cookie.to_string();
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let cookie = server.create_root_user(&keypair).await.unwrap().to_string();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -271,9 +265,10 @@ mod tests {
     async fn if_none_match() {
         let mut server = HomeserverCore::test().unwrap();
 
-        let public_key = Keypair::random().public_key();
-        let cookie = server.create_user(&public_key).unwrap();
-        let cookie = cookie.to_string();
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+
+        let cookie = server.create_root_user(&keypair).await.unwrap().to_string();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 

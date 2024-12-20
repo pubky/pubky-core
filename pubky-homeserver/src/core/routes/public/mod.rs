@@ -1,52 +1,21 @@
-use axum::http::StatusCode;
-use pkarr::PublicKey;
-use tower_cookies::Cookies;
-
-use crate::core::{
-    error::{Error, Result},
-    AppState,
+use axum::{
+    extract::DefaultBodyLimit,
+    routing::{delete, get, head, put},
+    Router,
 };
+
+use crate::core::{layers::authz::AuthorizationLayer, AppState};
 
 pub mod read;
 pub mod write;
 
-/// Authorize write (PUT or DELETE) for Public paths.
-fn authorize(
-    state: &mut AppState,
-    cookies: Cookies,
-    public_key: &PublicKey,
-    path: &str,
-) -> Result<()> {
-    // TODO: can we move this logic to the extractor or a layer
-    // to perform this validation?
-    let session = state
-        .db
-        .get_session(cookies, public_key)?
-        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
-
-    if session.pubky() == public_key
-        && session.capabilities().iter().any(|cap| {
-            path.starts_with(&cap.scope[1..])
-                && cap
-                    .actions
-                    .contains(&pubky_common::capabilities::Action::Write)
-        })
-    {
-        return Ok(());
-    }
-
-    Err(Error::with_status(StatusCode::FORBIDDEN))
-}
-
-fn verify(path: &str) -> Result<()> {
-    if !path.starts_with("pub/") {
-        return Err(Error::new(
-            StatusCode::FORBIDDEN,
-            "Writing to directories other than '/pub/' is forbidden".into(),
-        ));
-    }
-
-    // TODO: should we forbid paths ending with `/`?
-
-    Ok(())
+pub fn data_store_router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/pub/", get(read::list_root))
+        .route("/pub/*path", get(read::get))
+        .route("/pub/*path", head(read::head))
+        .route("/pub/*path", put(write::put))
+        .route("/pub/*path", delete(write::delete))
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        .layer(AuthorizationLayer::new(state.clone()))
 }

@@ -66,7 +66,6 @@ impl CookieStore for CookieJar {
             .collect::<Vec<_>>()
             .join("; ");
 
-        // TODO: should we return if empty or just push?
         if s.is_empty() {
             let host = url.host_str().unwrap_or("");
 

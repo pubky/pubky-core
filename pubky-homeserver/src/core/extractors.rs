@@ -10,48 +10,38 @@ use axum::{
 
 use pkarr::PublicKey;
 
-use crate::core::error::{Error, Result};
+use crate::core::error::Result;
 
-#[derive(Debug)]
-pub enum Pubky {
-    Host(PublicKey),
-    PubkyHost(PublicKey),
-}
+#[derive(Debug, Clone)]
+pub struct PubkyHost(pub(crate) PublicKey);
 
-impl Pubky {
+impl PubkyHost {
     pub fn public_key(&self) -> &PublicKey {
-        match self {
-            Pubky::Host(p) => p,
-            Pubky::PubkyHost(p) => p,
-        }
+        &self.0
     }
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for Pubky
+impl<S> FromRequestParts<S> for PubkyHost
 where
-    S: Send + Sync,
+    S: Sync + Send,
 {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let headers_to_check = ["host", "pubky-host"];
+        let pubky_host = parts
+            .extensions
+            .get::<PubkyHost>()
+            .cloned()
+            .ok_or((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Can't extract PubkyHost. Is `PubkyHostLayer` enabled?",
+            ))
+            .map_err(|e| e.into_response())?;
 
-        for header in headers_to_check {
-            if let Some(Ok(pubky_host)) = parts.headers.get(header).map(|h| h.to_str()) {
-                if let Ok(public_key) = PublicKey::try_from(pubky_host) {
-                    tracing::debug!(?pubky_host);
+        tracing::debug!(?pubky_host);
 
-                    if header == "host" {
-                        return Ok(Pubky::Host(public_key));
-                    }
-
-                    return Ok(Pubky::PubkyHost(public_key));
-                }
-            }
-        }
-
-        Err(Error::new(StatusCode::NOT_FOUND, "Pubky host not found".into()).into_response())
+        Ok(pubky_host)
     }
 }
 

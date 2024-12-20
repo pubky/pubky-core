@@ -1,20 +1,26 @@
 use anyhow::Result;
-use axum::{extract::Request, response::Response, Router};
+use axum::{
+    body::Body,
+    extract::Request,
+    http::{header, Method},
+    response::Response,
+    Router,
+};
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{
-    auth::AuthVerifier, capabilities::Capability, crypto::random_bytes, session::Session,
-    timestamp::Timestamp,
+    auth::{AuthToken, AuthVerifier},
+    capabilities::Capability,
 };
 use tower::ServiceExt;
-use tower_cookies::{cookie::SameSite, Cookie};
 
 mod config;
 mod database;
 mod error;
 mod extractors;
+mod layers;
 mod routes;
 
-use database::{tables::users::User, DB};
+use database::DB;
 
 pub use config::Config;
 
@@ -28,7 +34,6 @@ pub(crate) struct AppState {
 /// A side-effect-free Core of the [Homeserver].
 pub struct HomeserverCore {
     config: Config,
-    pub(crate) state: AppState,
     pub(crate) router: Router,
 }
 
@@ -49,7 +54,6 @@ impl HomeserverCore {
         let router = routes::create_app(state.clone());
 
         Ok(Self {
-            state,
             router,
             config: config.clone(),
         })
@@ -79,42 +83,28 @@ impl HomeserverCore {
 
     // === Public Methods ===
 
-    // TODO: move this logic to a common place.
-    pub fn create_user(&mut self, public_key: &PublicKey) -> Result<Cookie> {
-        let mut wtxn = self.state.db.env.write_txn()?;
+    pub async fn create_root_user(&mut self, keypair: &Keypair) -> Result<String> {
+        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
 
-        self.state.db.tables.users.put(
-            &mut wtxn,
-            public_key,
-            &User {
-                created_at: Timestamp::now().as_u64(),
-            },
-        )?;
+        let response = self
+            .call(
+                Request::builder()
+                    .uri("/signup")
+                    .header("host", keypair.public_key().to_string())
+                    .method(Method::POST)
+                    .body(Body::from(auth_token.serialize()))
+                    .unwrap(),
+            )
+            .await?;
 
-        let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
+        let header_value = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|h| h.to_str().ok())
+            .expect("should return a set-cookie header")
+            .to_string();
 
-        let session = Session::new(public_key, &[Capability::root()], None).serialize();
-
-        self.state
-            .db
-            .tables
-            .sessions
-            .put(&mut wtxn, &session_secret, &session)?;
-
-        wtxn.commit()?;
-
-        let mut cookie = Cookie::new(
-            public_key.to_string().chars().take(8).collect::<String>(),
-            session_secret,
-        );
-
-        cookie.set_path("/");
-
-        cookie.set_secure(true);
-        cookie.set_same_site(SameSite::None);
-        cookie.set_http_only(true);
-
-        Ok(cookie)
+        Ok(header_value)
     }
 
     pub async fn call(&self, request: Request) -> Result<Response> {
