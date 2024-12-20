@@ -103,10 +103,7 @@ pub async fn signin(
 
     wtxn.commit()?;
 
-    let mut cookie = Cookie::new(
-        public_key.to_string().chars().take(8).collect::<String>(),
-        session_secret,
-    );
+    let mut cookie = Cookie::new(public_key.to_string(), session_secret);
 
     cookie.set_path("/");
 

@@ -146,13 +146,9 @@ fn authorize(
     Err(Error::with_status(StatusCode::FORBIDDEN))
 }
 
-fn cookie_name(public_key: &PublicKey) -> String {
-    public_key.to_string().chars().take(8).collect::<String>()
-}
-
 pub fn session_secret_from_cookies(cookies: Cookies, public_key: &PublicKey) -> Option<String> {
     cookies
-        .get(&cookie_name(public_key))
+        .get(&public_key.to_string())
         .map(|c| c.value().to_string())
 }
 
@@ -162,7 +158,7 @@ fn session_secret_from_headers(headers: &HeaderMap, public_key: &PublicKey) -> O
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|h| h.to_str().ok())
-        .find(|h| h.starts_with(&cookie_name(public_key)))
+        .find(|h| h.starts_with(&public_key.to_string()))
         .and_then(|h| {
             h.split(';')
                 .next()
