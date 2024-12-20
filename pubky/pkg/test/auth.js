@@ -7,7 +7,7 @@ const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
 // TODO: test multiple users in wasm
   
-test('auth', async (t) => {
+test('Auth: basic', async (t) => {
   const client = Client.testnet();
 
   const keypair = Keypair.random()
@@ -33,7 +33,34 @@ test('auth', async (t) => {
   }
 })
 
-test("3rd party signin", async (t) => {
+test("Auth: multi-user (cookies)", async (t) => {
+  const client = Client.testnet();
+
+  const alice = Keypair.random()
+  const bob = Keypair.random()
+
+  await client.signup(alice, HOMESERVER_PUBLICKEY )
+
+  let session = await client.session(alice.publicKey())
+  t.ok(session, "signup")
+
+  {
+    await client.signup(bob, HOMESERVER_PUBLICKEY )
+
+    const session = await client.session(bob.publicKey())
+    t.ok(session, "signup")
+  }
+
+  session = await client.session(alice.publicKey());
+  t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in")
+
+  await client.signout(bob.publicKey());
+
+  session = await client.session(alice.publicKey());
+  t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in after signout of bob")
+})
+
+test("Auth: 3rd party signin", async (t) => {
   let keypair = Keypair.random();
   let pubky = keypair.publicKey().z32();
 
