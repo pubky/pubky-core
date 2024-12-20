@@ -12,7 +12,7 @@ pub struct CookieJar {
 impl CookieJar {
     pub(crate) fn store_session_after_signup(&self, response: &Response, pubky: &PublicKey) {
         for (header_name, header_value) in response.headers() {
-            let cookie_name = &pubky.to_string().chars().take(8).collect::<String>();
+            let cookie_name = &pubky.to_string();
 
             if header_name == "set-cookie"
                 && header_value.as_ref().starts_with(cookie_name.as_bytes())
@@ -70,7 +70,7 @@ impl CookieStore for CookieJar {
             let host = url.host_str().unwrap_or("");
 
             if let Ok(public_key) = PublicKey::try_from(host) {
-                let cookie_name = public_key.to_string().chars().take(8).collect::<String>();
+                let cookie_name = public_key.to_string();
 
                 return self.pubky_sessions.read().unwrap().get(host).map(|secret| {
                     HeaderValue::try_from(format!("{cookie_name}={secret}")).unwrap()
