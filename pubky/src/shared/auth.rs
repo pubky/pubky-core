@@ -14,7 +14,7 @@ use pubky_common::{
 
 use anyhow::Result;
 
-use crate::Client;
+use crate::{handle_http_error, Client};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -31,8 +31,9 @@ impl Client {
             .await
             .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        handle_http_error!(response);
 
         self.publish_homeserver(keypair, &homeserver.to_string())
             .await?;
@@ -52,30 +53,32 @@ impl Client {
     /// Returns None  if not signed in, or [reqwest::Error]
     /// if the response has any other `>=404` status code.
     pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
-        let res = self
+        let response = self
             .inner_request(Method::GET, format!("pubky://{}/session", pubky))
             .await
             .send()
             .await?;
 
-        if res.status() == StatusCode::NOT_FOUND {
+        if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
 
-        res.error_for_status_ref()?;
+        handle_http_error!(response);
 
-        let bytes = res.bytes().await?;
+        let bytes = response.bytes().await?;
 
         Ok(Some(Session::deserialize(&bytes)?))
     }
 
     /// Signout from a homeserver.
     pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        self.inner_request(Method::DELETE, format!("pubky://{}/session", pubky))
+        let response = self
+            .inner_request(Method::DELETE, format!("pubky://{}/session", pubky))
             .await
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        handle_http_error!(response);
 
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store.delete_session_after_signout(pubky);
@@ -144,12 +147,14 @@ impl Client {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        self.inner_request(Method::POST, callback_url)
+        let response = self
+            .inner_request(Method::POST, callback_url)
             .await
             .body(encrypted_token)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        handle_http_error!(response);
 
         Ok(())
     }
@@ -160,8 +165,9 @@ impl Client {
             .await
             .body(token.serialize())
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        handle_http_error!(response);
 
         let bytes = response.bytes().await?;
 

@@ -2,7 +2,7 @@ use reqwest::{IntoUrl, Method};
 
 use anyhow::Result;
 
-use crate::Client;
+use crate::{handle_http_error, Client};
 
 /// Helper struct to edit Pubky homeserver's list API options before sending them.
 #[derive(Debug)]
@@ -99,7 +99,7 @@ impl<'a> ListBuilder<'a> {
             .send()
             .await?;
 
-        response.error_for_status_ref()?;
+        handle_http_error!(response);
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;
