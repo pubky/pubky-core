@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::State,
+    extract::{OriginalUri, State},
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
 };
@@ -11,7 +11,7 @@ use std::str::FromStr;
 use crate::core::{
     database::tables::entries::Entry,
     error::{Error, Result},
-    extractors::{EntryPath, ListQueryParams, PubkyHost},
+    extractors::{ListQueryParams, PubkyHost},
     AppState,
 };
 
@@ -19,7 +19,7 @@ pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
     headers: HeaderMap,
-    path: EntryPath,
+    path: OriginalUri,
 ) -> Result<impl IntoResponse> {
     let rtxn = state.db.env.read_txn()?;
 
@@ -27,29 +27,22 @@ pub async fn head(
         headers,
         state
             .db
-            .get_entry(&rtxn, pubky.public_key(), path.as_str())?,
+            .get_entry(&rtxn, pubky.public_key(), path.0.path())?,
         None,
     )
-}
-
-pub async fn list_root(
-    State(state): State<AppState>,
-    pubky: PubkyHost,
-    params: ListQueryParams,
-) -> Result<impl IntoResponse> {
-    list(state, pubky.public_key(), "pub/", params)
 }
 
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
     pubky: PubkyHost,
-    path: EntryPath,
+    path: OriginalUri,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
+    let path = path.0.path().to_string();
 
-    if path.as_str().ends_with('/') {
+    if path.ends_with('/') {
         return list(state, &public_key, &path, params);
     }
 
@@ -91,7 +84,7 @@ pub fn list(
 ) -> Result<Response<Body>> {
     let txn = state.db.env.read_txn()?;
 
-    let path = format!("{public_key}/{path}");
+    let path = format!("{public_key}{path}");
 
     if !state.db.contains_directory(&txn, &path)? {
         return Err(Error::new(
