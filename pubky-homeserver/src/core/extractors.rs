@@ -1,8 +1,8 @@
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use axum::{
     async_trait,
-    extract::{FromRequestParts, Path, Query},
+    extract::{FromRequestParts, Query},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
     RequestPartsExt,
@@ -39,57 +39,9 @@ where
             ))
             .map_err(|e| e.into_response())?;
 
-        tracing::debug!(?pubky_host);
+        tracing::debug!(pubky_host = ?pubky_host.public_key().to_string());
 
         Ok(pubky_host)
-    }
-}
-
-#[derive(Debug)]
-pub struct EntryPath(pub(crate) String);
-
-impl EntryPath {
-    pub fn as_str(&self) -> &str {
-        self.as_ref()
-    }
-}
-
-impl std::fmt::Display for EntryPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Deref for EntryPath {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[async_trait]
-impl<S> FromRequestParts<S> for EntryPath
-where
-    S: Send + Sync,
-{
-    type Rejection = Response;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let params: Path<HashMap<String, String>> =
-            parts.extract().await.map_err(IntoResponse::into_response)?;
-
-        // TODO: enforce path limits like no trailing '/'
-
-        let path = params
-            .get("path")
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "entry path missing").into_response())?;
-
-        if parts.uri.to_string().starts_with("/pub/") {
-            Ok(EntryPath(format!("pub/{}", path)))
-        } else {
-            Ok(EntryPath(path.to_string()))
-        }
     }
 }
 

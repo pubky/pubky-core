@@ -69,11 +69,6 @@ where
         Box::pin(async move {
             let path = req.uri().path();
 
-            // Verify the path
-            if let Err(e) = verify(path) {
-                return Ok(e.into_response());
-            }
-
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
@@ -101,17 +96,6 @@ where
     }
 }
 
-/// Verifies the path.
-fn verify(path: &str) -> Result<()> {
-    if !path.starts_with("/pub/") {
-        return Err(Error::new(
-            StatusCode::FORBIDDEN,
-            "Writing to directories other than '/pub/' is forbidden".into(),
-        ));
-    }
-    Ok(())
-}
-
 /// Authorize write (PUT or DELETE) for Public paths.
 fn authorize(
     state: &AppState,
@@ -120,8 +104,18 @@ fn authorize(
     public_key: &PublicKey,
     path: &str,
 ) -> Result<()> {
-    if path.starts_with("/pub/") && method == Method::GET {
+    if path == "/session" {
+        // Checking (or deleting) one's session is ok for everyone
         return Ok(());
+    } else if path.starts_with("/pub/") {
+        if method == Method::GET {
+            return Ok(());
+        }
+    } else {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "Writing to directories other than '/pub/' is forbidden".into(),
+        ));
     }
 
     let session_secret = session_secret_from_headers(headers, public_key)

@@ -28,6 +28,9 @@ pub type EntriesTable = Database<Str, Bytes>;
 pub const ENTRIES_TABLE: &str = "entries";
 
 impl DB {
+    /// Write an entry by an author at a given path.
+    ///
+    /// The path has to start with a forward slash `/`
     pub fn write_entry(
         &mut self,
         public_key: &PublicKey,
@@ -36,10 +39,13 @@ impl DB {
         EntryWriter::new(self, public_key, path)
     }
 
+    /// Delete an entry by an author at a given path.
+    ///
+    /// The path has to start with a forward slash `/`
     pub fn delete_entry(&mut self, public_key: &PublicKey, path: &str) -> anyhow::Result<bool> {
         let mut wtxn = self.env.write_txn()?;
 
-        let key = format!("{public_key}/{path}");
+        let key = format!("{public_key}{path}");
 
         let deleted = if let Some(bytes) = self.tables.entries.get(&wtxn, &key)? {
             let entry = Entry::deserialize(bytes)?;
@@ -62,7 +68,7 @@ impl DB {
             let deleted_entry = self.tables.entries.delete(&mut wtxn, &key)?;
 
             // create DELETE event
-            if path.starts_with("pub/") {
+            if path.starts_with("/pub/") {
                 let url = format!("pubky://{key}");
 
                 let event = Event::delete(&url);
@@ -92,7 +98,7 @@ impl DB {
         public_key: &PublicKey,
         path: &str,
     ) -> anyhow::Result<Option<Entry>> {
-        let key = format!("{public_key}/{path}");
+        let key = format!("{public_key}{path}");
 
         if let Some(bytes) = self.tables.entries.get(txn, &key)? {
             return Ok(Some(Entry::deserialize(bytes)?));
@@ -336,7 +342,7 @@ impl<'db> EntryWriter<'db> {
 
         let buffer = File::create(&buffer_path)?;
 
-        let entry_key = format!("{public_key}/{path}");
+        let entry_key = format!("{public_key}{path}");
 
         Ok(Self {
             db,
@@ -345,7 +351,7 @@ impl<'db> EntryWriter<'db> {
             buffer_path,
             entry_key,
             timestamp,
-            is_public: path.starts_with("pub/"),
+            is_public: path.starts_with("/pub/"),
         })
     }
 
