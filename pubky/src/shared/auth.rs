@@ -346,4 +346,43 @@ mod tests {
             StatusCode::FORBIDDEN
         );
     }
+
+    #[tokio::test]
+    async fn multiple_users() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = Client::test(&testnet);
+
+        let first_keypair = Keypair::random();
+        let second_keypair = Keypair::random();
+
+        client
+            .signup(&first_keypair, &server.public_key())
+            .await
+            .unwrap();
+
+        client
+            .signup(&second_keypair, &server.public_key())
+            .await
+            .unwrap();
+
+        let session = client
+            .session(&first_keypair.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(session.pubky(), &first_keypair.public_key());
+        assert!(session.capabilities().contains(&Capability::root()));
+
+        let session = client
+            .session(&second_keypair.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(session.pubky(), &second_keypair.public_key());
+        assert!(session.capabilities().contains(&Capability::root()));
+    }
 }
