@@ -14,9 +14,8 @@ use crate::core::{
     AppState,
 };
 
-use super::auth;
-
 pub mod read;
+pub mod session;
 pub mod write;
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -28,8 +27,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/pub/*path", put(write::put))
         .route("/pub/*path", delete(write::delete))
         // - Session routes
-        .route("/session", get(auth::session))
-        .route("/session", delete(auth::signout))
+        .route("/session", get(session::session))
+        .route("/session", delete(session::signout))
         // Layers
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))

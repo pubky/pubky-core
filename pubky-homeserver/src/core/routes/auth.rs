@@ -1,6 +1,5 @@
 use axum::{
     extract::{Host, State},
-    http::StatusCode,
     response::IntoResponse,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
@@ -9,13 +8,7 @@ use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
 use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
 
-use crate::core::{
-    database::tables::users::User,
-    error::{Error, Result},
-    extractors::PubkyHost,
-    layers::authz::session_secret_from_cookies,
-    AppState,
-};
+use crate::core::{database::tables::users::User, error::Result, AppState};
 
 pub async fn signup(
     State(state): State<AppState>,
@@ -27,36 +20,6 @@ pub async fn signup(
     // TODO: Verify invitation link.
     // TODO: add errors in case of already axisting user.
     signin(State(state), user_agent, cookies, host, body).await
-}
-
-pub async fn session(
-    State(state): State<AppState>,
-    cookies: Cookies,
-    pubky: PubkyHost,
-) -> Result<impl IntoResponse> {
-    if let Some(secret) = session_secret_from_cookies(cookies, pubky.public_key()) {
-        if let Some(session) = state.db.get_session(&secret)? {
-            // TODO: add content-type
-            return Ok(session.serialize());
-        };
-    }
-
-    Err(Error::with_status(StatusCode::NOT_FOUND))
-}
-
-pub async fn signout(
-    State(mut state): State<AppState>,
-    cookies: Cookies,
-    pubky: PubkyHost,
-) -> Result<impl IntoResponse> {
-    // TODO: Set expired cookie to delete the cookie on client side.
-
-    if let Some(secret) = session_secret_from_cookies(cookies, pubky.public_key()) {
-        state.db.delete_session(&secret)?;
-    }
-
-    // Idempotent Success Response (200 OK)
-    Ok(())
 }
 
 pub async fn signin(

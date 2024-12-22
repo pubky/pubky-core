@@ -1,4 +1,4 @@
-use axum::http::{header, HeaderMap, Method};
+use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
     body::Body,
@@ -79,14 +79,10 @@ where
                 }
             };
 
+            let cookies = req.extensions().get::<Cookies>();
+
             // Authorize the request
-            if let Err(e) = authorize(
-                &state,
-                req.method(),
-                req.headers(),
-                pubky.public_key(),
-                path,
-            ) {
+            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
                 return Ok(e.into_response());
             }
 
@@ -100,7 +96,7 @@ where
 fn authorize(
     state: &AppState,
     method: &Method,
-    headers: &HeaderMap,
+    cookies: Option<&Cookies>,
     public_key: &PublicKey,
     path: &str,
 ) -> Result<()> {
@@ -118,45 +114,34 @@ fn authorize(
         ));
     }
 
-    let session_secret = session_secret_from_headers(headers, public_key)
-        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+    if let Some(cookies) = cookies {
+        let session_secret = session_secret_from_cookies(cookies, public_key)
+            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
-    let session = state
-        .db
-        .get_session(&session_secret)?
-        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+        let session = state
+            .db
+            .get_session(&session_secret)?
+            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
-    if session.pubky() == public_key
-        && session.capabilities().iter().any(|cap| {
-            path.starts_with(&cap.scope)
-                && cap
-                    .actions
-                    .contains(&pubky_common::capabilities::Action::Write)
-        })
-    {
-        return Ok(());
+        if session.pubky() == public_key
+            && session.capabilities().iter().any(|cap| {
+                path.starts_with(&cap.scope)
+                    && cap
+                        .actions
+                        .contains(&pubky_common::capabilities::Action::Write)
+            })
+        {
+            return Ok(());
+        }
+
+        return Err(Error::with_status(StatusCode::FORBIDDEN));
     }
 
-    Err(Error::with_status(StatusCode::FORBIDDEN))
+    Err(Error::with_status(StatusCode::UNAUTHORIZED))
 }
 
-pub fn session_secret_from_cookies(cookies: Cookies, public_key: &PublicKey) -> Option<String> {
+pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {
     cookies
         .get(&public_key.to_string())
         .map(|c| c.value().to_string())
-}
-
-// TODO: unit test this
-fn session_secret_from_headers(headers: &HeaderMap, public_key: &PublicKey) -> Option<String> {
-    headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|h| h.to_str().ok())
-        .find(|h| h.starts_with(&public_key.to_string()))
-        .and_then(|h| {
-            h.split(';')
-                .next()
-                .and_then(|key_value| key_value.split('=').last())
-        })
-        .map(|s| s.to_string())
 }
