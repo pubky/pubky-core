@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{auth::AuthToken, capabilities::Capability, timestamp::Timestamp};
+use crate::{capabilities::Capability, timestamp::Timestamp};
 
 // TODO: add IP address?
 // TODO: use https://crates.io/crates/user-agent-parser to parse the session
@@ -22,12 +22,12 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(token: &AuthToken, user_agent: Option<String>) -> Self {
+    pub fn new(pubky: &PublicKey, capabilities: &[Capability], user_agent: Option<String>) -> Self {
         Self {
             version: 0,
-            pubky: token.pubky().to_owned(),
+            pubky: pubky.clone(),
             created_at: Timestamp::now().as_u64(),
-            capabilities: token.capabilities().to_vec(),
+            capabilities: capabilities.to_vec(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }

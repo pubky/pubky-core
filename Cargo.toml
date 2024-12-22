@@ -3,6 +3,8 @@ members = [
   "pubky",
   "pubky-*", 
 
+  "http-relay",
+
   "examples"
 ]
 
@@ -10,8 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-pkarr = { version = "2.0.0", git = "https://github.com/Pubky/pkarr", branch = "serde", package = "pkarr", features = ["async", "serde"] }
-serde = { version = "^1.0.209", features = ["derive"] }
+pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr" }
 
 [profile.release]
 lto = true
