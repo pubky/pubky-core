@@ -111,10 +111,7 @@ impl Client {
             self.transform_url(url).await;
 
             pubky_host = Some(host);
-
-            log::debug!("Transformed URL to: {}", url.as_str());
         };
-        log::debug!("Prepare request");
 
         pubky_host
     }
@@ -122,19 +119,19 @@ impl Client {
     pub async fn transform_url(&self, url: &mut Url) {
         let clone = url.clone();
         let qname = clone.host_str().unwrap_or("");
-        log::debug!("Prepare request {}, {}", url.as_str(), qname);
+        log::debug!("Prepare request {}", url.as_str());
 
         let mut stream = self.pkarr.resolve_https_endpoints(qname);
 
         let mut so_far: Option<Endpoint> = None;
 
-        // TODO: currently we return the first thing we can see,
-        // in the future we might want to failover to other endpoints
-        while so_far.is_none() {
-            while let Some(endpoint) = stream.next().await {
-                if endpoint.domain() != "." {
-                    so_far = Some(endpoint);
-                }
+        while let Some(endpoint) = stream.next().await {
+            if endpoint.domain() != "." {
+                so_far = Some(endpoint);
+
+                // TODO: currently we return the first thing we can see,
+                // in the future we might want to failover to other endpoints
+                break;
             }
         }
 
@@ -149,8 +146,11 @@ impl Client {
                 .expect("coultdn't use the resolved endpoint's domain");
             url.set_port(Some(e.port()))
                 .expect("coultdn't use the resolved endpoint's port");
+
+            log::debug!("Transformed URL to: {}", url.as_str());
         } else {
             // TODO: didn't find any domain, what to do?
+            log::debug!("Could not resolve Pubky URL to clearnet {}", url.as_str());
         }
     }
 }
