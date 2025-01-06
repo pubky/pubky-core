@@ -83,7 +83,7 @@ impl Config {
     }
 
     /// Test configurations
-    pub fn test(testnet: &pkarr::mainline::Testnet) -> Self {
+    pub fn test(testnet: &mainline::Testnet) -> Self {
         let bootstrap = Some(testnet.bootstrap.to_owned());
         let storage = std::env::temp_dir()
             .join(pubky_common::timestamp::Timestamp::now().to_string())
@@ -188,7 +188,7 @@ fn storage(storage: Option<String>) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::mainline::Testnet;
+    use mainline::Testnet;
 
     use super::*;
 

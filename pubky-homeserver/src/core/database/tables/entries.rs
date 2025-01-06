@@ -451,7 +451,8 @@ impl<'db> std::io::Write for EntryWriter<'db> {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use pkarr::{mainline::Testnet, Keypair};
+    use mainline::Testnet;
+    use pkarr::Keypair;
 
     use crate::Config;
 

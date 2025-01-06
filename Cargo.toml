@@ -12,7 +12,9 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr" }
+pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3-rc1", package = "pkarr" }
+pkarr-relay = { git = "https://github.com/Pubky/pkarr", branch = "v3-rc1", package = "pkarr-relay" }
+mainline = {  git = "https://github.com/Pubky/mainline", branch = "v5-rc1", package = "mainline" }
 
 [profile.release]
 lto = true

@@ -62,7 +62,7 @@ impl HomeserverCore {
     #[cfg(test)]
     /// Test version of [HomeserverCore::new], using a temporary storage.
     pub fn test() -> Result<Self> {
-        let testnet = pkarr::mainline::Testnet::new(0).expect("ignore");
+        let testnet = mainline::Testnet::new(0).expect("ignore");
 
         unsafe { HomeserverCore::new(&Config::test(&testnet)) }
     }

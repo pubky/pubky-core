@@ -12,7 +12,7 @@ pub struct PkarrServer {
 
 impl PkarrServer {
     pub fn new(config: &Config, port: u16) -> Result<Self> {
-        let mut dht_config = pkarr::mainline::Config::default();
+        let mut dht_config = mainline::Config::default();
 
         if let Some(bootstrap) = config.bootstrap.clone() {
             dht_config.bootstrap = bootstrap;

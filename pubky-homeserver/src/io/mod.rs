@@ -47,7 +47,7 @@ impl HomeserverBuilder {
     /// # Safety
     /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async unsafe fn build(self) -> Result<Homeserver> {
+    pub async unsafe fn start(self) -> Result<Homeserver> {
         Homeserver::start(self.0).await
     }
 }
@@ -109,7 +109,7 @@ impl Homeserver {
     /// # Safety
     /// See [Self::start]
     pub async unsafe fn start_testnet() -> Result<Self> {
-        let testnet = ::pkarr::mainline::Testnet::new(10)?;
+        let testnet = mainline::Testnet::new(10)?;
 
         let storage =
             std::env::temp_dir().join(pubky_common::timestamp::Timestamp::now().to_string());
@@ -123,7 +123,7 @@ impl Homeserver {
             };
 
             config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
-            config.pkarr_config.resolvers = Some(vec![]);
+            config.pkarr_config.resolvers = Some(vec![].into());
 
             pkarr_relay::Relay::start(config).await?
         };
@@ -142,13 +142,13 @@ impl Homeserver {
                 .keypair(Keypair::from_secret_key(&[0; 32]))
                 .bootstrap(testnet.bootstrap)
                 .storage(storage.join("pubky-homeserver"))
-                .build()
+                .start()
                 .await
         }
     }
 
     /// Unit tests version of [Homeserver::start], using mainline Testnet, and a temporary storage.
-    pub async fn start_test(testnet: &::pkarr::mainline::Testnet) -> Result<Self> {
+    pub async fn start_test(testnet: &mainline::Testnet) -> Result<Self> {
         unsafe { Homeserver::start(Config::test(testnet)).await }
     }
 
