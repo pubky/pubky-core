@@ -133,7 +133,7 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::mainline::Testnet;
+    use mainline::Testnet;
     use pubky_homeserver::Homeserver;
 
     use crate::Client;

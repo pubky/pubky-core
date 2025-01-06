@@ -17,7 +17,8 @@ mod tests {
     use crate::*;
 
     use bytes::Bytes;
-    use pkarr::{mainline::Testnet, Keypair};
+    use mainline::Testnet;
+    use pkarr::Keypair;
     use pubky_homeserver::Homeserver;
     use reqwest::{Method, StatusCode};
 

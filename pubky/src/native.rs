@@ -1,6 +1,10 @@
-use std::{net::ToSocketAddrs, sync::Arc, time::Duration};
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    sync::Arc,
+    time::Duration,
+};
 
-use pkarr::mainline::Testnet;
+use mainline::Testnet;
 
 use crate::Client;
 
@@ -35,9 +39,17 @@ impl Settings {
         self.pkarr_config.resolvers = Some(
             bootstrap
                 .iter()
-                .flat_map(|resolver| resolver.to_socket_addrs())
+                .flat_map(|resolver| {
+                    resolver.to_socket_addrs().map(|iter| {
+                        iter.filter_map(|a| match a {
+                            SocketAddr::V4(a) => Some(a),
+                            _ => None,
+                        })
+                    })
+                })
                 .flatten()
-                .collect::<Vec<_>>(),
+                .collect::<Vec<_>>()
+                .into(),
         );
 
         self.pkarr_config.dht_config.bootstrap = bootstrap;

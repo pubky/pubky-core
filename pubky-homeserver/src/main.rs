@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         } else if let Some(config_path) = args.config {
             Homeserver::start(Config::load(config_path).await?).await?
         } else {
-            Homeserver::builder().build().await?
+            Homeserver::builder().start().await?
         }
     };
 

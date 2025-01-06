@@ -31,5 +31,6 @@ axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tower = "0.5.1"
 page_size = "0.6.0"
 
-pkarr-relay = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr-relay" }
+pkarr-relay = { workspace = true }
+mainline = { workspace = true }
 http-relay = { version = "0.1.0", path = "../http-relay" }

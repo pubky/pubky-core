@@ -226,7 +226,8 @@ mod tests {
     use crate::*;
 
     use http_relay::HttpRelay;
-    use pkarr::{mainline::Testnet, Keypair};
+    use mainline::Testnet;
+    use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_homeserver::Homeserver;
     use reqwest::StatusCode;
