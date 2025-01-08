@@ -14,6 +14,9 @@ struct Cli {
     method: Method,
     /// Pubky or HTTPS url
     url: Url,
+    /// Use testnet mode
+    #[clap(long)]
+    testnet: bool,
 }
 
 #[tokio::main]
@@ -24,7 +27,11 @@ async fn main() -> Result<()> {
         .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
         .init();
 
-    let client = Client::new()?;
+    let client = if args.testnet {
+        Client::testnet()?
+    } else {
+        Client::new()?
+    };
 
     // Build the request
     let response = client.get(args.url).send().await?;

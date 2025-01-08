@@ -85,11 +85,8 @@ impl Homeserver {
 
         let pkarr_server = PkarrServer::new(
             &config,
-            if config.testnet {
-                http_servers.http_address().port()
-            } else {
-                http_servers.https_address().port()
-            },
+            http_servers.https_address().port(),
+            http_servers.http_address().port(),
         )?;
         pkarr_server.publish_server_packet().await?;
 

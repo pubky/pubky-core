@@ -11,7 +11,7 @@ pub struct PkarrServer {
 }
 
 impl PkarrServer {
-    pub fn new(config: &Config, port: u16) -> Result<Self> {
+    pub fn new(config: &Config, https_port: u16, http_port: u16) -> Result<Self> {
         let mut dht_config = mainline::Config::default();
 
         if let Some(bootstrap) = config.bootstrap.clone() {
@@ -23,7 +23,7 @@ impl PkarrServer {
 
         let client = pkarr::Client::builder().dht_config(dht_config).build()?;
 
-        let signed_packet = create_signed_packet(config, port)?;
+        let signed_packet = create_signed_packet(config, https_port, http_port)?;
 
         Ok(Self {
             client,
@@ -41,7 +41,7 @@ impl PkarrServer {
     }
 }
 
-pub fn create_signed_packet(config: &Config, port: u16) -> Result<SignedPacket> {
+pub fn create_signed_packet(config: &Config, port: u16, http_port: u16) -> Result<SignedPacket> {
     // TODO: Try to resolve first before publishing.
 
     let default = ".".to_string();
