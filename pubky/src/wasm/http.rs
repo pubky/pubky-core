@@ -140,12 +140,22 @@ impl Client {
             if self.testnet && e.domain() == "localhost" {
                 url.set_scheme("http")
                     .expect("couldn't replace pubky:// with http://");
+
+                let http_port = e
+                    .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
+                    .and_then(|x| <[u8; 2]>::try_from(x).ok())
+                    .map(|x| u16::from_be_bytes(x))
+                    .expect("could not find HTTP_PORT service param");
+
+                url.set_port(Some(http_port))
+                    .expect("coultdn't use the resolved endpoint's port");
+            } else {
+                url.set_port(Some(e.port()))
+                    .expect("coultdn't use the resolved endpoint's port");
             }
 
             url.set_host(Some(e.domain()))
                 .expect("coultdn't use the resolved endpoint's domain");
-            url.set_port(Some(e.port()))
-                .expect("coultdn't use the resolved endpoint's port");
 
             log::debug!("Transformed URL to: {}", url.as_str());
         } else {

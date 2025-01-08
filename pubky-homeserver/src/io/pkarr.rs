@@ -51,6 +51,13 @@ pub fn create_signed_packet(config: &Config, port: u16, http_port: u16) -> Resul
     svcb.priority = 1;
     svcb.set_port(port);
 
+    let http_port_be_bytes = http_port.to_be_bytes();
+
+    svcb.set_param(
+        pubky_common::constants::reserved_param_keys::HTTP_PORT,
+        &http_port_be_bytes,
+    )?;
+
     let mut signed_packet_builder =
         SignedPacket::builder().https(".".try_into().unwrap(), svcb.clone(), 60 * 60);
 
