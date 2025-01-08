@@ -28,6 +28,8 @@ impl Client {
 
     /// Create a client with with configurations appropriate for local testing:
     /// - set Pkarr relays to `["http://localhost:15411"]` instead of default relay.
+    /// - transform `pubky://<pkarr public key>` to `http://<pkarr public key` instead of `https:`
+    ///     and read the homeserver HTTP port from the [reserved service parameter key](pubky_common::constants::reserved_param_keys::HTTP_PORT)
     #[wasm_bindgen]
     pub fn testnet() -> Self {
         Self {

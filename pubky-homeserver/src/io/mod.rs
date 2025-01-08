@@ -98,10 +98,10 @@ impl Homeserver {
     /// Start a homeserver in a Testnet mode.
     ///
     /// - Homeserver address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`
-    /// - Run a pkarr Relay on port `15411`
+    /// - Run a pkarr Relay on port [15411](pubky_common::constants::testnet_ports::PKARR_RELAY)
     /// - Use a temporary storage for the both homeserver and relay
-    /// - Only publish http port (ignore https port or domain configurations)
-    /// - Run an HTTP relay on port `15412`
+    /// - Publish http port on a [reserved service parameter key](pubky_common::constants::reserved_param_keys::HTTP_PORT)
+    /// - Run an HTTP relay on port [15412](pubky_common::constants::testnet_ports::HTTP_RELAY)
     ///
     /// # Safety
     /// See [Self::start]
@@ -113,7 +113,7 @@ impl Homeserver {
 
         let pkarr_relay = unsafe {
             let mut config = pkarr_relay::Config {
-                http_port: 15411,
+                http_port: pubky_common::constants::testnet_ports::PKARR_RELAY,
                 cache_path: Some(storage.join("pkarr-relay")),
                 rate_limiter: None,
                 ..Default::default()
@@ -126,7 +126,7 @@ impl Homeserver {
         };
 
         let http_relay = http_relay::HttpRelay::builder()
-            .http_port(15412)
+            .http_port(pubky_common::constants::testnet_ports::HTTP_RELAY)
             .build()
             .await?;
 
