@@ -38,7 +38,7 @@ test("3rd party signin", async (t) => {
   let capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
   let client = PubkyClient.testnet();
   let [pubkyauth_url, pubkyauthResponse] = client
-    .authRequest("https://demo.httprelay.io/link", capabilities);
+    .authRequest("https://httprelay.staging.pubky.app/link/", capabilities);
 
   if (globalThis.document) {
     // Skip `sendAuthToken` in browser
