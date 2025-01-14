@@ -280,7 +280,7 @@ mod tests {
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
         let client = PubkyClient::test(&testnet);
         let (pubkyauth_url, pubkyauth_response) = client
-            .auth_request("https://demo.httprelay.io/link", &capabilities)
+            .auth_request("https://httprelay.staging.pubky.app/link/", &capabilities)
             .unwrap();
 
         // Authenticator side
