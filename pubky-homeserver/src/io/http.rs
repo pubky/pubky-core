@@ -28,8 +28,7 @@ pub struct HttpServers {
 impl HttpServers {
     pub async fn start(core: &HomeserverCore) -> Result<Self> {
         let http_listener =
-        // TODO: add config to http port
-            TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 0)))?;
+            TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], core.config().io.http_port)))?;
         let http_address = http_listener.local_addr()?;
 
         let http_handle = Handle::new();
@@ -45,8 +44,10 @@ impl HttpServers {
                 .map_err(|error| tracing::error!(?error, "Homeserver http server error")),
         );
 
-        let https_listener =
-            TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], core.config().port)))?;
+        let https_listener = TcpListener::bind(SocketAddr::from((
+            [0, 0, 0, 0],
+            core.config().io.https_port,
+        )))?;
         let https_address = https_listener.local_addr()?;
 
         let https_handle = Handle::new();

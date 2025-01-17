@@ -41,43 +41,58 @@ impl PkarrServer {
     }
 }
 
-pub fn create_signed_packet(config: &Config, port: u16, http_port: u16) -> Result<SignedPacket> {
+pub fn create_signed_packet(
+    config: &Config,
+    https_port: u16,
+    http_port: u16,
+) -> Result<SignedPacket> {
     // TODO: Try to resolve first before publishing.
 
-    let default = ".".to_string();
-    let target = config.domain.clone().unwrap_or(default);
-    let mut svcb = SVCB::new(0, target.as_str().try_into()?);
+    let mut signed_packet_builder = SignedPacket::builder();
 
-    svcb.priority = 1;
-    svcb.set_port(port);
+    let mut svcb = SVCB::new(0, ".".try_into()?);
 
-    let http_port_be_bytes = http_port.to_be_bytes();
+    // Set the public Ip or the loclahost
+    signed_packet_builder = signed_packet_builder.address(
+        ".".try_into().unwrap(),
+        config
+            .io
+            .public_addr
+            .map(|addr| addr.ip())
+            .unwrap_or("127.0.0.1".parse().expect("localhost is valid ip")),
+        60 * 60,
+    );
 
-    svcb.set_param(
-        pubky_common::constants::reserved_param_keys::HTTP_PORT,
-        &http_port_be_bytes,
-    )?;
+    // Set the public port or the local https_port
+    svcb.set_port(
+        config
+            .io
+            .public_addr
+            .map(|addr| addr.port())
+            .unwrap_or(https_port),
+    );
 
-    let mut signed_packet_builder =
-        SignedPacket::builder().https(".".try_into().unwrap(), svcb.clone(), 60 * 60);
+    signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
 
+    // Set low priority https record for legacy browsers support
     if config.testnet {
+        let mut svcb = SVCB::new(10, ".".try_into()?);
+
+        let http_port_be_bytes = http_port.to_be_bytes();
+        svcb.set_param(
+            pubky_common::constants::reserved_param_keys::HTTP_PORT,
+            &http_port_be_bytes,
+        )?;
+
         svcb.target = "localhost".try_into().expect("localhost is valid dns name");
 
-        signed_packet_builder = signed_packet_builder
-            .https(".".try_into().unwrap(), svcb, 60 * 60)
-            .address(
-                ".".try_into().unwrap(),
-                "127.0.0.1".parse().unwrap(),
-                60 * 60,
-            );
-    } else if let Some(ref domain) = config.domain {
+        signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60)
+    } else if let Some(ref domain) = config.io.domain {
+        let mut svcb = SVCB::new(10, ".".try_into()?);
         svcb.target = domain.as_str().try_into()?;
 
         signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
     }
-
-    // TODO: announce public IP with A/AAAA records (need to add options in config)
 
     Ok(signed_packet_builder.build(&config.keypair)?)
 }

@@ -5,9 +5,13 @@ use pkarr::Keypair;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     time::Duration,
 };
+
+const DEFAULT_HTTP_PORT: u16 = 6286;
+const DEFAULT_HTTPS_PORT: u16 = 6287;
 
 // === Database ===
 const DEFAULT_STORAGE_DIR: &str = "pubky";
@@ -17,17 +21,45 @@ pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space us
 pub const DEFAULT_LIST_LIMIT: u16 = 100;
 pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
-struct ConfigToml {
-    port: Option<u16>,
-    bootstrap: Option<Vec<String>>,
-    domain: Option<String>,
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+struct DatabaseToml {
     storage: Option<PathBuf>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+struct ReverseProxyToml {
+    pub public_port: Option<u16>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+struct LegacyBrowsersTompl {
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
+struct IoToml {
+    pub http_port: Option<u16>,
+    pub https_port: Option<u16>,
+    pub public_ip: Option<IpAddr>,
+
+    pub reverse_proxy: Option<ReverseProxyToml>,
+    pub legacy_browsers: Option<LegacyBrowsersTompl>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+struct ConfigToml {
     secret_key: Option<String>,
-    dht_request_timeout: Option<Duration>,
-    default_list_limit: Option<u16>,
-    max_list_limit: Option<u16>,
-    db_map_size: Option<usize>,
+
+    database: Option<DatabaseToml>,
+    io: Option<IoToml>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IoConfig {
+    pub http_port: u16,
+    pub https_port: u16,
+    pub public_addr: Option<SocketAddr>,
+    pub domain: Option<String>,
 }
 
 /// Server configuration
@@ -35,15 +67,10 @@ struct ConfigToml {
 pub struct Config {
     /// Run in [testnet](crate::Homeserver::start_testnet) mode.
     pub testnet: bool,
-    /// The configured port for this server.
-    pub port: u16,
     /// Bootstrapping DHT nodes.
     ///
     /// Helpful to run the server locally or in testnet.
     pub bootstrap: Option<Vec<String>>,
-    /// A public domain for this server
-    /// necessary for web browsers running in https environment.
-    pub domain: Option<String>,
     /// Path to the storage directory.
     ///
     /// Defaults to a directory in the OS data directory
@@ -64,6 +91,8 @@ pub struct Config {
 
     // === Database params ===
     pub db_map_size: usize,
+
+    pub io: IoConfig,
 }
 
 impl Config {
@@ -92,8 +121,13 @@ impl Config {
         Self {
             bootstrap,
             storage,
-            domain: Some("localhost".to_string()),
             db_map_size: 10485760,
+            io: IoConfig {
+                http_port: 0,
+                https_port: 0,
+                public_addr: None,
+                domain: None,
+            },
             ..Default::default()
         }
     }
@@ -103,16 +137,20 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             testnet: false,
-            port: 0,
+            keypair: Keypair::random(),
             bootstrap: None,
-            domain: None,
             storage: storage(None)
                 .expect("operating environment provides no directory for application data"),
-            keypair: Keypair::random(),
             dht_request_timeout: None,
             default_list_limit: DEFAULT_LIST_LIMIT,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
             db_map_size: DEFAULT_MAP_SIZE,
+            io: IoConfig {
+                https_port: DEFAULT_HTTPS_PORT,
+                http_port: DEFAULT_HTTP_PORT,
+                domain: None,
+                public_addr: None,
+            },
         }
     }
 }
@@ -129,29 +167,54 @@ impl TryFrom<ConfigToml> for Config {
         };
 
         let storage = {
-            let dir = if let Some(storage) = value.storage {
-                storage
-            } else {
-                let path = dirs_next::data_dir().ok_or_else(|| {
-                    anyhow!("operating environment provides no directory for application data")
-                })?;
-                path.join(DEFAULT_STORAGE_DIR)
-            };
+            let dir =
+                if let Some(storage) = value.database.as_ref().and_then(|db| db.storage.clone()) {
+                    storage
+                } else {
+                    let path = dirs_next::data_dir().ok_or_else(|| {
+                        anyhow!("operating environment provides no directory for application data")
+                    })?;
+                    path.join(DEFAULT_STORAGE_DIR)
+                };
 
             dir.join("homeserver")
         };
 
+        let io = if let Some(io) = value.io {
+            IoConfig {
+                http_port: io.http_port.unwrap_or(DEFAULT_HTTP_PORT),
+                https_port: io.https_port.unwrap_or(DEFAULT_HTTPS_PORT),
+                domain: io.legacy_browsers.and_then(|l| l.domain),
+                public_addr: io.public_ip.map(|ip| {
+                    SocketAddr::from((
+                        ip,
+                        io.reverse_proxy
+                            .and_then(|r| r.public_port)
+                            .unwrap_or(io.https_port.unwrap_or(0)),
+                    ))
+                }),
+            }
+        } else {
+            IoConfig {
+                http_port: DEFAULT_HTTP_PORT,
+                https_port: DEFAULT_HTTPS_PORT,
+                domain: None,
+                public_addr: None,
+            }
+        };
+
         Ok(Config {
             testnet: false,
-            port: value.port.unwrap_or(0),
-            bootstrap: value.bootstrap,
-            domain: value.domain,
             keypair,
+
             storage,
-            dht_request_timeout: value.dht_request_timeout,
-            default_list_limit: value.default_list_limit.unwrap_or(DEFAULT_LIST_LIMIT),
-            max_list_limit: value.default_list_limit.unwrap_or(DEFAULT_MAX_LIST_LIMIT),
-            db_map_size: value.db_map_size.unwrap_or(DEFAULT_MAP_SIZE),
+            dht_request_timeout: None,
+            bootstrap: None,
+            default_list_limit: DEFAULT_LIST_LIMIT,
+            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
+            db_map_size: DEFAULT_MAP_SIZE,
+
+            io,
         })
     }
 }
@@ -219,8 +282,12 @@ mod tests {
                 storage: config.storage.clone(),
                 keypair: config.keypair.clone(),
 
-                domain: Some("localhost".to_string()),
-
+                io: IoConfig {
+                    http_port: 0,
+                    https_port: 0,
+                    public_addr: None,
+                    domain: None
+                },
                 ..Default::default()
             }
         )
@@ -230,29 +297,55 @@ mod tests {
     fn parse() {
         let config = Config::try_from_str(
             r#"
-            # Secret key (in hex) to generate the Homeserver's Keypair
-            secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
-            # Domain to be published in Pkarr records for this server to be accessible by.
-            domain = "localhost"
-            # Port for the Homeserver to listen on.
-            port = 6287
-            # Storage directory Defaults to <System's Data Directory>
-            storage = "/homeserver"
+# Secret key (in hex) to generate the Homeserver's Keypair
+secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
 
-            bootstrap = ["foo", "bar"]
+[database]
+# Storage directory Defaults to <System's Data Directory>
+# storage = ""
 
-            # event stream
-            default_list_limit = 500
-            max_list_limit = 10000
+[io]
+# The port number to run an HTTP (clear text) server on.
+http_port = 6286
+# The port number to run an HTTPs (Pkarr TLS) server on.
+https_port = 6287
+
+# The public IP of this server.
+# 
+# This address will be mentioned in the Pkarr records of this
+#   Homeserver that is published on its public key (derivde from `secret_key`)
+public_ip = "127.0.0.1"
+
+# If you are running this server behind a reverse proxy,
+#   you need to provide some extra configurations.
+[io.reverse_proxy]
+# The public port should be mapped to the `io::https_port`
+#   and you should setup tcp forwarding (don't terminate TLS on that port).
+public_port = 6287
+
+# If you want your server to be accessible from legacy browsers,
+#   you need to provide some extra configurations.
+[io.legacy_browsers]
+# An ICANN domain name is necessary to support legacy browsers
+#
+# Make sure to setup a domain name and point it the IP
+#   address of this machine where you are running this server.
+#
+# This domain should point to the `<public_ip>:<http_port>`.
+# 
+# Currently we don't support ICANN TLS, so you should be runing
+#   a reverse proxy and managing certifcates there for this endpoint.
+domain = "example.com"
         "#,
         )
         .unwrap();
 
         assert_eq!(config.keypair, Keypair::from_secret_key(&[0; 32]));
-        assert_eq!(config.port, 6287);
+        assert_eq!(config.io.https_port, 6287);
         assert_eq!(
-            config.bootstrap,
-            Some(vec!["foo".to_string(), "bar".to_string()])
+            config.io.public_addr,
+            Some(SocketAddr::from(([127, 0, 0, 1], 6287)))
         );
+        assert_eq!(config.io.domain, Some("example.com".to_string()));
     }
 }
