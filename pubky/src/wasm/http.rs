@@ -150,8 +150,11 @@ impl Client {
                 url.set_port(Some(http_port))
                     .expect("coultdn't use the resolved endpoint's port");
             } else {
-                url.set_port(Some(e.port()))
-                    .expect("coultdn't use the resolved endpoint's port");
+                // TODO: where does port zero come from?
+                if e.port() != 0 {
+                    url.set_port(Some(e.port()))
+                        .expect("coultdn't use the resolved endpoint's port");
+                }
             }
 
             url.set_host(Some(e.domain()))
