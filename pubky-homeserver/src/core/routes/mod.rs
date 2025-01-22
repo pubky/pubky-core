@@ -5,14 +5,18 @@ use axum::{
     Router,
 };
 use tower_cookies::CookieManagerLayer;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::cors::CorsLayer;
 
 use crate::core::AppState;
+
+use super::layers::trace::with_trace_layer;
 
 mod auth;
 mod feed;
 mod root;
 mod tenants;
+
+const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 
 fn base() -> Router<AppState> {
     Router::new()
@@ -27,10 +31,11 @@ fn base() -> Router<AppState> {
 }
 
 pub fn create_app(state: AppState) -> Router {
-    base()
+    let app = base()
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .with_state(state);
+
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
 }

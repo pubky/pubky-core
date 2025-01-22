@@ -39,8 +39,6 @@ where
             ))
             .map_err(|e| e.into_response())?;
 
-        tracing::debug!(pubky_host = ?pubky_host.public_key().to_string());
-
         Ok(pubky_host)
     }
 }
