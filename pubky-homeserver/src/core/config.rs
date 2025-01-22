@@ -5,6 +5,7 @@ use pkarr::Keypair;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
+    fs,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     time::Duration,
@@ -104,11 +105,26 @@ impl Config {
 
     /// Load the config from a file.
     pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
-        let s = tokio::fs::read_to_string(path.as_ref())
+        let config_file_path = path.as_ref();
+
+        let s = tokio::fs::read_to_string(config_file_path)
             .await
             .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
 
-        Config::try_from_str(&s)
+        let mut config = Config::try_from_str(&s)?;
+
+        // support relative path.
+        if config.storage.is_relative() {
+            config.storage = config_file_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(config.storage.clone());
+        }
+
+        fs::create_dir_all(&config.storage)?;
+        config.storage = config.storage.canonicalize()?;
+
+        Ok(config)
     }
 
     /// Test configurations
@@ -266,6 +282,19 @@ mod tests {
                 ..Default::default()
             }
         )
+    }
+
+    #[tokio::test]
+    async fn config_load() {
+        let crate_dir = std::env::current_dir().unwrap();
+        let config_file_path = crate_dir.join("./src/config.example.toml");
+        let canonical_file_path = config_file_path.canonicalize().unwrap();
+
+        let config = Config::load(canonical_file_path).await.unwrap();
+
+        assert!(config
+            .storage
+            .ends_with("pubky-homeserver/src/storage/homeserver"));
     }
 
     #[test]
