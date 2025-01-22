@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use axum::{extract::Request, Router};
 use tower_http::trace::{
-    DefaultMakeSpan, DefaultOnFailure, DefaultOnRequest, DefaultOnResponse, MakeSpan, OnFailure,
-    OnRequest, OnResponse, TraceLayer,
+    DefaultOnFailure, DefaultOnRequest, DefaultOnResponse, OnFailure, OnRequest, OnResponse,
+    TraceLayer,
 };
 use tracing::{Level, Span};
+
+use crate::core::extractors::PubkyHost;
 
 pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
     let excluded_paths = Arc::new(
@@ -23,7 +25,20 @@ pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
                     tracing::span!(Level::INFO, "request", excluded = true)
                 } else {
                     // Use the default span for other endpoints
-                    DefaultMakeSpan::new().make_span(request)
+
+                    let uri = if let Some(pubky_host) = request.extensions().get::<PubkyHost>() {
+                        format!("pubky://{pubky_host}{}", request.uri())
+                    } else {
+                        request.uri().to_string()
+                    };
+
+                    tracing::span!(
+                        Level::INFO,
+                        "request",
+                        method = %request.method(),
+                        uri = ?uri,
+                        version = ?request.version(),
+                    )
                 }
             })
             .on_request(|request: &Request, span: &Span| {
