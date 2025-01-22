@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use axum::{
     async_trait,
@@ -18,6 +18,12 @@ pub struct PubkyHost(pub(crate) PublicKey);
 impl PubkyHost {
     pub fn public_key(&self) -> &PublicKey {
         &self.0
+    }
+}
+
+impl Display for PubkyHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

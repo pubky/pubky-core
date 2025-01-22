@@ -9,7 +9,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::core::AppState;
 
-use super::layers::trace::with_trace_layer;
+use super::layers::{pubky_host::PubkyHostLayer, trace::with_trace_layer};
 
 mod auth;
 mod feed;
@@ -37,5 +37,5 @@ pub fn create_app(state: AppState) -> Router {
         .layer(CorsLayer::very_permissive())
         .with_state(state);
 
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS).layer(PubkyHostLayer)
 }
