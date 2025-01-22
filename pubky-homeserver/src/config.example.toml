@@ -3,7 +3,9 @@
 
 [database]
 # Storage directory Defaults to <System's Data Directory>
-# storage = ""
+#
+# Storage path can be relative or absolute.
+storage = "./storage/"
 
 [io]
 # The port number to run an HTTP (clear text) server on.
