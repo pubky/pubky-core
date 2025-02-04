@@ -1,6 +1,6 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey ,setLogLevel} from '../index.cjs'
+import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
@@ -128,8 +128,6 @@ test("list", async (t) => {
   const pubky = publicKey.z32()
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY)
-
-
 
   let urls = [
     `pubky://${pubky}/pub/a.wrong/a.txt`,

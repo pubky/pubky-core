@@ -5,8 +5,6 @@ import { Client, Keypair, PublicKey } from '../index.cjs'
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
-// TODO: test multiple users in wasm
-  
 test('Auth: basic', async (t) => {
   const client = Client.testnet();
 

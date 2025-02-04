@@ -107,6 +107,7 @@ impl Homeserver {
     /// See [Self::start]
     pub async unsafe fn start_testnet() -> Result<Self> {
         let testnet = mainline::Testnet::new(10)?;
+        testnet.leak();
 
         let storage =
             std::env::temp_dir().join(pubky_common::timestamp::Timestamp::now().to_string());
@@ -119,8 +120,8 @@ impl Homeserver {
                 ..Default::default()
             };
 
-            config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
-            config.pkarr_config.resolvers = Some(vec![].into());
+            config.pkarr.bootstrap(&testnet.bootstrap);
+            config.pkarr.no_resolvers();
 
             pkarr_relay::Relay::start(config).await?
         };

@@ -8,7 +8,7 @@ use reqwest::{IntoUrl, Method, RequestBuilder, Url};
 
 use futures_lite::StreamExt;
 
-use pkarr::extra::endpoints::{Endpoint, EndpointsResolver};
+use pkarr::extra::endpoints::Endpoint;
 use pkarr::PublicKey;
 
 use crate::Client;
@@ -126,7 +126,7 @@ impl Client {
         let mut so_far: Option<Endpoint> = None;
 
         while let Some(endpoint) = stream.next().await {
-            if endpoint.domain() != "." {
+            if let Some(domain) = endpoint.domain() {
                 so_far = Some(endpoint);
 
                 // TODO: currently we return the first thing we can see,
@@ -137,7 +137,7 @@ impl Client {
 
         if let Some(e) = so_far {
             // TODO: detect loopback IPs and other equivilants to localhost
-            if self.testnet && e.domain() == "localhost" {
+            if self.testnet && e.domain() == Some("localhost") {
                 url.set_scheme("http")
                     .expect("couldn't replace pubky:// with http://");
 
@@ -150,20 +150,22 @@ impl Client {
                 url.set_port(Some(http_port))
                     .expect("coultdn't use the resolved endpoint's port");
             } else {
-                // TODO: where does port zero come from?
-                if e.port() != 0 {
-                    url.set_port(Some(e.port()))
+                if let Some(port) = e.port() {
+                    url.set_port(Some(port))
                         .expect("coultdn't use the resolved endpoint's port");
                 }
             }
 
-            url.set_host(Some(e.domain()))
-                .expect("coultdn't use the resolved endpoint's domain");
+            if let Some(domain) = e.domain() {
+                url.set_host(Some(domain))
+                    .expect("coultdn't use the resolved endpoint's domain");
+            }
 
             log::debug!("Transformed URL to: {}", url.as_str());
         } else {
             // TODO: didn't find any domain, what to do?
-            log::debug!("Could not resolve Pubky URL to clearnet {}", url.as_str());
+            //  return an error.
+            log::debug!("Could not resolve host: {}", qname);
         }
     }
 }

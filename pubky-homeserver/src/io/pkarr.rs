@@ -12,16 +12,20 @@ pub struct PkarrServer {
 
 impl PkarrServer {
     pub fn new(config: &Config, https_port: u16, http_port: u16) -> Result<Self> {
-        let mut dht_config = mainline::Config::default();
+        let mut builder = pkarr::Client::builder();
 
-        if let Some(bootstrap) = config.bootstrap.clone() {
-            dht_config.bootstrap = bootstrap;
+        // TODO: should we enable relays in homeservers for udp restricted environments?
+        builder.no_relays();
+
+        if let Some(bootstrap) = &config.bootstrap {
+            builder.bootstrap(bootstrap);
         }
+
         if let Some(request_timeout) = config.dht_request_timeout {
-            dht_config.request_timeout = request_timeout;
+            builder.request_timeout(request_timeout);
         }
 
-        let client = pkarr::Client::builder().dht_config(dht_config).build()?;
+        let client = builder.build()?;
 
         let signed_packet = create_signed_packet(config, https_port, http_port)?;
 
@@ -35,7 +39,7 @@ impl PkarrServer {
         // TODO: warn if packet is not most recent, which means the
         // user is publishing a Packet from somewhere else.
 
-        self.client.publish(&self.signed_packet).await?;
+        self.client.publish(&self.signed_packet, None).await?;
 
         Ok(())
     }
