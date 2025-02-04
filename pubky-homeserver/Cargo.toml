@@ -17,7 +17,7 @@ heed = "0.21.0"
 hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
-pkarr = { workspace = true }
+pkarr = { workspace = true, features = ["dht", "lmdb-cache"] }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 serde = { version = "1.0.216", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["full"] }

@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     let client = if args.testnet {
         Client::testnet()?
     } else {
-        Client::new()?
+        Client::builder().build()?
     };
 
     // Build the request

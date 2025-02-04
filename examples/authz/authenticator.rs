@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
 
         client
     } else {
-        Client::new()?
+        Client::builder().build()?
     };
 
     println!("Sending AuthToken to the 3rd party app...");
