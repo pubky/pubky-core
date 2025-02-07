@@ -126,7 +126,7 @@ impl Client {
         let mut so_far: Option<Endpoint> = None;
 
         while let Some(endpoint) = stream.next().await {
-            if let Some(domain) = endpoint.domain() {
+            if endpoint.domain().is_some() {
                 so_far = Some(endpoint);
 
                 // TODO: currently we return the first thing we can see,
@@ -136,7 +136,7 @@ impl Client {
         }
 
         if let Some(e) = so_far {
-            // TODO: detect loopback IPs and other equivilants to localhost
+            // TODO: detect loopback IPs and other equivalent to localhost
             if self.testnet && e.domain() == Some("localhost") {
                 url.set_scheme("http")
                     .expect("couldn't replace pubky:// with http://");
@@ -144,16 +144,14 @@ impl Client {
                 let http_port = e
                     .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
                     .and_then(|x| <[u8; 2]>::try_from(x).ok())
-                    .map(|x| u16::from_be_bytes(x))
+                    .map(u16::from_be_bytes)
                     .expect("could not find HTTP_PORT service param");
 
                 url.set_port(Some(http_port))
                     .expect("coultdn't use the resolved endpoint's port");
-            } else {
-                if let Some(port) = e.port() {
-                    url.set_port(Some(port))
-                        .expect("coultdn't use the resolved endpoint's port");
-                }
+            } else if let Some(port) = e.port() {
+                url.set_port(Some(port))
+                    .expect("coultdn't use the resolved endpoint's port");
             }
 
             if let Some(domain) = e.domain() {

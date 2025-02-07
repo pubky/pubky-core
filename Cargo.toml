@@ -11,12 +11,6 @@ members = [
 # See: https://github.com/rust-lang/rust/issues/90148#issuecomment-949194352
 resolver = "2"
 
-[workspace.dependencies]
-# Todo move to crates after release.
-pkarr = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr" }
-pkarr-relay = { git = "https://github.com/Pubky/pkarr", branch = "v3", package = "pkarr-relay" }
-mainline = {  git = "https://github.com/Pubky/mainline", branch = "v5", package = "mainline" }
-
 [profile.release]
 lto = true
 opt-level = 'z'

@@ -456,9 +456,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
+checksum = "f61dac84819c6588b558454b194026eb1f09c293b9036ae9b159e74e73ab6cf9"
 
 [[package]]
 name = "cc"
@@ -822,9 +822,9 @@ dependencies = [
 
 [[package]]
 name = "dyn-clone"
-version = "1.0.17"
+version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
+checksum = "feeef44e73baff3a26d371801df019877a9866a8c493d315ab00177843314f35"
 
 [[package]]
 name = "ed25519"
@@ -1658,8 +1658,9 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 
 [[package]]
 name = "mainline"
-version = "4.2.1"
-source = "git+https://github.com/Pubky/mainline?branch=v5#e9dde7cc32a9f70dd9b9edbc92536d6cb88b5ed0"
+version = "5.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d40903d61c43712efd2d9151eeb3d53e8081e26efb2b69d7bb0693c49dfa195a"
 dependencies = [
  "crc",
  "document-features",
@@ -2010,13 +2011,47 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.0.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#8e77df1c30f38d19fc6c5dd123d59f30b788cb75"
+version = "3.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41060323086a60c20f28bf52afc915eafc971493bf8b887907c0909004731807"
 dependencies = [
  "async-compat",
  "base32",
  "byteorder",
  "bytes",
+ "cfg_aliases",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "futures-lite",
+ "getrandom",
+ "heed",
+ "log",
+ "lru",
+ "mainline",
+ "page_size",
+ "pubky-timestamp 0.3.0",
+ "rand",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "pkarr"
+version = "3.0.0-rc.1"
+source = "git+https://github.com/Pubky/pkarr#3a0cd3180616b19588162d7b89fc04bad6f7cbd9"
+dependencies = [
+ "async-compat",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
  "document-features",
  "dyn-clone",
  "ed25519-dalek",
@@ -2048,7 +2083,7 @@ dependencies = [
 [[package]]
 name = "pkarr-relay"
 version = "0.1.0"
-source = "git+https://github.com/Pubky/pkarr?branch=v3#8e77df1c30f38d19fc6c5dd123d59f30b788cb75"
+source = "git+https://github.com/Pubky/pkarr#3a0cd3180616b19588162d7b89fc04bad6f7cbd9"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
@@ -2060,7 +2095,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr",
+ "pkarr 3.0.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "pubky-timestamp 0.3.0",
  "rustls",
  "serde",
@@ -2168,7 +2203,7 @@ dependencies = [
  "js-sys",
  "log",
  "mainline",
- "pkarr",
+ "pkarr 3.0.0-rc.1 (git+https://github.com/Pubky/pkarr)",
  "pubky-common",
  "pubky-homeserver",
  "reqwest",
@@ -2192,7 +2227,7 @@ dependencies = [
  "ed25519-dalek",
  "js-sys",
  "once_cell",
- "pkarr",
+ "pkarr 3.0.0-rc.1 (git+https://github.com/Pubky/pkarr)",
  "postcard",
  "pubky-timestamp 0.2.0",
  "rand",
@@ -2220,7 +2255,7 @@ dependencies = [
  "httpdate",
  "mainline",
  "page_size",
- "pkarr",
+ "pkarr 3.0.0-rc.1 (git+https://github.com/Pubky/pkarr)",
  "pkarr-relay",
  "postcard",
  "pubky-common",
@@ -3169,9 +3204,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.19"
+version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ed1f98e3fdc28d6d910e6737ae6ab1a93bf1985935a1193e68f93eeb68d24e"
+checksum = "cd87a5cdd6ffab733b2f74bc4fd7ee5fff6634124999ac278c35fc78c6120148"
 dependencies = [
  "serde",
  "serde_spanned",
@@ -3190,9 +3225,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.22.22"
+version = "0.22.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ae48d6208a266e853d946088ed816055e556cc6028c5e8e2b84d9fa5dd7c7f5"
+checksum = "02a8b472d1a3d7c18e2d61a489aee3453fd9031c33e4f55bd533f4a7adca1bee"
 dependencies = [
  "indexmap",
  "serde",
@@ -3762,9 +3797,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.6.24"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8d71a593cc5c42ad7876e2c1fda56f314f3754c084128833e64f1345ff8a03a"
+checksum = "86e376c75f4f43f44db463cf729e0d3acbf954d13e22c51e26e4c264b4ab545f"
 dependencies = [
  "memchr",
 ]
