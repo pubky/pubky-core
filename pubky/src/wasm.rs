@@ -35,12 +35,8 @@ impl Client {
         Self {
             http: reqwest::Client::builder().build().unwrap(),
             pkarr: pkarr::Client::builder()
-                .relays(
-                    TESTNET_RELAYS
-                        .into_iter()
-                        .map(|s| url::Url::parse(s).expect("TESTNET_RELAYS should be valid urls"))
-                        .collect(),
-                )
+                .relays(&TESTNET_RELAYS)
+                .expect("testnet relays are valid urls")
                 .build()
                 .unwrap(),
             testnet: true,

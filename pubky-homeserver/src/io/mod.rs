@@ -121,9 +121,8 @@ impl Homeserver {
             };
 
             config.pkarr.bootstrap(&testnet.bootstrap);
-            config.pkarr.no_resolvers();
 
-            pkarr_relay::Relay::start(config).await?
+            pkarr_relay::Relay::run(config).await?
         };
 
         let http_relay = http_relay::HttpRelay::builder()
@@ -132,7 +131,7 @@ impl Homeserver {
             .await?;
 
         tracing::info!(http_relay=?http_relay.local_link_url().as_str(), "Running http relay in Testnet mode");
-        tracing::info!(relay_address=?pkarr_relay.relay_address(), bootstrap=?pkarr_relay.resolver_address(),"Running pkarr relay in Testnet mode");
+        tracing::info!(relay_address=?pkarr_relay.relay_address(), bootstrap=? testnet.bootstrap,"Running pkarr relay in Testnet mode");
 
         unsafe {
             Homeserver::builder()

@@ -21,11 +21,10 @@ impl ClientBuilder {
     /// Sets the following:
     /// - Pkarr client's DHT bootstrap nodes = `testnet` bootstrap nodes.
     /// - Pkarr client's resolvers           = `testnet` bootstrap nodes.
-    /// - Pkarr client's DHT request timout  = 500 milliseconds. (unless in CI, then it is left as default 2000)
+    /// - Pkarr client's DHT request timeout  = 500 milliseconds. (unless in CI, then it is left as default 2000)
     pub fn testnet(mut self, testnet: &Testnet) -> Self {
         let bootstrap = testnet.bootstrap.clone();
 
-        self.pkarr.resolvers(&bootstrap);
         self.pkarr.bootstrap(&bootstrap);
 
         if std::env::var("CI").is_err() {
