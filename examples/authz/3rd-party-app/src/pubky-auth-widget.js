@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit'
 import { createRef, ref } from 'lit/directives/ref.js';
 import QRCode from 'qrcode'
 
-const DEFAULT_HTTP_RELAY = "https://demo.httprelay.io/link"
+const DEFAULT_HTTP_RELAY = "https://httprelay.staging.pubky.app/link/"
 
 /**
  */
@@ -19,7 +19,7 @@ export class PubkyAuthWidget extends LitElement {
        * GET request made for `${realy url}/${channelID}`
        *
        * If no relay is passed, the widget will use a default relay:
-       * https://demo.httprelay.io/link
+       * https://httprelay.staging.pubky.app/link/
        */
       relay: { type: String },
       /**

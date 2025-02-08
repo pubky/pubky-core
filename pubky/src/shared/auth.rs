@@ -287,6 +287,7 @@ mod tests {
         // Third party app side
         let capabilities: Capabilities =
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
+      
         let client = Client::test(&testnet);
 
         let (pubkyauth_url, pubkyauth_response) =
