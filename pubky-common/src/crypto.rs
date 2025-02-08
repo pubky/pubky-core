@@ -30,7 +30,7 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
     arr
 }
 
-pub fn encrypt(plain_text: &[u8], encryption_key: &[u8; 32]) -> Result<Vec<u8>, Error> {
+pub fn encrypt(plain_text: &[u8], encryption_key: &[u8; 32]) -> Result<Vec<u8>, EncryptError> {
     let cipher = XSalsa20Poly1305::new(encryption_key.into());
     let nonce = XSalsa20Poly1305::generate_nonce(&mut OsRng); // unique per message
     let ciphertext = cipher.encrypt(&nonce, plain_text)?;
@@ -42,16 +42,29 @@ pub fn encrypt(plain_text: &[u8], encryption_key: &[u8; 32]) -> Result<Vec<u8>, 
     Ok(out)
 }
 
-pub fn decrypt(bytes: &[u8], encryption_key: &[u8; 32]) -> Result<Vec<u8>, Error> {
+pub fn decrypt(bytes: &[u8], encryption_key: &[u8; 32]) -> Result<Vec<u8>, DecryptError> {
     let cipher = XSalsa20Poly1305::new(encryption_key.into());
+
+    if bytes.len() < 24 {
+        return Err(DecryptError::PayloadTooSmall(bytes.len()));
+    }
 
     Ok(cipher.decrypt(bytes[..24].into(), &bytes[24..])?)
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum EncryptError {
     #[error(transparent)]
     SecretBox(#[from] crypto_secretbox::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DecryptError {
+    #[error(transparent)]
+    SecretBox(#[from] crypto_secretbox::Error),
+
+    #[error("Encrypted message too small, expected at least 24 bytes nonce, receieved {0} bytes")]
+    PayloadTooSmall(usize),
 }
 
 #[cfg(test)]

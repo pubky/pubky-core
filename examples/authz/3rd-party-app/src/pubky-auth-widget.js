@@ -56,8 +56,8 @@ export class PubkyAuthWidget extends LitElement {
     this.testnet = false;
     this.open = false;
 
-    /** @type {import("@synonymdev/pubky").PubkyClient} */
-    this.pubkyClient = new window.pubky.PubkyClient();
+    /** @type {import("@synonymdev/pubky").Client} */
+    this.pubkyClient = new window.pubky.Client();
 
     this.caps = this.caps || ""
   }
@@ -74,9 +74,9 @@ export class PubkyAuthWidget extends LitElement {
     console.debug("Switching testnet");
 
     if (this.testnet) {
-      this.pubkyClient = window.pubky.PubkyClient.testnet()
+      this.pubkyClient = window.pubky.Client.testnet()
     } else {
-      this.pubkyClient = new window.pubky.PubkyClient();
+      this.pubkyClient = new window.pubky.Client();
     }
 
     console.debug("Pkarr Relays: " + this.pubkyClient.getPkarrRelays())

@@ -1,16 +1,17 @@
 import test from 'tape'
 
-import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey } from '../index.cjs'
 
-const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
+const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
-test('auth', async (t) => {
-  const client = PubkyClient.testnet();
+test('Auth: basic', async (t) => {
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY )
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -30,15 +31,42 @@ test('auth', async (t) => {
   }
 })
 
-test("3rd party signin", async (t) => {
+test("Auth: multi-user (cookies)", async (t) => {
+  const client = Client.testnet();
+
+  const alice = Keypair.random()
+  const bob = Keypair.random()
+
+  await client.signup(alice, HOMESERVER_PUBLICKEY )
+
+  let session = await client.session(alice.publicKey())
+  t.ok(session, "signup")
+
+  {
+    await client.signup(bob, HOMESERVER_PUBLICKEY )
+
+    const session = await client.session(bob.publicKey())
+    t.ok(session, "signup")
+  }
+
+  session = await client.session(alice.publicKey());
+  t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in")
+
+  await client.signout(bob.publicKey());
+
+  session = await client.session(alice.publicKey());
+  t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in after signout of bob")
+})
+
+test("Auth: 3rd party signin", async (t) => {
   let keypair = Keypair.random();
   let pubky = keypair.publicKey().z32();
 
   // Third party app side
   let capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  let client = PubkyClient.testnet();
+  let client = Client.testnet();
   let [pubkyauth_url, pubkyauthResponse] = client
-    .authRequest("https://httprelay.staging.pubky.app/link/", capabilities);
+    .authRequest(TESTNET_HTTP_RELAY, capabilities);
 
   if (globalThis.document) {
     // Skip `sendAuthToken` in browser
@@ -49,9 +77,9 @@ test("3rd party signin", async (t) => {
 
   // Authenticator side
   {
-    let client = PubkyClient.testnet();
+    let client = Client.testnet();
 
-    await client.signup(keypair, Homeserver);
+    await client.signup(keypair, HOMESERVER_PUBLICKEY);
 
     await client.sendAuthToken(keypair, pubkyauth_url)
   }
