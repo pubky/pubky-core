@@ -1,9 +1,6 @@
-pub mod config;
-mod database;
-mod error;
-mod extractors;
-mod pkarr;
-mod routes;
-mod server;
+mod core;
+mod io;
 
-pub use server::Homeserver;
+pub use core::Config;
+pub use core::HomeserverCore;
+pub use io::Homeserver;

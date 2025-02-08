@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use pubky_homeserver::{config::Config, Homeserver};
+use pubky_homeserver::{Config, Homeserver};
 
 use clap::Parser;
 
@@ -31,16 +31,21 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let server = Homeserver::start(if args.testnet {
-        Config::testnet()
-    } else if let Some(config_path) = args.config {
-        Config::load(config_path).await?
-    } else {
-        Config::default()
-    })
-    .await?;
+    let server = unsafe {
+        if args.testnet {
+            Homeserver::start_testnet().await?
+        } else if let Some(config_path) = args.config {
+            Homeserver::start(Config::load(config_path).await?).await?
+        } else {
+            Homeserver::builder().start().await?
+        }
+    };
 
-    server.run_until_done().await?;
+    tokio::signal::ctrl_c().await?;
+
+    tracing::info!("Shutting down Homeserver");
+
+    server.shutdown();
 
     Ok(())
 }

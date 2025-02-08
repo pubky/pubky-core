@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
-use reqwest::{Method, StatusCode};
+use reqwest::{IntoUrl, Method, StatusCode};
 use url::Url;
 
 use pkarr::{Keypair, PublicKey};
@@ -12,14 +12,11 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{
-    error::{Error, Result},
-    PubkyClient,
-};
+use anyhow::Result;
 
-use super::pkarr::Endpoint;
+use crate::{handle_http_error, Client};
 
-impl PubkyClient {
+impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
@@ -29,23 +26,22 @@ impl PubkyClient {
         keypair: &Keypair,
         homeserver: &PublicKey,
     ) -> Result<Session> {
-        let homeserver = homeserver.to_string();
-
-        let Endpoint { mut url, .. } = self.resolve_endpoint(&homeserver).await?;
-
-        url.set_path("/signup");
-
-        let body = AuthToken::sign(keypair, vec![Capability::root()]).serialize();
-
         let response = self
-            .request(Method::POST, url.clone())
-            .body(body)
+            .inner_request(Method::POST, format!("https://{}/signup", homeserver))
+            .await
+            .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
             .send()
             .await?;
 
-        self.store_session(&response);
+        handle_http_error!(response);
 
-        self.publish_pubky_homeserver(keypair, &homeserver).await?;
+        self.publish_homeserver(keypair, &homeserver.to_string())
+            .await?;
+
+        // Store the cookie to the correct URL.
+        #[cfg(not(target_arch = "wasm32"))]
+        self.cookie_store
+            .store_session_after_signup(&response, &keypair.public_key());
 
         let bytes = response.bytes().await?;
 
@@ -57,34 +53,35 @@ impl PubkyClient {
     /// Returns None  if not signed in, or [reqwest::Error]
     /// if the response has any other `>=404` status code.
     pub(crate) async fn inner_session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
-        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
+        let response = self
+            .inner_request(Method::GET, format!("pubky://{}/session", pubky))
+            .await
+            .send()
+            .await?;
 
-        url.set_path(&format!("/{}/session", pubky));
-
-        let res = self.request(Method::GET, url).send().await?;
-
-        if res.status() == StatusCode::NOT_FOUND {
+        if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
 
-        if !res.status().is_success() {
-            res.error_for_status_ref()?;
-        };
+        handle_http_error!(response);
 
-        let bytes = res.bytes().await?;
+        let bytes = response.bytes().await?;
 
         Ok(Some(Session::deserialize(&bytes)?))
     }
 
     /// Signout from a homeserver.
     pub(crate) async fn inner_signout(&self, pubky: &PublicKey) -> Result<()> {
-        let Endpoint { mut url, .. } = self.resolve_pubky_homeserver(pubky).await?;
+        let response = self
+            .inner_request(Method::DELETE, format!("pubky://{}/session", pubky))
+            .await
+            .send()
+            .await?;
 
-        url.set_path(&format!("/{}/session", pubky));
+        handle_http_error!(response);
 
-        self.request(Method::DELETE, url).send().await?;
-
-        self.remove_session(pubky);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.cookie_store.delete_session_after_signout(pubky);
 
         Ok(())
     }
@@ -96,11 +93,18 @@ impl PubkyClient {
         self.signin_with_authtoken(&token).await
     }
 
-    pub(crate) async fn inner_send_auth_token(
+    pub(crate) async fn inner_send_auth_token<T: IntoUrl>(
         &self,
         keypair: &Keypair,
-        pubkyauth_url: Url,
+        pubkyauth_url: T,
     ) -> Result<()> {
+        let pubkyauth_url = Url::parse(
+            pubkyauth_url
+                .as_str()
+                .replace("pubkyauth_url", "http")
+                .as_str(),
+        )?;
+
         let query_params: HashMap<String, String> =
             pubkyauth_url.query_pairs().into_owned().collect();
 
@@ -136,36 +140,34 @@ impl PubkyClient {
 
         let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
 
-        let mut callback = relay.clone();
-        let mut path_segments = callback.path_segments_mut().unwrap();
+        let mut callback_url = relay.clone();
+        let mut path_segments = callback_url.path_segments_mut().unwrap();
         path_segments.pop_if_empty();
         let channel_id = engine.encode(hash(&client_secret).as_bytes());
         path_segments.push(&channel_id);
         drop(path_segments);
 
         let response = self
-            .request(Method::POST, callback)
+            .inner_request(Method::POST, callback_url)
+            .await
             .body(encrypted_token)
             .send()
             .await?;
 
-        response.error_for_status()?;
+        handle_http_error!(response);
 
         Ok(())
     }
 
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
-        let mut url = Url::parse(&format!("https://{}/session", token.pubky()))?;
-
-        self.resolve_url(&mut url).await?;
-
         let response = self
-            .request(Method::POST, url)
+            .inner_request(Method::POST, format!("pubky://{}/session", token.pubky()))
+            .await
             .body(token.serialize())
             .send()
             .await?;
 
-        self.store_session(&response);
+        handle_http_error!(response);
 
         let bytes = response.bytes().await?;
 
@@ -188,7 +190,8 @@ impl PubkyClient {
 
         let mut segments = relay
             .path_segments_mut()
-            .map_err(|_| Error::Generic("Invalid relay".into()))?;
+            .map_err(|_| anyhow::anyhow!("Invalid relay"))?;
+
         // remove trailing slash if any.
         segments.pop_if_empty();
         let channel_id = &engine.encode(hash(&client_secret).as_bytes());
@@ -203,9 +206,11 @@ impl PubkyClient {
         relay: Url,
         client_secret: &[u8; 32],
     ) -> Result<PublicKey> {
-        let response = self.http.request(Method::GET, relay).send().await?;
+        // TODO: use a clearnet client.
+        let response = reqwest::get(relay).await?;
         let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, client_secret)?;
+        let token_bytes = decrypt(&encrypted_token, client_secret)
+            .map_err(|e| anyhow::anyhow!("Got invalid token: {e}"))?;
         let token = AuthToken::verify(&token_bytes)?;
 
         if !token.capabilities().is_empty() {
@@ -218,20 +223,21 @@ impl PubkyClient {
 
 #[cfg(test)]
 mod tests {
-
     use crate::*;
 
-    use pkarr::{mainline::Testnet, Keypair};
+    use http_relay::HttpRelay;
+    use mainline::Testnet;
+    use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_homeserver::Homeserver;
     use reqwest::StatusCode;
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
 
-        let client = PubkyClient::test(&testnet);
+        let client = Client::test(&testnet);
 
         let keypair = Keypair::random();
 
@@ -269,8 +275,11 @@ mod tests {
 
     #[tokio::test]
     async fn authz() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
         let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let http_relay = HttpRelay::builder().build().await.unwrap();
+        let http_relay_url = http_relay.local_link_url();
 
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
@@ -278,14 +287,15 @@ mod tests {
         // Third party app side
         let capabilities: Capabilities =
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
-        let client = PubkyClient::test(&testnet);
-        let (pubkyauth_url, pubkyauth_response) = client
-            .auth_request("https://httprelay.staging.pubky.app/link/", &capabilities)
-            .unwrap();
+      
+        let client = Client::test(&testnet);
+
+        let (pubkyauth_url, pubkyauth_response) =
+            client.auth_request(http_relay_url, &capabilities).unwrap();
 
         // Authenticator side
         {
-            let client = PubkyClient::test(&testnet);
+            let client = Client::test(&testnet);
 
             client.signup(&keypair, &server.public_key()).await.unwrap();
 
@@ -295,37 +305,86 @@ mod tests {
                 .unwrap();
         }
 
-        let public_key = pubkyauth_response.await.unwrap();
+        let public_key = pubkyauth_response
+            .await
+            .expect("sender to not be dropped")
+            .unwrap();
 
         assert_eq!(&public_key, &pubky);
+
+        let session = client.session(&pubky).await.unwrap().unwrap();
+        assert_eq!(session.capabilities(), &capabilities.0);
 
         // Test access control enforcement
 
         client
-            .put(format!("pubky://{pubky}/pub/pubky.app/foo").as_str(), &[])
+            .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
+            .body(vec![])
+            .send()
             .await
+            .unwrap()
+            .error_for_status()
             .unwrap();
 
         assert_eq!(
             client
-                .put(format!("pubky://{pubky}/pub/pubky.app").as_str(), &[])
+                .put(format!("pubky://{pubky}/pub/pubky.app"))
+                .body(vec![])
+                .send()
                 .await
-                .map_err(|e| match e {
-                    crate::Error::Reqwest(e) => e.status(),
-                    _ => None,
-                }),
-            Err(Some(StatusCode::FORBIDDEN))
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
         );
 
         assert_eq!(
             client
-                .put(format!("pubky://{pubky}/pub/foo.bar/file").as_str(), &[])
+                .put(format!("pubky://{pubky}/pub/foo.bar/file"))
+                .body(vec![])
+                .send()
                 .await
-                .map_err(|e| match e {
-                    crate::Error::Reqwest(e) => e.status(),
-                    _ => None,
-                }),
-            Err(Some(StatusCode::FORBIDDEN))
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
         );
+    }
+
+    #[tokio::test]
+    async fn multiple_users() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let client = Client::test(&testnet);
+
+        let first_keypair = Keypair::random();
+        let second_keypair = Keypair::random();
+
+        client
+            .signup(&first_keypair, &server.public_key())
+            .await
+            .unwrap();
+
+        client
+            .signup(&second_keypair, &server.public_key())
+            .await
+            .unwrap();
+
+        let session = client
+            .session(&first_keypair.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(session.pubky(), &first_keypair.public_key());
+        assert!(session.capabilities().contains(&Capability::root()));
+
+        let session = client
+            .session(&second_keypair.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(session.pubky(), &second_keypair.public_key());
+        assert!(session.capabilities().contains(&Capability::root()));
     }
 }

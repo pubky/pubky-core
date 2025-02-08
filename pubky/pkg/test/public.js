@@ -1,125 +1,133 @@
 import test from 'tape'
 
-import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
 
-const Homeserver = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
+const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
 test('public: put/get', async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, Homeserver);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY);
 
   const publicKey = keypair.publicKey();
 
   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
-  const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
+  const json = { foo: 'bar' }
 
   // PUT public data, by authorized client
-  await client.put(url, body);
+  await client.fetch(url, {
+    method:"PUT",
+    body: JSON.stringify(json), 
+    contentType: "json",
+    credentials: "include"
+  });
 
-  const otherClient = PubkyClient.testnet();
+  const otherClient = Client.testnet();
 
   // GET public data without signup or signin
   {
-    let response = await otherClient.get(url);
+    let response = await otherClient.fetch(url)
 
-    t.ok(Buffer.from(response).equals(body))
+    t.is(response.status, 200);
+
+    t.deepEquals(await response.json(), {foo: "bar"})
   }
 
   // DELETE public data, by authorized client
-  await client.delete(url);
+  await client.fetch(url, {
+    method:"DELETE",
+    credentials: "include"
+  });
 
 
   // GET public data without signup or signin
   {
-    let response = await otherClient.get(url);
+    let response = await otherClient.fetch(url);
 
-    t.notOk(response)
+    t.is(response.status, 404)
   }
 })
 
 test("not found", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, Homeserver);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY);
 
   const publicKey = keypair.publicKey();
 
   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
-  let result = await client.get(url).catch(e => e);
+  let result = await client.fetch(url);
 
-  t.notOk(result);
+  t.is(result.status, 404);
 })
 
 test("unauthorized", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
 
   await client.signout(publicKey)
 
-  const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
-
   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
   // PUT public data, by authorized client
-  let result = await client.put(url, body).catch(e => e);
+  let response = await client.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify({ foo: 'bar' }),
+    contentType: "json",
+    credentials: "include"
+  });
 
-  t.ok(result instanceof Error);
-  t.is(
-    result.message,
-    `HTTP status client error (401 Unauthorized) for url (http://localhost:15411/${publicKey.z32()}/pub/example.com/arbitrary)`
-  )
+  t.equals(response.status,401);
 })
 
 test("forbidden", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
 
-  const body = Buffer.from(JSON.stringify({ foo: 'bar' }))
+  const body = (JSON.stringify({ foo: 'bar' }))
 
   let url = `pubky://${publicKey.z32()}/priv/example.com/arbitrary`;
 
   // PUT public data, by authorized client
-  let result = await client.put(url, body).catch(e => e);
+  let response = await client.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify({ foo: 'bar' }),
+    credentials: "include"
+  });
 
-  t.ok(result instanceof Error);
-  t.is(
-    result.message,
-    `HTTP status client error (403 Forbidden) for url (http://localhost:15411/${publicKey.z32()}/priv/example.com/arbitrary)`
-  )
+  t.is(response.status, 403)
+  t.is(await response.text(), 'Writing to directories other than \'/pub/\' is forbidden')
 })
 
 test("list", async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, Homeserver)
-
-
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   let urls = [
     `pubky://${pubky}/pub/a.wrong/a.txt`,
@@ -132,7 +140,11 @@ test("list", async (t) => {
   ]
 
   for (let url of urls) {
-    await client.put(url, Buffer.from(""));
+    await client.fetch(url, {
+      method: "PUT",
+      body:Buffer.from(""), 
+      credentials: "include"
+    });
   }
 
   let url = `pubky://${pubky}/pub/example.com/`;
@@ -242,13 +254,13 @@ test("list", async (t) => {
 })
 
 test('list shallow', async (t) => {
-  const client = PubkyClient.testnet();
+  const client = Client.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, Homeserver)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   let urls = [
     `pubky://${pubky}/pub/a.com/a.txt`,
@@ -264,7 +276,11 @@ test('list shallow', async (t) => {
   ]
 
   for (let url of urls) {
-    await client.put(url, Buffer.from(""));
+    await client.fetch(url, {
+      method: "PUT",
+      body: Buffer.from(""),
+      credentials: "include"
+    });
   }
 
   let url = `pubky://${pubky}/pub/`;

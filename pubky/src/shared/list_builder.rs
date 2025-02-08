@@ -1,25 +1,26 @@
-use reqwest::Method;
-use url::Url;
+use reqwest::{IntoUrl, Method};
 
-use crate::{error::Result, PubkyClient};
+use anyhow::Result;
+
+use crate::{handle_http_error, Client};
 
 /// Helper struct to edit Pubky homeserver's list API options before sending them.
 #[derive(Debug)]
 pub struct ListBuilder<'a> {
-    url: Url,
+    url: String,
     reverse: bool,
     limit: Option<u16>,
     cursor: Option<&'a str>,
-    client: &'a PubkyClient,
+    client: &'a Client,
     shallow: bool,
 }
 
 impl<'a> ListBuilder<'a> {
     /// Create a new List request builder
-    pub(crate) fn new(client: &'a PubkyClient, url: Url) -> Self {
+    pub(crate) fn new<T: IntoUrl>(client: &'a Client, url: T) -> Self {
         Self {
             client,
-            url,
+            url: url.as_str().to_string(),
             limit: None,
             cursor: None,
             reverse: false,
@@ -59,7 +60,7 @@ impl<'a> ListBuilder<'a> {
     /// respecting [ListBuilder::reverse], [ListBuilder::limit] and [ListBuilder::cursor]
     /// options.
     pub async fn send(self) -> Result<Vec<String>> {
-        let mut url = self.client.pubky_to_http(self.url).await?;
+        let mut url = url::Url::parse(&self.url)?;
 
         if !url.path().ends_with('/') {
             let path = url.path().to_string();
@@ -91,9 +92,14 @@ impl<'a> ListBuilder<'a> {
 
         drop(query);
 
-        let response = self.client.request(Method::GET, url).send().await?;
+        let response = self
+            .client
+            .inner_request(Method::GET, url)
+            .await
+            .send()
+            .await?;
 
-        response.error_for_status_ref()?;
+        handle_http_error!(response);
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;

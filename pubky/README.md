@@ -8,7 +8,7 @@ Rust implementation implementation of [Pubky](https://github.com/pubky/pubky-cor
 use pkarr::mainline::Testnet;
 use pkarr::Keypair;
 use pubky_homeserver::Homeserver;
-use pubky::PubkyClient;
+use pubky::Client;
 
 #[tokio::main]
 async fn main () {
@@ -16,10 +16,10 @@ async fn main () {
   let testnet = Testnet::new(10);
   let server = Homeserver::start_test(&testnet).await.unwrap();
 
-  let client = PubkyClient::test(&testnet);
+  let client = Client::test(&testnet);
 
   // Uncomment the following line instead if you are not just testing.
-  // let client PubkyClient::builder().build(); 
+  // let client Client::new().unwrap(); 
 
   // Generate a keypair
   let keypair = Keypair::random();
