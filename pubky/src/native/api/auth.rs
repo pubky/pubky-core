@@ -1,7 +1,6 @@
 use pkarr::Keypair;
 use pubky_common::session::Session;
 use reqwest::IntoUrl;
-use tokio::sync::oneshot;
 use url::Url;
 
 use pkarr::PublicKey;
@@ -21,9 +20,9 @@ impl Client {
         self.inner_signup(keypair, homeserver).await
     }
 
-    /// Check the current sesison for a given Pubky in its homeserver.
+    /// Check the current sessison for a given Pubky in its homeserver.
     ///
-    /// Returns [Session] or `None` (if recieved `404 NOT_FOUND`),
+    /// Returns [Session] or `None` (if received `404 NOT_FOUND`),
     /// or [reqwest::Error] if the response has any other `>=400` status code.
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         self.inner_session(pubky).await
@@ -46,20 +45,24 @@ impl Client {
         &self,
         relay: T,
         capabilities: &Capabilities,
-    ) -> Result<(Url, tokio::sync::oneshot::Receiver<Result<PublicKey>>)> {
+    ) -> Result<AuthRequest> {
+        // TODO: use `async_compat` to remove the dependency on Tokio runtime.
         let mut relay: Url = relay.into_url()?;
 
-        let (pubkyauth_url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
+        let (url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
 
-        let (tx, rx) = oneshot::channel::<Result<PublicKey>>();
+        let (tx, rx) = flume::bounded(1);
 
         let this = self.clone();
 
         tokio::spawn(async move {
-            tx.send(this.subscribe_to_auth_response(relay, &client_secret).await)
+            let result = this
+                .subscribe_to_auth_response(relay, &client_secret, tx.clone())
+                .await;
+            tx.send(result)
         });
 
-        Ok((pubkyauth_url, rx))
+        Ok(AuthRequest { url, rx })
     }
 
     /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
@@ -67,8 +70,27 @@ impl Client {
     pub async fn send_auth_token<T: IntoUrl>(
         &self,
         keypair: &Keypair,
-        pubkyauth_url: T,
+        pubkyauth_url: &T,
     ) -> Result<()> {
         self.inner_send_auth_token(keypair, pubkyauth_url).await
+    }
+}
+
+pub struct AuthRequest {
+    url: Url,
+    rx: flume::Receiver<Result<PublicKey>>,
+}
+
+impl AuthRequest {
+    /// Returns the Pubky Auth URL.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    pub async fn response(&self) -> Result<PublicKey> {
+        self.rx
+            .recv_async()
+            .await
+            .expect("sender dropped unexpectedly")
     }
 }

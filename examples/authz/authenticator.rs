@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
 
     println!("Sending AuthToken to the 3rd party app...");
 
-    client.send_auth_token(&keypair, url).await?;
+    client.send_auth_token(&keypair, &url).await?;
 
     Ok(())
 }
