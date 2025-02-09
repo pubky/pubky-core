@@ -3,9 +3,10 @@
 use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
-use crate::Client;
+use super::super::Client;
 
 impl Client {
+    #[cfg(not(wasm_browser))]
     /// Start building a `Request` with the `Method` and `Url`.
     ///
     /// Returns a `RequestBuilder`, which will allow setting headers and
@@ -29,6 +30,8 @@ impl Client {
 
             return self.http.request(method, url);
         } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
+            // TODO: remove icann_http when we can control reqwest connection
+            // and or create a tls config per connection.
             return self.icann_http.request(method, url);
         }
 
@@ -126,7 +129,7 @@ impl Client {
 
     // === Private Methods ===
 
-    pub(crate) async fn inner_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
+    pub(crate) async fn cross_request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
         self.request(method, url)
     }
 }
