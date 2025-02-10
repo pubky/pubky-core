@@ -13,7 +13,8 @@ pub mod api {
 use std::fmt::Debug;
 
 #[cfg(not(wasm_browser))]
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 #[cfg(not(wasm_browser))]
 use mainline::Testnet;
@@ -35,6 +36,7 @@ macro_rules! handle_http_error {
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
     pkarr: pkarr::ClientBuilder,
+    http_request_timeout: Option<Duration>,
 }
 
 impl ClientBuilder {
@@ -46,7 +48,7 @@ impl ClientBuilder {
     pub fn testnet(&mut self, testnet: &Testnet) -> &mut Self {
         let bootstrap = testnet.bootstrap.clone();
 
-        self.pkarr.bootstrap(&bootstrap);
+        self.pkarr.no_default_network().bootstrap(&bootstrap);
 
         if std::env::var("CI").is_err() {
             self.pkarr.request_timeout(Duration::from_millis(500));
@@ -65,6 +67,13 @@ impl ClientBuilder {
         self
     }
 
+    /// Set HTTP requests timeout.
+    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.http_request_timeout = Some(timeout);
+
+        self
+    }
+
     /// Build [Client]
     pub fn build(&self) -> Result<Client, BuildError> {
         let pkarr = self.pkarr.build()?;
@@ -76,28 +85,34 @@ impl ClientBuilder {
         let user_agent = DEFAULT_USER_AGENT;
 
         #[cfg(not(wasm_browser))]
-        let http = reqwest::ClientBuilder::from(pkarr.clone())
+        let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone())
             // TODO: use persistent cookie jar
             .cookie_provider(cookie_store.clone())
-            .user_agent(user_agent)
-            .build()
-            .expect("config expected to not error");
+            .user_agent(user_agent);
 
         #[cfg(wasm_browser)]
-        let http = reqwest::Client::builder()
-            .user_agent(user_agent)
-            .build()
-            .expect("config expected to not error");
+        let mut http_builder = reqwest::Client::builder().user_agent(user_agent);
+
+        #[cfg(not(wasm_browser))]
+        let mut icann_http_builder = reqwest::Client::builder()
+            // TODO: use persistent cookie jar
+            .cookie_provider(cookie_store.clone())
+            .user_agent(user_agent);
+
+        // TODO: change this after Reqwest publish a release with timeout in wasm
+        #[cfg(not(wasm_browser))]
+        if let Some(timeout) = self.http_request_timeout {
+            http_builder = http_builder.timeout(timeout);
+
+            icann_http_builder = icann_http_builder.timeout(timeout);
+        }
 
         Ok(Client {
-            http,
             pkarr,
+            http: http_builder.build().expect("config expected to not error"),
 
             #[cfg(not(wasm_browser))]
-            icann_http: reqwest::Client::builder()
-                // TODO: use persistent cookie jar
-                .cookie_provider(cookie_store.clone())
-                .user_agent(user_agent)
+            icann_http: icann_http_builder
                 .build()
                 .expect("config expected to not error"),
             #[cfg(not(wasm_browser))]
