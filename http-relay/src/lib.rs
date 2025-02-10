@@ -17,6 +17,7 @@ use axum_server::Handle;
 use tokio::sync::{oneshot, Mutex};
 
 use futures_util::TryFutureExt;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use url::Url;
 
 // Shared state to store GET requests and their notifications
@@ -69,6 +70,8 @@ impl HttpRelay {
 
         let app = Router::new()
             .route("/link/:id", get(link::get).post(link::post))
+            .layer(CorsLayer::very_permissive())
+            .layer(TraceLayer::new_for_http())
             .with_state(shared_state);
 
         let http_handle = Handle::new();
