@@ -52,6 +52,8 @@ export class PubkyAuthWidget extends LitElement {
       throw new Error("window.pubky is unavailable, make sure to import `@synonymdev/pubky` before this web component.")
     }
 
+    window.pubky.setLogLevel("debug");
+
     super()
 
     this.testnet = false;
@@ -92,6 +94,11 @@ export class PubkyAuthWidget extends LitElement {
 
 
   _generateURL() {
+    if (!this.open) {
+      return;
+    }
+
+
     let  authRequest= this.pubkyClient.authRequest(
       this.testnet ? TESTNET_HTTP_RELAY : (this.relay || DEFAULT_HTTP_RELAY), 
       this.caps
@@ -103,38 +110,41 @@ export class PubkyAuthWidget extends LitElement {
       console.error(e)
     })
 
-    this.authUrl = authRequest.url()
+    this.authRequest = authRequest;
 
     this._updateQr();
   }
 
   _updateQr() {
     if (this.canvas) {
-      this._setQr(this.canvas);
+      QRCode.toCanvas(this.canvas, this.authRequest.url(), {
+        margin: 2,
+        scale: 8,
+
+        color: {
+          light: '#fff',
+          dark: '#000',
+        },
+      });
     }
   }
 
   _setQr(canvas) {
     this.canvas = canvas
-    QRCode.toCanvas(canvas, this.authUrl, {
-      margin: 2,
-      scale: 8,
-
-      color: {
-        light: '#fff',
-        dark: '#000',
-      },
-    });
   }
 
   _switchOpen() {
     this.open = !this.open
+    if (!this.authRequest) {
+      this._generateURL()
+    }
+
     setTimeout(() => { this.pubky = null }, 80)
   }
 
   async _copyToClipboard() {
     try {
-      await navigator.clipboard.writeText(this.authUrl);
+      await navigator.clipboard.writeText(this.authRequest.url());
       this.showCopied = true;
       setTimeout(() => { this.showCopied = false }, 1000)
     } catch (error) {
@@ -190,7 +200,7 @@ export class PubkyAuthWidget extends LitElement {
                   </div>
                   <button class="card url" @click=${this._copyToClipboard}>
                     <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
-                    <p>${this.authUrl}</p>
+                    <p>${this.authRequest?.url()}</p>
                     <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
                   </button>
               `

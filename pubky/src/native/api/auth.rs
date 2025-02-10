@@ -271,9 +271,10 @@ impl Client {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AuthRequest {
     url: Url,
-    rx: flume::Receiver<Result<PublicKey>>,
+    pub(crate) rx: flume::Receiver<Result<PublicKey>>,
 }
 
 impl AuthRequest {
@@ -283,6 +284,8 @@ impl AuthRequest {
     }
 
     // TODO: Return better errors
+
+    /// Returns the result of an Auth request.
     pub async fn response(&self) -> Result<PublicKey> {
         self.rx
             .recv_async()
