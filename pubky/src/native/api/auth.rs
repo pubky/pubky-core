@@ -257,7 +257,6 @@ impl Client {
                 }
             }
         }?;
-        cross_debug!("LOOPING xxx {:?}", &response);
 
         let encrypted_token = response.bytes().await?;
         let token_bytes = decrypt(&encrypted_token, client_secret)
@@ -283,6 +282,7 @@ impl AuthRequest {
         &self.url
     }
 
+    // TODO: Return better errors
     pub async fn response(&self) -> Result<PublicKey> {
         self.rx
             .recv_async()
@@ -293,6 +293,8 @@ impl AuthRequest {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::*;
 
     use http_relay::HttpRelay;
@@ -452,5 +454,89 @@ mod tests {
 
         assert_eq!(session.pubky(), &second_keypair.public_key());
         assert!(session.capabilities().contains(&Capability::root()));
+    }
+
+    #[tokio::test]
+    async fn authz_timeout_reconnect() {
+        let testnet = Testnet::new(10).unwrap();
+        let server = Homeserver::start_test(&testnet).await.unwrap();
+
+        let http_relay = HttpRelay::builder().build().await.unwrap();
+        let http_relay_url = http_relay.local_link_url();
+
+        let keypair = Keypair::random();
+        let pubky = keypair.public_key();
+
+        // Third party app side
+        let capabilities: Capabilities =
+            "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
+
+        let client = Client::builder()
+            .pkarr(|builder| builder.no_default_network().bootstrap(&testnet.bootstrap))
+            .request_timeout(Duration::from_millis(1000))
+            .build()
+            .unwrap();
+
+        let pubky_auth_request = client.auth_request(http_relay_url, &capabilities).unwrap();
+
+        // Authenticator side
+        {
+            let url = pubky_auth_request.url().clone();
+
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+
+                    let client = Client::builder()
+                        .pkarr(|builder| builder.no_default_network().bootstrap(&testnet.bootstrap))
+                        .build()
+                        .unwrap();
+
+                    client.signup(&keypair, &server.public_key()).await.unwrap();
+
+                    client.send_auth_token(&keypair, &url).await.unwrap();
+                }
+            });
+        }
+
+        let public_key = pubky_auth_request.response().await.unwrap();
+
+        assert_eq!(&public_key, &pubky);
+
+        let session = client.session(&pubky).await.unwrap().unwrap();
+        assert_eq!(session.capabilities(), &capabilities.0);
+
+        // Test access control enforcement
+
+        client
+            .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
+            .body(vec![])
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        assert_eq!(
+            client
+                .put(format!("pubky://{pubky}/pub/pubky.app"))
+                .body(vec![])
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+
+        assert_eq!(
+            client
+                .put(format!("pubky://{pubky}/pub/foo.bar/file"))
+                .body(vec![])
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
     }
 }

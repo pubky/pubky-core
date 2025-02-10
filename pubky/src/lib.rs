@@ -9,10 +9,12 @@
 
 macro_rules! cross_debug {
     ($($arg:tt)*) => {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(not(test), target_arch = "wasm32"))]
         log::debug!($($arg)*);
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(test), not(target_arch = "wasm32")))]
         tracing::debug!($($arg)*);
+        #[cfg(test)]
+        println!($($arg)*);
     };
 }
 

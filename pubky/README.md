@@ -39,7 +39,7 @@ async fn main () {
 
   assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-  // Delet an entry.
+  // Delete an entry.
   client.delete(url).await.unwrap();
 
   let response = client.get(url).await.unwrap();
