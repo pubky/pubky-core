@@ -3,6 +3,7 @@ import { createRef, ref } from 'lit/directives/ref.js';
 import QRCode from 'qrcode'
 
 const DEFAULT_HTTP_RELAY = "https://httprelay.staging.pubky.app/link/"
+const TESTNET_HTTP_RELAY = "http://localhost:15412/link"
 
 /**
  */
@@ -16,7 +17,7 @@ export class PubkyAuthWidget extends LitElement {
        * Relay endpoint for the widget to receive Pubky AuthTokens
        *
        * Internally, a random channel ID will be generated and a
-       * GET request made for `${realy url}/${channelID}`
+       * GET request made for `${relay url}/${channelID}`
        *
        * If no relay is passed, the widget will use a default relay:
        * https://httprelay.staging.pubky.app/link/
@@ -79,8 +80,6 @@ export class PubkyAuthWidget extends LitElement {
       this.pubkyClient = new window.pubky.Client();
     }
 
-    console.debug("Pkarr Relays: " + this.pubkyClient.getPkarrRelays())
-
     this._generateURL()
   }
 
@@ -93,15 +92,18 @@ export class PubkyAuthWidget extends LitElement {
 
 
   _generateURL() {
-    let [url, promise] = this.pubkyClient.authRequest(this.relay || DEFAULT_HTTP_RELAY, this.caps);
+    let  authRequest= this.pubkyClient.authRequest(
+      this.testnet ? TESTNET_HTTP_RELAY : (this.relay || DEFAULT_HTTP_RELAY), 
+      this.caps
+    );
 
-    promise.then(pubky => {
+    authRequest.response().then(pubky => {
       this.pubky = pubky.z32();
     }).catch(e => {
       console.error(e)
     })
 
-    this.authUrl = url
+    this.authUrl = authRequest.url()
 
     this._updateQr();
   }
