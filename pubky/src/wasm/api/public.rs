@@ -3,7 +3,7 @@
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use crate::Client;
+use super::super::Client;
 
 #[wasm_bindgen]
 impl Client {
@@ -28,7 +28,8 @@ impl Client {
 
         if let Some(cursor) = cursor {
             return self
-                .inner_list(url)
+                .0
+                .list(url)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?
                 .reverse(reverse.unwrap_or(false))
                 .limit(limit.unwrap_or(u16::MAX))
@@ -48,7 +49,8 @@ impl Client {
                 .map_err(|e| JsValue::from_str(&e.to_string()));
         }
 
-        self.inner_list(url)
+        self.0
+            .list(url)
             .map_err(|e| JsValue::from_str(&e.to_string()))?
             .reverse(reverse.unwrap_or(false))
             .limit(limit.unwrap_or(u16::MAX))

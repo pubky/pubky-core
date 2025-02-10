@@ -11,7 +11,7 @@ use futures_lite::StreamExt;
 use pkarr::extra::endpoints::Endpoint;
 use pkarr::PublicKey;
 
-use crate::Client;
+use super::super::Client;
 
 #[wasm_bindgen]
 impl Client {
@@ -27,7 +27,7 @@ impl Client {
 
         let request_init = request_init.unwrap_or_default();
 
-        if let Some(pubky_host) = self.prepare_request(&mut url).await {
+        if let Some(pubky_host) = self.0.prepare_request(&mut url).await {
             let headers = request_init.get_headers();
 
             let headers = if headers.is_null() || headers.is_undefined() {
@@ -74,9 +74,9 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
     }
 }
 
-impl Client {
-    /// A wrapper around [reqwest::Client::request], with the same signature between native and wasm.
-    pub(crate) async fn inner_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
+impl crate::NativeClient {
+    /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
+    pub(crate) async fn cross_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
 
@@ -95,7 +95,7 @@ impl Client {
     /// - Transforms pubky:// url to http(s):// urls
     /// - Resolves a clearnet host to call with fetch
     /// - Returns the `pubky-host` value if available
-    pub(super) async fn prepare_request(&self, url: &mut Url) -> Option<String> {
+    pub(crate) async fn prepare_request(&self, url: &mut Url) -> Option<String> {
         let host = url.host_str().unwrap_or("").to_string();
 
         if url.scheme() == "pubky" {
@@ -116,10 +116,10 @@ impl Client {
         pubky_host
     }
 
-    pub async fn transform_url(&self, url: &mut Url) {
+    pub(crate) async fn transform_url(&self, url: &mut Url) {
         let clone = url.clone();
         let qname = clone.host_str().unwrap_or("");
-        log::debug!("Prepare request {}", url.as_str());
+        cross_debug!("Prepare request {}", url.as_str());
 
         let mut stream = self.pkarr.resolve_https_endpoints(qname);
 
@@ -163,7 +163,7 @@ impl Client {
         } else {
             // TODO: didn't find any domain, what to do?
             //  return an error.
-            log::debug!("Could not resolve host: {}", qname);
+            cross_debug!("Could not resolve host: {}", qname);
         }
     }
 }

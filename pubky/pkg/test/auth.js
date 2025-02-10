@@ -1,6 +1,6 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey } from '../index.cjs'
+import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
@@ -65,8 +65,11 @@ test("Auth: 3rd party signin", async (t) => {
   // Third party app side
   let capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
   let client = Client.testnet();
-  let [pubkyauth_url, pubkyauthResponse] = client
+  let authRequest = client
     .authRequest(TESTNET_HTTP_RELAY, capabilities);
+
+  let pubkyauthUrl = authRequest.url();
+  let pubkyauthResponse = authRequest.response();
 
   if (globalThis.document) {
     // Skip `sendAuthToken` in browser
@@ -81,7 +84,7 @@ test("Auth: 3rd party signin", async (t) => {
 
     await client.signup(keypair, HOMESERVER_PUBLICKEY);
 
-    await client.sendAuthToken(keypair, pubkyauth_url)
+    await client.sendAuthToken(keypair, pubkyauthUrl)
   }
 
   let authedPubky = await pubkyauthResponse;

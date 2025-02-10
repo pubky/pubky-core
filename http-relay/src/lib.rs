@@ -1,26 +1,37 @@
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use anyhow::Result;
 
 use axum::{
-    body::{Body, Bytes},
+    body::Bytes,
     extract::{Path, State},
     response::IntoResponse,
     routing::get,
     Router,
 };
 use axum_server::Handle;
-use tokio::sync::Notify;
+use tokio::sync::{oneshot, Mutex};
 
-use futures_util::{stream::StreamExt, TryFutureExt};
+use futures_util::TryFutureExt;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use url::Url;
 
 // Shared state to store GET requests and their notifications
-type SharedState = Arc<Mutex<HashMap<String, (Vec<u8>, Arc<Notify>)>>>;
+type SharedState = Arc<Mutex<HashMap<String, ChannelState>>>;
+
+enum ChannelState {
+    ProducerWaiting {
+        body: Bytes,
+        completion: oneshot::Sender<()>,
+    },
+    ConsumerWaiting {
+        message_sender: oneshot::Sender<Bytes>,
+    },
+}
 
 #[derive(Debug, Default)]
 pub struct Config {
@@ -59,6 +70,8 @@ impl HttpRelay {
 
         let app = Router::new()
             .route("/link/:id", get(link::get).post(link::post))
+            .layer(CorsLayer::very_permissive())
+            .layer(TraceLayer::new_for_http())
             .with_state(shared_state);
 
         let http_handle = Handle::new();
@@ -110,58 +123,60 @@ impl HttpRelay {
 }
 
 mod link {
+    use axum::http::StatusCode;
+
     use super::*;
 
     pub async fn get(
         Path(id): Path<String>,
         State(state): State<SharedState>,
     ) -> impl IntoResponse {
-        // Create a notification for this ID
-        let notify = Arc::new(Notify::new());
+        let mut channels = state.lock().await;
 
-        {
-            let mut map = state.lock().unwrap();
+        match channels.remove(&id) {
+            Some(ChannelState::ProducerWaiting { body, completion }) => {
+                let _ = completion.send(());
 
-            // Store the notification and return it when POST arrives
-            map.entry(id.clone())
-                .or_insert_with(|| (vec![], notify.clone()));
-        }
+                (StatusCode::OK, body)
+            }
+            _ => {
+                let (message_sender, message_receiver) = oneshot::channel();
+                channels.insert(id, ChannelState::ConsumerWaiting { message_sender });
+                drop(channels);
 
-        notify.notified().await;
-
-        // Respond with the data stored for this ID
-        let map = state.lock().unwrap();
-        if let Some((data, _)) = map.get(&id) {
-            Bytes::from(data.clone()).into_response()
-        } else {
-            (axum::http::StatusCode::NOT_FOUND, "Not Found").into_response()
+                match message_receiver.await {
+                    Ok(message) => (StatusCode::OK, message),
+                    Err(_) => (StatusCode::NOT_FOUND, "Not Found".into()),
+                }
+            }
         }
     }
 
     pub async fn post(
-        Path(id): Path<String>,
+        Path(channel): Path<String>,
         State(state): State<SharedState>,
-        body: Body,
+        body: Bytes,
     ) -> impl IntoResponse {
-        // Aggregate the body into bytes
-        let mut stream = body.into_data_stream();
-        let mut bytes = vec![];
-        while let Some(next) = stream.next().await {
-            let chunk = next.map_err(|e| e.to_string()).unwrap();
-            bytes.extend_from_slice(&chunk);
-        }
+        let mut channels = state.lock().await;
 
-        // Notify any waiting GET request for this ID
-        let mut map = state.lock().unwrap();
-        if let Some((storage, notify)) = map.get_mut(&id) {
-            *storage = bytes;
-            notify.notify_one();
-            Ok(())
-        } else {
-            Err((
-                axum::http::StatusCode::NOT_FOUND,
-                "No waiting GET request for this ID",
-            ))
+        match channels.remove(&channel) {
+            Some(ChannelState::ConsumerWaiting { message_sender }) => {
+                let _ = message_sender.send(body);
+                (StatusCode::OK, ())
+            }
+            _ => {
+                let (completion_sender, completion_receiver) = oneshot::channel();
+                channels.insert(
+                    channel,
+                    ChannelState::ProducerWaiting {
+                        body,
+                        completion: completion_sender,
+                    },
+                );
+                drop(channels);
+                let _ = completion_receiver.await;
+                (StatusCode::OK, ())
+            }
         }
     }
 }

@@ -1,39 +1,36 @@
 #![doc = include_str!("../README.md")]
 //!
 
-mod shared;
+// TODO: deny missing docs.
+// #![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// TODO: deny unwrap
+#![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-#[cfg(not(target_arch = "wasm32"))]
-mod native;
+macro_rules! cross_debug {
+    ($($arg:tt)*) => {
+        #[cfg(all(not(test), target_arch = "wasm32"))]
+        log::debug!($($arg)*);
+        #[cfg(all(not(test), not(target_arch = "wasm32")))]
+        tracing::debug!($($arg)*);
+        #[cfg(test)]
+        println!($($arg)*);
+    };
+}
 
-#[cfg(target_arch = "wasm32")]
+pub mod native;
+#[cfg(wasm_browser)]
 mod wasm;
 
-use std::fmt::Debug;
+#[cfg(not(wasm_browser))]
+pub use crate::native::Client;
+pub use crate::native::{api::auth::AuthRequest, api::public::ListBuilder, ClientBuilder};
 
-use wasm_bindgen::prelude::*;
+#[cfg(wasm_browser)]
+pub use native::Client as NativeClient;
+#[cfg(wasm_browser)]
+pub use wasm::Client;
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use crate::shared::list_builder::ListBuilder;
-
-/// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
-#[derive(Clone)]
-#[wasm_bindgen]
-pub struct Client {
-    http: reqwest::Client,
-    pkarr: pkarr::Client,
-
-    #[cfg(not(target_arch = "wasm32"))]
-    cookie_store: std::sync::Arc<native::CookieJar>,
-    #[cfg(not(target_arch = "wasm32"))]
-    icann_http: reqwest::Client,
-
-    #[cfg(target_arch = "wasm32")]
-    testnet: bool,
-}
-
-impl Debug for Client {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pubky Client").finish()
-    }
-}
+// Re-exports
+pub use pkarr::{Keypair, PublicKey};
+pub use pubky_common::recovery_file;
