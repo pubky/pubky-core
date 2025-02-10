@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::RwLock};
 use pkarr::PublicKey;
 use reqwest::{cookie::CookieStore, header::HeaderValue, Response};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct CookieJar {
     pubky_sessions: RwLock<HashMap<String, String>>,
     normal_jar: RwLock<cookie_store::CookieStore>,

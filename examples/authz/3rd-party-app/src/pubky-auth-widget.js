@@ -3,6 +3,7 @@ import { createRef, ref } from 'lit/directives/ref.js';
 import QRCode from 'qrcode'
 
 const DEFAULT_HTTP_RELAY = "https://httprelay.staging.pubky.app/link/"
+const TESTNET_HTTP_RELAY = "http://localhost:15412/link"
 
 /**
  */
@@ -16,7 +17,7 @@ export class PubkyAuthWidget extends LitElement {
        * Relay endpoint for the widget to receive Pubky AuthTokens
        *
        * Internally, a random channel ID will be generated and a
-       * GET request made for `${realy url}/${channelID}`
+       * GET request made for `${relay url}/${channelID}`
        *
        * If no relay is passed, the widget will use a default relay:
        * https://httprelay.staging.pubky.app/link/
@@ -51,6 +52,8 @@ export class PubkyAuthWidget extends LitElement {
       throw new Error("window.pubky is unavailable, make sure to import `@synonymdev/pubky` before this web component.")
     }
 
+    window.pubky.setLogLevel("debug");
+
     super()
 
     this.testnet = false;
@@ -79,8 +82,6 @@ export class PubkyAuthWidget extends LitElement {
       this.pubkyClient = new window.pubky.Client();
     }
 
-    console.debug("Pkarr Relays: " + this.pubkyClient.getPkarrRelays())
-
     this._generateURL()
   }
 
@@ -93,46 +94,57 @@ export class PubkyAuthWidget extends LitElement {
 
 
   _generateURL() {
-    let [url, promise] = this.pubkyClient.authRequest(this.relay || DEFAULT_HTTP_RELAY, this.caps);
+    if (!this.open) {
+      return;
+    }
 
-    promise.then(pubky => {
+
+    let  authRequest= this.pubkyClient.authRequest(
+      this.testnet ? TESTNET_HTTP_RELAY : (this.relay || DEFAULT_HTTP_RELAY), 
+      this.caps
+    );
+
+    authRequest.response().then(pubky => {
       this.pubky = pubky.z32();
     }).catch(e => {
       console.error(e)
     })
 
-    this.authUrl = url
+    this.authRequest = authRequest;
 
     this._updateQr();
   }
 
   _updateQr() {
     if (this.canvas) {
-      this._setQr(this.canvas);
+      QRCode.toCanvas(this.canvas, this.authRequest.url(), {
+        margin: 2,
+        scale: 8,
+
+        color: {
+          light: '#fff',
+          dark: '#000',
+        },
+      });
     }
   }
 
   _setQr(canvas) {
     this.canvas = canvas
-    QRCode.toCanvas(canvas, this.authUrl, {
-      margin: 2,
-      scale: 8,
-
-      color: {
-        light: '#fff',
-        dark: '#000',
-      },
-    });
   }
 
   _switchOpen() {
     this.open = !this.open
+    if (!this.authRequest) {
+      this._generateURL()
+    }
+
     setTimeout(() => { this.pubky = null }, 80)
   }
 
   async _copyToClipboard() {
     try {
-      await navigator.clipboard.writeText(this.authUrl);
+      await navigator.clipboard.writeText(this.authRequest.url());
       this.showCopied = true;
       setTimeout(() => { this.showCopied = false }, 1000)
     } catch (error) {
@@ -188,7 +200,7 @@ export class PubkyAuthWidget extends LitElement {
                   </div>
                   <button class="card url" @click=${this._copyToClipboard}>
                     <div class="copied ${this.showCopied ? "show" : ""}">Copied to Clipboard</div>
-                    <p>${this.authUrl}</p>
+                    <p>${this.authRequest?.url()}</p>
                     <svg width="14" height="16" viewBox="0 0 14 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="12" rx="2" fill="white"></rect><rect x="3" y="3" width="10" height="12" rx="2" fill="white" stroke="#3B3B3B"></rect></svg>
                   </button>
               `
