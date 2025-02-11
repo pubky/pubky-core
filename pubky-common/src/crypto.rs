@@ -2,7 +2,7 @@ use crypto_secretbox::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     XSalsa20Poly1305,
 };
-use rand::prelude::Rng;
+use rand::random;
 
 pub use pkarr::{Keypair, PublicKey};
 
@@ -15,18 +15,12 @@ pub use blake3::hash;
 pub use blake3::Hasher;
 
 pub fn random_hash() -> Hash {
-    let mut rng = rand::thread_rng();
-    Hash::from_bytes(rng.gen())
+    Hash::from_bytes(random())
 }
 
 pub fn random_bytes<const N: usize>() -> [u8; N] {
-    let mut rng = rand::thread_rng();
-    let mut arr = [0u8; N];
+    let arr: [u8; N] = random();
 
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..N {
-        arr[i] = rng.gen();
-    }
     arr
 }
 
