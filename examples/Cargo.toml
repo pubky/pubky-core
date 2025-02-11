@@ -20,7 +20,7 @@ anyhow = "1.0.94"
 base64 = "0.22.1"
 clap = { version = "4.5.23", features = ["derive"] }
 pubky = { path = "../pubky" }
-pubky-common = { version = "0.1.0", path = "../pubky-common" }
+pubky-common = { version = "0.2.0", path = "../pubky-common" }
 reqwest = "0.12.9"
 rpassword = "7.3.1"
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }

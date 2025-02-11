@@ -19,7 +19,7 @@ base64 = "0.22.1"
 
 pkarr = { version = "3.0.0", features = ["full"] }
 mainline = "5.0.0-rc.1"
-pubky-common = { version = "0.1.0", path = "../pubky-common" }
+pubky-common = { version = "0.2.0", path = "../pubky-common" }
 cookie = "0.18.1"
 tracing = "0.1.41"
 cookie_store = { version = "0.21.1", default-features = false }
