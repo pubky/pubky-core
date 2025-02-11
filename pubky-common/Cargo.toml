@@ -21,7 +21,7 @@ argon2 = { version = "0.5.3", features = ["std"] }
 
 pubky-timestamp = { version = "0.2.0", features = ["full"] }
 serde = { version = "1.0.216", features = ["derive"] }
-pkarr = { git = "https://github.com/Pubky/pkarr", package = "pkarr", default-features = false, features = ["keys"] }
+pkarr = { version = "3.0.0", default-features = false, features = ["keys"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.76"

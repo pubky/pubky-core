@@ -17,7 +17,7 @@ url = "2.5.4"
 bytes = "^1.9.0"
 base64 = "0.22.1"
 
-pkarr = { git = "https://github.com/Pubky/pkarr", package = "pkarr", features = ["full"] }
+pkarr = { version = "3.0.0", features = ["full"] }
 mainline = "5.0.0-rc.1"
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 cookie = "0.18.1"

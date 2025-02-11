@@ -17,7 +17,7 @@ heed = "0.21.0"
 hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
-pkarr = { git = "https://github.com/Pubky/pkarr", package = "pkarr", features = ["dht", "lmdb-cache", "tls"] }
+pkarr = { version = "3.0.0", features = ["dht", "lmdb-cache", "tls"] }
 pubky-common = { version = "0.1.0", path = "../pubky-common" }
 serde = { version = "1.0.216", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["full"] }
@@ -31,6 +31,6 @@ axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tower = "0.5.1"
 page_size = "0.6.0"
 
-pkarr-relay = { git = "https://github.com/Pubky/pkarr", package = "pkarr-relay" }
+pkarr-relay = "0.1.0"
 mainline = "5.0.0-rc.1"
 http-relay = { version = "0.1.0", path = "../http-relay" }
