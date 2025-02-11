@@ -2,13 +2,13 @@
 name = "pubky-common"
 version = "0.1.0"
 edition = "2021"
+authors = ["Nuh <nuh@nuh.dev>"]
 description = "Types and struct in common between Pubky client and homeserver"
 license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
 repository = "https://github.com/pubky/pubky-core"
-categories = ["web-programming", "authentication", "cryptography"]
 keywords = ["pkarr", "pubky", "auth", "pubkey"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+categories = ["web-programming", "authentication", "cryptography"]
 
 [dependencies]
 base32 = "0.5.1"
