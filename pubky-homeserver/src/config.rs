@@ -106,6 +106,9 @@ impl Config {
         Self {
             io: IoConfig {
                 bootstrap,
+                http_port: 0,
+                https_port: 0,
+
                 ..Default::default()
             },
             core: CoreConfig::test(),
@@ -244,6 +247,8 @@ mod tests {
 
                 io: IoConfig {
                     bootstrap: Some(vec![]),
+                    http_port: 0,
+                    https_port: 0,
 
                     ..Default::default()
                 },

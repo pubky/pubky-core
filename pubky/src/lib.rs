@@ -34,3 +34,10 @@ pub use wasm::Client;
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::recovery_file;
+
+pub mod errors {
+    pub use super::*;
+
+    #[cfg(not(wasm_browser))]
+    pub use native::BuildError;
+}

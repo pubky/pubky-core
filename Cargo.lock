@@ -1246,6 +1246,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-relay"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e21bdfe99224d6d446eb1b6ecc139ed96a7a8f0a77a123158b9c31d1dbbbcb08"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "futures-util",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "httparse"
 version = "1.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2082,8 +2098,6 @@ name = "pubky"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "axum",
- "axum-server",
  "base64 0.22.1",
  "bytes",
  "cfg_aliases",
@@ -2095,14 +2109,14 @@ dependencies = [
  "futures-util",
  "js-sys",
  "log",
- "mainline",
  "pkarr",
  "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "pubky-homeserver",
+ "pubky-testnet",
  "reqwest",
  "thiserror 2.0.11",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -2186,9 +2200,11 @@ name = "pubky-testnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "http-relay 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mainline",
  "pkarr-relay",
  "pubky",
+ "pubky-homeserver",
  "tokio",
  "url",
 ]

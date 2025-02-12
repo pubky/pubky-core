@@ -25,7 +25,7 @@ pub struct AuthToken {
     /// A namespace to ensure this signature can't be used for any
     /// other purposes that share the same message structurea by accident.
     namespace: [u8; 10],
-    /// Version of the [AuthToken], in case we need to upgrade it to support unforseen usecases.
+    /// Version of the [AuthToken], in case we need to upgrade it to support unforeseen usecases.
     ///
     /// Version 0:
     /// - Signer is implicitly the same as the root keypair for
