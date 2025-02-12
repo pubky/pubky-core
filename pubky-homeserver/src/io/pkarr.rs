@@ -1,9 +1,9 @@
 //! Pkarr related task
 
 use anyhow::Result;
-use pkarr::{dns::rdata::SVCB, SignedPacket};
+use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
 
-use crate::Config;
+use super::IoConfig;
 
 pub struct PkarrServer {
     client: pkarr::Client,
@@ -11,7 +11,12 @@ pub struct PkarrServer {
 }
 
 impl PkarrServer {
-    pub fn new(config: &Config, https_port: u16, http_port: u16) -> Result<Self> {
+    pub fn new(
+        keypair: &Keypair,
+        config: &IoConfig,
+        https_port: u16,
+        http_port: u16,
+    ) -> Result<Self> {
         let mut builder = pkarr::Client::builder();
 
         // TODO: should we enable relays in homeservers for udp restricted environments?
@@ -27,7 +32,7 @@ impl PkarrServer {
 
         let client = builder.build()?;
 
-        let signed_packet = create_signed_packet(config, https_port, http_port)?;
+        let signed_packet = create_signed_packet(keypair, config, https_port, http_port)?;
 
         Ok(Self {
             client,
@@ -46,7 +51,8 @@ impl PkarrServer {
 }
 
 pub fn create_signed_packet(
-    config: &Config,
+    keypair: &Keypair,
+    config: &IoConfig,
     https_port: u16,
     http_port: u16,
 ) -> Result<SignedPacket> {
@@ -60,7 +66,6 @@ pub fn create_signed_packet(
     signed_packet_builder = signed_packet_builder.address(
         ".".try_into().unwrap(),
         config
-            .io
             .public_addr
             .map(|addr| addr.ip())
             .unwrap_or("127.0.0.1".parse().expect("localhost is valid ip")),
@@ -70,7 +75,6 @@ pub fn create_signed_packet(
     // Set the public port or the local https_port
     svcb.set_port(
         config
-            .io
             .public_addr
             .map(|addr| addr.port())
             .unwrap_or(https_port),
@@ -91,12 +95,12 @@ pub fn create_signed_packet(
         svcb.target = "localhost".try_into().expect("localhost is valid dns name");
 
         signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60)
-    } else if let Some(ref domain) = config.io.domain {
+    } else if let Some(ref domain) = config.domain {
         let mut svcb = SVCB::new(10, ".".try_into()?);
         svcb.target = domain.as_str().try_into()?;
 
         signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
     }
 
-    Ok(signed_packet_builder.build(&config.keypair)?)
+    Ok(signed_packet_builder.build(keypair)?)
 }

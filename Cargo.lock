@@ -1246,22 +1246,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "http-relay"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e21bdfe99224d6d446eb1b6ecc139ed96a7a8f0a77a123158b9c31d1dbbbcb08"
-dependencies = [
- "anyhow",
- "axum",
- "axum-server",
- "futures-util",
- "tokio",
- "tower-http",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "httparse"
 version = "1.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1275,9 +1259,9 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hyper"
-version = "1.5.2"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "256fb8d4bd6413123cc9d91832d78325c48ff41677595be797d90f42969beae0"
+checksum = "cc2b571658e38e0c01b1fdca3bbbe93c00d3d71693ff2770043f8c29bc7d6f80"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2181,12 +2165,9 @@ dependencies = [
  "futures-util",
  "heed",
  "hex",
- "http-relay 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "httpdate",
- "mainline",
  "page_size",
  "pkarr",
- "pkarr-relay",
  "postcard",
  "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",

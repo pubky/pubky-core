@@ -16,13 +16,13 @@ name = "request"
 path = "./request/main.rs"
 
 [dependencies]
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 base64 = "0.22.1"
-clap = { version = "4.5.23", features = ["derive"] }
+clap = { version = "4.5.29", features = ["derive"] }
 pubky = { path = "../pubky" }
 pubky-common = { version = "0.2.0", path = "../pubky-common" }
-reqwest = "0.12.9"
+reqwest = "0.12.12"
 rpassword = "7.3.1"
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 url = "2.5.4"

@@ -7,14 +7,15 @@ use heed::{Env, EnvOpenOptions};
 mod migrations;
 pub mod tables;
 
-use crate::core::config::Config;
-
 use tables::{Tables, TABLES_COUNT};
 
 pub use protected::DB;
 
 /// Protecting fields from being mutated by modules in crate::database
 mod protected {
+
+    use crate::core::CoreConfig;
+
     use super::*;
 
     #[derive(Debug, Clone)]
@@ -23,14 +24,14 @@ mod protected {
         pub(crate) tables: Tables,
         pub(crate) buffers_dir: PathBuf,
         pub(crate) max_chunk_size: usize,
-        config: Config,
+        config: CoreConfig,
     }
 
     impl DB {
         /// # Safety
         /// DB uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
         /// because the possible Undefined Behavior (UB) if the lock file is broken.
-        pub unsafe fn open(config: Config) -> anyhow::Result<Self> {
+        pub unsafe fn open(config: CoreConfig) -> anyhow::Result<Self> {
             let buffers_dir = config.storage.clone().join("buffers");
 
             // Cleanup buffers.
@@ -57,9 +58,14 @@ mod protected {
             Ok(db)
         }
 
+        // Create an ephemeral database for testing purposes.
+        pub fn test() -> DB {
+            unsafe { DB::open(CoreConfig::test()).unwrap() }
+        }
+
         // === Getters ===
 
-        pub fn config(&self) -> &Config {
+        pub fn config(&self) -> &CoreConfig {
             &self.config
         }
     }
@@ -73,7 +79,7 @@ fn max_chunk_size() -> usize {
 
     // - 16 bytes Header  per page (LMDB)
     // - Each page has to contain 2 records
-    // - 8 bytes per record (LMDB) (imperically, it seems to be 10 not 8)
+    // - 8 bytes per record (LMDB) (empirically, it seems to be 10 not 8)
     // - 12 bytes key:
     //      - timestamp : 8 bytes
     //      - chunk index: 4 bytes
