@@ -1,3 +1,6 @@
+//! A Rust implementation of _some_ of [Http relay spec](https://httprelay.io/).
+//!
+
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener},
@@ -69,7 +72,7 @@ impl HttpRelay {
         let shared_state: SharedState = Arc::new(Mutex::new(HashMap::new()));
 
         let app = Router::new()
-            .route("/link/:id", get(link::get).post(link::post))
+            .route("/link/{id}", get(link::get).post(link::post))
             .layer(CorsLayer::very_permissive())
             .layer(TraceLayer::new_for_http())
             .with_state(shared_state);
