@@ -84,7 +84,7 @@ impl ClientBuilder {
             .user_agent(user_agent);
 
         #[cfg(wasm_browser)]
-        let mut http_builder = reqwest::Client::builder().user_agent(user_agent);
+        let http_builder = reqwest::Client::builder().user_agent(user_agent);
 
         #[cfg(not(wasm_browser))]
         let mut icann_http_builder = reqwest::Client::builder()

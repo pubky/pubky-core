@@ -50,6 +50,13 @@ impl HomeserverBuilder {
         self
     }
 
+    /// Set the public domain of this Homeserver
+    pub fn domain(&mut self, domain: &str) -> &mut Self {
+        self.0.io.domain = Some(domain.to_string());
+
+        self
+    }
+
     /// Run a Homeserver
     ///
     /// # Safety
