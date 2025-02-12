@@ -4,7 +4,7 @@
 // TODO: deny missing docs.
 // #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// TODO: deny unwrap
+// TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
 macro_rules! cross_debug {
