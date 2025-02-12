@@ -36,6 +36,20 @@ impl HomeserverBuilder {
         self
     }
 
+    /// Configure the DHT bootstrapping nodes that this Homeserver is connected to.
+    pub fn bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
+        self.0.io.bootstrap = Some(bootstrap.to_vec());
+
+        self
+    }
+
+    /// Configure Pkarr relays used by this Homeserver
+    pub fn relays(&mut self, _relays: &[url::Url]) -> &mut Self {
+        // TODO: make it not a noop if we are going to support relays in homeservers.
+
+        self
+    }
+
     /// Run a Homeserver
     ///
     /// # Safety
