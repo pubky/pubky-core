@@ -113,7 +113,7 @@ impl DB {
 
     /// Return a list of pubky urls.
     ///
-    /// - limit defaults to [crate::Config::default_list_limit] and capped by [crate::Config::max_list_limit]
+    /// - limit defaults to [crate::core::Config::default_list_limit] and capped by [crate::core::Config::max_list_limit]
     pub fn list(
         &self,
         txn: &RoTxn,
@@ -451,16 +451,13 @@ impl<'db> std::io::Write for EntryWriter<'db> {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use mainline::Testnet;
     use pkarr::Keypair;
-
-    use crate::Config;
 
     use super::DB;
 
     #[tokio::test]
     async fn entries() -> anyhow::Result<()> {
-        let mut db = unsafe { DB::open(Config::test(&Testnet::new(0).unwrap())).unwrap() };
+        let mut db = DB::test();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
@@ -502,7 +499,7 @@ mod tests {
 
     #[tokio::test]
     async fn chunked_entry() -> anyhow::Result<()> {
-        let mut db = unsafe { DB::open(Config::test(&Testnet::new(0).unwrap())).unwrap() };
+        let mut db = DB::test();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();

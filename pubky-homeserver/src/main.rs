@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use pubky_homeserver::{Config, Homeserver};
+use pubky_homeserver::Homeserver;
 
 use clap::Parser;
 
@@ -10,10 +10,6 @@ struct Cli {
     /// [tracing_subscriber::EnvFilter]
     #[clap(short, long)]
     tracing_env_filter: Option<String>,
-
-    /// Run Homeserver in a local testnet
-    #[clap(long)]
-    testnet: bool,
 
     /// Optional Path to config file.
     #[clap(short, long)]
@@ -32,12 +28,10 @@ async fn main() -> Result<()> {
         .init();
 
     let server = unsafe {
-        if args.testnet {
-            Homeserver::start_testnet().await?
-        } else if let Some(config_path) = args.config {
-            Homeserver::start(Config::load(config_path).await?).await?
+        if let Some(config_path) = args.config {
+            Homeserver::run_with_config_file(config_path).await?
         } else {
-            Homeserver::builder().start().await?
+            Homeserver::builder().run().await?
         }
     };
 

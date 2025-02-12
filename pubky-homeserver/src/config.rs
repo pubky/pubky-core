@@ -8,19 +8,20 @@ use std::{
     fs,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
-    time::Duration,
 };
 
-const DEFAULT_HTTP_PORT: u16 = 6286;
-const DEFAULT_HTTPS_PORT: u16 = 6287;
+use crate::{core::CoreConfig, io::IoConfig};
 
-// === Database ===
-const DEFAULT_STORAGE_DIR: &str = "pubky";
+// === Core ==
+pub const DEFAULT_STORAGE_DIR: &str = "pubky";
 pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
 
-// === Server ==
 pub const DEFAULT_LIST_LIMIT: u16 = 100;
 pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
+
+// === IO ===
+pub const DEFAULT_HTTP_PORT: u16 = 6286;
+pub const DEFAULT_HTTPS_PORT: u16 = 6287;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 struct DatabaseToml {
@@ -55,45 +56,16 @@ struct ConfigToml {
     io: Option<IoToml>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IoConfig {
-    pub http_port: u16,
-    pub https_port: u16,
-    pub public_addr: Option<SocketAddr>,
-    pub domain: Option<String>,
-}
-
 /// Server configuration
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    /// Run in [testnet](crate::Homeserver::start_testnet) mode.
-    pub testnet: bool,
-    /// Bootstrapping DHT nodes.
-    ///
-    /// Helpful to run the server locally or in testnet.
-    pub bootstrap: Option<Vec<String>>,
-    /// Path to the storage directory.
-    ///
-    /// Defaults to a directory in the OS data directory
-    pub storage: PathBuf,
     /// Server keypair.
     ///
     /// Defaults to a random keypair.
     pub keypair: Keypair,
-    pub dht_request_timeout: Option<Duration>,
-    /// The default limit of a list api if no `limit` query parameter is provided.
-    ///
-    /// Defaults to `100`
-    pub default_list_limit: u16,
-    /// The maximum limit of a list api, even if a `limit` query parameter is provided.
-    ///
-    /// Defaults to `1000`
-    pub max_list_limit: u16,
-
-    // === Database params ===
-    pub db_map_size: usize,
 
     pub io: IoConfig,
+    pub core: CoreConfig,
 }
 
 impl Config {
@@ -114,36 +86,29 @@ impl Config {
         let mut config = Config::try_from_str(&s)?;
 
         // support relative path.
-        if config.storage.is_relative() {
-            config.storage = config_file_path
+        if config.core.storage.is_relative() {
+            config.core.storage = config_file_path
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
-                .join(config.storage.clone());
+                .join(config.core.storage.clone());
         }
 
-        fs::create_dir_all(&config.storage)?;
-        config.storage = config.storage.canonicalize()?;
+        fs::create_dir_all(&config.core.storage)?;
+        config.core.storage = config.core.storage.canonicalize()?;
 
         Ok(config)
     }
 
-    /// Test configurations
-    pub fn test(testnet: &mainline::Testnet) -> Self {
-        let bootstrap = Some(testnet.bootstrap.to_owned());
-        let storage = std::env::temp_dir()
-            .join(pubky_common::timestamp::Timestamp::now().to_string())
-            .join(DEFAULT_STORAGE_DIR);
+    /// Create test configurations
+    pub fn test(bootstrap: &[String]) -> Self {
+        let bootstrap = Some(bootstrap.to_vec());
 
         Self {
-            bootstrap,
-            storage,
-            db_map_size: 10485760,
             io: IoConfig {
-                http_port: 0,
-                https_port: 0,
-                public_addr: None,
-                domain: None,
+                bootstrap,
+                ..Default::default()
             },
+            core: CoreConfig::test(),
             ..Default::default()
         }
     }
@@ -152,21 +117,9 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            testnet: false,
             keypair: Keypair::random(),
-            bootstrap: None,
-            storage: storage(None)
-                .expect("operating environment provides no directory for application data"),
-            dht_request_timeout: None,
-            default_list_limit: DEFAULT_LIST_LIMIT,
-            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
-            db_map_size: DEFAULT_MAP_SIZE,
-            io: IoConfig {
-                https_port: DEFAULT_HTTPS_PORT,
-                http_port: DEFAULT_HTTP_PORT,
-                domain: None,
-                public_addr: None,
-            },
+            io: IoConfig::default(),
+            core: CoreConfig::default(),
         }
     }
 }
@@ -209,28 +162,24 @@ impl TryFrom<ConfigToml> for Config {
                             .unwrap_or(io.https_port.unwrap_or(0)),
                     ))
                 }),
+                ..Default::default()
             }
         } else {
             IoConfig {
                 http_port: DEFAULT_HTTP_PORT,
                 https_port: DEFAULT_HTTPS_PORT,
-                domain: None,
-                public_addr: None,
+                ..Default::default()
             }
         };
 
         Ok(Config {
-            testnet: false,
             keypair,
 
-            storage,
-            dht_request_timeout: None,
-            bootstrap: None,
-            default_list_limit: DEFAULT_LIST_LIMIT,
-            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
-            db_map_size: DEFAULT_MAP_SIZE,
-
             io,
+            core: CoreConfig {
+                storage,
+                ..Default::default()
+            },
         })
     }
 }
@@ -252,22 +201,8 @@ fn deserialize_secret_key(s: String) -> anyhow::Result<[u8; 32]> {
     Ok(arr)
 }
 
-fn storage(storage: Option<String>) -> Result<PathBuf> {
-    let dir = if let Some(storage) = storage {
-        PathBuf::from(storage)
-    } else {
-        let path = dirs_next::data_dir().ok_or_else(|| {
-            anyhow!("operating environment provides no directory for application data")
-        })?;
-        path.join(DEFAULT_STORAGE_DIR)
-    };
-
-    Ok(dir.join("homeserver"))
-}
-
 #[cfg(test)]
 mod tests {
-    use mainline::Testnet;
 
     use super::*;
 
@@ -293,31 +228,31 @@ mod tests {
         let config = Config::load(canonical_file_path).await.unwrap();
 
         assert!(config
+            .core
             .storage
             .ends_with("pubky-homeserver/src/storage/homeserver"));
     }
 
     #[test]
     fn config_test() {
-        let testnet = Testnet::new(3).unwrap();
-        let config = Config::test(&testnet);
+        let config = Config::test(&[]);
 
         assert_eq!(
             config,
             Config {
-                bootstrap: testnet.bootstrap.into(),
-                db_map_size: 10485760,
-
-                storage: config.storage.clone(),
                 keypair: config.keypair.clone(),
 
                 io: IoConfig {
-                    http_port: 0,
-                    https_port: 0,
-                    public_addr: None,
-                    domain: None
+                    bootstrap: Some(vec![]),
+
+                    ..Default::default()
                 },
-                ..Default::default()
+                core: CoreConfig {
+                    db_map_size: 10485760,
+                    storage: config.core.storage.clone(),
+
+                    ..Default::default()
+                },
             }
         )
     }
@@ -362,8 +297,8 @@ public_port = 6287
 #
 # This domain should point to the `<public_ip>:<http_port>`.
 # 
-# Currently we don't support ICANN TLS, so you should be runing
-#   a reverse proxy and managing certifcates there for this endpoint.
+# Currently we don't support ICANN TLS, so you should be running
+#   a reverse proxy and managing certificates there for this endpoint.
 domain = "example.com"
         "#,
         )

@@ -36,6 +36,6 @@ public_port = 6287
 #
 # This domain should point to the `<public_ip>:<http_port>`.
 # 
-# Currently we don't support ICANN TLS, so you should be runing
-#   a reverse proxy and managing certifcates there for this endpoint.
+# Currently we don't support ICANN TLS, so you should be running
+#   a reverse proxy and managing certificates there for this endpoint.
 domain = "example.com"
