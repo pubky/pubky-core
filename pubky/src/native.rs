@@ -50,7 +50,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Create a [mainline::DhtBuilder] if `None`, and allows mutating it with a callback function.
+    /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
     pub fn pkarr<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut pkarr::ClientBuilder) -> &mut pkarr::ClientBuilder,
