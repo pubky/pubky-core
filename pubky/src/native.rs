@@ -16,9 +16,6 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(not(wasm_browser))]
-use mainline::Testnet;
-
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
 #[macro_export]
@@ -41,18 +38,14 @@ pub struct ClientBuilder {
 
 impl ClientBuilder {
     #[cfg(not(wasm_browser))]
-    /// Sets the following:
-    /// - Pkarr client's DHT bootstrap nodes = `testnet` bootstrap nodes.
-    /// - Pkarr client's resolvers           = `testnet` bootstrap nodes.
-    /// - Pkarr client's DHT request timeout  = 500 milliseconds. (unless in CI, then it is left as default 2000)
-    pub fn testnet(&mut self, testnet: &Testnet) -> &mut Self {
-        let bootstrap = testnet.bootstrap.clone();
-
-        self.pkarr.no_default_network().bootstrap(&bootstrap);
-
-        if std::env::var("CI").is_err() {
-            self.pkarr.request_timeout(Duration::from_millis(500));
-        }
+    /// Creates a client connected to a local test network with hardcoded configurations:
+    /// 1. local DHT with bootstrapping nodes: `&["localhost:6881"]`
+    /// 2. Pkarr Relay running on port [15411][pubky_common::constants::testnet_ports::PKARR_RELAY]
+    pub fn testnet(&mut self) -> &mut Self {
+        self.pkarr
+            .bootstrap(&["localhost:6881"])
+            .relays(&["http://localhost:5411"])
+            .expect("relays urls infallible");
 
         self
     }
@@ -152,22 +145,10 @@ impl Client {
         ClientBuilder::default()
     }
 
-    #[cfg(not(wasm_browser))]
-    /// Create a client connected to the local network
-    /// with the bootstrapping node: `localhost:6881`
-    pub fn testnet() -> Result<Self, BuildError> {
-        Self::builder()
-            .testnet(&Testnet {
-                bootstrap: vec!["localhost:6881".to_string()],
-                nodes: vec![],
-            })
-            .build()
-    }
+    // === Getters ===
 
-    #[cfg(test)]
-    #[cfg(not(wasm_browser))]
-    /// Alias to `pubky::Client::builder().testnet(testnet).build().unwrap()`
-    pub(crate) fn test(testnet: &Testnet) -> Client {
-        Client::builder().testnet(testnet).build().unwrap()
+    /// Returns a reference to the internal Pkarr Client.
+    pub fn pkarr(&self) -> &pkarr::Client {
+        &self.pkarr
     }
 }

@@ -11,46 +11,44 @@ keywords = ["web", "dht", "dns", "decentralized", "identity"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-thiserror = "2.0.6"
-wasm-bindgen = "0.2.99"
+thiserror = "2.0.11"
+wasm-bindgen = "0.2.100"
 url = "2.5.4"
-bytes = "^1.9.0"
+bytes = "^1.10.0"
 base64 = "0.22.1"
 
-pkarr = { version = "3.0.0", features = ["full"] }
-mainline = "5.0.0-rc.1"
-pubky-common = { version = "0.2.0", path = "../pubky-common" }
+pkarr = { version = "3.1.1", features = ["full"] }
 cookie = "0.18.1"
 tracing = "0.1.41"
 cookie_store = { version = "0.21.1", default-features = false }
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
+pubky-common = "0.2.0"
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-reqwest = { version = "0.12.9", features = ["cookies", "rustls-tls"], default-features = false }
-tokio = { version = "1.42.0", features = ["full"] }
+reqwest = { version = "0.12.12", features = ["cookies", "rustls-tls"], default-features = false }
+tokio = { version = "1.43.0", features = ["full"] }
 
 # Wasm dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwest = { version = "0.12.9", default-features = false }
-futures-lite = { version = "2.5.0", default-features = false }
-wasm-bindgen = "0.2.99"
-wasm-bindgen-futures = "0.4.49"
+reqwest = { version = "0.12.12", default-features = false }
+futures-lite = { version = "2.6.0", default-features = false }
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4.50"
 console_log = { version = "1.0.0", features = ["color"] }
-log = "0.4.22"
+log = "0.4.25"
 
-js-sys = "0.3.76"
-web-sys = "0.3.76"
+js-sys = "0.3.77"
+web-sys = "0.3.77"
 
 [dev-dependencies]
-anyhow = "1.0.94"
-axum = "0.7.9"
-axum-server = "0.7.1"
-http-relay = { path = "../http-relay" }
-pubky-homeserver = { path = "../pubky-homeserver" }
-tokio = "1.42.0"
+anyhow = "1.0.95"
+futures-lite = "2.6.0"
+pubky-testnet = { path = "../pubky-testnet" }
+tokio = "1.43.0"
+tracing-subscriber = "0.3.19"
 
 [build-dependencies]
 cfg_aliases = "0.2.1"

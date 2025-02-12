@@ -298,21 +298,17 @@ impl AuthRequest {
 mod tests {
     use std::time::Duration;
 
-    use crate::*;
-
-    use http_relay::HttpRelay;
-    use mainline::Testnet;
     use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
-    use pubky_homeserver::Homeserver;
+    use pubky_testnet::Testnet;
     use reqwest::StatusCode;
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
 
-        let client = Client::test(&testnet);
+        let client = testnet.client_builder().build().unwrap();
 
         let keypair = Keypair::random();
 
@@ -350,10 +346,10 @@ mod tests {
 
     #[tokio::test]
     async fn authz() {
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
 
-        let http_relay = HttpRelay::builder().build().await.unwrap();
+        let http_relay = testnet.run_http_relay().await.unwrap();
         let http_relay_url = http_relay.local_link_url();
 
         let keypair = Keypair::random();
@@ -363,13 +359,13 @@ mod tests {
         let capabilities: Capabilities =
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
 
-        let client = Client::test(&testnet);
+        let client = testnet.client_builder().build().unwrap();
 
         let pubky_auth_request = client.auth_request(http_relay_url, &capabilities).unwrap();
 
         // Authenticator side
         {
-            let client = Client::test(&testnet);
+            let client = testnet.client_builder().build().unwrap();
 
             client.signup(&keypair, &server.public_key()).await.unwrap();
 
@@ -422,10 +418,10 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_users() {
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
 
-        let client = Client::test(&testnet);
+        let client = testnet.client_builder().build().unwrap();
 
         let first_keypair = Keypair::random();
         let second_keypair = Keypair::random();
@@ -461,10 +457,10 @@ mod tests {
 
     #[tokio::test]
     async fn authz_timeout_reconnect() {
-        let testnet = Testnet::new(10).unwrap();
-        let server = Homeserver::start_test(&testnet).await.unwrap();
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
 
-        let http_relay = HttpRelay::builder().build().await.unwrap();
+        let http_relay = testnet.run_http_relay().await.unwrap();
         let http_relay_url = http_relay.local_link_url();
 
         let keypair = Keypair::random();
@@ -474,8 +470,8 @@ mod tests {
         let capabilities: Capabilities =
             "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
 
-        let client = Client::builder()
-            .pkarr(|builder| builder.no_default_network().bootstrap(&testnet.bootstrap))
+        let client = testnet
+            .client_builder()
             .request_timeout(Duration::from_millis(1000))
             .build()
             .unwrap();
@@ -486,19 +482,14 @@ mod tests {
         {
             let url = pubky_auth_request.url().clone();
 
+            let client = testnet.client_builder().build().unwrap();
+            client.signup(&keypair, &server.public_key()).await.unwrap();
+
             tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(400)).await;
-
-                    let client = Client::builder()
-                        .pkarr(|builder| builder.no_default_network().bootstrap(&testnet.bootstrap))
-                        .build()
-                        .unwrap();
-
-                    client.signup(&keypair, &server.public_key()).await.unwrap();
-
-                    client.send_auth_token(&keypair, &url).await.unwrap();
-                }
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                // loop {
+                client.send_auth_token(&keypair, &url).await.unwrap();
+                //     }
             });
         }
 

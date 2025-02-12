@@ -136,18 +136,14 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use mainline::Testnet;
-    use pubky_homeserver::Homeserver;
-
-    use crate::Client;
+    use pubky_testnet::Testnet;
 
     #[tokio::test]
     async fn http_get_pubky() {
-        let testnet = Testnet::new(10).unwrap();
+        let testnet = Testnet::run().await.unwrap();
+        let homeserver = testnet.run_homeserver().await.unwrap();
 
-        let homeserver = Homeserver::start_test(&testnet).await.unwrap();
-
-        let client = Client::test(&testnet);
+        let client = testnet.client_builder().build().unwrap();
 
         let response = client
             .get(format!("https://{}/", homeserver.public_key()))
@@ -160,9 +156,9 @@ mod tests {
 
     #[tokio::test]
     async fn http_get_icann() {
-        let testnet = Testnet::new(10).unwrap();
+        let testnet = Testnet::run().await.unwrap();
 
-        let client = Client::test(&testnet);
+        let client = testnet.client_builder().build().unwrap();
 
         let response = client
             .request(Default::default(), "https://example.com/")

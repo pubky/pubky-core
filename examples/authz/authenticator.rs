@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
     println!("PublicKey: {}", keypair.public_key());
 
     let client = if cli.testnet.unwrap_or_default() {
-        let client = Client::testnet()?;
+        let client = Client::builder().testnet().build()?;
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.

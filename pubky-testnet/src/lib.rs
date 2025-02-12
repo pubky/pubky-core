@@ -1,4 +1,7 @@
 use anyhow::Result;
+use http_relay::HttpRelay;
+use pubky::ClientBuilder;
+use pubky_homeserver::Homeserver;
 use url::Url;
 
 pub struct Testnet {
@@ -34,7 +37,31 @@ impl Testnet {
 
     // === Public Methods ===
 
-    // pub fn pubky_client() -> std::result::Result<pubky::Client, pubky::errors::BuildError> {}
+    /// Run a Pubky Homeserver
+    pub async fn run_homeserver(&self) -> Result<Homeserver> {
+        Homeserver::run_test(&self.dht.bootstrap).await
+    }
+
+    /// Run an HTTP Relay
+    pub async fn run_http_relay(&self) -> Result<HttpRelay> {
+        HttpRelay::builder().build().await
+    }
+
+    /// Create a [ClientBuilder] and configure it to use this local test network.
+    pub fn client_builder(&self) -> ClientBuilder {
+        let bootstrap = self.bootstrap();
+        let relays = self.relays();
+
+        let mut builder = pubky::Client::builder();
+        builder.pkarr(|builder| {
+            builder
+                .bootstrap(bootstrap)
+                .relays(&relays)
+                .expect("testnet relays should be valid urls")
+        });
+
+        builder
+    }
 
     /// Run a new Pkarr relay.
     ///
@@ -42,6 +69,10 @@ impl Testnet {
     pub async fn run_pkarr_relay(&mut self) -> Result<Url> {
         let relay = pkarr_relay::Relay::run_test(&self.dht).await?;
 
-        Ok(relay.local_url())
+        let url = relay.local_url();
+
+        self.relays.push(relay);
+
+        Ok(url)
     }
 }

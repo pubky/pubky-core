@@ -14,7 +14,7 @@ use pubky::Client;
 async fn main () {
   // Mainline Dht testnet and a temporary homeserver for unit testing.
   let testnet = Testnet::new(10);
-  let server = Homeserver::start_test(&testnet).await.unwrap();
+  let server = Homeserver::run_test(&testnet).await.unwrap();
 
   let client = Client::test(&testnet);
 
