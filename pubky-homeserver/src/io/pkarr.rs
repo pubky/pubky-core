@@ -83,20 +83,17 @@ pub fn create_signed_packet(
     signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
 
     // Set low priority https record for legacy browsers support
-    if config.testnet {
+    if let Some(ref domain) = config.domain {
         let mut svcb = SVCB::new(10, ".".try_into()?);
 
         let http_port_be_bytes = http_port.to_be_bytes();
-        svcb.set_param(
-            pubky_common::constants::reserved_param_keys::HTTP_PORT,
-            &http_port_be_bytes,
-        )?;
+        if domain == "localhost" {
+            svcb.set_param(
+                pubky_common::constants::reserved_param_keys::HTTP_PORT,
+                &http_port_be_bytes,
+            )?;
+        }
 
-        svcb.target = "localhost".try_into().expect("localhost is valid dns name");
-
-        signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60)
-    } else if let Some(ref domain) = config.domain {
-        let mut svcb = SVCB::new(10, ".".try_into()?);
         svcb.target = domain.as_str().try_into()?;
 
         signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);

@@ -22,22 +22,9 @@ mod pkarr;
 pub struct HomeserverBuilder(Config);
 
 impl HomeserverBuilder {
-    pub fn testnet(&mut self) -> &mut Self {
-        self.0.io.testnet = true;
-
-        self
-    }
-
-    /// Configure the Homeserver's keypair
+    /// Set the Homeserver's keypair
     pub fn keypair(&mut self, keypair: Keypair) -> &mut Self {
         self.0.keypair = keypair;
-
-        self
-    }
-
-    /// Configure the Mainline DHT bootstrap nodes. Useful for testnet configurations.
-    pub fn bootstrap(&mut self, bootstrap: Vec<String>) -> &mut Self {
-        self.0.io.bootstrap = Some(bootstrap);
 
         self
     }
@@ -146,10 +133,6 @@ impl Homeserver {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IoConfig {
-    // TODO: why does this matter?
-    /// Run in [testnet](crate::Homeserver::run_testnet) mode.
-    pub testnet: bool,
-
     pub http_port: u16,
     pub https_port: u16,
     pub public_addr: Option<SocketAddr>,
@@ -168,7 +151,6 @@ impl Default for IoConfig {
             https_port: DEFAULT_HTTPS_PORT,
             http_port: DEFAULT_HTTP_PORT,
 
-            testnet: false,
             public_addr: None,
             domain: None,
             bootstrap: None,
