@@ -136,17 +136,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-trait"
-version = "0.1.86"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644dd749086bf3771a2fbc5f256fdb982d53f011c7d5d560304eafeecebce79d"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "atomic-polyfill"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -169,7 +158,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "pubky",
- "pubky-common",
+ "pubky-common 0.2.0",
  "reqwest",
  "rpassword",
  "tokio",
@@ -185,46 +174,12 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
 name = "axum"
-version = "0.7.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
-dependencies = [
- "async-trait",
- "axum-core 0.4.5",
- "axum-macros",
- "bytes",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "itoa",
- "matchit 0.7.3",
- "memchr",
- "mime",
- "percent-encoding",
- "pin-project-lite",
- "rustversion",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tower 0.5.2",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "axum"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d6fd624c75e18b3b4c6b9caf42b1afe24437daaee904069137d8bab077be8b8"
 dependencies = [
- "axum-core 0.5.0",
+ "axum-core",
+ "axum-macros",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -234,7 +189,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "itoa",
- "matchit 0.8.4",
+ "matchit",
  "memchr",
  "mime",
  "percent-encoding",
@@ -247,27 +202,6 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tower 0.5.2",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "axum-core"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09f2bd6146b97ae3359fa0cc6d6b376d9539582c7b4220f041a33ec24c226199"
-dependencies = [
- "async-trait",
- "bytes",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "mime",
- "pin-project-lite",
- "rustversion",
- "sync_wrapper",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -295,21 +229,19 @@ dependencies = [
 
 [[package]]
 name = "axum-extra"
-version = "0.9.6"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c794b30c904f0a1c2fb7740f7df7f7972dfaa14ef6f57cb6178dc63e5dca2f04"
+checksum = "460fc6f625a1f7705c6cf62d0d070794e94668988b1c38111baeec177c715f7b"
 dependencies = [
- "axum 0.7.9",
- "axum-core 0.4.5",
+ "axum",
+ "axum-core",
  "bytes",
- "fastrand",
  "futures-util",
  "headers",
  "http",
  "http-body",
  "http-body-util",
  "mime",
- "multer",
  "pin-project-lite",
  "serde",
  "tokio",
@@ -321,9 +253,9 @@ dependencies = [
 
 [[package]]
 name = "axum-macros"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57d123550fa8d071b7255cb0cc04dc302baa6c8c4a79f55701552684d8399bce"
+checksum = "604fde5e028fea851ce1d8570bbdc034bec850d157f7569d10f347d06808c05c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1304,7 +1236,23 @@ name = "http-relay"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum 0.8.1",
+ "axum",
+ "axum-server",
+ "futures-util",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "http-relay"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e21bdfe99224d6d446eb1b6ecc139ed96a7a8f0a77a123158b9c31d1dbbbcb08"
+dependencies = [
+ "anyhow",
+ "axum",
  "axum-server",
  "futures-util",
  "tokio",
@@ -1704,12 +1652,6 @@ dependencies = [
 
 [[package]]
 name = "matchit"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
-
-[[package]]
-name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
@@ -1744,23 +1686,6 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "multer"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
-dependencies = [
- "bytes",
- "encoding_rs",
- "futures-util",
- "http",
- "httparse",
- "memchr",
- "mime",
- "spin",
- "version_check",
 ]
 
 [[package]]
@@ -2047,7 +1972,7 @@ dependencies = [
  "lru",
  "mainline",
  "page_size",
- "pubky-timestamp 0.4.0",
+ "pubky-timestamp",
  "rand 0.9.0",
  "reqwest",
  "rustls",
@@ -2065,12 +1990,12 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff203c41d090ae24a8b2d76747cf56f645ed1373d2bd1ae6f5fd3df73aa0dddf"
+checksum = "7aaf659e9dee61ed790ce8d5e43f439e7444904772365bd975f44005c4a164b0"
 dependencies = [
  "anyhow",
- "axum 0.8.1",
+ "axum",
  "axum-server",
  "bytes",
  "clap",
@@ -2080,7 +2005,6 @@ dependencies = [
  "httpdate",
  "mainline",
  "pkarr",
- "pubky-timestamp 0.3.0",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -2174,7 +2098,7 @@ name = "pubky"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "axum 0.7.9",
+ "axum",
  "axum-server",
  "base64 0.22.1",
  "bytes",
@@ -2185,12 +2109,12 @@ dependencies = [
  "flume",
  "futures-lite",
  "futures-util",
- "http-relay",
+ "http-relay 0.1.0",
  "js-sys",
  "log",
  "mainline",
  "pkarr",
- "pubky-common",
+ "pubky-common 0.2.0",
  "pubky-homeserver",
  "reqwest",
  "thiserror 2.0.11",
@@ -2215,7 +2139,28 @@ dependencies = [
  "once_cell",
  "pkarr",
  "postcard",
- "pubky-timestamp 0.4.0",
+ "pubky-timestamp",
+ "rand 0.9.0",
+ "serde",
+ "thiserror 2.0.11",
+]
+
+[[package]]
+name = "pubky-common"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c3fc5af2af85da2967ce17a91aae82c828b750db748e24eadb5e06c0ade2ad2"
+dependencies = [
+ "argon2",
+ "base32",
+ "blake3",
+ "crypto_secretbox",
+ "ed25519-dalek",
+ "js-sys",
+ "once_cell",
+ "pkarr",
+ "postcard",
+ "pubky-timestamp",
  "rand 0.9.0",
  "serde",
  "thiserror 2.0.11",
@@ -2226,7 +2171,7 @@ name = "pubky-homeserver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum 0.7.9",
+ "axum",
  "axum-extra",
  "axum-server",
  "base32",
@@ -2237,14 +2182,14 @@ dependencies = [
  "futures-util",
  "heed",
  "hex",
- "http-relay",
+ "http-relay 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "httpdate",
  "mainline",
  "page_size",
  "pkarr",
  "pkarr-relay",
  "postcard",
- "pubky-common",
+ "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "tokio",
  "toml",
@@ -2254,18 +2199,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "pubky-timestamp"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4869545866057b802cdfe69f7d6e3db0783741b74c46caa11434a82f523f61ca"
-dependencies = [
- "document-features",
- "getrandom 0.2.15",
- "js-sys",
- "once_cell",
 ]
 
 [[package]]
@@ -3283,12 +3216,11 @@ dependencies = [
 
 [[package]]
 name = "tower-cookies"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fd0118512cf0b3768f7fcccf0bef1ae41d68f2b45edc1e77432b36c97c56c6d"
+checksum = "151b5a3e3c45df17466454bb74e9ecedecc955269bdedbf4d150dfa393b55a36"
 dependencies = [
- "async-trait",
- "axum-core 0.4.5",
+ "axum-core",
  "cookie",
  "futures-util",
  "http",
@@ -3332,7 +3264,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57a2ccff6830fa835371af7541e561a90e4c07b84f72991ebac4b3cb6790dc0d"
 dependencies = [
- "axum 0.8.1",
+ "axum",
  "forwarded-header-value",
  "governor",
  "http",

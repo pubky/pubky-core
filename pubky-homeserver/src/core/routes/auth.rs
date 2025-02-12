@@ -1,8 +1,5 @@
-use axum::{
-    extract::{Host, State},
-    response::IntoResponse,
-};
-use axum_extra::{headers::UserAgent, TypedHeader};
+use axum::{extract::State, response::IntoResponse};
+use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
 use bytes::Bytes;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 

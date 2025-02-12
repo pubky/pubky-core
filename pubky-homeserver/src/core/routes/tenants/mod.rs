@@ -19,10 +19,10 @@ pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         // - Datastore routes
         .route("/pub/", get(read::get))
-        .route("/pub/*path", get(read::get))
-        .route("/pub/*path", head(read::head))
-        .route("/pub/*path", put(write::put))
-        .route("/pub/*path", delete(write::delete))
+        .route("/pub/{path}", get(read::get))
+        .route("/pub/{path}", head(read::head))
+        .route("/pub/{path}", put(write::put))
+        .route("/pub/{path}", delete(write::delete))
         // - Session routes
         .route("/session", get(session::session))
         .route("/session", delete(session::signout))

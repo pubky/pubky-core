@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
 use axum::{
-    async_trait,
     extract::{FromRequestParts, Query},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
@@ -27,7 +26,6 @@ impl Display for PubkyHost {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for PubkyHost
 where
     S: Sync + Send,
@@ -57,7 +55,6 @@ pub struct ListQueryParams {
     pub shallow: bool,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ListQueryParams
 where
     S: Send + Sync,
