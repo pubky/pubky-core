@@ -2,13 +2,20 @@
 name = "http-relay"
 version = "0.1.0"
 edition = "2021"
+authors = ["Nuh <nuh@nuh.dev>"]
+description = "A Rust implementation of _some_ of [Http relay spec](https://httprelay.io/)."
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+keywords = ["httprelay", "http", "relay"]
+categories = ["web-programming"]
 
 [dependencies]
-anyhow = "1.0.94"
-axum = "0.7.9"
+anyhow = "1.0.95"
+axum = "0.8.1"
 axum-server = "0.7.1"
 futures-util = "0.3.31"
-tokio = { version = "1.42.0", features = ["full"] }
+tokio = { version = "1.43.0", features = ["full"] }
 tracing = "0.1.41"
 url = "2.5.4"
 tower-http = { version = "0.6.2", features = ["cors", "trace"] }
