@@ -1,0 +1,19 @@
+[package]
+name = "pubky-testnet"
+version = "0.1.0"
+edition = "2021"
+authors = ["Nuh <nuh@nuh.dev>"]
+description = "A local test network for Pubky Core development."
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+keywords = ["pkarr", "pubky", "testnet", "testing"]
+categories = ["web-programming", "authentication", "cryptography"]
+
+[dependencies]
+anyhow = "1.0.95"
+mainline = "5.2.0"
+pkarr-relay = "0.2.0"
+pubky = { version = "0.3.0", path = "../pubky" }
+tokio = { version = "1.43.0", features = ["full"] }
+url = "2.5.4"

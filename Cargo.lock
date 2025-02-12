@@ -2109,12 +2109,11 @@ dependencies = [
  "flume",
  "futures-lite",
  "futures-util",
- "http-relay 0.1.0",
  "js-sys",
  "log",
  "mainline",
  "pkarr",
- "pubky-common 0.2.0",
+ "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pubky-homeserver",
  "reqwest",
  "thiserror 2.0.11",
@@ -2198,6 +2197,18 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "pubky-testnet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "mainline",
+ "pkarr-relay",
+ "pubky",
+ "tokio",
  "url",
 ]
 
