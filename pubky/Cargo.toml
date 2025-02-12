@@ -33,7 +33,9 @@ reqwest = { version = "0.12.12", features = ["cookies", "rustls-tls"], default-f
 tokio = { version = "1.43.0", features = ["full"] }
 
 # Wasm dependencies
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3.1", features = ["wasm_js"] }
+getrandom2 = { version = "0.2.15", package = "getrandom", features = ["js"] }
 reqwest = { version = "0.12.12", default-features = false }
 futures-lite = { version = "2.6.0", default-features = false }
 wasm-bindgen = "0.2.100"

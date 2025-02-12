@@ -9,7 +9,6 @@ use url::Url;
 
 pub struct Testnet {
     dht: mainline::Testnet,
-    bootstrap: Vec<String>,
     relays: Vec<pkarr_relay::Relay>,
 }
 
@@ -18,7 +17,6 @@ impl Testnet {
         let dht = mainline::Testnet::new(10)?;
 
         let mut testnet = Self {
-            bootstrap: dht.bootstrap.clone(),
             dht,
             relays: vec![],
         };
@@ -37,12 +35,7 @@ impl Testnet {
     pub async fn run_with_hardcoded_configurations() -> Result<Self> {
         let dht = mainline::Testnet::new(10)?;
 
-        let node = mainline::Dht::builder()
-            .server_mode()
-            .bootstrap(&dht.bootstrap)
-            .build()?;
-
-        let bootstrap = vec![node.info().local_addr().to_string()];
+        dht.leak();
 
         let storage = std::env::temp_dir().join(Timestamp::now().to_string());
 
@@ -58,31 +51,31 @@ impl Testnet {
             config
                 .pkarr
                 .request_timeout(Duration::from_millis(100))
-                .bootstrap(&bootstrap)
-                .dht(|builder| builder.server_mode());
+                .bootstrap(&dht.bootstrap)
+                .dht(|builder| {
+                    if !dht.bootstrap.first().unwrap().contains("6881") {
+                        builder.server_mode().port(6881);
+                    }
+
+                    builder
+                });
 
             unsafe { pkarr_relay::Relay::run(config).await? }
         };
 
-        {
-            let mut builder = Homeserver::builder();
+        let mut builder = Homeserver::builder();
+        builder
+            .keypair(Keypair::from_secret_key(&[0; 32]))
+            .storage(storage)
+            .bootstrap(&dht.bootstrap)
+            .relays(&[relay.local_url()])
+            .domain("localhost");
+        unsafe { builder.run().await }?;
 
-            builder
-                .keypair(Keypair::from_secret_key(&[0; 32]))
-                .storage(storage)
-                .bootstrap(&bootstrap)
-                .relays(&[]);
-
-            unsafe { builder.run().await? }
-        };
-
-        {
-            HttpRelay::builder().http_port(15412).run().await?
-        };
+        HttpRelay::builder().http_port(15412).run().await?;
 
         let testnet = Self {
             dht,
-            bootstrap,
             relays: vec![relay],
         };
 
@@ -93,7 +86,7 @@ impl Testnet {
 
     /// Returns a list of DHT bootstrapping nodes.
     pub fn bootstrap(&self) -> &[String] {
-        &self.bootstrap
+        &self.dht.bootstrap
     }
 
     /// Returns a list of pkarr relays.
