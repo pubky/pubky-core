@@ -16,6 +16,11 @@ http-relay = "0.1.0"
 mainline = "5.2.0"
 pkarr-relay = "0.2.0"
 pubky = { version = "0.3.0", path = "../pubky" }
+pubky-common = "0.2.0"
 pubky-homeserver = { version = "0.1.0", path = "../pubky-homeserver" }
 tokio = { version = "1.43.0", features = ["full"] }
+tracing-subscriber = "0.3.19"
 url = "2.5.4"
+
+[dev-dependencies]
+tracing-subscriber = "0.3.19"

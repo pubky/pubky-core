@@ -12,7 +12,7 @@ It consists of 2 parts:
 First you need to be running a local testnet Homeserver, in the root of this repo run
 
 ```bash
-cargo run --bin pubky_homeserver -- --testnet
+cargo run --bin pubky_testnet
 ```
 
 Run the frontend of the 3rd party app
