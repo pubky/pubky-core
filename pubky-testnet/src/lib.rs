@@ -39,29 +39,26 @@ impl Testnet {
 
         let storage = std::env::temp_dir().join(Timestamp::now().to_string());
 
-        // TODO: add a builder for pkarr relay for consistency?
-        let relay = {
-            let mut config = pkarr_relay::Config {
-                http_port: 15411,
-                cache_path: Some(storage.join("pkarr-relay")),
-                rate_limiter: None,
-                ..Default::default()
-            };
+        let mut builder = pkarr_relay::Relay::builder();
+        builder
+            .http_port(15411)
+            .storage(storage.clone())
+            .disable_rate_limiter()
+            .pkarr(|pkarr| {
+                pkarr
+                    .request_timeout(Duration::from_millis(100))
+                    .bootstrap(&dht.bootstrap)
+                    .dht(|builder| {
+                        if !dht.bootstrap.first().unwrap().contains("6881") {
+                            builder.server_mode().port(6881);
+                        }
 
-            config
-                .pkarr
-                .request_timeout(Duration::from_millis(100))
-                .bootstrap(&dht.bootstrap)
-                .dht(|builder| {
-                    if !dht.bootstrap.first().unwrap().contains("6881") {
-                        builder.server_mode().port(6881);
-                    }
-
-                    builder
-                });
-
-            unsafe { pkarr_relay::Relay::run(config).await? }
-        };
+                        builder
+                            .bootstrap(&dht.bootstrap)
+                            .request_timeout(Duration::from_millis(200))
+                    })
+            });
+        let relay = unsafe { builder.run() }.await?;
 
         let mut builder = Homeserver::builder();
         builder
