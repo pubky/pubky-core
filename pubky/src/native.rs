@@ -45,9 +45,7 @@ impl ClientBuilder {
         self.pkarr
             .bootstrap(&[format!(
                 "localhost:{}",
-                // TODO: update constants
-                // pubky_common::constants::testnet_ports::BOOTSTRAP
-                6881
+                pubky_common::constants::testnet_ports::BOOTSTRAP
             )])
             .relays(&[format!(
                 "http://localhost:{}",
