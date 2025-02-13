@@ -113,7 +113,7 @@ impl DB {
 
     /// Return a list of pubky urls.
     ///
-    /// - limit defaults to [crate::core::Config::default_list_limit] and capped by [crate::core::Config::max_list_limit]
+    /// - limit defaults to [crate::config::DEFAULT_LIST_LIMIT] and capped by [crate::config::DEFAULT_MAX_LIST_LIMIT]
     pub fn list(
         &self,
         txn: &RoTxn,
