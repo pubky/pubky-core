@@ -1,6 +1,10 @@
 //! A Rust implementation of _some_ of [Http relay spec](https://httprelay.io/).
 //!
 
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(any(), deny(clippy::unwrap_used))]
+
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener},
@@ -37,11 +41,12 @@ enum ChannelState {
 }
 
 #[derive(Debug, Default)]
-pub struct Config {
+struct Config {
     pub http_port: u16,
 }
 
 #[derive(Debug, Default)]
+/// Builder for [HttpRelay].
 pub struct HttpRelayBuilder(Config);
 
 impl HttpRelayBuilder {
@@ -52,11 +57,13 @@ impl HttpRelayBuilder {
         self
     }
 
-    pub async fn build(self) -> Result<HttpRelay> {
+    /// Start running an HTTP relay.
+    pub async fn run(self) -> Result<HttpRelay> {
         HttpRelay::start(self.0).await
     }
 }
 
+/// An implementation of _some_ of [Http relay spec](https://httprelay.io/).
 pub struct HttpRelay {
     pub(crate) http_handle: Handle,
 
@@ -64,11 +71,7 @@ pub struct HttpRelay {
 }
 
 impl HttpRelay {
-    pub fn builder() -> HttpRelayBuilder {
-        HttpRelayBuilder::default()
-    }
-
-    pub async fn start(config: Config) -> Result<Self> {
+    async fn start(config: Config) -> Result<Self> {
         let shared_state: SharedState = Arc::new(Mutex::new(HashMap::new()));
 
         let app = Router::new()
@@ -95,6 +98,12 @@ impl HttpRelay {
         })
     }
 
+    /// Create [HttpRelayBuilder].
+    pub fn builder() -> HttpRelayBuilder {
+        HttpRelayBuilder::default()
+    }
+
+    /// Returns the HTTP address of this http relay.
     pub fn http_address(&self) -> SocketAddr {
         self.http_address
     }
@@ -120,6 +129,7 @@ impl HttpRelay {
         url
     }
 
+    /// Shut down this http relay server.
     pub fn shutdown(&self) {
         self.http_handle.shutdown();
     }
