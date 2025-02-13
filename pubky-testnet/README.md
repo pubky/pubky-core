@@ -2,7 +2,7 @@
 
 A local test network for developing Pubky Core or applications depending on it.
 
-All resources are ephemeral, databases are in the operating system's temporaray directories, and all servers are closed as the testnet dropped.
+All resources are ephemeral, databases are in the operating system's temporary directories, and all servers are closed as the testnet dropped.
 
 ## Usage
 

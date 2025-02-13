@@ -45,11 +45,11 @@ COPY Cargo.toml Cargo.lock ./
 COPY . .
 
 # Build the project in release mode for the MUSL target
-RUN cargo build --release --bin pubky-homeserver --target $TARGETARCH-unknown-linux-musl
+RUN cargo build --release --bin pubky-homeserver --bin pubky-testnet --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
 RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-homeserver
-
+RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-testnet
 # ========================
 # Runtime Stage
 # ========================
@@ -62,6 +62,7 @@ RUN apk add --no-cache ca-certificates
 
 # Copy the compiled binary from the builder stage
 COPY --from=builder /usr/src/app/target/$TARGETARCH-unknown-linux-musl/release/pubky-homeserver /usr/local/bin/homeserver
+COPY --from=builder /usr/src/app/target/$TARGETARCH-unknown-linux-musl/release/pubky-testnet /usr/local/bin/testnet
 
 # Set the working directory
 WORKDIR /usr/local/bin
