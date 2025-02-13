@@ -138,7 +138,7 @@ pub enum Error {
     /// Capability: Invalid scope: does not start with `/`
     InvalidScope,
     #[error("Capability: Invalid format should be <scope>:<abilities>")]
-    /// Capability: Invalid format should be <scope>:<abilities>
+    /// Capability: Invalid format should be `<scope>:<abilities>`
     InvalidFormat,
     #[error("Capability: Invalid Action")]
     /// Capability: Invalid Action

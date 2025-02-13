@@ -1,4 +1,4 @@
-//! Internal database in [crate::HomeserverCore]
+//! Internal database in [super::HomeserverCore]
 
 use std::{fs, path::PathBuf};
 

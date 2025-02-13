@@ -69,7 +69,7 @@ impl HomeserverBuilder {
 }
 
 #[derive(Debug)]
-/// Homeserver [Core][HomeserverCore] + I/O (http server and pkarr publishing).
+/// Homeserver Core + I/O (http server and pkarr publishing).
 pub struct Homeserver {
     http_servers: HttpServers,
     keypair: Keypair,

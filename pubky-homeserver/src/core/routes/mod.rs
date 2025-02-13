@@ -1,4 +1,4 @@
-//! The controller part of the [crate::HomeserverCore]
+//! The controller part of the [super::HomeserverCore]
 
 use axum::{
     body::Body,
