@@ -12,13 +12,14 @@ use tracing::info;
 
 use crate::{
     config::{Config, DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
-    HomeserverCore,
+    core::HomeserverCore,
 };
 
 mod http;
 mod pkarr;
 
 #[derive(Debug, Default)]
+/// Builder for [Homeserver].
 pub struct HomeserverBuilder(Config);
 
 impl HomeserverBuilder {
@@ -135,11 +136,12 @@ impl Homeserver {
 
     // === Getters ===
 
+    /// Returns the public_key of this server.
     pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
 
-    /// Return the `https://<server public key>` url
+    /// Returns the `https://<server public key>` url
     pub fn url(&self) -> url::Url {
         url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
     }
