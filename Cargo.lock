@@ -1233,9 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "http-relay"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e21bdfe99224d6d446eb1b6ecc139ed96a7a8f0a77a123158b9c31d1dbbbcb08"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1250,6 +1248,8 @@ dependencies = [
 [[package]]
 name = "http-relay"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0043bce2a7f4a4fbc870c4489223052b3aba084ead8a39581ea69d3e9a3e04a9"
 dependencies = [
  "anyhow",
  "axum",
@@ -2112,7 +2112,7 @@ dependencies = [
  "js-sys",
  "log",
  "pkarr",
- "pubky-common 0.2.0",
+ "pubky-common 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pubky-testnet",
  "reqwest",
  "thiserror 2.0.11",
@@ -2127,9 +2127,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c3fc5af2af85da2967ce17a91aae82c828b750db748e24eadb5e06c0ade2ad2"
+version = "0.3.0"
 dependencies = [
  "argon2",
  "base32",
@@ -2149,6 +2147,8 @@ dependencies = [
 [[package]]
 name = "pubky-common"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77dddc23db4c39c39412fdede996c16e36c93aedfe61226913f389df118a9254"
 dependencies = [
  "argon2",
  "base32",
@@ -2185,7 +2185,7 @@ dependencies = [
  "page_size",
  "pkarr",
  "postcard",
- "pubky-common 0.2.0",
+ "pubky-common 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "tokio",
  "toml",
@@ -2202,11 +2202,11 @@ name = "pubky-testnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "http-relay 0.1.0",
+ "http-relay 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mainline",
  "pkarr-relay",
  "pubky",
- "pubky-common 0.2.0",
+ "pubky-common 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pubky-homeserver",
  "tokio",
  "tracing-subscriber",

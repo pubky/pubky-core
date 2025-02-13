@@ -6,10 +6,10 @@ use crate::wasm::wrappers::keys::Keypair;
 /// Create a recovery file of the `keypair`, containing the secret key encrypted
 /// using the `passphrase`.
 #[wasm_bindgen(js_name = "createRecoveryFile")]
-pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Uint8Array, JsValue> {
+pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Uint8Array {
     pubky_common::recovery_file::create_recovery_file(keypair.as_inner(), passphrase)
-        .map(|b| b.as_slice().into())
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+        .as_slice()
+        .into()
 }
 
 /// Create a recovery file of the `keypair`, containing the secret key encrypted
