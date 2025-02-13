@@ -1,19 +1,8 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use axum::{
-    body::Body,
-    extract::Request,
-    http::{header, Method},
-    response::Response,
-    Router,
-};
-use pkarr::Keypair;
-use pubky_common::{
-    auth::{AuthToken, AuthVerifier},
-    capabilities::Capability,
-};
-use tower::ServiceExt;
+use axum::Router;
+use pubky_common::auth::AuthVerifier;
 
 pub mod database;
 mod error;
@@ -36,7 +25,6 @@ pub(crate) struct AppState {
 #[derive(Debug, Clone)]
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
-    config: CoreConfig,
     pub(crate) router: Router,
 }
 
@@ -56,48 +44,61 @@ impl HomeserverCore {
 
         let router = routes::create_app(state.clone());
 
-        Ok(Self { router, config })
+        Ok(Self { router })
     }
+}
 
-    /// Test version of [HomeserverCore::new], using an ephemeral small storage.
-    pub fn test() -> Result<Self> {
-        unsafe { HomeserverCore::new(CoreConfig::test()) }
-    }
+#[cfg(test)]
+mod tests {
 
-    // === Getters ===
+    use anyhow::Result;
+    use axum::{
+        body::Body,
+        extract::Request,
+        http::{header, Method},
+        response::Response,
+    };
+    use pkarr::Keypair;
+    use pubky_common::{auth::AuthToken, capabilities::Capability};
+    use tower::ServiceExt;
 
-    pub fn config(&self) -> &CoreConfig {
-        &self.config
-    }
+    use super::*;
 
-    // === Public Methods ===
+    impl HomeserverCore {
+        /// Test version of [HomeserverCore::new], using an ephemeral small storage.
+        pub fn test() -> Result<Self> {
+            unsafe { HomeserverCore::new(CoreConfig::test()) }
+        }
 
-    pub async fn create_root_user(&mut self, keypair: &Keypair) -> Result<String> {
-        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        // === Public Methods ===
 
-        let response = self
-            .call(
-                Request::builder()
-                    .uri("/signup")
-                    .header("host", keypair.public_key().to_string())
-                    .method(Method::POST)
-                    .body(Body::from(auth_token.serialize()))
-                    .unwrap(),
-            )
-            .await?;
+        pub async fn create_root_user(&mut self, keypair: &Keypair) -> Result<String> {
+            let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
 
-        let header_value = response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|h| h.to_str().ok())
-            .expect("should return a set-cookie header")
-            .to_string();
+            let response = self
+                .call(
+                    Request::builder()
+                        .uri("/signup")
+                        .header("host", keypair.public_key().to_string())
+                        .method(Method::POST)
+                        .body(Body::from(auth_token.serialize()))
+                        .unwrap(),
+                )
+                .await?;
 
-        Ok(header_value)
-    }
+            let header_value = response
+                .headers()
+                .get(header::SET_COOKIE)
+                .and_then(|h| h.to_str().ok())
+                .expect("should return a set-cookie header")
+                .to_string();
 
-    pub async fn call(&self, request: Request) -> Result<Response> {
-        Ok(self.router.clone().oneshot(request).await?)
+            Ok(header_value)
+        }
+
+        pub async fn call(&self, request: Request) -> Result<Response> {
+            Ok(self.router.clone().oneshot(request).await?)
+        }
     }
 }
 

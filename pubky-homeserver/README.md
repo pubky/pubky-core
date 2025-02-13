@@ -1,8 +1,30 @@
 # Pubky Homeserver
 
-A pubky-core homeserver that acts as users' agent on the Internet, providing data availability and more.more.more.more.
+A pubky-core homeserver that acts as users' agent on the Internet, providing data availability and more.
 
 ## Usage
+
+### Library
+
+You can use the Homeserver as a library in other crates/binaries or for testing purposes.
+
+```rust
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    Homeserver::builder().run().await?
+
+    tokio::signal::ctrl_c().await?;
+
+    tracing::info!("Shutting down Homeserver");
+
+    server.shutdown();
+
+    Ok(())
+}
+```
+
+### Binary
 
 Use `cargo run`
 
