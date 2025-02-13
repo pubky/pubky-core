@@ -1,10 +1,16 @@
+//! Capabilities defining what scopes of resources can be accessed with what actions.
+
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A Capability defines the scope of resources and the actions that the holder
+/// of this capability can access.
 pub struct Capability {
+    /// Scope of resources (for example directories).
     pub scope: String,
+    /// Actions allowed on the [Capability::scope].
     pub actions: Vec<Action>,
 }
 
@@ -19,6 +25,7 @@ impl Capability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Actions allowed on a given resource or scope of resources.
 pub enum Action {
     /// Can read the scope at the specified path (GET requests).
     Read,
@@ -125,14 +132,19 @@ impl<'de> Deserialize<'de> for Capability {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
+/// Error parsing a [Capability].
 pub enum Error {
     #[error("Capability: Invalid scope: does not start with `/`")]
+    /// Capability: Invalid scope: does not start with `/`
     InvalidScope,
     #[error("Capability: Invalid format should be <scope>:<abilities>")]
+    /// Capability: Invalid format should be <scope>:<abilities>
     InvalidFormat,
     #[error("Capability: Invalid Action")]
+    /// Capability: Invalid Action
     InvalidAction,
     #[error("Capabilities: Invalid capabilities format")]
+    /// Capabilities: Invalid capabilities format
     InvalidCapabilities,
 }
 
@@ -142,6 +154,7 @@ pub enum Error {
 pub struct Capabilities(pub Vec<Capability>);
 
 impl Capabilities {
+    /// Returns true if the list of capabilities contains a given capability.
     pub fn contains(&self, capability: &Capability) -> bool {
         self.0.contains(capability)
     }
@@ -227,7 +240,7 @@ mod tests {
             actions: vec![Action::Read, Action::Write],
         };
 
-        // Read and write withing directory `/pub/pubky.app/`.
+        // Read and write within directory `/pub/pubky.app/`.
         let expected_string = "/pub/pubky.app/:rw";
 
         assert_eq!(cap.to_string(), expected_string);

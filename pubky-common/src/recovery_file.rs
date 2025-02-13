@@ -1,3 +1,5 @@
+//! Tools for encrypting and decrypting a recovery file storing user's root key's secret.
+
 use argon2::Argon2;
 use pkarr::Keypair;
 
@@ -6,8 +8,9 @@ use crate::crypto::{decrypt, encrypt};
 static SPEC_NAME: &str = "recovery";
 static SPEC_LINE: &str = "pubky.org/recovery";
 
+/// Decrypt a recovery file.
 pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<Keypair, Error> {
-    let encryption_key = recovery_file_encryption_key_from_passphrase(passphrase)?;
+    let encryption_key = recovery_file_encryption_key_from_passphrase(passphrase);
 
     let newline_index = recovery_file
         .iter()
@@ -38,11 +41,12 @@ pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<K
     Ok(Keypair::from_secret_key(&secret_key))
 }
 
-pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u8>, Error> {
-    let encryption_key = recovery_file_encryption_key_from_passphrase(passphrase)?;
+/// Encrypt a recovery file.
+pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Vec<u8> {
+    let encryption_key = recovery_file_encryption_key_from_passphrase(passphrase);
     let secret_key = keypair.secret_key();
 
-    let encrypted_secret_key = encrypt(&secret_key, &encryption_key)?;
+    let encrypted_secret_key = encrypt(&secret_key, &encryption_key);
 
     let mut out = Vec::with_capacity(SPEC_LINE.len() + 1 + encrypted_secret_key.len());
 
@@ -50,42 +54,44 @@ pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Result<Vec<u
     out.extend_from_slice(b"\n");
     out.extend_from_slice(&encrypted_secret_key);
 
-    Ok(out)
+    out
 }
 
-fn recovery_file_encryption_key_from_passphrase(passphrase: &str) -> Result<[u8; 32], Error> {
+fn recovery_file_encryption_key_from_passphrase(passphrase: &str) -> [u8; 32] {
     let argon2id = Argon2::default();
 
     let mut out = [0; 32];
 
-    argon2id.hash_password_into(passphrase.as_bytes(), SPEC_NAME.as_bytes(), &mut out)?;
+    argon2id
+        .hash_password_into(passphrase.as_bytes(), SPEC_NAME.as_bytes(), &mut out)
+        .expect("Output is the correct length, so this should be infallible");
 
-    Ok(out)
+    out
 }
 
 #[derive(thiserror::Error, Debug)]
+/// Error decrypting a recovery file
 pub enum Error {
     // === Recovery file ==
     #[error("Recovery file should start with a spec line, followed by a new line character")]
+    /// Recovery file should start with a spec line, followed by a new line character
     RecoveryFileMissingSpecLine,
 
     #[error("Recovery file should start with a spec line, followed by a new line character")]
+    /// Recovery file should start with a spec line, followed by a new line character
     RecoveryFileVersionNotSupported,
 
     #[error("Recovery file should contain an encrypted secret key after the new line character")]
+    /// Recovery file should contain an encrypted secret key after the new line character
     RecoverFileMissingEncryptedSecretKey,
 
     #[error("Recovery file encrypted secret key should be 32 bytes, got {0}")]
+    /// Recovery file encrypted secret key should be 32 bytes, got {0}
     RecoverFileInvalidSecretKeyLength(usize),
 
     #[error(transparent)]
-    Argon(#[from] argon2::Error),
-
-    #[error(transparent)]
+    /// Error while decrypting a message
     DecryptError(#[from] crate::crypto::DecryptError),
-
-    #[error(transparent)]
-    EncryptError(#[from] crate::crypto::EncryptError),
 }
 
 #[cfg(test)]
@@ -97,7 +103,7 @@ mod tests {
         let passphrase = "very secure password";
         let keypair = Keypair::random();
 
-        let recovery_file = create_recovery_file(&keypair, passphrase).unwrap();
+        let recovery_file = create_recovery_file(&keypair, passphrase);
         let recovered = decrypt_recovery_file(&recovery_file, passphrase).unwrap();
 
         assert_eq!(recovered.public_key(), keypair.public_key());

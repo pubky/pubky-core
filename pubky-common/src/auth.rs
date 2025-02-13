@@ -19,6 +19,7 @@ const CURRENT_VERSION: u8 = 0;
 const TIMESTAMP_WINDOW: i64 = 45 * 1_000_000;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
+/// Implementation of the [Pubky Auth spec](https://pubky.github.io/pubky-core/spec/auth.html).
 pub struct AuthToken {
     /// Signature over the token.
     signature: Signature,
@@ -41,6 +42,7 @@ pub struct AuthToken {
 }
 
 impl AuthToken {
+    /// Sign a new AuthToken with given capabilities.
     pub fn sign(keypair: &Keypair, capabilities: impl Into<Capabilities>) -> Self {
         let timestamp = Timestamp::now();
 
@@ -60,10 +62,21 @@ impl AuthToken {
         token
     }
 
+    // === Getters ===
+
+    /// Returns the pubky that is providing this AuthToken
+    pub fn pubky(&self) -> &PublicKey {
+        &self.pubky
+    }
+
+    /// Returns the capabilities in this AuthToken.
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities.0
     }
 
+    // === Public Methods ===
+
+    /// Parse and verify an AuthToken.
     pub fn verify(bytes: &[u8]) -> Result<Self, Error> {
         if bytes[75] > CURRENT_VERSION {
             return Err(Error::UnknownVersion);
@@ -95,19 +108,17 @@ impl AuthToken {
         }
     }
 
+    /// Serialize this AuthToken to its canonical binary representation.
     pub fn serialize(&self) -> Vec<u8> {
         postcard::to_allocvec(self).unwrap()
     }
 
+    /// Deserialize an AuthToken from its canonical binary representation.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Ok(postcard::from_bytes(bytes)?)
     }
 
-    pub fn pubky(&self) -> &PublicKey {
-        &self.pubky
-    }
-
-    /// A unique ID for this [AuthToken], which is a concatenation of
+    /// Returns the unique ID for this [AuthToken], which is a concatenation of
     /// [AuthToken::pubky] and [AuthToken::timestamp].
     ///
     /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::pubky].
@@ -133,6 +144,8 @@ pub struct AuthVerifier {
 }
 
 impl AuthVerifier {
+    /// Verify an [AuthToken] by parsing it from its canonical binary representation,
+    /// verifying its signature, and confirm it wasn't already used.
     pub fn verify(&self, bytes: &[u8]) -> Result<AuthToken, Error> {
         self.gc();
 
@@ -168,18 +181,25 @@ impl AuthVerifier {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
+/// Error verifying an [AuthToken]
 pub enum Error {
     #[error("Unknown version")]
+    /// Unknown version
     UnknownVersion,
     #[error("AuthToken has a timestamp that is more than 45 seconds in the future")]
+    /// AuthToken has a timestamp that is more than 45 seconds in the future
     TooFarInTheFuture,
     #[error("AuthToken has a timestamp that is more than 45 seconds in the past")]
+    /// AuthToken has a timestamp that is more than 45 seconds in the past
     Expired,
     #[error("Invalid Signature")]
+    /// Invalid Signature
     InvalidSignature,
     #[error(transparent)]
-    Postcard(#[from] postcard::Error),
+    /// Error parsing [AuthToken] using Postcard
+    Parsing(#[from] postcard::Error),
     #[error("AuthToken already used")]
+    /// AuthToken already used
     AlreadyUsed,
 }
 

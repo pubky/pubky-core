@@ -1,3 +1,5 @@
+//! Pubky homeserver session struct.
+
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
@@ -11,6 +13,7 @@ use crate::{capabilities::Capability, timestamp::Timestamp};
 // TODO: use https://crates.io/crates/user-agent-parser to parse the session
 // and get more informations from the user-agent.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+/// Pubky homeserver session struct.
 pub struct Session {
     version: usize,
     pubky: PublicKey,
@@ -22,6 +25,7 @@ pub struct Session {
 }
 
 impl Session {
+    /// Create a new session.
     pub fn new(pubky: &PublicKey, capabilities: &[Capability], user_agent: Option<String>) -> Self {
         Self {
             version: 0,
@@ -35,16 +39,19 @@ impl Session {
 
     // === Getters ===
 
+    /// Returns the pubky of this session authorizes for.
     pub fn pubky(&self) -> &PublicKey {
         &self.pubky
     }
 
+    /// Returns the capabilities this session provide on this session's pubky's resources.
     pub fn capabilities(&self) -> &Vec<Capability> {
         &self.capabilities
     }
 
     // === Setters ===
 
+    /// Set this session user agent.
     pub fn set_user_agent(&mut self, user_agent: String) -> &mut Self {
         self.user_agent = user_agent;
 
@@ -55,6 +62,7 @@ impl Session {
         self
     }
 
+    /// Set this session's capabilities.
     pub fn set_capabilities(&mut self, capabilities: Vec<Capability>) -> &mut Self {
         self.capabilities = capabilities;
 
@@ -63,11 +71,13 @@ impl Session {
 
     // === Public Methods ===
 
+    /// Serialize this session to its canonical binary representation.
     pub fn serialize(&self) -> Vec<u8> {
         to_allocvec(self).expect("Session::serialize")
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
+    /// Deserialize this session from its canonical binary representation.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.is_empty() {
             return Err(Error::EmptyPayload);
         }
@@ -82,16 +92,18 @@ impl Session {
     // TODO: add `can_read()`, `can_write()` and `is_root()` methods
 }
 
-pub type Result<T> = core::result::Result<T, Error>;
-
 #[derive(thiserror::Error, Debug, PartialEq)]
+/// Error deserializing a [Session].
 pub enum Error {
     #[error("Empty payload")]
+    /// Empty payload
     EmptyPayload,
     #[error("Unknown version")]
+    /// Unknown version
     UnknownVersion,
     #[error(transparent)]
-    Postcard(#[from] postcard::Error),
+    /// Error parsing the binary representation.
+    Parsing(#[from] postcard::Error),
 }
 
 #[cfg(test)]
