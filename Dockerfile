@@ -44,25 +44,28 @@ COPY Cargo.toml Cargo.lock ./
 # Copy over all the source code
 COPY . .
 
+# Add build argument for binary selection (homeserver or testnet)
+ARG BUILD_TARGET=testnet
+
 # Build the project in release mode for the MUSL target
-RUN cargo build --release --bin pubky-homeserver --bin pubky-testnet --target $TARGETARCH-unknown-linux-musl
+RUN cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
-RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-homeserver
-RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-testnet
+RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-$BUILD_TARGET
+
 # ========================
 # Runtime Stage
 # ========================
 FROM alpine:3.20
 
 ARG TARGETARCH=x86_64
+ARG BUILD_TARGET=testnet
 
 # Install runtime dependencies (only ca-certificates)
 RUN apk add --no-cache ca-certificates
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/app/target/$TARGETARCH-unknown-linux-musl/release/pubky-homeserver /usr/local/bin/homeserver
-COPY --from=builder /usr/src/app/target/$TARGETARCH-unknown-linux-musl/release/pubky-testnet /usr/local/bin/testnet
+COPY --from=builder /usr/src/app/target/$TARGETARCH-unknown-linux-musl/release/pubky-$BUILD_TARGET /usr/local/bin/homeserver
 
 # Set the working directory
 WORKDIR /usr/local/bin
@@ -70,5 +73,5 @@ WORKDIR /usr/local/bin
 # Expose the port the homeserver listens on (should match that of config.toml)
 EXPOSE 6287
 
-# Set the default command to run the homeserver binary
+# Set the default command to run the binary
 CMD ["homeserver"]
