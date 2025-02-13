@@ -43,8 +43,16 @@ impl ClientBuilder {
     /// 2. Pkarr Relay running on port [15411][pubky_common::constants::testnet_ports::PKARR_RELAY]
     pub fn testnet(&mut self) -> &mut Self {
         self.pkarr
-            .bootstrap(&["localhost:6881"])
-            .relays(&["http://localhost:5411"])
+            .bootstrap(&[format!(
+                "localhost:{}",
+                // TODO: update constants
+                // pubky_common::constants::testnet_ports::BOOTSTRAP
+                6881
+            )])
+            .relays(&[format!(
+                "http://localhost:{}",
+                pubky_common::constants::testnet_ports::PKARR_RELAY
+            )])
             .expect("relays urls infallible");
 
         self
