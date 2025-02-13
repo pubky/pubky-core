@@ -34,7 +34,7 @@ pub(crate) struct AppState {
 }
 
 #[derive(Debug, Clone)]
-/// A side-effect-free Core of the [Homeserver].
+/// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
     config: CoreConfig,
     pub(crate) router: Router,

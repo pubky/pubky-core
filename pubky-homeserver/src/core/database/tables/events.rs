@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::database::DB;
 
-/// Event [Timestamp] base32 => Encoded event.
+/// Event [pkarr::Timestamp] base32 => Encoded event.
 pub type EventsTable = Database<Str, Bytes>;
 
 pub const EVENTS_TABLE: &str = "events";
@@ -62,7 +62,7 @@ impl Event {
 impl DB {
     /// Returns a list of events formatted as `<OP> <url>`.
     ///
-    /// - limit defaults to [crate::Config::default_list_limit] and capped by [crate::Config::max_list_limit]
+    /// - limit defaults to [crate::config::DEFAULT_LIST_LIMIT] and capped by [crate::config::DEFAULT_MAX_LIST_LIMIT]
     /// - cursor is a 13 character string encoding of a timestamp
     pub fn list_events(
         &self,
