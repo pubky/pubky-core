@@ -1234,6 +1234,8 @@ dependencies = [
 [[package]]
 name = "http-relay"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e21bdfe99224d6d446eb1b6ecc139ed96a7a8f0a77a123158b9c31d1dbbbcb08"
 dependencies = [
  "anyhow",
  "axum",
@@ -1247,9 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "http-relay"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e21bdfe99224d6d446eb1b6ecc139ed96a7a8f0a77a123158b9c31d1dbbbcb08"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2202,7 +2202,7 @@ name = "pubky-testnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "http-relay 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http-relay 0.1.0",
  "mainline",
  "pkarr-relay",
  "pubky",
