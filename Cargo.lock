@@ -158,7 +158,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "pubky",
- "pubky-common 0.2.0",
+ "pubky-common 0.3.0",
  "reqwest",
  "rpassword",
  "tokio",
@@ -2112,7 +2112,7 @@ dependencies = [
  "js-sys",
  "log",
  "pkarr",
- "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pubky-common 0.2.0",
  "pubky-testnet",
  "reqwest",
  "thiserror 2.0.11",
@@ -2128,6 +2128,8 @@ dependencies = [
 [[package]]
 name = "pubky-common"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c3fc5af2af85da2967ce17a91aae82c828b750db748e24eadb5e06c0ade2ad2"
 dependencies = [
  "argon2",
  "base32",
@@ -2146,9 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c3fc5af2af85da2967ce17a91aae82c828b750db748e24eadb5e06c0ade2ad2"
+version = "0.3.0"
 dependencies = [
  "argon2",
  "base32",
@@ -2185,7 +2185,7 @@ dependencies = [
  "page_size",
  "pkarr",
  "postcard",
- "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pubky-common 0.2.0",
  "serde",
  "tokio",
  "toml",
@@ -2206,7 +2206,7 @@ dependencies = [
  "mainline",
  "pkarr-relay",
  "pubky",
- "pubky-common 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pubky-common 0.2.0",
  "pubky-homeserver",
  "tokio",
  "tracing-subscriber",
