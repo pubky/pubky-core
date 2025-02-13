@@ -18,7 +18,7 @@ hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
 pkarr = { version = "3.1.1", features = ["dht", "lmdb-cache", "tls"] }
-pubky-common = "0.2.0"
+pubky-common = "0.3.0"
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"

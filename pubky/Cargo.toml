@@ -25,7 +25,7 @@ cookie_store = { version = "0.21.1", default-features = false }
 anyhow = "1.0.95"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
-pubky-common = "0.2.0"
+pubky-common = "0.3.0"
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -134,7 +134,7 @@ impl Client {
 
         let token = AuthToken::sign(keypair, capabilities);
 
-        let encrypted_token = encrypt(&token.serialize(), &client_secret)?;
+        let encrypted_token = encrypt(&token.serialize(), &client_secret);
 
         let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
 
