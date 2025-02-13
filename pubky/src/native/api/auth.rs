@@ -247,6 +247,7 @@ impl Client {
                     break Ok(response);
                 }
                 Err(error) => {
+                    // TODO: test again after Rqewest support timeout
                     if error.is_timeout() && !tx.is_disconnected() {
                         cross_debug!("Connection to HttpRelay timedout, reconnecting...");
 
