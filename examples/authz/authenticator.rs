@@ -18,8 +18,9 @@ struct Cli {
     /// Pubky Auth url
     url: Url,
 
-    // Whether or not to use testnet Dht network (local testing)
-    testnet: Option<bool>,
+    /// Use testnet mode
+    #[clap(long)]
+    testnet: bool,
 }
 
 #[tokio::main]
@@ -65,7 +66,8 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted recovery file...");
     println!("PublicKey: {}", keypair.public_key());
 
-    let client = if cli.testnet.unwrap_or_default() {
+    let client = if cli.testnet {
+        dbg!("HERE");
         let client = Client::builder().testnet().build()?;
 
         // For the purposes of this demo, we need to make sure
