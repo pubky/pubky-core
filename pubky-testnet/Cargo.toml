@@ -15,7 +15,7 @@ anyhow = "1.0.95"
 http-relay = "0.2.0"
 mainline = "5.2.0"
 pkarr-relay = "0.3.0"
-pubky = { version = "0.3.0", path = "../pubky" }
+pubky = { version = "0.4.0", path = "../pubky" }
 pubky-common = "0.3.0"
 pubky-homeserver = { version = "0.1.0", path = "../pubky-homeserver" }
 tokio = { version = "1.43.0", features = ["full"] }
