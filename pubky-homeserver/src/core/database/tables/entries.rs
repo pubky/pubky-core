@@ -486,7 +486,7 @@ mod tests {
             let mut iter = entry.read_content(&db, &rtxn).unwrap();
 
             while let Some(Ok(chunk)) = iter.next() {
-                blob.extend_from_slice(&chunk);
+                blob.extend_from_slice(chunk);
             }
         }
 
@@ -528,7 +528,7 @@ mod tests {
             let mut iter = entry.read_content(&db, &rtxn).unwrap();
 
             while let Some(Ok(chunk)) = iter.next() {
-                blob.extend_from_slice(&chunk);
+                blob.extend_from_slice(chunk);
             }
         }
 
