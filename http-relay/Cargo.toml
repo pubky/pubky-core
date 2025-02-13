@@ -1,6 +1,6 @@
 [package]
 name = "http-relay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Nuh <nuh@nuh.dev>"]
 description = "A Rust implementation of _some_ of [Http relay spec](https://httprelay.io/)."
