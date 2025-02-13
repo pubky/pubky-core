@@ -103,11 +103,13 @@ await client.signout(publicKey)
 
 #### authRequest
 ```js
-let [pubkyauthUrl, sessionPromise] = client.authRequest(relay, capabilities);
+let pubkyAuthRequest = client.authRequest(relay, capabilities);
+
+let pubkyauthUrl= pubkyAuthRequest.url();
 
 showQr(pubkyauthUrl);
 
-let pubky = await sessionPromise;
+let pubky = await pubkyAuthRequest.response();
 ```
 
 Sign in to a user's Homeserver, without access to their [Keypair](#keypair), nor even [PublicKey](#publickey),
@@ -115,10 +117,6 @@ instead request permissions (showing the user pubkyauthUrl), and await a Session
 
 - relay: A URL to an [HTTP relay](https://httprelay.io/features/link/) endpoint.
 - capabilities: A list of capabilities required for the app for example `/pub/pubky.app/:rw,/pub/example.com/:r`.
-
-Returns: 
-- pubkyauthUrl: A url to show to the user to scan or paste into an Authenticator app holding the user [Keypair](#keypair)
-- sessionPromise: A promise that resolves into a [PublicKey](#publickey) on success, which you can use in `client.session(pubky)` to resolve more information about the Session.
 
 #### sendAuthToken
 ```js
