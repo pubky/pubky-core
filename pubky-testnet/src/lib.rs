@@ -1,3 +1,10 @@
+#![doc = include_str!("../README.md")]
+//!
+
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(any(), deny(clippy::unwrap_used))]
+
 use std::time::Duration;
 
 use anyhow::Result;
@@ -7,12 +14,14 @@ use pubky_common::timestamp::Timestamp;
 use pubky_homeserver::Homeserver;
 use url::Url;
 
+/// A local test network for Pubky Core development.
 pub struct Testnet {
     dht: mainline::Testnet,
     relays: Vec<pkarr_relay::Relay>,
 }
 
 impl Testnet {
+    /// Run a new testnet.
     pub async fn run() -> Result<Self> {
         let dht = mainline::Testnet::new(10)?;
 
