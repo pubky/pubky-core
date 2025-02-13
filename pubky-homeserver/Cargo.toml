@@ -2,6 +2,13 @@
 name = "pubky-homeserver"
 version = "0.1.0"
 edition = "2021"
+authors = ["Nuh <nuh@nuh.dev>"]
+description = "Pubky core's homeserver."
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+keywords = ["pkarr", "sovereign", "web", "pkarr", "datastore"]
+categories = ["network-programming", "cryptography", "web-programming", "authentication"]
 
 [dependencies]
 anyhow = "1.0.95"
