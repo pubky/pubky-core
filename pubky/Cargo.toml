@@ -6,7 +6,12 @@ description = "Pubky core client"
 license = "MIT"
 repository = "https://github.com/pubky/pubky"
 keywords = ["web", "dht", "dns", "decentralized", "identity"]
-categories = ["network-programming", "cryptography", "web-programming", "authentication"]
+categories = [
+    "network-programming",
+    "cryptography",
+    "web-programming",
+    "authentication",
+]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -18,7 +23,7 @@ url = "2.5.4"
 bytes = "^1.10.0"
 base64 = "0.22.1"
 
-pkarr = { version = "3.1.1", features = ["full"] }
+pkarr = { version = "3.3.1", features = ["full"] }
 cookie = "0.18.1"
 tracing = "0.1.41"
 cookie_store = { version = "0.21.1", default-features = false }
@@ -29,7 +34,10 @@ pubky-common = "0.3.0"
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-reqwest = { version = "0.12.12", features = ["cookies", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12.12", features = [
+    "cookies",
+    "rustls-tls",
+], default-features = false }
 tokio = { version = "1.43.0", features = ["full"] }
 
 # Wasm dependencies
