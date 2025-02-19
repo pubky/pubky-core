@@ -23,14 +23,16 @@ url = "2.5.4"
 bytes = "^1.10.0"
 base64 = "0.22.1"
 
-pkarr = { version = "3.3.1", features = ["full"] }
+pkarr = { git = "https://github.com/pubky/pkarr", rev = "4269e68", features = [
+    "full",
+] } # `main` pkarr a few commits after 3.3.1.
 cookie = "0.18.1"
 tracing = "0.1.41"
 cookie_store = { version = "0.21.1", default-features = false }
 anyhow = "1.0.95"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
-pubky-common = "0.3.0"
+pubky-common = { path = "../pubky-common" }
 
 # Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -57,7 +59,7 @@ web-sys = "0.3.77"
 [dev-dependencies]
 anyhow = "1.0.95"
 futures-lite = "2.6.0"
-pubky-testnet = "0.1.0"
+pubky-testnet = { path = "../pubky-testnet" }
 tokio = "1.43.0"
 tracing-subscriber = "0.3.19"
 
