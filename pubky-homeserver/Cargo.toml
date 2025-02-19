@@ -32,8 +32,12 @@ heed = "0.21.0"
 hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
-pkarr = { version = "3.3.1", features = ["dht", "lmdb-cache", "tls"] }
-pubky-common = "0.3.0"
+pkarr = { git = "https://github.com/pubky/pkarr", branch = "main", features = [
+    "dht",
+    "lmdb-cache",
+    "tls",
+] }
+pubky-common = { path = "../pubky-common" }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"
