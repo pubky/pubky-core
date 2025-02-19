@@ -304,7 +304,7 @@ mod tests {
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn basic_authn() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -345,7 +345,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn authz() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -417,7 +417,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn multiple_users() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -456,7 +456,7 @@ mod tests {
         assert!(session.capabilities().contains(&Capability::root()));
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn authz_timeout_reconnect() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();

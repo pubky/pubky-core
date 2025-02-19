@@ -222,7 +222,7 @@ mod tests {
         )
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn config_load() {
         let crate_dir = std::env::current_dir().unwrap();
         let config_file_path = crate_dir.join("./src/config.example.toml");

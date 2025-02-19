@@ -5,46 +5,46 @@ Rust implementation implementation of [Pubky](https://github.com/pubky/pubky-cor
 ## Quick Start
 
 ```rust
-use pkarr::mainline::Testnet;
-use pkarr::Keypair;
-use pubky_homeserver::Homeserver;
-use pubky::Client;
+use pubky::Keypair;
+use pubky_testnet::Testnet;
 
 #[tokio::main]
 async fn main () {
-  // Mainline Dht testnet and a temporary homeserver for unit testing.
-  let testnet = Testnet::new(10);
-  let server = Homeserver::run_test(&testnet).await.unwrap();
+    // Mainline Dht testnet network
+    let testnet = Testnet::run().await.unwrap();
 
-  let client = Client::test(&testnet);
+    // Create and run a Homeserver.
+    let server = testnet.run_homeserver().await.unwrap();
 
-  // Uncomment the following line instead if you are not just testing.
-  // let client Client::new().unwrap(); 
+    // Create a Pubky Client from the testnet
+    let client = testnet.client_builder().build().unwrap();
 
-  // Generate a keypair
-  let keypair = Keypair::random();
+    // Signup to a Homeserver
+    let keypair = Keypair::random();
+    client.signup(&keypair, &server.public_key()).await.unwrap();
 
-  // Signup to a Homeserver
-  let keypair = Keypair::random();
-  client.signup(&keypair, &server.public_key()).await.unwrap();
+    // Write data
+    let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
+    let url = url.as_str();
 
-  // Write data.
-  let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-  let url = url.as_str();
+    client
+        .put(url)
+        .body([0, 1, 2, 3].to_vec())
+        .send()
+        .await
+        .unwrap();
 
-  client.put(url, &[0, 1, 2, 3, 4]).await.unwrap();
+    // Read using a Public key based link
+    let response = client.get(url).send().await.unwrap();
+    let blob = response.bytes().await.unwrap();
+    assert_eq!(blob.to_vec(), vec![0, 1, 2, 3]);
 
-  // Read using a Public key based link
-  let response = client.get(url).await.unwrap().unwrap();
 
-  assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    // Delete an entry.
+    client.delete(url).send().await.unwrap();
 
-  // Delete an entry.
-  client.delete(url).await.unwrap();
-
-  let response = client.get(url).await.unwrap();
-
-  assert_eq!(response, None);
+    let response = client.get(url).send().await.unwrap();
+    assert_eq!(response.status(), 404);
 }
 ```
 

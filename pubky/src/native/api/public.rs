@@ -129,7 +129,7 @@ mod tests {
     use pubky_testnet::Testnet;
     use reqwest::{Method, StatusCode};
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn put_get_delete() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn unauthorized_put_delete() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn list() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -437,7 +437,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn list_shallow() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -647,7 +647,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn list_events() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -743,7 +743,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn read_after_event() {
         let testnet = Testnet::run().await.unwrap();
         let server = testnet.run_homeserver().await.unwrap();
@@ -793,7 +793,7 @@ mod tests {
         assert_eq!(body.as_ref(), &[0]);
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn dont_delete_shared_blobs() {
         let testnet = Testnet::run().await.unwrap();
         let homeserver = testnet.run_homeserver().await.unwrap();
@@ -862,7 +862,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn stream() {
         // TODO: test better streaming API
         let testnet = Testnet::run().await.unwrap();

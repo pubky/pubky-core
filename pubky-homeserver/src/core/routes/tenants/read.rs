@@ -198,7 +198,7 @@ mod tests {
 
     use crate::core::HomeserverCore;
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn if_last_modified() {
         let mut server = HomeserverCore::test().unwrap();
 
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn if_none_match() {
         let mut server = HomeserverCore::test().unwrap();
 

@@ -138,7 +138,7 @@ impl Client {
 mod tests {
     use pubky_testnet::Testnet;
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn http_get_pubky() {
         let testnet = Testnet::run().await.unwrap();
         let homeserver = testnet.run_homeserver().await.unwrap();
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(response.status(), 200)
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn http_get_icann() {
         let testnet = Testnet::run().await.unwrap();
 

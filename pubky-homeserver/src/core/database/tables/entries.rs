@@ -455,7 +455,7 @@ mod tests {
 
     use super::DB;
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn entries() -> anyhow::Result<()> {
         let mut db = DB::test();
 
@@ -497,7 +497,7 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio_shared_rt::test(shared)]
     async fn chunked_entry() -> anyhow::Result<()> {
         let mut db = DB::test();
 

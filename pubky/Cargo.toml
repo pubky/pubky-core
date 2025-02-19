@@ -52,6 +52,7 @@ futures-lite = "2.6.0"
 pubky-testnet = "0.1.0"
 tokio = "1.43.0"
 tracing-subscriber = "0.3.19"
+tokio-shared-rt = "0.1"
 
 [build-dependencies]
 cfg_aliases = "0.2.1"
