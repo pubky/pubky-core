@@ -14,7 +14,7 @@ categories = ["web-programming", "authentication", "cryptography"]
 anyhow = "1.0.95"
 http-relay = "0.2.0"
 mainline = "5.2.0"
-pkarr-relay = { git = "https://github.com/pubky/pkarr", branch = "main" }
+pkarr-relay = { git = "https://github.com/pubky/pkarr", rev = "4269e68" } # a few commits after 0.5.6 release
 pubky = { path = "../pubky" }
 pubky-common = { path = "../pubky-common" }
 pubky-homeserver = { path = "../pubky-homeserver" }

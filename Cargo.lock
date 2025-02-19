@@ -1993,7 +1993,7 @@ dependencies = [
 [[package]]
 name = "pkarr"
 version = "3.3.1"
-source = "git+https://github.com/pubky/pkarr?branch=main#4269e689c1782600a603e214eea621230ff04e7d"
+source = "git+https://github.com/pubky/pkarr?rev=4269e68#4269e689c1782600a603e214eea621230ff04e7d"
 dependencies = [
  "async-compat",
  "base32",
@@ -2030,7 +2030,7 @@ dependencies = [
 [[package]]
 name = "pkarr-relay"
 version = "0.5.6"
-source = "git+https://github.com/pubky/pkarr?branch=main#4269e689c1782600a603e214eea621230ff04e7d"
+source = "git+https://github.com/pubky/pkarr?rev=4269e68#4269e689c1782600a603e214eea621230ff04e7d"
 dependencies = [
  "anyhow",
  "axum",
@@ -2149,7 +2149,7 @@ dependencies = [
  "getrandom 0.3.1",
  "js-sys",
  "log",
- "pkarr 3.3.1 (git+https://github.com/pubky/pkarr?branch=main)",
+ "pkarr 3.3.1 (git+https://github.com/pubky/pkarr?rev=4269e68)",
  "pubky-common",
  "pubky-testnet",
  "reqwest",
@@ -2174,7 +2174,7 @@ dependencies = [
  "ed25519-dalek",
  "js-sys",
  "once_cell",
- "pkarr 3.3.1 (git+https://github.com/pubky/pkarr?branch=main)",
+ "pkarr 3.3.1 (git+https://github.com/pubky/pkarr?rev=4269e68)",
  "postcard",
  "pubky-timestamp",
  "rand 0.9.0",
@@ -2200,7 +2200,7 @@ dependencies = [
  "hex",
  "httpdate",
  "page_size",
- "pkarr 3.3.1 (git+https://github.com/pubky/pkarr?branch=main)",
+ "pkarr 3.3.1 (git+https://github.com/pubky/pkarr?rev=4269e68)",
  "postcard",
  "pubky-common",
  "serde",
