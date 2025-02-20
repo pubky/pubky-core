@@ -2155,6 +2155,7 @@ dependencies = [
  "reqwest",
  "thiserror 2.0.11",
  "tokio",
+ "tokio-shared-rt",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2205,6 +2206,7 @@ dependencies = [
  "pubky-common",
  "serde",
  "tokio",
+ "tokio-shared-rt",
  "toml",
  "tower 0.5.2",
  "tower-cookies",
@@ -3162,6 +3164,28 @@ checksum = "5f6d0975eaace0cf0fcadee4e4aaa5da15b5c079146f2cffb67c113be122bf37"
 dependencies = [
  "rustls",
  "tokio",
+]
+
+[[package]]
+name = "tokio-shared-rt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a6bb03ec682a0bb16ce93d19301abc5b98a0d7936477175a156a213dcc47d85"
+dependencies = [
+ "once_cell",
+ "tokio",
+ "tokio-shared-rt-macro",
+]
+
+[[package]]
+name = "tokio-shared-rt-macro"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fe49a94e3a984b0d0ab97343dc3dcd52baae1ee13f005bfad39faea47d051dc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
