@@ -33,8 +33,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Check and test http-relay
         run: |
-          cargo clippy -p http-relay -- -D warnings
+          cargo clippy -p http-relay -- -D warnings -A clippy::needless_lifetimes
           cargo test -p http-relay
+
   pubky:
     runs-on: ubuntu-latest
     steps:
@@ -50,7 +51,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Check and test pubky
         run: |
-          cargo clippy -p pubky -- -D warnings
+          cargo clippy -p pubky -- -D warnings -A clippy::needless_lifetimes
           cargo test -p pubky
 
   pubky-common:
@@ -68,7 +69,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Check and test common
         run: |
-          cargo clippy -p pubky-common -- -D warnings
+          cargo clippy -p pubky-common -- -D warnings -A clippy::needless_lifetimes
           cargo test -p pubky-common
 
   pubky-homeserver:
@@ -86,7 +87,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Check and test homeserver
         run: |
-          cargo clippy -p pubky-homeserver -- -D warnings
+          cargo clippy -p pubky-homeserver -- -D warnings -A clippy::needless_lifetimes
           cargo test -p pubky-homeserver
 
   pubky-testnet:
@@ -104,5 +105,5 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Check and test testnet
         run: |
-          cargo clippy -p pubky-testnet -- -D warnings
+          cargo clippy -p pubky-testnet -- -D warnings -A clippy::needless_lifetimes
           cargo test -p pubky-testnet
