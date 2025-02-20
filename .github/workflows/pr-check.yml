@@ -1,0 +1,109 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt
+          override: true
+      - name: Check formatting
+        run: cargo fmt --check
+
+  http-relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Check and test http-relay
+        run: |
+          cargo clippy -p http-relay -- -D warnings
+          cargo test -p http-relay
+  pubky:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Check and test pubky
+        run: |
+          cargo clippy -p pubky -- -D warnings
+          cargo test -p pubky
+
+  pubky-common:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Check and test common
+        run: |
+          cargo clippy -p pubky-common -- -D warnings
+          cargo test -p pubky-common
+
+  pubky-homeserver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Check and test homeserver
+        run: |
+          cargo clippy -p pubky-homeserver -- -D warnings
+          cargo test -p pubky-homeserver
+
+  pubky-testnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Check and test testnet
+        run: |
+          cargo clippy -p pubky-testnet -- -D warnings
+          cargo test -p pubky-testnet
