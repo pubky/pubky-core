@@ -1,6 +1,6 @@
 [package]
 name = "pubky-homeserver"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Nuh <nuh@nuh.dev>"]
 description = "Pubky core's homeserver."
@@ -33,7 +33,7 @@ hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
 pkarr = { version = "3.3.3", features = ["dht", "lmdb-cache", "tls"] }
-pubky-common = { path = "../pubky-common" }
+pubky-common = { version = "0.3.1", path = "../pubky-common" }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"
