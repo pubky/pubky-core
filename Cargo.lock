@@ -2103,7 +2103,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2135,7 +2135,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "argon2",
  "base32",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "http-relay 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
