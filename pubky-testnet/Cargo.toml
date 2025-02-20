@@ -14,10 +14,10 @@ categories = ["web-programming", "authentication", "cryptography"]
 anyhow = "1.0.95"
 http-relay = "0.2.0"
 mainline = "5.2.0"
-pkarr-relay = "0.3.0"
-pubky = "0.4.0"
-pubky-common = "0.3.0"
-pubky-homeserver = "0.1.0"
+pkarr-relay = { git = "https://github.com/pubky/pkarr", rev = "4269e68" } # a few commits after 0.5.6 release
+pubky = { path = "../pubky" }
+pubky-common = { path = "../pubky-common" }
+pubky-homeserver = { path = "../pubky-homeserver" }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"
 url = "2.5.4"

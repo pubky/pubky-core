@@ -8,12 +8,20 @@ license = "MIT"
 homepage = "https://github.com/pubky/pubky-core"
 repository = "https://github.com/pubky/pubky-core"
 keywords = ["pkarr", "sovereign", "web", "pkarr", "datastore"]
-categories = ["network-programming", "cryptography", "web-programming", "authentication"]
+categories = [
+    "network-programming",
+    "cryptography",
+    "web-programming",
+    "authentication",
+]
 
 [dependencies]
 anyhow = "1.0.95"
 axum = { version = "0.8.1", features = ["macros"] }
-axum-extra = { version = "0.10.0", features = ["typed-header", "async-read-body"] }
+axum-extra = { version = "0.10.0", features = [
+    "typed-header",
+    "async-read-body",
+] }
 base32 = "0.5.1"
 bytes = "^1.10.0"
 clap = { version = "4.5.29", features = ["derive"] }
@@ -24,8 +32,12 @@ heed = "0.21.0"
 hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
-pkarr = { version = "3.1.1", features = ["dht", "lmdb-cache", "tls"] }
-pubky-common = "0.3.0"
+pkarr = { git = "https://github.com/pubky/pkarr", rev = "4269e68", features = [
+    "dht",
+    "lmdb-cache",
+    "tls",
+] } # `main` pkarr a few commits after 3.3.1.
+pubky-common = { path = "../pubky-common" }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"
