@@ -51,4 +51,4 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo nextest run --workspace --all-features
+        run: cargo nextest run --workspace --all-features --profile ci
