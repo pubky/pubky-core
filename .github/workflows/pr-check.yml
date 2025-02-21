@@ -66,3 +66,4 @@ jobs:
               --verbose
           else
             echo "No tests found for ${{ matrix.crate }}"
+          fi
