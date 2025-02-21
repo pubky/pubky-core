@@ -51,4 +51,10 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo nextest run --workspace --all-features --profile ci
+        run: |
+          cargo nextest run \
+            --workspace \
+            --all-features \
+            --partition count:4 \
+            --test-threads num-cpus \
+            --retries 2
