@@ -18,7 +18,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
-  http-relay:
+  clippy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +31,10 @@ jobs:
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Check and test http-relay
-        run: |
-          cargo clippy -p http-relay -- -D warnings -A clippy::needless_lifetimes
-          cargo test -p http-relay
+      - name: Lint with Clippy
+        run: cargo clippy --workspace --all-features -- -D warnings -A clippy::needless_lifetimes
 
-  pubky:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,65 +43,10 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-          components: clippy
           override: true
+      - name: Install Nextest
+        uses: taiki-e/install-action@nextest
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Check and test pubky
-        run: |
-          cargo clippy -p pubky -- -D warnings -A clippy::needless_lifetimes
-          cargo test -p pubky
-
-  pubky-common:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: clippy
-          override: true
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Check and test common
-        run: |
-          cargo clippy -p pubky-common -- -D warnings -A clippy::needless_lifetimes
-          cargo test -p pubky-common
-
-  pubky-homeserver:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: clippy
-          override: true
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Check and test homeserver
-        run: |
-          cargo clippy -p pubky-homeserver -- -D warnings -A clippy::needless_lifetimes
-          cargo test -p pubky-homeserver
-
-  pubky-testnet:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: clippy
-          override: true
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Check and test testnet
-        run: |
-          cargo clippy -p pubky-testnet -- -D warnings -A clippy::needless_lifetimes
-          cargo test -p pubky-testnet
+      - name: Run tests
+        run: cargo nextest run --workspace --all-features
