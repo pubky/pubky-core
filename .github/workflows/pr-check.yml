@@ -37,6 +37,9 @@ jobs:
         run: cargo clippy --workspace --all-features -- -D warnings -A clippy::needless_lifetimes
 
   test:
+    strategy:
+      matrix:
+        crate: [pubky, pubky-common, pubky-homeserver, pubky-testnet, http-relay]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +56,7 @@ jobs:
       - name: Run tests
         run: |
           cargo nextest run \
-            --workspace \
+            -p ${{ matrix.crate }} \
             --all-features \
             --test-threads num-cpus \
             --retries 2
