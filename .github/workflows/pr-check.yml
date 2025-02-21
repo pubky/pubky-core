@@ -55,6 +55,5 @@ jobs:
           cargo nextest run \
             --workspace \
             --all-features \
-            --partition count:4 \
             --test-threads num-cpus \
             --retries 2
