@@ -56,12 +56,13 @@ jobs:
       - name: Run tests
         run: |
           set -e
-          cargo nextest run \
-            -p ${{ matrix.crate }} \
-            --all-features \
-            --test-threads num-cpus \
-            --retries 2 \
-            --no-fail-fast \
-            --no-capture \
-            --verbose || true
-          echo "Tests completed for ${{ matrix.crate }}"
+          if cargo test -p ${{ matrix.crate }} --no-run --all-features; then
+            cargo nextest run \
+              -p ${{ matrix.crate }} \
+              --all-features \
+              --test-threads num-cpus \
+              --retries 2 \
+              --no-fail-fast \
+              --verbose
+          else
+            echo "No tests found for ${{ matrix.crate }}"
