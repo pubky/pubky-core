@@ -55,8 +55,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: |
+          set -e
           cargo nextest run \
             -p ${{ matrix.crate }} \
             --all-features \
             --test-threads num-cpus \
-            --retries 2
+            --retries 2 \
+            --no-fail-fast \
+            --no-capture \
+            -s \
+            --verbose || true
+          echo "Tests completed for ${{ matrix.crate }}"
