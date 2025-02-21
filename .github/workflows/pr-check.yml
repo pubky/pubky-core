@@ -1,0 +1,75 @@
+name: PR Check
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt
+          override: true
+      - name: Check formatting
+        run: cargo fmt --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Lint with Clippy
+        run: cargo clippy --workspace --all-features -- -D warnings -A clippy::needless_lifetimes
+
+  test:
+    strategy:
+      matrix:
+        crate: [pubky, pubky-common, pubky-homeserver, pubky-testnet, http-relay]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Install Nextest
+        uses: taiki-e/install-action@nextest
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: |
+          set -e
+          if cargo nextest run \
+            -p ${{ matrix.crate }} \
+            --all-features \
+            --test-threads num-cpus \
+            --retries 2 \
+            --no-fail-fast \
+            --verbose; then
+            echo "Tests passed for ${{ matrix.crate }}"
+          else
+            if [ $? -eq 4 ]; then
+              echo "No tests found for ${{ matrix.crate }}"
+              exit 0
+            else
+              echo "Tests failed for ${{ matrix.crate }}"
+              exit 1
+            fi
+          fi
