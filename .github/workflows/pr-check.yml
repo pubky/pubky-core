@@ -63,6 +63,5 @@ jobs:
             --retries 2 \
             --no-fail-fast \
             --no-capture \
-            -s \
             --verbose || true
           echo "Tests completed for ${{ matrix.crate }}"
