@@ -9,18 +9,18 @@ A pubky-core homeserver that acts as users' agent on the Internet, providing dat
 You can use the Homeserver as a library in other crates/binaries or for testing purposes.
 
 ```rust
+use anyhow::Result;
+use pubky_homeserver::Homeserver;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    Homeserver::builder().run().await?
+async fn main() {
+    let homeserver = unsafe {
+        Homeserver::builder().run().await.unwrap()
+    };
 
-    tokio::signal::ctrl_c().await?;
+    println!("Shutting down Homeserver");
 
-    tracing::info!("Shutting down Homeserver");
-
-    server.shutdown();
-
-    Ok(())
+    homeserver.shutdown();
 }
 ```
 
