@@ -3,7 +3,7 @@ name: PR Check
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   fmt:
@@ -39,7 +39,8 @@ jobs:
   test:
     strategy:
       matrix:
-        crate: [pubky, pubky-common, pubky-homeserver, pubky-testnet, http-relay]
+        crate:
+          [pubky, pubky-common, pubky-homeserver, pubky-testnet, http-relay]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,9 +54,12 @@ jobs:
         uses: taiki-e/install-action@nextest
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Run tests
+      - name: Run doctests and nextest
         run: |
           set -e
+          # nextest does not support doctests yet.
+          cargo test --doc -p ${{ matrix.crate }} --all-features 
+
           if cargo nextest run \
             -p ${{ matrix.crate }} \
             --all-features \
