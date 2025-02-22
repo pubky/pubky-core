@@ -23,7 +23,7 @@ pub struct Testnet {
 impl Testnet {
     /// Run a new testnet.
     pub async fn run() -> Result<Self> {
-        let dht = mainline::Testnet::new(10)?;
+        let dht = mainline::Testnet::new(3)?;
 
         let mut testnet = Self {
             dht,
@@ -42,7 +42,7 @@ impl Testnet {
     /// 2. A Homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`
     /// 4. An HTTP relay running on port [15412](pubky_common::constants::testnet_ports::HTTP_RELAY)
     pub async fn run_with_hardcoded_configurations() -> Result<Self> {
-        let dht = mainline::Testnet::new(10)?;
+        let dht = mainline::Testnet::new(3)?;
 
         dht.leak();
 
