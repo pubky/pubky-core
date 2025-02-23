@@ -14,7 +14,7 @@ use pubky_common::{
 
 use anyhow::Result;
 
-use crate::handle_http_error;
+use crate::{handle_http_error, native::internal::pkarr::PublishStrategy};
 
 use super::super::Client;
 
@@ -33,8 +33,13 @@ impl Client {
 
         handle_http_error!(response);
 
-        self.publish_homeserver(keypair, &homeserver.to_string())
-            .await?;
+        // Publish homeserver Pkarr record for the first time (force)
+        self.update_homeserver_record(
+            keypair,
+            Some(&homeserver.to_string()),
+            PublishStrategy::Force,
+        )
+        .await?;
 
         // Store the cookie to the correct URL.
         #[cfg(not(target_arch = "wasm32"))]
@@ -85,10 +90,24 @@ impl Client {
     }
 
     /// Signin to a homeserver.
+    /// After a successful signin, a background task is spawned to republish the user's
+    /// PKarr record if it is missing or older than 4 days. We don't mind if it succeed
+    /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let session = self.signin_with_authtoken(&token).await?;
 
-        self.signin_with_authtoken(&token).await
+        // Spawn a background task to republish the record.
+        let client_clone = self.clone();
+        let keypair_clone = keypair.clone();
+        tokio::spawn(async move {
+            // Resolve the record and republish if existing and older than 4 days.
+            let _ = client_clone
+                .update_homeserver_record(&keypair_clone, None, PublishStrategy::IfOlderThan)
+                .await;
+        });
+
+        Ok(session)
     }
 
     pub async fn send_auth_token<T: IntoUrl>(
