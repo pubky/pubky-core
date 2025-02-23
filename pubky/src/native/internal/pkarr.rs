@@ -112,3 +112,29 @@ impl crate::Client {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Client;
+    use pkarr::dns::rdata::SVCB;
+    use pkarr::Keypair;
+
+    #[tokio::test]
+    async fn test_extract_host_from_record() -> Result<()> {
+        let keypair = Keypair::random();
+        // Define the host that we want to encode.
+        let host = "host.example.com";
+        // Create an SVCB record with that host.
+        let svcb = SVCB::new(0, host.try_into()?);
+        // Build a signed packet containing an HTTPS record for "_pubky".
+        let signed_packet = SignedPacket::builder()
+            .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
+            .sign(&keypair)?;
+        // Use our helper to extract the host.
+        let extracted_host = Client::extract_host_from_record(&signed_packet);
+        // Verify that the extracted host matches what we set.
+        assert_eq!(extracted_host.as_deref(), Some(host));
+        Ok(())
+    }
+}
