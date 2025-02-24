@@ -1,8 +1,7 @@
-use crate::common::timestamp;
 use anyhow::Result;
 use pkarr::{
     dns::rdata::{RData, SVCB},
-    Keypair, SignedPacket,
+    Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
 
@@ -55,9 +54,9 @@ impl crate::Client {
             PublishStrategy::IfOlderThan => {
                 match existing {
                     Some(ref record) => {
-                        let now_micros = timestamp();
+                        let now_micros = Timestamp::now();
                         let record_micros = record.timestamp().as_u64();
-                        now_micros.saturating_sub(record_micros) > self.max_record_age_micros
+                        now_micros - record_micros > Timestamp::from(self.max_record_age_micros)
                     }
                     None => true, // If there's no record yet, we publish.
                 }

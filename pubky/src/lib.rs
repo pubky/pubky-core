@@ -18,8 +18,6 @@ macro_rules! cross_debug {
     };
 }
 
-mod common;
-
 pub mod native;
 #[cfg(wasm_browser)]
 mod wasm;

@@ -34,8 +34,7 @@ macro_rules! handle_http_error {
 pub struct ClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
-    /// Will not republish a user record if existing is more recent than this value
-    /// Maximum age in microseconds before a homeserver record should be republished.
+    /// Maximum age in microseconds before a user record should be republished.
     /// Defaults to 4 days.
     max_record_age_micros: Option<u64>,
 }
