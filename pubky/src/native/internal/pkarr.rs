@@ -22,7 +22,7 @@ impl crate::Client {
     /// currently resolved record. Under the IfOlderThan strategy, the record is only updated if
     /// it is missing or its timestamp is older than 4 days. Under the Force strategy, the
     /// record is always published.
-    pub(crate) async fn update_homeserver_record(
+    pub(crate) async fn publish_homeserver(
         &self,
         keypair: &Keypair,
         host: Option<&str>,
@@ -55,10 +55,9 @@ impl crate::Client {
             PublishStrategy::IfOlderThan => {
                 match existing {
                     Some(ref record) => {
-                        let now_secs = timestamp();
-                        let record_secs = record.timestamp().as_u64();
-                        let four_days_secs = 4 * 24 * 60 * 60;
-                        now_secs.saturating_sub(record_secs) > four_days_secs
+                        let now_micros = timestamp();
+                        let record_micros = record.timestamp().as_u64();
+                        now_micros.saturating_sub(record_micros) > self.max_record_age_micros
                     }
                     None => true, // If there's no record yet, we publish.
                 }
@@ -102,7 +101,7 @@ impl crate::Client {
 
     /// Helper to extract the current homeserver host from a signed PKarr record.
     /// Iterates over the records with name "_pubky" and returns the first SVCB target found.
-    pub fn extract_host_from_record(record: &SignedPacket) -> Option<String> {
+    fn extract_host_from_record(record: &SignedPacket) -> Option<String> {
         record
             .resource_records("_pubky")
             .find_map(|rr| match &rr.rdata {

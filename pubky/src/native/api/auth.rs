@@ -34,7 +34,7 @@ impl Client {
         handle_http_error!(response);
 
         // Publish homeserver Pkarr record for the first time (force)
-        self.update_homeserver_record(
+        self.publish_homeserver(
             keypair,
             Some(&homeserver.to_string()),
             PublishStrategy::Force,
@@ -101,9 +101,9 @@ impl Client {
         let client_clone = self.clone();
         let keypair_clone = keypair.clone();
         tokio::spawn(async move {
-            // Resolve the record and republish if existing and older than 4 days.
+            // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
             let _ = client_clone
-                .update_homeserver_record(&keypair_clone, None, PublishStrategy::IfOlderThan)
+                .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
                 .await;
         });
 
@@ -292,13 +292,15 @@ impl Client {
 
     /// Republish the user's Pkarr record pointing to their homeserver if
     /// no record can be resolved or if the existing record is older than 4 days.
-    /// This method is intended for clients and key managers (e.g., pubky-ring)
-    /// to keep the records of active users fresh and available in the DHT and
-    /// relays. It is intended to be used only after failed signin due to homeserver
+    ///
+    /// This method is intended to be used by clients and key managers (e.g., pubky-ring)
+    /// in order to keep the records of active users fresh and available in the DHT.
+    /// It is intended to be used only after failed signin due to homeserver
     /// resolution failure. This method is lighter than performing a re-signup into
     /// the last known homeserver, but does not return a session token, so a signin
-    /// must be done after republishing. On a failed signin due to homeserver resolution
-    /// failure, `pubky-ring` should always republish the last known homeserver.
+    /// must be done after republishing if a session token is needed. On a failed
+    /// signin due to homeserver resolution failure, `pubky-ring` should always
+    /// republish the last known homeserver.
     ///
     /// # Arguments
     ///
@@ -309,7 +311,7 @@ impl Client {
     ///
     /// Returns an error if the publication fails.
     pub async fn republish_homeserver(&self, keypair: &Keypair, host: &str) -> Result<()> {
-        self.update_homeserver_record(keypair, Some(host), PublishStrategy::IfOlderThan)
+        self.publish_homeserver(keypair, Some(host), PublishStrategy::IfOlderThan)
             .await
     }
 }
@@ -574,6 +576,130 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::FORBIDDEN
+        );
+    }
+
+    // This test verifies that when a signin happens immediately after signup,
+    // the record is not republished on signin (its timestamp remains unchanged)
+    // but when a signin happens after the record is “old” (in test, after 1 second),
+    // the record is republished (its timestamp increases).
+    #[tokio::test]
+    async fn test_republish_on_signin() {
+        // Setup the testnet and run a homeserver.
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
+        // Create a client that will republish conditionally if a record is older than 1 second
+        let client = testnet
+            .client_builder()
+            .max_record_age_micros(1_000_000)
+            .build()
+            .unwrap();
+        let keypair = Keypair::random();
+
+        // Signup publishes a new record.
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+        // Resolve the record and get its timestamp.
+        let record1 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts1 = record1.timestamp().as_u64();
+
+        // Immediately sign in. This spawns a background task to update the record
+        // with PublishStrategy::IfOlderThan.
+        client.signin(&keypair).await.unwrap();
+        // Wait a short time to let the background task complete.
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let record2 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts2 = record2.timestamp().as_u64();
+
+        // Because the record is fresh (less than 1 second old in our test configuration),
+        // the background task should not republish it. The timestamp should remain the same.
+        assert_eq!(
+            ts1, ts2,
+            "Record republished too early; timestamps should be equal"
+        );
+
+        // Wait long enough for the record to be considered 'old' (greater than 1 second).
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        // Sign in again. Now the background task should trigger a republish.
+        client.signin(&keypair).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let record3 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts3 = record3.timestamp().as_u64();
+
+        // Now the republished record's timestamp should be greater than before.
+        assert!(
+            ts3 > ts2,
+            "Record was not republished after threshold exceeded"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_republish_homeserver() {
+        // Setup the testnet and run a homeserver.
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
+        // Create a client that will republish conditionally if a record is older than 1 second
+        let client = testnet
+            .client_builder()
+            .max_record_age_micros(1_000_000)
+            .build()
+            .unwrap();
+        let keypair = Keypair::random();
+
+        // Signup publishes a new record.
+        client.signup(&keypair, &server.public_key()).await.unwrap();
+        // Resolve the record and get its timestamp.
+        let record1 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts1 = record1.timestamp().as_u64();
+
+        // Immediately call republish_homeserver.
+        // Since the record is fresh, republish should do nothing.
+        client
+            .republish_homeserver(&keypair, &server.public_key().to_string())
+            .await
+            .unwrap();
+        let record2 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts2 = record2.timestamp().as_u64();
+        assert_eq!(
+            ts1, ts2,
+            "Record republished too early; timestamp should be equal"
+        );
+
+        // Wait long enough for the record to be considered 'old'.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Call republish_homeserver again; now the record should be updated.
+        client
+            .republish_homeserver(&keypair, &server.public_key().to_string())
+            .await
+            .unwrap();
+        let record3 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts3 = record3.timestamp().as_u64();
+        assert!(
+            ts3 > ts2,
+            "Record was not republished after threshold exceeded"
         );
     }
 }
