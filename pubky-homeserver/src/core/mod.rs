@@ -20,6 +20,7 @@ use database::DB;
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: DB,
+    pub(crate) admin: AdminConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -34,12 +35,13 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(config: CoreConfig) -> Result<Self> {
+    pub unsafe fn new(config: CoreConfig, admin: AdminConfig) -> Result<Self> {
         let db = unsafe { DB::open(config.clone())? };
 
         let state = AppState {
             verifier: AuthVerifier::default(),
             db,
+            admin,
         };
 
         let router = routes::create_app(state.clone());
@@ -67,7 +69,7 @@ mod tests {
     impl HomeserverCore {
         /// Test version of [HomeserverCore::new], using an ephemeral small storage.
         pub fn test() -> Result<Self> {
-            unsafe { HomeserverCore::new(CoreConfig::test()) }
+            unsafe { HomeserverCore::new(CoreConfig::test(), AdminConfig::test()) }
         }
 
         // === Public Methods ===
@@ -98,6 +100,30 @@ mod tests {
 
         pub async fn call(&self, request: Request) -> Result<Response> {
             Ok(self.router.clone().oneshot(request).await?)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SignupMode {
+    Open,
+    #[default]
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AdminConfig {
+    /// The password used to authorize admin endpoints.
+    pub password: Option<String>,
+    /// Determines whether new signups require a valid token.
+    pub signup_mode: SignupMode,
+}
+
+impl AdminConfig {
+    pub fn test() -> Self {
+        AdminConfig {
+            password: None,
+            signup_mode: SignupMode::Open,
         }
     }
 }

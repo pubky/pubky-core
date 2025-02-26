@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::{
     config::{Config, DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
-    core::HomeserverCore,
+    core::{HomeserverCore, SignupMode},
 };
 
 mod http;
@@ -54,6 +54,15 @@ impl HomeserverBuilder {
     /// Set the public domain of this Homeserver
     pub fn domain(&mut self, domain: &str) -> &mut Self {
         self.0.io.domain = Some(domain.to_string());
+
+        self
+    }
+
+    /// Set the signup mode to "close" (require signup token to new user)
+    /// Only to be used on ::test() homeserver for the specific case of
+    /// testing signup token flow.
+    pub fn close_signups(&mut self) -> &mut Self {
+        self.0.admin.signup_mode = SignupMode::Closed;
 
         self
     }
@@ -107,7 +116,7 @@ impl Homeserver {
 
         let keypair = config.keypair;
 
-        let core = unsafe { HomeserverCore::new(config.core)? };
+        let core = unsafe { HomeserverCore::new(config.core, config.admin)? };
 
         let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 

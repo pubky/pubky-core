@@ -10,7 +10,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{core::CoreConfig, io::IoConfig};
+use crate::{
+    core::{AdminConfig, CoreConfig, SignupMode},
+    io::IoConfig,
+};
 
 // === Core ==
 pub const DEFAULT_STORAGE_DIR: &str = "pubky";
@@ -46,29 +49,6 @@ struct AdminToml {
     pub signup_mode: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SignupMode {
-    Open,
-    #[default]
-    Closed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AdminConfig {
-    /// The password used to authorize admin endpoints.
-    pub password: Option<String>,
-    /// Determines whether new signups require a valid token.
-    pub signup_mode: SignupMode,
-}
-
-impl AdminConfig {
-    pub fn test() -> Self {
-        AdminConfig {
-            password: None,
-            signup_mode: SignupMode::Open,
-        }
-    }
-}
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 struct IoToml {
     pub http_port: Option<u16>,
