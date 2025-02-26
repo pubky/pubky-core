@@ -3,6 +3,7 @@
 JavaScript implementation of [Pubky](https://github.com/pubky/pubky-core) client.
 
 ## Table of Contents
+
 - [Install](#install)
 - [Getting Started](#getting-started)
 - [API](#api)
@@ -21,7 +22,7 @@ For Nodejs, you need Node v20 or later.
 ## Getting started
 
 ```js
-import { Client, Keypair, PublicKey } from '../index.js'
+import { Client, Keypair, PublicKey } from "../index.js";
 
 // Initialize Client with Pkarr relay(s).
 let client = new Client();
@@ -30,9 +31,11 @@ let client = new Client();
 let keypair = Keypair.random();
 
 // Create a new account
-let homeserver = PublicKey.from("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
+let homeserver = PublicKey.from(
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+);
 
-await client.signup(keypair, homeserver)
+await client.signup(keypair, homeserver, signup_token);
 
 const publicKey = keypair.publicKey();
 
@@ -40,24 +43,24 @@ const publicKey = keypair.publicKey();
 let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
 
 // Verify that you are signed in.
-const session = await client.session(publicKey)
+const session = await client.session(publicKey);
 
 // PUT public data, by authorized client
-await client.fetch(url, { 
-    method: "PUT",
-    body: JSON.stringify({foo: "bar"}),
-    credentials: "include"
+await client.fetch(url, {
+  method: "PUT",
+  body: JSON.stringify({ foo: "bar" }),
+  credentials: "include",
 });
 
 // GET public data without signup or signin
 {
-    const client = new Client();
+  const client = new Client();
 
-    let response = await client.fetch(url);
+  let response = await client.fetch(url);
 }
 
 // Delete public data, by authorized client
-await client.fetch(url, { method: "DELETE", credentials: "include "});
+await client.fetch(url, { method: "DELETE", credentials: "include " });
 ```
 
 ## API
@@ -65,11 +68,13 @@ await client.fetch(url, { method: "DELETE", credentials: "include "});
 ### Client
 
 #### constructor
+
 ```js
-let client = new Client()
+let client = new Client();
 ```
 
 #### fetch
+
 ```js
 let response = await client.fetch(url, opts);
 ```
@@ -77,35 +82,45 @@ let response = await client.fetch(url, opts);
 Just like normal Fetch API, but it can handle `pubky://` urls and `http(s)://` urls with Pkarr domains.
 
 #### signup
+
 ```js
-await client.signup(keypair, homeserver)
+await client.signup(keypair, homeserver, signup_token);
 ```
+
 - keypair: An instance of [Keypair](#keypair).
 - homeserver: An instance of [PublicKey](#publickey) representing the homeserver.
+- signup_token: A homeserver could optionally ask for a valid signup token (aka, invitation code).
 
 Returns:
+
 - session: An instance of [Session](#session).
 
 #### signin
+
 ```js
-let session = await client.signin(keypair)
+let session = await client.signin(keypair);
 ```
+
 - keypair: An instance of [Keypair](#keypair).
 
 Returns:
+
 - An instance of [Session](#session).
 
 #### signout
+
 ```js
-await client.signout(publicKey)
+await client.signout(publicKey);
 ```
+
 - publicKey: An instance of [PublicKey](#publicKey).
 
 #### authRequest
+
 ```js
 let pubkyAuthRequest = client.authRequest(relay, capabilities);
 
-let pubkyauthUrl= pubkyAuthRequest.url();
+let pubkyauthUrl = pubkyAuthRequest.url();
 
 showQr(pubkyauthUrl);
 
@@ -119,25 +134,31 @@ instead request permissions (showing the user pubkyauthUrl), and await a Session
 - capabilities: A list of capabilities required for the app for example `/pub/pubky.app/:rw,/pub/example.com/:r`.
 
 #### sendAuthToken
+
 ```js
 await client.sendAuthToken(keypair, pubkyauthUrl);
 ```
+
 Consenting to authentication or authorization according to the required capabilities in the `pubkyauthUrl` , and sign and send an auth token to the requester.
 
 - keypair: An instance of [KeyPair](#keypair)
 - pubkyauthUrl: A string `pubkyauth://` url
 
 #### session {#session-method}
+
 ```js
-let session = await client.session(publicKey)
+let session = await client.session(publicKey);
 ```
+
 - publicKey: An instance of [PublicKey](#publickey).
 - Returns: A [Session](#session) object if signed in, or undefined if not.
 
 ### list
+
 ```js
-let response = await client.list(url, cursor, reverse, limit)
+let response = await client.list(url, cursor, reverse, limit);
 ```
+
 - url: A string representing the Pubky URL. The path in that url is the prefix that you want to list files within.
 - cursor: Usually the last URL from previous calls. List urls after/before (depending on `reverse`) the cursor.
 - reverse: Whether or not return urls in reverse order.
@@ -147,29 +168,36 @@ let response = await client.list(url, cursor, reverse, limit)
 ### Keypair
 
 #### random
+
 ```js
-let keypair = Keypair.random()
+let keypair = Keypair.random();
 ```
+
 - Returns: A new random Keypair.
 
 #### fromSecretKey
+
 ```js
-let keypair = Keypair.fromSecretKey(secretKey)
+let keypair = Keypair.fromSecretKey(secretKey);
 ```
+
 - secretKey: A 32 bytes Uint8array.
 - Returns: A new Keypair.
 
-
 #### publicKey {#publickey-method}
+
 ```js
-let publicKey = keypair.publicKey()
+let publicKey = keypair.publicKey();
 ```
+
 - Returns: The [PublicKey](#publickey) associated with the Keypair.
 
 #### secretKey
+
 ```js
-let secretKey = keypair.secretKey()
+let secretKey = keypair.secretKey();
 ```
+
 - Returns: The Uint8array secret key associated with the Keypair.
 
 ### PublicKey
@@ -179,43 +207,54 @@ let secretKey = keypair.secretKey()
 ```js
 let publicKey = PublicKey.from(string);
 ```
+
 - string: A string representing the public key.
 - Returns: A new PublicKey instance.
 
 #### z32
+
 ```js
 let pubky = publicKey.z32();
 ```
+
 Returns: The z-base-32 encoded string representation of the PublicKey.
 
-### Session 
+### Session
 
 #### pubky
+
 ```js
 let pubky = session.pubky();
 ```
+
 Returns an instance of [PublicKey](#publickey)
 
 #### capabilities
+
 ```js
 let capabilities = session.capabilities();
 ```
+
 Returns an array of capabilities, for example `["/pub/pubky.app/:rw"]`
 
 ### Helper functions
 
 #### createRecoveryFile
+
 ```js
-let recoveryFile = createRecoveryFile(keypair, passphrase)
+let recoveryFile = createRecoveryFile(keypair, passphrase);
 ```
+
 - keypair: An instance of [Keypair](#keypair).
 - passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
 - Returns: A recovery file with a spec line and an encrypted secret key.
 
 #### createRecoveryFile
+
 ```js
-let keypair = decryptRecoveryfile(recoveryFile, passphrase)
+let keypair = decryptRecoveryfile(recoveryFile, passphrase);
 ```
+
 - recoveryFile: An instance of Uint8Array containing the recovery file blob.
 - passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
 - Returns: An instance of [Keypair](#keypair).
@@ -246,7 +285,7 @@ npm run testnet
 Use the logged addresses as inputs to `Client`
 
 ```js
-import { Client } from '../index.js'
+import { Client } from "../index.js";
 
 const client = Client().testnet();
 ```

@@ -23,26 +23,51 @@ impl Client {
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<Session> {
+    ///
+    /// - `keypair`: The user's keypair (used to sign the AuthToken).
+    /// - `homeserver`: The server's public key (as a domain-like string).
+    /// - `signup_token`: Optional invite code or token required by the server for new users.
+    pub async fn signup(
+        &self,
+        keypair: &Keypair,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<Session> {
+        // 1) Construct the base URL: "https://<homeserver>/signup"
+        let mut url = Url::parse(&format!("https://{}", homeserver))?;
+        url.set_path("/signup");
+
+        // 2) If we have a signup_token, append it to the query string.
+        if let Some(token) = signup_token {
+            url.query_pairs_mut().append_pair("signup_token", token);
+        }
+
+        // 3) Create an AuthToken (e.g. with root capability).
+        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let request_body = auth_token.serialize();
+
+        // 4) Send POST request with the AuthToken in the body
         let response = self
-            .cross_request(Method::POST, format!("https://{}/signup", homeserver))
+            .cross_request(Method::POST, url)
             .await
-            .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
+            .body(request_body)
             .send()
             .await?;
 
+        // 5) Check for non-2xx status codes
         handle_http_error!(response);
 
+        // 6) Publish the homeserver record
         self.publish_homeserver(keypair, &homeserver.to_string())
             .await?;
 
-        // Store the cookie to the correct URL.
+        // 7) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
             .store_session_after_signup(&response, &keypair.public_key());
 
+        // 8) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
-
         Ok(Session::deserialize(&bytes)?)
     }
 
@@ -313,7 +338,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let session = client
             .session(&keypair.public_key())
@@ -368,7 +396,10 @@ mod tests {
         {
             let client = testnet.client_builder().build().unwrap();
 
-            client.signup(&keypair, &server.public_key()).await.unwrap();
+            client
+                .signup(&keypair, &server.public_key(), None)
+                .await
+                .unwrap();
 
             client
                 .send_auth_token(&keypair, pubky_auth_request.url())
@@ -428,12 +459,12 @@ mod tests {
         let second_keypair = Keypair::random();
 
         client
-            .signup(&first_keypair, &server.public_key())
+            .signup(&first_keypair, &server.public_key(), None)
             .await
             .unwrap();
 
         client
-            .signup(&second_keypair, &server.public_key())
+            .signup(&second_keypair, &server.public_key(), None)
             .await
             .unwrap();
 
@@ -484,7 +515,10 @@ mod tests {
             let url = pubky_auth_request.url().clone();
 
             let client = testnet.client_builder().build().unwrap();
-            client.signup(&keypair, &server.public_key()).await.unwrap();
+            client
+                .signup(&keypair, &server.public_key(), None)
+                .await
+                .unwrap();
 
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(400)).await;
