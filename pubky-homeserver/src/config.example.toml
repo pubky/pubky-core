@@ -1,6 +1,14 @@
 # Secret key (in hex) to generate the Homeserver's Keypair
 # secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
 
+[admin]
+# Set an admin password to protect admin endpoints.
+# WARNING: if no password is set, the admin endpoints will be unprotected.
+password = "mySecretAdminPassword"
+# Set signup_mode to "open" to allow anyone to signup a new user,
+# otherwise, "closed" (the default) to require a valid invite token on signup;
+signup_mode = "closed"
+
 [database]
 # Storage directory Defaults to <System's Data Directory>
 #

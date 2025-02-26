@@ -38,6 +38,37 @@ struct LegacyBrowsersTompl {
     pub domain: Option<String>,
 }
 
+// Add these new types near the top:
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+struct AdminToml {
+    pub password: Option<String>,
+    /// "open" or "closed" (defaults to "closed", i.e., a signup token is required)
+    pub signup_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SignupMode {
+    Open,
+    #[default]
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AdminConfig {
+    /// The password used to authorize admin endpoints.
+    pub password: Option<String>,
+    /// Determines whether new signups require a valid token.
+    pub signup_mode: SignupMode,
+}
+
+impl AdminConfig {
+    pub fn test() -> Self {
+        AdminConfig {
+            password: None,
+            signup_mode: SignupMode::Open,
+        }
+    }
+}
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 struct IoToml {
     pub http_port: Option<u16>,
@@ -51,9 +82,9 @@ struct IoToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 struct ConfigToml {
     secret_key: Option<String>,
-
     database: Option<DatabaseToml>,
     io: Option<IoToml>,
+    admin: Option<AdminToml>,
 }
 
 /// Server configuration
@@ -63,9 +94,20 @@ pub struct Config {
     ///
     /// Defaults to a random keypair.
     pub keypair: Keypair,
-
     pub io: IoConfig,
     pub core: CoreConfig,
+    pub admin: AdminConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            keypair: Keypair::random(),
+            io: IoConfig::default(),
+            core: CoreConfig::default(),
+            admin: AdminConfig::default(),
+        }
+    }
 }
 
 impl Config {
@@ -112,17 +154,8 @@ impl Config {
                 ..Default::default()
             },
             core: CoreConfig::test(),
+            admin: AdminConfig::test(),
             ..Default::default()
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            keypair: Keypair::random(),
-            io: IoConfig::default(),
-            core: CoreConfig::default(),
         }
     }
 }
@@ -175,14 +208,26 @@ impl TryFrom<ConfigToml> for Config {
             }
         };
 
+        let admin = if let Some(admin_toml) = value.admin {
+            AdminConfig {
+                password: admin_toml.password.clone(),
+                signup_mode: match admin_toml.signup_mode.as_deref() {
+                    Some("open") => SignupMode::Open,
+                    _ => SignupMode::Closed,
+                },
+            }
+        } else {
+            AdminConfig::default()
+        };
+
         Ok(Config {
             keypair,
-
             io,
             core: CoreConfig {
                 storage,
                 ..Default::default()
             },
+            admin,
         })
     }
 }
@@ -258,6 +303,10 @@ mod tests {
 
                     ..Default::default()
                 },
+                admin: AdminConfig {
+                    password: None,
+                    signup_mode: SignupMode::Open
+                }
             }
         )
     }
