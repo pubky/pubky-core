@@ -11,7 +11,7 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{ClientBuilder, Keypair};
 use pubky_common::timestamp::Timestamp;
-use pubky_homeserver::Homeserver;
+use pubky_homeserver::{Homeserver, HomeserverBuilder};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -105,6 +105,15 @@ impl Testnet {
     /// Run a Pubky Homeserver
     pub async fn run_homeserver(&self) -> Result<Homeserver> {
         Homeserver::run_test(&self.dht.bootstrap).await
+    }
+
+    /// Returns a [HomeserverBuilder] preconfigured with this testnet's DHT bootstrap nodes.
+    pub fn homeserver_builder(&self) -> HomeserverBuilder {
+        let mut builder = Homeserver::builder();
+        // Set the DHT bootstrap nodes so the homeserver can join this local testnet
+        builder.bootstrap(&self.dht.bootstrap);
+
+        builder
     }
 
     /// Run an HTTP Relay

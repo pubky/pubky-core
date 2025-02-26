@@ -61,8 +61,15 @@ impl HomeserverBuilder {
     /// Set the signup mode to "close" (require signup token to new user)
     /// Only to be used on ::test() homeserver for the specific case of
     /// testing signup token flow.
-    pub fn close_signups(&mut self) -> &mut Self {
+    pub fn close_signups(mut self) -> Self {
         self.0.admin.signup_mode = SignupMode::Closed;
+
+        self
+    }
+
+    /// Set a password to protect admin endpoints
+    pub fn admin_password(mut self, password: String) -> Self {
+        self.0.admin.password = Some(password);
 
         self
     }

@@ -41,7 +41,6 @@ struct LegacyBrowsersTompl {
     pub domain: Option<String>,
 }
 
-// Add these new types near the top:
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 struct AdminToml {
     pub password: Option<String>,

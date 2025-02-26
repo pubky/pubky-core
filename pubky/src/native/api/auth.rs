@@ -322,12 +322,11 @@ impl AuthRequest {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn basic_authn() {
@@ -566,6 +565,88 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn test_signup_with_token() {
+        // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
+        let testnet = Testnet::run().await.unwrap();
+        let admin_password = "testPassword".to_string();
+        let server = unsafe {
+            testnet
+                .homeserver_builder()
+                .close_signups()
+                .admin_password(admin_password.clone()) // configure this test homeserver to require signup tokens
+                .run()
+                .await
+                .unwrap()
+        };
+
+        let client = testnet.client_builder().build().unwrap();
+        let keypair = Keypair::random();
+
+        // 2. Try to signup with an invalid token "AAAAA" and expect failure.
+        let invalid_signup = client
+            .signup(&keypair, &server.public_key(), Some("AAAAA"))
+            .await;
+        assert!(
+            invalid_signup.is_err(),
+            "Signup should fail with an invalid signup token"
+        );
+
+        // 3. Call the admin endpoint to generate a valid signup token.
+        //    The admin endpoint is protected via the header "X-Admin-Password"
+        //    and the password we set up above.
+        let admin_url = format!(
+            "https://{}/admin/generate_signup_token",
+            server.public_key()
+        );
+
+        // 3.1. Call the admin endpoint *with a WRONG admin password* to ensure we get 401 UNAUTHORIZED.
+        let wrong_password_response = client
+            .get(&admin_url)
+            .header("X-Admin-Password", "notTheRightPassword")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            wrong_password_response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Wrong admin password should return 401"
+        );
+
+        // 3.1 Now call the admin endpoint again, this time with the correct password.
+        let admin_response = client
+            .get(&admin_url)
+            .header("X-Admin-Password", &admin_password)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            admin_response.status(),
+            StatusCode::OK,
+            "Admin endpoint should return OK"
+        );
+        let valid_token = admin_response.text().await.unwrap(); // The token string.
+
+        println!("VALID TOKEN: {valid_token}");
+        // 4. Now signup with the valid token. Expect success and a session back.
+        let session = client
+            .signup(&keypair, &server.public_key(), Some(&valid_token))
+            .await
+            .unwrap();
+        assert!(
+            !session.pubky().to_string().is_empty(),
+            "Session should contain a valid public key"
+        );
+
+        // 5. Finally, sign in with the same keypair and verify that a session is returned.
+        let signin_session = client.signin(&keypair).await.unwrap();
+        assert_eq!(
+            signin_session.pubky(),
+            &keypair.public_key(),
+            "Signed-in session should correspond to the same public key"
         );
     }
 }

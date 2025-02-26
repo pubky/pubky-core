@@ -29,10 +29,10 @@ impl SignupToken {
     }
 }
 
-// Generate 8 random bytes and encode as BASE32, fully uppercase
-// with hyphens every 4 characters.
+// Generate 7 random bytes and encode as BASE32, fully uppercase
+// with hyphens every 4 characters. Example, `QXV0-15V7-EXY0`
 fn generate_random_token() -> String {
-    let bytes = random_bytes::<8>();
+    let bytes = random_bytes::<7>();
     let encoded = encode(Alphabet::Crockford, &bytes).to_uppercase();
     let mut with_hyphens = String::new();
     for (i, ch) in encoded.chars().enumerate() {
