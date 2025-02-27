@@ -1,6 +1,7 @@
 import test from 'tape'
 
 import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
+import { getSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
@@ -11,7 +12,10 @@ test('Auth: basic', async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
+  const signupToken = await getSignupToken(client)
+
+  // Use the received token to sign up.
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -20,7 +24,7 @@ test('Auth: basic', async (t) => {
     await client.signout(publicKey)
 
     const session = await client.session(publicKey)
-    t.notOk(session, "singout")
+    t.notOk(session, "signout")
   }
 
   {
@@ -37,13 +41,16 @@ test("Auth: multi-user (cookies)", async (t) => {
   const alice = Keypair.random()
   const bob = Keypair.random()
 
-  await client.signup(alice, HOMESERVER_PUBLICKEY , null)
+  const aliceSignupToken = await getSignupToken(client)
+  const bobSignupToken = await getSignupToken(client)
+
+  await client.signup(alice, HOMESERVER_PUBLICKEY , aliceSignupToken)
 
   let session = await client.session(alice.publicKey())
   t.ok(session, "signup")
 
   {
-    await client.signup(bob, HOMESERVER_PUBLICKEY )
+    await client.signup(bob, HOMESERVER_PUBLICKEY, bobSignupToken)
 
     const session = await client.session(bob.publicKey())
     t.ok(session, "signup")
@@ -82,7 +89,9 @@ test("Auth: 3rd party signin", async (t) => {
   {
     let client = Client.testnet();
 
-    await client.signup(keypair, HOMESERVER_PUBLICKEY, null);
+    const signupToken = await getSignupToken(client)
+
+    await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
 
     await client.sendAuthToken(keypair, pubkyauthUrl)
   }

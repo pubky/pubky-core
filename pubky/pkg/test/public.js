@@ -1,6 +1,7 @@
 import test from 'tape'
 
 import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
+import { getSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
@@ -9,7 +10,9 @@ test('public: put/get', async (t) => {
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null);
+  const signupToken = await getSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
 
   const publicKey = keypair.publicKey();
 
@@ -57,7 +60,9 @@ test("not found", async (t) => {
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null);
+  const signupToken = await getSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
 
   const publicKey = keypair.publicKey();
 
@@ -74,7 +79,9 @@ test("unauthorized", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
+  const signupToken = await getSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -100,7 +107,9 @@ test("forbidden", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
+  const signupToken = await getSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -127,7 +136,9 @@ test("list", async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
+  const signupToken = await getSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
   let urls = [
     `pubky://${pubky}/pub/a.wrong/a.txt`,
@@ -260,7 +271,9 @@ test('list shallow', async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
+  const signupToken = await getSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
   let urls = [
     `pubky://${pubky}/pub/a.com/a.txt`,
