@@ -67,7 +67,7 @@ impl DB {
     ) -> anyhow::Result<()> {
         let mut wtxn = self.env.write_txn()?;
         if let Some(token_bytes) = self.tables.signup_tokens.get(&wtxn, token)? {
-            let mut signup_token = SignupToken::deserialize(&token_bytes);
+            let mut signup_token = SignupToken::deserialize(token_bytes);
             if signup_token.used.is_some() {
                 anyhow::bail!("Token already used");
             }

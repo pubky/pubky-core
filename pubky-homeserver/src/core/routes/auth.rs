@@ -124,7 +124,7 @@ fn create_session_and_cookie(
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
     let session = Session::new(
-        &public_key,
+        public_key,
         capabilities,
         user_agent.map(|ua| ua.to_string()),
     )
