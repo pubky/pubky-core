@@ -1,6 +1,6 @@
 [package]
 name = "pubky"
-version = "0.4.2"
+version = "0.4.2-rc.1"
 edition = "2021"
 description = "Pubky core client"
 license = "MIT"
