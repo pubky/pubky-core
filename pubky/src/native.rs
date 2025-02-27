@@ -35,7 +35,7 @@ pub struct ClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
     /// Maximum age in microseconds before a user record should be republished.
-    /// Defaults to 4 days.
+    /// Defaults to 6 hours.
     max_record_age_micros: Option<u64>,
 }
 
@@ -77,7 +77,7 @@ impl ClientBuilder {
     }
 
     /// Set how many microseconds old a record can be before it must be republished.
-    /// Defaults to 4 days (345600 seconds) if not overridden.
+    /// Defaults to 6 hours if not overridden.
     pub fn max_record_age_micros(&mut self, micros: u64) -> &mut Self {
         self.max_record_age_micros = Some(micros);
         self
@@ -117,10 +117,11 @@ impl ClientBuilder {
         }
 
         // Maximum age in microseconds before a homeserver record should be republished.
-        // Default is 4 days. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
+        // Default is 6 hours. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
+        // See https://github.com/pubky/pkarr-churn for latest date of record churn
         let max_record_age_micros = self
             .max_record_age_micros
-            .unwrap_or(4 * 24 * 60 * 60 * 1_000_000);
+            .unwrap_or(6 * 60 * 60 * 1_000_000);
 
         Ok(Client {
             pkarr,
