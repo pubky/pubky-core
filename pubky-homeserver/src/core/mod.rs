@@ -122,7 +122,7 @@ pub struct AdminConfig {
 impl AdminConfig {
     pub fn test() -> Self {
         AdminConfig {
-            password: None,
+            password: Some("test_admin_password".to_string()),
             signup_mode: SignupMode::Open,
         }
     }

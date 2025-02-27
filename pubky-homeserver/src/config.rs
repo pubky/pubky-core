@@ -283,7 +283,7 @@ mod tests {
                     ..Default::default()
                 },
                 admin: AdminConfig {
-                    password: None,
+                    password: Some("test_admin_password".to_string()),
                     signup_mode: SignupMode::Open
                 }
             }

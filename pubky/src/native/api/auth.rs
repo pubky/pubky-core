@@ -572,16 +572,16 @@ mod tests {
     async fn test_signup_with_token() {
         // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
         let testnet = Testnet::run().await.unwrap();
-        let admin_password = "testPassword".to_string();
         let server = unsafe {
             testnet
                 .homeserver_builder()
-                .close_signups()
-                .admin_password(admin_password.clone()) // configure this test homeserver to require signup tokens
+                .close_signups() // configure this test homeserver to require signup tokens
                 .run()
                 .await
                 .unwrap()
         };
+
+        let admin_password = "test_admin_password";
 
         let client = testnet.client_builder().build().unwrap();
         let keypair = Keypair::random();
@@ -606,7 +606,7 @@ mod tests {
         // 3.1. Call the admin endpoint *with a WRONG admin password* to ensure we get 401 UNAUTHORIZED.
         let wrong_password_response = client
             .get(&admin_url)
-            .header("X-Admin-Password", "notTheRightPassword")
+            .header("X-Admin-Password", "wrong_admin_password")
             .send()
             .await
             .unwrap();
@@ -619,7 +619,7 @@ mod tests {
         // 3.1 Now call the admin endpoint again, this time with the correct password.
         let admin_response = client
             .get(&admin_url)
-            .header("X-Admin-Password", &admin_password)
+            .header("X-Admin-Password", admin_password)
             .send()
             .await
             .unwrap();
@@ -630,7 +630,6 @@ mod tests {
         );
         let valid_token = admin_response.text().await.unwrap(); // The token string.
 
-        println!("VALID TOKEN: {valid_token}");
         // 4. Now signup with the valid token. Expect success and a session back.
         let session = client
             .signup(&keypair, &server.public_key(), Some(&valid_token))

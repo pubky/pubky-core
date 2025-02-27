@@ -109,7 +109,8 @@ impl Testnet {
 
     /// Returns a [HomeserverBuilder] preconfigured with this testnet's DHT bootstrap nodes.
     pub fn homeserver_builder(&self) -> HomeserverBuilder {
-        let mut builder = Homeserver::builder();
+        // Use the same test admin password as the run_test() homeserver.
+        let mut builder = Homeserver::builder().admin_password("test_admin_password".to_string());
         // Set the DHT bootstrap nodes so the homeserver can join this local testnet
         builder.bootstrap(&self.dht.bootstrap);
 
