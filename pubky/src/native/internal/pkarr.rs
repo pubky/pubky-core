@@ -5,21 +5,23 @@ use pkarr::{
 };
 use std::convert::TryInto;
 
+use super::super::Client;
+
 /// The strategy to decide whether to (re)publish a homeserver record.
 pub(crate) enum PublishStrategy {
     /// Always publish a new record (used on signup).
     Force,
-    /// Only publish if no record can be resolved or if the record is older than 4 days.
+    /// Only publish if no record can be resolved or if the record is older than 6 hours.
     /// Used on signin and on republish_homeserver (used by key managing apps)
     IfOlderThan,
 }
 
-impl crate::Client {
+impl Client {
     /// Unified method to update the homeserver record.
     ///
     /// If `host` is provided, that value is used; otherwise the host is extracted from the
     /// currently resolved record. Under the IfOlderThan strategy, the record is only updated if
-    /// it is missing or its timestamp is older than 4 days. Under the Force strategy, the
+    /// it is missing or its timestamp is older than 6 hours. Under the Force strategy, the
     /// record is always published.
     pub(crate) async fn publish_homeserver(
         &self,

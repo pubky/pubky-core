@@ -104,7 +104,7 @@ impl Client {
     /// Republish the user's PKarr record pointing to their homeserver.
     ///
     /// This method will republish the record if no record exists or if the existing record
-    /// is older than 4 days.
+    /// is older than 6 hours.
     ///
     /// The method is intended for clients and key managers (e.g., pubky-ring) to
     /// keep the records of active users fresh and available in the DHT and relays.
@@ -113,12 +113,14 @@ impl Client {
     /// homeserver, but does not return a session token, so a signin must be done after
     /// republishing. On a failed signin due to homeserver resolution failure, a key
     /// manager should always attempt to republish the last known homeserver.
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "republishHomeserver")]
     pub async fn republish_homeserver(&self, keypair: &Keypair, host: &str) -> Result<(), JsValue> {
         self.0
             .republish_homeserver(keypair.as_inner(), host)
             .await
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+            .map_err(|e| JsValue::from_str(&e.to_string()));
+
+        Ok(())
     }
 }
 

@@ -14,9 +14,8 @@ use pubky_common::{
 
 use anyhow::Result;
 
-use crate::{handle_http_error, native::internal::pkarr::PublishStrategy};
-
-use super::super::Client;
+use super::super::{internal::pkarr::PublishStrategy, Client};
+use crate::handle_http_error;
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -91,7 +90,7 @@ impl Client {
 
     /// Signin to a homeserver.
     /// After a successful signin, a background task is spawned to republish the user's
-    /// PKarr record if it is missing or older than 4 days. We don't mind if it succeed
+    /// PKarr record if it is missing or older than 6 hours. We don't mind if it succeed
     /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
@@ -296,7 +295,7 @@ impl Client {
     }
 
     /// Republish the user's Pkarr record pointing to their homeserver if
-    /// no record can be resolved or if the existing record is older than 4 days.
+    /// no record can be resolved or if the existing record is older than 6 hours.
     ///
     /// This method is intended to be used by clients and key managers (e.g., pubky-ring)
     /// in order to keep the records of active users fresh and available in the DHT.
