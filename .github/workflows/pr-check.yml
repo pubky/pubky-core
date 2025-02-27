@@ -77,3 +77,34 @@ jobs:
               exit 1
             fi
           fi
+
+  wasm-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+          
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        
+      - name: Build and Test WASM
+        run: |
+          cd pubky/pkg
+          npm install
+          npm run build
+          npm test
