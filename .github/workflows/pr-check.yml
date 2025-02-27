@@ -102,9 +102,24 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
         
-      - name: Build and Test WASM
+      - name: Build WASM
         run: |
           cd pubky/pkg
           npm install
           npm run build
+
+      - name: Start Testnet
+        run: |
+          cd pubky/pkg
+          npm run testnet &
+          timeout 30 sh -c 'until nc -z localhost 15411 && nc -z localhost 15412; do sleep 1; done'
+
+      - name: Run Tests
+        run: |
+          cd pubky/pkg
           npm test
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -f "pubky-testnet" || true
