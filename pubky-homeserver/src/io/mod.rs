@@ -58,17 +58,16 @@ impl HomeserverBuilder {
         self
     }
 
-    /// Set the signup mode to "close" (require signup token to new user)
-    /// Only to be used on ::test() homeserver for the specific case of
-    /// testing signup token flow.
-    pub fn close_signups(mut self) -> Self {
-        self.0.admin.signup_mode = SignupMode::Closed;
+    /// Set the signup mode to "token_required". Only to be used on ::test()
+    /// homeserver for the specific case of testing signup token flow.
+    pub fn close_signups(&mut self) -> &mut Self {
+        self.0.admin.signup_mode = SignupMode::TokenRequired;
 
         self
     }
 
     /// Set a password to protect admin endpoints
-    pub fn admin_password(mut self, password: String) -> Self {
+    pub fn admin_password(&mut self, password: String) -> &mut Self {
         self.0.admin.password = Some(password);
 
         self
@@ -109,6 +108,15 @@ impl Homeserver {
     /// Run a Homeserver with configurations suitable for ephemeral tests.
     pub async fn run_test(bootstrap: &[String]) -> Result<Self> {
         let config = Config::test(bootstrap);
+
+        unsafe { Self::run(config) }.await
+    }
+
+    /// Run a Homeserver with configurations suitable for ephemeral tests.
+    /// That requires signup tokens.
+    pub async fn run_test_with_signup_tokens(bootstrap: &[String]) -> Result<Self> {
+        let mut config = Config::test(bootstrap);
+        config.admin.signup_mode = SignupMode::TokenRequired;
 
         unsafe { Self::run(config) }.await
     }

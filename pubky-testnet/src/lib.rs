@@ -11,7 +11,7 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{ClientBuilder, Keypair};
 use pubky_common::timestamp::Timestamp;
-use pubky_homeserver::{Homeserver, HomeserverBuilder};
+use pubky_homeserver::Homeserver;
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -75,7 +75,9 @@ impl Testnet {
             .storage(storage)
             .bootstrap(&dht.bootstrap)
             .relays(&[relay.local_url()])
-            .domain("localhost");
+            .domain("localhost")
+            .close_signups()
+            .admin_password("admin".to_string());
         unsafe { builder.run().await }?;
 
         HttpRelay::builder().http_port(15412).run().await?;
@@ -107,14 +109,9 @@ impl Testnet {
         Homeserver::run_test(&self.dht.bootstrap).await
     }
 
-    /// Returns a [HomeserverBuilder] preconfigured with this testnet's DHT bootstrap nodes.
-    pub fn homeserver_builder(&self) -> HomeserverBuilder {
-        // Use the same test admin password as the run_test() homeserver.
-        let mut builder = Homeserver::builder().admin_password("test_admin_password".to_string());
-        // Set the DHT bootstrap nodes so the homeserver can join this local testnet
-        builder.bootstrap(&self.dht.bootstrap);
-
-        builder
+    /// Run a Pubky Homeserver that requires signup tokens
+    pub async fn run_homeserver_with_signup_tokens(&self) -> Result<Homeserver> {
+        Homeserver::run_test_with_signup_tokens(&self.dht.bootstrap).await
     }
 
     /// Run an HTTP Relay

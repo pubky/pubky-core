@@ -572,23 +572,16 @@ mod tests {
     async fn test_signup_with_token() {
         // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
         let testnet = Testnet::run().await.unwrap();
-        let server = unsafe {
-            testnet
-                .homeserver_builder()
-                .close_signups() // configure this test homeserver to require signup tokens
-                .run()
-                .await
-                .unwrap()
-        };
+        let server = testnet.run_homeserver_with_signup_tokens().await.unwrap();
 
-        let admin_password = "test_admin_password";
+        let admin_password = "admin";
 
         let client = testnet.client_builder().build().unwrap();
         let keypair = Keypair::random();
 
         // 2. Try to signup with an invalid token "AAAAA" and expect failure.
         let invalid_signup = client
-            .signup(&keypair, &server.public_key(), Some("AAAAA"))
+            .signup(&keypair, &server.public_key(), Some("AAAA-BBBB-CCCC"))
             .await;
         assert!(
             invalid_signup.is_err(),

@@ -44,7 +44,7 @@ struct LegacyBrowsersTompl {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 struct AdminToml {
     pub password: Option<String>,
-    /// "open" or "closed" (defaults to "closed", i.e., a signup token is required)
+    /// "open" or "token_required" (defaults to "token_required", i.e., a signup token is required)
     pub signup_mode: Option<String>,
 }
 
@@ -192,7 +192,7 @@ impl TryFrom<ConfigToml> for Config {
                 password: admin_toml.password.clone(),
                 signup_mode: match admin_toml.signup_mode.as_deref() {
                     Some("open") => SignupMode::Open,
-                    _ => SignupMode::Closed,
+                    _ => SignupMode::TokenRequired,
                 },
             }
         } else {
@@ -283,7 +283,7 @@ mod tests {
                     ..Default::default()
                 },
                 admin: AdminConfig {
-                    password: Some("test_admin_password".to_string()),
+                    password: Some("admin".to_string()),
                     signup_mode: SignupMode::Open
                 }
             }

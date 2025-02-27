@@ -108,7 +108,7 @@ mod tests {
 pub enum SignupMode {
     Open,
     #[default]
-    Closed,
+    TokenRequired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -122,7 +122,7 @@ pub struct AdminConfig {
 impl AdminConfig {
     pub fn test() -> Self {
         AdminConfig {
-            password: Some("test_admin_password".to_string()),
+            password: Some("admin".to_string()),
             signup_mode: SignupMode::Open,
         }
     }

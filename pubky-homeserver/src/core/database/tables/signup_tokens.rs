@@ -27,40 +27,40 @@ impl SignupToken {
     pub fn deserialize(bytes: &[u8]) -> Self {
         from_bytes(bytes).expect("deserialize signup token")
     }
-}
 
-// Generate 7 random bytes and encode as BASE32, fully uppercase
-// with hyphens every 4 characters. Example, `QXV0-15V7-EXY0`
-fn generate_random_token() -> String {
-    let bytes = random_bytes::<7>();
-    let encoded = encode(Alphabet::Crockford, &bytes).to_uppercase();
-    let mut with_hyphens = String::new();
-    for (i, ch) in encoded.chars().enumerate() {
-        if i > 0 && i % 4 == 0 {
-            with_hyphens.push('-');
+    // Generate 7 random bytes and encode as BASE32, fully uppercase
+    // with hyphens every 4 characters. Example, `QXV0-15V7-EXY0`
+    pub fn random() -> Self {
+        let bytes = random_bytes::<7>();
+        let encoded = encode(Alphabet::Crockford, &bytes).to_uppercase();
+        let mut with_hyphens = String::new();
+        for (i, ch) in encoded.chars().enumerate() {
+            if i > 0 && i % 4 == 0 {
+                with_hyphens.push('-');
+            }
+            with_hyphens.push(ch);
         }
-        with_hyphens.push(ch);
+
+        SignupToken {
+            token: with_hyphens,
+            created_at: Timestamp::now().as_u64(),
+            used: None,
+        }
     }
-    with_hyphens
 }
 
 impl DB {
     pub fn generate_signup_token(&mut self) -> anyhow::Result<String> {
-        let token = generate_random_token();
-        let signup_token = SignupToken {
-            token: token.clone(),
-            created_at: Timestamp::now().as_u64(),
-            used: None,
-        };
+        let signup_token = SignupToken::random();
         let mut wtxn = self.env.write_txn()?;
         self.tables
             .signup_tokens
-            .put(&mut wtxn, &token, &signup_token.serialize())?;
+            .put(&mut wtxn, &signup_token.token, &signup_token.serialize())?;
         wtxn.commit()?;
-        Ok(token)
+        Ok(signup_token.token)
     }
 
-    pub fn validate_signup_token(
+    pub fn validate_and_consume_signup_token(
         &self,
         token: &str,
         user_pubkey: &PublicKey,

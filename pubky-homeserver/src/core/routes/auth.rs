@@ -35,28 +35,30 @@ pub async fn signup(
     let token = state.verifier.verify(&body)?;
     let public_key = token.pubky();
 
-    // 2) If signup_mode == closed, require & validate a `signup_token` param.
-    if state.admin.signup_mode == SignupMode::Closed {
+    // 2) Ensure the user does *not* already exist
+    let txn = state.db.env.read_txn()?;
+    let users = state.db.tables.users;
+    if users.get(&txn, public_key)?.is_some() {
+        return Err(Error::new(
+            StatusCode::CONFLICT,
+            Some("User already exists"),
+        ));
+    }
+    txn.commit()?;
+
+    // 3) If signup_mode == closed, require & validate a `signup_token` param.
+    if state.admin.signup_mode == SignupMode::TokenRequired {
         let signup_token_param = params
             .get("signup_token")
             .ok_or_else(|| Error::new(StatusCode::BAD_REQUEST, Some("signup_token required")))?;
         // Validate it in the DB (marks it used)
         state
             .db
-            .validate_signup_token(signup_token_param, public_key)?;
-    }
-
-    // 3) Ensure the user does *not* already exist
-    let mut wtxn = state.db.env.write_txn()?;
-    let users = state.db.tables.users;
-    if users.get(&wtxn, public_key)?.is_some() {
-        return Err(Error::new(
-            StatusCode::CONFLICT,
-            Some("User already exists"),
-        ));
+            .validate_and_consume_signup_token(signup_token_param, public_key)?;
     }
 
     // 4) Create the new user record
+    let mut wtxn = state.db.env.write_txn()?;
     users.put(
         &mut wtxn,
         public_key,
@@ -90,10 +92,10 @@ pub async fn signin(
     let public_key = token.pubky();
 
     // 2) Ensure user *does* exist
-    let rtxn = state.db.env.read_txn()?;
+    let txn = state.db.env.read_txn()?;
     let users = state.db.tables.users;
-    let user_exists = users.get(&rtxn, public_key)?.is_some();
-    rtxn.commit()?;
+    let user_exists = users.get(&txn, public_key)?.is_some();
+    txn.commit()?;
     if !user_exists {
         return Err(Error::new(
             StatusCode::NOT_FOUND,
