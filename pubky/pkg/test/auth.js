@@ -11,7 +11,7 @@ test('Auth: basic', async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY )
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -37,7 +37,7 @@ test("Auth: multi-user (cookies)", async (t) => {
   const alice = Keypair.random()
   const bob = Keypair.random()
 
-  await client.signup(alice, HOMESERVER_PUBLICKEY )
+  await client.signup(alice, HOMESERVER_PUBLICKEY , null)
 
   let session = await client.session(alice.publicKey())
   t.ok(session, "signup")
@@ -82,7 +82,7 @@ test("Auth: 3rd party signin", async (t) => {
   {
     let client = Client.testnet();
 
-    await client.signup(keypair, HOMESERVER_PUBLICKEY);
+    await client.signup(keypair, HOMESERVER_PUBLICKEY, null);
 
     await client.sendAuthToken(keypair, pubkyauthUrl)
   }

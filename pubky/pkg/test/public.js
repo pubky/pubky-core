@@ -9,7 +9,7 @@ test('public: put/get', async (t) => {
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null);
 
   const publicKey = keypair.publicKey();
 
@@ -57,7 +57,7 @@ test("not found", async (t) => {
 
   const keypair = Keypair.random();
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null);
 
   const publicKey = keypair.publicKey();
 
@@ -74,7 +74,7 @@ test("unauthorized", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -100,7 +100,7 @@ test("forbidden", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -127,7 +127,7 @@ test("list", async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
 
   let urls = [
     `pubky://${pubky}/pub/a.wrong/a.txt`,
@@ -260,7 +260,7 @@ test('list shallow', async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, null)
 
   let urls = [
     `pubky://${pubky}/pub/a.com/a.txt`,
