@@ -19,7 +19,7 @@ pub struct User {
     pub created_at: u64,
 }
 
-impl<'a> BytesEncode<'a> for User {
+impl BytesEncode<'_> for User {
     type EItem = Self;
 
     fn bytes_encode(user: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
@@ -41,7 +41,7 @@ impl<'a> BytesDecode<'a> for User {
 
 pub struct PublicKeyCodec {}
 
-impl<'a> BytesEncode<'a> for PublicKeyCodec {
+impl BytesEncode<'_> for PublicKeyCodec {
     type EItem = PublicKey;
 
     fn bytes_encode(pubky: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {

@@ -138,7 +138,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
         let url = url.as_str();
@@ -178,7 +181,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let public_key = keypair.public_key();
 
@@ -191,7 +197,7 @@ mod tests {
 
             // TODO: remove extra client after switching to subdomains.
             other_client
-                .signup(&other, &server.public_key())
+                .signup(&other, &server.public_key(), None)
                 .await
                 .unwrap();
 
@@ -219,7 +225,7 @@ mod tests {
 
             // TODO: remove extra client after switching to subdomains.
             other_client
-                .signup(&other, &server.public_key())
+                .signup(&other, &server.public_key(), None)
                 .await
                 .unwrap();
 
@@ -243,7 +249,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let pubky = keypair.public_key();
 
@@ -446,7 +455,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let pubky = keypair.public_key();
 
@@ -656,7 +668,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let pubky = keypair.public_key();
 
@@ -752,7 +767,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let pubky = keypair.public_key();
 
@@ -805,8 +823,14 @@ mod tests {
         let user_1 = Keypair::random();
         let user_2 = Keypair::random();
 
-        client.signup(&user_1, &homeserver_pubky).await.unwrap();
-        client.signup(&user_2, &homeserver_pubky).await.unwrap();
+        client
+            .signup(&user_1, &homeserver_pubky, None)
+            .await
+            .unwrap();
+        client
+            .signup(&user_2, &homeserver_pubky, None)
+            .await
+            .unwrap();
 
         let user_1_id = user_1.public_key();
         let user_2_id = user_2.public_key();
@@ -872,7 +896,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
         let url = url.as_str();

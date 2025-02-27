@@ -17,6 +17,7 @@ use crate::core::AppState;
 
 use super::layers::{pubky_host::PubkyHostLayer, trace::with_trace_layer};
 
+mod admin;
 mod auth;
 mod feed;
 mod root;
@@ -32,6 +33,11 @@ fn base() -> Router<AppState> {
         .route("/session", post(auth::signin))
         // Events
         .route("/events/", get(feed::feed))
+        // Admin endpoints
+        .route(
+            "/admin/generate_signup_token",
+            get(admin::generate_signup_token),
+        )
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).

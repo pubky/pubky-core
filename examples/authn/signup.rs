@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
     client
-        .signup(&keypair, &PublicKey::try_from(homeserver).unwrap())
+        .signup(&keypair, &PublicKey::try_from(homeserver).unwrap(), None)
         .await?;
 
     println!("Successfully signed up. Checking session:");
