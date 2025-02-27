@@ -100,12 +100,17 @@ impl Client {
         // Spawn a background task to republish the record.
         let client_clone = self.clone();
         let keypair_clone = keypair.clone();
-        tokio::spawn(async move {
+        let future = async move {
             // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
             let _ = client_clone
                 .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
                 .await;
-        });
+        };
+
+        #[cfg(not(wasm_browser))]
+        tokio::spawn(future);
+        #[cfg(wasm_browser)]
+        wasm_bindgen_futures::spawn_local(future);
 
         Ok(session)
     }
