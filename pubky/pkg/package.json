@@ -34,6 +34,7 @@
   ],
   "devDependencies": {
     "browser-resolve": "^2.0.0",
+    "browserify": "^17.0.1",
     "esmify": "^2.1.1",
     "tape": "^5.8.1",
     "tape-run": "^11.0.0"
