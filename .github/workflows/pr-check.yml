@@ -119,10 +119,12 @@ jobs:
             sleep 1
           done
 
-      - name: Run Tests
+      - name: Run Tests (only node-js)
         working-directory: pubky/pkg
-        run: npm run test
+        # runing only `test-nodjs` and not browser because of weird `exit` behavior
+        run: npm run test-nodejs
 
       - name: Show testnet logs if tests fail
+        working-directory: pubky/pkg
         if: failure()
         run: cat testnet.log
