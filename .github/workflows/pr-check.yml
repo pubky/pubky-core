@@ -94,72 +94,35 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Install netcat and other tools
-        run: sudo apt-get update && sudo apt-get install -y netcat-openbsd lsof
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
       - name: Build WASM
+        working-directory: pubky/pkg
         run: |
-          cd pubky/pkg
           npm install
           npm run build
 
-      - name: Create test configuration
+      - name: Run the testnet
+        working-directory: pubky/pkg
+        run: npm run testnet > testnet.log 2>&1 &
+
+      - name: Wait for testnet homeserver
         run: |
-          # Create a special configuration file for tests
-          echo 'export function getTestConfig() {
-            return {
-              useLocalhost: true,
-              testMode: true,
-              homeserverUrl: "http://127.0.0.1:6286",
-              relayUrl: "http://127.0.0.1:15411"
-            };
-          }' > pubky/pkg/test/test-config.js
-
-      - name: Build Testnet Binary with debugging
-        run: |
-          # Build with detailed logging
-          RUST_LOG=debug cargo build -p pubky-testnet
-
-      - name: Start Testnet
-        run: |
-          # Start with explicit host bindings
-          RUST_LOG=debug PUBKY_TEST_LOCAL=1 PUBKY_BIND_ADDR=0.0.0.0 ./target/debug/pubky-testnet &
-          TESTNET_PID=$!
-          echo "Testnet PID: $TESTNET_PID"
-
-          # Wait for ports to be open
-          timeout 120 sh -c 'until nc -z localhost 15411 && nc -z localhost 15412 && nc -z localhost 6286; do sleep 1; done'
-
-          # Check what's listening on these ports
-          echo "Network ports in use:"
-          sudo lsof -i :15411,15412,6286
-
-          # Verify network connectivity
-          echo "Testing connectivity to Pkarr relay:"
-          curl -v http://127.0.0.1:15411 || true
-          echo "Testing connectivity to homeserver:"  
-          curl -v http://127.0.0.1:6286 || true
+          until nc -zv 127.0.0.1 6286; do
+            echo "Waiting for testnet homeserver to be ready..."
+            sleep 1
+          done
 
       - name: Run Tests
-        run: |
-          cd pubky/pkg
-          # Set environment variables for tests
-          export PUBKY_TEST_URL="http://127.0.0.1:6286"
-          export PUBKY_TEST_LOCAL=1
-          export PUBKY_FORCE_LOCALHOST=1
-          export NODE_TLS_REJECT_UNAUTHORIZED=0
-          # Run tests with explicit debug logging
-          NODE_DEBUG=http,net,fetch,request npm run test-nodejs || (echo "Tests failed, checking logs:" && cat test-*.log || true)
+        working-directory: pubky/pkg
+        run: npm run test
 
-      - name: Cleanup
-        if: always()
-        run: |
-          pkill -f "pubky-testnet" || true
+      - name: Show testnet logs if tests fail
+        if: failure()
+        run: cat testnet.log
