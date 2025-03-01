@@ -114,9 +114,13 @@ impl Client {
     /// republishing. On a failed signin due to homeserver resolution failure, a key
     /// manager should always attempt to republish the last known homeserver.
     #[wasm_bindgen(js_name = "republishHomeserver")]
-    pub async fn republish_homeserver(&self, keypair: &Keypair, host: &str) -> Result<(), JsValue> {
+    pub async fn republish_homeserver(
+        &self,
+        keypair: &Keypair,
+        host: &PublicKey,
+    ) -> Result<(), JsValue> {
         self.0
-            .republish_homeserver(keypair.as_inner(), host)
+            .republish_homeserver(keypair.as_inner(), host.as_inner())
             .await
             .map_err(|e| JsValue::from_str(&e.to_string()));
 
