@@ -338,9 +338,13 @@ impl Client {
     /// # Errors
     ///
     /// Returns an error if the publication fails.
-    pub async fn republish_homeserver(&self, keypair: &Keypair, host: &str) -> Result<()> {
-        self.publish_homeserver(keypair, Some(host), PublishStrategy::IfOlderThan)
-            .await
+    pub async fn republish_homeserver(&self, keypair: &Keypair, host: &PublicKey) -> Result<()> {
+        self.publish_homeserver(
+            keypair,
+            Some(&host.to_string()),
+            PublishStrategy::IfOlderThan,
+        )
+        .await
     }
 }
 
@@ -786,7 +790,7 @@ mod tests {
         // Immediately call republish_homeserver.
         // Since the record is fresh, republish should do nothing.
         client
-            .republish_homeserver(&keypair, &server.public_key().to_string())
+            .republish_homeserver(&keypair, &server.public_key())
             .await
             .unwrap();
         let record2 = client
@@ -804,7 +808,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         // Call republish_homeserver again; now the record should be updated.
         client
-            .republish_homeserver(&keypair, &server.public_key().to_string())
+            .republish_homeserver(&keypair, &server.public_key())
             .await
             .unwrap();
         let record3 = client
