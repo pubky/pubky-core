@@ -22,22 +22,14 @@ use tracing_subscriber::EnvFilter;
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Cli {
-    /// Number of records to publish
-    #[arg(long, default_value_t = 100)]
-    num_records: usize,
-
     /// Number of parallel threads
     #[arg(long, default_value_t = 12)]
     threads: usize,
-
-    /// Verify x keys by checking how many nodes it was stored on.
-    #[arg(long, default_value_t = 20)]
-    num_verify_keys: usize,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("main_publish_and_save started.");
+    println!("read_and_republish started.");
     // Initialize tracing
 
     tracing_subscriber::fmt()
