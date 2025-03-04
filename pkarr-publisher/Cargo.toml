@@ -1,0 +1,31 @@
+[package]
+name = "pkarr-publisher"
+version = "0.1.0"
+edition = "2021"
+authors = ["Severin Alex Bühler <severin@synonym.to>"]
+description = "A pkarr packet republisher."
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+keywords = ["pkarr", "mainline", "pubky"]
+categories = ["web-programming"]
+
+[dependencies]
+anyhow = "1.0.95"
+pkarr = "3.5.2"
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
+
+# bin dependencies
+clap = { version = "4.4", features = ["derive"] } 
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+ctrlc = "3.4.5"
+hex = "0.4.3"
+
+[dev-dependencies]
+pubky-testnet = { path = "../pubky-testnet" }
+
+
+[[bin]]
+name = "publish_and_save"
+path = "src/bin/publish_and_save.rs"
