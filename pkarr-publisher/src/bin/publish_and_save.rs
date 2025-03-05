@@ -1,10 +1,10 @@
-//! Publish and save the published public keys in a file
+//! Publishs packets with random keys and saves the published public keys in a file
 //! so they can be reused in other experiments.
 //!
-//! Run with `cargo run --bin main_publish_and_save`.
+//! Run with `cargo run --bin main_publish_and_save -- --num-records 100`.
 
 use clap::Parser;
-use pkarr::{dns::Name, mainline::Dht, Client, Keypair, PublicKey};
+use pkarr::{dns::Name, mainline::{Dht, MutableItem}, Client, Keypair, PublicKey, SignedPacket};
 use rand::seq::SliceRandom;
 use rand::rng;
 use std::{
@@ -18,6 +18,9 @@ use std::{
 use tokio::time::sleep;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
+use futures_lite::StreamExt;
+
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -32,7 +35,7 @@ struct Cli {
 
     /// Verify x keys by checking how many nodes it was stored on.
     #[arg(long, default_value_t = 20)]
-    num_verify_keys: usize,
+    verify_keys: usize,
 }
 
 #[tokio::main]
@@ -58,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     
-    let num_verify_keys = cli.num_verify_keys;
+    let num_verify_keys = cli.verify_keys;
     info!("Publish {} records. Verify: {num_verify_keys}", cli.num_records);
     let published_keys = publish_parallel(cli.num_records, cli.threads, &ctrlc_pressed).await;
 
@@ -137,14 +140,14 @@ async fn publish_parallel(
 // Publishes x number of packets. Checks if they are actually available
 async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
     let client = Client::builder().no_relays().build().unwrap();
-    let dht = client.dht().unwrap();
-    dht.clone().as_async().bootstrapped().await;
+    let dht = client.dht().unwrap().as_async();
+    dht.bootstrapped().await;
     let mut records = vec![];
 
     for i in 0..num_records {
         let instant = Instant::now();
         let key = Keypair::random();
-        let packet = pkarr::SignedPacketBuilder::default().cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600).build(&key).unwrap();
+        let packet: SignedPacket = pkarr::SignedPacketBuilder::default().cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600).build(&key).unwrap();
         if let Err(e) = client.publish(&packet, None).await {
             tracing::error!("Failed to publish {} record: {e:?}", key.public_key());
             continue;
@@ -175,18 +178,12 @@ async fn verify_published(keys: &Vec<Keypair>, count: usize) {
 
 /// Queries the public key and returns how many nodes responded with the packet.
 pub async fn count_dht_nodes_storing_packet(pubkey: &PublicKey, client: &Dht) -> u8 {
-    let c = client.clone();
-    let p = pubkey.clone();
-    let handle = tokio::task::spawn_blocking(move || {
-        let stream = c.get_mutable(p.as_bytes(), None, None);
-        let mut response_count: u8 = 0;
-    
-        for _ in stream {
-            response_count += 1;
-        }
-    
-        response_count
-    });
+    let c = client.clone().as_async();
+    let mut response_count: u8 = 0;
+    let mut stream = c.get_mutable(pubkey.as_bytes(), None, None);
+    while let Some(_) = stream.next().await {
+        response_count += 1;
+    }
 
-    handle.await.unwrap()
+    response_count
 }

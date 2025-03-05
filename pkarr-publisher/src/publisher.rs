@@ -1,91 +1,44 @@
-use std::any;
+use std::collections::HashMap;
+use pkarr::{Client, PublicKey};
+use tokio::time::Instant;
 
-use pkarr::{mainline::Dht, Client, PublicKey};
+use crate::single_key_publisher::{RepublishError, RepublishInfo, SingleKeyRepublisherBuilder};
 
-#[derive(Debug, Clone)]
-pub enum PublishState {
-    /// The packet has been republished.
-    Republished {
-        published_nodes_count: usize
-    },
-    /// The packet can't be resolved on the DHT and therefore can't be republished.
-    Missing,
-}
 
-impl PublishState {
-    pub fn is_republished(&self) -> bool {
-        if let PublishState::Republished{..} = self {
-            return true
-        } else {
-            return false
-        }
-    }
-
-    pub fn is_missing(&self) -> bool {
-        if let PublishState::Missing = self {
-            return true
-        } else {
-            return false
-        }
-    }
+pub struct PkarrRepublisher {
+    results: HashMap<PublicKey, Option<Result<RepublishInfo, RepublishError>>>,
+    client: pkarr::Client
 }
 
 
-/// A struct that holds the public key and
-/// the information if it is published and verified.
-#[derive(Debug, Clone)]
-pub struct PublicKeyPub {
-    pub public_key: PublicKey,
-    state: Option<PublishState>,
-}
-
-impl PublicKeyPub {
-    pub fn new(public_key: PublicKey) -> Self {
-        Self {
-            public_key,
-            state: None
-        }
-    }
-
-    /// If this key has already been processed.
-    pub fn is_processed(&self) -> bool {
-        self.state.is_some()
-    }
-}
-
-pub struct PkarrPublisher {
-    pub public_keys: Vec<PublicKeyPub>,
-    client: pkarr::Client,
-    dht: Dht
-}
-
-
-impl PkarrPublisher {
+impl PkarrRepublisher {
     pub fn new(public_keys: Vec<PublicKey>) -> Result<Self, pkarr::errors::BuildError> {
         let client = pkarr::Client::builder().build()?;
-        let dht = client.dht().unwrap();
-        let keys = public_keys.into_iter().map(|pk| PublicKeyPub::new(pk)).collect();
+        let mut results: HashMap<PublicKey, Option<Result<RepublishInfo, RepublishError>>> = HashMap::with_capacity(public_keys.len());
+        for key in public_keys {
+            results.insert(key, None);
+        };
         Ok(Self {
-            public_keys: keys,
+            results,
             client,
-            dht
         })
     }
 
     pub fn new_with_client(public_keys: Vec<PublicKey>, client: Client) -> Self {
-        let keys = public_keys.into_iter().map(|pk| PublicKeyPub::new(pk)).collect();
-        let dht = client.dht().unwrap();
+        let mut results: HashMap<PublicKey, Option<Result<RepublishInfo, RepublishError>>> = HashMap::with_capacity(public_keys.len());
+        for key in public_keys {
+            results.insert(key, None);
+        };
         Self {
-            public_keys: keys,
+            results,
             client,
-            dht,
         }
     }
 
     /// Number of keys that haven't been checked yet
     /// either because the publisher didn't get there yet or because there was an error.
-    pub fn num_unprocessed_keys(&self) -> usize {
-        self.public_keys.iter().filter(|key| !key.is_processed()).count()
+    pub fn unprocessed_keys(&self) -> Vec<PublicKey> {
+        self.results.iter().filter(|(_, result)| result.is_none()).map(|(key, _)| key.clone()).collect()
     }
 
     /// Wait until the DHT is bootstrapped.
@@ -95,50 +48,29 @@ impl PkarrPublisher {
         dht.clone().as_async().bootstrapped().await;
     }
 
-    /// Count the number of nodes that public key is published on.
-    async fn count_published_nodes(&self, public_key: &PublicKey) -> usize {
-        let dht = self.dht.clone();
-        let pubkey = public_key.clone();
-        let count = tokio::task::spawn_blocking(move || {
-            let stream = dht.get_mutable(pubkey.as_bytes(), None, None);
-            let items_count = stream.map(|_| 1).reduce(|a, b| a + b);
-            items_count.unwrap_or(0)
-        }).await.unwrap_or(0);
-        count
-    }
-
-    /// Republish a single public key.
-    async fn republish_single_key(&self, public_key: PublicKey) -> Result<PublishState, pkarr::errors::PublishError> {
-        let packet = self.client.resolve_most_recent(&public_key).await;
-        if packet.is_none() {
-            tracing::debug!("Packet {} is missing on the DHT.", public_key);
-            return Ok(PublishState::Missing)
-        }
-        let packet = packet.unwrap();
-        if let Err(e) = self.client.publish(&packet, None).await {
-            return Err(e);
-        }
-        let published_nodes_count = self.count_published_nodes(&public_key).await;
-        Ok(PublishState::Republished {published_nodes_count})
-    }
-
     /// Go through the list of all public keys and republish them.
-    async fn republish_keys_once(&mut self) {
-        let mut keys = self.public_keys.clone();
-        tracing::debug!("Start to republish {} public keys. {} to go.", self.public_keys.len(), self.num_unprocessed_keys());
-        for key in keys.iter_mut() {
-            if key.is_processed() {
-                continue;
+    pub async fn run(&mut self) -> &HashMap<PublicKey, Option<Result<RepublishInfo, RepublishError>>>{
+        let keys = self.unprocessed_keys();
+        tracing::info!("Start to republish {} public keys. {} to go.", self.results.len(), keys.len());
+        for key in keys {
+            let start = Instant::now();
+
+            let republisher = SingleKeyRepublisherBuilder::new(key.clone()).pkarr_client(self.client.clone()).build().unwrap();
+            let res = republisher.republish().await;
+
+            let elapsed = start.elapsed().as_millis();
+            match &res {
+                Ok(info) => {
+                    tracing::info!("Republished {key} successfully on {} nodes within {elapsed}ms.", info.published_nodes_count)
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to republish public_key {} within {elapsed}ms. {}", key, e);
+                }
             }
-            let public_key = key.public_key.clone();
-            let new_state_result = self.republish_single_key(public_key.clone()).await;
-            if let Err(e) = new_state_result {
-                tracing::warn!("Failed to republish public_key {}. {}", public_key, e);
-                continue;
-            }
-            key.state = Some(new_state_result.unwrap());
-        } 
-        self.public_keys = keys;
+
+            self.results.insert(key.clone(), Some(res));
+        }
+        &self.results
     }
 }
 
@@ -148,7 +80,6 @@ impl PkarrPublisher {
 mod tests {
     use pkarr::{dns::Name, Keypair, PublicKey};
     use pubky_testnet::Testnet;
-    use super::PublishState; 
 
     async fn publish_sample_packets(client: &pkarr::Client, count: usize) -> Vec<PublicKey> {
         let keys: Vec<Keypair> = (0..count).map(|_| Keypair::random()).collect();
@@ -169,10 +100,11 @@ mod tests {
 
         let public_key = public_keys.first().unwrap().clone();
 
-        let publisher = super::PkarrPublisher::new_with_client(public_keys, pkarr_client.clone());
-        let new_state = publisher.republish_single_key(public_key.clone()).await.expect("Should work without an error");
+        let publisher = super::PkarrRepublisher::new_with_client(public_keys, pkarr_client.clone());
+        let results = publisher.run().await;
+        let result = results.get(&public_key).unwrap();
 
-        if let PublishState::Republished{published_nodes_count} = new_state {
+        if let RepublishState::Republished{..} = new_state {
             assert!(true);
         } else {
             panic!("Expected Republished state");
@@ -188,10 +120,10 @@ mod tests {
 
         let public_key = Keypair::random().public_key();
 
-        let publisher = super::PkarrPublisher::new_with_client(vec![public_key.clone()], pkarr_client.clone());
+        let publisher = super::PkarrRepublisher::new_with_client(vec![public_key.clone()], pkarr_client.clone());
         let new_state = publisher.republish_single_key(public_key.clone()).await.expect("Should work without an error");
 
-        if let PublishState::Missing = new_state {
+        if let RepublishState::Missing = new_state {
             assert!(true);
         } else {
             panic!("Expected Missing state");
@@ -207,8 +139,8 @@ mod tests {
         let mut public_keys = publish_sample_packets(&pkarr_client, 10).await;
         public_keys.push(Keypair::random().public_key()); // Add key that is not published.
 
-        let mut publisher = super::PkarrPublisher::new_with_client(public_keys, pkarr_client.clone());
-        publisher.republish_keys_once().await;
+        let mut publisher = super::PkarrRepublisher::new_with_client(public_keys, pkarr_client.clone());
+        publisher.run().await;
         assert_eq!(publisher.num_unprocessed_keys(), 0);
 
         for key in publisher.public_keys[..10].iter() {

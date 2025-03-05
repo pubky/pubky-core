@@ -5,6 +5,7 @@
 
 use clap::Parser;
 use pkarr::{dns::Name, mainline::Dht, Client, Keypair, PublicKey};
+use pkarr_publisher::publisher::PkarrRepublisher;
 use rand::seq::SliceRandom;
 use rand::rng;
 use std::{
@@ -12,10 +13,8 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
-    },
-    time::{Duration, Instant},
+    }
 };
-use tokio::time::sleep;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
@@ -23,8 +22,8 @@ use tracing_subscriber::EnvFilter;
 #[command(author, version, about)]
 struct Cli {
     /// Number of parallel threads
-    #[arg(long, default_value_t = 12)]
-    threads: usize,
+    #[arg(long, default_value_t = 10)]
+    republish_count: usize,
 }
 
 #[tokio::main]
@@ -42,143 +41,50 @@ async fn main() -> anyhow::Result<()> {
     ctrlc::set_handler(move || {
         r.store(true, Ordering::SeqCst);
         println!("Ctrl+C detected, shutting down...");
-        std::process::exit(0);
+        process::exit(0);
     })
     .expect("Error setting Ctrl+C handler");
 
     println!("Press Ctrl+C to stop...");
 
     let cli = Cli::parse();
-    
-    let num_verify_keys = cli.num_verify_keys;
-    info!("Publish {} records. Verify: {num_verify_keys}", cli.num_records);
-    let published_keys = publish_parallel(cli.num_records, cli.threads, &ctrlc_pressed).await;
 
-    // Turn into a hex list and write to file
-    let pubkeys = published_keys
-        .clone().into_iter()
-        .map(|key| {
-            let secret = key.secret_key();
-            let h = hex::encode(secret);
-            h
-        })
-        .collect::<Vec<_>>();
-    let pubkeys_str = pubkeys.join("\n");
-    std::fs::write("published_secrets.txt", pubkeys_str).unwrap();
-    info!("Successfully wrote secrets keys to published_secrets.txt");
+    println!("Read published_secrets.txt");
+    let mut published_keys = read_keys();
+    println!("Read {} keys", published_keys.len());
 
-    if num_verify_keys > 0 {
-        info!("Verify {num_verify_keys} published keys randomly.");
-        verify_published(&published_keys, num_verify_keys).await;
-    };
+    println!("Take a random sample of {} keys to republish.", cli.republish_count);
+    let mut rng = rng();
+    published_keys.shuffle(&mut rng);
+    let keys: Vec<Keypair> = published_keys.into_iter().take(cli.republish_count).collect();
+
+    run_churn_loop(keys).await;
+
     Ok(())
 }
 
-// Publish records in multiple threads.
-async fn publish_parallel(
-    num_records: usize,
-    threads: usize,
-    ctrlc_pressed: &Arc<AtomicBool>,
-) -> Vec<Keypair> {
-    let start = Instant::now();
-    let mut handles = vec![];
-    for thread_id in 0..threads {
-        let handle = tokio::spawn(async move {
-            tracing::info!("Started thread t{thread_id}");
-            publish_records(num_records / threads, thread_id).await
-        });
-        handles.push(handle);
-    }
-
-    loop {
-        let all_finished = handles
-            .iter()
-            .map(|handle| handle.is_finished())
-            .reduce(|a, b| a && b)
-            .unwrap();
-        if all_finished {
-            break;
-        }
-        if ctrlc_pressed.load(Ordering::Relaxed) {
-            break;
-        }
-        sleep(Duration::from_millis(250)).await;
-    }
-
-    if ctrlc_pressed.load(Ordering::Relaxed) {
-        process::exit(0);
-    }
-
-    let mut all_result = vec![];
-    for handle in handles {
-        let keys = handle.await.unwrap();
-        all_result.extend(keys);
-    }
-
-    let rate = all_result.len() as f64 / start.elapsed().as_secs() as f64;
-    tracing::info!(
-        "Published {} keys in {} seconds at {rate:.2} keys/s",
-        all_result.len(),
-        start.elapsed().as_secs()
-    );
-
-    all_result
+fn read_keys() -> Vec<Keypair> {
+    let secret_srs = std::fs::read_to_string("published_secrets.txt").expect("File not found");
+    let keys = secret_srs.lines().map(|line| line.to_string()).collect::<Vec<_>>();
+    keys.into_iter().map(|key| {
+        let secret = hex::decode(key).expect("invalid hex");
+        let secret: [u8; 32] = secret.try_into().unwrap();
+        Keypair::from_secret_key(&secret)
+    }).collect::<Vec<_>>()
 }
 
 
-// Publishes x number of packets. Checks if they are actually available
-async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
-    let client = Client::builder().no_relays().build().unwrap();
-    let dht = client.dht().unwrap();
-    dht.clone().as_async().bootstrapped().await;
-    let mut records = vec![];
+async fn run_churn_loop(keys: Vec<Keypair>) {
+    let public_keys = keys.into_iter().map(|key| key.public_key()).collect();
+    let mut republisher = PkarrRepublisher::new(public_keys).unwrap();
+    republisher.wait_until_dht_is_bootstrap().await;
 
-    for i in 0..num_records {
-        let instant = Instant::now();
-        let key = Keypair::random();
-        let packet = pkarr::SignedPacketBuilder::default().cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600).build(&key).unwrap();
-        if let Err(e) = client.publish(&packet, None).await {
-            tracing::error!("Failed to publish {} record: {e:?}", key.public_key());
-            continue;
-        }
-        let publish_time = instant.elapsed().as_millis();
-        tracing::info!("- t{thread_id:<2} {i:>3}/{num_records} Published {} within {publish_time}ms", key.public_key());
-        records.push(key);
-    }
-    records
-}
+    println!("Republish keys. Hold on...");
+    republisher.run().await;
 
-async fn verify_published(keys: &Vec<Keypair>, count: usize) {
-    // Shuffle and take {count} elements to verify.
-    let mut keys = keys.clone();
-    let mut rng = rng();
-    keys.shuffle(&mut rng);
-    let keys: Vec<Keypair> = keys.into_iter().take(count).collect();
-
-    let client = Client::builder().no_relays().build().unwrap();
-    let dht = client.dht().unwrap();
-    dht.clone().as_async().bootstrapped().await;
-    for (i, key) in keys.into_iter().enumerate() {
-        let nodes_count = count_dht_nodes_storing_packet(&key.public_key(), &dht).await;
-        tracing::info!("- {i}/{count} Verify {} found on {nodes_count} nodes.", key.public_key());
+    println!("Republishing finished. Let's see the result.");
+    for key in &republisher.public_keys {
+        println!("- {key}");
     }
 }
 
-
-/// Queries the public key and returns how many nodes responded with the packet.
-pub async fn count_dht_nodes_storing_packet(pubkey: &PublicKey, client: &Dht) -> u8 {
-    let c = client.clone();
-    let p = pubkey.clone();
-    let handle = tokio::task::spawn_blocking(move || {
-        let stream = c.get_mutable(p.as_bytes(), None, None);
-        let mut response_count: u8 = 0;
-    
-        for _ in stream {
-            response_count += 1;
-        }
-    
-        response_count
-    });
-
-    handle.await.unwrap()
-}

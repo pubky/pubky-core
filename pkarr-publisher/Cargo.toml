@@ -22,6 +22,8 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 ctrlc = "3.4.5"
 hex = "0.4.3"
 rand = "0.9.0"
+futures-lite = { version = "2.6.0"}
+thiserror = "2.0.12"
 
 [dev-dependencies]
 pubky-testnet = { path = "../pubky-testnet" }
@@ -30,6 +32,10 @@ pubky-testnet = { path = "../pubky-testnet" }
 [[bin]]
 name = "publish_and_save"
 path = "src/bin/publish_and_save.rs"
+
+[[bin]]
+name = "read_and_verify"
+path = "src/bin/read_and_verify.rs"
 
 [[bin]]
 name = "read_and_republish"
