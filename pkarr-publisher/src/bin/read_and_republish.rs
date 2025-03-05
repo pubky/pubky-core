@@ -4,8 +4,8 @@
 //! Run with `cargo run --bin main_publish_and_save`.
 
 use clap::Parser;
-use pkarr::{dns::Name, mainline::Dht, Client, Keypair, PublicKey};
-use pkarr_publisher::publisher::PkarrRepublisher;
+use pkarr::Keypair;
+use pkarr_publisher::pkarr_publisher::PkarrRepublisher;
 use rand::seq::SliceRandom;
 use rand::rng;
 use std::{
@@ -15,7 +15,7 @@ use std::{
         Arc,
     }
 };
-use tracing::{info, level_filters::LevelFilter};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -76,15 +76,13 @@ fn read_keys() -> Vec<Keypair> {
 
 async fn run_churn_loop(keys: Vec<Keypair>) {
     let public_keys = keys.into_iter().map(|key| key.public_key()).collect();
-    let mut republisher = PkarrRepublisher::new(public_keys).unwrap();
+
+    let republisher = PkarrRepublisher::new().unwrap();
     republisher.wait_until_dht_is_bootstrap().await;
 
     println!("Republish keys. Hold on...");
-    republisher.run().await;
+    let _ = republisher.run_parallel(public_keys, 8).await;
 
-    println!("Republishing finished. Let's see the result.");
-    for key in &republisher.public_keys {
-        println!("- {key}");
-    }
+    println!("Republishing finished.");
 }
 
