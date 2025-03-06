@@ -1,12 +1,17 @@
+//! 
 //! Publishs packets with random keys and saves the published public keys in a file
 //! so they can be reused in other experiments.
 //!
-//! Run with `cargo run --bin main_publish_and_save -- --num-records 100`.
+//! Run with `cargo run --bin publish_and_save -- --num-records 100 --threads 6`.
+//! 
 
 use clap::Parser;
-use pkarr::{dns::Name, mainline::{Dht, MutableItem}, Client, Keypair, PublicKey, SignedPacket};
-use rand::seq::SliceRandom;
-use rand::rng;
+
+use pkarr::{
+    dns::Name,
+    Client, Keypair, SignedPacket,
+};
+use pkarr_publisher::{Publisher, PublisherSettings};
 use std::{
     process,
     sync::{
@@ -18,12 +23,10 @@ use std::{
 use tokio::time::sleep;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
-use futures_lite::StreamExt;
-
 
 
 #[derive(Parser, Debug)]
-#[command(author, version, about)]
+#[command(author, about = "Publish random packets and save them in `published_secrets.txt`.")]
 struct Cli {
     /// Number of records to publish
     #[arg(long, default_value_t = 100)]
@@ -32,16 +35,12 @@ struct Cli {
     /// Number of parallel threads
     #[arg(long, default_value_t = 6)]
     threads: usize,
-
-    /// Verify x keys by checking how many nodes it was stored on.
-    #[arg(long, default_value_t = 20)]
-    verify_keys: usize,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("main_publish_and_save started.");
-    // Initialize tracing
+    let cli = Cli::parse();
+    println!("publish_and_save started.");
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(LevelFilter::INFO.into()))
@@ -59,15 +58,14 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Press Ctrl+C to stop...");
 
-    let cli = Cli::parse();
-    
-    let num_verify_keys = cli.verify_keys;
-    info!("Publish {} records. Verify: {num_verify_keys}", cli.num_records);
+
+    info!("Publish {} records. Verify", cli.num_records);
     let published_keys = publish_parallel(cli.num_records, cli.threads, &ctrlc_pressed).await;
 
     // Turn into a hex list and write to file
     let pubkeys = published_keys
-        .clone().into_iter()
+        .clone()
+        .into_iter()
         .map(|key| {
             let secret = key.secret_key();
             let h = hex::encode(secret);
@@ -78,10 +76,6 @@ async fn main() -> anyhow::Result<()> {
     std::fs::write("published_secrets.txt", pubkeys_str).unwrap();
     info!("Successfully wrote secrets keys to published_secrets.txt");
 
-    if num_verify_keys > 0 {
-        info!("Verify {num_verify_keys} published keys randomly.");
-        verify_published(&published_keys, num_verify_keys).await;
-    };
     Ok(())
 }
 
@@ -136,8 +130,7 @@ async fn publish_parallel(
     all_result
 }
 
-
-// Publishes x number of packets. Checks if they are actually available
+// Publishes x number of packets. Checks if they are actually available.
 async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
     let client = Client::builder().no_relays().build().unwrap();
     let dht = client.dht().unwrap().as_async();
@@ -147,43 +140,23 @@ async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
     for i in 0..num_records {
         let instant = Instant::now();
         let key = Keypair::random();
-        let packet: SignedPacket = pkarr::SignedPacketBuilder::default().cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600).build(&key).unwrap();
-        if let Err(e) = client.publish(&packet, None).await {
+        let packet: SignedPacket = pkarr::SignedPacketBuilder::default()
+            .cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600)
+            .build(&key)
+            .unwrap();
+        let settings = PublisherSettings::new().pkarr_client(client.clone());
+        let publisher = Publisher::new_with_settings(key.public_key(), packet, settings).unwrap();
+        let result = publisher.publish().await;
+        let elapsed_time = instant.elapsed().as_millis();
+        if result.is_ok() {
+            let info = result.unwrap();
+            tracing::info!("- t{thread_id:<2} {i:>3}/{num_records} Published {} within {elapsed_time}ms to {} nodes {} attempts", key.public_key(), info.published_nodes_count, info.attempts_needed);
+            records.push(key);
+        } else {
+            let e = result.unwrap_err();
             tracing::error!("Failed to publish {} record: {e:?}", key.public_key());
             continue;
         }
-        let publish_time = instant.elapsed().as_millis();
-        tracing::info!("- t{thread_id:<2} {i:>3}/{num_records} Published {} within {publish_time}ms", key.public_key());
-        records.push(key);
     }
     records
-}
-
-async fn verify_published(keys: &Vec<Keypair>, count: usize) {
-    // Shuffle and take {count} elements to verify.
-    let mut keys = keys.clone();
-    let mut rng = rng();
-    keys.shuffle(&mut rng);
-    let keys: Vec<Keypair> = keys.into_iter().take(count).collect();
-
-    let client = Client::builder().no_relays().build().unwrap();
-    let dht = client.dht().unwrap();
-    dht.clone().as_async().bootstrapped().await;
-    for (i, key) in keys.into_iter().enumerate() {
-        let nodes_count = count_dht_nodes_storing_packet(&key.public_key(), &dht).await;
-        tracing::info!("- {i}/{count} Verify {} found on {nodes_count} nodes.", key.public_key());
-    }
-}
-
-
-/// Queries the public key and returns how many nodes responded with the packet.
-pub async fn count_dht_nodes_storing_packet(pubkey: &PublicKey, client: &Dht) -> u8 {
-    let c = client.clone().as_async();
-    let mut response_count: u8 = 0;
-    let mut stream = c.get_mutable(pubkey.as_bytes(), None, None);
-    while let Some(_) = stream.next().await {
-        response_count += 1;
-    }
-
-    response_count
 }
