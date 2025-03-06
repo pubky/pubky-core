@@ -1,54 +1,41 @@
 use std::{collections::HashMap};
-use pkarr::PublicKey;
+use pkarr::{Client, PublicKey};
 use tokio::time::Instant;
 
 use crate::single_key_publisher::{RepublishError, RepublishInfo, RepublisherSettings, SingleKeyRepublisher};
 
 #[derive(Debug, Clone)]
 pub struct PkarrRepublisher {
-    client: pkarr::Client,
     settings: RepublisherSettings
 }
 
 
 impl PkarrRepublisher {
     pub fn new() -> Result<Self, pkarr::errors::BuildError> {
-        let client = pkarr::Client::builder().no_relays().cache_size(0).build()?;
-        let settings = RepublisherSettings::new().pkarr_client(client.clone());
+        let settings = RepublisherSettings::new();
         Ok(Self {
-            client,
             settings,
         })
     }
 
     pub fn new_with_settings(mut settings: RepublisherSettings) -> Result<Self, pkarr::errors::BuildError> {
-        if let None = &settings.client {
-            // Define client here if it's not already defined.
-            // so we don't recreate the client for every key.
-            settings.client = Some(pkarr::Client::builder().build()?);
-        };
-        let client = settings.client.as_ref().unwrap();
+        settings.client = None; // Remove client if it's there because every thread will have it's own.
         Ok(Self {
-            client: client.clone(),
             settings,
         })
-    }
-
-    /// Wait until the DHT is bootstrapped.
-    /// Use this method to be sure that the DHT is ready to use.
-    pub async fn wait_until_dht_is_bootstrap(&self) {
-        let dht = self.client.dht().unwrap();
-        dht.clone().as_async().bootstrapped().await;
     }
 
     /// Go through the list of all public keys and republish them serially.
     pub async fn run(&self, public_keys: Vec<PublicKey>) -> HashMap<PublicKey, Result<RepublishInfo, RepublishError>>{
         let mut results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> = HashMap::with_capacity(public_keys.len());
         tracing::info!("Start to republish {} public keys.", public_keys.len());
+        let client = Client::builder().no_relays().build().unwrap();
+        let mut local_settings = self.settings.clone();
+        local_settings.client = Some(client);
         for key in public_keys {
             let start = Instant::now();
 
-            let republisher = SingleKeyRepublisher::new_with_settings(key.clone(), self.settings.clone()).expect("infalliable");
+            let republisher = SingleKeyRepublisher::new_with_settings(key.clone(), local_settings.clone()).expect("infalliable");
             let res = republisher.republish().await;
 
             let elapsed = start.elapsed().as_millis();
@@ -88,6 +75,7 @@ impl PkarrRepublisher {
                 results.insert(entry.0, entry.1);
             }
         }
+
         results
     }
 }

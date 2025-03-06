@@ -131,7 +131,7 @@ pub struct SingleKeyRepublisher {
 impl SingleKeyRepublisher {
     /// Creates a new Republisher with a new pkarr client.
     pub fn new(public_key: PublicKey) -> Result<Self, pkarr::errors::BuildError> {
-        let client = pkarr::Client::builder().build()?;
+        let client = pkarr::Client::builder().no_relays().build()?;
         let dht = client.dht().expect("infalliable").as_async();
 
         Ok(Self {
@@ -154,7 +154,7 @@ impl SingleKeyRepublisher {
     ) -> Result<Self, pkarr::errors::BuildError> {
         let client = match &settings.client {
             Some(c) => c.clone(),
-            None => pkarr::Client::builder().build()?
+            None => pkarr::Client::builder().no_relays().build()?
         };
         let dht = client.dht().expect("infalliable").as_async();
         Ok(SingleKeyRepublisher {
@@ -181,7 +181,6 @@ impl SingleKeyRepublisher {
     async fn count_published_nodes(&self, public_key: &PublicKey) -> usize {
         let mut response_count = 0;
         let mut stream = self.dht.get_mutable(public_key.as_bytes(), None, None);
-        let start = Instant::now();
         while let Some(_) = stream.next().await {
             response_count += 1;
         }

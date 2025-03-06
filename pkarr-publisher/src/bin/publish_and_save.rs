@@ -30,7 +30,7 @@ struct Cli {
     num_records: usize,
 
     /// Number of parallel threads
-    #[arg(long, default_value_t = 12)]
+    #[arg(long, default_value_t = 6)]
     threads: usize,
 
     /// Verify x keys by checking how many nodes it was stored on.
