@@ -2,7 +2,10 @@ use std::num::NonZeroU8;
 
 use pkarr::{mainline::async_dht::AsyncDht, PublicKey, SignedPacket};
 
-use crate::{count_key_on_dht, PublishError, PublishInfo, Publisher, PublisherSettings, RepublishError, RepublishInfo, Republisher, RepublisherSettings, RetrySettings};
+use crate::{
+    count_key_on_dht, PublishError, PublishInfo, Publisher, PublisherSettings, RepublishError,
+    RepublishInfo, Republisher, RepublisherSettings, RetrySettings,
+};
 
 /// Simple pkarr client that focuses on resilience
 /// and verification compared to the regular client that
@@ -33,7 +36,7 @@ impl ResilientClient {
         &self,
         public_key: PublicKey,
         packet: SignedPacket,
-        min_sufficient_node_publish_count: Option<NonZeroU8>
+        min_sufficient_node_publish_count: Option<NonZeroU8>,
     ) -> Result<PublishInfo, PublishError> {
         let mut settings = PublisherSettings::new();
         settings.pkarr_client(self.client.clone());
@@ -50,7 +53,7 @@ impl ResilientClient {
     pub async fn republish(
         &self,
         public_key: PublicKey,
-        min_sufficient_node_publish_count: Option<NonZeroU8>
+        min_sufficient_node_publish_count: Option<NonZeroU8>,
     ) -> Result<RepublishInfo, RepublishError> {
         let mut settings = RepublisherSettings::new();
         settings.pkarr_client(self.client.clone());

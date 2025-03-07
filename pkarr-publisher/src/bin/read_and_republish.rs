@@ -1,16 +1,13 @@
-//! 
+//!
 //! Reads `published_secrets.txt` and tries to republish the packets.
 //! This is done in a multi-threaded way to improve speed.
 //!
 //! Run with `cargo run --bin read_and_republish -- --num-records 100 --threads 10`.
-//! 
+//!
 
 use clap::Parser;
 use pkarr::{ClientBuilder, Keypair, PublicKey};
-use pkarr_publisher::{
-    MultiRepublisher,
-    RepublishError, RepublishInfo, RepublisherSettings,
-};
+use pkarr_publisher::{MultiRepublisher, RepublishError, RepublishInfo, RepublisherSettings};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::{
@@ -26,7 +23,10 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(author, about = "Reads `published_secrets.txt` and tries to republish the packets.")]
+#[command(
+    author,
+    about = "Reads `published_secrets.txt` and tries to republish the packets."
+)]
 struct Cli {
     /// How many keys should be republished?
     #[arg(long, default_value_t = 100)]
@@ -57,8 +57,6 @@ async fn main() -> anyhow::Result<()> {
     .expect("Error setting Ctrl+C handler");
     println!("Press Ctrl+C to stop...");
 
-
-
     println!("Read published_secrets.txt");
     let mut published_keys = read_keys();
     println!("Read {} keys", published_keys.len());
@@ -69,10 +67,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut rng = rng();
     published_keys.shuffle(&mut rng);
-    let keys: Vec<Keypair> = published_keys
-        .into_iter()
-        .take(cli.num_records)
-        .collect();
+    let keys: Vec<Keypair> = published_keys.into_iter().take(cli.num_records).collect();
 
     run_churn_loop(keys, cli.threads).await;
 
@@ -99,14 +94,13 @@ async fn run_churn_loop(keys: Vec<Keypair>, thread_count: u8) {
 
     let mut builder = ClientBuilder::default();
     builder.no_relays();
-    let republisher = MultiRepublisher::new_with_settings( RepublisherSettings::new(), Some(builder));
+    let republisher =
+        MultiRepublisher::new_with_settings(RepublisherSettings::new(), Some(builder));
 
     println!("Republish keys. Hold on...");
     let start = Instant::now();
-    let results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> = republisher
-        .run(public_keys, thread_count)
-        .await
-        .unwrap();
+    let results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> =
+        republisher.run(public_keys, thread_count).await.unwrap();
 
     let elapsed_seconds = start.elapsed().as_secs_f32();
     let keys_per_s = results.len() as f32 / elapsed_seconds;

@@ -1,17 +1,14 @@
-//! 
+//!
 //! Publishs packets with random keys and saves the published public keys in a file
 //! so they can be reused in other experiments.
 //!
 //! Run with `cargo run --bin publish_and_save -- --num-records 100 --threads 6`.
-//! 
+//!
 
 use clap::Parser;
 
-use pkarr::{
-    dns::Name,
-    Client, Keypair, SignedPacket,
-};
-use pkarr_publisher::{Publisher, PublisherSettings, ResilientClient, RetrySettings};
+use pkarr::{dns::Name, Client, Keypair, SignedPacket};
+use pkarr_publisher::{ResilientClient, RetrySettings};
 use std::{
     process,
     sync::{
@@ -24,9 +21,11 @@ use tokio::time::sleep;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
-
 #[derive(Parser, Debug)]
-#[command(author, about = "Publish random packets and save them in `published_secrets.txt`.")]
+#[command(
+    author,
+    about = "Publish random packets and save them in `published_secrets.txt`."
+)]
 struct Cli {
     /// Number of records to publish
     #[arg(long, default_value_t = 100)]
@@ -57,7 +56,6 @@ async fn main() -> anyhow::Result<()> {
     .expect("Error setting Ctrl+C handler");
 
     println!("Press Ctrl+C to stop...");
-
 
     info!("Publish {} records. Verify", cli.num_records);
     let published_keys = publish_parallel(cli.num_records, cli.threads, &ctrlc_pressed).await;

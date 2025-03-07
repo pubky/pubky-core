@@ -81,11 +81,11 @@ impl RepublisherSettings {
         self
     }
 
-        /// Set settings in relation to retries.
-        pub fn retry_settings(&mut self, settings: RetrySettings) -> &mut Self {
-            self.retry_settings = settings;
-            self
-        }
+    /// Set settings in relation to retries.
+    pub fn retry_settings(&mut self, settings: RetrySettings) -> &mut Self {
+        self.retry_settings = settings;
+        self
+    }
 }
 
 /// Tries to republish a single key.

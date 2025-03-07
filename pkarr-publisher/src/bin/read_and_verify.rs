@@ -1,16 +1,16 @@
-//! 
+//!
 //! Reads `published_secrets.txt` and outputs how many nodes store this public key.
 //! Run `publish_and_save` first to publish some packets to verify
 //! Freshly stored once should have 15+.
 //! <10 is ready for a republish.
 //! 0 = Packet unavailable.
-//! 
+//!
 //! Run with `cargo run --bin read_and_verify -- --num_keys 20`
-//! 
+//!
 
 use clap::Parser;
-use pkarr::{ Client, Keypair};
-use pkarr_publisher::{count_key_on_dht, ResilientClient, RetrySettings};
+use pkarr::{Client, Keypair};
+use pkarr_publisher::{ResilientClient, RetrySettings};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::sync::{
@@ -20,7 +20,6 @@ use std::sync::{
 
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
-
 
 #[derive(Parser, Debug)]
 #[command(author, about = "Verify pkarr packets on the DHT.")]
@@ -50,8 +49,6 @@ async fn main() -> anyhow::Result<()> {
     .expect("Error setting Ctrl+C handler");
 
     println!("Press Ctrl+C to stop...");
-
-
 
     println!("Read published_secrets.txt");
     let published_keys = read_keys();

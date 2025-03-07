@@ -48,7 +48,6 @@ impl PublishInfo {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct RetrySettings {
     /// Number of max retries to do before aborting.
@@ -87,7 +86,6 @@ impl RetrySettings {
     }
 }
 
-
 /// Settings for creating a republisher
 #[derive(Debug, Clone)]
 pub struct PublisherSettings {
@@ -101,11 +99,8 @@ impl PublisherSettings {
     pub fn new() -> Self {
         Self {
             client: None,
-            min_sufficient_node_publish_count: NonZeroU8::new(
-                10,
-            )
-            .unwrap(),
-            retry_settings: RetrySettings::new()
+            min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
+            retry_settings: RetrySettings::new(),
         }
     }
 
@@ -279,7 +274,8 @@ mod tests {
 
         let required_nodes = 2;
         let mut settings = PublisherSettings::new();
-            settings.pkarr_client(pkarr_client)
+        settings
+            .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
         let publisher = Publisher::new_with_settings(key, packet, settings).unwrap();
         let res = publisher.publish_once().await;
@@ -304,11 +300,14 @@ mod tests {
 
         let required_nodes = 1;
         let mut settings = PublisherSettings::new();
-        settings.pkarr_client(pkarr_client)
+        settings
+            .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
-        settings.retry_settings.max_retries(NonZeroU8::new(10).unwrap())
-        .initial_retry_delay(Duration::from_millis(100))
-        .max_retry_delay(Duration::from_secs(10));
+        settings
+            .retry_settings
+            .max_retries(NonZeroU8::new(10).unwrap())
+            .initial_retry_delay(Duration::from_millis(100))
+            .max_retry_delay(Duration::from_secs(10));
         let publisher = Publisher::new_with_settings(key, packet, settings).unwrap();
 
         let first_delay = publisher.get_retry_delay(0);

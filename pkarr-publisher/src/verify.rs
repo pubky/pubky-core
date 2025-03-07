@@ -1,6 +1,5 @@
-use pkarr::{mainline::async_dht::AsyncDht, PublicKey};
 use futures_lite::StreamExt;
-
+use pkarr::{mainline::async_dht::AsyncDht, PublicKey};
 
 /// Verifies the number of nodes that store the public key.
 pub async fn count_key_on_dht(public_key: &PublicKey, dht: &AsyncDht) -> usize {
