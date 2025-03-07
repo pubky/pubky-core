@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         // the user has an account on the local homeserver.
         if client.signin(&keypair).await.is_err() {
             client
-                .signup(&keypair, &PublicKey::try_from(HOMESERVER).unwrap())
+                .signup(&keypair, &PublicKey::try_from(HOMESERVER).unwrap(), None)
                 .await?;
         };
 

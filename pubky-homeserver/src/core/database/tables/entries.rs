@@ -431,7 +431,7 @@ impl<'db> EntryWriter<'db> {
     }
 }
 
-impl<'db> std::io::Write for EntryWriter<'db> {
+impl std::io::Write for EntryWriter<'_> {
     /// Write a chunk to a Filesystem based buffer.
     #[inline]
     fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {

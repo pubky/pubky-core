@@ -75,7 +75,9 @@ impl Testnet {
             .storage(storage)
             .bootstrap(&dht.bootstrap)
             .relays(&[relay.local_url()])
-            .domain("localhost");
+            .domain("localhost")
+            .close_signups()
+            .admin_password("admin".to_string());
         unsafe { builder.run().await }?;
 
         HttpRelay::builder().http_port(15412).run().await?;
@@ -105,6 +107,11 @@ impl Testnet {
     /// Run a Pubky Homeserver
     pub async fn run_homeserver(&self) -> Result<Homeserver> {
         Homeserver::run_test(&self.dht.bootstrap).await
+    }
+
+    /// Run a Pubky Homeserver that requires signup tokens
+    pub async fn run_homeserver_with_signup_tokens(&self) -> Result<Homeserver> {
+        Homeserver::run_test_with_signup_tokens(&self.dht.bootstrap).await
     }
 
     /// Run an HTTP Relay
