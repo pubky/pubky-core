@@ -6,10 +6,10 @@
 //! 
 
 use clap::Parser;
-use pkarr::{Keypair, PublicKey};
+use pkarr::{ClientBuilder, Keypair, PublicKey};
 use pkarr_publisher::{
     MultiRepublisher,
-    {RepublishError, RepublishInfo},
+    RepublishError, RepublishInfo, RepublisherSettings,
 };
 use rand::rng;
 use rand::seq::SliceRandom;
@@ -97,12 +97,14 @@ fn read_keys() -> Vec<Keypair> {
 async fn run_churn_loop(keys: Vec<Keypair>, thread_count: u8) {
     let public_keys = keys.into_iter().map(|key| key.public_key()).collect();
 
-    let republisher = MultiRepublisher::new().unwrap();
+    let mut builder = ClientBuilder::default();
+    builder.no_relays();
+    let republisher = MultiRepublisher::new_with_settings( RepublisherSettings::new(), Some(builder));
 
     println!("Republish keys. Hold on...");
     let start = Instant::now();
     let results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> = republisher
-        .run_parallel(public_keys, thread_count)
+        .run(public_keys, thread_count)
         .await
         .unwrap();
 

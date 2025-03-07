@@ -144,7 +144,8 @@ async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
             .cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600)
             .build(&key)
             .unwrap();
-        let settings = PublisherSettings::new().pkarr_client(client.clone());
+        let mut settings = PublisherSettings::new();
+        settings.pkarr_client(client.clone());
         let publisher = Publisher::new_with_settings(key.public_key(), packet, settings).unwrap();
         let result = publisher.publish().await;
         let elapsed_time = instant.elapsed().as_millis();

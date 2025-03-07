@@ -34,13 +34,15 @@ impl MultiRepublisher {
     }
 
     /// Go through the list of all public keys and republish them serially.
-    pub async fn run(
+    async fn run_serially(
         &self,
         public_keys: Vec<PublicKey>,
     ) -> Result<HashMap<PublicKey, Result<RepublishInfo, RepublishError>>, BuildError> {
         let mut results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> =
             HashMap::with_capacity(public_keys.len());
-        tracing::info!("Start to republish {} public keys.", public_keys.len());
+        tracing::debug!("Start to republish {} public keys.", public_keys.len());
+        // TODO: Inspect pkarr reliability.
+        // pkarr client gets really unreliable when used in parallel. To get around this, we use one client per run().
         let client = self.client_builder.clone().build()?;
         let mut local_settings = self.settings.clone();
         local_settings.client = Some(client);
@@ -74,7 +76,7 @@ impl MultiRepublisher {
         Ok(results)
     }
 
-    pub async fn run_parallel(
+    pub async fn run(
         &self,
         public_keys: Vec<PublicKey>,
         thread_count: u8,
@@ -89,7 +91,7 @@ impl MultiRepublisher {
         let mut handles = vec![];
         for chunk in chunks {
             let publisher = self.clone();
-            let handle = tokio::spawn(async move { publisher.run(chunk).await });
+            let handle = tokio::spawn(async move { publisher.run_serially(chunk).await });
             handles.push(handle);
         }
 
@@ -139,11 +141,12 @@ mod tests {
         let public_keys = publish_sample_packets(&pkarr_client, 1).await;
         let public_key = public_keys.first().unwrap().clone();
 
-        let settings = RepublisherSettings::new()
+        let mut settings = RepublisherSettings::new();
+        settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(1).unwrap());
         let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
-        let results = publisher.run(public_keys).await.unwrap();
+        let results = publisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();
         if let Err(e) = result {
             println!("Err {e}");
@@ -162,11 +165,12 @@ mod tests {
 
         let public_key = public_keys.first().unwrap().clone();
 
-        let settings = RepublisherSettings::new()
+        let mut settings = RepublisherSettings::new();
+        settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(2).unwrap());
         let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
-        let results = publisher.run(public_keys).await.unwrap();
+        let results = publisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();
         assert!(result.is_err());
     }
