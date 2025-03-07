@@ -82,6 +82,9 @@ impl MultiRepublisher {
         Ok(results)
     }
 
+    /// Republish keys in a parallel fashion, using multiple threads for better performance.
+    /// A good thread size is around 10 for most computers. With high performance cores, you can push
+    /// it to 40+.
     pub async fn run(
         &self,
         public_keys: Vec<PublicKey>,
@@ -180,4 +183,5 @@ mod tests {
         let result = results.get(&public_key).unwrap();
         assert!(result.is_err());
     }
+
 }

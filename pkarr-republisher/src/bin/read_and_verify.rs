@@ -10,7 +10,7 @@
 
 use clap::Parser;
 use pkarr::{Client, Keypair};
-use pkarr_publisher::{ResilientClient, RetrySettings};
+use pkarr_republisher::{ResilientClient, RetrySettings};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::sync::{

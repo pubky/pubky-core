@@ -8,7 +8,7 @@
 use clap::Parser;
 
 use pkarr::{dns::Name, Client, Keypair, SignedPacket};
-use pkarr_publisher::{ResilientClient, RetrySettings};
+use pkarr_republisher::{ResilientClient, RetrySettings};
 use std::{
     process,
     sync::{

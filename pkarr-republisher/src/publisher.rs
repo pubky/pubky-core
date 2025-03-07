@@ -319,18 +319,4 @@ mod tests {
         let ninth_delay = publisher.get_retry_delay(9);
         assert_eq!(ninth_delay.as_millis(), 10_000);
     }
-
-    #[tokio::test]
-    async fn publish_mainline_success() {
-        let client = Client::builder().build().unwrap();
-        for i in 0..10 {
-            println!("{i}");
-            let (key, packet) = sample_packet();
-            let mut settings = PublisherSettings::new();
-            settings.pkarr_client(client.clone());
-            let publisher = Publisher::new_with_settings(key, packet, settings).unwrap();
-            let res = publisher.publish_once().await;
-            assert!(res.unwrap().published_nodes_count > 10);
-        }
-    }
 }

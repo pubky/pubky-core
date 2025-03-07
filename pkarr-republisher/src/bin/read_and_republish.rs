@@ -7,7 +7,7 @@
 
 use clap::Parser;
 use pkarr::{ClientBuilder, Keypair, PublicKey};
-use pkarr_publisher::{MultiRepublisher, RepublishError, RepublishInfo, RepublisherSettings};
+use pkarr_republisher::{MultiRepublisher, RepublishError, RepublishInfo, RepublisherSettings};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::{
