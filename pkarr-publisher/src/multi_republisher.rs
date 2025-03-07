@@ -1,8 +1,10 @@
-use crate::republisher::{RepublishError, RepublishInfo, Republisher, RepublisherSettings};
+use crate::{republisher::{RepublishError, RepublishInfo, Republisher, RepublisherSettings}, ResilientClient, RetrySettings};
 use pkarr::{errors::BuildError, ClientBuilder, PublicKey};
 use std::collections::HashMap;
 use tokio::time::Instant;
 
+
+/// Republish multiple keys in a serially or multi-threaded way/
 #[derive(Debug, Clone)]
 pub struct MultiRepublisher {
     settings: RepublisherSettings,
@@ -44,14 +46,10 @@ impl MultiRepublisher {
         // TODO: Inspect pkarr reliability.
         // pkarr client gets really unreliable when used in parallel. To get around this, we use one client per run().
         let client = self.client_builder.clone().build()?;
-        let mut local_settings = self.settings.clone();
-        local_settings.client = Some(client);
+        let rclient = ResilientClient::new_with_client(client, RetrySettings::new());
         for key in public_keys {
             let start = Instant::now();
-
-            let republisher = Republisher::new_with_settings(key.clone(), local_settings.clone())
-                .expect("infalliable");
-            let res = republisher.republish().await;
+            let res = rclient.republish(key.clone(), None).await;
 
             let elapsed = start.elapsed().as_millis();
             match &res {

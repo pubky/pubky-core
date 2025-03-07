@@ -64,7 +64,7 @@ impl RetrySettings {
     pub fn new() -> Self {
         Self {
             max_retries: NonZeroU8::new(4).unwrap(),
-            initial_retry_delay: Duration::from_millis(500),
+            initial_retry_delay: Duration::from_millis(200),
             max_retry_delay: Duration::from_millis(5_000),
         }
     }
@@ -93,7 +93,7 @@ impl RetrySettings {
 pub struct PublisherSettings {
     pub(crate) client: Option<pkarr::Client>,
     pub(crate) min_sufficient_node_publish_count: NonZeroU8,
-    pub(crate) retry_settings: RetrySettings,
+    pub retry_settings: RetrySettings,
 }
 
 impl PublisherSettings {
@@ -119,6 +119,12 @@ impl PublisherSettings {
     /// to be considered a success
     pub fn min_sufficient_node_publish_count(&mut self, count: NonZeroU8) -> &mut Self {
         self.min_sufficient_node_publish_count = count;
+        self
+    }
+
+    /// Set settings in relation to retries.
+    pub fn retry_settings(&mut self, settings: RetrySettings) -> &mut Self {
+        self.retry_settings = settings;
         self
     }
 }

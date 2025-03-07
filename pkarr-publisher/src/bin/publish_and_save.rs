@@ -11,7 +11,7 @@ use pkarr::{
     dns::Name,
     Client, Keypair, SignedPacket,
 };
-use pkarr_publisher::{Publisher, PublisherSettings};
+use pkarr_publisher::{Publisher, PublisherSettings, ResilientClient, RetrySettings};
 use std::{
     process,
     sync::{
@@ -133,8 +133,7 @@ async fn publish_parallel(
 // Publishes x number of packets. Checks if they are actually available.
 async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
     let client = Client::builder().no_relays().build().unwrap();
-    let dht = client.dht().unwrap().as_async();
-    dht.bootstrapped().await;
+    let rclient = ResilientClient::new_with_client(client, RetrySettings::new());
     let mut records = vec![];
 
     for i in 0..num_records {
@@ -144,10 +143,7 @@ async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
             .cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600)
             .build(&key)
             .unwrap();
-        let mut settings = PublisherSettings::new();
-        settings.pkarr_client(client.clone());
-        let publisher = Publisher::new_with_settings(key.public_key(), packet, settings).unwrap();
-        let result = publisher.publish().await;
+        let result = rclient.publish(key.public_key(), packet, None).await;
         let elapsed_time = instant.elapsed().as_millis();
         if result.is_ok() {
             let info = result.unwrap();

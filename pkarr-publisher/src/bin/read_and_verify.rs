@@ -10,7 +10,7 @@
 
 use clap::Parser;
 use pkarr::{ Client, Keypair};
-use pkarr_publisher::count_key_on_dht;
+use pkarr_publisher::{count_key_on_dht, ResilientClient, RetrySettings};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::sync::{
@@ -86,10 +86,9 @@ async fn verify_published(keys: &Vec<Keypair>, count: usize) {
     let keys: Vec<Keypair> = keys.into_iter().take(count).collect();
 
     let client = Client::builder().no_relays().build().unwrap();
-    let dht = client.dht().unwrap().as_async();
-    dht.bootstrapped().await;
+    let rclient = ResilientClient::new_with_client(client, RetrySettings::new());
     for (i, key) in keys.into_iter().enumerate() {
-        let nodes_count = count_key_on_dht(&key.public_key(), &dht).await;
+        let nodes_count = rclient.verify_node_count(&key.public_key()).await;
         tracing::info!(
             "- {i}/{count} Verify {} found on {nodes_count} nodes.",
             key.public_key()

@@ -80,6 +80,12 @@ impl RepublisherSettings {
         self.min_sufficient_node_publish_count = count;
         self
     }
+
+        /// Set settings in relation to retries.
+        pub fn retry_settings(&mut self, settings: RetrySettings) -> &mut Self {
+            self.retry_settings = settings;
+            self
+        }
 }
 
 /// Tries to republish a single key.
@@ -169,7 +175,7 @@ impl Republisher {
 
             let delay = self.get_retry_delay(retry_count);
             retry_count += 1;
-            tracing::info!(
+            tracing::debug!(
                 "{} {retry_count}/{max_retries} Sleep for {delay:?} before trying again.",
                 self.public_key
             );
