@@ -11,6 +11,9 @@ struct Cli {
 
     /// Path to a recovery_file of the Pubky you want to sign in with
     recovery_file: PathBuf,
+
+    /// Signup code (optional)
+    signup_code: Option<String>,
 }
 
 #[tokio::main]
@@ -32,7 +35,11 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
     client
-        .signup(&keypair, &PublicKey::try_from(homeserver).unwrap(), None)
+        .signup(
+            &keypair,
+            &PublicKey::try_from(homeserver).unwrap(),
+            cli.signup_code.as_deref(),
+        )
         .await?;
 
     println!("Successfully signed up. Checking session:");
