@@ -4,7 +4,7 @@ use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
 use heed::{BoxedError, BytesDecode, BytesEncode, Database};
-use pkarr::PublicKey;
+use pkarr::{PublicKey, Timestamp};
 
 extern crate alloc;
 
@@ -17,6 +17,12 @@ pub const USERS_TABLE: &str = "users";
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct User {
     pub created_at: u64,
+}
+
+impl User {
+    pub fn new() -> Self {
+        Self { created_at: Timestamp::now().as_u64() }
+    }
 }
 
 impl<'a> BytesEncode<'a> for User {

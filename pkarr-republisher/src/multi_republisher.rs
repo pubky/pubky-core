@@ -6,6 +6,56 @@ use pkarr::{errors::BuildError, ClientBuilder, PublicKey};
 use std::collections::HashMap;
 use tokio::time::Instant;
 
+#[derive(Debug, Clone)]
+pub struct MultiRepublishResult {
+    results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>>,
+}
+
+impl MultiRepublishResult {
+    pub fn new(results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>>) -> Self {
+        Self { results }
+    }
+
+    /// Number of keys
+    pub fn len(&self) -> usize {
+        self.results.len()
+    }
+
+    /// All keys
+    pub fn all_keys(&self) -> Vec<PublicKey> {
+        self.results.keys().cloned().collect()
+    }
+
+    /// Successfully published keys
+    pub fn success(&self) -> Vec<PublicKey> {
+        self.results.iter().filter(|(_, result)| result.is_ok()).map(|(key, _)| key.clone()).collect()
+    }
+
+    /// Keys that failed to publish
+    pub fn publishing_failed(&self) -> Vec<PublicKey> {
+        self.results
+        .iter()
+        .filter(|(_, val)| {
+            if let Err(e) = val {
+                return e.is_publish_failed();
+            }
+            return false;
+        }).map(|entry| entry.0.clone()).collect()
+    }
+
+    /// Keys that are missing and could not be republished
+    pub fn missing(&self) -> Vec<PublicKey> {
+        self.results
+        .iter()
+        .filter(|(_, val)| {
+            if let Err(e) = val {
+                return e.is_missing();
+            }
+            return false;
+        }).map(|entry| entry.0.clone()).collect()
+    }
+}
+
 /// Republish multiple keys in a serially or multi-threaded way/
 #[derive(Debug, Clone)]
 pub struct MultiRepublisher {
@@ -14,12 +64,12 @@ pub struct MultiRepublisher {
 }
 
 impl MultiRepublisher {
-    pub fn new() -> Result<Self, pkarr::errors::BuildError> {
+    pub fn new() -> Self {
         let settings = RepublisherSettings::new();
-        Ok(Self {
+        Self {
             settings,
             client_builder: pkarr::ClientBuilder::default(),
-        })
+        }
     }
 
     /// Create a new republisher with the settings.
@@ -89,7 +139,7 @@ impl MultiRepublisher {
         &self,
         public_keys: Vec<PublicKey>,
         thread_count: u8,
-    ) -> Result<HashMap<PublicKey, Result<RepublishInfo, RepublishError>>, BuildError> {
+    ) -> Result<MultiRepublishResult, BuildError> {
         let chunk_size = public_keys.len().div_ceil(thread_count as usize);
         let chunks = public_keys
             .chunks(chunk_size)
@@ -113,7 +163,7 @@ impl MultiRepublisher {
             }
         }
 
-        Ok(results)
+        Ok(MultiRepublishResult::new(results))
     }
 }
 

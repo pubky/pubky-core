@@ -1,14 +1,17 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use axum::Router;
 use pubky_common::auth::AuthVerifier;
+use tokio::time::sleep;
+use user_keys_republisher::UserKeysRepublisher;
 
 pub mod database;
 mod error;
 mod extractors;
 mod layers;
 mod routes;
+mod user_keys_republisher;
 
 use crate::config::{
     DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_STORAGE_DIR,
@@ -26,6 +29,7 @@ pub(crate) struct AppState {
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
     pub(crate) router: Router,
+    pub(crate) user_keys_republisher: UserKeysRepublisher,
 }
 
 impl HomeserverCore {
@@ -39,14 +43,34 @@ impl HomeserverCore {
 
         let state = AppState {
             verifier: AuthVerifier::default(),
-            db,
+            db: db.clone(),
         };
 
         let router = routes::create_app(state.clone());
 
-        Ok(Self { router })
+        let user_keys_republisher =
+            UserKeysRepublisher::new(db.clone(), config.user_keys_republisher_interval);
+        
+        let user_keys_republisher_clone = user_keys_republisher.clone();
+        if config.user_keys_republisher_enabled {
+            // Delayed start of the republisher to give time for the homeserver to start.
+            tokio::spawn(async move {
+                sleep(Duration::from_secs(60)).await;
+                user_keys_republisher_clone.run().await;
+            });
+        }
+        Ok(Self {
+            router,
+            user_keys_republisher,
+        })
+    }
+
+    /// Stop the home server background tasks.
+    pub async fn stop(&mut self) {
+        self.user_keys_republisher.stop().await;
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -119,6 +143,16 @@ pub struct CoreConfig {
     ///
     /// Defaults to `1000`
     pub max_list_limit: u16,
+
+    /// The interval at which the user keys republisher runs.
+    ///
+    /// Defaults to `60*60*4` (4 hours)
+    pub user_keys_republisher_interval: Duration,
+
+    /// Whether the user keys republisher is enabled.
+    ///
+    /// Defaults to `true`
+    pub user_keys_republisher_enabled: bool,
 }
 
 impl Default for CoreConfig {
@@ -130,6 +164,9 @@ impl Default for CoreConfig {
 
             default_list_limit: DEFAULT_LIST_LIMIT,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
+
+            user_keys_republisher_interval: Duration::from_secs(60 * 60 * 4),
+            user_keys_republisher_enabled: true,
         }
     }
 }

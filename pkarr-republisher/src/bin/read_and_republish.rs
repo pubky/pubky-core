@@ -99,7 +99,7 @@ async fn run_churn_loop(keys: Vec<Keypair>, thread_count: u8) {
 
     println!("Republish keys. Hold on...");
     let start = Instant::now();
-    let results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> =
+    let results =
         republisher.run(public_keys, thread_count).await.unwrap();
 
     let elapsed_seconds = start.elapsed().as_secs_f32();
@@ -109,32 +109,11 @@ async fn run_churn_loop(keys: Vec<Keypair>, thread_count: u8) {
         results.len()
     );
 
-    let success: HashMap<&PublicKey, &Result<RepublishInfo, RepublishError>> =
-        results.iter().filter(|(_, val)| val.is_ok()).collect();
-    let missing: HashMap<&PublicKey, &Result<RepublishInfo, RepublishError>> = results
-        .iter()
-        .filter(|(_, val)| {
-            if let Err(e) = val {
-                return e.is_missing();
-            }
-            return false;
-        })
-        .collect();
-    let failed: HashMap<&PublicKey, &Result<RepublishInfo, RepublishError>> = results
-        .iter()
-        .filter(|(_, val)| {
-            if let Err(e) = val {
-                return e.is_publish_failed();
-            }
-            return false;
-        })
-        .collect();
-
     tracing::info!(
         "{} success, {} missing, {} failed.",
-        success.len(),
-        missing.len(),
-        failed.len()
+        results.success().len(),
+        results.missing().len(),
+        results.publishing_failed().len()
     );
 
     tracing::info!("Republishing finished.");

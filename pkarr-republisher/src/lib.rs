@@ -4,7 +4,7 @@ mod republisher;
 mod resilient_client;
 mod verify;
 
-pub use multi_republisher::MultiRepublisher;
+pub use multi_republisher::*;
 pub use publisher::*;
 pub use republisher::*;
 pub use resilient_client::*;

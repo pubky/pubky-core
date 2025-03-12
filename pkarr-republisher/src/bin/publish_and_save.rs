@@ -55,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
     })
     .expect("Error setting Ctrl+C handler");
 
+
     println!("Press Ctrl+C to stop...");
 
     info!("Publish {} records. Verify", cli.num_records);
