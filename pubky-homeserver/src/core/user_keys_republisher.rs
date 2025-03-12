@@ -1,8 +1,15 @@
-use std::{collections::HashMap, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use pkarr::PublicKey;
 use pkarr_republisher::{MultiRepublishResult, MultiRepublisher};
-use tokio::{sync::{RwLock, Mutex}, task::JoinHandle, time::Instant};
+use tokio::{sync::RwLock, task::JoinHandle, time::Instant};
 
 use crate::core::database::DB;
 
@@ -20,8 +27,6 @@ pub struct UserKeysRepublisher {
     db: DB,
     handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     is_running: Arc<AtomicBool>,
-    is_stopping: Arc<AtomicBool>,
-    is_stopped: Arc<AtomicBool>,
     republish_interval: Duration,
 }
 
@@ -31,22 +36,8 @@ impl UserKeysRepublisher {
             db,
             handle: Arc::new(RwLock::new(None)),
             is_running: Arc::new(AtomicBool::new(false)),
-            is_stopping: Arc::new(AtomicBool::new(false)),
-            is_stopped: Arc::new(AtomicBool::new(false)),
             republish_interval,
         }
-    }
-
-    pub fn is_stopping(&self) -> bool {
-        self.is_stopping.load(Ordering::Relaxed)
-    }
-
-    pub fn is_stopped(&self) -> bool {
-        self.is_stopped.load(Ordering::Relaxed)
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.is_running.load(Ordering::Relaxed)
     }
 
     /// Run the user keys republisher.
@@ -54,7 +45,7 @@ impl UserKeysRepublisher {
         tracing::info!("Started user keys republisher...");
         let mut lock = self.handle.write().await;
         if lock.is_some() {
-            return
+            return;
         }
         let db = self.db.clone();
         let republish_interval = self.republish_interval.clone();
@@ -74,9 +65,9 @@ impl UserKeysRepublisher {
     }
 
     /// Republishes all user pkarr keys to the Mainline DHT once.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// - If the database cannot be read, an error is returned.
     /// - If the pkarr keys cannot be republished, an error is returned.
     async fn republish_keys_once(db: DB) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
@@ -97,10 +88,7 @@ impl UserKeysRepublisher {
     }
 
     /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
-    async fn run_loop(
-        db: DB,
-        republish_interval: Duration,
-    ) {
+    async fn run_loop(db: DB, republish_interval: Duration) {
         loop {
             let start = Instant::now();
             tracing::info!("Republishing user keys...");
@@ -113,7 +101,7 @@ impl UserKeysRepublisher {
             let result = result.unwrap();
             if result.len() > 0 {
                 tracing::info!(
-                    "Republished {} user keys within {:.2}s. {} success, {} missing, {} failed.",
+                    "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
                     result.len(),
                     elapsed.as_secs_f32(),
                     result.success().len(),
@@ -124,13 +112,17 @@ impl UserKeysRepublisher {
             // Sleep for the remaining time of the interval.
             let sleep_duration = republish_interval - elapsed;
             if sleep_duration > Duration::from_secs(0) {
-                tracing::info!("Sleeping for {:.2}s before next republish...", sleep_duration.as_secs_f32());
+                tracing::info!(
+                    "Wait for {:.1}s before next republish...",
+                    sleep_duration.as_secs_f32()
+                );
                 tokio::time::sleep(republish_interval).await;
             }
         }
     }
 
     /// Stop the user keys republisher.
+    #[allow(dead_code)]
     pub async fn stop(&mut self) {
         let mut lock = self.handle.write().await;
         if let None = lock.as_ref() {
@@ -141,31 +133,24 @@ impl UserKeysRepublisher {
 
         handle.abort();
         *lock = None;
-        self.is_stopped.store(true, Ordering::Relaxed);
-        self.is_stopping.store(false, Ordering::Relaxed);
         self.is_running.store(false, Ordering::Relaxed);
     }
 
     /// Stops the republisher synchronously.
+    #[allow(dead_code)]
     pub fn stop_sync(&mut self) {
-        if !self.is_running() {
-            return;
-        }
         let mut lock = self.handle.blocking_write();
         if lock.is_none() {
             // Republisher is not running.
             return;
         }
         let handle = lock.take().unwrap();
-        self.is_stopped.store(true, Ordering::Relaxed);
+
         handle.abort();
         *lock = None;
-        self.is_stopped.store(false, Ordering::Relaxed);
-        self.is_stopping.store(false, Ordering::Relaxed);
         self.is_running.store(false, Ordering::Relaxed);
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -174,14 +159,17 @@ mod tests {
     use pkarr::Keypair;
     use tokio::time::Instant;
 
-    use crate::core::{database::{tables::users::User, DB}, user_keys_republisher::UserKeysRepublisher};
+    use crate::core::{
+        database::{tables::users::User, DB},
+        user_keys_republisher::UserKeysRepublisher,
+    };
 
     async fn init_db_with_users(count: usize) -> DB {
         let db = DB::test();
         let mut wtxn = db.env.write_txn().unwrap();
         for _ in 0..count {
             let user = User::new();
-            let public_key= Keypair::random().public_key();
+            let public_key = Keypair::random().public_key();
             db.tables.users.put(&mut wtxn, &public_key, &user).unwrap();
         }
         wtxn.commit().unwrap();
@@ -202,18 +190,14 @@ mod tests {
     /// Test that the republisher stops instantly.
     #[tokio::test]
     async fn start_and_stop() {
-        let mut republisher = UserKeysRepublisher::new(init_db_with_users(1000).await, Duration::from_secs(1));
+        let mut republisher =
+            UserKeysRepublisher::new(init_db_with_users(1000).await, Duration::from_secs(1));
         let start = Instant::now();
         republisher.run().await;
         assert!(republisher.handle.read().await.is_some());
-        assert!(republisher.is_running());
-        assert!(!republisher.is_stopped());
-        assert!(!republisher.is_stopping());
         republisher.stop().await;
         let elapsed = start.elapsed();
         assert!(elapsed < Duration::from_secs(1));
         assert!(republisher.handle.read().await.is_none());
-        assert!(republisher.is_stopped());
     }
-    
 }

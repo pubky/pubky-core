@@ -50,7 +50,7 @@ impl HomeserverCore {
 
         let user_keys_republisher =
             UserKeysRepublisher::new(db.clone(), config.user_keys_republisher_interval);
-        
+
         let user_keys_republisher_clone = user_keys_republisher.clone();
         if config.user_keys_republisher_enabled {
             // Delayed start of the republisher to give time for the homeserver to start.
@@ -70,7 +70,6 @@ impl HomeserverCore {
         self.user_keys_republisher.stop().await;
     }
 }
-
 
 #[cfg(test)]
 mod tests {

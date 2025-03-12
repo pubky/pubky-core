@@ -21,7 +21,9 @@ pub struct User {
 
 impl User {
     pub fn new() -> Self {
-        Self { created_at: Timestamp::now().as_u64() }
+        Self {
+            created_at: Timestamp::now().as_u64(),
+        }
     }
 }
 
