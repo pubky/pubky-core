@@ -7,7 +7,7 @@ use std::{
 use ::pkarr::{Keypair, PublicKey};
 use anyhow::Result;
 use http::HttpServers;
-use pkarr::PkarrServer;
+use homeserver_key_republisher::HomeserverKeyRepublisher;
 use tracing::info;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 };
 
 mod http;
-mod pkarr;
+mod homeserver_key_republisher;
 
 #[derive(Debug, Default)]
 /// Builder for [Homeserver].
@@ -73,6 +73,7 @@ impl HomeserverBuilder {
 pub struct Homeserver {
     http_servers: HttpServers,
     keypair: Keypair,
+    pkarr_server: HomeserverKeyRepublisher,
 }
 
 impl Homeserver {
@@ -111,26 +112,23 @@ impl Homeserver {
 
         let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 
-        info!(
-            "Homeserver listening on http://localhost:{}",
-            http_servers.http_address().port()
-        );
-
-        info!("Publishing Pkarr packet..");
-
-        let pkarr_server = PkarrServer::new(
+        let pkarr_server = HomeserverKeyRepublisher::new(
             &keypair,
             &config.io,
             http_servers.https_address().port(),
             http_servers.http_address().port(),
         )?;
-        pkarr_server.publish_server_packet().await?;
-
+        pkarr_server.start_periodic_republish().await?;
+        info!(
+            "Homeserver listening on http://localhost:{}",
+            http_servers.http_address().port()
+        );
         info!("Homeserver listening on https://{}", keypair.public_key());
 
         Ok(Self {
             http_servers,
             keypair,
+            pkarr_server,
         })
     }
 
@@ -151,6 +149,7 @@ impl Homeserver {
     /// Send a shutdown signal to all open resources
     pub fn shutdown(&self) {
         self.http_servers.shutdown();
+        self.pkarr_server.stop_periodic_republish().expect("should always work");
     }
 }
 
