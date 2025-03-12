@@ -33,11 +33,6 @@ fn base() -> Router<AppState> {
         .route("/session", post(auth::signin))
         // Events
         .route("/events/", get(feed::feed))
-        // Admin endpoints
-        .route(
-            "/admin/generate_signup_token",
-            get(admin::generate_signup_token),
-        )
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).
@@ -46,11 +41,13 @@ fn base() -> Router<AppState> {
 pub fn create_app(state: AppState) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
+        .nest("/admin", admin::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
         .with_state(state);
 
+    // Apply trace and pubky host layers to the complete router.
     with_trace_layer(app, &TRACING_EXCLUDED_PATHS).layer(PubkyHostLayer)
 }
 
