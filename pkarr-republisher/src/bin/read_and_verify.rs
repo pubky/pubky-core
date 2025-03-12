@@ -86,9 +86,18 @@ async fn verify_published(keys: &Vec<Keypair>, count: usize) {
     let rclient = ResilientClient::new_with_client(client, RetrySettings::new());
     for (i, key) in keys.into_iter().enumerate() {
         let nodes_count = rclient.verify_node_count(&key.public_key()).await;
-        tracing::info!(
-            "- {i}/{count} Verify {} found on {nodes_count} nodes.",
-            key.public_key()
-        );
+        if nodes_count == 0 {
+            tracing::error!(
+                "- {i}/{count} Verify {} found on {nodes_count} nodes.",
+                key.public_key()
+            );
+        } else if nodes_count < 5 {
+            tracing::warn!(
+                "- {i}/{count} Verify {} found on {nodes_count} nodes.",
+                key.public_key()
+            );
+        } else {
+            tracing::info!("- {i}/{count} Verify {} found on {nodes_count} nodes.", key.public_key());
+        }
     }
 }

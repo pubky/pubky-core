@@ -112,13 +112,13 @@ impl Homeserver {
 
         let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 
-        let pkarr_server = HomeserverKeyRepublisher::new(
+        let dht_republisher = HomeserverKeyRepublisher::new(
             &keypair,
             &config.io,
             http_servers.https_address().port(),
             http_servers.http_address().port(),
         )?;
-        pkarr_server.start_periodic_republish().await?;
+        dht_republisher.start_periodic_republish().await?;
         info!(
             "Homeserver listening on http://localhost:{}",
             http_servers.http_address().port()
@@ -128,7 +128,7 @@ impl Homeserver {
         Ok(Self {
             http_servers,
             keypair,
-            pkarr_server,
+            pkarr_server: dht_republisher,
         })
     }
 

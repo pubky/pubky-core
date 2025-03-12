@@ -9,7 +9,7 @@ use std::{
 
 use pkarr::PublicKey;
 use pkarr_republisher::{MultiRepublishResult, MultiRepublisher};
-use tokio::{sync::RwLock, task::JoinHandle, time::Instant};
+use tokio::{sync::RwLock, task::JoinHandle, time::{interval, Instant}};
 
 use crate::core::database::DB;
 
@@ -42,7 +42,7 @@ impl UserKeysRepublisher {
 
     /// Run the user keys republisher.
     pub async fn run(&self) {
-        tracing::info!("Started user keys republisher...");
+        tracing::info!("Initialize user keys republisher...");
         let mut lock = self.handle.write().await;
         if lock.is_some() {
             return;
@@ -89,7 +89,9 @@ impl UserKeysRepublisher {
 
     /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
     async fn run_loop(db: DB, republish_interval: Duration) {
+        let mut interval = interval(republish_interval);
         loop {
+            interval.tick().await;
             let start = Instant::now();
             tracing::info!("Republishing user keys...");
             let result = Self::republish_keys_once(db.clone()).await;
@@ -108,15 +110,6 @@ impl UserKeysRepublisher {
                     result.missing().len(),
                     result.publishing_failed().len()
                 );
-            }
-            // Sleep for the remaining time of the interval.
-            let sleep_duration = republish_interval - elapsed;
-            if sleep_duration > Duration::from_secs(0) {
-                tracing::info!(
-                    "Wait for {:.1}s before next republish...",
-                    sleep_duration.as_secs_f32()
-                );
-                tokio::time::sleep(republish_interval).await;
             }
         }
     }

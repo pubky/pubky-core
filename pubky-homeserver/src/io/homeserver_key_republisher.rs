@@ -9,6 +9,7 @@ use std::sync::Mutex;
 
 use super::IoConfig;
 
+/// Republishes the homeserver's pkarr packet to the DHT every hour.
 #[derive(Debug)]
 pub struct HomeserverKeyRepublisher {
     client: pkarr::Client,
@@ -50,9 +51,9 @@ impl HomeserverKeyRepublisher {
     async fn publish_once(client: &pkarr::Client, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let res = client.publish(&signed_packet, None).await;
         if let Err(e) = &res {
-            tracing::warn!("Failed to republish the homeserver's pkarr packet to the DHT: {}", e);
+            tracing::warn!("Failed to publish the homeserver's pkarr packet to the DHT: {}", e);
         } else {
-            tracing::info!("Successfully republished the homeserver's pkarr packet to the DHT.");
+            tracing::info!("Published the homeserver's pkarr packet to the DHT.");
         }
         res
     }

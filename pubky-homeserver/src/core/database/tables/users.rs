@@ -20,6 +20,7 @@ pub struct User {
 }
 
 impl User {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             created_at: Timestamp::now().as_u64(),

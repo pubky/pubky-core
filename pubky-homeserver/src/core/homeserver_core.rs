@@ -41,11 +41,15 @@ impl HomeserverCore {
 
         let router = super::routes::create_app(state.clone());
 
+
         let user_keys_republisher =
-            UserKeysRepublisher::new(db.clone(), config.user_keys_republisher_interval);
+            UserKeysRepublisher::new(
+                db.clone(), 
+                config.user_keys_republisher_interval.or(Some(Duration::from_secs(60 * 60 * 4))).unwrap()
+            );
 
         let user_keys_republisher_clone = user_keys_republisher.clone();
-        if config.user_keys_republisher_enabled {
+        if config.is_user_keys_republisher_enabled() {
             // Delayed start of the republisher to give time for the homeserver to start.
             tokio::spawn(async move {
                 sleep(Duration::from_secs(60)).await;
@@ -82,15 +86,10 @@ pub struct CoreConfig {
     /// Defaults to `1000`
     pub max_list_limit: u16,
 
-    /// The interval at which the user keys republisher runs.
+    /// The interval at which the user keys republisher runs. None is disabled.
     ///
     /// Defaults to `60*60*4` (4 hours)
-    pub user_keys_republisher_interval: Duration,
-
-    /// Whether the user keys republisher is enabled.
-    ///
-    /// Defaults to `true`
-    pub user_keys_republisher_enabled: bool,
+    pub user_keys_republisher_interval: Option<Duration>,
 }
 
 impl Default for CoreConfig {
@@ -103,8 +102,7 @@ impl Default for CoreConfig {
             default_list_limit: DEFAULT_LIST_LIMIT,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
 
-            user_keys_republisher_interval: Duration::from_secs(60 * 60 * 4),
-            user_keys_republisher_enabled: true,
+            user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
         }
     }
 }
@@ -121,6 +119,10 @@ impl CoreConfig {
 
             ..Default::default()
         }
+    }
+
+    pub fn is_user_keys_republisher_enabled(&self) -> bool {
+        self.user_keys_republisher_interval.is_some()
     }
 }
 
