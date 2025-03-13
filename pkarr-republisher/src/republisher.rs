@@ -2,8 +2,8 @@
 //! Republishes a single public key with retries in case it fails.
 //!
 use pkarr::PublicKey;
-use std::{num::NonZeroU8, time::Duration, sync::Arc};
 use pkarr::SignedPacket;
+use std::{num::NonZeroU8, sync::Arc, time::Duration};
 
 use crate::{
     publisher::{PublishError, Publisher, PublisherSettings},
@@ -42,11 +42,14 @@ pub struct RepublishInfo {
     pub attempts_needed: usize,
     /// Whether the `republish_condition` was negative.
     pub condition_failed: bool,
-
 }
 
 impl RepublishInfo {
-    pub fn new(published_nodes_count: usize, attempts_needed: usize, should_republish_condition_failed: bool) -> Self {
+    pub fn new(
+        published_nodes_count: usize,
+        attempts_needed: usize,
+        should_republish_condition_failed: bool,
+    ) -> Self {
         Self {
             published_nodes_count,
             attempts_needed,
@@ -68,7 +71,10 @@ impl std::fmt::Debug for RepublisherSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RepublisherSettings")
             .field("client", &self.client)
-            .field("min_sufficient_node_publish_count", &self.min_sufficient_node_publish_count)
+            .field(
+                "min_sufficient_node_publish_count",
+                &self.min_sufficient_node_publish_count,
+            )
             .field("retry_settings", &self.retry_settings)
             .finish_non_exhaustive()
     }
@@ -105,7 +111,7 @@ impl RepublisherSettings {
     }
 
     /// Set a closure that determines whether a packet should be republished
-    pub fn republish_condition<F>(&mut self, f: F) -> &mut Self 
+    pub fn republish_condition<F>(&mut self, f: F) -> &mut Self
     where
         F: Fn(&SignedPacket) -> bool + Send + Sync + 'static,
     {
@@ -129,7 +135,10 @@ impl std::fmt::Debug for Republisher {
         f.debug_struct("Republisher")
             .field("public_key", &self.public_key)
             .field("client", &self.client)
-            .field("min_sufficient_node_publish_count", &self.min_sufficient_node_publish_count)
+            .field(
+                "min_sufficient_node_publish_count",
+                &self.min_sufficient_node_publish_count,
+            )
             .field("retry_settings", &self.retry_settings)
             .finish_non_exhaustive()
     }
@@ -155,7 +164,9 @@ impl Republisher {
             client,
             min_sufficient_node_publish_count: settings.min_sufficient_node_publish_count,
             retry_settings: settings.retry_settings,
-            republish_condition: settings.republish_condition.unwrap_or_else(|| Arc::new(|_| true)),
+            republish_condition: settings
+                .republish_condition
+                .unwrap_or_else(|| Arc::new(|_| true)),
         })
     }
 

@@ -3,9 +3,9 @@
 use anyhow::Result;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
-use tokio::time::{interval, Duration};
-use tokio::task::JoinHandle;
 use std::sync::Mutex;
+use tokio::task::JoinHandle;
+use tokio::time::{interval, Duration};
 
 use super::IoConfig;
 
@@ -48,10 +48,16 @@ impl HomeserverKeyRepublisher {
         })
     }
 
-    async fn publish_once(client: &pkarr::Client, signed_packet: &SignedPacket) -> Result<(), PublishError> {
+    async fn publish_once(
+        client: &pkarr::Client,
+        signed_packet: &SignedPacket,
+    ) -> Result<(), PublishError> {
         let res = client.publish(&signed_packet, None).await;
         if let Err(e) = &res {
-            tracing::warn!("Failed to publish the homeserver's pkarr packet to the DHT: {}", e);
+            tracing::warn!(
+                "Failed to publish the homeserver's pkarr packet to the DHT: {}",
+                e
+            );
         } else {
             tracing::info!("Published the homeserver's pkarr packet to the DHT.");
         }
@@ -59,15 +65,20 @@ impl HomeserverKeyRepublisher {
     }
 
     /// Start the periodic republish task which will republish the server packet to the DHT every hour.
-    /// 
+    ///
     /// # Errors
     /// - Throws an error if the initial publish fails.
     /// - Throws an error if the periodic republish task is already running.
     pub async fn start_periodic_republish(&self) -> anyhow::Result<()> {
-        let mut task_guard = self.republish_task.lock().map_err(|_| anyhow::anyhow!("Failed to lock republish task"))?;
-        
+        let mut task_guard = self
+            .republish_task
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock republish task"))?;
+
         if task_guard.is_some() {
-            return Err(anyhow::anyhow!("Periodic republish task is already running"));
+            return Err(anyhow::anyhow!(
+                "Periodic republish task is already running"
+            ));
         }
 
         // Publish once to make sure the packet is published to the DHT before this
@@ -79,7 +90,7 @@ impl HomeserverKeyRepublisher {
         let client = self.client.clone();
         let signed_packet = self.signed_packet.clone();
         let handle = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(60*60)); // 1 hour in seconds
+            let mut interval = interval(Duration::from_secs(60 * 60)); // 1 hour in seconds
             interval.tick().await; // This ticks immediatly. Wait for first interval before starting the loop.
             loop {
                 interval.tick().await;
@@ -93,8 +104,11 @@ impl HomeserverKeyRepublisher {
 
     /// Stop the periodic republish task.
     pub fn stop_periodic_republish(&self) -> anyhow::Result<()> {
-        let mut task_guard = self.republish_task.lock().map_err(|_| anyhow::anyhow!("Failed to lock republish task"))?;
-        
+        let mut task_guard = self
+            .republish_task
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock republish task"))?;
+
         if let Some(handle) = task_guard.take() {
             handle.abort();
         }
@@ -102,8 +116,6 @@ impl HomeserverKeyRepublisher {
         Ok(())
     }
 }
-
-
 
 pub fn create_signed_packet(
     keypair: &Keypair,

@@ -6,12 +6,11 @@
 //!
 
 use clap::Parser;
-use pkarr::{ClientBuilder, Keypair, PublicKey};
-use pkarr_republisher::{MultiRepublisher, RepublishError, RepublishInfo, RepublisherSettings};
+use pkarr::{ClientBuilder, Keypair};
+use pkarr_republisher::{MultiRepublisher, RepublisherSettings};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::{
-    collections::HashMap,
     process,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -99,8 +98,7 @@ async fn run_churn_loop(keys: Vec<Keypair>, thread_count: u8) {
 
     println!("Republish keys. Hold on...");
     let start = Instant::now();
-    let results =
-        republisher.run(public_keys, thread_count).await.unwrap();
+    let results = republisher.run(public_keys, thread_count).await.unwrap();
 
     let elapsed_seconds = start.elapsed().as_secs_f32();
     let keys_per_s = results.len() as f32 / elapsed_seconds;

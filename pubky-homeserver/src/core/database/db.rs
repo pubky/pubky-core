@@ -1,11 +1,10 @@
+use super::tables::{Tables, TABLES_COUNT};
 /// Protecting fields from being mutated by modules in crate::database
 use crate::core::CoreConfig;
-use super::tables::{Tables, TABLES_COUNT};
-use std::{fs, path::PathBuf};
 use heed::{Env, EnvOpenOptions};
+use std::{fs, path::PathBuf};
 
 use super::migrations;
-
 
 #[derive(Debug, Clone)]
 pub struct DB {

@@ -1,10 +1,10 @@
 use std::{path::PathBuf, time::Duration};
 
+use crate::core::user_keys_republisher::UserKeysRepublisher;
 use anyhow::Result;
 use axum::Router;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
-use crate::core::user_keys_republisher::UserKeysRepublisher;
 
 use crate::config::{
     DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_STORAGE_DIR,
@@ -41,12 +41,13 @@ impl HomeserverCore {
 
         let router = super::routes::create_app(state.clone());
 
-    
-        let user_keys_republisher =
-            UserKeysRepublisher::new(
-                db.clone(), 
-                config.user_keys_republisher_interval.or(Some(Duration::from_secs(60 * 60 * 4))).unwrap()
-            );
+        let user_keys_republisher = UserKeysRepublisher::new(
+            db.clone(),
+            config
+                .user_keys_republisher_interval
+                .or(Some(Duration::from_secs(60 * 60 * 4)))
+                .unwrap(),
+        );
 
         let user_keys_republisher_clone = user_keys_republisher.clone();
         if config.is_user_keys_republisher_enabled() {
@@ -138,7 +139,6 @@ pub fn storage(storage: Option<String>) -> Result<PathBuf> {
 
     Ok(dir.join("homeserver"))
 }
-
 
 #[cfg(test)]
 mod tests {

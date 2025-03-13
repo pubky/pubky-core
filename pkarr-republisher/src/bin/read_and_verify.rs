@@ -102,7 +102,10 @@ async fn verify_published(keys: &Vec<Keypair>, count: usize) {
             );
             warn += 1;
         } else {
-            tracing::info!("- {i}/{count} Verify {} found on {nodes_count} nodes.", key.public_key());
+            tracing::info!(
+                "- {i}/{count} Verify {} found on {nodes_count} nodes.",
+                key.public_key()
+            );
             success += 1;
         }
     }

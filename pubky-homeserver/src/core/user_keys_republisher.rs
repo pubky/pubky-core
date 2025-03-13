@@ -9,7 +9,11 @@ use std::{
 
 use pkarr::PublicKey;
 use pkarr_republisher::{MultiRepublishResult, MultiRepublisher, RepublisherSettings};
-use tokio::{sync::RwLock, task::JoinHandle, time::{interval, Instant}};
+use tokio::{
+    sync::RwLock,
+    task::JoinHandle,
+    time::{interval, Instant},
+};
 
 use crate::core::database::DB;
 
@@ -28,17 +32,15 @@ pub struct UserKeysRepublisher {
     handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     is_running: Arc<AtomicBool>,
     republish_interval: Duration,
-    homeserver_publickey: PublicKey,
 }
 
 impl UserKeysRepublisher {
-    pub fn new(db: DB, republish_interval: Duration, homeserver_publickey: PublicKey) -> Self {
+    pub fn new(db: DB, republish_interval: Duration) -> Self {
         Self {
             db,
             handle: Arc::new(RwLock::new(None)),
             is_running: Arc::new(AtomicBool::new(false)),
             republish_interval,
-            homeserver_publickey,
         }
     }
 
@@ -187,9 +189,8 @@ mod tests {
     /// Test that the republisher stops instantly.
     #[tokio::test]
     async fn start_and_stop() {
-        let homeserver_publickey = Keypair::random().public_key();
         let mut republisher =
-            UserKeysRepublisher::new(init_db_with_users(1000).await, Duration::from_secs(1), homeserver_publickey);
+            UserKeysRepublisher::new(init_db_with_users(1000).await, Duration::from_secs(1));
         let start = Instant::now();
         republisher.run().await;
         assert!(republisher.handle.read().await.is_some());

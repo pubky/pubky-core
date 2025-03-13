@@ -6,8 +6,8 @@ use std::{
 
 use ::pkarr::{Keypair, PublicKey};
 use anyhow::Result;
-use http::HttpServers;
 use homeserver_key_republisher::HomeserverKeyRepublisher;
+use http::HttpServers;
 use tracing::info;
 
 use crate::{
@@ -15,8 +15,8 @@ use crate::{
     core::HomeserverCore,
 };
 
-mod http;
 mod homeserver_key_republisher;
+mod http;
 
 #[derive(Debug, Default)]
 /// Builder for [Homeserver].
@@ -149,7 +149,9 @@ impl Homeserver {
     /// Send a shutdown signal to all open resources
     pub fn shutdown(&self) {
         self.http_servers.shutdown();
-        self.pkarr_server.stop_periodic_republish().expect("should always work");
+        self.pkarr_server
+            .stop_periodic_republish()
+            .expect("should always work");
     }
 }
 

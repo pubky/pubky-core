@@ -28,31 +28,39 @@ impl MultiRepublishResult {
 
     /// Successfully published keys
     pub fn success(&self) -> Vec<PublicKey> {
-        self.results.iter().filter(|(_, result)| result.is_ok()).map(|(key, _)| key.clone()).collect()
+        self.results
+            .iter()
+            .filter(|(_, result)| result.is_ok())
+            .map(|(key, _)| key.clone())
+            .collect()
     }
 
     /// Keys that failed to publish
     pub fn publishing_failed(&self) -> Vec<PublicKey> {
         self.results
-        .iter()
-        .filter(|(_, val)| {
-            if let Err(e) = val {
-                return e.is_publish_failed();
-            }
-            return false;
-        }).map(|entry| entry.0.clone()).collect()
+            .iter()
+            .filter(|(_, val)| {
+                if let Err(e) = val {
+                    return e.is_publish_failed();
+                }
+                return false;
+            })
+            .map(|entry| entry.0.clone())
+            .collect()
     }
 
     /// Keys that are missing and could not be republished
     pub fn missing(&self) -> Vec<PublicKey> {
         self.results
-        .iter()
-        .filter(|(_, val)| {
-            if let Err(e) = val {
-                return e.is_missing();
-            }
-            return false;
-        }).map(|entry| entry.0.clone()).collect()
+            .iter()
+            .filter(|(_, val)| {
+                if let Err(e) = val {
+                    return e.is_missing();
+                }
+                return false;
+            })
+            .map(|entry| entry.0.clone())
+            .collect()
     }
 }
 
@@ -233,5 +241,4 @@ mod tests {
         let result = results.get(&public_key).unwrap();
         assert!(result.is_err());
     }
-
 }
