@@ -232,7 +232,7 @@ impl Publisher {
 mod tests {
     use std::{num::NonZeroU8, time::Duration};
 
-    use pkarr::{dns::Name, Client, Keypair, PublicKey, SignedPacket};
+    use pkarr::{dns::Name, Keypair, PublicKey, SignedPacket};
     use pubky_testnet::Testnet;
 
     use crate::publisher::{PublishError, Publisher, PublisherSettings};

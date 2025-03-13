@@ -41,7 +41,7 @@ impl HomeserverCore {
 
         let router = super::routes::create_app(state.clone());
 
-
+    
         let user_keys_republisher =
             UserKeysRepublisher::new(
                 db.clone(), 

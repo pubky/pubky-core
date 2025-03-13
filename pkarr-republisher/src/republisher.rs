@@ -2,7 +2,8 @@
 //! Republishes a single public key with retries in case it fails.
 //!
 use pkarr::PublicKey;
-use std::{num::NonZeroU8, time::Duration};
+use std::{num::NonZeroU8, time::Duration, sync::Arc};
+use pkarr::SignedPacket;
 
 use crate::{
     publisher::{PublishError, Publisher, PublisherSettings},
@@ -39,23 +40,38 @@ pub struct RepublishInfo {
     pub published_nodes_count: usize,
     /// Number of publishing attempts needed to successfully republish.
     pub attempts_needed: usize,
+    /// Whether the `republish_condition` was negative.
+    pub condition_failed: bool,
+
 }
 
 impl RepublishInfo {
-    pub fn new(published_nodes_count: usize, attempts_needed: usize) -> Self {
+    pub fn new(published_nodes_count: usize, attempts_needed: usize, should_republish_condition_failed: bool) -> Self {
         Self {
             published_nodes_count,
             attempts_needed,
+            condition_failed: should_republish_condition_failed,
         }
     }
 }
 
 /// Settings for creating a republisher
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RepublisherSettings {
     pub(crate) client: Option<pkarr::Client>,
     pub(crate) min_sufficient_node_publish_count: NonZeroU8,
     pub(crate) retry_settings: RetrySettings,
+    pub(crate) republish_condition: Option<Arc<dyn Fn(&SignedPacket) -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for RepublisherSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RepublisherSettings")
+            .field("client", &self.client)
+            .field("min_sufficient_node_publish_count", &self.min_sufficient_node_publish_count)
+            .field("retry_settings", &self.retry_settings)
+            .finish_non_exhaustive()
+    }
 }
 
 impl RepublisherSettings {
@@ -65,6 +81,7 @@ impl RepublisherSettings {
             client: None,
             min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
             retry_settings: RetrySettings::new(),
+            republish_condition: None,
         }
     }
 
@@ -86,16 +103,36 @@ impl RepublisherSettings {
         self.retry_settings = settings;
         self
     }
+
+    /// Set a closure that determines whether a packet should be republished
+    pub fn republish_condition<F>(&mut self, f: F) -> &mut Self 
+    where
+        F: Fn(&SignedPacket) -> bool + Send + Sync + 'static,
+    {
+        self.republish_condition = Some(Arc::new(f));
+        self
+    }
 }
 
 /// Tries to republish a single key.
 /// Retries in case of errors with an exponential backoff.
-#[derive(Debug, Clone)]
 pub struct Republisher {
     pub public_key: PublicKey,
     client: pkarr::Client,
     min_sufficient_node_publish_count: NonZeroU8,
     retry_settings: RetrySettings,
+    republish_condition: Arc<dyn Fn(&SignedPacket) -> bool + Send + Sync>,
+}
+
+impl std::fmt::Debug for Republisher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Republisher")
+            .field("public_key", &self.public_key)
+            .field("client", &self.client)
+            .field("min_sufficient_node_publish_count", &self.min_sufficient_node_publish_count)
+            .field("retry_settings", &self.retry_settings)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Republisher {
@@ -118,6 +155,7 @@ impl Republisher {
             client,
             min_sufficient_node_publish_count: settings.min_sufficient_node_publish_count,
             retry_settings: settings.retry_settings,
+            republish_condition: settings.republish_condition.unwrap_or_else(|| Arc::new(|_| true)),
         })
     }
 
@@ -138,6 +176,11 @@ impl Republisher {
         }
         let packet = packet.unwrap();
 
+        // Check if the packet should be republished
+        if !(self.republish_condition)(&packet) {
+            return Ok(RepublishInfo::new(0, 1, true));
+        }
+
         let mut settings = PublisherSettings::new();
         settings
             .pkarr_client(self.client.clone())
@@ -145,7 +188,7 @@ impl Republisher {
         let publisher = Publisher::new_with_settings(self.public_key.clone(), packet, settings)
             .expect("infalliable because pkarr client provided");
         match publisher.publish_once().await {
-            Ok(info) => return Ok(RepublishInfo::new(info.published_nodes_count, 1)),
+            Ok(info) => return Ok(RepublishInfo::new(info.published_nodes_count, 1, false)),
             Err(e) => {
                 let publish_error: PublishError = e.into();
                 return Err(publish_error.into());
@@ -298,5 +341,51 @@ mod tests {
 
         assert!(res.is_err());
         assert!(res.unwrap_err().is_missing());
+    }
+
+    #[tokio::test]
+    async fn republish_with_condition_fail() {
+        let testnet = Testnet::run().await.unwrap();
+        let pubky_client = testnet.client_builder().build().unwrap();
+        let pkarr_client = pubky_client.pkarr().clone();
+        let public_key = publish_sample_packets(&pkarr_client).await;
+
+        let required_nodes = 1;
+        let mut settings = RepublisherSettings::new();
+        settings
+            .pkarr_client(pkarr_client.clone())
+            .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap())
+            // Only republish if the packet has a TTL greater than 300
+            .republish_condition(|_| false);
+
+        let publisher = Republisher::new_with_settings(public_key.clone(), settings).unwrap();
+        let res = publisher.republish_once().await;
+        assert!(res.is_ok());
+        let info = res.unwrap();
+        assert_eq!(info.published_nodes_count, 0);
+        assert_eq!(info.condition_failed, true);
+    }
+
+    #[tokio::test]
+    async fn republish_with_condition_success() {
+        let testnet = Testnet::run().await.unwrap();
+        let pubky_client = testnet.client_builder().build().unwrap();
+        let pkarr_client = pubky_client.pkarr().clone();
+        let public_key = publish_sample_packets(&pkarr_client).await;
+
+        let required_nodes = 1;
+        let mut settings = RepublisherSettings::new();
+        settings
+            .pkarr_client(pkarr_client.clone())
+            .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap())
+            // Only republish if the packet has a TTL greater than 300
+            .republish_condition(|_| true);
+
+        let publisher = Republisher::new_with_settings(public_key.clone(), settings).unwrap();
+        let res = publisher.republish_once().await;
+        assert!(res.is_ok());
+        let info = res.unwrap();
+        assert_eq!(info.published_nodes_count, 1);
+        assert_eq!(info.condition_failed, false);
     }
 }
