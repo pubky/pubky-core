@@ -20,14 +20,14 @@ impl PublishError {
         if let PublishError::InsuffientlyPublished { .. } = self {
             return true;
         }
-        return false;
+        false
     }
 
     pub fn is_publish_failed(&self) -> bool {
         if let PublishError::PublishFailed { .. } = self {
             return true;
         }
-        return false;
+        false
     }
 }
 
@@ -86,12 +86,24 @@ impl RetrySettings {
     }
 }
 
+impl Default for RetrySettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Settings for creating a republisher
 #[derive(Debug, Clone)]
 pub struct PublisherSettings {
     pub(crate) client: Option<pkarr::Client>,
     pub(crate) min_sufficient_node_publish_count: NonZeroU8,
     pub retry_settings: RetrySettings,
+}
+
+impl Default for PublisherSettings {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PublisherSettings {
@@ -158,7 +170,7 @@ impl Publisher {
         };
         let dht = client.dht().expect("infalliable").as_async();
         Ok(Self {
-            public_key: public_key,
+            public_key,
             packet,
             client,
             dht,
@@ -224,7 +236,7 @@ impl Publisher {
             tokio::time::sleep(delay).await;
         }
 
-        return Err(last_error.expect("infalliable"));
+        Err(last_error.expect("infalliable"))
     }
 }
 

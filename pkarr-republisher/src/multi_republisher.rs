@@ -2,7 +2,7 @@ use crate::{
     republisher::{RepublishError, RepublishInfo, RepublisherSettings},
     ResilientClient,
 };
-use pkarr::{errors::BuildError, ClientBuilder, PublicKey};
+use pkarr::{errors::BuildError, PublicKey};
 use std::collections::HashMap;
 use tokio::time::Instant;
 
@@ -19,6 +19,10 @@ impl MultiRepublishResult {
     /// Number of keys
     pub fn len(&self) -> usize {
         self.results.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.results.is_empty()
     }
 
     /// All keys
@@ -43,7 +47,7 @@ impl MultiRepublishResult {
                 if let Err(e) = val {
                     return e.is_publish_failed();
                 }
-                return false;
+                false
             })
             .map(|entry| entry.0.clone())
             .collect()
@@ -57,7 +61,7 @@ impl MultiRepublishResult {
                 if let Err(e) = val {
                     return e.is_missing();
                 }
-                return false;
+                false
             })
             .map(|entry| entry.0.clone())
             .collect()
@@ -88,7 +92,7 @@ impl MultiRepublisher {
         client_builder: Option<pkarr::ClientBuilder>,
     ) -> Self {
         settings.client = None; // Remove client if it's there because every thread will have it's own.
-        let builder = client_builder.unwrap_or(ClientBuilder::default());
+        let builder = client_builder.unwrap_or_default();
         Self {
             settings,
             client_builder: builder,
@@ -172,6 +176,12 @@ impl MultiRepublisher {
         }
 
         Ok(MultiRepublishResult::new(results))
+    }
+}
+
+impl Default for MultiRepublisher {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

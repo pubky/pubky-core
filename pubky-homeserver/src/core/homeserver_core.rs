@@ -45,8 +45,7 @@ impl HomeserverCore {
             db.clone(),
             config
                 .user_keys_republisher_interval
-                .or(Some(Duration::from_secs(60 * 60 * 4)))
-                .unwrap(),
+                .unwrap_or(Duration::from_secs(60 * 60 * 4)),
         );
 
         let user_keys_republisher_clone = user_keys_republisher.clone();
@@ -64,6 +63,7 @@ impl HomeserverCore {
     }
 
     /// Stop the home server background tasks.
+    #[allow(dead_code)]
     pub async fn stop(&mut self) {
         self.user_keys_republisher.stop().await;
     }

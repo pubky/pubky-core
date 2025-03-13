@@ -66,8 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .into_iter()
         .map(|key| {
             let secret = key.secret_key();
-            let h = hex::encode(secret);
-            h
+            hex::encode(secret)
         })
         .collect::<Vec<_>>();
     let pubkeys_str = pubkeys.join("\n");

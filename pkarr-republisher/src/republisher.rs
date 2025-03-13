@@ -23,14 +23,14 @@ impl RepublishError {
         if let RepublishError::Missing = self {
             return true;
         }
-        return false;
+        false
     }
 
     pub fn is_publish_failed(&self) -> bool {
         if let RepublishError::PublishFailed { .. } = self {
             return true;
         }
-        return false;
+        false
     }
 }
 
@@ -58,13 +58,15 @@ impl RepublishInfo {
     }
 }
 
+pub type RepublishCondition = dyn Fn(&SignedPacket) -> bool + Send + Sync;
+
 /// Settings for creating a republisher
 #[derive(Clone)]
 pub struct RepublisherSettings {
     pub(crate) client: Option<pkarr::Client>,
     pub(crate) min_sufficient_node_publish_count: NonZeroU8,
     pub(crate) retry_settings: RetrySettings,
-    pub(crate) republish_condition: Option<Arc<dyn Fn(&SignedPacket) -> bool + Send + Sync>>,
+    pub(crate) republish_condition: Option<Arc<RepublishCondition>>,
 }
 
 impl std::fmt::Debug for RepublisherSettings {
@@ -120,6 +122,12 @@ impl RepublisherSettings {
     }
 }
 
+impl Default for RepublisherSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Tries to republish a single key.
 /// Retries in case of errors with an exponential backoff.
 pub struct Republisher {
@@ -160,7 +168,7 @@ impl Republisher {
             None => pkarr::Client::builder().build()?,
         };
         Ok(Republisher {
-            public_key: public_key,
+            public_key,
             client,
             min_sufficient_node_publish_count: settings.min_sufficient_node_publish_count,
             retry_settings: settings.retry_settings,
@@ -199,11 +207,8 @@ impl Republisher {
         let publisher = Publisher::new_with_settings(self.public_key.clone(), packet, settings)
             .expect("infalliable because pkarr client provided");
         match publisher.publish_once().await {
-            Ok(info) => return Ok(RepublishInfo::new(info.published_nodes_count, 1, false)),
-            Err(e) => {
-                let publish_error: PublishError = e.into();
-                return Err(publish_error.into());
-            }
+            Ok(info) => Ok(RepublishInfo::new(info.published_nodes_count, 1, false)),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -236,7 +241,7 @@ impl Republisher {
             tokio::time::sleep(delay).await;
         }
 
-        return Err(last_error.expect("infalliable"));
+        Err(last_error.expect("infalliable"))
     }
 }
 

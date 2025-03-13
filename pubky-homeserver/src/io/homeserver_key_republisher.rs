@@ -3,7 +3,8 @@
 use anyhow::Result;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
-use std::sync::Mutex;
+
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
@@ -52,7 +53,7 @@ impl HomeserverKeyRepublisher {
         client: &pkarr::Client,
         signed_packet: &SignedPacket,
     ) -> Result<(), PublishError> {
-        let res = client.publish(&signed_packet, None).await;
+        let res = client.publish(signed_packet, None).await;
         if let Err(e) = &res {
             tracing::warn!(
                 "Failed to publish the homeserver's pkarr packet to the DHT: {}",
@@ -70,10 +71,7 @@ impl HomeserverKeyRepublisher {
     /// - Throws an error if the initial publish fails.
     /// - Throws an error if the periodic republish task is already running.
     pub async fn start_periodic_republish(&self) -> anyhow::Result<()> {
-        let mut task_guard = self
-            .republish_task
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock republish task"))?;
+        let mut task_guard = self.republish_task.lock().await;
 
         if task_guard.is_some() {
             return Err(anyhow::anyhow!(
@@ -103,17 +101,12 @@ impl HomeserverKeyRepublisher {
     }
 
     /// Stop the periodic republish task.
-    pub fn stop_periodic_republish(&self) -> anyhow::Result<()> {
-        let mut task_guard = self
-            .republish_task
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock republish task"))?;
+    pub async fn stop_periodic_republish(&self) {
+        let mut task_guard = self.republish_task.lock().await;
 
         if let Some(handle) = task_guard.take() {
             handle.abort();
         }
-
-        Ok(())
     }
 }
 

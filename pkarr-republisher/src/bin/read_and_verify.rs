@@ -75,9 +75,9 @@ fn read_keys() -> Vec<Keypair> {
         .collect::<Vec<_>>()
 }
 
-async fn verify_published(keys: &Vec<Keypair>, count: usize) {
+async fn verify_published(keys: &[Keypair], count: usize) {
     // Shuffle and take {count} elements to verify.
-    let mut keys = keys.clone();
+    let mut keys: Vec<Keypair> = keys.to_owned();
     let mut rng = rng();
     keys.shuffle(&mut rng);
     let keys: Vec<Keypair> = keys.into_iter().take(count).collect();

@@ -68,6 +68,6 @@ impl ResilientClient {
 
     /// Counts the number of nodes the public key has been stored on.
     pub async fn verify_node_count(&self, public_key: &PublicKey) -> usize {
-        count_key_on_dht(&public_key, &self.dht).await
+        count_key_on_dht(public_key, &self.dht).await
     }
 }

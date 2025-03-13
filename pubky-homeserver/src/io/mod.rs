@@ -147,11 +147,9 @@ impl Homeserver {
     // === Public Methods ===
 
     /// Send a shutdown signal to all open resources
-    pub fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         self.http_servers.shutdown();
-        self.pkarr_server
-            .stop_periodic_republish()
-            .expect("should always work");
+        self.pkarr_server.stop_periodic_republish().await;
     }
 }
 

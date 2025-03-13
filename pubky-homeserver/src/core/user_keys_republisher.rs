@@ -22,7 +22,7 @@ pub enum UserKeysRepublisherError {
     #[error(transparent)]
     DB(heed::Error),
     #[error(transparent)]
-    PKARR(pkarr::errors::BuildError),
+    Pkarr(pkarr::errors::BuildError),
 }
 
 /// Publishes the pkarr keys of all users to the Mainline DHT.
@@ -52,7 +52,7 @@ impl UserKeysRepublisher {
             return;
         }
         let db = self.db.clone();
-        let republish_interval = self.republish_interval.clone();
+        let republish_interval = self.republish_interval;
         let handle: JoinHandle<()> =
             tokio::spawn(async move { Self::run_loop(db, republish_interval).await });
 
@@ -77,7 +77,7 @@ impl UserKeysRepublisher {
     async fn republish_keys_once(db: DB) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
         let keys = Self::get_all_user_keys(db)
             .await
-            .map_err(|e| UserKeysRepublisherError::DB(e))?;
+            .map_err(UserKeysRepublisherError::DB)?;
         if keys.is_empty() {
             tracing::info!("No user keys to republish.");
             return Ok(MultiRepublishResult::new(HashMap::new()));
@@ -89,7 +89,7 @@ impl UserKeysRepublisher {
         let results = republisher
             .run(keys, 12)
             .await
-            .map_err(|e| UserKeysRepublisherError::PKARR(e))?;
+            .map_err(UserKeysRepublisherError::Pkarr)?;
         Ok(results)
     }
 
@@ -107,7 +107,7 @@ impl UserKeysRepublisher {
                 continue;
             }
             let result = result.unwrap();
-            if result.len() > 0 {
+            if result.is_empty() {
                 tracing::info!(
                     "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
                     result.len(),
@@ -124,7 +124,7 @@ impl UserKeysRepublisher {
     #[allow(dead_code)]
     pub async fn stop(&mut self) {
         let mut lock = self.handle.write().await;
-        if let None = lock.as_ref() {
+        if lock.is_none() {
             // Republisher is not running.
             return;
         }
