@@ -36,6 +36,9 @@ match client.republish(public_key.clone(), None).await {
 }
 ```
 
+> **Limitation** ResilientClient requires a pkarr client that was built with the `dht` feature.
+> Relays only are not supported.
+
 **MultiRepublisher** Multi-threaded republisher of pkarr keys.
 
 Uses the ResilientClient to publish hundrets of thousands of pkarr keys per day.

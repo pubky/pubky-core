@@ -18,6 +18,9 @@ pub(crate) struct AppState {
     pub(crate) db: DB,
 }
 
+const DEFAULT_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60*60*4); // 4 hours
+const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
+
 #[derive(Debug, Clone)]
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
@@ -45,14 +48,14 @@ impl HomeserverCore {
             db.clone(),
             config
                 .user_keys_republisher_interval
-                .unwrap_or(Duration::from_secs(60 * 60 * 4)),
+                .unwrap_or(DEFAULT_REPUBLISH_INTERVAL),
         );
 
         let user_keys_republisher_clone = user_keys_republisher.clone();
         if config.is_user_keys_republisher_enabled() {
             // Delayed start of the republisher to give time for the homeserver to start.
             tokio::spawn(async move {
-                sleep(Duration::from_secs(60)).await;
+                sleep(INITIAL_DELAY_BEFORE_REPUBLISH).await;
                 user_keys_republisher_clone.run().await;
             });
         }

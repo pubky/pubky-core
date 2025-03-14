@@ -10,6 +10,9 @@ use crate::{
 /// Simple pkarr client that focuses on resilience
 /// and verification compared to the regular client that
 /// might experience inreliability due to the underlying UDP connection.
+///
+/// This client requires a pkarr client that was built with the `dht` feature.
+/// Relays only are not supported.
 pub struct ResilientClient {
     client: pkarr::Client,
     dht: AsyncDht,
@@ -23,7 +26,11 @@ impl ResilientClient {
     }
 
     pub fn new_with_client(client: pkarr::Client, retry_settings: RetrySettings) -> Self {
-        let dht = client.dht().unwrap().as_async();
+        let dht = client.dht();
+        if dht.is_none() {
+            panic!("pkarr client was built without DHT and is only using relays. This is not supported.");
+        }
+        let dht = dht.unwrap().as_async();
         Self {
             client,
             dht,
