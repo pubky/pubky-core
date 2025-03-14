@@ -103,7 +103,10 @@ impl MultiRepublisher {
     async fn run_serially(
         &self,
         public_keys: Vec<PublicKey>,
-    ) -> Result<HashMap<PublicKey, Result<RepublishInfo, RepublishError>>, ResilientClientBuilderError> {
+    ) -> Result<
+        HashMap<PublicKey, Result<RepublishInfo, RepublishError>>,
+        ResilientClientBuilderError,
+    > {
         let mut results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> =
             HashMap::with_capacity(public_keys.len());
         tracing::debug!("Start to republish {} public keys.", public_keys.len());

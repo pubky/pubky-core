@@ -8,7 +8,9 @@ use std::{
 };
 
 use pkarr::PublicKey;
-use pkarr_republisher::{MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError};
+use pkarr_republisher::{
+    MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
+};
 use tokio::{
     sync::RwLock,
     task::JoinHandle,
@@ -46,7 +48,10 @@ impl UserKeysRepublisher {
 
     /// Run the user keys republisher.
     pub async fn run(&self) {
-        tracing::info!("Initialize user keys republisher with interval {:?}", self.republish_interval);
+        tracing::info!(
+            "Initialize user keys republisher with interval {:?}",
+            self.republish_interval
+        );
         let mut lock = self.handle.write().await;
         if lock.is_some() {
             return;

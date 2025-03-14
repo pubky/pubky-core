@@ -33,7 +33,10 @@ impl ResilientClient {
         Self::new_with_client(client, RetrySettings::new())
     }
 
-    pub fn new_with_client(client: pkarr::Client, retry_settings: RetrySettings) -> Result<Self, ResilientClientBuilderError> {
+    pub fn new_with_client(
+        client: pkarr::Client,
+        retry_settings: RetrySettings,
+    ) -> Result<Self, ResilientClientBuilderError> {
         let dht = client.dht();
         if dht.is_none() {
             return Err(ResilientClientBuilderError::DhtNotEnabled);

@@ -7,11 +7,11 @@ use std::{
     fmt::Debug,
     fs,
     net::{IpAddr, SocketAddr},
-    path::{Path, PathBuf}, time::Duration,
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 use crate::{core::CoreConfig, io::IoConfig};
-
 
 pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
@@ -334,6 +334,9 @@ domain = "example.com"
             Some(SocketAddr::from(([127, 0, 0, 1], 6287)))
         );
         assert_eq!(config.io.domain, Some("example.com".to_string()));
-        assert_eq!(config.core.user_keys_republisher_interval, Some(Duration::from_secs(3600))); // 1 hour
+        assert_eq!(
+            config.core.user_keys_republisher_interval,
+            Some(Duration::from_secs(3600))
+        ); // 1 hour
     }
 }
