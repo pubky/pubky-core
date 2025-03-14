@@ -28,6 +28,10 @@ impl SignupToken {
         from_bytes(bytes).expect("deserialize signup token")
     }
 
+    pub fn is_used(&self) -> bool {
+        self.used.is_some()
+    }
+
     // Generate 7 random bytes and encode as BASE32, fully uppercase
     // with hyphens every 4 characters. Example, `QXV0-15V7-EXY0`
     pub fn random() -> Self {
@@ -68,7 +72,7 @@ impl DB {
         let mut wtxn = self.env.write_txn()?;
         if let Some(token_bytes) = self.tables.signup_tokens.get(&wtxn, token)? {
             let mut signup_token = SignupToken::deserialize(token_bytes);
-            if signup_token.used.is_some() {
+            if signup_token.is_used() {
                 anyhow::bail!("Token already used");
             }
             // Mark token as used.
