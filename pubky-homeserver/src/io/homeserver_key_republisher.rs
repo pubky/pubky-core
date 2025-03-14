@@ -27,9 +27,6 @@ impl HomeserverKeyRepublisher {
     ) -> Result<Self> {
         let mut builder = pkarr::Client::builder();
 
-        // TODO: Relays have rate limits. pkarr currently panics if accessed too quickly.
-        builder.no_relays();
-
         if let Some(bootstrap) = &config.bootstrap {
             builder.bootstrap(bootstrap);
         }
