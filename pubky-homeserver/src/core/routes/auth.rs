@@ -46,7 +46,7 @@ pub async fn signup(
     }
     txn.commit()?;
 
-    // 3) If signup_mode == closed, require & validate a `signup_token` param.
+    // 3) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.admin.signup_mode == SignupMode::TokenRequired {
         let signup_token_param = params
             .get("signup_token")
