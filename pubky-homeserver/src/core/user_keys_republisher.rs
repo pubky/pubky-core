@@ -147,6 +147,7 @@ impl UserKeysRepublisher {
             // Republisher is not running.
             return;
         }
+
         let handle = lock.take().unwrap();
 
         handle.abort();

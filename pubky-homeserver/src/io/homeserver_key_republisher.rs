@@ -124,7 +124,7 @@ pub fn create_signed_packet(
 
     // Set the public Ip or the loclahost
     signed_packet_builder = signed_packet_builder.address(
-        ".".try_into().unwrap(),
+        ".".try_into().expect(". is valid domain and therefore always succeeds"),
         config
             .public_addr
             .map(|addr| addr.ip())
