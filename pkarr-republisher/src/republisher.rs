@@ -205,7 +205,7 @@ impl Republisher {
             .pkarr_client(self.client.clone())
             .min_sufficient_node_publish_count(self.min_sufficient_node_publish_count);
         let publisher = Publisher::new_with_settings(self.public_key.clone(), packet, settings)
-            .expect("infalliable because pkarr client provided");
+            .expect("infallible because pkarr client provided");
         match publisher.publish_once().await {
             Ok(info) => Ok(RepublishInfo::new(info.published_nodes_count, 1, false)),
             Err(e) => Err(e.into()),
@@ -241,7 +241,7 @@ impl Republisher {
             tokio::time::sleep(delay).await;
         }
 
-        Err(last_error.expect("infalliable"))
+        Err(last_error.expect("infallible"))
     }
 }
 

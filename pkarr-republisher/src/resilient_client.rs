@@ -60,7 +60,7 @@ impl ResilientClient {
             settings.min_sufficient_node_publish_count = count;
         };
         let publisher = Publisher::new_with_settings(public_key, packet, settings)
-            .expect("infalliable because pkarr client provided.");
+            .expect("infallible because pkarr client provided.");
         publisher.publish().await
     }
 
@@ -77,7 +77,7 @@ impl ResilientClient {
         };
         settings.retry_settings(self.retry_settings.clone());
         let publisher = Republisher::new_with_settings(public_key, settings)
-            .expect("infalliable because pkarr client provided.");
+            .expect("infallible because pkarr client provided.");
         publisher.republish().await
     }
 

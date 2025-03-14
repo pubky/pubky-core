@@ -49,7 +49,7 @@ use pkarr::{Keypair, PublicKey};
 
 let public_keys: Vec<PublicKey> = (0..100).map(|_| Keypair::random().public_key()).collect();
 let republisher = MultiRepublisher::new().unwrap();
-let results = republisher.run(public_keys, 10).await.expect("UDP socket build infalliable");
+let results = republisher.run(public_keys, 10).await.expect("UDP socket build infallible");
 
 // Verify result of each republished key.
 for (key, result) in results {
@@ -72,6 +72,7 @@ for (key, result) in results {
 
 > **Limitation** Publishing a high number of pkarr keys is CPU intense. A recent test showed a 4 Core CPU being able to publish ~600,000 keys in 24hrs.
 > Takes this into consideration.
+> Do not use pkarr relays with the MultiRepublisher. You will run into rate limits which are currently not handled.
 
 
 ## Examples

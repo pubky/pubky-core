@@ -27,6 +27,7 @@ impl HomeserverKeyRepublisher {
     ) -> Result<Self> {
         let mut builder = pkarr::Client::builder();
 
+        // TODO: Relays have rate limits. pkarr currently panics if accessed too quickly.
         builder.no_relays();
 
         if let Some(bootstrap) = &config.bootstrap {
@@ -121,7 +122,7 @@ pub fn create_signed_packet(
 
     let mut svcb = SVCB::new(0, ".".try_into()?);
 
-    // Set the public Ip or the loclahost
+    // Set the public Ip or localhost
     signed_packet_builder = signed_packet_builder.address(
         ".".try_into().expect(". is valid domain and therefore always succeeds"),
         config

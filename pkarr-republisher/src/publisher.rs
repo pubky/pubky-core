@@ -168,7 +168,7 @@ impl Publisher {
             Some(c) => c.clone(),
             None => pkarr::Client::builder().build()?,
         };
-        let dht = client.dht().expect("infalliable").as_async();
+        let dht = client.dht().expect("infallible").as_async();
         Ok(Self {
             public_key,
             packet,
