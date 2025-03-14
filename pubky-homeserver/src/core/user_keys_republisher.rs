@@ -112,7 +112,19 @@ impl UserKeysRepublisher {
             }
             let result = result.unwrap();
             if result.is_empty() {
+                continue;
+            }
+            if result.missing().is_empty() {
                 tracing::info!(
+                    "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
+                    result.len(),
+                    elapsed.as_secs_f32(),
+                    result.success().len(),
+                    result.missing().len(),
+                    result.publishing_failed().len()
+                );
+            } else {
+                tracing::warn!(
                     "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
                     result.len(),
                     elapsed.as_secs_f32(),
