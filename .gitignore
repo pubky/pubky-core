@@ -2,3 +2,4 @@ target/
 storage/
 .continuerules
 .cursorrules
+.cursor/*

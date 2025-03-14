@@ -2,7 +2,7 @@
 //! Publishs packets with random keys and saves the published public keys in a file
 //! so they can be reused in other experiments.
 //!
-//! Run with `cargo run --bin publish_and_save -- --num-records 100 --threads 6`.
+//! Run with `cargo run --example publish_and_save -- --num-records 100 --threads 6`.
 //!
 
 use clap::Parser;

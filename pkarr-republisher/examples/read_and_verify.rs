@@ -5,7 +5,7 @@
 //! <10 is ready for a republish.
 //! 0 = Packet unavailable.
 //!
-//! Run with `cargo run --bin read_and_verify -- --num_keys 20`
+//! Run with `cargo run --example read_and_verify -- --num_keys 20`
 //!
 
 use clap::Parser;

@@ -2,7 +2,7 @@
 //! Reads `published_secrets.txt` and tries to republish the packets.
 //! This is done in a multi-threaded way to improve speed.
 //!
-//! Run with `cargo run --bin read_and_republish -- --num-records 100 --threads 10`.
+//! Run with `cargo run --example read_and_republish -- --num-records 100 --threads 10`.
 //!
 
 use clap::Parser;

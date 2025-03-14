@@ -2,12 +2,17 @@
 
 > Early version. Expect breaking API changes. Can still be heavily performance optimized especially by improving the `mainline` lib.
 
-A pkarr packet republisher. Takes [pkarr](https://github.com/pubky/pkarr) and makes it resilient to UDP unreliabilities and CPU exhaustion
-by retrying operations with an exponential backoff. Retries help with UDP packet loss and the backoff gives the CPU time to recover.
+To keep data on the Mainline DHT alive, it needs to be actively republished every hour. This library provides the tools to republish packets reliably
+and in a multi-threaded fashion. This allows the homeserver to republish hundrets of thousands of pkarr keys per day.
+
+
 
 ## Usage
 
 **ResilientClient** Pkarr Client with retry and exponential backoff.
+
+Takes [pkarr](https://github.com/pubky/pkarr) and makes it resilient to UDP unreliabilities and CPU exhaustion
+by retrying operations with an exponential backoff. Retries help with UDP packet loss and the backoff gives the CPU time to recover.
 
 ```rust
 use pkarr_republisher::ResilientClient;
@@ -32,6 +37,8 @@ match client.republish(public_key.clone(), None).await {
 ```
 
 **MultiRepublisher** Multi-threaded republisher of pkarr keys.
+
+Uses the ResilientClient to publish hundrets of thousands of pkarr keys per day.
 
 ```rust
 use pkarr_republisher::MultiRepublisher;
@@ -60,12 +67,16 @@ for (key, result) in results {
 }
 ```
 
+> **Limitation** Publishing a high number of pkarr keys is CPU intense. A recent test showed a 4 Core CPU being able to publish ~600,000 keys in 24hrs.
+> Takes this into consideration.
 
 
 ## Examples
 
-The [src/bin folder](./src/bin) contains example scripts to test the performance of the republisher.
+The [examples folder](./examples) contains scripts to test the performance of the republisher.
 
-- [publish_and_save](./src/bin/publish_and_save.rs) Publishes x keys multi-threaded and saves them in `published_secrets.txt`.
-- [read_and_verify](./src/bin/read_and_verify.rs) Takes a random sample of the published keys and verifies on how many nodes they've been stored on.
-- [read_and_republish](./src/bin/read_and_republish.rs) takes the saved keys and republishes them multi-threaded.
+- [publish_and_save](./examples/publish_and_save.rs) Publishes x keys multi-threaded and saves them in `published_secrets.txt`.
+- [read_and_verify](./examples/read_and_verify.rs) Takes a random sample of the published keys and verifies on how many nodes they've been stored on.
+- [read_and_republish](./examples/read_and_republish.rs) takes the saved keys and republishes them multi-threaded.
+
+Execute with `cargo run --example publish_and_save`
