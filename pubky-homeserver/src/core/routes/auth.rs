@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
-/// 1) Check if signup tokens are required (signup mode is Closed).
+/// 1) Check if signup tokens are required (signup mode is token_required).
 /// 2) Ensure the user *does not* already exist.
 /// 3) Create new user if needed.
 /// 4) Create a session and set the cookie (using the shared helper).
