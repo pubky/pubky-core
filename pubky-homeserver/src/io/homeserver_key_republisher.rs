@@ -140,7 +140,7 @@ pub fn create_signed_packet(
             .unwrap_or(https_port),
     );
 
-    signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
+    signed_packet_builder = signed_packet_builder.https(".".try_into().expect(". is valid domain and therefore always succeeds"), svcb, 60 * 60);
 
     // Set low priority https record for legacy browsers support
     if let Some(ref domain) = config.domain {
@@ -156,7 +156,7 @@ pub fn create_signed_packet(
 
         svcb.target = domain.as_str().try_into()?;
 
-        signed_packet_builder = signed_packet_builder.https(".".try_into().unwrap(), svcb, 60 * 60);
+        signed_packet_builder = signed_packet_builder.https(".".try_into().expect(". is valid domain and therefore always succeeds"), svcb, 60 * 60);
     }
 
     Ok(signed_packet_builder.build(keypair)?)

@@ -169,7 +169,12 @@ impl MultiRepublisher {
         // Join results of all tasks
         let mut results = HashMap::with_capacity(public_keys.len());
         for handle in handles {
-            let result = handle.await.expect("should have result")?;
+            let join_result = handle.await;
+            if let Err(e) = join_result {
+                tracing::error!("Failed to join handle in MultiRepublisher::run: {e}");
+                continue;
+            }
+            let result = join_result.unwrap()?;
             for entry in result {
                 results.insert(entry.0, entry.1);
             }
