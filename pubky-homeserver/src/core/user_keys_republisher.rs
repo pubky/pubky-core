@@ -67,7 +67,7 @@ impl UserKeysRepublisher {
 
         let keys: Vec<PublicKey> = users
             .map(|result| result.map(|val| val.0))
-            .filter_map(Result::ok) // Ignore errors.
+            .filter_map(Result::ok) // Errors: Db corruption or out of memory. For this use case, we just ignore it.
             .collect();
         Ok(keys)
     }
