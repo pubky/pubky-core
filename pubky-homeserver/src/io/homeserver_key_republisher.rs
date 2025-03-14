@@ -27,7 +27,6 @@ impl HomeserverKeyRepublisher {
     ) -> Result<Self> {
         let mut builder = pkarr::Client::builder();
 
-        // TODO: should we enable relays in homeservers for udp restricted environments?
         builder.no_relays();
 
         if let Some(bootstrap) = &config.bootstrap {

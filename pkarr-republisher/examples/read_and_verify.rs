@@ -26,7 +26,7 @@ use tracing_subscriber::EnvFilter;
 struct Cli {
     /// Verify x keys by checking how many nodes it was stored on.
     #[arg(long, default_value_t = 20)]
-    num_keys: usize,
+    num_records: usize,
 }
 
 #[tokio::main]
@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let published_keys = read_keys();
     println!("Read {} keys", published_keys.len());
 
-    let num_verify_keys = cli.num_keys;
+    let num_verify_keys = cli.num_records;
     info!("Randomly verify: {num_verify_keys} keys");
     verify_published(&published_keys, num_verify_keys).await;
     Ok(())
