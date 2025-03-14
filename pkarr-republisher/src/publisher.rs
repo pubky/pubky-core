@@ -210,17 +210,17 @@ impl Publisher {
     // Publishes the key with an exponential backoff
     pub async fn publish(&self) -> Result<PublishInfo, PublishError> {
         let max_retries = self.retry_settings.max_retries.get();
-        let mut retry_count = 0;
         let mut last_error: Option<PublishError> = None;
-        while retry_count < max_retries {
+        for retry_count in 0..max_retries {
+            let human_retry_count = retry_count + 1;
             match self.publish_once().await {
                 Ok(mut info) => {
-                    info.attempts_needed = retry_count as usize + 1;
+                    info.attempts_needed = human_retry_count as usize;
                     return Ok(info);
                 }
                 Err(e) => {
                     tracing::debug!(
-                        "{retry_count}/{max_retries} Failed to publish {}: {e}",
+                        "{human_retry_count}/{max_retries} Failed to publish {}: {e}",
                         self.public_key
                     );
                     last_error = Some(e);
@@ -228,15 +228,14 @@ impl Publisher {
             }
 
             let delay = self.get_retry_delay(retry_count);
-            retry_count += 1;
             tracing::debug!(
-                "{} {retry_count}/{max_retries} Sleep for {delay:?} before trying again.",
+                "{} {human_retry_count}/{max_retries} Sleep for {delay:?} before trying again.",
                 self.public_key
             );
             tokio::time::sleep(delay).await;
         }
 
-        Err(last_error.expect("infalliable"))
+        Err(last_error.expect("infallible"))
     }
 }
 
