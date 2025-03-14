@@ -1,8 +1,8 @@
 use crate::{
     republisher::{RepublishError, RepublishInfo, RepublisherSettings},
-    ResilientClient,
+    ResilientClient, ResilientClientBuilderError,
 };
-use pkarr::{errors::BuildError, PublicKey};
+use pkarr::PublicKey;
 use std::collections::HashMap;
 use tokio::time::Instant;
 
@@ -103,7 +103,7 @@ impl MultiRepublisher {
     async fn run_serially(
         &self,
         public_keys: Vec<PublicKey>,
-    ) -> Result<HashMap<PublicKey, Result<RepublishInfo, RepublishError>>, BuildError> {
+    ) -> Result<HashMap<PublicKey, Result<RepublishInfo, RepublishError>>, ResilientClientBuilderError> {
         let mut results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> =
             HashMap::with_capacity(public_keys.len());
         tracing::debug!("Start to republish {} public keys.", public_keys.len());
@@ -111,7 +111,7 @@ impl MultiRepublisher {
         // pkarr client gets really unreliable when used in parallel. To get around this, we use one client per run().
         let client = self.client_builder.clone().build()?;
         let rclient =
-            ResilientClient::new_with_client(client, self.settings.retry_settings.clone());
+            ResilientClient::new_with_client(client, self.settings.retry_settings.clone())?;
         for key in public_keys {
             let start = Instant::now();
             let res = rclient
@@ -151,7 +151,7 @@ impl MultiRepublisher {
         &self,
         public_keys: Vec<PublicKey>,
         thread_count: u8,
-    ) -> Result<MultiRepublishResult, BuildError> {
+    ) -> Result<MultiRepublishResult, ResilientClientBuilderError> {
         let chunk_size = public_keys.len().div_ceil(thread_count as usize);
         let chunks = public_keys
             .chunks(chunk_size)

@@ -8,7 +8,7 @@ use std::{
 };
 
 use pkarr::PublicKey;
-use pkarr_republisher::{MultiRepublishResult, MultiRepublisher, RepublisherSettings};
+use pkarr_republisher::{MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError};
 use tokio::{
     sync::RwLock,
     task::JoinHandle,
@@ -22,7 +22,7 @@ pub enum UserKeysRepublisherError {
     #[error(transparent)]
     DB(heed::Error),
     #[error(transparent)]
-    Pkarr(pkarr::errors::BuildError),
+    Pkarr(ResilientClientBuilderError),
 }
 
 /// Publishes the pkarr keys of all users to the Mainline DHT.

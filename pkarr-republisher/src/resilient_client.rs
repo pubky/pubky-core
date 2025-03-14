@@ -7,6 +7,14 @@ use crate::{
     RepublishInfo, Republisher, RepublisherSettings, RetrySettings,
 };
 
+#[derive(Debug, thiserror::Error)]
+pub enum ResilientClientBuilderError {
+    #[error("pkarr client was built without DHT and is only using relays. This is not supported.")]
+    DhtNotEnabled,
+    #[error(transparent)]
+    BuildError(#[from] pkarr::errors::BuildError),
+}
+
 /// Simple pkarr client that focuses on resilience
 /// and verification compared to the regular client that
 /// might experience inreliability due to the underlying UDP connection.
@@ -20,22 +28,22 @@ pub struct ResilientClient {
 }
 
 impl ResilientClient {
-    pub fn new() -> Result<Self, pkarr::errors::BuildError> {
+    pub fn new() -> Result<Self, ResilientClientBuilderError> {
         let client = pkarr::Client::builder().build()?;
-        Ok(Self::new_with_client(client, RetrySettings::new()))
+        Self::new_with_client(client, RetrySettings::new())
     }
 
-    pub fn new_with_client(client: pkarr::Client, retry_settings: RetrySettings) -> Self {
+    pub fn new_with_client(client: pkarr::Client, retry_settings: RetrySettings) -> Result<Self, ResilientClientBuilderError> {
         let dht = client.dht();
         if dht.is_none() {
-            panic!("pkarr client was built without DHT and is only using relays. This is not supported.");
+            return Err(ResilientClientBuilderError::DhtNotEnabled);
         }
         let dht = dht.unwrap().as_async();
-        Self {
+        Ok(Self {
             client,
             dht,
             retry_settings,
-        }
+        })
     }
 
     /// Publishes a pkarr packet with retries. Verifies it's been stored correctly.
