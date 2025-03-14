@@ -64,7 +64,11 @@ impl UserKeysRepublisher {
     async fn get_all_user_keys(db: DB) -> Result<Vec<PublicKey>, heed::Error> {
         let rtxn = db.env.read_txn()?;
         let users = db.tables.users.iter(&rtxn)?;
-        let keys: Vec<PublicKey> = users.map(|result| result.unwrap().0).collect();
+
+        let keys: Vec<PublicKey> = users
+            .map(|result| result.map(|val| val.0))
+            .filter_map(Result::ok) // Ignore errors.
+            .collect();
         Ok(keys)
     }
 
