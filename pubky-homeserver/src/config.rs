@@ -7,10 +7,13 @@ use std::{
     fmt::Debug,
     fs,
     net::{IpAddr, SocketAddr},
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, time::Duration,
 };
 
 use crate::{core::CoreConfig, io::IoConfig};
+
+
+pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
 // === Core ==
 pub const DEFAULT_STORAGE_DIR: &str = "pubky";
@@ -51,9 +54,15 @@ struct IoToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 struct ConfigToml {
     secret_key: Option<String>,
+    #[serde(default = "default_republisher_interval")]
+    user_keys_republisher_interval: u64,
 
     database: Option<DatabaseToml>,
     io: Option<IoToml>,
+}
+
+fn default_republisher_interval() -> u64 {
+    DEFAULT_REPUBLISHER_INTERVAL
 }
 
 /// Server configuration
@@ -175,12 +184,18 @@ impl TryFrom<ConfigToml> for Config {
             }
         };
 
+        let user_keys_republisher_interval = if value.user_keys_republisher_interval > 0 {
+            Some(Duration::from_secs(value.user_keys_republisher_interval))
+        } else {
+            None
+        };
+
         Ok(Config {
             keypair,
-
             io,
             core: CoreConfig {
                 storage,
+                user_keys_republisher_interval,
                 ..Default::default()
             },
         })
@@ -269,6 +284,9 @@ mod tests {
 # Secret key (in hex) to generate the Homeserver's Keypair
 secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
 
+# The interval at which user keys are republished to the DHT.
+user_keys_republisher_interval = 3600  # 1 hour in seconds
+
 [database]
 # Storage directory Defaults to <System's Data Directory>
 # storage = ""
@@ -316,5 +334,6 @@ domain = "example.com"
             Some(SocketAddr::from(([127, 0, 0, 1], 6287)))
         );
         assert_eq!(config.io.domain, Some("example.com".to_string()));
+        assert_eq!(config.core.user_keys_republisher_interval, Some(Duration::from_secs(3600))); // 1 hour
     }
 }

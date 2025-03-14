@@ -46,7 +46,7 @@ impl UserKeysRepublisher {
 
     /// Run the user keys republisher.
     pub async fn run(&self) {
-        tracing::info!("Initialize user keys republisher...");
+        tracing::info!("Initialize user keys republisher with interval {:?}", self.republish_interval);
         let mut lock = self.handle.write().await;
         if lock.is_some() {
             return;

@@ -1,6 +1,9 @@
 # Secret key (in hex) to generate the Homeserver's Keypair
 # secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
 
+# The interval at which user keys are republished to the DHT.
+user_keys_republisher_interval = 14400  # 4 hour in seconds
+
 [database]
 # Storage directory Defaults to <System's Data Directory>
 #

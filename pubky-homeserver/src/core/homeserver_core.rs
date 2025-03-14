@@ -7,7 +7,7 @@ use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
 
 use crate::config::{
-    DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_STORAGE_DIR,
+    DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_REPUBLISHER_INTERVAL, DEFAULT_STORAGE_DIR
 };
 
 use crate::core::database::DB;
@@ -18,7 +18,6 @@ pub(crate) struct AppState {
     pub(crate) db: DB,
 }
 
-const DEFAULT_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60*60*4); // 4 hours
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone)]
@@ -48,7 +47,7 @@ impl HomeserverCore {
             db.clone(),
             config
                 .user_keys_republisher_interval
-                .unwrap_or(DEFAULT_REPUBLISH_INTERVAL),
+                .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
         );
 
         let user_keys_republisher_clone = user_keys_republisher.clone();
