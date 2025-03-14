@@ -1,7 +1,7 @@
 import test from 'tape'
 
 import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
-import { getSignupToken } from './utils.js';
+import { createSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
@@ -10,7 +10,7 @@ test('public: put/get', async (t) => {
 
   const keypair = Keypair.random();
 
-  const signupToken = await getSignupToken(client)
+  const signupToken = await createSignupToken(client)
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
 
@@ -60,7 +60,7 @@ test("not found", async (t) => {
 
   const keypair = Keypair.random();
 
-  const signupToken = await getSignupToken(client)
+  const signupToken = await createSignupToken(client)
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
 
@@ -79,7 +79,7 @@ test("unauthorized", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  const signupToken = await getSignupToken(client)
+  const signupToken = await createSignupToken(client)
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
@@ -107,7 +107,7 @@ test("forbidden", async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  const signupToken = await getSignupToken(client)
+  const signupToken = await createSignupToken(client)
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
@@ -136,7 +136,7 @@ test("list", async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  const signupToken = await getSignupToken(client)
+  const signupToken = await createSignupToken(client)
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
@@ -271,7 +271,7 @@ test('list shallow', async (t) => {
   const publicKey = keypair.publicKey()
   const pubky = publicKey.z32()
 
-  const signupToken = await getSignupToken(client)
+  const signupToken = await createSignupToken(client)
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
 
