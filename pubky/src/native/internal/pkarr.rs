@@ -95,7 +95,7 @@ impl Client {
             .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
             .sign(keypair)?;
         self.pkarr
-            .publish(&signed_packet, existing.map(|r| r.timestamp()))
+            .publish(&signed_packet, existing.map(|s| s.timestamp()))
             .await?;
         Ok(())
     }
