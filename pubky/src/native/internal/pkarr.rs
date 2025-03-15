@@ -100,10 +100,10 @@ impl Client {
         Ok(())
     }
 
-    /// Helper to extract the current homeserver host from a signed PKarr record.
+    /// Helper to extract the current homeserver host from a signed PKarr packet.
     /// Iterates over the records with name "_pubky" and returns the first SVCB target found.
-    fn extract_host_from_record(record: &SignedPacket) -> Option<String> {
-        record
+    fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
+        packet
             .resource_records("_pubky")
             .find_map(|rr| match &rr.rdata {
                 RData::SVCB(svcb) => Some(svcb.target.to_string()),
