@@ -82,9 +82,9 @@ impl Client {
         existing: Option<SignedPacket>,
     ) -> Result<()> {
         let mut builder = SignedPacket::builder();
-        if let Some(ref record) = existing {
+        if let Some(ref packet) = existing {
             // Append any records (except those already starting with "_pubky") to our builder.
-            for answer in record.resource_records("_pubky") {
+            for answer in packet.resource_records("_pubky") {
                 if !answer.name.to_string().starts_with("_pubky") {
                     builder = builder.record(answer.to_owned());
                 }
