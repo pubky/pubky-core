@@ -108,12 +108,14 @@ impl Client {
     pub async fn get_homeserver(
         &self,
         public_key: &PublicKey,
-    ) -> Result<String, String> {
+    ) -> Result<PublicKey, JsValue> {
         let val = self.0.get_homeserver(public_key.as_inner()).await;
-        match val {
-            Some(homeserver) => Ok(homeserver),
-            None => Err(String::from("No homeserver found")),
+        if val.is_none() {
+            return Err(JsValue::from_str("No homeserver found"));
         }
+        let val = val.unwrap();
+        let js_val = JsValue::from_str(val.as_str());
+        PublicKey::try_from(js_val)
     }
 }
 

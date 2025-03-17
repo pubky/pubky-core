@@ -102,11 +102,6 @@ test('getHomeserver not found', async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY)
-
-  const session = await client.session(publicKey)
-  t.ok(session, "signup")
-
   try {
     let homeserver = await client.getHomeserver(publicKey);
     t.fail("getHomeserver should NOT be found.");
@@ -114,6 +109,10 @@ test('getHomeserver not found', async (t) => {
     t.pass("getHomeserver should NOT be found.");
   }
 })
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 test('getHomeserver success', async (t) => {
   const client = Client.testnet();
@@ -123,8 +122,6 @@ test('getHomeserver success', async (t) => {
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
-  const client2 = Client.testnet();
-
-  let homeserver = await client2.getHomeserver(publicKey);
-  t.is(homeserver, "http://localhost:15412", "homeserver is correct");
+  let homeserver = await client.getHomeserver(publicKey);
+  t.is(homeserver.z32(), HOMESERVER_PUBLICKEY.z32(), "homeserver is correct");
 })
