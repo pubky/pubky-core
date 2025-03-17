@@ -4,7 +4,11 @@ use anyhow::{anyhow, Context, Result};
 use pkarr::Keypair;
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug, fs, net::{IpAddr, SocketAddr}, num::NonZeroU8, path::{Path, PathBuf}
+    fmt::Debug,
+    fs,
+    net::{IpAddr, SocketAddr},
+    num::NonZeroU8,
+    path::{Path, PathBuf},
 };
 
 use crate::{core::CoreConfig, io::IoConfig};

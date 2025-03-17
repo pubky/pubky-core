@@ -1,5 +1,8 @@
 use std::{
-    net::SocketAddr, num::NonZeroU8, path::{Path, PathBuf}, time::Duration
+    net::SocketAddr,
+    num::NonZeroU8,
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 use ::pkarr::{Keypair, PublicKey};
