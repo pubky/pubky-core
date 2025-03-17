@@ -118,9 +118,8 @@ impl Homeserver {
             &config.io,
             http_servers.https_address().port(),
             http_servers.http_address().port(),
-            config.io.min_sufficient_node_publish_count,
         )?;
-        // dht_republisher.start_periodic_republish().await?;
+        dht_republisher.start_periodic_republish().await?;
         info!(
             "Homeserver listening on http://localhost:{}",
             http_servers.http_address().port()
@@ -161,7 +160,6 @@ pub struct IoConfig {
     pub https_port: u16,
     pub public_addr: Option<SocketAddr>,
     pub domain: Option<String>,
-    pub min_sufficient_node_publish_count: NonZeroU8,
 
     /// Bootstrapping DHT nodes.
     ///
@@ -175,7 +173,6 @@ impl Default for IoConfig {
         IoConfig {
             https_port: DEFAULT_HTTPS_PORT,
             http_port: DEFAULT_HTTP_PORT,
-            min_sufficient_node_publish_count: NonZeroU8::new(10).expect("Should always be > 0"),
             public_addr: None,
             domain: None,
             bootstrap: None,

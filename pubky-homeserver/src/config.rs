@@ -111,7 +111,6 @@ impl Config {
                 bootstrap,
                 http_port: 0,
                 https_port: 0,
-                min_sufficient_node_publish_count: NonZeroU8::new(1).expect("Should always be > 0"),
                 ..Default::default()
             },
             core: CoreConfig::test(),
