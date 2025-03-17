@@ -1,6 +1,5 @@
 use std::{
     net::SocketAddr,
-    num::NonZeroU8,
     path::{Path, PathBuf},
     time::Duration,
 };

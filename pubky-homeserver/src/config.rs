@@ -7,7 +7,6 @@ use std::{
     fmt::Debug,
     fs,
     net::{IpAddr, SocketAddr},
-    num::NonZeroU8,
     path::{Path, PathBuf},
 };
 

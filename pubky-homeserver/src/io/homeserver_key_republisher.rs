@@ -3,7 +3,6 @@
 use anyhow::Result;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
-use std::num::NonZeroU8;
 
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
