@@ -101,7 +101,7 @@ impl Client {
         Ok(())
     }
 
-    /// Get the homeserver for a given Pubky public key.
+    /// Get the homeserver id for a given Pubky public key.
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
     /// Throws an error if no homeserver is found.
     #[wasm_bindgen(js_name = "getHomeserver")]
@@ -116,6 +116,33 @@ impl Client {
         let val = val.unwrap();
         let js_val = JsValue::from_str(val.as_str());
         PublicKey::try_from(js_val)
+    }
+
+
+    /// Republish the user's PKarr record pointing to their homeserver.
+    ///
+    /// This method will republish the record if no record exists or if the existing record
+    /// is older than 6 hours.
+    ///
+    /// The method is intended for clients and key managers (e.g., pubky-ring) to
+    /// keep the records of active users fresh and available in the DHT and relays.
+    /// It is intended to be used only after failed signin due to homeserver resolution
+    /// failure. This method is lighter than performing a re-signup into the last known
+    /// homeserver, but does not return a session token, so a signin must be done after
+    /// republishing. On a failed signin due to homeserver resolution failure, a key
+    /// manager should always attempt to republish the last known homeserver.
+    #[wasm_bindgen(js_name = "republishHomeserver")]
+    pub async fn republish_homeserver(
+        &self,
+        keypair: &Keypair,
+        host: &PublicKey,
+    ) -> Result<(), JsValue> {
+        self.0
+            .republish_homeserver(keypair.as_inner(), host.as_inner())
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()));
+
+        Ok(())
     }
 }
 

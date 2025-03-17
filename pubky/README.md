@@ -71,7 +71,8 @@ This is just a workaround because it enables the wasm feature in all workspace m
 So it is best to enable this settings only temporarily for wasm development and then turn it off again before commiting the
 changes. This is a [rust-analyzer issue](https://github.com/rust-lang/rust-analyzer/issues/11900#issuecomment-1166638234).
 
-## How To Build the NPM Package
+## How To Build/Test the NPM Package
 
 1. Go to `pubky/pkg`.
 2. Run `npm run build`.
+3. Run tests with `npm run test`.
