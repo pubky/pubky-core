@@ -157,16 +157,12 @@ impl UserKeysRepublisher {
     #[allow(dead_code)]
     pub fn stop_sync(&mut self) {
         let mut lock = self.handle.blocking_write();
-        if lock.is_none() {
-            // Republisher is not running.
-            return;
+
+        if let Some(handle) = lock.take() {
+            handle.abort();
+            *lock = None;
+            self.is_running.store(false, Ordering::Relaxed);
         }
-
-        let handle = lock.take().unwrap();
-
-        handle.abort();
-        *lock = None;
-        self.is_running.store(false, Ordering::Relaxed);
     }
 }
 
