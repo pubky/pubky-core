@@ -11,7 +11,7 @@ test('Auth: basic', async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY )
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -37,13 +37,13 @@ test("Auth: multi-user (cookies)", async (t) => {
   const alice = Keypair.random()
   const bob = Keypair.random()
 
-  await client.signup(alice, HOMESERVER_PUBLICKEY )
+  await client.signup(alice, HOMESERVER_PUBLICKEY)
 
   let session = await client.session(alice.publicKey())
   t.ok(session, "signup")
 
   {
-    await client.signup(bob, HOMESERVER_PUBLICKEY )
+    await client.signup(bob, HOMESERVER_PUBLICKEY)
 
     const session = await client.session(bob.publicKey())
     t.ok(session, "signup")
@@ -93,4 +93,39 @@ test("Auth: 3rd party signin", async (t) => {
 
   let session = await client.session(authedPubky);
   t.deepEqual(session.capabilities(), capabilities.split(','))
+})
+
+
+test('getHomeserver not found', async (t) => {
+  const client = Client.testnet();
+
+  const keypair = Keypair.random()
+  const publicKey = keypair.publicKey()
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+
+  const session = await client.session(publicKey)
+  t.ok(session, "signup")
+
+  try {
+    let homeserver = await client.getHomeserver(publicKey);
+    t.fail("getHomeserver should NOT be found.");
+  } catch (e) {
+    t.pass("getHomeserver should NOT be found.");
+  }
+})
+
+test('getHomeserver success', async (t) => {
+  const client = Client.testnet();
+
+  const keypair = Keypair.random()
+  const publicKey = keypair.publicKey()
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+
+  const session = await client.session(publicKey)
+  t.ok(session, "signup")
+
+  let homeserver = await client.getHomeserver(publicKey);
+  t.is(homeserver, "http://localhost:15412", "homeserver is correct");
 })
