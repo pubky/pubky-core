@@ -101,8 +101,9 @@ impl Client {
         Ok(())
     }
 
-    /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
-    /// source of the pubkyauth request url.
+    /// Get the homeserver for a given Pubky public key.
+    /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
+    /// Throws an error if no homeserver is found.
     #[wasm_bindgen(js_name = "getHomeserver")]
     pub async fn get_homeserver(
         &self,

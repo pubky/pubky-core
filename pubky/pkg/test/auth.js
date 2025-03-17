@@ -123,9 +123,8 @@ test('getHomeserver success', async (t) => {
 
   await client.signup(keypair, HOMESERVER_PUBLICKEY)
 
-  const session = await client.session(publicKey)
-  t.ok(session, "signup")
+  const client2 = Client.testnet();
 
-  let homeserver = await client.getHomeserver(publicKey);
+  let homeserver = await client2.getHomeserver(publicKey);
   t.is(homeserver, "http://localhost:15412", "homeserver is correct");
 })
