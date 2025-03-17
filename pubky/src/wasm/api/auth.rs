@@ -100,6 +100,24 @@ impl Client {
 
         Ok(())
     }
+
+    /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
+    /// source of the pubkyauth request url.
+    #[wasm_bindgen(js_name = "getHomeserver")]
+    pub async fn get_homeserver(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<(), JsValue> {
+        let val = self.0.get_homeserver(public_key.as_inner()).await;
+        let pubkyauth_url: Url = pubkyauth_url.try_into().map_err(|_| "Invalid relay Url")?;
+
+        self.0
+            .send_auth_token(keypair.as_inner(), &pubkyauth_url)
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 #[wasm_bindgen]

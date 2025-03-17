@@ -53,3 +53,19 @@ async fn main () {
 ## Example code
 
 Check more [examples](https://github.com/pubky/pubky-core/tree/main/examples) for using the Pubky client.
+
+
+## Wasm Rust Analyzer
+
+In vscode with the rust-analyzer, wasm behind the `#[cfg(wasm_browser)]` guard is not type checked. To fix this, add 
+a `.vscode/settings.json` file in the root of this project with the following content:
+
+```json
+{
+    "rust-analyzer.cargo.target": "wasm32-unknown-unknown"
+}
+```
+
+This is just a workaround because it enables the wasm feature in all workspace member which creates problems.
+So it is best to enable this settings only temporarily for wasm development and then turn it off again before commiting the
+changes. This is a [rust-analyzer issue](https://github.com/rust-lang/rust-analyzer/issues/11900#issuecomment-1166638234).
