@@ -4,6 +4,7 @@ use pkarr::{
     Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
+use std::time::Duration;
 
 use super::super::Client;
 
@@ -11,7 +12,7 @@ use super::super::Client;
 pub(crate) enum PublishStrategy {
     /// Always publish a new record (used on signup).
     Force,
-    /// Only publish if no record can be resolved or if the record is older than 6 hours.
+    /// Only publish if no record can be resolved or if the record is older than 1 hour.
     /// Used on signin and on republish_homeserver (used by key managing apps)
     IfOlderThan,
 }
@@ -21,7 +22,7 @@ impl Client {
     ///
     /// If `host` is provided, that value is used; otherwise the host is extracted from the
     /// currently resolved record. Under the IfOlderThan strategy, the record is only updated if
-    /// it is missing or its timestamp is older than 6 hours. Under the Force strategy, the
+    /// it is missing or its timestamp is older than 1 hour. Under the Force strategy, the
     /// record is always published.
     pub(crate) async fn publish_homeserver(
         &self,
@@ -41,16 +42,13 @@ impl Client {
         // Determine if we should publish based on the given strategy.
         let should_publish = match strategy {
             PublishStrategy::Force => true,
-            PublishStrategy::IfOlderThan => {
-                match existing {
-                    Some(ref record) => {
-                        let now_micros = Timestamp::now();
-                        let record_micros = record.timestamp().as_u64();
-                        now_micros - record_micros > Timestamp::from(self.max_record_age_micros)
-                    }
-                    None => true, // If there's no record yet, we publish.
+            PublishStrategy::IfOlderThan => match existing {
+                Some(ref record) => {
+                    let elapsed = Timestamp::now() - record.timestamp();
+                    Duration::from_micros(elapsed.as_u64()) > self.max_record_age
                 }
-            }
+                None => true,
+            },
         };
 
         if should_publish {

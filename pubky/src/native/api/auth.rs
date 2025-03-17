@@ -599,7 +599,7 @@ mod tests {
         // Create a client that will republish conditionally if a record is older than 1 second
         let client = testnet
             .client_builder()
-            .max_record_age_micros(1_000_000)
+            .max_record_age(Duration::from_secs(1))
             .build()
             .unwrap();
         let keypair = Keypair::random();
@@ -660,7 +660,7 @@ mod tests {
         // Create a client that will republish conditionally if a record is older than 1 second
         let client = testnet
             .client_builder()
-            .max_record_age_micros(1_000_000)
+            .max_record_age(Duration::from_secs(1))
             .build()
             .unwrap();
         let keypair = Keypair::random();
