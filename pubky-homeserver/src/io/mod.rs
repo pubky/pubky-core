@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::{
     config::{Config, DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
-    core::HomeserverCore,
+    core::{HomeserverCore, SignupMode},
 };
 
 mod http;
@@ -58,6 +58,21 @@ impl HomeserverBuilder {
         self
     }
 
+    /// Set the signup mode to "token_required". Only to be used on ::test()
+    /// homeserver for the specific case of testing signup token flow.
+    pub fn close_signups(&mut self) -> &mut Self {
+        self.0.admin.signup_mode = SignupMode::TokenRequired;
+
+        self
+    }
+
+    /// Set a password to protect admin endpoints
+    pub fn admin_password(&mut self, password: String) -> &mut Self {
+        self.0.admin.password = Some(password);
+
+        self
+    }
+
     /// Run a Homeserver
     ///
     /// # Safety
@@ -97,6 +112,15 @@ impl Homeserver {
         unsafe { Self::run(config) }.await
     }
 
+    /// Run a Homeserver with configurations suitable for ephemeral tests.
+    /// That requires signup tokens.
+    pub async fn run_test_with_signup_tokens(bootstrap: &[String]) -> Result<Self> {
+        let mut config = Config::test(bootstrap);
+        config.admin.signup_mode = SignupMode::TokenRequired;
+
+        unsafe { Self::run(config) }.await
+    }
+
     /// Run a Homeserver
     ///
     /// # Safety
@@ -107,7 +131,7 @@ impl Homeserver {
 
         let keypair = config.keypair;
 
-        let core = unsafe { HomeserverCore::new(config.core)? };
+        let core = unsafe { HomeserverCore::new(config.core, config.admin)? };
 
         let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 

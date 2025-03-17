@@ -24,6 +24,39 @@ async fn main() {
 }
 ```
 
+If homeserver is set to require signup tokens, you can create a new signup token using the admin endpoint:
+
+```rust,ignore
+let response = pubky_client
+    .get(&format!("https://{homeserver_pubkey}/admin/generate_signup_token"))
+    .header("X-Admin-Password", "admin") // Use your admin password. This is testnet default pwd.
+    .send()
+    .await
+    .unwrap();
+let signup_token = response.text().await.unwrap();
+```
+
+via CLI with `curl`
+
+```bash
+curl -X GET "https://<homeserver_ip:port>/admin/generate_signup_token" \
+     -H "X-Admin-Password: admin"
+     # Use your admin password. This is testnet default pwd.
+```
+
+or from JS
+
+```js
+const url = "http://${homeserver_address}/admin/generate_signup_token";
+const response = await client.fetch(url, {
+  method: "GET",
+  headers: {
+    "X-Admin-Password": "admin", // use your admin password, defaults to testnet password.
+  },
+});
+const signupToken = await response.text();
+```
+
 ### Binary
 
 Use `cargo run`

@@ -24,10 +24,15 @@ impl Client {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
+        signup_token: Option<String>,
     ) -> Result<Session, JsValue> {
         Ok(Session(
             self.0
-                .signup(keypair.as_inner(), homeserver.as_inner())
+                .signup(
+                    keypair.as_inner(),
+                    homeserver.as_inner(),
+                    signup_token.as_deref(),
+                )
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?,
         ))
