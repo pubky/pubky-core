@@ -120,7 +120,7 @@ impl Homeserver {
             http_servers.http_address().port(),
             config.io.min_sufficient_node_publish_count,
         )?;
-        dht_republisher.start_periodic_republish().await?;
+        // dht_republisher.start_periodic_republish().await?;
         info!(
             "Homeserver listening on http://localhost:{}",
             http_servers.http_address().port()
