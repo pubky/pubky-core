@@ -73,7 +73,7 @@ impl ResilientClient {
         public_key: PublicKey,
         min_sufficient_node_publish_count: Option<NonZeroU8>,
     ) -> Result<RepublishInfo, RepublishError> {
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings.pkarr_client(self.client.clone());
         if let Some(count) = min_sufficient_node_publish_count {
             settings.min_sufficient_node_publish_count = count;

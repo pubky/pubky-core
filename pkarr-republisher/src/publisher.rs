@@ -60,6 +60,9 @@ pub struct RetrySettings {
 }
 
 impl RetrySettings {
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// Maximum number of republishing retries before giving up.
     pub fn max_retries(&mut self, max_retries: NonZeroU8) -> &mut Self {
         self.max_retries = max_retries;
@@ -82,7 +85,7 @@ impl RetrySettings {
 impl Default for RetrySettings {
     fn default() -> Self {
         Self {
-            max_retries: NonZeroU8::new(4).unwrap(),
+            max_retries: NonZeroU8::new(4).expect("should always be > 0"),
             initial_retry_delay: Duration::from_millis(200),
             max_retry_delay: Duration::from_millis(5_000),
         }
@@ -101,13 +104,16 @@ impl Default for PublisherSettings {
     fn default() -> Self {
         Self {
             client: None,
-            min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
+            min_sufficient_node_publish_count: NonZeroU8::new(10).expect("Should always be > 0"),
             retry_settings: RetrySettings::default(),
         }
     }
 }
 
 impl PublisherSettings {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Set a custom pkarr client
     pub fn pkarr_client(&mut self, client: pkarr::Client) -> &mut Self {

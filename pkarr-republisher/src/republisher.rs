@@ -83,14 +83,8 @@ impl std::fmt::Debug for RepublisherSettings {
 }
 
 impl RepublisherSettings {
-    // Create new builder
     pub fn new() -> Self {
-        Self {
-            client: None,
-            min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
-            retry_settings: RetrySettings::default(),
-            republish_condition: None,
-        }
+        Self::default()
     }
 
     /// Set a custom pkarr client
@@ -124,7 +118,12 @@ impl RepublisherSettings {
 
 impl Default for RepublisherSettings {
     fn default() -> Self {
-        Self::new()
+        Self {
+            client: None,
+            min_sufficient_node_publish_count: NonZeroU8::new(10).expect("Should always be > 0"),
+            retry_settings: RetrySettings::default(),
+            republish_condition: None,
+        }
     }
 }
 
@@ -155,7 +154,7 @@ impl std::fmt::Debug for Republisher {
 impl Republisher {
     /// Creates a new Republisher;
     pub fn new(public_key: PublicKey) -> Result<Self, pkarr::errors::BuildError> {
-        let settings = RepublisherSettings::new();
+        let settings = RepublisherSettings::default();
         Self::new_with_settings(public_key, settings)
     }
 
@@ -276,7 +275,7 @@ mod tests {
         let public_key = publish_sample_packets(&pkarr_client).await;
 
         let required_nodes = 1;
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
@@ -295,7 +294,7 @@ mod tests {
         let public_key = Keypair::random().public_key();
 
         let required_nodes = 1;
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
@@ -315,7 +314,7 @@ mod tests {
         let public_key = Keypair::random().public_key();
 
         let required_nodes = 1;
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
@@ -344,7 +343,7 @@ mod tests {
         let public_key = Keypair::random().public_key();
 
         let required_nodes = 1;
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
@@ -367,7 +366,7 @@ mod tests {
         let public_key = publish_sample_packets(&pkarr_client).await;
 
         let required_nodes = 1;
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client.clone())
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap())
@@ -390,7 +389,7 @@ mod tests {
         let public_key = publish_sample_packets(&pkarr_client).await;
 
         let required_nodes = 1;
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client.clone())
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap())

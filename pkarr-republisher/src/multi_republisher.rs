@@ -69,7 +69,7 @@ impl MultiRepublishResult {
 }
 
 /// Republish multiple keys in a serially or multi-threaded way/
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MultiRepublisher {
     settings: RepublisherSettings,
     client_builder: pkarr::ClientBuilder,
@@ -77,11 +77,7 @@ pub struct MultiRepublisher {
 
 impl MultiRepublisher {
     pub fn new() -> Self {
-        let settings = RepublisherSettings::new();
-        Self {
-            settings,
-            client_builder: pkarr::ClientBuilder::default(),
-        }
+        Self::default()
     }
 
     /// Create a new republisher with the settings.
@@ -187,11 +183,6 @@ impl MultiRepublisher {
     }
 }
 
-impl Default for MultiRepublisher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -226,7 +217,7 @@ mod tests {
         let public_keys = publish_sample_packets(&pkarr_client, 1).await;
         let public_key = public_keys.first().unwrap().clone();
 
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(1).unwrap());
@@ -250,7 +241,7 @@ mod tests {
 
         let public_key = public_keys.first().unwrap().clone();
 
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(2).unwrap());

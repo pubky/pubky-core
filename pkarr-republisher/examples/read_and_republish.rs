@@ -94,7 +94,7 @@ async fn run_churn_loop(keys: Vec<Keypair>, thread_count: u8) {
     let mut builder = ClientBuilder::default();
     builder.no_relays();
     let republisher =
-        MultiRepublisher::new_with_settings(RepublisherSettings::new(), Some(builder));
+        MultiRepublisher::new_with_settings(RepublisherSettings::default(), Some(builder));
 
     println!("Republish keys. Hold on...");
     let start = Instant::now();

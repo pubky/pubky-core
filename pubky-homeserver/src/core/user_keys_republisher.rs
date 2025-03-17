@@ -91,7 +91,7 @@ impl UserKeysRepublisher {
             tracing::info!("No user keys to republish.");
             return Ok(MultiRepublishResult::new(HashMap::new()));
         }
-        let mut settings = RepublisherSettings::new();
+        let mut settings = RepublisherSettings::default();
         settings.republish_condition(|_| true);
         let republisher = MultiRepublisher::new_with_settings(settings, None);
         // TODO: Only publish if user points to this home server.
