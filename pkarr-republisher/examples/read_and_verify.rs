@@ -83,7 +83,7 @@ async fn verify_published(keys: &[Keypair], count: usize) {
     let keys: Vec<Keypair> = keys.into_iter().take(count).collect();
 
     let client = Client::builder().no_relays().build().unwrap();
-    let rclient = ResilientClient::new_with_client(client, RetrySettings::new()).unwrap();
+    let rclient = ResilientClient::new_with_client(client, RetrySettings::default()).unwrap();
     let mut success = 0;
     let mut warn = 0;
     let mut error = 0;

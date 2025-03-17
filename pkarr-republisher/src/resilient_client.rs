@@ -31,7 +31,7 @@ pub struct ResilientClient {
 impl ResilientClient {
     pub fn new() -> Result<Self, ResilientClientBuilderError> {
         let client = pkarr::Client::builder().build()?;
-        Self::new_with_client(client, RetrySettings::new())
+        Self::new_with_client(client, RetrySettings::default())
     }
 
     pub fn new_with_client(
@@ -56,7 +56,7 @@ impl ResilientClient {
         packet: SignedPacket,
         min_sufficient_node_publish_count: Option<NonZeroU8>,
     ) -> Result<PublishInfo, PublishError> {
-        let mut settings = PublisherSettings::new();
+        let mut settings = PublisherSettings::default();
         settings.pkarr_client(self.client.clone());
         settings.retry_settings(self.retry_settings.clone());
         if let Some(count) = min_sufficient_node_publish_count {

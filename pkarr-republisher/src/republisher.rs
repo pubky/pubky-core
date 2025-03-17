@@ -88,7 +88,7 @@ impl RepublisherSettings {
         Self {
             client: None,
             min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
-            retry_settings: RetrySettings::new(),
+            retry_settings: RetrySettings::default(),
             republish_condition: None,
         }
     }
@@ -200,7 +200,7 @@ impl Republisher {
             return Ok(RepublishInfo::new(0, 1, true));
         }
 
-        let mut settings = PublisherSettings::new();
+        let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(self.client.clone())
             .min_sufficient_node_publish_count(self.min_sufficient_node_publish_count);

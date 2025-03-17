@@ -35,7 +35,7 @@ impl HomeserverKeyRepublisher {
             builder.request_timeout(request_timeout);
         }
 
-        let client = ResilientClient::new_with_client(builder.build()?, RetrySettings::new())?;
+        let client = ResilientClient::new_with_client(builder.build()?, RetrySettings::default())?;
 
         let signed_packet = create_signed_packet(keypair, config, https_port, http_port)?;
 

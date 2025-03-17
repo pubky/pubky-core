@@ -60,13 +60,6 @@ pub struct RetrySettings {
 }
 
 impl RetrySettings {
-    pub fn new() -> Self {
-        Self {
-            max_retries: NonZeroU8::new(4).unwrap(),
-            initial_retry_delay: Duration::from_millis(200),
-            max_retry_delay: Duration::from_millis(5_000),
-        }
-    }
     /// Maximum number of republishing retries before giving up.
     pub fn max_retries(&mut self, max_retries: NonZeroU8) -> &mut Self {
         self.max_retries = max_retries;
@@ -88,7 +81,11 @@ impl RetrySettings {
 
 impl Default for RetrySettings {
     fn default() -> Self {
-        Self::new()
+        Self {
+            max_retries: NonZeroU8::new(4).unwrap(),
+            initial_retry_delay: Duration::from_millis(200),
+            max_retry_delay: Duration::from_millis(5_000),
+        }
     }
 }
 
@@ -102,19 +99,15 @@ pub struct PublisherSettings {
 
 impl Default for PublisherSettings {
     fn default() -> Self {
-        Self::new()
+        Self {
+            client: None,
+            min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
+            retry_settings: RetrySettings::default(),
+        }
     }
 }
 
 impl PublisherSettings {
-    // Create new builder
-    pub fn new() -> Self {
-        Self {
-            client: None,
-            min_sufficient_node_publish_count: NonZeroU8::new(10).unwrap(),
-            retry_settings: RetrySettings::new(),
-        }
-    }
 
     /// Set a custom pkarr client
     pub fn pkarr_client(&mut self, client: pkarr::Client) -> &mut Self {
@@ -153,7 +146,7 @@ impl Publisher {
     pub fn new(
         packet: SignedPacket,
     ) -> Result<Self, pkarr::errors::BuildError> {
-        let settings = PublisherSettings::new();
+        let settings = PublisherSettings::default();
         Self::new_with_settings(packet, settings)
     }
 
@@ -266,7 +259,7 @@ mod tests {
         let (key, packet) = sample_packet();
 
         let required_nodes = 1;
-        let mut settings = PublisherSettings::new();
+        let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
@@ -285,7 +278,7 @@ mod tests {
         let (key, packet) = sample_packet();
 
         let required_nodes = 2;
-        let mut settings = PublisherSettings::new();
+        let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
@@ -311,7 +304,7 @@ mod tests {
         let (key, packet) = sample_packet();
 
         let required_nodes = 1;
-        let mut settings = PublisherSettings::new();
+        let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());

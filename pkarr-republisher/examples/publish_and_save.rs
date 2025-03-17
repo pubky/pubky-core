@@ -130,7 +130,7 @@ async fn publish_parallel(
 // Publishes x number of packets. Checks if they are actually available.
 async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
     let client = Client::builder().no_relays().build().unwrap();
-    let rclient = ResilientClient::new_with_client(client, RetrySettings::new()).unwrap();
+    let rclient = ResilientClient::new_with_client(client, RetrySettings::default()).unwrap();
     let mut records = vec![];
 
     for i in 0..num_records {
