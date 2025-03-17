@@ -141,7 +141,6 @@ impl PublisherSettings {
 /// Retries in case of errors with an exponential backoff.
 #[derive(Debug, Clone)]
 pub struct Publisher {
-    pub public_key: PublicKey,
     pub packet: SignedPacket,
     client: pkarr::Client,
     dht: AsyncDht,
@@ -152,15 +151,13 @@ pub struct Publisher {
 impl Publisher {
     /// Creates a new Publisher with a new pkarr client.
     pub fn new(
-        public_key: PublicKey,
         packet: SignedPacket,
     ) -> Result<Self, pkarr::errors::BuildError> {
         let settings = PublisherSettings::new();
-        Self::new_with_settings(public_key, packet, settings)
+        Self::new_with_settings(packet, settings)
     }
 
     pub fn new_with_settings(
-        public_key: PublicKey,
         packet: SignedPacket,
         settings: PublisherSettings,
     ) -> Result<Self, pkarr::errors::BuildError> {
@@ -170,13 +167,17 @@ impl Publisher {
         };
         let dht = client.dht().expect("infallible").as_async();
         Ok(Self {
-            public_key,
             packet,
             client,
             dht,
             min_sufficient_node_publish_count: settings.min_sufficient_node_publish_count,
             retry_settings: settings.retry_settings,
         })
+    }
+
+    /// Get the public key of the signer of the packet
+    fn get_public_key(&self) -> PublicKey {
+        self.packet.public_key()
     }
 
     /// Exponential backoff delay starting with `INITIAL_DELAY_MS` and maxing out at  `MAX_DELAY_MS`
@@ -197,7 +198,7 @@ impl Publisher {
         // TODO: This counting could really be done with the put response in the mainline library already. It's not exposed though.
         // This would really speed up the publishing and reduce the load on the DHT.
         // -- Sev April 2025 --
-        let published_nodes_count = count_key_on_dht(&self.public_key, &self.dht).await;
+        let published_nodes_count = count_key_on_dht(&self.get_public_key(), &self.dht).await;
         if published_nodes_count < self.min_sufficient_node_publish_count.get().into() {
             return Err(PublishError::InsuffientlyPublished {
                 published_nodes_count,
@@ -221,7 +222,7 @@ impl Publisher {
                 Err(e) => {
                     tracing::debug!(
                         "{human_retry_count}/{max_retries} Failed to publish {}: {e}",
-                        self.public_key
+                        self.get_public_key()
                     );
                     last_error = Some(e);
                 }
@@ -230,7 +231,7 @@ impl Publisher {
             let delay = self.get_retry_delay(retry_count);
             tracing::debug!(
                 "{} {human_retry_count}/{max_retries} Sleep for {delay:?} before trying again.",
-                self.public_key
+                self.get_public_key()
             );
             tokio::time::sleep(delay).await;
         }
@@ -269,7 +270,7 @@ mod tests {
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
-        let publisher = Publisher::new_with_settings(key, packet, settings).unwrap();
+        let publisher = Publisher::new_with_settings(packet, settings).unwrap();
         let res = publisher.publish_once().await;
         assert!(res.is_ok());
         let success = res.unwrap();
@@ -288,7 +289,7 @@ mod tests {
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
-        let publisher = Publisher::new_with_settings(key, packet, settings).unwrap();
+        let publisher = Publisher::new_with_settings(packet, settings).unwrap();
         let res = publisher.publish_once().await;
 
         assert!(res.is_err());
@@ -319,7 +320,7 @@ mod tests {
             .max_retries(NonZeroU8::new(10).unwrap())
             .initial_retry_delay(Duration::from_millis(100))
             .max_retry_delay(Duration::from_secs(10));
-        let publisher = Publisher::new_with_settings(key, packet, settings).unwrap();
+        let publisher = Publisher::new_with_settings(packet, settings).unwrap();
 
         let first_delay = publisher.get_retry_delay(0);
         assert_eq!(first_delay.as_millis(), 100);

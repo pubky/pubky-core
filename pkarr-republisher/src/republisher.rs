@@ -204,7 +204,7 @@ impl Republisher {
         settings
             .pkarr_client(self.client.clone())
             .min_sufficient_node_publish_count(self.min_sufficient_node_publish_count);
-        let publisher = Publisher::new_with_settings(self.public_key.clone(), packet, settings)
+        let publisher = Publisher::new_with_settings(packet, settings)
             .expect("infallible because pkarr client provided");
         match publisher.publish_once().await {
             Ok(info) => Ok(RepublishInfo::new(info.published_nodes_count, 1, false)),

@@ -140,7 +140,7 @@ async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
             .cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600)
             .build(&key)
             .unwrap();
-        let result = rclient.publish(key.public_key(), packet, None).await;
+        let result = rclient.publish(packet, None).await;
         let elapsed_time = instant.elapsed().as_millis();
         if result.is_ok() {
             let info = result.unwrap();

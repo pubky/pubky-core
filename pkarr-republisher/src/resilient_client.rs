@@ -21,6 +21,7 @@ pub enum ResilientClientBuilderError {
 ///
 /// This client requires a pkarr client that was built with the `dht` feature.
 /// Relays only are not supported.
+#[derive(Debug, Clone)]
 pub struct ResilientClient {
     client: pkarr::Client,
     dht: AsyncDht,
@@ -52,7 +53,6 @@ impl ResilientClient {
     /// Publishes a pkarr packet with retries. Verifies it's been stored correctly.
     pub async fn publish(
         &self,
-        public_key: PublicKey,
         packet: SignedPacket,
         min_sufficient_node_publish_count: Option<NonZeroU8>,
     ) -> Result<PublishInfo, PublishError> {
@@ -62,7 +62,7 @@ impl ResilientClient {
         if let Some(count) = min_sufficient_node_publish_count {
             settings.min_sufficient_node_publish_count = count;
         };
-        let publisher = Publisher::new_with_settings(public_key, packet, settings)
+        let publisher = Publisher::new_with_settings(packet, settings)
             .expect("infallible because pkarr client provided.");
         publisher.publish().await
     }
