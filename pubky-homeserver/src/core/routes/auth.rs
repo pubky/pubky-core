@@ -1,24 +1,85 @@
-use axum::{extract::State, response::IntoResponse};
+use crate::core::{
+    database::tables::users::User,
+    error::{Error, Result},
+    AppState, SignupMode,
+};
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
 use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
+use base32::{encode, Alphabet};
 use bytes::Bytes;
+use pkarr::PublicKey;
+use pubky_common::{
+    capabilities::Capability, crypto::random_bytes, session::Session, timestamp::Timestamp,
+};
+use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
-use pubky_common::{crypto::random_bytes, session::Session, timestamp::Timestamp};
-
-use crate::core::{database::tables::users::User, error::Result, AppState};
-
+/// Creates a brand-new user if they do not exist, then logs them in by creating a session.
+/// 1) Check if signup tokens are required (signup mode is token_required).
+/// 2) Ensure the user *does not* already exist.
+/// 3) Create new user if needed.
+/// 4) Create a session and set the cookie (using the shared helper).
 pub async fn signup(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
-    host: Host,
+    Host(host): Host,
+    Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
     body: Bytes,
 ) -> Result<impl IntoResponse> {
-    // TODO: Verify invitation link.
-    // TODO: add errors in case of already axisting user.
-    signin(State(state), user_agent, cookies, host, body).await
+    // 1) Verify AuthToken from request body
+    let token = state.verifier.verify(&body)?;
+    let public_key = token.pubky();
+
+    // 2) Ensure the user does *not* already exist
+    let txn = state.db.env.read_txn()?;
+    let users = state.db.tables.users;
+    if users.get(&txn, public_key)?.is_some() {
+        return Err(Error::new(
+            StatusCode::CONFLICT,
+            Some("User already exists"),
+        ));
+    }
+    txn.commit()?;
+
+    // 3) If signup_mode == token_required, require & validate a `signup_token` param.
+    if state.admin.signup_mode == SignupMode::TokenRequired {
+        let signup_token_param = params
+            .get("signup_token")
+            .ok_or_else(|| Error::new(StatusCode::BAD_REQUEST, Some("signup_token required")))?;
+        // Validate it in the DB (marks it used)
+        state
+            .db
+            .validate_and_consume_signup_token(signup_token_param, public_key)?;
+    }
+
+    // 4) Create the new user record
+    let mut wtxn = state.db.env.write_txn()?;
+    users.put(
+        &mut wtxn,
+        public_key,
+        &User {
+            created_at: Timestamp::now().as_u64(),
+        },
+    )?;
+    wtxn.commit()?;
+
+    // 5) Create session & set cookie
+    create_session_and_cookie(
+        &state,
+        cookies,
+        &host,
+        public_key,
+        token.capabilities(),
+        user_agent,
+    )
 }
 
+/// Fails if user doesn’t exist, otherwise logs them in by creating a session.
 pub async fn signin(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
@@ -26,54 +87,68 @@ pub async fn signin(
     Host(host): Host,
     body: Bytes,
 ) -> Result<impl IntoResponse> {
+    // 1) Verify the AuthToken in the request body
     let token = state.verifier.verify(&body)?;
-
     let public_key = token.pubky();
 
-    let mut wtxn = state.db.env.write_txn()?;
-
+    // 2) Ensure user *does* exist
+    let txn = state.db.env.read_txn()?;
     let users = state.db.tables.users;
-    if let Some(existing) = users.get(&wtxn, public_key)? {
-        // TODO: why do we need this?
-        users.put(&mut wtxn, public_key, &existing)?;
-    } else {
-        users.put(
-            &mut wtxn,
-            public_key,
-            &User {
-                created_at: Timestamp::now().as_u64(),
-            },
-        )?;
+    let user_exists = users.get(&txn, public_key)?.is_some();
+    txn.commit()?;
+    if !user_exists {
+        return Err(Error::new(
+            StatusCode::NOT_FOUND,
+            Some("User does not exist"),
+        ));
     }
 
-    let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
-
-    let session = Session::new(
-        token.pubky(),
+    // 3) Create the session & set cookie
+    create_session_and_cookie(
+        &state,
+        cookies,
+        &host,
+        public_key,
         token.capabilities(),
+        user_agent,
+    )
+}
+
+/// Creates and stores a session, sets the cookie, returns session as JSON/string.
+fn create_session_and_cookie(
+    state: &AppState,
+    cookies: Cookies,
+    host: &str,
+    public_key: &PublicKey,
+    capabilities: &[Capability],
+    user_agent: Option<TypedHeader<UserAgent>>,
+) -> Result<impl IntoResponse> {
+    // 1) Create session
+    let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
+    let session = Session::new(
+        public_key,
+        capabilities,
         user_agent.map(|ua| ua.to_string()),
     )
     .serialize();
 
+    // 2) Insert session into DB
+    let mut wtxn = state.db.env.write_txn()?;
     state
         .db
         .tables
         .sessions
         .put(&mut wtxn, &session_secret, &session)?;
-
     wtxn.commit()?;
 
+    // 3) Build and set cookie
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
-
     cookie.set_path("/");
-
-    // TODO: do we even have insecure anymore?
-    if is_secure(&host) {
+    if is_secure(host) {
         cookie.set_secure(true);
         cookie.set_same_site(SameSite::None);
     }
     cookie.set_http_only(true);
-
     cookies.add(cookie);
 
     Ok(session)

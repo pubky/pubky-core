@@ -2,6 +2,7 @@ pub mod blobs;
 pub mod entries;
 pub mod events;
 pub mod sessions;
+pub mod signup_tokens;
 pub mod users;
 
 use heed::{Env, RwTxn};
@@ -12,10 +13,11 @@ use entries::{EntriesTable, ENTRIES_TABLE};
 use self::{
     events::{EventsTable, EVENTS_TABLE},
     sessions::{SessionsTable, SESSIONS_TABLE},
+    signup_tokens::{SignupTokensTable, SIGNUP_TOKENS_TABLE},
     users::{UsersTable, USERS_TABLE},
 };
 
-pub const TABLES_COUNT: u32 = 5;
+pub const TABLES_COUNT: u32 = 6;
 
 #[derive(Debug, Clone)]
 pub struct Tables {
@@ -24,6 +26,7 @@ pub struct Tables {
     pub blobs: BlobsTable,
     pub entries: EntriesTable,
     pub events: EventsTable,
+    pub signup_tokens: SignupTokensTable,
 }
 
 impl Tables {
@@ -44,6 +47,9 @@ impl Tables {
             events: env
                 .open_database(wtxn, Some(EVENTS_TABLE))?
                 .expect("Events table already created"),
+            signup_tokens: env
+                .open_database(wtxn, Some(SIGNUP_TOKENS_TABLE))?
+                .expect("Signup tokens table already created"),
         })
     }
 }
