@@ -107,16 +107,12 @@ impl Client {
     pub async fn get_homeserver(
         &self,
         public_key: &PublicKey,
-    ) -> Result<(), JsValue> {
+    ) -> Result<JsValue, JsValue> {
         let val = self.0.get_homeserver(public_key.as_inner()).await;
-        let pubkyauth_url: Url = pubkyauth_url.try_into().map_err(|_| "Invalid relay Url")?;
-
-        self.0
-            .send_auth_token(keypair.as_inner(), &pubkyauth_url)
-            .await
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-        Ok(())
+        match val {
+            Some(homeserver) => Ok(JsValue::from_str(&homeserver)),
+            None => Err(JsValue::from_str("No homeserver found")),
+        }
     }
 }
 
