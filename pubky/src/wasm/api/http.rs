@@ -27,7 +27,6 @@ impl Client {
 
         let request_init = request_init.unwrap_or_default();
 
-
         if let Some(pubky_host) = self.0.prepare_request(&mut url).await {
             let headers = request_init.get_headers();
 

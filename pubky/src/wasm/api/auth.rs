@@ -105,10 +105,7 @@ impl Client {
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
     /// Throws an error if no homeserver is found.
     #[wasm_bindgen(js_name = "getHomeserver")]
-    pub async fn get_homeserver(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<PublicKey, JsValue> {
+    pub async fn get_homeserver(&self, public_key: &PublicKey) -> Result<PublicKey, JsValue> {
         let val = self.0.get_homeserver(public_key.as_inner()).await;
         if val.is_none() {
             return Err(JsValue::from_str("No homeserver found"));
@@ -117,7 +114,6 @@ impl Client {
         let js_val = JsValue::from_str(val.as_str());
         PublicKey::try_from(js_val)
     }
-
 
     /// Republish the user's PKarr record pointing to their homeserver.
     ///

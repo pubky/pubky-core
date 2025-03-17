@@ -1,5 +1,8 @@
-use pkarr::{dns::rdata::{RData, SVCB}, Keypair, PublicKey, SignedPacket, Timestamp};
 use anyhow::Result;
+use pkarr::{
+    dns::rdata::{RData, SVCB},
+    Keypair, PublicKey, SignedPacket, Timestamp,
+};
 use std::convert::TryInto;
 use std::time::Duration;
 
@@ -108,23 +111,20 @@ impl Client {
             })
     }
 
-
     /// Get the homeserver for a given Pubky public key.
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
     pub async fn get_homeserver(&self, pubky: &PublicKey) -> Option<String> {
-        let packet = self.pkarr.resolve_most_recent(pubky).await;
-        if packet.is_none() {
-            return None;
-        }
+        let packet = self.pkarr.resolve_most_recent(pubky).await?;
 
         // Check for the `_pubky` SVCB record.
-        let packet = packet.unwrap();
         let name = format!("_pubky.{}", pubky.to_z32());
         let maching_names = packet.resource_records(name.as_str()).collect::<Vec<_>>();
 
-        let pubky_records = maching_names.into_iter()
-        .map(|r| r.rdata.clone())
-        .filter(|r| matches!(r, RData::HTTPS(_))).collect::<Vec<_>>();
+        let pubky_records = maching_names
+            .into_iter()
+            .map(|r| r.rdata.clone())
+            .filter(|r| matches!(r, RData::HTTPS(_)))
+            .collect::<Vec<_>>();
 
         if pubky_records.is_empty() {
             return None;
@@ -137,7 +137,6 @@ impl Client {
         None
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -167,14 +166,22 @@ mod tests {
     #[tokio::test]
     async fn test_get_homeserver() {
         let dht = mainline::Testnet::new(3).unwrap();
-        let client = Client::builder().pkarr(|builder| {
-            builder.bootstrap(&dht.bootstrap)
-        }).build().unwrap();
+        let client = Client::builder()
+            .pkarr(|builder| builder.bootstrap(&dht.bootstrap))
+            .build()
+            .unwrap();
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
 
         let homeserver_key = Keypair::random().public_key().to_z32();
-        client.publish_homeserver(&keypair, Some(homeserver_key.as_str()), PublishStrategy::Force).await.unwrap();
+        client
+            .publish_homeserver(
+                &keypair,
+                Some(homeserver_key.as_str()),
+                PublishStrategy::Force,
+            )
+            .await
+            .unwrap();
         let homeserver = client.get_homeserver(&pubky).await;
         assert_eq!(homeserver, Some(homeserver_key));
     }
