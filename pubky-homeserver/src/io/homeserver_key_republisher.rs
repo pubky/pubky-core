@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
+use std::num::NonZeroU8;
 
 use pkarr_republisher::{PublishError, PublishInfo, ResilientClient, RetrySettings};
 use tokio::sync::Mutex;
@@ -16,6 +17,7 @@ pub struct HomeserverKeyRepublisher {
     client: ResilientClient,
     signed_packet: SignedPacket,
     republish_task: Mutex<Option<JoinHandle<()>>>,
+    min_sufficient_node_publish_count: NonZeroU8,
 }
 
 impl HomeserverKeyRepublisher {
@@ -24,6 +26,7 @@ impl HomeserverKeyRepublisher {
         config: &IoConfig,
         https_port: u16,
         http_port: u16,
+        min_sufficient_node_publish_count: NonZeroU8,
     ) -> Result<Self> {
         let mut builder = pkarr::Client::builder();
 
@@ -43,14 +46,16 @@ impl HomeserverKeyRepublisher {
             client,
             signed_packet,
             republish_task: Mutex::new(None),
+            min_sufficient_node_publish_count,
         })
     }
 
     async fn publish_once(
         client: &ResilientClient,
         signed_packet: &SignedPacket,
+        min_sufficient_node_publish_count: NonZeroU8,
     ) -> Result<PublishInfo, PublishError> {
-        let res = client.publish(signed_packet.clone(), None).await;
+        let res = client.publish(signed_packet.clone(), Some(min_sufficient_node_publish_count)).await;
         if let Err(e) = &res {
             tracing::warn!(
                 "Failed to publish the homeserver's pkarr packet to the DHT: {}",
@@ -79,17 +84,18 @@ impl HomeserverKeyRepublisher {
         // Publish once to make sure the packet is published to the DHT before this
         // function returns.
         // Throws an error if the packet is not published to the DHT.
-        Self::publish_once(&self.client, &self.signed_packet).await?;
+        Self::publish_once(&self.client, &self.signed_packet, self.min_sufficient_node_publish_count).await?;
 
         // Start the periodic republish task.
         let client = self.client.clone();
         let signed_packet = self.signed_packet.clone();
+        let min_sufficient_node_publish_count = self.min_sufficient_node_publish_count;
         let handle = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60 * 60)); // 1 hour in seconds
             interval.tick().await; // This ticks immediatly. Wait for first interval before starting the loop.
             loop {
                 interval.tick().await;
-                let _ = Self::publish_once(&client, &signed_packet).await;
+                let _ = Self::publish_once(&client, &signed_packet, min_sufficient_node_publish_count).await;
             }
         });
 

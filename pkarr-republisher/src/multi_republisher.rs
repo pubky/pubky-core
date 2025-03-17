@@ -183,7 +183,6 @@ impl MultiRepublisher {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU8;

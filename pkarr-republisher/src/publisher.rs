@@ -149,9 +149,7 @@ pub struct Publisher {
 
 impl Publisher {
     /// Creates a new Publisher with a new pkarr client.
-    pub fn new(
-        packet: SignedPacket,
-    ) -> Result<Self, pkarr::errors::BuildError> {
+    pub fn new(packet: SignedPacket) -> Result<Self, pkarr::errors::BuildError> {
         let settings = PublisherSettings::default();
         Self::new_with_settings(packet, settings)
     }
@@ -262,7 +260,7 @@ mod tests {
         let testnet = Testnet::run().await.unwrap();
         let pubky_client = testnet.client_builder().build().unwrap();
         let pkarr_client = pubky_client.pkarr().clone();
-        let (key, packet) = sample_packet();
+        let (_, packet) = sample_packet();
 
         let required_nodes = 1;
         let mut settings = PublisherSettings::default();
@@ -281,7 +279,7 @@ mod tests {
         let testnet = Testnet::run().await.unwrap();
         let pubky_client = testnet.client_builder().build().unwrap();
         let pkarr_client = pubky_client.pkarr().clone();
-        let (key, packet) = sample_packet();
+        let (_, packet) = sample_packet();
 
         let required_nodes = 2;
         let mut settings = PublisherSettings::default();
@@ -307,7 +305,7 @@ mod tests {
         let testnet = Testnet::run().await.unwrap();
         let pubky_client = testnet.client_builder().build().unwrap();
         let pkarr_client = pubky_client.pkarr().clone();
-        let (key, packet) = sample_packet();
+        let (_, packet) = sample_packet();
 
         let required_nodes = 1;
         let mut settings = PublisherSettings::default();
