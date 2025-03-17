@@ -145,15 +145,12 @@ impl UserKeysRepublisher {
     #[allow(dead_code)]
     pub async fn stop(&mut self) {
         let mut lock = self.handle.write().await;
-        if lock.is_none() {
-            // Republisher is not running.
-            return;
-        }
-        let handle = lock.as_ref().unwrap();
 
-        handle.abort();
-        *lock = None;
-        self.is_running.store(false, Ordering::Relaxed);
+        if let Some(handle) = lock.take() {
+            handle.abort();
+            *lock = None;
+            self.is_running.store(false, Ordering::Relaxed);
+        }
     }
 
     /// Stops the republisher synchronously.
