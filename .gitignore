@@ -3,3 +3,4 @@ storage/
 .continuerules
 .cursorrules
 .cursor/*
+.vscode/*
