@@ -4,7 +4,7 @@ use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
 use reqwest::{IntoUrl, Method, StatusCode};
 use url::Url;
 
-use pkarr::{Keypair, PublicKey};
+use pkarr::{dns::rdata::RData, Keypair, PublicKey};
 use pubky_common::{
     auth::AuthToken,
     capabilities::{Capabilities, Capability},
@@ -322,6 +322,32 @@ impl Client {
         )
         .await
     }
+
+    /// Get the homeserver for a given Pubky public key.
+    /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
+    pub async fn get_homeserver(&self, pubky: &PublicKey) -> Option<String> {
+        let packet = self.pkarr.resolve_most_recent(pubky).await?;
+
+        // Check for the `_pubky` SVCB record.
+        let name = format!("_pubky.{}", pubky.to_z32());
+        let maching_names = packet.resource_records(name.as_str()).collect::<Vec<_>>();
+
+        let pubky_records = maching_names
+            .into_iter()
+            .map(|r| r.rdata.clone())
+            .filter(|r| matches!(r, RData::HTTPS(_)))
+            .collect::<Vec<_>>();
+
+        if pubky_records.is_empty() {
+            return None;
+        }
+
+        let record = pubky_records.first().unwrap();
+        if let RData::HTTPS(svc) = record {
+            return Some(svc.target.to_string());
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -351,10 +377,12 @@ impl AuthRequest {
 mod tests {
     use std::time::Duration;
 
-    use pkarr::Keypair;
+    use pkarr::{Keypair};
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
+
+    use crate::{native::internal::pkarr::PublishStrategy, Client};
 
     #[tokio::test]
     async fn basic_authn() {
@@ -710,4 +738,29 @@ mod tests {
             "Record was not republished after threshold exceeded"
         );
     }
+
+    #[tokio::test]
+    async fn test_get_homeserver() {
+        let dht = mainline::Testnet::new(3).unwrap();
+        let client = Client::builder()
+            .pkarr(|builder| builder.bootstrap(&dht.bootstrap))
+            .build()
+            .unwrap();
+        let keypair = Keypair::random();
+        let pubky = keypair.public_key();
+
+        let homeserver_key = Keypair::random().public_key().to_z32();
+        client
+            .publish_homeserver(
+                &keypair,
+                Some(homeserver_key.as_str()),
+                PublishStrategy::Force,
+            )
+            .await
+            .unwrap();
+        let homeserver = client.get_homeserver(&pubky).await;
+        assert_eq!(homeserver, Some(homeserver_key));
+    }
 }
+
+
