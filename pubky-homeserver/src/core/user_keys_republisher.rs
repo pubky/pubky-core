@@ -109,13 +109,14 @@ impl UserKeysRepublisher {
             interval.tick().await;
             let start = Instant::now();
             tracing::info!("Republishing user keys...");
-            let result = Self::republish_keys_once(db.clone()).await;
+            let result = match Self::republish_keys_once(db.clone()).await {
+                Ok(result) => result,
+                Err(e) => {
+                    tracing::error!("Error republishing user keys: {:?}", e);
+                    continue;
+                }
+            };
             let elapsed = start.elapsed();
-            if let Err(e) = result {
-                tracing::error!("Error republishing user keys: {:?}", e);
-                continue;
-            }
-            let result = result.unwrap();
             if result.is_empty() {
                 continue;
             }
