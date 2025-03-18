@@ -327,26 +327,7 @@ impl Client {
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
     pub async fn get_homeserver(&self, pubky: &PublicKey) -> Option<String> {
         let packet = self.pkarr.resolve_most_recent(pubky).await?;
-
-        // Check for the `_pubky` SVCB record.
-        let name = format!("_pubky.{}", pubky.to_z32());
-        let maching_names = packet.resource_records(name.as_str()).collect::<Vec<_>>();
-
-        let pubky_records = maching_names
-            .into_iter()
-            .map(|r| r.rdata.clone())
-            .filter(|r| matches!(r, RData::HTTPS(_)))
-            .collect::<Vec<_>>();
-
-        if pubky_records.is_empty() {
-            return None;
-        }
-
-        let record = pubky_records.first().unwrap();
-        if let RData::HTTPS(svc) = record {
-            return Some(svc.target.to_string());
-        }
-        None
+        Self::extract_host_from_packet(&packet)
     }
 }
 
