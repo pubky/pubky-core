@@ -1,2 +1,6 @@
 target/
 storage/
+.continuerules
+.cursorrules
+.cursor/*
+.vscode/*

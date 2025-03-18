@@ -15,6 +15,8 @@ use crate::{
     io::IoConfig,
 };
 
+pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
+
 // === Core ==
 pub const DEFAULT_STORAGE_DIR: &str = "pubky";
 pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
@@ -129,7 +131,6 @@ impl Config {
                 bootstrap,
                 http_port: 0,
                 https_port: 0,
-
                 ..Default::default()
             },
             core: CoreConfig::test(),

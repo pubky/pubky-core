@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("Shutting down Homeserver");
 
-    server.shutdown();
+    server.shutdown().await;
 
     Ok(())
 }
