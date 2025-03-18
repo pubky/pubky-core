@@ -24,10 +24,15 @@ impl Client {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
+        signup_token: Option<String>,
     ) -> Result<Session, JsValue> {
         Ok(Session(
             self.0
-                .signup(keypair.as_inner(), homeserver.as_inner())
+                .signup(
+                    keypair.as_inner(),
+                    homeserver.as_inner(),
+                    signup_token.as_deref(),
+                )
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?,
         ))
@@ -97,6 +102,32 @@ impl Client {
             .send_auth_token(keypair.as_inner(), &pubkyauth_url)
             .await
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Republish the user's PKarr record pointing to their homeserver.
+    ///
+    /// This method will republish the record if no record exists or if the existing record
+    /// is older than 6 hours.
+    ///
+    /// The method is intended for clients and key managers (e.g., pubky-ring) to
+    /// keep the records of active users fresh and available in the DHT and relays.
+    /// It is intended to be used only after failed signin due to homeserver resolution
+    /// failure. This method is lighter than performing a re-signup into the last known
+    /// homeserver, but does not return a session token, so a signin must be done after
+    /// republishing. On a failed signin due to homeserver resolution failure, a key
+    /// manager should always attempt to republish the last known homeserver.
+    #[wasm_bindgen(js_name = "republishHomeserver")]
+    pub async fn republish_homeserver(
+        &self,
+        keypair: &Keypair,
+        host: &PublicKey,
+    ) -> Result<(), JsValue> {
+        self.0
+            .republish_homeserver(keypair.as_inner(), host.as_inner())
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()));
 
         Ok(())
     }

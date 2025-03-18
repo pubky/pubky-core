@@ -14,35 +14,63 @@ use pubky_common::{
 
 use anyhow::Result;
 
+use super::super::{internal::pkarr::PublishStrategy, Client};
 use crate::handle_http_error;
-
-use super::super::Client;
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<Session> {
+    ///
+    /// - `keypair`: The user's keypair (used to sign the AuthToken).
+    /// - `homeserver`: The server's public key (as a domain-like string).
+    /// - `signup_token`: Optional invite code or token required by the server for new users.
+    pub async fn signup(
+        &self,
+        keypair: &Keypair,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<Session> {
+        // 1) Construct the base URL: "https://<homeserver>/signup"
+        let mut url = Url::parse(&format!("https://{}", homeserver))?;
+        url.set_path("/signup");
+
+        // 2) If we have a signup_token, append it to the query string.
+        if let Some(token) = signup_token {
+            url.query_pairs_mut().append_pair("signup_token", token);
+        }
+
+        // 3) Create an AuthToken (e.g. with root capability).
+        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let request_body = auth_token.serialize();
+
+        // 4) Send POST request with the AuthToken in the body
         let response = self
-            .cross_request(Method::POST, format!("https://{}/signup", homeserver))
+            .cross_request(Method::POST, url)
             .await
-            .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
+            .body(request_body)
             .send()
             .await?;
 
+        // 5) Check for non-2xx status codes
         handle_http_error!(response);
 
-        self.publish_homeserver(keypair, &homeserver.to_string())
-            .await?;
+        // 6) Publish the homeserver record
+        self.publish_homeserver(
+            keypair,
+            Some(&homeserver.to_string()),
+            PublishStrategy::Force,
+        )
+        .await?;
 
-        // Store the cookie to the correct URL.
+        // 7) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
             .store_session_after_signup(&response, &keypair.public_key());
 
+        // 8) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
-
         Ok(Session::deserialize(&bytes)?)
     }
 
@@ -85,10 +113,29 @@ impl Client {
     }
 
     /// Signin to a homeserver.
+    /// After a successful signin, a background task is spawned to republish the user's
+    /// PKarr record if it is missing or older than 6 hours. We don't mind if it succeed
+    /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let session = self.signin_with_authtoken(&token).await?;
 
-        self.signin_with_authtoken(&token).await
+        // Spawn a background task to republish the record.
+        let client_clone = self.clone();
+        let keypair_clone = keypair.clone();
+        let future = async move {
+            // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
+            let _ = client_clone
+                .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
+                .await;
+        };
+
+        #[cfg(not(wasm_browser))]
+        tokio::spawn(future);
+        #[cfg(wasm_browser)]
+        wasm_bindgen_futures::spawn_local(future);
+
+        Ok(session)
     }
 
     pub async fn send_auth_token<T: IntoUrl>(
@@ -270,6 +317,35 @@ impl Client {
 
         Ok(token.pubky().clone())
     }
+
+    /// Republish the user's Pkarr record pointing to their homeserver if
+    /// no record can be resolved or if the existing record is older than 6 hours.
+    ///
+    /// This method is intended to be used by clients and key managers (e.g., pubky-ring)
+    /// in order to keep the records of active users fresh and available in the DHT.
+    /// It is intended to be used only after failed signin due to homeserver
+    /// resolution failure. This method is lighter than performing a re-signup into
+    /// the last known homeserver, but does not return a session token, so a signin
+    /// must be done after republishing if a session token is needed. On a failed
+    /// signin due to homeserver resolution failure, `pubky-ring` should always
+    /// republish the last known homeserver.
+    ///
+    /// # Arguments
+    ///
+    /// * `keypair` - The keypair associated with the record.
+    /// * `host` - The homeserver to publish the record for.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the publication fails.
+    pub async fn republish_homeserver(&self, keypair: &Keypair, host: &PublicKey) -> Result<()> {
+        self.publish_homeserver(
+            keypair,
+            Some(&host.to_string()),
+            PublishStrategy::IfOlderThan,
+        )
+        .await
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -297,12 +373,11 @@ impl AuthRequest {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn basic_authn() {
@@ -313,7 +388,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let session = client
             .session(&keypair.public_key())
@@ -368,7 +446,10 @@ mod tests {
         {
             let client = testnet.client_builder().build().unwrap();
 
-            client.signup(&keypair, &server.public_key()).await.unwrap();
+            client
+                .signup(&keypair, &server.public_key(), None)
+                .await
+                .unwrap();
 
             client
                 .send_auth_token(&keypair, pubky_auth_request.url())
@@ -428,12 +509,12 @@ mod tests {
         let second_keypair = Keypair::random();
 
         client
-            .signup(&first_keypair, &server.public_key())
+            .signup(&first_keypair, &server.public_key(), None)
             .await
             .unwrap();
 
         client
-            .signup(&second_keypair, &server.public_key())
+            .signup(&second_keypair, &server.public_key(), None)
             .await
             .unwrap();
 
@@ -484,7 +565,10 @@ mod tests {
             let url = pubky_auth_request.url().clone();
 
             let client = testnet.client_builder().build().unwrap();
-            client.signup(&keypair, &server.public_key()).await.unwrap();
+            client
+                .signup(&keypair, &server.public_key(), None)
+                .await
+                .unwrap();
 
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(400)).await;
@@ -532,6 +616,210 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn test_signup_with_token() {
+        // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver_with_signup_tokens().await.unwrap();
+
+        let admin_password = "admin";
+
+        let client = testnet.client_builder().build().unwrap();
+        let keypair = Keypair::random();
+
+        // 2. Try to signup with an invalid token "AAAAA" and expect failure.
+        let invalid_signup = client
+            .signup(&keypair, &server.public_key(), Some("AAAA-BBBB-CCCC"))
+            .await;
+        assert!(
+            invalid_signup.is_err(),
+            "Signup should fail with an invalid signup token"
+        );
+
+        // 3. Call the admin endpoint to generate a valid signup token.
+        //    The admin endpoint is protected via the header "X-Admin-Password"
+        //    and the password we set up above.
+        let admin_url = format!(
+            "https://{}/admin/generate_signup_token",
+            server.public_key()
+        );
+
+        // 3.1. Call the admin endpoint *with a WRONG admin password* to ensure we get 401 UNAUTHORIZED.
+        let wrong_password_response = client
+            .get(&admin_url)
+            .header("X-Admin-Password", "wrong_admin_password")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            wrong_password_response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Wrong admin password should return 401"
+        );
+
+        // 3.1 Now call the admin endpoint again, this time with the correct password.
+        let admin_response = client
+            .get(&admin_url)
+            .header("X-Admin-Password", admin_password)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            admin_response.status(),
+            StatusCode::OK,
+            "Admin endpoint should return OK"
+        );
+        let valid_token = admin_response.text().await.unwrap(); // The token string.
+
+        // 4. Now signup with the valid token. Expect success and a session back.
+        let session = client
+            .signup(&keypair, &server.public_key(), Some(&valid_token))
+            .await
+            .unwrap();
+        assert!(
+            !session.pubky().to_string().is_empty(),
+            "Session should contain a valid public key"
+        );
+
+        // 5. Finally, sign in with the same keypair and verify that a session is returned.
+        let signin_session = client.signin(&keypair).await.unwrap();
+        assert_eq!(
+            signin_session.pubky(),
+            &keypair.public_key(),
+            "Signed-in session should correspond to the same public key"
+        );
+    }
+
+    // This test verifies that when a signin happens immediately after signup,
+    // the record is not republished on signin (its timestamp remains unchanged)
+    // but when a signin happens after the record is “old” (in test, after 1 second),
+    // the record is republished (its timestamp increases).
+    #[tokio::test]
+    async fn test_republish_on_signin() {
+        // Setup the testnet and run a homeserver.
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
+        // Create a client that will republish conditionally if a record is older than 1 second
+        let client = testnet
+            .client_builder()
+            .max_record_age(Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let keypair = Keypair::random();
+
+        // Signup publishes a new record.
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
+        // Resolve the record and get its timestamp.
+        let record1 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts1 = record1.timestamp().as_u64();
+
+        // Immediately sign in. This spawns a background task to update the record
+        // with PublishStrategy::IfOlderThan.
+        client.signin(&keypair).await.unwrap();
+        // Wait a short time to let the background task complete.
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let record2 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts2 = record2.timestamp().as_u64();
+
+        // Because the record is fresh (less than 1 second old in our test configuration),
+        // the background task should not republish it. The timestamp should remain the same.
+        assert_eq!(
+            ts1, ts2,
+            "Record republished too early; timestamps should be equal"
+        );
+
+        // Wait long enough for the record to be considered 'old' (greater than 1 second).
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        // Sign in again. Now the background task should trigger a republish.
+        client.signin(&keypair).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let record3 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts3 = record3.timestamp().as_u64();
+
+        // Now the republished record's timestamp should be greater than before.
+        assert!(
+            ts3 > ts2,
+            "Record was not republished after threshold exceeded"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_republish_homeserver() {
+        // Setup the testnet and run a homeserver.
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver().await.unwrap();
+        // Create a client that will republish conditionally if a record is older than 1 second
+        let client = testnet
+            .client_builder()
+            .max_record_age(Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let keypair = Keypair::random();
+
+        // Signup publishes a new record.
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
+        // Resolve the record and get its timestamp.
+        let record1 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts1 = record1.timestamp().as_u64();
+
+        // Immediately call republish_homeserver.
+        // Since the record is fresh, republish should do nothing.
+        client
+            .republish_homeserver(&keypair, &server.public_key())
+            .await
+            .unwrap();
+        let record2 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts2 = record2.timestamp().as_u64();
+        assert_eq!(
+            ts1, ts2,
+            "Record republished too early; timestamp should be equal"
+        );
+
+        // Wait long enough for the record to be considered 'old'.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Call republish_homeserver again; now the record should be updated.
+        client
+            .republish_homeserver(&keypair, &server.public_key())
+            .await
+            .unwrap();
+        let record3 = client
+            .pkarr()
+            .resolve_most_recent(&keypair.public_key())
+            .await
+            .unwrap();
+        let ts3 = record3.timestamp().as_u64();
+        assert!(
+            ts3 > ts2,
+            "Record was not republished after threshold exceeded"
         );
     }
 }

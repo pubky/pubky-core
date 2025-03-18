@@ -17,6 +17,7 @@ use crate::core::database::DB;
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: DB,
+    pub(crate) admin: AdminConfig,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -34,12 +35,13 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(config: CoreConfig) -> Result<Self> {
+    pub unsafe fn new(config: CoreConfig, admin: AdminConfig) -> Result<Self> {
         let db = unsafe { DB::open(config.clone())? };
 
         let state = AppState {
             verifier: AuthVerifier::default(),
             db: db.clone(),
+            admin,
         };
 
         let router = super::routes::create_app(state.clone());
@@ -69,6 +71,30 @@ impl HomeserverCore {
     #[allow(dead_code)]
     pub async fn stop(&mut self) {
         self.user_keys_republisher.stop().await;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SignupMode {
+    Open,
+    #[default]
+    TokenRequired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AdminConfig {
+    /// The password used to authorize admin endpoints.
+    pub password: Option<String>,
+    /// Determines whether new signups require a valid token.
+    pub signup_mode: SignupMode,
+}
+
+impl AdminConfig {
+    pub fn test() -> Self {
+        AdminConfig {
+            password: Some("admin".to_string()),
+            signup_mode: SignupMode::Open,
+        }
     }
 }
 
@@ -162,7 +188,7 @@ mod tests {
     impl HomeserverCore {
         /// Test version of [HomeserverCore::new], using an ephemeral small storage.
         pub fn test() -> Result<Self> {
-            unsafe { HomeserverCore::new(CoreConfig::test()) }
+            unsafe { HomeserverCore::new(CoreConfig::test(), AdminConfig::test()) }
         }
 
         // === Public Methods ===

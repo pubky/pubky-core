@@ -34,6 +34,9 @@ macro_rules! handle_http_error {
 pub struct ClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
+    /// Maximum age in microseconds before a user record should be republished.
+    /// Defaults to 1 hour.
+    max_record_age: Option<Duration>,
 }
 
 impl ClientBuilder {
@@ -73,6 +76,13 @@ impl ClientBuilder {
         self
     }
 
+    /// Set how many microseconds old a record can be before it must be republished.
+    /// Defaults to 1 hour if not overridden.
+    pub fn max_record_age(&mut self, max_age: Duration) -> &mut Self {
+        self.max_record_age = Some(max_age);
+        self
+    }
+
     /// Build [Client]
     pub fn build(&self) -> Result<Client, BuildError> {
         let pkarr = self.pkarr.build()?;
@@ -106,6 +116,11 @@ impl ClientBuilder {
             icann_http_builder = icann_http_builder.timeout(timeout);
         }
 
+        // Maximum age in microseconds before a homeserver record should be republished.
+        // Default is 1 hour. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
+        // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
+        let max_record_age = self.max_record_age.unwrap_or(Duration::from_secs(60 * 60));
+
         Ok(Client {
             pkarr,
             http: http_builder.build().expect("config expected to not error"),
@@ -119,6 +134,8 @@ impl ClientBuilder {
 
             #[cfg(wasm_browser)]
             testnet: false,
+
+            max_record_age,
         })
     }
 }
@@ -143,6 +160,9 @@ pub struct Client {
 
     #[cfg(wasm_browser)]
     pub(crate) testnet: bool,
+
+    /// The record age threshold (in microseconds) before republishing.
+    pub(crate) max_record_age: Duration,
 }
 
 impl Client {
