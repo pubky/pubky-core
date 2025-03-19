@@ -136,12 +136,12 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use pubky_testnet::Testnet;
+    use crate::test_helpers::Testnet2;
 
     #[tokio::test]
     async fn http_get_pubky() {
-        let testnet = Testnet::run().await.unwrap();
-        let homeserver = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let homeserver = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -156,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn http_get_icann() {
-        let testnet = Testnet::run().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 

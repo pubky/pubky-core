@@ -382,16 +382,15 @@ impl AuthRequest {
 mod tests {
     use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
-    use pubky_testnet::Testnet;
     use reqwest::StatusCode;
     use std::time::Duration;
 
-    use crate::{native::internal::pkarr::PublishStrategy, Client};
+    use crate::{native::internal::pkarr::PublishStrategy, test_helpers::Testnet2};
 
     #[tokio::test]
     async fn basic_authn() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -434,10 +433,10 @@ mod tests {
 
     #[tokio::test]
     async fn authz() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
-        let http_relay = testnet.run_http_relay().await.unwrap();
+        let http_relay = testnet.create_http_relay().await.unwrap();
         let http_relay_url = http_relay.local_link_url();
 
         let keypair = Keypair::random();
@@ -509,8 +508,8 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_users() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -548,10 +547,10 @@ mod tests {
 
     #[tokio::test]
     async fn authz_timeout_reconnect() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
-        let http_relay = testnet.run_http_relay().await.unwrap();
+        let http_relay = testnet.create_http_relay().await.unwrap();
         let http_relay_url = http_relay.local_link_url();
 
         let keypair = Keypair::random();
@@ -631,8 +630,8 @@ mod tests {
     #[tokio::test]
     async fn test_signup_with_token() {
         // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver_with_signup_tokens().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver_with_signup_tokens().await.unwrap();
 
         let admin_password = "admin";
 
@@ -709,8 +708,8 @@ mod tests {
     #[tokio::test]
     async fn test_republish_on_signin() {
         // Setup the testnet and run a homeserver.
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
         // Create a client that will republish conditionally if a record is older than 1 second
         let client = testnet
             .client_builder()
@@ -773,8 +772,8 @@ mod tests {
     #[tokio::test]
     async fn test_republish_homeserver() {
         // Setup the testnet and run a homeserver.
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
         // Create a client that will republish conditionally if a record is older than 1 second
         let client = testnet
             .client_builder()
@@ -834,11 +833,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_homeserver() {
-        let dht = mainline::Testnet::new(3).unwrap();
-        let client = Client::builder()
-            .pkarr(|builder| builder.bootstrap(&dht.bootstrap))
-            .build()
-            .unwrap();
+        let testnet =Testnet2::new().await.unwrap();
+        let client = testnet.client_builder().build().unwrap();
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
 

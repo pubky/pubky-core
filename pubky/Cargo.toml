@@ -56,10 +56,12 @@ web-sys = "0.3.77"
 [dev-dependencies]
 anyhow = "1.0.95"
 futures-lite = "2.6.0"
-pubky-testnet = { path = "../pubky-testnet" }
 tokio = "1.43.0"
 tracing-subscriber = "0.3.19"
 mainline = "5.3.1"
+http-relay = "0.2.0"
+pubky-common = { path = "../pubky-common" }
+pubky-homeserver = { path = "../pubky-homeserver" }
 
 [build-dependencies]
 cfg_aliases = "0.2.1"

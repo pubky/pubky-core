@@ -31,6 +31,9 @@ pub use native::Client as NativeClient;
 #[cfg(wasm_browser)]
 pub use wasm::Client;
 
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::recovery_file;

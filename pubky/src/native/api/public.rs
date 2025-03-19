@@ -126,13 +126,14 @@ impl<'a> ListBuilder<'a> {
 mod tests {
     use bytes::Bytes;
     use pkarr::Keypair;
-    use pubky_testnet::Testnet;
     use reqwest::{Method, StatusCode};
+
+    use crate::test_helpers::Testnet2;
 
     #[tokio::test]
     async fn put_get_delete() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -174,8 +175,8 @@ mod tests {
 
     #[tokio::test]
     async fn unauthorized_put_delete() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -242,8 +243,8 @@ mod tests {
 
     #[tokio::test]
     async fn list() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -448,8 +449,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_shallow() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -661,8 +662,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_events() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -760,8 +761,8 @@ mod tests {
 
     #[tokio::test]
     async fn read_after_event() {
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -813,8 +814,8 @@ mod tests {
 
     #[tokio::test]
     async fn dont_delete_shared_blobs() {
-        let testnet = Testnet::run().await.unwrap();
-        let homeserver = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let homeserver = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
@@ -889,8 +890,8 @@ mod tests {
     #[tokio::test]
     async fn stream() {
         // TODO: test better streaming API
-        let testnet = Testnet::run().await.unwrap();
-        let server = testnet.run_homeserver().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
+        let server = testnet.create_homeserver().await.unwrap();
 
         let client = testnet.client_builder().build().unwrap();
 
