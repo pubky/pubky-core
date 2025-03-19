@@ -129,7 +129,9 @@ test('getHomeserver success', async (t) => {
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY)
+  const signupToken = await createSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
 
   let homeserver = await client.getHomeserver(publicKey);
   t.is(homeserver.z32(), HOMESERVER_PUBLICKEY.z32(), "homeserver is correct");
