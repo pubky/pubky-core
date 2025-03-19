@@ -59,6 +59,7 @@ futures-lite = "2.6.0"
 pubky-testnet = { path = "../pubky-testnet" }
 tokio = "1.43.0"
 tracing-subscriber = "0.3.19"
+mainline = "5.3.1"
 
 [build-dependencies]
 cfg_aliases = "0.2.1"
