@@ -346,6 +346,13 @@ impl Client {
         )
         .await
     }
+
+    /// Get the homeserver for a given Pubky public key.
+    /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
+    pub async fn get_homeserver(&self, pubky: &PublicKey) -> Option<String> {
+        let packet = self.pkarr.resolve_most_recent(pubky).await?;
+        Self::extract_host_from_packet(&packet)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -378,6 +385,8 @@ mod tests {
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
     use std::time::Duration;
+
+    use crate::{native::internal::pkarr::PublishStrategy, Client};
 
     #[tokio::test]
     async fn basic_authn() {
@@ -821,5 +830,28 @@ mod tests {
             ts3 > ts2,
             "Record was not republished after threshold exceeded"
         );
+    }
+
+    #[tokio::test]
+    async fn test_get_homeserver() {
+        let dht = mainline::Testnet::new(3).unwrap();
+        let client = Client::builder()
+            .pkarr(|builder| builder.bootstrap(&dht.bootstrap))
+            .build()
+            .unwrap();
+        let keypair = Keypair::random();
+        let pubky = keypair.public_key();
+
+        let homeserver_key = Keypair::random().public_key().to_z32();
+        client
+            .publish_homeserver(
+                &keypair,
+                Some(homeserver_key.as_str()),
+                PublishStrategy::Force,
+            )
+            .await
+            .unwrap();
+        let homeserver = client.get_homeserver(&pubky).await;
+        assert_eq!(homeserver, Some(homeserver_key));
     }
 }

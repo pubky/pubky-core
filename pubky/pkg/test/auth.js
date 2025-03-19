@@ -103,3 +103,36 @@ test("Auth: 3rd party signin", async (t) => {
   let session = await client.session(authedPubky);
   t.deepEqual(session.capabilities(), capabilities.split(','))
 })
+
+
+test('getHomeserver not found', async (t) => {
+  const client = Client.testnet();
+
+  const keypair = Keypair.random()
+  const publicKey = keypair.publicKey()
+
+  try {
+    let homeserver = await client.getHomeserver(publicKey);
+    t.fail("getHomeserver should NOT be found.");
+  } catch (e) {
+    t.pass("getHomeserver should NOT be found.");
+  }
+})
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+test('getHomeserver success', async (t) => {
+  const client = Client.testnet();
+
+  const keypair = Keypair.random()
+  const publicKey = keypair.publicKey()
+
+  const signupToken = await createSignupToken(client)
+
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+
+  let homeserver = await client.getHomeserver(publicKey);
+  t.is(homeserver.z32(), HOMESERVER_PUBLICKEY.z32(), "homeserver is correct");
+})
