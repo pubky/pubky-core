@@ -6,17 +6,17 @@ use std::{
 
 use ::pkarr::{Keypair, PublicKey};
 use anyhow::Result;
+use homeserver_key_republisher::HomeserverKeyRepublisher;
 use http::HttpServers;
-use pkarr::PkarrServer;
 use tracing::info;
 
 use crate::{
     config::{Config, DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
-    core::HomeserverCore,
+    core::{HomeserverCore, SignupMode},
 };
 
+mod homeserver_key_republisher;
 mod http;
-mod pkarr;
 
 #[derive(Debug, Default)]
 /// Builder for [Homeserver].
@@ -58,6 +58,21 @@ impl HomeserverBuilder {
         self
     }
 
+    /// Set the signup mode to "token_required". Only to be used on ::test()
+    /// homeserver for the specific case of testing signup token flow.
+    pub fn close_signups(&mut self) -> &mut Self {
+        self.0.admin.signup_mode = SignupMode::TokenRequired;
+
+        self
+    }
+
+    /// Set a password to protect admin endpoints
+    pub fn admin_password(&mut self, password: String) -> &mut Self {
+        self.0.admin.password = Some(password);
+
+        self
+    }
+
     /// Run a Homeserver
     ///
     /// # Safety
@@ -73,6 +88,7 @@ impl HomeserverBuilder {
 pub struct Homeserver {
     http_servers: HttpServers,
     keypair: Keypair,
+    pkarr_server: HomeserverKeyRepublisher,
 }
 
 impl Homeserver {
@@ -97,6 +113,15 @@ impl Homeserver {
         unsafe { Self::run(config) }.await
     }
 
+    /// Run a Homeserver with configurations suitable for ephemeral tests.
+    /// That requires signup tokens.
+    pub async fn run_test_with_signup_tokens(bootstrap: &[String]) -> Result<Self> {
+        let mut config = Config::test(bootstrap);
+        config.admin.signup_mode = SignupMode::TokenRequired;
+
+        unsafe { Self::run(config) }.await
+    }
+
     /// Run a Homeserver
     ///
     /// # Safety
@@ -107,30 +132,27 @@ impl Homeserver {
 
         let keypair = config.keypair;
 
-        let core = unsafe { HomeserverCore::new(config.core)? };
+        let core = unsafe { HomeserverCore::new(config.core, config.admin)? };
 
         let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 
-        info!(
-            "Homeserver listening on http://localhost:{}",
-            http_servers.http_address().port()
-        );
-
-        info!("Publishing Pkarr packet..");
-
-        let pkarr_server = PkarrServer::new(
+        let dht_republisher = HomeserverKeyRepublisher::new(
             &keypair,
             &config.io,
             http_servers.https_address().port(),
             http_servers.http_address().port(),
         )?;
-        pkarr_server.publish_server_packet().await?;
-
+        dht_republisher.start_periodic_republish().await?;
+        info!(
+            "Homeserver listening on http://localhost:{}",
+            http_servers.http_address().port()
+        );
         info!("Homeserver listening on https://{}", keypair.public_key());
 
         Ok(Self {
             http_servers,
             keypair,
+            pkarr_server: dht_republisher,
         })
     }
 
@@ -149,8 +171,9 @@ impl Homeserver {
     // === Public Methods ===
 
     /// Send a shutdown signal to all open resources
-    pub fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         self.http_servers.shutdown();
+        self.pkarr_server.stop_periodic_republish().await;
     }
 }
 
@@ -173,7 +196,6 @@ impl Default for IoConfig {
         IoConfig {
             https_port: DEFAULT_HTTPS_PORT,
             http_port: DEFAULT_HTTP_PORT,
-
             public_addr: None,
             domain: None,
             bootstrap: None,

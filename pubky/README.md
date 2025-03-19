@@ -24,7 +24,7 @@ async fn main () {
 
   // Signup to a Homeserver
   let keypair = Keypair::random();
-  client.signup(&keypair, &homeserver.public_key()).await.unwrap();
+  client.signup(&keypair, &homeserver.public_key(), None).await.unwrap();
 
   // Write data.
   let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());

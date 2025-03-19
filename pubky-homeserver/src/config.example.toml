@@ -1,6 +1,17 @@
 # Secret key (in hex) to generate the Homeserver's Keypair
 # secret_key = "0000000000000000000000000000000000000000000000000000000000000000"
 
+# The interval at which user keys are republished to the DHT.
+user_keys_republisher_interval = 14400  # 4 hour in seconds
+
+[admin]
+# Set an admin password to protect admin endpoints.
+# If no password is set, the admin endpoints will not be accessible. 
+password = "admin"
+# Set signup_mode to "open" to allow anyone to signup a new user,
+# otherwise, "token_required" (the default) to require a valid invite token on signup;
+signup_mode = "token_required"
+
 [database]
 # Storage directory Defaults to <System's Data Directory>
 #

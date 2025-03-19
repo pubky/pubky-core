@@ -22,17 +22,41 @@ impl Client {
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
     /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    pub async fn signup(&self, keypair: &Keypair, homeserver: &PublicKey) -> Result<Session> {
+    ///
+    /// - `keypair`: The user's keypair (used to sign the AuthToken).
+    /// - `homeserver`: The server's public key (as a domain-like string).
+    /// - `signup_token`: Optional invite code or token required by the server for new users.
+    pub async fn signup(
+        &self,
+        keypair: &Keypair,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<Session> {
+        // 1) Construct the base URL: "https://<homeserver>/signup"
+        let mut url = Url::parse(&format!("https://{}", homeserver))?;
+        url.set_path("/signup");
+
+        // 2) If we have a signup_token, append it to the query string.
+        if let Some(token) = signup_token {
+            url.query_pairs_mut().append_pair("signup_token", token);
+        }
+
+        // 3) Create an AuthToken (e.g. with root capability).
+        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let request_body = auth_token.serialize();
+
+        // 4) Send POST request with the AuthToken in the body
         let response = self
-            .cross_request(Method::POST, format!("https://{}/signup", homeserver))
+            .cross_request(Method::POST, url)
             .await
-            .body(AuthToken::sign(keypair, vec![Capability::root()]).serialize())
+            .body(request_body)
             .send()
             .await?;
 
+        // 5) Check for non-2xx status codes
         handle_http_error!(response);
 
-        // Publish homeserver Pkarr record for the first time (force)
+        // 6) Publish the homeserver record
         self.publish_homeserver(
             keypair,
             Some(&homeserver.to_string()),
@@ -40,13 +64,13 @@ impl Client {
         )
         .await?;
 
-        // Store the cookie to the correct URL.
+        // 7) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
             .store_session_after_signup(&response, &keypair.public_key());
 
+        // 8) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
-
         Ok(Session::deserialize(&bytes)?)
     }
 
@@ -356,12 +380,11 @@ impl AuthRequest {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
+    use std::time::Duration;
 
     use crate::{native::internal::pkarr::PublishStrategy, Client};
 
@@ -374,7 +397,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
 
         let session = client
             .session(&keypair.public_key())
@@ -429,7 +455,10 @@ mod tests {
         {
             let client = testnet.client_builder().build().unwrap();
 
-            client.signup(&keypair, &server.public_key()).await.unwrap();
+            client
+                .signup(&keypair, &server.public_key(), None)
+                .await
+                .unwrap();
 
             client
                 .send_auth_token(&keypair, pubky_auth_request.url())
@@ -489,12 +518,12 @@ mod tests {
         let second_keypair = Keypair::random();
 
         client
-            .signup(&first_keypair, &server.public_key())
+            .signup(&first_keypair, &server.public_key(), None)
             .await
             .unwrap();
 
         client
-            .signup(&second_keypair, &server.public_key())
+            .signup(&second_keypair, &server.public_key(), None)
             .await
             .unwrap();
 
@@ -545,7 +574,10 @@ mod tests {
             let url = pubky_auth_request.url().clone();
 
             let client = testnet.client_builder().build().unwrap();
-            client.signup(&keypair, &server.public_key()).await.unwrap();
+            client
+                .signup(&keypair, &server.public_key(), None)
+                .await
+                .unwrap();
 
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(400)).await;
@@ -596,6 +628,80 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_signup_with_token() {
+        // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
+        let testnet = Testnet::run().await.unwrap();
+        let server = testnet.run_homeserver_with_signup_tokens().await.unwrap();
+
+        let admin_password = "admin";
+
+        let client = testnet.client_builder().build().unwrap();
+        let keypair = Keypair::random();
+
+        // 2. Try to signup with an invalid token "AAAAA" and expect failure.
+        let invalid_signup = client
+            .signup(&keypair, &server.public_key(), Some("AAAA-BBBB-CCCC"))
+            .await;
+        assert!(
+            invalid_signup.is_err(),
+            "Signup should fail with an invalid signup token"
+        );
+
+        // 3. Call the admin endpoint to generate a valid signup token.
+        //    The admin endpoint is protected via the header "X-Admin-Password"
+        //    and the password we set up above.
+        let admin_url = format!(
+            "https://{}/admin/generate_signup_token",
+            server.public_key()
+        );
+
+        // 3.1. Call the admin endpoint *with a WRONG admin password* to ensure we get 401 UNAUTHORIZED.
+        let wrong_password_response = client
+            .get(&admin_url)
+            .header("X-Admin-Password", "wrong_admin_password")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            wrong_password_response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Wrong admin password should return 401"
+        );
+
+        // 3.1 Now call the admin endpoint again, this time with the correct password.
+        let admin_response = client
+            .get(&admin_url)
+            .header("X-Admin-Password", admin_password)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            admin_response.status(),
+            StatusCode::OK,
+            "Admin endpoint should return OK"
+        );
+        let valid_token = admin_response.text().await.unwrap(); // The token string.
+
+        // 4. Now signup with the valid token. Expect success and a session back.
+        let session = client
+            .signup(&keypair, &server.public_key(), Some(&valid_token))
+            .await
+            .unwrap();
+        assert!(
+            !session.pubky().to_string().is_empty(),
+            "Session should contain a valid public key"
+        );
+
+        // 5. Finally, sign in with the same keypair and verify that a session is returned.
+        let signin_session = client.signin(&keypair).await.unwrap();
+        assert_eq!(
+            signin_session.pubky(),
+            &keypair.public_key(),
+            "Signed-in session should correspond to the same public key"
+        );
+    }
+
     // This test verifies that when a signin happens immediately after signup,
     // the record is not republished on signin (its timestamp remains unchanged)
     // but when a signin happens after the record is “old” (in test, after 1 second),
@@ -614,7 +720,10 @@ mod tests {
         let keypair = Keypair::random();
 
         // Signup publishes a new record.
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
         // Resolve the record and get its timestamp.
         let record1 = client
             .pkarr()
@@ -675,7 +784,10 @@ mod tests {
         let keypair = Keypair::random();
 
         // Signup publishes a new record.
-        client.signup(&keypair, &server.public_key()).await.unwrap();
+        client
+            .signup(&keypair, &server.public_key(), None)
+            .await
+            .unwrap();
         // Resolve the record and get its timestamp.
         let record1 = client
             .pkarr()
