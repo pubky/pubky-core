@@ -3,7 +3,7 @@
 //! Only available for use in tests.
 //! This module is not included in the crate's public interface.
 //!
-//! This testnet class is independent of `pubky-testnet` because 
+//! This testnet class is independent of `pubky-testnet` because
 //! it would introduce circular dependencies.
 //!
 
@@ -56,11 +56,7 @@ impl Testnet2 {
         let bootstrap = self.bootstrap();
 
         let mut builder = crate::Client::builder();
-        builder.pkarr(|builder| {
-            builder
-                .bootstrap(bootstrap)
-                .no_relays()
-        });
+        builder.pkarr(|builder| builder.bootstrap(bootstrap).no_relays());
 
         builder
     }

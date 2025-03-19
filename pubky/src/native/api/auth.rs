@@ -631,7 +631,10 @@ mod tests {
     async fn test_signup_with_token() {
         // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
         let testnet = Testnet2::new().await.unwrap();
-        let server = testnet.create_homeserver_with_signup_tokens().await.unwrap();
+        let server = testnet
+            .create_homeserver_with_signup_tokens()
+            .await
+            .unwrap();
 
         let admin_password = "admin";
 
@@ -833,7 +836,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_homeserver() {
-        let testnet =Testnet2::new().await.unwrap();
+        let testnet = Testnet2::new().await.unwrap();
         let client = testnet.client_builder().build().unwrap();
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
