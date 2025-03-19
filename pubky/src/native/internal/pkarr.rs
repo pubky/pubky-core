@@ -1,7 +1,7 @@
 use anyhow::Result;
 use pkarr::{
     dns::rdata::{RData, SVCB},
-    Keypair, PublicKey, SignedPacket, Timestamp,
+    Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
 use std::time::Duration;
@@ -110,7 +110,6 @@ impl Client {
                 _ => None,
             })
     }
-
 }
 
 #[cfg(test)]
@@ -137,5 +136,4 @@ mod tests {
         assert_eq!(extracted_host.as_deref(), Some(host));
         Ok(())
     }
-
 }

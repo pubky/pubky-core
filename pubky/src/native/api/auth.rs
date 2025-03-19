@@ -4,7 +4,7 @@ use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
 use reqwest::{IntoUrl, Method, StatusCode};
 use url::Url;
 
-use pkarr::{dns::rdata::RData, Keypair, PublicKey};
+use pkarr::{Keypair, PublicKey};
 use pubky_common::{
     auth::AuthToken,
     capabilities::{Capabilities, Capability},
@@ -358,7 +358,7 @@ impl AuthRequest {
 mod tests {
     use std::time::Duration;
 
-    use pkarr::{Keypair};
+    use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_testnet::Testnet;
     use reqwest::StatusCode;
@@ -743,5 +743,3 @@ mod tests {
         assert_eq!(homeserver, Some(homeserver_key));
     }
 }
-
-
