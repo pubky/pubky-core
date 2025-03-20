@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     net::{IpAddr, Ipv4Addr},
-    path::PathBuf, str::FromStr,
+    str::FromStr,
 };
-use dirs::home_dir;
 
 
 use super::validate_domain::validate_domain;
@@ -64,13 +63,18 @@ fn default_https_port() -> u16 {
     6287
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigReadError {
+    #[error("Config file not found")]
+    ConfigFileNotFound,
+    #[error("Config file is not valid")]
+    ConfigFileNotValid,
+}
+
 
 /// The main server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-struct ConfigToml {
-    /// The main directory to store the Pubky data in.
-    #[serde(default = "default_data_dir")]
-    data_dir: PathBuf,
+pub struct ConfigToml {
 
     #[serde(default = "default_signup_mode", deserialize_with = "validate_signup_mode")]
     signup_mode: String,
@@ -80,10 +84,6 @@ struct ConfigToml {
 
     http_api: HttpApiToml,
     pkdns: PkdnsToml,
-}
-
-fn default_data_dir() -> PathBuf {
-    PathBuf::from("~/.pubky/")
 }
 
 fn default_signup_mode() -> String {
@@ -119,28 +119,6 @@ impl ConfigToml {
         let contents = std::fs::read_to_string(path)?;
         let config: ConfigToml = ConfigToml::try_from(&contents)?;
         Ok(config)
-    }
-
-    /// Expands the data directory to the home directory if it starts with "~".
-    /// Return the full path to the data directory.
-    pub fn get_data_dir_expanded(&self) -> PathBuf {
-        let path = self.data_dir.to_str().unwrap();
-        if path.starts_with("~/") {
-            if let Some(home) = home_dir() {
-                let without_home = path.strip_prefix("~/").expect("Invalid ~ prefix");
-                let joined = home.join(without_home);
-                return joined;
-            }
-        }
-        PathBuf::from(path)
-    }
-
-    /// Makes sure the data directory exists.
-    /// Create the directory if it doesn't exist.
-    pub fn ensure_data_dir_exists(&self) -> Result<()> {
-        let data_dir = self.get_data_dir_expanded();
-        std::fs::create_dir_all(&data_dir)?;
-        Ok(())
     }
 }
 
@@ -178,9 +156,6 @@ mod tests {
     use super::*;
 
     const SAMPLE_CONFIG: &str = r#"
-# The main directory to store the Pubky data in.
-data_dir = "~/.pubky/"
-
 # The password for the admin endpoints
 admin_password = "admin"
 
@@ -225,9 +200,6 @@ dht_bootstrap_nodes = [
     #[test]
     fn parse_config() {
         let config: ConfigToml = ConfigToml::try_from(SAMPLE_CONFIG).expect("Failed to parse config");
-        
-        // Verify data_dir config
-        assert_eq!(config.data_dir, PathBuf::from("~/.pubky/"));
     
         // Verify Http api config
         let http_api = config.http_api;

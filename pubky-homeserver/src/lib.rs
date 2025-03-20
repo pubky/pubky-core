@@ -10,5 +10,6 @@ mod core;
 mod io;
 mod config2;
 
+pub use config2::*;
 pub use io::Homeserver;
 pub use io::HomeserverBuilder;

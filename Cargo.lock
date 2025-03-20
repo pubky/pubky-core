@@ -2259,6 +2259,7 @@ dependencies = [
  "postcard",
  "pubky-common",
  "serde",
+ "tempfile",
  "thiserror 2.0.12",
  "tokio",
  "toml",
