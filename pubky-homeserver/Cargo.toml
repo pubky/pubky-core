@@ -1,6 +1,6 @@
 [package]
 name = "pubky-homeserver"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Nuh <nuh@nuh.dev>"]
 description = "Pubky core's homeserver."
@@ -45,6 +45,5 @@ url = "2.5.4"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tower = "0.5.2"
 page_size = "0.6.0"
-pkarr-republisher = { path = "../pkarr-republisher" }
+pkarr-republisher = { version = "0.1.0", path = "../pkarr-republisher" }
 thiserror = "2.0.12"
-
