@@ -134,6 +134,14 @@ impl ConfigToml {
         }
         PathBuf::from(path)
     }
+
+    /// Makes sure the data directory exists.
+    /// Create the directory if it doesn't exist.
+    pub fn ensure_data_dir_exists(&self) -> Result<()> {
+        let data_dir = self.get_data_dir_expanded();
+        std::fs::create_dir_all(&data_dir)?;
+        Ok(())
+    }
 }
 
 impl FromStr for ConfigToml {
