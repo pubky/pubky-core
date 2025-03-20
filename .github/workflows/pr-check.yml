@@ -40,7 +40,7 @@ jobs:
     strategy:
       matrix:
         crate:
-          [pubky, pubky-common, pubky-homeserver, pubky-testnet, http-relay]
+          [pubky, pubky-common, pubky-homeserver, pubky-testnet, http-relay, pkarr-republisher]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
