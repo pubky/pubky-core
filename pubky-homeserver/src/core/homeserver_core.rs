@@ -81,6 +81,8 @@ pub enum SignupMode {
     TokenRequired,
 }
 
+
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AdminConfig {
     /// The password used to authorize admin endpoints.

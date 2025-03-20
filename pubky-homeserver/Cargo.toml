@@ -47,4 +47,5 @@ tower = "0.5.2"
 page_size = "0.6.0"
 pkarr-republisher = { path = "../pkarr-republisher" }
 thiserror = "2.0.12"
+dirs = "6.0.0"
 

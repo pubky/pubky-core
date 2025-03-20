@@ -8,6 +8,7 @@
 mod config;
 mod core;
 mod io;
+mod toml_config;
 
 pub use io::Homeserver;
 pub use io::HomeserverBuilder;
