@@ -1,9 +1,6 @@
-use std::{
-    fmt::{self, Display},
-    str::FromStr,
-};
-
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 use super::validate_domain::validate_domain_str;
 
@@ -22,17 +19,9 @@ impl TryFrom<&str> for DomainPort {
     }
 }
 
-impl TryFrom<String> for DomainPort {
-    type Error = anyhow::Error;
-
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        Self::from_str(&s)
-    }
-}
-
-impl From<DomainPort> for String {
-    fn from(domain_port: DomainPort) -> Self {
-        format!("{}:{}", domain_port.domain, domain_port.port)
+impl fmt::Display for DomainPort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.domain, self.port)
     }
 }
 
@@ -52,12 +41,6 @@ impl FromStr for DomainPort {
         let port = parts[1].parse::<u16>()?;
 
         Ok(Self { domain, port })
-    }
-}
-
-impl Display for DomainPort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.domain, self.port)
     }
 }
 

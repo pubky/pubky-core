@@ -170,7 +170,7 @@ impl ConfigToml {
     /// * `Result<ConfigToml>` - The parsed configuration or an error if reading/parsing fails
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, ConfigReadError> {
         let contents = std::fs::read_to_string(path)?;
-        let config: ConfigToml = ConfigToml::try_from(&contents)?;
+        let config: ConfigToml = contents.parse()?;
         Ok(config)
     }
 
@@ -195,7 +195,9 @@ impl ConfigToml {
 
 impl Default for ConfigToml {
     fn default() -> Self {
-        ConfigToml::try_from(DEFAULT_CONFIG).expect("Default config is always valid")
+        DEFAULT_CONFIG
+            .parse()
+            .expect("Default config is always valid")
     }
 }
 
@@ -208,32 +210,13 @@ impl FromStr for ConfigToml {
     }
 }
 
-impl TryFrom<&str> for ConfigToml {
-    type Error = toml::de::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let config: ConfigToml = toml::from_str(value)?;
-        Ok(config)
-    }
-}
-
-impl TryFrom<&String> for ConfigToml {
-    type Error = toml::de::Error;
-
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
-        let config: ConfigToml = toml::from_str(value)?;
-        Ok(config)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_directory::default_toml::DEFAULT_CONFIG;
 
     #[test]
     fn test_default_config() {
-        let c: ConfigToml = ConfigToml::try_from(DEFAULT_CONFIG).expect("Failed to parse config");
+        let c: ConfigToml = ConfigToml::default();
 
         assert_eq!(
             c.icann_drive_api.listen_socket,
@@ -278,6 +261,6 @@ mod tests {
         // Sanity check that the default config is valid
         // even when the variables are commented out.
         let s = ConfigToml::default_string();
-        let _ = ConfigToml::try_from(&s).expect("Failed to parse config");
+        let _: ConfigToml = s.parse().expect("Failed to parse config");
     }
 }
