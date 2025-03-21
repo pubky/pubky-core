@@ -37,7 +37,7 @@ Pubky-core combines a [censorship resistant public-key based alternative to DNS]
 
 ## Getting started
 
-This repository contains a [Homeserver](./pubky-homeserver), and a [Client](./pubky) (both Rust and JS wasm bindings).
+This repository contains a [Homeserver](./pubky-homeserver), and a [Client](./pubky-client) (both Rust and JS wasm bindings).
 You can a run a local homeserver using `cargo run` with more instructions in the README.
 Check  the [Examples](./examples) directory for small feature-focesed examples of how to use the Pubky client.
 
