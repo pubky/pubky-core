@@ -45,7 +45,7 @@ Check  the [Examples](./examples) directory for small feature-focesed examples o
 If you prefer to use JavaScript in NodeJs/Browser or any runtime with Wasm support, you can either install from npm [`@synonymdev/pubky`](https://www.npmjs.com/package/@synonymdev/pubky)
 or build the bindings yourself:
 ```bash
-cd pubky/pkg
+cd pubky-client/pkg
 npm i
 npm run build
 ```
