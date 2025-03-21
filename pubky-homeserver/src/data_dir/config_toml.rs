@@ -27,7 +27,6 @@ pub struct PkdnsToml {
     pub dht_bootstrap_nodes: Option<Vec<DomainPort>>,
 
     /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
-    /// TODO: Use url::Url instead of String to validate the urls.
     #[serde(default = "default_dht_relay_nodes")]
     pub dht_relay_nodes: Option<Vec<Url>>,
 }
@@ -178,6 +177,12 @@ impl ConfigToml {
     }
 }
 
+impl Default for ConfigToml {
+    fn default() -> Self {
+        ConfigToml::try_from(DEFAULT_CONFIG).expect("Default config is always valid")
+    }
+}
+
 impl FromStr for ConfigToml {
     type Err = toml::de::Error;
 
@@ -208,7 +213,7 @@ impl TryFrom<&String> for ConfigToml {
 #[cfg(test)]
 mod tests {
     use std::net::Ipv4Addr;
-    use crate::config2::default_toml::DEFAULT_CONFIG;
+    use crate::data_dir::default_toml::DEFAULT_CONFIG;
     use super::*;
 
     #[test]

@@ -11,7 +11,7 @@ use anyhow::Result;
 use tracing::info;
 
 use crate::{
-    config::{DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
+    config_old::{DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
     core::{AdminConfig, CoreConfig, HomeserverCore, SignupMode},
 };
 

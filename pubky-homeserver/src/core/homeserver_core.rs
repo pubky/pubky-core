@@ -6,7 +6,7 @@ use axum::Router;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
 
-use crate::config::{
+use crate::config_old::{
     DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_REPUBLISHER_INTERVAL,
     DEFAULT_STORAGE_DIR,
 };
