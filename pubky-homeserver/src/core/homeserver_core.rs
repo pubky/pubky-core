@@ -1,17 +1,19 @@
 use std::{path::PathBuf, time::Duration};
 
+use crate::core::database::DB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use anyhow::Result;
 use axum::Router;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
 
-use crate::config::{
-    DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_REPUBLISHER_INTERVAL,
-    DEFAULT_STORAGE_DIR,
-};
+pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
-use crate::core::database::DB;
+pub const DEFAULT_STORAGE_DIR: &str = "pubky";
+pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
+
+pub const DEFAULT_LIST_LIMIT: u16 = 100;
+pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -79,6 +81,18 @@ pub enum SignupMode {
     Open,
     #[default]
     TokenRequired,
+}
+
+impl TryFrom<String> for SignupMode {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(match value.as_str() {
+            "open" => Self::Open,
+            "token_required" => Self::TokenRequired,
+            _ => return Err(anyhow::anyhow!("Invalid signup mode: {}", value)),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
