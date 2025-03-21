@@ -1,8 +1,6 @@
 [workspace]
 members = [
-  "pubky",
   "pubky-*", 
-
   "http-relay",
   "pkarr-republisher",
   "examples"
