@@ -1,4 +1,4 @@
-mod homeserver_key_republisher;
+mod key_republisher;
 mod http;
 mod homeserver;
 

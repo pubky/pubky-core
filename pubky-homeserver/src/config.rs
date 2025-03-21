@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     core::{AdminConfig, CoreConfig, SignupMode},
-    io::IoConfig,
+    homeserver::IoConfig,
 };
 
 pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds

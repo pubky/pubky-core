@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
-use super::homeserver_key_republisher::HomeserverKeyRepublisher;
+use super::key_republisher::HomeserverKeyRepublisher;
 use super::http::HttpServers;
-use ::pkarr::{Keypair, PublicKey};
+use pkarr::{Keypair, PublicKey};
 use anyhow::Result;
 use tracing::info;
 

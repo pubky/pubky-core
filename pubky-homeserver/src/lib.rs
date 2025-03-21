@@ -7,9 +7,9 @@
 
 mod config;
 mod core;
-mod io;
+mod homeserver;
 mod config2;
 
 pub use config2::*;
-pub use io::Homeserver;
-pub use io::HomeserverBuilder;
+pub use homeserver::Homeserver;
+pub use homeserver::HomeserverBuilder;
