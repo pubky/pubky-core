@@ -57,6 +57,7 @@ public_port = 6286
 user_keys_republisher_interval = 14400  # 4 hours in seconds
 
 # List of bootstrap nodes for the DHT.
+# domain:port format.
 dht_bootstrap_nodes = [
     "router.bittorrent.com:6881",
     "dht.transmissionbt.com:6881",
@@ -64,7 +65,7 @@ dht_bootstrap_nodes = [
     "relay.pkarr.org:6881"
 ]
 
-# Relay nodes for the DHT.
+# Relay node urls for the DHT.
 # Improves the availability of pkarr packets.
 dht_relay_nodes = [
     "https://relay.pkarr.org", 

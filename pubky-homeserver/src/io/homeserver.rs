@@ -85,7 +85,7 @@ impl HomeserverBuilder {
 pub struct Homeserver {
     http_servers: HttpServers,
     keypair: Keypair,
-    pkarr_server: HomeserverKeyRepublisher,
+    key_republisher: HomeserverKeyRepublisher,
 }
 
 impl Homeserver {
@@ -140,7 +140,7 @@ impl Homeserver {
         Ok(Self {
             http_servers,
             keypair,
-            pkarr_server: dht_republisher,
+            key_republisher: dht_republisher,
         })
     }
 
@@ -161,7 +161,7 @@ impl Homeserver {
     /// Send a shutdown signal to all open resources
     pub async fn shutdown(&self) {
         self.http_servers.shutdown();
-        self.pkarr_server.stop_periodic_republish().await;
+        self.key_republisher.stop_periodic_republish().await;
     }
 }
 
