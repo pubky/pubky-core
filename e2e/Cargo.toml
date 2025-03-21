@@ -1,0 +1,13 @@
+[package]
+name = "e2e"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pubky-testnet = { path = "../pubky-testnet" }
+pubky-common = { path = "../pubky-common" }
+tokio = { version = "1.43.0", features = ["full"] }
+tracing-subscriber = "0.3.19"
+pkarr = "3.6.0"
+reqwest = "0.12.15"
+bytes = "1.10.1"

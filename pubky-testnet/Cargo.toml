@@ -1,6 +1,6 @@
 [package]
 name = "pubky-testnet"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Nuh <nuh@nuh.dev>"]
 description = "A local test network for Pubky Core development."
@@ -19,9 +19,8 @@ tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"
 url = "2.5.4"
 
-pubky = { path = "../pubky" }
-pubky-common = { path = "../pubky-common" }
-pubky-homeserver = { path = "../pubky-homeserver" }
+pubky = { version = "0.4.2", path = "../pubky-client" }
+pubky-common = { version = "0.3.1", path = "../pubky-common" }
+pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver" }
 
-[dev-dependencies]
-tracing-subscriber = "0.3.19"
+
