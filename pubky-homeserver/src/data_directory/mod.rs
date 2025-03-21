@@ -1,8 +1,8 @@
 mod config_toml;
-mod validate_domain;
 mod data_dir;
 mod default_toml;
 mod domain_port;
+mod validate_domain;
 
-pub use config_toml::{ConfigToml, ConfigReadError};
+pub use config_toml::{ConfigReadError, ConfigToml};
 pub use data_dir::DataDir;

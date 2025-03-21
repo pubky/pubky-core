@@ -1,10 +1,17 @@
-//! Configuration for the server
+//!
+//! Configuration file for the homeserver.
+//!
+use super::{
+    default_toml::DEFAULT_CONFIG, domain_port::DomainPort, validate_domain::validate_domain_opt,
+};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug, net::{IpAddr, Ipv4Addr, SocketAddr}, num::NonZeroU64, str::FromStr
+    fmt::Debug,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroU64,
+    str::FromStr,
 };
 use url::Url;
-use super::{default_toml::DEFAULT_CONFIG, domain_port::DomainPort, validate_domain::validate_domain_opt};
 
 /// All configuration related to the DHT
 /// and /pkarr.
@@ -67,7 +74,10 @@ pub struct IcannDriveApiToml {
     #[serde(default = "default_icann_drive_listen_socket")]
     pub listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
-    #[serde(deserialize_with = "validate_domain_opt", default = "default_icann_drive_domain")]
+    #[serde(
+        deserialize_with = "validate_domain_opt",
+        default = "default_icann_drive_domain"
+    )]
     pub domain: Option<String>,
 }
 
@@ -113,12 +123,14 @@ pub enum ConfigReadError {
     ConfigFileNotValid(#[from] toml::de::Error),
 }
 
-
 /// The main server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
     /// The mode of the signup.
-    #[serde(default = "default_signup_mode", deserialize_with = "validate_signup_mode")]
+    #[serde(
+        default = "default_signup_mode",
+        deserialize_with = "validate_signup_mode"
+    )]
     pub signup_mode: String,
 
     /// The configuration for the regular http API.
@@ -150,10 +162,10 @@ where
 
 impl ConfigToml {
     /// Reads the configuration from a TOML file at the specified path.
-    /// 
+    ///
     /// # Arguments
     /// * `path` - The path to the TOML configuration file
-    /// 
+    ///
     /// # Returns
     /// * `Result<ConfigToml>` - The parsed configuration or an error if reading/parsing fails
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, ConfigReadError> {
@@ -165,14 +177,19 @@ impl ConfigToml {
     /// Returns the default config with all variables commented out.
     pub fn default_string() -> String {
         // Comment out all variables so they are not fixed by default.
-        DEFAULT_CONFIG.split("\n").map(|line| {
-            let is_not_commented_variable = !line.starts_with("#") && !line.starts_with("[") && line.len() > 0;
-            if is_not_commented_variable {
-                format!("# {}", line)
-            } else {
-                line.to_string()
-            }
-        }).collect::<Vec<String>>().join("\n")
+        DEFAULT_CONFIG
+            .split("\n")
+            .map(|line| {
+                let is_not_commented_variable =
+                    !line.starts_with("#") && !line.starts_with("[") && line.is_empty();
+                if is_not_commented_variable {
+                    format!("# {}", line)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 }
 
@@ -211,34 +228,49 @@ impl TryFrom<&String> for ConfigToml {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_dir::default_toml::DEFAULT_CONFIG;
     use super::*;
+    use crate::data_directory::default_toml::DEFAULT_CONFIG;
 
     #[test]
     fn test_default_config() {
         let c: ConfigToml = ConfigToml::try_from(DEFAULT_CONFIG).expect("Failed to parse config");
-    
-        assert_eq!(c.icann_drive_api.listen_socket, default_icann_drive_listen_socket());
+
+        assert_eq!(
+            c.icann_drive_api.listen_socket,
+            default_icann_drive_listen_socket()
+        );
         assert_eq!(c.icann_drive_api.domain, Some("example.com".to_string()));
-        
-        assert_eq!(c.pubky_drive_api.listen_socket, default_pubky_drive_listen_socket());
+
+        assert_eq!(
+            c.pubky_drive_api.listen_socket,
+            default_pubky_drive_listen_socket()
+        );
 
         assert_eq!(c.admin_api.listen_socket, default_admin_listen_socket());
         assert_eq!(c.admin_api.admin_password, default_admin_password());
 
         // Verify pkdns config
         assert_eq!(c.pkdns.public_socket, default_public_socket());
-        assert_eq!(c.pkdns.user_keys_republisher_interval, default_user_keys_republisher_interval());
-        assert_eq!(c.pkdns.dht_bootstrap_nodes, Some(vec![
-            DomainPort::from_str("router.bittorrent.com:6881").unwrap(),
-            DomainPort::from_str("dht.transmissionbt.com:6881").unwrap(),
-            DomainPort::from_str("dht.libtorrent.org:25401").unwrap(),
-            DomainPort::from_str("relay.pkarr.org:6881").unwrap(),
-        ]));
-        assert_eq!(c.pkdns.dht_relay_nodes, Some(vec![
-            Url::parse("https://relay.pkarr.org").unwrap(),
-            Url::parse("https://pkarr.pubky.org").unwrap(),
-        ]));
+        assert_eq!(
+            c.pkdns.user_keys_republisher_interval,
+            default_user_keys_republisher_interval()
+        );
+        assert_eq!(
+            c.pkdns.dht_bootstrap_nodes,
+            Some(vec![
+                DomainPort::from_str("router.bittorrent.com:6881").unwrap(),
+                DomainPort::from_str("dht.transmissionbt.com:6881").unwrap(),
+                DomainPort::from_str("dht.libtorrent.org:25401").unwrap(),
+                DomainPort::from_str("relay.pkarr.org:6881").unwrap(),
+            ])
+        );
+        assert_eq!(
+            c.pkdns.dht_relay_nodes,
+            Some(vec![
+                Url::parse("https://relay.pkarr.org").unwrap(),
+                Url::parse("https://pkarr.pubky.org").unwrap(),
+            ])
+        );
     }
 
     #[test]

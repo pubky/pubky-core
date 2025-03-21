@@ -1,20 +1,16 @@
-use std::{
-    net::SocketAddr,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
-use super::key_republisher::HomeserverKeyRepublisher;
 use super::http::HttpServers;
-use crate::data_dir::DataDir;
-use pkarr::{Keypair, PublicKey};
+use super::key_republisher::HomeserverKeyRepublisher;
+use crate::data_directory::DataDir;
 use anyhow::Result;
+use pkarr::{Keypair, PublicKey};
 use tracing::info;
 
-use crate::{
-    config_old::{DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
-    core::{AdminConfig, CoreConfig, HomeserverCore, SignupMode},
-};
+use crate::core::{AdminConfig, CoreConfig, HomeserverCore, SignupMode};
+
+pub const DEFAULT_HTTP_PORT: u16 = 6286;
+pub const DEFAULT_HTTPS_PORT: u16 = 6287;
 
 #[derive(Debug, Default)]
 /// Builder for [Homeserver].
@@ -242,7 +238,6 @@ impl Default for Config {
     }
 }
 
-
 impl TryFrom<DataDir> for Config {
     type Error = anyhow::Error;
 
@@ -250,9 +245,8 @@ impl TryFrom<DataDir> for Config {
         dir.ensure_data_dir_exists_and_is_writable()?;
         let conf = dir.read_or_create_config_file()?;
         let keypair = dir.read_or_create_keypair()?;
-        
 
-        // TODO: Needs refactoring of the Homeserver Config struct. I am not doing 
+        // TODO: Needs refactoring of the Homeserver Config struct. I am not doing
         // it yet because I am concentrating on the config currently.
         let io = IoConfig {
             http_port: conf.icann_drive_api.listen_socket.port(),
@@ -264,16 +258,17 @@ impl TryFrom<DataDir> for Config {
 
         let core = CoreConfig {
             storage: dir.path().join("data/lmdb"),
-            user_keys_republisher_interval: Some(Duration::from_secs(conf.pkdns.user_keys_republisher_interval.into())),
+            user_keys_republisher_interval: Some(Duration::from_secs(
+                conf.pkdns.user_keys_republisher_interval.into(),
+            )),
             ..Default::default()
         };
 
         let admin = AdminConfig {
             signup_mode: conf.signup_mode.try_into()?,
             password: Some(conf.admin_api.admin_password),
-            ..Default::default()
         };
-        
+
         Ok(Config {
             keypair,
             io,

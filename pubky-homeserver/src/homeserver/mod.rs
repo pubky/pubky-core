@@ -1,5 +1,5 @@
-mod key_republisher;
 mod http;
-mod homeserver;
+mod key_republisher;
+mod server;
 
-pub use homeserver::*;
+pub use server::*;

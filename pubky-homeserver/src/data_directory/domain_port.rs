@@ -1,4 +1,7 @@
-use std::{fmt::{self, Display}, str::FromStr};
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -33,14 +36,15 @@ impl From<DomainPort> for String {
     }
 }
 
-
 impl FromStr for DomainPort {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 {
-            return Err(anyhow::anyhow!("Invalid domain:port format. Expected 'domain:port'"));
+            return Err(anyhow::anyhow!(
+                "Invalid domain:port format. Expected 'domain:port'"
+            ));
         }
         let part0 = parts[0];
 
@@ -60,7 +64,8 @@ impl Display for DomainPort {
 impl Serialize for DomainPort {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         serializer.serialize_str(&self.to_string())
     }
 }
@@ -74,7 +79,6 @@ impl<'de> Deserialize<'de> for DomainPort {
         Self::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

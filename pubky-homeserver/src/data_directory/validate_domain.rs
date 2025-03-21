@@ -1,7 +1,6 @@
 use serde::{Deserialize, Deserializer};
 use std::result::Result;
 
-
 /// Validate a domain name according to RFC 1123
 pub fn validate_domain_opt<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
@@ -10,7 +9,8 @@ where
     let domain: Option<String> = Option::deserialize(deserializer)?;
 
     if let Some(ref domain) = domain {
-        let domain = validate_domain_str(domain).map_err(|e| serde::de::Error::custom(e.to_string()))?;
+        let domain =
+            validate_domain_str(domain).map_err(|e| serde::de::Error::custom(e.to_string()))?;
         Ok(Some(domain))
     } else {
         Ok(None)
@@ -63,7 +63,8 @@ pub fn validate_domain_str(domain: &str) -> anyhow::Result<String> {
         if label.len() > 63 {
             return Err(anyhow::anyhow!(
                 "Invalid domain '{}': label '{}' exceeds maximum length of 63 characters",
-                domain, label
+                domain,
+                label
             ));
         }
     }

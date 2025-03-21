@@ -1,11 +1,11 @@
 //!
 //! Default TOML configuration for the homeserver.
-//! 
-//! This is used to create a default config file if one doesn't exist.
-//! 
+//!
+//! This is used to create a default config file if it doesn't exist.
+//!
 //! Why not use the Default trait? The `toml` crate doesn't support adding comments.
 //! So we maintain this default manually.
-//! 
+//!
 
 pub const DEFAULT_CONFIG: &str = r#"
 # The mode for the signup. Options:

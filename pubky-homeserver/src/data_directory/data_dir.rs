@@ -1,11 +1,9 @@
-use std::{io::Write, path::PathBuf};
-use hex;
 use super::ConfigToml;
-
+use std::{io::Write, path::PathBuf};
 
 /// The data directory for the homeserver.
-/// 
-/// This is the directory that will store the homeserver's data.
+///
+/// This is the directory that will store the homeservers data.
 ///
 #[derive(Debug, Clone)]
 pub struct DataDir {
@@ -16,7 +14,9 @@ impl DataDir {
     /// Creates a new data directory.
     /// `path` will be expanded to the home directory if it starts with "~".
     pub fn new(path: PathBuf) -> Self {
-        Self { expanded_path: Self::expand_home_dir(path) }
+        Self {
+            expanded_path: Self::expand_home_dir(path),
+        }
     }
 
     /// Returns the full path to the data directory.
@@ -31,8 +31,8 @@ impl DataDir {
             Some(path) => path,
             None => {
                 // Path not valid utf-8 so we can't expand it.
-                return path
-            },
+                return path;
+            }
         };
 
         if path.starts_with("~/") {
@@ -51,9 +51,13 @@ impl DataDir {
         std::fs::create_dir_all(&self.expanded_path)?;
 
         // Check if we can write to the data directory
-        let test_file_path = self.expanded_path.join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
-        std::fs::write(test_file_path.clone(), b"test").map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
-        std::fs::remove_file(test_file_path).map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+        let test_file_path = self
+            .expanded_path
+            .join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
+        std::fs::write(test_file_path.clone(), b"test")
+            .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+        std::fs::remove_file(test_file_path)
+            .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
         Ok(())
     }
 
@@ -77,7 +81,7 @@ impl DataDir {
         let config_string = ConfigToml::default_string();
         let config_file_path = self.get_config_file_path();
         let mut config_file = std::fs::File::create(config_file_path)?;
-        config_file.write_all(config_string.as_bytes())?; 
+        config_file.write_all(config_string.as_bytes())?;
         Ok(())
     }
 
@@ -106,7 +110,6 @@ impl DataDir {
         let keypair = pkarr::Keypair::from_secret_key(&secret_bytes);
         Ok(keypair)
     }
-
 }
 
 impl Default for DataDir {
@@ -121,7 +124,7 @@ mod tests {
 
     use super::*;
     use tempfile::TempDir;
-    
+
     /// Test that the home directory is expanded correctly.
     #[test]
     pub fn test_expand_home_dir() {
@@ -137,7 +140,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
         let data_dir = DataDir::new(test_path.clone());
-        
+
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         assert!(test_path.exists());
         // temp_dir will be automatically cleaned up when it goes out of scope
@@ -155,7 +158,7 @@ mod tests {
         let mut config_file = std::fs::File::create(config_file_path.clone()).unwrap();
         config_file.write_all(b"test").unwrap();
         assert!(config_file_path.exists()); // Should exist now
-        // temp_dir will be automatically cleaned up when it goes out of scope
+                                            // temp_dir will be automatically cleaned up when it goes out of scope
     }
 
     #[test]

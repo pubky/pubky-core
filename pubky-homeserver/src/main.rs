@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use pubky_homeserver::Homeserver;
-use dirs;
 use clap::Parser;
+use pubky_homeserver::Homeserver;
 use tracing_subscriber::EnvFilter;
 
 fn default_config_dir_path() -> PathBuf {
@@ -34,7 +33,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("pubky_homeserver=debug,tower_http=debug"))
+                .unwrap_or_else(|_| EnvFilter::new("pubky_homeserver=debug,tower_http=debug")),
         )
         .init();
 
