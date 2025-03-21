@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use super::ConfigToml;
 
@@ -54,16 +54,21 @@ impl DataDir {
     }
 
     /// Reads the config file from the data directory.
-    pub fn read_config_file(&self) -> anyhow::Result<ConfigToml> {
+    /// Creates a default config file if it doesn't exist.
+    pub fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
         let config_file_path = self.get_config_file_path();
+        if !config_file_path.exists() {
+            self.write_default_config_file()?;
+        }
         let config = ConfigToml::from_file(config_file_path)?;
         Ok(config)
     }
 
-    pub fn create_config_file(&self, config: &ConfigToml) -> anyhow::Result<()> {
+    fn write_default_config_file(&self) -> anyhow::Result<()> {
+        let config_string = ConfigToml::default_string();
         let config_file_path = self.get_config_file_path();
-        let config_file = std::fs::File::create(config_file_path)?;
-        config_file.write_all(b"test")?;
+        let mut config_file = std::fs::File::create(config_file_path)?;
+        config_file.write_all(config_string.as_bytes())?; 
         Ok(())
     }
 
@@ -117,5 +122,39 @@ mod tests {
         config_file.write_all(b"test").unwrap();
         assert!(config_file_path.exists()); // Should exist now
         // temp_dir will be automatically cleaned up when it goes out of scope
+    }
+
+    #[test]
+    pub fn test_read_or_create_config_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().join(".pubky");
+        let data_dir = DataDir::new(test_path.clone());
+        data_dir.ensure_data_dir_exists_and_is_accessible().unwrap();
+        let _ = data_dir.read_or_create_config_file().unwrap(); // Should create a default config file
+        assert!(data_dir.get_config_file_path().exists());
+
+        let _ = data_dir.read_or_create_config_file().unwrap(); // Should read the existing file
+        assert!(data_dir.get_config_file_path().exists());
+    }
+
+    #[test]
+    pub fn test_read_or_create_config_file_dont_override_existing_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().join(".pubky");
+        let data_dir = DataDir::new(test_path.clone());
+        data_dir.ensure_data_dir_exists_and_is_accessible().unwrap();
+
+        // Write a broken config file
+        let config_file_path = data_dir.get_config_file_path();
+        std::fs::write(config_file_path.clone(), b"test").unwrap();
+        assert!(config_file_path.exists()); // Should exist now
+
+        // Try to read the config file and fail because config is broken
+        let read_result = data_dir.read_or_create_config_file();
+        assert!(read_result.is_err());
+
+        // Make sure the broken config file is still there
+        let content = std::fs::read_to_string(config_file_path).unwrap();
+        assert_eq!(content, "test");
     }
 }

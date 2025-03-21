@@ -1,6 +1,4 @@
 //! Configuration for the server
-
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -9,28 +7,29 @@ use std::{
 };
 
 
-use super::validate_domain::validate_domain;
+use super::{default_toml::DEFAULT_CONFIG, validate_domain::validate_domain};
 
 /// All configuration related to the DHT
 /// and pkdns.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 struct PkdnsToml {
-    #[serde(default = "default_homeserver_public_ip")]
-    pub homeserver_public_ip: IpAddr,
+    #[serde(default = "default_public_ip")]
+    pub public_ip: IpAddr,
 
-    #[serde(default = "default_homeserver_public_port")]
-    pub homeserver_public_port: Option<u16>,
+    #[serde(default = "default_public_port")]
+    pub public_port: Option<u16>,
 
     /// The list of bootstrap nodes for the DHT. If None, the default pkarr bootstrap nodes will be used.
     #[serde(default = "default_dht_bootstrap_nodes")]
     pub dht_bootstrap_nodes: Option<Vec<String>>,
 }
 
-fn default_homeserver_public_port() -> Option<u16> {
+
+fn default_public_port() -> Option<u16> {
     None
 }
 
-fn default_homeserver_public_ip() -> IpAddr {
+fn default_public_ip() -> IpAddr {
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
 }
 
@@ -63,12 +62,15 @@ fn default_https_port() -> u16 {
     6287
 }
 
+/// The error that can occur when reading the config file
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigReadError {
-    #[error("Config file not found")]
-    ConfigFileNotFound,
-    #[error("Config file is not valid")]
-    ConfigFileNotValid,
+    /// The config file not found
+    #[error("Config file not found. {0}")]
+    ConfigFileNotFound(#[from] std::io::Error),
+    /// The config file is not valid    
+    #[error("Config file is not valid. {0}")]
+    ConfigFileNotValid(#[from] toml::de::Error),
 }
 
 
@@ -115,10 +117,16 @@ impl ConfigToml {
     /// 
     /// # Returns
     /// * `Result<ConfigToml>` - The parsed configuration or an error if reading/parsing fails
-    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, ConfigReadError> {
         let contents = std::fs::read_to_string(path)?;
         let config: ConfigToml = ConfigToml::try_from(&contents)?;
         Ok(config)
+    }
+
+    /// Returns the default config including comments as a string.
+    /// toml lib can't handle comments, so we maintain this manually.
+    pub fn default_string() -> &'static str {
+        DEFAULT_CONFIG
     }
 }
 
@@ -153,53 +161,14 @@ impl TryFrom<&String> for ConfigToml {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use crate::config2::default_toml::DEFAULT_CONFIG;
+
     use super::*;
 
-    const SAMPLE_CONFIG: &str = r#"
-# The password for the admin endpoints
-admin_password = "admin"
-
-# The mode for the signup.
-signup_mode = "token_required"
-
-[http_api]
-# The port number to run an HTTP (clear text) server on.
-http_port = 6286
-# The port number to run an HTTPs (Pkarr TLS) server on.
-https_port = 6287
-
-# An ICANN domain name is necessary to support legacy browsers
-#
-# Make sure to setup a domain name and point it the IP
-# address of this machine where you are running this server.
-#
-# This domain should point to the `<homeserver_public_ip>:<homeserver_public_port>`.
-# 
-# ICANN TLS is not natively supported, so you should be running
-# a reverse proxy and managing certificates yourself.
-legacy_browser_domain = "example.com"
-
-[pkdns]
-# The public IP address of the homeserver to be advertised on the DHT.
-homeserver_public_ip = "127.0.0.1"
-
-# The public port the homeserver is listening on to be advertised on the DHT.
-# Defaults to the http_port but might be different if you are
-# using a reverse proxy.
-homeserver_public_port = 6286
-
-# List of bootstrap nodes for the DHT
-dht_bootstrap_nodes = [
-    "router.bittorrent.com:6881",
-    "dht.transmissionbt.com:6881",
-    "dht.libtorrent.org:25401",
-    "relay.pkarr.org:6881"
-]
-    "#;
 
     #[test]
     fn parse_config() {
-        let config: ConfigToml = ConfigToml::try_from(SAMPLE_CONFIG).expect("Failed to parse config");
+        let config: ConfigToml = ConfigToml::try_from(DEFAULT_CONFIG).expect("Failed to parse config");
     
         // Verify Http api config
         let http_api = config.http_api;
@@ -210,8 +179,8 @@ dht_bootstrap_nodes = [
         assert_eq!(http_api.legacy_browser_domain, Some("example.com".to_string()));
 
         // Verify pkdns config
-        assert_eq!(config.pkdns.homeserver_public_ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-        assert_eq!(config.pkdns.homeserver_public_port, Some(6286));
+        assert_eq!(config.pkdns.public_ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(config.pkdns.public_port, Some(6286));
         assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(vec![
             "router.bittorrent.com:6881",
             "dht.transmissionbt.com:6881",
