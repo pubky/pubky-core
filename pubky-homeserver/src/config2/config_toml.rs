@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug, net::{IpAddr, Ipv4Addr}, num::NonZeroU64, str::FromStr
 };
-
-use super::{default_toml::DEFAULT_CONFIG, validate_domain::validate_domain};
+use url::Url;
+use super::{default_toml::DEFAULT_CONFIG, domain_port::DomainPort, validate_domain::validate_domain_opt};
 
 /// All configuration related to the DHT
 /// and /pkarr.
@@ -23,14 +23,13 @@ pub struct PkdnsToml {
     pub user_keys_republisher_interval: NonZeroU64,
 
     /// The list of bootstrap nodes for the DHT. If None, the default pkarr bootstrap nodes will be used.
-    /// TODO: Create a domain:port type for this to validate the input better.
     #[serde(default = "default_dht_bootstrap_nodes")]
-    pub dht_bootstrap_nodes: Option<Vec<String>>,
+    pub dht_bootstrap_nodes: Option<Vec<DomainPort>>,
 
     /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
     /// TODO: Use url::Url instead of String to validate the urls.
     #[serde(default = "default_dht_relay_nodes")]
-    pub dht_relay_nodes: Option<Vec<String>>,
+    pub dht_relay_nodes: Option<Vec<Url>>,
 }
 
 
@@ -42,11 +41,11 @@ fn default_public_ip() -> IpAddr {
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
 }
 
-fn default_dht_bootstrap_nodes() -> Option<Vec<String>> {
+fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
     None
 }
 
-fn default_dht_relay_nodes() -> Option<Vec<String>> {
+fn default_dht_relay_nodes() -> Option<Vec<Url>> {
     None
 }
 
@@ -74,7 +73,7 @@ pub struct IcannDriveApiToml {
     #[serde(default = "default_icann_drive_listen_port")]
     pub listen_port: u16,
     /// Optional domain name of the regular http API.
-    #[serde(deserialize_with = "validate_domain", default = "default_icann_drive_domain")]
+    #[serde(deserialize_with = "validate_domain_opt", default = "default_icann_drive_domain")]
     pub domain: Option<String>,
 }
 
@@ -229,11 +228,15 @@ mod tests {
         assert_eq!(c.pkdns.public_port, Some(6286));
         assert_eq!(c.pkdns.user_keys_republisher_interval, NonZeroU64::new(14400).unwrap());
         assert_eq!(c.pkdns.dht_bootstrap_nodes, Some(vec![
-            "router.bittorrent.com:6881",
-            "dht.transmissionbt.com:6881",
-            "dht.libtorrent.org:25401",
-            "relay.pkarr.org:6881"
-        ].iter().map(|s| s.to_string()).collect()));
+            DomainPort::from_str("router.bittorrent.com:6881").unwrap(),
+            DomainPort::from_str("dht.transmissionbt.com:6881").unwrap(),
+            DomainPort::from_str("dht.libtorrent.org:25401").unwrap(),
+            DomainPort::from_str("relay.pkarr.org:6881").unwrap(),
+        ]));
+        assert_eq!(c.pkdns.dht_relay_nodes, Some(vec![
+            Url::parse("https://relay.pkarr.org").unwrap(),
+            Url::parse("https://pkarr.pubky.org").unwrap(),
+        ]));
     }
 
     #[test]
@@ -243,5 +246,4 @@ mod tests {
         let s = ConfigToml::default_string();
         let _ = ConfigToml::try_from(&s).expect("Failed to parse config");
     }
-
 }

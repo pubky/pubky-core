@@ -1,6 +1,6 @@
 use std::{
     net::SocketAddr,
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::Duration,
 };
 
