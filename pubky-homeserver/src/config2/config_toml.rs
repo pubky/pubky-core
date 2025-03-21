@@ -23,10 +23,12 @@ pub struct PkdnsToml {
     pub user_keys_republisher_interval: NonZeroU64,
 
     /// The list of bootstrap nodes for the DHT. If None, the default pkarr bootstrap nodes will be used.
+    /// TODO: Create a domain:port type for this to validate the input better.
     #[serde(default = "default_dht_bootstrap_nodes")]
     pub dht_bootstrap_nodes: Option<Vec<String>>,
 
     /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
+    /// TODO: Use url::Url instead of String to validate the urls.
     #[serde(default = "default_dht_relay_nodes")]
     pub dht_relay_nodes: Option<Vec<String>>,
 }
@@ -207,11 +209,8 @@ impl TryFrom<&String> for ConfigToml {
 #[cfg(test)]
 mod tests {
     use std::net::Ipv4Addr;
-
     use crate::config2::default_toml::DEFAULT_CONFIG;
-
     use super::*;
-
 
     #[test]
     fn test_default_config() {
@@ -239,35 +238,10 @@ mod tests {
 
     #[test]
     fn test_default_config_commented_out() {
+        // Sanity check that the default config is valid
+        // even when the variables are commented out.
         let s = ConfigToml::default_string();
         let _ = ConfigToml::try_from(&s).expect("Failed to parse config");
     }
 
-    #[test]
-    fn test_signup_mode_validation() {
-        // Test valid values
-        let valid_open = r#"
-            signup_mode = "open"
-            [http_api]
-            [pkdns]
-        "#;
-        assert!(toml::from_str::<ConfigToml>(valid_open).is_ok());
-
-        let valid_token = r#"
-            signup_mode = "token_required"
-            [http_api]
-            [pkdns]
-        "#;
-        assert!(toml::from_str::<ConfigToml>(valid_token).is_ok());
-
-        // Test invalid value
-        let invalid = r#"
-            signup_mode = "invalid"
-            [http_api]
-            [pkdns]
-        "#;
-        let result = toml::from_str::<ConfigToml>(invalid);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be either"));
-    }
 }

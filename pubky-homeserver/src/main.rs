@@ -57,14 +57,13 @@ async fn main() -> Result<()> {
         builder.domain(domain.as_str());
     }
     if let Some(boostrap_nodes) = config.pkdns.dht_bootstrap_nodes.as_ref() {
-        builder.bootstrap(boostrap_nodes);
+        // builder.bootstrap(boostrap_nodes);
     }
 
 
 
 
-    let server =  
-        Homeserver::run_with_config_file(data_dir.get_config_file_path()).await?;
+    // let server =  Homeserver::test(boostrap_nodes);
 
     tokio::signal::ctrl_c().await?;
 
