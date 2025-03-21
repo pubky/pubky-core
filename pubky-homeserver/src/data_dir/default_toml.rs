@@ -46,8 +46,7 @@ admin_password = "admin"
 
 [pkdns]
 # The public IP address and port of the homeserver pubky_drive_api to be advertised on the DHT.
-# Defaults to the pubky_drive_api.listen_socket but might be different if you are
-# using a reverse proxy.
+# Must be set to be reachable from the outside.
 public_socket = "127.0.0.1:6286"
 
 # The interval at which user keys are republished to the DHT.

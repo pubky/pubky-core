@@ -81,6 +81,18 @@ pub enum SignupMode {
     TokenRequired,
 }
 
+impl TryFrom<String> for SignupMode {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(match value.as_str() {
+            "open" => Self::Open,
+            "token_required" => Self::TokenRequired,
+            _ => return Err(anyhow::anyhow!("Invalid signup mode: {}", value)),
+        })
+    }
+}
+
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

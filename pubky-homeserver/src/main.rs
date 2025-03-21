@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use pubky_homeserver::{Homeserver, HomeserverBuilder};
+use pubky_homeserver::Homeserver;
 use dirs;
-use pubky_homeserver::DataDir;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
@@ -41,35 +40,13 @@ async fn main() -> Result<()> {
 
     tracing::debug!("Using data dir: {}", args.data_dir.display());
 
-    let data_dir = DataDir::new(args.data_dir);
-    data_dir.ensure_data_dir_exists_and_is_writable()?;
-    let config = data_dir.read_or_create_config_file()?;
-    let keypair = data_dir.read_or_create_keypair()?;
-    tracing::debug!("{config:?} {:?}", keypair.public_key());
-
-
-    let mut builder = HomeserverBuilder::default();
-    builder
-    .keypair(keypair)
-    .admin_password(config.admin_api.admin_password);
-
-    if let Some(domain) = config.icann_drive_api.domain.as_ref() {
-        builder.domain(domain.as_str());
-    }
-    if let Some(boostrap_nodes) = config.pkdns.dht_bootstrap_nodes.as_ref() {
-        // builder.bootstrap(boostrap_nodes);
-    }
-
-
-
-
-    // let server =  Homeserver::test(boostrap_nodes);
+    let server = Homeserver::run_with_data_dir(args.data_dir).await?;
 
     tokio::signal::ctrl_c().await?;
 
     tracing::info!("Shutting down Homeserver");
 
-    // server.shutdown().await;
+    server.shutdown().await;
 
     Ok(())
 }
