@@ -6,8 +6,6 @@ use super::ConfigToml;
 /// The data directory for the homeserver.
 /// 
 /// This is the directory that will store the homeserver's data.
-/// 
-/// It will be expanded to the home directory if it starts with "~".
 ///
 #[derive(Debug, Clone)]
 pub struct DataDir {
@@ -16,8 +14,14 @@ pub struct DataDir {
 
 impl DataDir {
     /// Creates a new data directory.
+    /// `path` will be expanded to the home directory if it starts with "~".
     pub fn new(path: PathBuf) -> Self {
         Self { expanded_path: Self::expand_home_dir(path) }
+    }
+
+    /// Returns the full path to the data directory.
+    pub fn path(&self) -> &PathBuf {
+        &self.expanded_path
     }
 
     /// Expands the data directory to the home directory if it starts with "~".

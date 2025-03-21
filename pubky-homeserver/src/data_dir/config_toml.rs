@@ -1,7 +1,7 @@
 //! Configuration for the server
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug, net::{IpAddr, Ipv4Addr}, num::NonZeroU64, str::FromStr
+    fmt::Debug, net::{IpAddr, Ipv4Addr, SocketAddr}, num::NonZeroU64, str::FromStr
 };
 use url::Url;
 use super::{default_toml::DEFAULT_CONFIG, domain_port::DomainPort, validate_domain::validate_domain_opt};
@@ -10,13 +10,9 @@ use super::{default_toml::DEFAULT_CONFIG, domain_port::DomainPort, validate_doma
 /// and /pkarr.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PkdnsToml {
-    /// The public IP address of the server to be advertised in the DHT.
-    #[serde(default = "default_public_ip")]
-    pub public_ip: IpAddr,
-
-    /// The public port of the server to be advertised in the DHT.
-    #[serde(default = "default_public_port")]
-    pub public_port: Option<u16>,
+    /// The public IP address and port of the server to be advertised in the DHT.
+    #[serde(default = "default_public_socket")]
+    pub public_socket: SocketAddr,
 
     /// The interval at which the user keys are republished in the DHT.
     #[serde(default = "default_user_keys_republisher_interval")]
@@ -31,13 +27,10 @@ pub struct PkdnsToml {
     pub dht_relay_nodes: Option<Vec<Url>>,
 }
 
-
-fn default_public_port() -> Option<u16> {
-    None
-}
-
-fn default_public_ip() -> IpAddr {
-    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+fn default_public_socket() -> SocketAddr {
+    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let port = 6286;
+    SocketAddr::from((ip, port))
 }
 
 fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
@@ -57,39 +50,43 @@ fn default_user_keys_republisher_interval() -> NonZeroU64 {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PubkyDriveApiToml {
     /// The port on which the Pubky TLS Drive API will listen.
-    #[serde(default = "default_pubky_drive_listen_port")]
-    pub listen_port: u16,
+    #[serde(default = "default_pubky_drive_listen_socket")]
+    pub listen_socket: SocketAddr,
 }
 
-fn default_pubky_drive_listen_port() -> u16 {
-    6287
+fn default_pubky_drive_listen_socket() -> SocketAddr {
+    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let port = 6287;
+    SocketAddr::from((ip, port))
 }
 
 /// All configuration related to the regular HTTP API
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct IcannDriveApiToml {
     /// The port on which the regular http API will listen.
-    #[serde(default = "default_icann_drive_listen_port")]
-    pub listen_port: u16,
+    #[serde(default = "default_icann_drive_listen_socket")]
+    pub listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
     #[serde(deserialize_with = "validate_domain_opt", default = "default_icann_drive_domain")]
     pub domain: Option<String>,
+}
+
+fn default_icann_drive_listen_socket() -> SocketAddr {
+    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let port = 6286;
+    SocketAddr::from((ip, port))
 }
 
 fn default_icann_drive_domain() -> Option<String> {
     None
 }
 
-fn default_icann_drive_listen_port() -> u16 {
-    6286
-}
-
 /// All configuration related to the admin API
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct AdminApiToml {
-    /// The port on which the admin API will listen.
-    #[serde(default = "default_admin_listen_port")]
-    pub listen_port: u16,
+    /// The socket on which the admin API will listen.
+    #[serde(default = "default_admin_listen_socket")]
+    pub listen_socket: SocketAddr,
     /// The password for the admin API.
     #[serde(default = "default_admin_password")]
     pub admin_password: String,
@@ -99,8 +96,10 @@ fn default_admin_password() -> String {
     "admin".to_string()
 }
 
-fn default_admin_listen_port() -> u16 {
-    6288
+fn default_admin_listen_socket() -> SocketAddr {
+    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let port = 6288;
+    SocketAddr::from((ip, port))
 }
 
 /// The error that can occur when reading the config file
@@ -212,7 +211,6 @@ impl TryFrom<&String> for ConfigToml {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
     use crate::data_dir::default_toml::DEFAULT_CONFIG;
     use super::*;
 
@@ -220,18 +218,17 @@ mod tests {
     fn test_default_config() {
         let c: ConfigToml = ConfigToml::try_from(DEFAULT_CONFIG).expect("Failed to parse config");
     
-        assert_eq!(c.icann_drive_api.listen_port, 6286);
+        assert_eq!(c.icann_drive_api.listen_socket, default_icann_drive_listen_socket());
         assert_eq!(c.icann_drive_api.domain, Some("example.com".to_string()));
         
-        assert_eq!(c.pubky_drive_api.listen_port, 6287);
+        assert_eq!(c.pubky_drive_api.listen_socket, default_pubky_drive_listen_socket());
 
-        assert_eq!(c.admin_api.listen_port, 6288);
-        assert_eq!(c.admin_api.admin_password, "admin".to_string());
+        assert_eq!(c.admin_api.listen_socket, default_admin_listen_socket());
+        assert_eq!(c.admin_api.admin_password, default_admin_password());
 
         // Verify pkdns config
-        assert_eq!(c.pkdns.public_ip, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-        assert_eq!(c.pkdns.public_port, Some(6286));
-        assert_eq!(c.pkdns.user_keys_republisher_interval, NonZeroU64::new(14400).unwrap());
+        assert_eq!(c.pkdns.public_socket, default_public_socket());
+        assert_eq!(c.pkdns.user_keys_republisher_interval, default_user_keys_republisher_interval());
         assert_eq!(c.pkdns.dht_bootstrap_nodes, Some(vec![
             DomainPort::from_str("router.bittorrent.com:6881").unwrap(),
             DomainPort::from_str("dht.transmissionbt.com:6881").unwrap(),

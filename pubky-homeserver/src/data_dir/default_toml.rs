@@ -17,7 +17,7 @@ signup_mode = "token_required"
 # The port number to run an HTTP (clear text) server on.
 # Used for http requests from regular browsers.
 # May be put behind a reverse proxy with TLS enabled.
-listen_port = 6286
+listen_socket = "127.0.0.1:6286"
 
 # An ICANN domain name is necessary to support legacy browsers
 #
@@ -34,24 +34,21 @@ domain = "example.com"
 # The port number to run an HTTPS (Pkarr TLS) server on.
 # Pkarr TLS is a TLS implementation that is compatible with the Pkarr protocol.
 # No need to provide a ICANN TLS certificate.
-listen_port = 6287
+listen_socket = "127.0.0.1:6287"
 
 [admin_api]
 # The port number to run the admin HTTP (clear text) server on.
 # Used for admin requests from the admin UI.
-listen_port = 6288
+listen_socket = "127.0.0.1:6288"
 
 # The password for the admin user to access the admin UI.
 admin_password = "admin"
 
 [pkdns]
-# The public IP address of the homeserver to be advertised on the DHT.
-public_ip = "127.0.0.1"
-
-# The public port the homeserver is listening on to be advertised on the DHT.
-# Defaults to the pubky_drive_api.listen_port but might be different if you are
+# The public IP address and port of the homeserver pubky_drive_api to be advertised on the DHT.
+# Defaults to the pubky_drive_api.listen_socket but might be different if you are
 # using a reverse proxy.
-public_port = 6286
+public_socket = "127.0.0.1:6286"
 
 # The interval at which user keys are republished to the DHT.
 user_keys_republisher_interval = 14400  # 4 hours in seconds

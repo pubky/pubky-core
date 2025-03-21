@@ -6,6 +6,7 @@ use std::{
 
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::http::HttpServers;
+use crate::data_dir::DataDir;
 use pkarr::{Keypair, PublicKey};
 use anyhow::Result;
 use tracing::info;
@@ -92,6 +93,18 @@ impl Homeserver {
     /// Returns a Homeserver builder.
     pub fn builder() -> HomeserverBuilder {
         HomeserverBuilder::default()
+    }
+
+    /// Run the homeserver with configurations from a data directory.
+    pub async fn run_with_data_dir(dir_path: PathBuf) -> Result<()> {
+        let data_dir = DataDir::new(dir_path);
+        data_dir.ensure_data_dir_exists_and_is_writable()?;
+        let config = data_dir.read_or_create_config_file()?;
+        let keypair = data_dir.read_or_create_keypair()?;
+        unimplemented!("Not implemented");
+        // TODO: implement this
+        // let config = Config::from_data_dir(data_dir);
+        // Self::run(config).await
     }
 
     /// Run a Homeserver with configurations suitable for ephemeral tests.
@@ -231,5 +244,34 @@ impl Default for Config {
             core: CoreConfig::default(),
             admin: AdminConfig::default(),
         }
+    }
+}
+
+
+impl TryFrom<DataDir> for Config {
+    type Error = anyhow::Error;
+
+    fn try_from(dir: DataDir) -> Result<Self, Self::Error> {
+        let conf = dir.read_or_create_config_file()?;
+        let keypair = dir.read_or_create_keypair()?;
+        
+        let lmdb_path = dir.path().join("data/lmdb");
+        unimplemented!("Not implemented");
+        
+        // IoConfig {
+        //     http_port: conf.icann_drive_api.listen_port,
+        //     https_port: conf.pubky_drive_api.listen_port,
+        //     domain: conf.icann_drive_api.domain,
+        //     public_addr: io.public_ip.map(|ip| {
+        //         SocketAddr::from((
+        //             ip,
+        //             io.reverse_proxy
+        //                 .and_then(|r| r.public_port)
+        //                 .unwrap_or(io.https_port.unwrap_or(0)),
+        //         ))
+        //     }),
+        //     ..Default::default()
+        // }
+        // Ok(config)
     }
 }
