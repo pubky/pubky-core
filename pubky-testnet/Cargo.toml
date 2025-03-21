@@ -23,5 +23,4 @@ pubky = { version = "0.4.2", path = "../pubky" }
 pubky-common = { version = "0.3.1", path = "../pubky-common" }
 pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver" }
 
-[dev-dependencies]
-tracing-subscriber = "0.3.19"
+
