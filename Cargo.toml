@@ -2,10 +2,10 @@
 members = [
   "pubky",
   "pubky-*", 
-
   "http-relay",
   "pkarr-republisher",
-  "examples"
+  "examples", 
+  "e2e",
 ]
 
 # See: https://github.com/rust-lang/rust/issues/90148#issuecomment-949194352
