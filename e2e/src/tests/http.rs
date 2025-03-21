@@ -1,4 +1,4 @@
-use crate::Testnet;
+use pubky_testnet::Testnet;
 
 #[tokio::test]
 async fn http_get_pubky() {

@@ -1,4 +1,4 @@
-use crate::Testnet;
+use pubky_testnet::Testnet;
 use bytes::Bytes;
 use pkarr::Keypair;
 use reqwest::{Method, StatusCode};

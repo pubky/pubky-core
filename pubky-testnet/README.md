@@ -1,7 +1,6 @@
 # Pubky Testnet
 
 A local test network for developing Pubky Core or applications depending on it.
-Also includes Pubky E2E tests.
 
 All resources are ephemeral, databases are in the operating system's temporary directories, and all servers are closed as the testnet dropped.
 
@@ -36,7 +35,3 @@ If you need to run the testnet in a separate process, for example to test Pubky 
 3. A Pkarr Relay running on port [15411](pubky_common::constants::testnet_ports::PKARR_RELAY)
 2. A Homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`
 4. An HTTP relay running on port [15412](pubky_common::constants::testnet_ports::HTTP_RELAY)
-
-### E2E Tests
-
-Run with `cargo test`.

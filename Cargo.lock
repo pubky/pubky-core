@@ -770,6 +770,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "feeef44e73baff3a26d371801df019877a9866a8c493d315ab00177843314f35"
 
 [[package]]
+name = "e2e"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "pkarr",
+ "pubky-common",
+ "pubky-testnet",
+ "reqwest",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2247,15 +2260,12 @@ name = "pubky-testnet"
 version = "0.1.1"
 dependencies = [
  "anyhow",
- "bytes",
  "http-relay 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mainline",
- "pkarr",
  "pkarr-relay",
  "pubky",
  "pubky-common",
  "pubky-homeserver",
- "reqwest",
  "tokio",
  "tracing-subscriber",
  "url",

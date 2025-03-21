@@ -1,4 +1,4 @@
-use crate::Testnet;
+use pubky_testnet::Testnet;
 use pkarr::Keypair;
 use pubky_common::capabilities::{Capabilities, Capability};
 use reqwest::StatusCode;
