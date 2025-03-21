@@ -273,7 +273,7 @@ Clone the Pubky repository:
 
 ```bash
 git clone https://github.com/pubky/pubky
-cd pubky/pkg
+cd pubky-client/pkg
 ```
 
 Run the local testnet server
