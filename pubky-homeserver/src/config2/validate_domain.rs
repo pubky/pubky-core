@@ -61,6 +61,7 @@ mod tests {
     use super::*;
     use serde::Deserialize;
 
+    #[allow(unused)]
     #[derive(Debug, Deserialize)]
     struct TestConfig {
         #[serde(deserialize_with = "validate_domain")]

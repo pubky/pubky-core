@@ -1,5 +1,5 @@
 use std::{io::Write, path::PathBuf};
-
+use hex;
 use super::ConfigToml;
 
 
@@ -43,8 +43,13 @@ impl DataDir {
 
     /// Makes sure the data directory exists.
     /// Create the directory if it doesn't exist.
-    pub fn ensure_data_dir_exists_and_is_accessible(&self) -> anyhow::Result<()> {
+    pub fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.expanded_path)?;
+
+        // Check if we can write to the data directory
+        let test_file_path = self.expanded_path.join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
+        std::fs::write(test_file_path.clone(), b"test").map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+        std::fs::remove_file(test_file_path).map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
         Ok(())
     }
 
@@ -72,6 +77,31 @@ impl DataDir {
         Ok(())
     }
 
+    /// Returns the path to the secret file.
+    pub fn get_secret_file_path(&self) -> PathBuf {
+        self.expanded_path.join("secret")
+    }
+
+    /// Reads the secret file. Creates a new secret file if it doesn't exist.
+    pub fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair> {
+        let secret_file_path = self.get_secret_file_path();
+        if !secret_file_path.exists() {
+            // Create a new secret file
+            let keypair = pkarr::Keypair::random();
+            let secret = keypair.secret_key();
+            let hex_string = hex::encode(secret);
+            std::fs::write(secret_file_path.clone(), hex_string)?;
+        }
+        // Read the secret file
+        let secret = std::fs::read(secret_file_path)?;
+        let secret_bytes = hex::decode(secret)?;
+        if secret_bytes.len() != 32 {
+            return Err(anyhow::anyhow!("Invalid secret file"));
+        }
+        let secret_bytes: [u8; 32] = secret_bytes.try_into().unwrap();
+        let keypair = pkarr::Keypair::from_secret_key(&secret_bytes);
+        Ok(keypair)
+    }
 
 }
 
@@ -104,7 +134,7 @@ mod tests {
         let test_path = temp_dir.path().join(".pubky");
         let data_dir = DataDir::new(test_path.clone());
         
-        data_dir.ensure_data_dir_exists_and_is_accessible().unwrap();
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         assert!(test_path.exists());
         // temp_dir will be automatically cleaned up when it goes out of scope
     }
@@ -114,7 +144,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
         let data_dir = DataDir::new(test_path.clone());
-        data_dir.ensure_data_dir_exists_and_is_accessible().unwrap();
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         let config_file_path = data_dir.get_config_file_path();
         assert!(!config_file_path.exists()); // Should not exist yet
 
@@ -129,7 +159,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
         let data_dir = DataDir::new(test_path.clone());
-        data_dir.ensure_data_dir_exists_and_is_accessible().unwrap();
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         let _ = data_dir.read_or_create_config_file().unwrap(); // Should create a default config file
         assert!(data_dir.get_config_file_path().exists());
 
@@ -142,7 +172,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
         let data_dir = DataDir::new(test_path.clone());
-        data_dir.ensure_data_dir_exists_and_is_accessible().unwrap();
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Write a broken config file
         let config_file_path = data_dir.get_config_file_path();
@@ -155,6 +185,35 @@ mod tests {
 
         // Make sure the broken config file is still there
         let content = std::fs::read_to_string(config_file_path).unwrap();
+        assert_eq!(content, "test");
+    }
+
+    #[test]
+    pub fn test_create_secret_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().join(".pubky");
+        let data_dir = DataDir::new(test_path.clone());
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
+
+        let _ = data_dir.read_or_create_keypair().unwrap();
+        assert!(data_dir.get_secret_file_path().exists());
+    }
+
+    #[test]
+    pub fn test_dont_override_existing_secret_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().join(".pubky");
+        let data_dir = DataDir::new(test_path.clone());
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
+
+        // Create a secret file
+        let secret_file_path = data_dir.get_secret_file_path();
+        std::fs::write(secret_file_path.clone(), b"test").unwrap();
+
+        let result = data_dir.read_or_create_keypair();
+        assert!(result.is_err());
+        assert!(data_dir.get_secret_file_path().exists());
+        let content = std::fs::read_to_string(secret_file_path).unwrap();
         assert_eq!(content, "test");
     }
 }

@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use pubky_homeserver::{ConfigToml, Homeserver};
+use pubky_homeserver::{Homeserver, HomeserverBuilder};
 use dirs;
 use pubky_homeserver::DataDir;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 fn default_config_dir_path() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join("~/.pubky")
+    dirs::home_dir().unwrap_or_default().join(".pubky")
 }
 
 /// Validate that the data_dir path is a directory.
@@ -39,15 +39,32 @@ async fn main() -> Result<()> {
         )
         .init();
 
+    tracing::debug!("Using data dir: {}", args.data_dir.display());
+
     let data_dir = DataDir::new(args.data_dir);
-    data_dir.ensure_data_dir_exists_and_is_accessible()?;
-    let config = data_dir.read_config_file()?;
+    data_dir.ensure_data_dir_exists_and_is_writable()?;
+    let config = data_dir.read_or_create_config_file()?;
+    let keypair = data_dir.read_or_create_keypair()?;
+    tracing::debug!("{config:?} {:?}", keypair.public_key());
 
-    tracing::info!("Config: {:?}", config);
 
-    let server = unsafe {
-        Homeserver::run_with_config_file(data_dir.get_config_file_path()).await?
-    };
+    let mut builder = HomeserverBuilder::default();
+    builder
+    .keypair(keypair)
+    .admin_password(config.admin_api.admin_password);
+
+    if let Some(domain) = config.icann_drive_api.domain.as_ref() {
+        builder.domain(domain.as_str());
+    }
+    if let Some(boostrap_nodes) = config.pkdns.dht_bootstrap_nodes.as_ref() {
+        builder.bootstrap(boostrap_nodes);
+    }
+
+
+
+
+    let server =  
+        Homeserver::run_with_config_file(data_dir.get_config_file_path()).await?;
 
     tokio::signal::ctrl_c().await?;
 
