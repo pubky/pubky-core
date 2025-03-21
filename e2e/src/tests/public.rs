@@ -1,6 +1,6 @@
-use pubky_testnet::Testnet;
 use bytes::Bytes;
 use pkarr::Keypair;
+use pubky_testnet::Testnet;
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
