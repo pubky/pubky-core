@@ -1,5 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
+use super::backup::backup_lmdb_periodically;
 use crate::core::database::DB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::SignupMode;
@@ -46,6 +47,10 @@ impl HomeserverCore {
             db: db.clone(),
             admin,
         };
+
+        // Spawn the backup process. This task will run forever, creating a backup every 4 hours.
+        let backup_path = config.storage.join("backup");
+        tokio::spawn(backup_lmdb_periodically(db.clone(), backup_path));
 
         let router = super::routes::create_app(state.clone());
 
