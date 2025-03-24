@@ -1,5 +1,5 @@
 use super::ConfigToml;
-use std::{io::Write, path::PathBuf};
+use std::{io::Write, os::unix::fs::PermissionsExt, path::PathBuf};
 
 /// The data directory for the homeserver.
 ///
@@ -99,14 +99,13 @@ impl DataDir {
             let secret = keypair.secret_key();
             let hex_string = hex::encode(secret);
             std::fs::write(secret_file_path.clone(), hex_string)?;
+            std::fs::set_permissions(&secret_file_path, std::fs::Permissions::from_mode(0o600))?;
+            tracing::info!("Secret file created at {}", secret_file_path.display());
         }
         // Read the secret file
         let secret = std::fs::read(secret_file_path)?;
         let secret_bytes = hex::decode(secret)?;
-        if secret_bytes.len() != 32 {
-            return Err(anyhow::anyhow!("Invalid secret file"));
-        }
-        let secret_bytes: [u8; 32] = secret_bytes.try_into().unwrap();
+        let secret_bytes: [u8; 32] = secret_bytes.try_into().map_err(|_| anyhow::anyhow!("Failed to convert secret bytes into array of length 32"))?;
         let keypair = pkarr::Keypair::from_secret_key(&secret_bytes);
         Ok(keypair)
     }
