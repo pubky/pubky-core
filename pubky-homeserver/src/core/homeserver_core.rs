@@ -170,17 +170,18 @@ impl CoreConfig {
     }
 }
 
-pub fn storage(storage: Option<String>) -> Result<PathBuf> {
-    let dir = if let Some(storage) = storage {
-        PathBuf::from(storage)
+pub fn storage(storage: Option<String>) -> anyhow::Result<PathBuf> {
+    if let Some(storage) = storage {
+        Ok(PathBuf::from(storage))
     } else {
-        let path = dirs_next::data_dir().ok_or_else(|| {
-            anyhow::anyhow!("operating environment provides no directory for application data")
-        })?;
-        path.join(DEFAULT_STORAGE_DIR)
-    };
-
-    Ok(dir.join("homeserver"))
+        dirs::home_dir()
+        .map(|dir| dir.join(".pubky/data/lmdb"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "operating environment provides no directory for application data"
+            )
+        })
+    }
 }
 
 #[cfg(test)]

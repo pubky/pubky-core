@@ -25,7 +25,6 @@ axum-extra = { version = "0.10.0", features = [
 base32 = "0.5.1"
 bytes = "^1.10.0"
 clap = { version = "4.5.29", features = ["derive"] }
-dirs-next = "2.0.0"
 flume = "0.11.1"
 futures-util = "0.3.31"
 heed = "0.21.0"

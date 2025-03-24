@@ -2260,7 +2260,6 @@ dependencies = [
  "bytes",
  "clap",
  "dirs",
- "dirs-next",
  "flume",
  "futures-util",
  "heed",
