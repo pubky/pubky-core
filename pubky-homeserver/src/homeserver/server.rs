@@ -249,9 +249,9 @@ impl TryFrom<DataDir> for Config {
         // TODO: Needs refactoring of the Homeserver Config struct. I am not doing
         // it yet because I am concentrating on the config currently.
         let io = IoConfig {
-            http_port: conf.icann_drive_api.listen_socket.port(),
-            https_port: conf.pubky_drive_api.listen_socket.port(),
-            domain: conf.icann_drive_api.domain,
+            http_port: conf.drive.icann_listen_socket.port(),
+            https_port: conf.drive.pubky_listen_socket.port(),
+            domain: conf.drive.icann_domain,
             public_addr: Some(conf.pkdns.public_socket),
             ..Default::default()
         };
@@ -265,8 +265,8 @@ impl TryFrom<DataDir> for Config {
         };
 
         let admin = AdminConfig {
-            signup_mode: conf.signup_mode.try_into()?,
-            password: Some(conf.admin_api.admin_password),
+            signup_mode: conf.general.signup_mode.try_into()?,
+            password: Some(conf.admin.admin_password),
         };
 
         Ok(Config {

@@ -1,13 +1,19 @@
-# The mode for the signup. Options:
+[general]
+# The mode for the signup. Default: "token_required" Options:
 # "open" - anyone can signup.
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
-[icann_drive_api]
+[drive]
+# The port number to run an HTTPS (Pkarr TLS) server on.
+# Pkarr TLS is a TLS implementation that is compatible with the Pkarr protocol.
+# No need to provide a ICANN TLS certificate.
+pubky_listen_socket = "127.0.0.1:6287"
+
 # The port number to run an HTTP (clear text) server on.
 # Used for http requests from regular browsers.
 # May be put behind a reverse proxy with TLS enabled.
-listen_socket = "127.0.0.1:6286"
+icann_listen_socket = "127.0.0.1:6286"
 
 # An ICANN domain name is necessary to support legacy browsers
 #
@@ -18,15 +24,10 @@ listen_socket = "127.0.0.1:6286"
 # 
 # ICANN TLS is not natively supported, so you should be running
 # a reverse proxy and managing certificates yourself.
-domain = "example.com"
+icann_domain = "example.com"
 
-[pubky_drive_api]
-# The port number to run an HTTPS (Pkarr TLS) server on.
-# Pkarr TLS is a TLS implementation that is compatible with the Pkarr protocol.
-# No need to provide a ICANN TLS certificate.
-listen_socket = "127.0.0.1:6287"
 
-[admin_api]
+[admin]
 # The port number to run the admin HTTP (clear text) server on.
 # Used for admin requests from the admin UI.
 listen_socket = "127.0.0.1:6288"

@@ -57,29 +57,24 @@ fn default_user_keys_republisher_interval() -> NonZeroU64 {
     NonZeroU64::new(14400).expect("14400 is a valid non-zero u64")
 }
 
-/// All configuration related to the Pubky TLS Drive API
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct PubkyDriveApiToml {
-    /// The port on which the Pubky TLS Drive API will listen.
-    #[serde(default = "default_pubky_drive_listen_socket")]
-    pub listen_socket: SocketAddr,
-}
-
 fn default_pubky_drive_listen_socket() -> SocketAddr {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = 6287;
     SocketAddr::from((ip, port))
 }
 
-/// All configuration related to the regular HTTP API
+/// All configuration related to file drive
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct IcannDriveApiToml {
+pub struct DriveToml {
+    /// The port on which the Pubky TLS Drive API will listen.
+    #[serde(default = "default_pubky_drive_listen_socket")]
+    pub pubky_listen_socket: SocketAddr,
     /// The port on which the regular http API will listen.
     #[serde(default = "default_icann_drive_listen_socket")]
-    pub listen_socket: SocketAddr,
+    pub icann_listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
     #[serde(default = "default_icann_drive_domain")]
-    pub domain: Option<String>,
+    pub icann_domain: Option<String>,
 }
 
 fn default_icann_drive_listen_socket() -> SocketAddr {
@@ -94,7 +89,7 @@ fn default_icann_drive_domain() -> Option<String> {
 
 /// All configuration related to the admin API
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct AdminApiToml {
+pub struct AdminToml {
     /// The socket on which the admin API will listen.
     #[serde(default = "default_admin_listen_socket")]
     pub listen_socket: SocketAddr,
@@ -113,6 +108,21 @@ fn default_admin_listen_socket() -> SocketAddr {
     SocketAddr::from((ip, port))
 }
 
+/// All configuration related to the admin API
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct GeneralToml {
+    /// The mode of the signup.
+    #[serde(
+        default = "default_signup_mode",
+        deserialize_with = "validate_signup_mode"
+    )]
+    pub signup_mode: String,
+}
+
+fn default_signup_mode() -> String {
+    "token_required".to_string()
+}
+
 /// The error that can occur when reading the config file
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigReadError {
@@ -127,25 +137,14 @@ pub enum ConfigReadError {
 /// The main server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
-    /// The mode of the signup.
-    #[serde(
-        default = "default_signup_mode",
-        deserialize_with = "validate_signup_mode"
-    )]
-    pub signup_mode: String,
-
-    /// The configuration for the regular http API.
-    pub icann_drive_api: IcannDriveApiToml,
-    /// The configuration for the Pubky TLS Drive API.
-    pub pubky_drive_api: PubkyDriveApiToml,
+    /// The configuration for the general settings.
+    pub general: GeneralToml,
+    /// The configuration for the drive files.
+    pub drive: DriveToml,
     /// The configuration for the admin API.
-    pub admin_api: AdminApiToml,
+    pub admin: AdminToml,
     /// The configuration for the pkdns.
     pub pkdns: PkdnsToml,
-}
-
-fn default_signup_mode() -> String {
-    "token_required".to_string()
 }
 
 fn validate_signup_mode<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -219,19 +218,20 @@ mod tests {
     fn test_default_config() {
         let c: ConfigToml = ConfigToml::default();
 
+        assert_eq!(c.general.signup_mode, "token_required".to_string());
         assert_eq!(
-            c.icann_drive_api.listen_socket,
+            c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(c.icann_drive_api.domain, Some("example.com".to_string()));
+        assert_eq!(c.drive.icann_domain, Some("example.com".to_string()));
 
         assert_eq!(
-            c.pubky_drive_api.listen_socket,
+            c.drive.pubky_listen_socket,
             default_pubky_drive_listen_socket()
         );
 
-        assert_eq!(c.admin_api.listen_socket, default_admin_listen_socket());
-        assert_eq!(c.admin_api.admin_password, default_admin_password());
+        assert_eq!(c.admin.listen_socket, default_admin_listen_socket());
+        assert_eq!(c.admin.admin_password, default_admin_password());
 
         // Verify pkdns config
         assert_eq!(c.pkdns.public_socket, default_public_socket());
