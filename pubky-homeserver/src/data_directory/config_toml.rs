@@ -1,7 +1,7 @@
 //!
 //! Configuration file for the homeserver.
 //!
-use super::domain_port::{DomainPort, validate_domain_opt};
+use super::domain_port::DomainPort;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -79,7 +79,6 @@ pub struct IcannDriveApiToml {
     pub listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
     #[serde(
-        deserialize_with = "validate_domain_opt",
         default = "default_icann_drive_domain"
     )]
     pub domain: Option<String>,

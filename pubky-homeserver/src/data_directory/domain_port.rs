@@ -1,13 +1,15 @@
-use serde::{Deserialize, Serialize, Deserializer};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use std::result::Result;
+
+use super::domain::Domain;
 
 
 /// A domain and port pair.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DomainPort {
-    pub domain: String,
+    pub domain: Domain,
     pub port: u16,
 }
 
@@ -37,7 +39,7 @@ impl FromStr for DomainPort {
         }
         let part0 = parts[0];
 
-        let domain = validate_domain_str(part0)?;
+        let domain = part0.parse::<Domain>()?;
         let port = parts[1].parse::<u16>()?;
 
         Ok(Self { domain, port })
@@ -63,33 +65,6 @@ impl<'de> Deserialize<'de> for DomainPort {
     }
 }
 
-/// Validate a domain name according to RFC 1123
-pub fn validate_domain_opt<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let domain: Option<String> = Option::deserialize(deserializer)?;
-
-    if let Some(ref domain) = domain {
-        let domain =
-            validate_domain_str(domain).map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        Ok(Some(domain))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Validate a domain name according to RFC 1123
-pub fn validate_domain_str(domain: &str) -> anyhow::Result<String> {
-    // Check if it's a valid hostname according to RFC 1123
-    if !hostname_validator::is_valid(domain) {
-        return Err(anyhow::anyhow!(
-            "Invalid domain '{}': is not a valid RFC 1123 hostname",
-            domain
-        ));
-    }
-    Ok(domain.to_string())
-}
 
 #[cfg(test)]
 mod tests {
@@ -98,71 +73,19 @@ mod tests {
     #[test]
     fn test_domain_port_from_str() {
         let domain_port = DomainPort::from_str("example.com:6286").unwrap();
-        assert_eq!(domain_port.domain, "example.com");
+        assert_eq!(domain_port.domain.to_string(), "example.com");
         assert_eq!(domain_port.port, 6286);
     }
 
     #[test]
-    fn test_domain_port_from_str_invalid() {
+    fn test_domain_port_from_str_invalid1() {
         let domain_port = DomainPort::from_str("example.com");
         assert!(domain_port.is_err());
     }
 
-    #[allow(unused)]
-    #[derive(Debug, Deserialize)]
-    struct TestConfig {
-        #[serde(deserialize_with = "validate_domain_opt")]
-        domain: Option<String>,
-    }
-
     #[test]
-    fn test_domain_validation() {
-        // Test valid domains
-        let valid_domains = [
-            "example.com",
-            "sub.example.com",
-            "a.b.c.d",
-            "valid-domain.com",
-            "valid.domain-name.com",
-            "localhost",
-            "test.local",
-        ];
-
-        for domain in valid_domains {
-            let config = format!(
-                r#"
-                domain = "{}"
-                "#,
-                domain
-            );
-            let result = toml::from_str::<TestConfig>(&config);
-            assert!(result.is_ok(), "Domain '{}' should be valid", domain);
-        }
-
-        // Test invalid domains
-        let invalid_domains = [
-            ("invalid@domain.com", "contains invalid characters"),
-            ("domain..com", "contains consecutive dots"),
-            (".domain.com", "starts with a dot"),
-            ("domain.com.", "ends with a dot"),
-            ("-domain.com", "starts with a hyphen"),
-            ("domain.com-", "ends with a hyphen"),
-        ];
-
-        for (domain, reason) in invalid_domains {
-            let config = format!(
-                r#"
-                domain = "{}"
-                "#,
-                domain
-            );
-            let result = toml::from_str::<TestConfig>(&config);
-            assert!(
-                result.is_err(),
-                "Domain '{}' should be invalid: {}",
-                domain,
-                reason
-            );
-        }
+    fn test_domain_port_from_str_invalid2() {
+        let domain_port = DomainPort::from_str("example..com:80");
+        assert!(domain_port.is_err());
     }
 }
