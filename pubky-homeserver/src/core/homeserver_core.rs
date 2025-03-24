@@ -48,13 +48,16 @@ impl HomeserverCore {
             admin,
         };
 
-        // Spawn the backup process. This task will run forever, creating a backup every 4 hours.
-        let backup_path = config.storage.join("backup");
-        tokio::spawn(backup_lmdb_periodically(
-            db.clone(),
-            backup_path,
-            Duration::from_secs(4 * 60 * 60), // TODO: move into Config.
-        ));
+        // Spawn the backup process. This task will run forever, defaults to
+        // creating a backup every 4 hours.
+        if let Some(backup_interval) = config.lmdb_backup_interval {
+            let backup_path = config.storage.join("backup");
+            tokio::spawn(backup_lmdb_periodically(
+                db.clone(),
+                backup_path,
+                backup_interval,
+            ));
+        }
 
         let router = super::routes::create_app(state.clone());
 
@@ -125,6 +128,9 @@ pub struct CoreConfig {
     ///
     /// Defaults to `60*60*4` (4 hours)
     pub user_keys_republisher_interval: Option<Duration>,
+
+    /// The interval at which the LMDB backup is performed. None means disabled.
+    pub lmdb_backup_interval: Option<Duration>,
 }
 
 impl Default for CoreConfig {
@@ -138,6 +144,8 @@ impl Default for CoreConfig {
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
 
             user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
+
+            lmdb_backup_interval: Some(Duration::from_secs(60 * 60 * 4)),
         }
     }
 }
@@ -151,7 +159,7 @@ impl CoreConfig {
         Self {
             storage,
             db_map_size: 10485760,
-
+            lmdb_backup_interval: None,
             ..Default::default()
         }
     }

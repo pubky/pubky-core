@@ -261,6 +261,11 @@ impl TryFrom<DataDir> for Config {
             user_keys_republisher_interval: Some(Duration::from_secs(
                 conf.pkdns.user_keys_republisher_interval.into(),
             )),
+            lmdb_backup_interval: if conf.general.lmdb_backup_interval_s == 0 {
+                None
+            } else {
+                Some(Duration::from_secs(conf.general.lmdb_backup_interval_s))
+            },
             ..Default::default()
         };
 
