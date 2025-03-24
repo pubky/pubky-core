@@ -1,13 +1,3 @@
-//!
-//! Default TOML configuration for the homeserver.
-//!
-//! This is used to create a default config file if it doesn't exist.
-//!
-//! Why not use the Default trait? The `toml` crate doesn't support adding comments.
-//! So we maintain this default manually.
-//!
-
-pub const DEFAULT_CONFIG: &str = r#"
 # The mode for the signup. Options:
 # "open" - anyone can signup.
 # "token_required" - a signup token is required to signup.
@@ -67,4 +57,3 @@ dht_relay_nodes = [
     "https://relay.pkarr.org", 
     "https://pkarr.pubky.org"
 ]
-"#;

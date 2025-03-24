@@ -1,9 +1,7 @@
 //!
 //! Configuration file for the homeserver.
 //!
-use super::{
-    default_toml::DEFAULT_CONFIG, domain_port::DomainPort, validate_domain::validate_domain_opt,
-};
+use super::{domain_port::DomainPort, validate_domain::validate_domain_opt};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -12,6 +10,12 @@ use std::{
     str::FromStr,
 };
 use url::Url;
+
+/// Default TOML configuration for the homeserver.
+/// This is used to create a default config file if it doesn't exist.
+/// Why not use the Default trait? The `toml` crate doesn't support adding comments.
+/// So we maintain this default manually.
+pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
 
 /// All configuration related to the DHT
 /// and /pkarr.
