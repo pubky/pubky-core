@@ -10,7 +10,9 @@ use heed::{
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
-use crate::core::database::DB;
+use crate::persistence::consts::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+
+use super::super::LmDB;
 
 /// Event [pkarr::Timestamp] base32 => Encoded event.
 pub type EventsTable = Database<Str, Bytes>;
@@ -59,7 +61,7 @@ impl Event {
     }
 }
 
-impl DB {
+impl LmDB {
     /// Returns a list of events formatted as `<OP> <url>`.
     ///
     /// - limit defaults to [crate::config::DEFAULT_LIST_LIMIT] and capped by [crate::config::DEFAULT_MAX_LIST_LIMIT]
@@ -72,8 +74,8 @@ impl DB {
         let txn = self.env.read_txn()?;
 
         let limit = limit
-            .unwrap_or(self.config().default_list_limit)
-            .min(self.config().max_list_limit);
+            .unwrap_or(DEFAULT_LIST_LIMIT)
+            .min(DEFAULT_MAX_LIST_LIMIT);
 
         let cursor = cursor.unwrap_or("0000000000000".to_string());
 

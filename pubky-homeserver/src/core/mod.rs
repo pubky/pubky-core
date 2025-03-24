@@ -1,4 +1,3 @@
-pub mod database;
 mod error;
 mod extractors;
 mod homeserver_core;

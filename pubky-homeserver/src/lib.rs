@@ -6,7 +6,9 @@
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
 mod core;
+mod persistence;
 mod data_directory;
+mod admin;
 mod homeserver;
 
 pub use data_directory::*;

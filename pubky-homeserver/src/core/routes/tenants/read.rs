@@ -9,11 +9,11 @@ use pkarr::PublicKey;
 use std::str::FromStr;
 
 use crate::core::{
-    database::tables::entries::Entry,
     error::{Error, Result},
     extractors::{ListQueryParams, PubkyHost},
     AppState,
 };
+use crate::persistence::lmdb::tables::entries::Entry;
 
 pub async fn head(
     State(state): State<AppState>,

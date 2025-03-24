@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
-use crate::core::database::DB;
+use crate::persistence::lmdb::LmDB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::SignupMode;
 use anyhow::Result;
@@ -19,7 +19,7 @@ pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
-    pub(crate) db: DB,
+    pub(crate) db: LmDB,
     pub(crate) admin: AdminConfig,
 }
 
@@ -39,7 +39,7 @@ impl HomeserverCore {
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub unsafe fn new(config: CoreConfig, admin: AdminConfig) -> Result<Self> {
-        let db = unsafe { DB::open(config.clone())? };
+        let db = unsafe { LmDB::open(config.storage.clone())? };
 
         let state = AppState {
             verifier: AuthVerifier::default(),

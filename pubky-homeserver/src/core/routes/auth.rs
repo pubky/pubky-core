@@ -1,11 +1,11 @@
 use crate::{
     core::{
-        database::tables::users::User,
         error::{Error, Result},
         AppState,
     },
     SignupMode,
 };
+use crate::persistence::lmdb::tables::users::User;
 use axum::{
     extract::{Query, State},
     http::StatusCode,

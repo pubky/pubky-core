@@ -1,9 +1,9 @@
 use heed::Env;
+use super::tables::Tables;
 
 mod m0;
 
-use super::tables::Tables;
-
+/// Run the migrations.
 pub fn run(env: &Env) -> anyhow::Result<Tables> {
     let mut wtxn = env.write_txn()?;
 

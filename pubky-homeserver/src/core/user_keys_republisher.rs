@@ -17,7 +17,7 @@ use tokio::{
     time::{interval, Instant},
 };
 
-use crate::core::database::DB;
+use crate::persistence::lmdb::LmDB;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserKeysRepublisherError {
@@ -30,14 +30,14 @@ pub enum UserKeysRepublisherError {
 /// Publishes the pkarr keys of all users to the Mainline DHT.
 #[derive(Debug, Clone)]
 pub struct UserKeysRepublisher {
-    db: DB,
+    db: LmDB,
     handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     is_running: Arc<AtomicBool>,
     republish_interval: Duration,
 }
 
 impl UserKeysRepublisher {
-    pub fn new(db: DB, republish_interval: Duration) -> Self {
+    pub fn new(db: LmDB, republish_interval: Duration) -> Self {
         Self {
             db,
             handle: Arc::new(RwLock::new(None)),
@@ -66,7 +66,7 @@ impl UserKeysRepublisher {
     }
 
     // Get all user public keys from the database.
-    async fn get_all_user_keys(db: DB) -> Result<Vec<PublicKey>, heed::Error> {
+    async fn get_all_user_keys(db: LmDB) -> Result<Vec<PublicKey>, heed::Error> {
         let rtxn = db.env.read_txn()?;
         let users = db.tables.users.iter(&rtxn)?;
 
@@ -83,7 +83,7 @@ impl UserKeysRepublisher {
     ///
     /// - If the database cannot be read, an error is returned.
     /// - If the pkarr keys cannot be republished, an error is returned.
-    async fn republish_keys_once(db: DB) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
+    async fn republish_keys_once(db: LmDB) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
         let keys = Self::get_all_user_keys(db)
             .await
             .map_err(UserKeysRepublisherError::DB)?;
@@ -103,7 +103,7 @@ impl UserKeysRepublisher {
     }
 
     /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
-    async fn run_loop(db: DB, republish_interval: Duration) {
+    async fn run_loop(db: LmDB, republish_interval: Duration) {
         let mut interval = interval(republish_interval);
         loop {
             interval.tick().await;
@@ -174,13 +174,12 @@ mod tests {
     use pkarr::Keypair;
     use tokio::time::Instant;
 
-    use crate::core::{
-        database::{tables::users::User, DB},
-        user_keys_republisher::UserKeysRepublisher,
-    };
+    use crate::persistence::lmdb::LmDB;
+    use crate::persistence::lmdb::tables::users::User;
+    use crate::core::user_keys_republisher::UserKeysRepublisher;
 
-    async fn init_db_with_users(count: usize) -> DB {
-        let db = DB::test();
+    async fn init_db_with_users(count: usize) -> LmDB {
+        let db = LmDB::test();
         let mut wtxn = db.env.write_txn().unwrap();
         for _ in 0..count {
             let user = User::new();

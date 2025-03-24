@@ -1,6 +1,6 @@
 use heed::{types::Bytes, Database, RoTxn};
 
-use crate::core::database::DB;
+use super::super::LmDB;
 
 use super::entries::Entry;
 
@@ -9,7 +9,7 @@ pub type BlobsTable = Database<Bytes, Bytes>;
 
 pub const BLOBS_TABLE: &str = "blobs";
 
-impl DB {
+impl LmDB {
     pub fn read_entry_content<'txn>(
         &self,
         rtxn: &'txn RoTxn,
