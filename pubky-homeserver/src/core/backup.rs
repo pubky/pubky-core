@@ -2,10 +2,8 @@ use crate::core::database::DB;
 use heed::CompactionOption;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::time::{interval_at, Instant};
+use tokio::time::interval;
 use tracing::{error, info};
-
-const BACKUP_INTERVAL: Duration = Duration::from_secs(4 * 60 * 60); // 4 hours
 
 /// Periodically creates a backup of the LMDB environment every 4 hours.
 ///
@@ -18,10 +16,10 @@ const BACKUP_INTERVAL: Duration = Duration::from_secs(4 * 60 * 60); // 4 hours
 ///
 /// * `db` - The LMDB database handle.
 /// * `backup_path` - The base path for the backup file (extensions will be appended).
-pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf) {
-    // Schedule the first backup after the interval.
-    let start_time = Instant::now() + BACKUP_INTERVAL;
-    let mut interval_timer = interval_at(start_time, BACKUP_INTERVAL);
+pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf, period: Duration) {
+    let mut interval_timer = interval(period);
+
+    interval_timer.tick().await; // Ignore the first tick as it is instant.
 
     loop {
         // Wait for the next backup tick.
@@ -36,7 +34,8 @@ pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf) {
             do_backup(db_clone, backup_path_clone);
         })
         .await
-        .expect("Failed to execute backup task");
+        .map_err(|e| error!("Backup task panicked: {:?}", e))
+        .ok();
     }
 }
 
@@ -84,7 +83,6 @@ fn do_backup(db: DB, backup_path: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::tempdir;
 
     /// Tests that the backup creates the final backup file with the `.mdb` extension
@@ -118,8 +116,5 @@ mod tests {
             "Expected temporary backup file at {:?} to be removed.",
             temp_backup_file
         );
-
-        // Clean up the final backup file.
-        fs::remove_file(final_backup_file).expect("Failed to remove backup file");
     }
 }

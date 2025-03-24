@@ -50,7 +50,11 @@ impl HomeserverCore {
 
         // Spawn the backup process. This task will run forever, creating a backup every 4 hours.
         let backup_path = config.storage.join("backup");
-        tokio::spawn(backup_lmdb_periodically(db.clone(), backup_path));
+        tokio::spawn(backup_lmdb_periodically(
+            db.clone(),
+            backup_path,
+            Duration::from_secs(4 * 60 * 60), // TODO: move into Config.
+        ));
 
         let router = super::routes::create_app(state.clone());
 
