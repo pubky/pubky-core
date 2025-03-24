@@ -78,9 +78,7 @@ pub struct IcannDriveApiToml {
     #[serde(default = "default_icann_drive_listen_socket")]
     pub listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
-    #[serde(
-        default = "default_icann_drive_domain"
-    )]
+    #[serde(default = "default_icann_drive_domain")]
     pub domain: Option<String>,
 }
 

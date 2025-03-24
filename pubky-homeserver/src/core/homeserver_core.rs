@@ -175,12 +175,10 @@ pub fn storage(storage: Option<String>) -> anyhow::Result<PathBuf> {
         Ok(PathBuf::from(storage))
     } else {
         dirs::home_dir()
-        .map(|dir| dir.join(".pubky/data/lmdb"))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "operating environment provides no directory for application data"
-            )
-        })
+            .map(|dir| dir.join(".pubky/data/lmdb"))
+            .ok_or_else(|| {
+                anyhow::anyhow!("operating environment provides no directory for application data")
+            })
     }
 }
 

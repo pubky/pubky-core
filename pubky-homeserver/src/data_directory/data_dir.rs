@@ -105,7 +105,9 @@ impl DataDir {
         // Read the secret file
         let secret = std::fs::read(secret_file_path)?;
         let secret_bytes = hex::decode(secret)?;
-        let secret_bytes: [u8; 32] = secret_bytes.try_into().map_err(|_| anyhow::anyhow!("Failed to convert secret bytes into array of length 32"))?;
+        let secret_bytes: [u8; 32] = secret_bytes.try_into().map_err(|_| {
+            anyhow::anyhow!("Failed to convert secret bytes into array of length 32")
+        })?;
         let keypair = pkarr::Keypair::from_secret_key(&secret_bytes);
         Ok(keypair)
     }

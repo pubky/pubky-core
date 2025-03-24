@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::str::FromStr;
 use std::result::Result;
+use std::str::FromStr;
 
 use super::domain::Domain;
-
 
 /// A domain and port pair.
 #[derive(Debug, Clone, PartialEq)]
@@ -64,7 +63,6 @@ impl<'de> Deserialize<'de> for DomainPort {
         Self::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
