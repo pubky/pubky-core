@@ -1,7 +1,7 @@
 //!
 //! Configuration file for the homeserver.
 //!
-use super::{domain_port::DomainPort, validate_domain::validate_domain_opt};
+use super::domain_port::{DomainPort, validate_domain_opt};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
