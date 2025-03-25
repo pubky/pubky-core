@@ -2,6 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use crate::core::database::DB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
+use crate::SignupMode;
 use anyhow::Result;
 use axum::Router;
 use pubky_common::auth::AuthVerifier;
@@ -73,25 +74,6 @@ impl HomeserverCore {
     #[allow(dead_code)]
     pub async fn stop(&mut self) {
         self.user_keys_republisher.stop().await;
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SignupMode {
-    Open,
-    #[default]
-    TokenRequired,
-}
-
-impl TryFrom<String> for SignupMode {
-    type Error = anyhow::Error;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(match value.as_str() {
-            "open" => Self::Open,
-            "token_required" => Self::TokenRequired,
-            _ => return Err(anyhow::anyhow!("Invalid signup mode: {}", value)),
-        })
     }
 }
 

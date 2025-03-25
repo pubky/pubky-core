@@ -1,7 +1,10 @@
-use crate::core::{
-    database::tables::users::User,
-    error::{Error, Result},
-    AppState, SignupMode,
+use crate::{
+    core::{
+        database::tables::users::User,
+        error::{Error, Result},
+        AppState,
+    },
+    SignupMode,
 };
 use axum::{
     extract::{Query, State},

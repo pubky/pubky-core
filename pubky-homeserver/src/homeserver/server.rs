@@ -2,12 +2,12 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use super::http::HttpServers;
 use super::key_republisher::HomeserverKeyRepublisher;
-use crate::data_directory::DataDir;
+use crate::{data_directory::DataDir, SignupMode};
 use anyhow::Result;
 use pkarr::{Keypair, PublicKey};
 use tracing::info;
 
-use crate::core::{AdminConfig, CoreConfig, HomeserverCore, SignupMode};
+use crate::core::{AdminConfig, CoreConfig, HomeserverCore};
 
 pub const DEFAULT_HTTP_PORT: u16 = 6286;
 pub const DEFAULT_HTTPS_PORT: u16 = 6287;
@@ -265,7 +265,7 @@ impl TryFrom<DataDir> for Config {
         };
 
         let admin = AdminConfig {
-            signup_mode: conf.general.signup_mode.try_into()?,
+            signup_mode: conf.general.signup_mode,
             password: Some(conf.admin.admin_password),
         };
 

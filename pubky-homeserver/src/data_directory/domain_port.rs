@@ -8,7 +8,9 @@ use super::domain::Domain;
 /// A domain and port pair.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DomainPort {
+    /// The domain name.
     pub domain: Domain,
+    /// The port number.
     pub port: u16,
 }
 

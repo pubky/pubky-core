@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Validated domain name according to RFC 1123.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Domain(String);
+pub struct Domain(pub String);
 
 impl Domain {
     /// Create a new domain from a string.

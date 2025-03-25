@@ -1,7 +1,7 @@
 //!
 //! Configuration file for the homeserver.
 //!
-use super::domain_port::DomainPort;
+use super::{domain_port::DomainPort, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -112,15 +112,12 @@ fn default_admin_listen_socket() -> SocketAddr {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct GeneralToml {
     /// The mode of the signup.
-    #[serde(
-        default = "default_signup_mode",
-        deserialize_with = "validate_signup_mode"
-    )]
-    pub signup_mode: String,
+    #[serde(default = "default_signup_mode")]
+    pub signup_mode: SignupMode,
 }
 
-fn default_signup_mode() -> String {
-    "token_required".to_string()
+fn default_signup_mode() -> SignupMode {
+    SignupMode::TokenRequired
 }
 
 /// The error that can occur when reading the config file
@@ -145,19 +142,6 @@ pub struct ConfigToml {
     pub admin: AdminToml,
     /// The configuration for the pkdns.
     pub pkdns: PkdnsToml,
-}
-
-fn validate_signup_mode<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s: String = String::deserialize(deserializer)?;
-    match s.as_str() {
-        "open" | "token_required" => Ok(s),
-        _ => Err(serde::de::Error::custom(
-            "signup_mode must be either \"open\" or \"token_required\"",
-        )),
-    }
 }
 
 impl ConfigToml {
@@ -218,7 +202,7 @@ mod tests {
     fn test_default_config() {
         let c: ConfigToml = ConfigToml::default();
 
-        assert_eq!(c.general.signup_mode, "token_required".to_string());
+        assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
         assert_eq!(
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
