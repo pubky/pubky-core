@@ -1,3 +1,4 @@
+mod backup;
 pub mod database;
 mod error;
 mod extractors;

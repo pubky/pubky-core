@@ -114,10 +114,17 @@ pub struct GeneralToml {
     /// The mode of the signup.
     #[serde(default = "default_signup_mode")]
     pub signup_mode: SignupMode,
+    /// LMDB backup interval in seconds. 0 means disabled.
+    #[serde(default = "default_lmdb_backup_interval_s")]
+    pub lmdb_backup_interval_s: u64,
 }
 
 fn default_signup_mode() -> SignupMode {
     SignupMode::TokenRequired
+}
+
+fn default_lmdb_backup_interval_s() -> u64 {
+    0
 }
 
 /// The error that can occur when reading the config file
