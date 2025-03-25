@@ -4,6 +4,11 @@
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
+# LMDB backup interval in seconds. 0 means disabled.
+# Periodically creates a "safe to copy" compacted backup on single
+# file under `{data_dir}/data/lmdb/backup.mdb`
+lmdb_backup_interval_s = 0
+
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.
 # Pkarr TLS is a TLS implementation that is compatible with the Pkarr protocol.
@@ -41,7 +46,7 @@ admin_password = "admin"
 public_socket = "127.0.0.1:6286"
 
 # The interval at which user keys are republished to the DHT.
-user_keys_republisher_interval = 14400  # 4 hours in seconds
+user_keys_republisher_interval = 14400 # 4 hours in seconds
 
 # List of bootstrap nodes for the DHT.
 # domain:port format.
@@ -49,12 +54,9 @@ dht_bootstrap_nodes = [
     "router.bittorrent.com:6881",
     "dht.transmissionbt.com:6881",
     "dht.libtorrent.org:25401",
-    "relay.pkarr.org:6881"
+    "relay.pkarr.org:6881",
 ]
 
 # Relay node urls for the DHT.
 # Improves the availability of pkarr packets.
-dht_relay_nodes = [
-    "https://relay.pkarr.org", 
-    "https://pkarr.pubky.org"
-]
+dht_relay_nodes = ["https://relay.pkarr.org", "https://pkarr.pubky.org"]

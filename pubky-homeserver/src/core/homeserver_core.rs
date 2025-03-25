@@ -1,5 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
+use super::backup::backup_lmdb_periodically;
 use crate::core::database::DB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::SignupMode;
@@ -46,6 +47,16 @@ impl HomeserverCore {
             db: db.clone(),
             admin,
         };
+
+        // Spawn the backup process. This task will run forever.
+        if let Some(backup_interval) = config.lmdb_backup_interval {
+            let backup_path = config.storage.join("backup");
+            tokio::spawn(backup_lmdb_periodically(
+                db.clone(),
+                backup_path,
+                backup_interval,
+            ));
+        }
 
         let router = super::routes::create_app(state.clone());
 
@@ -116,6 +127,9 @@ pub struct CoreConfig {
     ///
     /// Defaults to `60*60*4` (4 hours)
     pub user_keys_republisher_interval: Option<Duration>,
+
+    /// The interval at which the LMDB backup is performed. None means disabled.
+    pub lmdb_backup_interval: Option<Duration>,
 }
 
 impl Default for CoreConfig {
@@ -129,6 +143,8 @@ impl Default for CoreConfig {
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
 
             user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
+
+            lmdb_backup_interval: None,
         }
     }
 }
@@ -142,7 +158,7 @@ impl CoreConfig {
         Self {
             storage,
             db_map_size: 10485760,
-
+            lmdb_backup_interval: None,
             ..Default::default()
         }
     }
