@@ -124,7 +124,7 @@ fn default_signup_mode() -> SignupMode {
 }
 
 fn default_lmdb_backup_interval_s() -> u64 {
-    14400
+    0
 }
 
 /// The error that can occur when reading the config file

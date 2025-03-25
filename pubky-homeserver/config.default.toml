@@ -7,7 +7,7 @@ signup_mode = "token_required"
 # LMDB backup interval in seconds. 0 means disabled.
 # Periodically creates a "safe to copy" compacted backup on single
 # file under `{data_dir}/data/lmdb/backup.mdb`
-lmdb_backup_interval_s = 14400
+lmdb_backup_interval_s = 0
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.

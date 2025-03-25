@@ -48,8 +48,7 @@ impl HomeserverCore {
             admin,
         };
 
-        // Spawn the backup process. This task will run forever, defaults to
-        // creating a backup every 4 hours.
+        // Spawn the backup process. This task will run forever.
         if let Some(backup_interval) = config.lmdb_backup_interval {
             let backup_path = config.storage.join("backup");
             tokio::spawn(backup_lmdb_periodically(
@@ -145,7 +144,7 @@ impl Default for CoreConfig {
 
             user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
 
-            lmdb_backup_interval: Some(Duration::from_secs(60 * 60 * 4)),
+            lmdb_backup_interval: None,
         }
     }
 }
