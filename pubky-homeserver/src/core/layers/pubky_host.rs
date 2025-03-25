@@ -1,13 +1,10 @@
-use pkarr::PublicKey;
-
+use crate::core::error::Result;
 use crate::core::extractors::PubkyHost;
-
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
+use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
-
-use crate::core::error::Result;
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -40,25 +37,44 @@ where
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(|_| unreachable!()) // `Infallible` conversion
+        self.inner.poll_ready(cx).map_err(|_| unreachable!())
     }
 
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
-        let mut req = req;
 
-        Box::pin(async move {
-            let headers_to_check = ["host", "pubky-host"];
+        // Use helper function to extract public key from headers or query parameter.
+        if let Some(public_key) = extract_pubky(&req) {
+            req.extensions_mut().insert(PubkyHost(public_key));
+        }
 
-            for header in headers_to_check {
-                if let Some(Ok(pubky_host)) = req.headers().get(header).map(|h| h.to_str()) {
-                    if let Ok(public_key) = PublicKey::try_from(pubky_host) {
-                        req.extensions_mut().insert(PubkyHost(public_key));
-                    }
+        Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) })
+    }
+}
+
+/// Helper function to extract the public key from request headers or query parameter.
+fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
+    // Check headers "host" and "pubky-host"
+    for header in ["host", "pubky-host"] {
+        if let Some(value) = req.headers().get(header) {
+            if let Ok(s) = value.to_str() {
+                if let Ok(pubky) = PublicKey::try_from(s) {
+                    return Some(pubky);
                 }
             }
-
-            inner.call(req).await.map_err(|_| unreachable!())
-        })
+        }
     }
+
+    // Fallback: check query string for "pubky-host"
+    req.uri().query().and_then(|query| {
+        query.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
+                if key == "pubky-host" {
+                    return PublicKey::try_from(value).ok();
+                }
+            }
+            None
+        })
+    })
 }
