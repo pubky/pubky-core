@@ -6,7 +6,7 @@ use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 
-/// A Tower Layer to handle authorization for write operations.
+/// A Tower Layer to extract and inject the PubkyHost into request extensions.
 #[derive(Debug, Clone)]
 pub struct PubkyHostLayer;
 
@@ -18,7 +18,7 @@ impl<S> Layer<S> for PubkyHostLayer {
     }
 }
 
-/// Middleware that performs authorization checks for write operations.
+/// Middleware that extracts the public key from headers or query parameters.
 #[derive(Debug, Clone)]
 pub struct PubkyHostLayerMiddleware<S> {
     inner: S,
@@ -28,8 +28,8 @@ impl<S> Service<Request<Body>> for PubkyHostLayerMiddleware<S>
 where
     S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
         + Send
-        + 'static
-        + Clone,
+        + Clone
+        + 'static,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -41,40 +41,43 @@ where
     }
 
     fn call(&mut self, mut req: Request<Body>) -> Self::Future {
-        let mut inner = self.inner.clone();
-
-        // Use helper function to extract public key from headers or query parameter.
         if let Some(public_key) = extract_pubky(&req) {
             req.extensions_mut().insert(PubkyHost(public_key));
         }
-
+        let mut inner = self.inner.clone();
         Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) })
     }
 }
 
-/// Helper function to extract the public key from request headers or query parameter.
+/// Extracts a PublicKey by checking, in order:
+/// 1. The "host" header.
+/// 2. The "pubky-host" header (which overwrites any previously found key).
+/// 3. The query parameter "pubky-host" if none was found in headers.
 fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
-    // Check headers "host" and "pubky-host"
-    for header in ["host", "pubky-host"] {
-        if let Some(value) = req.headers().get(header) {
-            if let Ok(s) = value.to_str() {
-                if let Ok(pubky) = PublicKey::try_from(s) {
-                    return Some(pubky);
+    let mut pubky = None;
+    // Check headers in order: "host" then "pubky-host".
+    for header in ["host", "pubky-host"].iter() {
+        if let Some(val) = req.headers().get(*header) {
+            if let Ok(s) = val.to_str() {
+                if let Ok(key) = PublicKey::try_from(s) {
+                    pubky = Some(key);
                 }
             }
         }
     }
-
-    // Fallback: check query string for "pubky-host"
-    req.uri().query().and_then(|query| {
-        query.split('&').find_map(|pair| {
-            let mut parts = pair.splitn(2, '=');
-            if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
-                if key == "pubky-host" {
-                    return PublicKey::try_from(value).ok();
+    // If still no key, fall back to query parameter.
+    if pubky.is_none() {
+        pubky = req.uri().query().and_then(|query| {
+            query.split('&').find_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
+                    if key == "pubky-host" {
+                        return PublicKey::try_from(val).ok();
+                    }
                 }
-            }
-            None
-        })
-    })
+                None
+            })
+        });
+    }
+    pubky
 }
