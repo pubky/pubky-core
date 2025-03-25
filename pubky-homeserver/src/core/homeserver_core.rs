@@ -1,17 +1,20 @@
 use std::{path::PathBuf, time::Duration};
 
+use crate::core::database::DB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
+use crate::SignupMode;
 use anyhow::Result;
 use axum::Router;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
 
-use crate::config::{
-    DEFAULT_LIST_LIMIT, DEFAULT_MAP_SIZE, DEFAULT_MAX_LIST_LIMIT, DEFAULT_REPUBLISHER_INTERVAL,
-    DEFAULT_STORAGE_DIR,
-};
+pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
-use crate::core::database::DB;
+pub const DEFAULT_STORAGE_DIR: &str = "pubky";
+pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
+
+pub const DEFAULT_LIST_LIMIT: u16 = 100;
+pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -72,13 +75,6 @@ impl HomeserverCore {
     pub async fn stop(&mut self) {
         self.user_keys_republisher.stop().await;
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SignupMode {
-    Open,
-    #[default]
-    TokenRequired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -156,17 +152,16 @@ impl CoreConfig {
     }
 }
 
-pub fn storage(storage: Option<String>) -> Result<PathBuf> {
-    let dir = if let Some(storage) = storage {
-        PathBuf::from(storage)
+pub fn storage(storage: Option<String>) -> anyhow::Result<PathBuf> {
+    if let Some(storage) = storage {
+        Ok(PathBuf::from(storage))
     } else {
-        let path = dirs_next::data_dir().ok_or_else(|| {
-            anyhow::anyhow!("operating environment provides no directory for application data")
-        })?;
-        path.join(DEFAULT_STORAGE_DIR)
-    };
-
-    Ok(dir.join("homeserver"))
+        dirs::home_dir()
+            .map(|dir| dir.join(".pubky/data/lmdb"))
+            .ok_or_else(|| {
+                anyhow::anyhow!("operating environment provides no directory for application data")
+            })
+    }
 }
 
 #[cfg(test)]

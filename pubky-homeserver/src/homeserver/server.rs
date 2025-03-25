@@ -1,22 +1,16 @@
-use std::{
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
-use ::pkarr::{Keypair, PublicKey};
+use super::http::HttpServers;
+use super::key_republisher::HomeserverKeyRepublisher;
+use crate::{data_directory::DataDir, SignupMode};
 use anyhow::Result;
-use homeserver_key_republisher::HomeserverKeyRepublisher;
-use http::HttpServers;
+use pkarr::{Keypair, PublicKey};
 use tracing::info;
 
-use crate::{
-    config::{Config, DEFAULT_HTTPS_PORT, DEFAULT_HTTP_PORT},
-    core::{HomeserverCore, SignupMode},
-};
+use crate::core::{AdminConfig, CoreConfig, HomeserverCore};
 
-mod homeserver_key_republisher;
-mod http;
+pub const DEFAULT_HTTP_PORT: u16 = 6286;
+pub const DEFAULT_HTTPS_PORT: u16 = 6287;
 
 #[derive(Debug, Default)]
 /// Builder for [Homeserver].
@@ -88,7 +82,7 @@ impl HomeserverBuilder {
 pub struct Homeserver {
     http_servers: HttpServers,
     keypair: Keypair,
-    pkarr_server: HomeserverKeyRepublisher,
+    key_republisher: HomeserverKeyRepublisher,
 }
 
 impl Homeserver {
@@ -97,13 +91,11 @@ impl Homeserver {
         HomeserverBuilder::default()
     }
 
-    /// Run a Homeserver with a configuration file path.
-    ///
-    /// # Safety
-    /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async fn run_with_config_file(config_path: impl AsRef<Path>) -> Result<Self> {
-        unsafe { Self::run(Config::load(config_path).await?) }.await
+    /// Run the homeserver with configurations from a data directory.
+    pub async fn run_with_data_dir(dir_path: PathBuf) -> Result<Self> {
+        let data_dir = DataDir::new(dir_path);
+        let config = Config::try_from(data_dir)?;
+        unsafe { Self::run(config) }.await
     }
 
     /// Run a Homeserver with configurations suitable for ephemeral tests.
@@ -152,7 +144,7 @@ impl Homeserver {
         Ok(Self {
             http_servers,
             keypair,
-            pkarr_server: dht_republisher,
+            key_republisher: dht_republisher,
         })
     }
 
@@ -173,7 +165,7 @@ impl Homeserver {
     /// Send a shutdown signal to all open resources
     pub async fn shutdown(&self) {
         self.http_servers.shutdown();
-        self.pkarr_server.stop_periodic_republish().await;
+        self.key_republisher.stop_periodic_republish().await;
     }
 }
 
@@ -201,5 +193,87 @@ impl Default for IoConfig {
             bootstrap: None,
             dht_request_timeout: None,
         }
+    }
+}
+
+/// Server configuration
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Config {
+    /// Server keypair.
+    ///
+    /// Defaults to a random keypair.
+    pub keypair: Keypair,
+    pub io: IoConfig,
+    pub core: CoreConfig,
+    pub admin: AdminConfig,
+}
+
+impl Config {
+    /// Create test configurations
+    pub fn test(bootstrap: &[String]) -> Self {
+        let bootstrap = Some(bootstrap.to_vec());
+
+        Self {
+            io: IoConfig {
+                bootstrap,
+                http_port: 0,
+                https_port: 0,
+                ..Default::default()
+            },
+            core: CoreConfig::test(),
+            admin: AdminConfig::test(),
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            keypair: Keypair::random(),
+            io: IoConfig::default(),
+            core: CoreConfig::default(),
+            admin: AdminConfig::default(),
+        }
+    }
+}
+
+impl TryFrom<DataDir> for Config {
+    type Error = anyhow::Error;
+
+    fn try_from(dir: DataDir) -> Result<Self, Self::Error> {
+        dir.ensure_data_dir_exists_and_is_writable()?;
+        let conf = dir.read_or_create_config_file()?;
+        let keypair = dir.read_or_create_keypair()?;
+
+        // TODO: Needs refactoring of the Homeserver Config struct. I am not doing
+        // it yet because I am concentrating on the config currently.
+        let io = IoConfig {
+            http_port: conf.drive.icann_listen_socket.port(),
+            https_port: conf.drive.pubky_listen_socket.port(),
+            domain: conf.drive.icann_domain,
+            public_addr: Some(conf.pkdns.public_socket),
+            ..Default::default()
+        };
+
+        let core = CoreConfig {
+            storage: dir.path().join("data/lmdb"),
+            user_keys_republisher_interval: Some(Duration::from_secs(
+                conf.pkdns.user_keys_republisher_interval.into(),
+            )),
+            ..Default::default()
+        };
+
+        let admin = AdminConfig {
+            signup_mode: conf.general.signup_mode,
+            password: Some(conf.admin.admin_password),
+        };
+
+        Ok(Config {
+            keypair,
+            io,
+            core,
+            admin,
+        })
     }
 }
