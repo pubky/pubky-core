@@ -9,7 +9,7 @@ use pkarr::Keypair;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
 
-use super::key_republisher::HomeserverKeyRepublisher;
+use super::key_republisher::{HomeserverKeyRepublisher, HomeserverKeyRepublisherConfig};
 
 pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
@@ -41,7 +41,7 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(config: CoreConfig) -> Result<Self> {
+    pub async unsafe fn new(config: CoreConfig) -> Result<Self> {
 
         let state = AppState {
             verifier: AuthVerifier::default(),
@@ -51,13 +51,9 @@ impl HomeserverCore {
 
         let router = super::routes::create_app(state.clone());
 
-
-        let dht_republisher = HomeserverKeyRepublisher::new(
-            &config.keypair,
-            &config.io,
-            http_servers.https_address().port(),
-            http_servers.http_address().port(),
-        )?;
+        let pkarr_client = config.pkarr_builder.build()?;
+        let republisher_config = HomeserverKeyRepublisherConfig::new(config.keypair.clone(), public_ip, pubky_https_port, icann_http_port, pkarr_client);
+        let dht_republisher = HomeserverKeyRepublisher::new(republisher_config)?;
         dht_republisher.start_periodic_republish().await?;
 
         let user_keys_republisher = UserKeysRepublisher::new(
@@ -104,6 +100,8 @@ pub struct CoreConfig {
     pub(crate) user_keys_republisher_interval: Option<Duration>,
 
     pub(crate) signup_mode: SignupMode,
+
+    pub(crate) pkarr_builder: pkarr::ClientBuilder,
 }
 
 
@@ -114,6 +112,7 @@ impl CoreConfig {
             db,
             user_keys_republisher_interval: None,
             signup_mode: SignupMode::Open,
+            pkarr_builder: pkarr::ClientBuilder::default(),
         }
     }
 
@@ -131,6 +130,11 @@ impl CoreConfig {
         self.user_keys_republisher_interval.is_some()
     }
 
+    pub fn pkarr_builder(&mut self, pkarr_builder: pkarr::ClientBuilder) -> &mut Self {
+        self.pkarr_builder = pkarr_builder;
+        self
+    }
+
     #[cfg(test)]
     pub fn test() -> Self {
         Self {
@@ -138,6 +142,7 @@ impl CoreConfig {
             db: LmDB::test(),
             user_keys_republisher_interval: None,
             signup_mode: SignupMode::Open,
+            pkarr_builder: pkarr::ClientBuilder::default(),
         }
     }
 }
