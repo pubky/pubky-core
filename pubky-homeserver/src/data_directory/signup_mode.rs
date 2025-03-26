@@ -1,6 +1,4 @@
-use core::fmt;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 
 /// The mode of signup.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -13,24 +11,9 @@ pub enum SignupMode {
     TokenRequired,
 }
 
-impl Display for SignupMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Open => write!(f, "open"),
-            Self::TokenRequired => write!(f, "token_required"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_signup_mode_display() {
-        assert_eq!(SignupMode::Open.to_string(), "open");
-        assert_eq!(SignupMode::TokenRequired.to_string(), "token_required");
-    }
 
     #[derive(Default, Serialize, Deserialize)]
     struct TestToml {
