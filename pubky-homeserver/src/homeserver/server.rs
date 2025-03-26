@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use super::http::HttpServers;
-use crate::{admin::run_admin_server, data_directory::DataDir, FullConfig, SignupMode};
+use crate::{admin::run_admin_server, context::AppContext, data_directory::DataDir, FullConfig, SignupMode};
 use anyhow::Result;
 use pkarr::{Keypair, PublicKey};
 use tracing::info;
@@ -11,70 +11,6 @@ use crate::core::{CoreConfig, HomeserverCore};
 pub const DEFAULT_HTTP_PORT: u16 = 6286;
 pub const DEFAULT_HTTPS_PORT: u16 = 6287;
 
-#[derive(Debug, Default)]
-/// Builder for [Homeserver].
-pub struct HomeserverBuilder(Config);
-
-impl HomeserverBuilder {
-    /// Set the Homeserver's keypair
-    pub fn keypair(&mut self, keypair: Keypair) -> &mut Self {
-        self.0.keypair = keypair;
-
-        self
-    }
-
-    /// Configure the storage path of the Homeserver
-    pub fn storage(&mut self, storage: PathBuf) -> &mut Self {
-        self.0.core.storage = storage;
-
-        self
-    }
-
-    /// Configure the DHT bootstrapping nodes that this Homeserver is connected to.
-    pub fn bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
-        self.0.io.bootstrap = Some(bootstrap.to_vec());
-
-        self
-    }
-
-    /// Configure Pkarr relays used by this Homeserver
-    pub fn relays(&mut self, _relays: &[url::Url]) -> &mut Self {
-        // TODO: make it not a noop if we are going to support relays in homeservers.
-
-        self
-    }
-
-    /// Set the public domain of this Homeserver
-    pub fn domain(&mut self, domain: &str) -> &mut Self {
-        self.0.io.domain = Some(domain.to_string());
-
-        self
-    }
-
-    /// Set the signup mode to "token_required". Only to be used on ::test()
-    /// homeserver for the specific case of testing signup token flow.
-    pub fn close_signups(&mut self) -> &mut Self {
-        self.0.admin.signup_mode = SignupMode::TokenRequired;
-
-        self
-    }
-
-    /// Set a password to protect admin endpoints
-    pub fn admin_password(&mut self, password: String) -> &mut Self {
-        self.0.admin.password = password;
-
-        self
-    }
-
-    /// Run a Homeserver
-    ///
-    /// # Safety
-    /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async unsafe fn run(self) -> Result<Homeserver> {
-        Homeserver::run(self.0).await
-    }
-}
 
 #[derive(Debug)]
 /// Homeserver Core + I/O (http server and pkarr publishing).
@@ -117,12 +53,10 @@ impl Homeserver {
     /// # Safety
     /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    async unsafe fn run(config: Config) -> Result<Self> {
-        tracing::debug!(?config, "Running homeserver with configurations");
+    async unsafe fn run(context: AppContext) -> Result<Self> {
+        tracing::debug!(?context, "Running homeserver with configurations");
 
-        let keypair = config.keypair;
-
-        // let core = unsafe { HomeserverCore::new(config.core, config.admin.signup_mode)? }.await;
+        let core = unsafe { HomeserverCore::new(context)? }.await;
 
         // let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 

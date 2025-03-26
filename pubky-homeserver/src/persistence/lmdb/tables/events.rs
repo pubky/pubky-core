@@ -10,7 +10,7 @@ use heed::{
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
-use crate::persistence::consts::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 
 use super::super::LmDB;
 

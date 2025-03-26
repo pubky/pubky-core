@@ -24,8 +24,16 @@ pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PkdnsToml {
     /// The public IP address and port of the server to be advertised in the DHT.
-    #[serde(default = "default_public_socket")]
-    pub public_socket: SocketAddr,
+    #[serde(default = "default_public_ip")]
+    pub public_ip: IpAddr,
+
+    /// The public port of the Pubky TLS Drive API in case it's different from the listening port.
+    #[serde(default)]
+    pub public_pubky_tls_port: Option<u16>,
+
+    /// The public port of the regular http API in case it's different from the listening port.
+    #[serde(default)]
+    pub public_icann_http_port: Option<u16>,
 
     /// The interval at which the user keys are republished in the DHT.
     #[serde(default = "default_user_keys_republisher_interval")]
@@ -44,10 +52,9 @@ pub struct PkdnsToml {
     pub dht_request_timeout: Option<Duration>,
 }
 
-fn default_public_socket() -> SocketAddr {
+fn default_public_ip() -> IpAddr {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6286;
-    SocketAddr::from((ip, port))
+    ip
 }
 
 fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
@@ -179,6 +186,8 @@ impl ConfigToml {
             .collect::<Vec<String>>()
             .join("\n")
     }
+
+
 }
 
 impl Default for ConfigToml {
@@ -222,7 +231,9 @@ mod tests {
         assert_eq!(c.admin.admin_password, default_admin_password());
 
         // Verify pkdns config
-        assert_eq!(c.pkdns.public_socket, default_public_socket());
+        assert_eq!(c.pkdns.public_ip, default_public_ip());
+        assert_eq!(c.pkdns.public_pubky_tls_port, Some(6287));
+        assert_eq!(c.pkdns.public_icann_http_port, Some(80));
         assert_eq!(
             c.pkdns.user_keys_republisher_interval,
             default_user_keys_republisher_interval()

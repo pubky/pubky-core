@@ -1,15 +1,15 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::{net::IpAddr, time::Duration};
 
+use crate::context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
-use crate::{SignupMode};
+use crate::SignupMode;
 use crate::{persistence::lmdb::LmDB, Domain};
 use anyhow::Result;
 use axum::Router;
 use pkarr::Keypair;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
-use tracing::dispatcher::get_default;
 use crate::constants::{default_keypair, DEFAULT_ICANN_HTTP_LISTEN_SOCKET, DEFAULT_PUBKY_TLS_LISTEN_SOCKET};
 
 use super::key_republisher::{HomeserverKeyRepublisher, HomeserverKeyRepublisherConfig};
@@ -45,23 +45,23 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async unsafe fn new(config: CoreConfig) -> Result<Self> {
+    pub async fn new(context: AppContext) -> Result<Self> {
         let state = AppState {
             verifier: AuthVerifier::default(),
-            db: config.db.clone(),
-            signup_mode: config.signup_mode.clone(),
+            db: context.db.clone(),
+            signup_mode: context.config_toml.general.signup_mode.clone(),
         };
 
         let router = super::routes::create_app(state.clone());
 
-        let pkarr_client = config.pkarr_builder.build()?;
+        let pkarr_client = context.pkarr_builder.build()?;
 
         // Background task to republish the homeserver's pkarr packet to the DHT.
         let key_republisher_config = HomeserverKeyRepublisherConfig::new(
-            config.keypair.clone(),
-            config.public_ip,
-            config.get_public_pubky_tls_port(),
-            config.get_public_icann_http_port(),
+            context.keypair.clone(),
+            context.config_toml.pkdns.public_ip.ip(),
+            context.get_public_pubky_tls_port(),
+            context.get_public_icann_http_port(),
             pkarr_client,
         );
         let key_republisher = HomeserverKeyRepublisher::new(key_republisher_config)?;
@@ -69,8 +69,8 @@ impl HomeserverCore {
 
         // Background task to republish the user keys to the DHT.
         let user_keys_republisher = UserKeysRepublisher::new(
-            config.db.clone(),
-            config
+            context.db.clone(),
+            context
                 .user_keys_republisher_interval
                 .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
         );
@@ -235,9 +235,6 @@ impl CoreConfig {
         self.public_icann_http_port
             .unwrap_or(self.icann_http_listen.port())
     }
-
-
-
 
     #[cfg(test)]
     pub fn test() -> Self {

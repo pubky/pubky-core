@@ -18,7 +18,7 @@ use pubky_common::{
     timestamp::Timestamp,
 };
 
-use crate::persistence::consts::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 
 use super::super::LmDB;
 

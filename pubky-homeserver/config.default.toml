@@ -38,7 +38,15 @@ admin_password = "admin"
 [pkdns]
 # The public IP address and port of the homeserver pubky_drive_api to be advertised on the DHT.
 # Must be set to be reachable from the outside.
-public_socket = "127.0.0.1:6286"
+public_ip = "127.0.0.1"
+
+# The pubky tls port in case it differs from the pubky_listen_socket port.
+# Defaults to the pubky_listen_socket port.
+public_pubky_tls_port = 6287
+
+# The icann http port in case it differs from the icann_listen_socket port.
+# Defaults to the icann_listen_socket port.
+public_icann_http_port = 80
 
 # The interval at which user keys are republished to the DHT.
 user_keys_republisher_interval = 14400  # 4 hours in seconds

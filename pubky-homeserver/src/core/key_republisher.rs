@@ -6,48 +6,13 @@ use std::sync::Arc;
 use anyhow::Result;
 use pkarr::dns::Name;
 use pkarr::errors::PublishError;
-use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
+use pkarr::{dns::rdata::SVCB, SignedPacket};
 
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
+use crate::context::AppContext;
 
-use crate::Domain;
-
-
-pub (crate) struct HomeserverKeyRepublisherConfig {
-    pub(crate) keypair: Keypair,
-    pub(crate) client: pkarr::Client,
-    pub(crate) public_ip: IpAddr,
-    pub(crate) pubky_tls_port: u16,
-    pub(crate) icann_http_port: u16,
-    pub(crate) domain: Option<Domain>,
-}
-
-impl HomeserverKeyRepublisherConfig {
-    pub fn new(
-        keypair: Keypair,
-        public_ip: IpAddr,
-        pubky_tls_port: u16,
-        icann_http_port: u16,
-        client: pkarr::Client,
-    ) -> Self {
-        Self {
-            keypair,
-            public_ip,
-            pubky_tls_port,
-            icann_http_port,
-            domain: None,
-            client,
-        }
-    }
-
-    pub fn domain(&mut self, domain: Domain) -> &mut Self {
-        self.domain = Some(domain);
-        self
-    }
-
-}
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
 #[derive(Debug, Clone)]
@@ -58,14 +23,12 @@ pub struct HomeserverKeyRepublisher {
 }
 
 impl HomeserverKeyRepublisher {
-    pub fn new(
-        config: HomeserverKeyRepublisherConfig,
-    ) -> Result<Self> {
+    pub fn new(context: &AppContext) -> Result<Self> {
 
-        let signed_packet = create_signed_packet(&config)?;
+        let signed_packet = create_signed_packet(context)?;
 
         Ok(Self {
-            client: config.client,
+            client: context.pkarr_client.clone(),
             signed_packet,
             republish_task: Arc::new(Mutex::new(None)),
         })
@@ -132,19 +95,21 @@ impl HomeserverKeyRepublisher {
     }
 }
 
-pub fn create_signed_packet(
-    config: &HomeserverKeyRepublisherConfig
-) -> Result<SignedPacket> {
+pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
     let root_name: Name = ".".try_into().expect(". is the root domain and always valid");
 
     let mut signed_packet_builder = SignedPacket::builder();
 
+    let public_ip = context.config_toml.pkdns.public_ip;
+    let public_pubky_tls_port = context.config_toml.pkdns.public_pubky_tls_port.unwrap_or(context.config_toml.drive.pubky_listen_socket.port());
+    let public_icann_http_port = context.config_toml.pkdns.public_icann_http_port.unwrap_or(context.config_toml.drive.icann_listen_socket.port());
+
     // `SVCB(HTTPS)` record pointing to the pubky tls port and the public ip address
     let mut svcb = SVCB::new(0, root_name.clone());
     svcb.set_port(
-        config.pubky_tls_port,
+        public_pubky_tls_port,
     );
-    match &config.public_ip {
+    match &public_ip {
         IpAddr::V4(ip) => {
             svcb.set_ipv4hint([ip.to_bits()]);
         },
@@ -161,10 +126,10 @@ pub fn create_signed_packet(
 
     // `SVCB` record pointing to the icann http port and the ICANN domain for legacy browsers support.
     // Low priority to not override the `SVCB(HTTPS)` record.
-    if let Some(ref domain) = config.domain {
+    if let Some(domain) = context.config_toml.drive.icann_domain {
         let mut svcb = SVCB::new(10, root_name.clone());
 
-        let http_port_be_bytes = config.icann_http_port.to_be_bytes();
+        let http_port_be_bytes = public_icann_http_port.to_be_bytes();
         if domain.0 == "localhost" {
             svcb.set_param(
                 pubky_common::constants::reserved_param_keys::HTTP_PORT,
@@ -182,29 +147,9 @@ pub fn create_signed_packet(
     // `A` record to the public IP. This is used for regular browser connections.
     signed_packet_builder = signed_packet_builder.address(
         root_name.clone(),
-        config.public_ip.clone(),
+        public_ip.clone(),
         60 * 60,
     );
 
-    Ok(signed_packet_builder.build(&config.keypair)?)
-}
-
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use pkarr::PublicKey;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn pull_homeserver_packet_from_dht() {
-        let client = pkarr::ClientBuilder::default().build().unwrap();
-        let public_key_str = "8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty";
-        let public_key = PublicKey::from_str(public_key_str).unwrap();
-        let packet = client.resolve(&public_key).await.unwrap();
-        println!("{:?}", packet);
-    }
-    
+    Ok(signed_packet_builder.build(&context.keypair)?)
 }
