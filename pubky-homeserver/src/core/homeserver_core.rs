@@ -12,15 +12,12 @@ use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
 use crate::constants::{default_keypair, DEFAULT_ICANN_HTTP_LISTEN_SOCKET, DEFAULT_PUBKY_TLS_LISTEN_SOCKET};
 
-use super::key_republisher::{HomeserverKeyRepublisher, HomeserverKeyRepublisherConfig};
+use super::backup::backup_lmdb_periodically;
+use super::key_republisher::HomeserverKeyRepublisher;
 
 pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
-pub const DEFAULT_STORAGE_DIR: &str = "pubky";
-pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
 
-pub const DEFAULT_LIST_LIMIT: u16 = 100;
-pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -45,7 +42,7 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async fn new(context: AppContext) -> Result<Self> {
+    pub async fn new(context: &AppContext) -> Result<Self> {
         let state = AppState {
             verifier: AuthVerifier::default(),
             db: context.db.clone(),
@@ -53,40 +50,32 @@ impl HomeserverCore {
         };
 
         // Spawn the backup process. This task will run forever.
-        if let Some(backup_interval) = config.lmdb_backup_interval {
-            let backup_path = config.storage.join("backup");
+        let backup_interval = context.config_toml.general.lmdb_backup_interval_s;
+        if backup_interval > 0 {
+            let backup_path = context.data_dir.path().join("backup");
             tokio::spawn(backup_lmdb_periodically(
-                db.clone(),
+                context.db.clone(),
                 backup_path,
-                backup_interval,
+                Duration::from_secs(backup_interval),
             ));
         }
 
         let router = super::routes::create_app(state.clone());
 
-        let pkarr_client = context.pkarr_builder.build()?;
-
         // Background task to republish the homeserver's pkarr packet to the DHT.
-        let key_republisher_config = HomeserverKeyRepublisherConfig::new(
-            context.keypair.clone(),
-            context.config_toml.pkdns.public_ip.ip(),
-            context.get_public_pubky_tls_port(),
-            context.get_public_icann_http_port(),
-            pkarr_client,
-        );
-        let key_republisher = HomeserverKeyRepublisher::new(key_republisher_config)?;
+        let key_republisher = HomeserverKeyRepublisher::new(context)?;
         key_republisher.start_periodic_republish().await?;
 
         // Background task to republish the user keys to the DHT.
+        let user_keys_republisher_interval = context.config_toml.pkdns.user_keys_republisher_interval;
         let user_keys_republisher = UserKeysRepublisher::new(
             context.db.clone(),
-            context
-                .user_keys_republisher_interval
-                .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
+            Duration::from_secs(user_keys_republisher_interval),
         );
-        let user_keys_republisher_clone = user_keys_republisher.clone();
-        if config.is_user_keys_republisher_enabled() {
+
+        if user_keys_republisher_interval > 0 {
             // Delayed start of the republisher to give time for the homeserver to start.
+            let user_keys_republisher_clone = user_keys_republisher.clone();
             tokio::spawn(async move {
                 sleep(INITIAL_DELAY_BEFORE_REPUBLISH).await;
                 user_keys_republisher_clone.run().await;
@@ -152,9 +141,6 @@ pub struct CoreConfig {
 
     /// The socket address of the icann http server.
     pub(crate) icann_http_listen: SocketAddr,
-
-    /// The interval at which the LMDB backup is performed. None means disabled.
-    pub (crate) lmdb_backup_interval: Option<Duration>,
 }
 
 impl CoreConfig {
@@ -255,7 +241,7 @@ impl CoreConfig {
 
     #[cfg(test)]
     pub fn test() -> Self {
-        use std::net::{Ipv4Addr, SocketAddrV4};
+        use std::net::Ipv4Addr;
 
         Self {
             keypair: Keypair::random(),
@@ -293,7 +279,8 @@ mod tests {
     impl HomeserverCore {
         /// Test version of [HomeserverCore::new], using an ephemeral small storage.
         pub async fn test() -> Result<Self> {
-            unsafe { Self::new(CoreConfig::test()).await }
+            let context = AppContext::test();
+            Self::new(&context).await
         }
 
         // === Public Methods ===

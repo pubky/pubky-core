@@ -3,7 +3,7 @@
 //!
 use crate::constants::{DEFAULT_ADMIN_LISTEN_SOCKET, DEFAULT_ICANN_HTTP_LISTEN_SOCKET, DEFAULT_PUBKY_TLS_LISTEN_SOCKET};
 
-use super::{domain_port::DomainPort, SignupMode};
+use super::{domain_port::DomainPort, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -36,8 +36,9 @@ pub struct PkdnsToml {
     pub public_icann_http_port: Option<u16>,
 
     /// The interval at which the user keys are republished in the DHT.
+    /// 0 means disabled.
     #[serde(default = "default_user_keys_republisher_interval")]
-    pub user_keys_republisher_interval: NonZeroU64,
+    pub user_keys_republisher_interval: u64,
 
     /// The list of bootstrap nodes for the DHT. If None, the default pkarr bootstrap nodes will be used.
     #[serde(default = "default_dht_bootstrap_nodes")]
@@ -69,9 +70,9 @@ fn default_dht_request_timeout() -> Option<Duration> {
     None
 }
 
-fn default_user_keys_republisher_interval() -> NonZeroU64 {
+fn default_user_keys_republisher_interval() -> u64 {
     // 4 hours
-    NonZeroU64::new(14400).expect("14400 is a valid non-zero u64")
+    14400
 }
 
 /// All configuration related to file drive
@@ -84,8 +85,8 @@ pub struct DriveToml {
     #[serde(default = "default_icann_drive_listen_socket")]
     pub icann_listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
-    #[serde(default = "default_icann_drive_domain")]
-    pub icann_domain: Option<String>,
+    #[serde(default)]
+    pub icann_domain: Option<Domain>,
 }
 
 fn default_pubky_drive_listen_socket() -> SocketAddr {
@@ -94,10 +95,6 @@ fn default_pubky_drive_listen_socket() -> SocketAddr {
 
 fn default_icann_drive_listen_socket() -> SocketAddr {
     DEFAULT_ICANN_HTTP_LISTEN_SOCKET
-}
-
-fn default_icann_drive_domain() -> Option<String> {
-    None
 }
 
 /// All configuration related to the admin API
@@ -218,7 +215,7 @@ mod tests {
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(c.drive.icann_domain, Some("example.com".to_string()));
+        assert_eq!(c.drive.icann_domain, Some(Domain::from_str("example.com").unwrap()));
 
         assert_eq!(
             c.drive.pubky_listen_socket,

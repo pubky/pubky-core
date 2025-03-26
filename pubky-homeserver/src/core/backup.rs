@@ -1,4 +1,4 @@
-use crate::core::database::DB;
+use crate::persistence::lmdb::LmDB;
 use heed::CompactionOption;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -16,7 +16,7 @@ use tracing::{error, info};
 ///
 /// * `db` - The LMDB database handle.
 /// * `backup_path` - The base path for the backup file (extensions will be appended).
-pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf, period: Duration) {
+pub async fn backup_lmdb_periodically(db: LmDB, backup_path: PathBuf, period: Duration) {
     let mut interval_timer = interval(period);
 
     interval_timer.tick().await; // Ignore the first tick as it is instant.
@@ -48,7 +48,7 @@ pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf, period: Dura
 ///
 /// * `db` - The LMDB database handle.
 /// * `backup_path` - The base path for the backup file (extensions will be appended).
-fn do_backup(db: DB, backup_path: PathBuf) {
+fn do_backup(db: LmDB, backup_path: PathBuf) {
     // Define file paths for the temporary and final backup files.
     let final_backup_path = backup_path.with_extension("mdb");
     let temp_backup_path = backup_path.with_extension("tmp");
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn test_do_backup_creates_backup_file() {
         // Create a test DB instance.
-        let db = DB::test();
+        let db = LmDB::test();
 
         // Create a temporary directory to store the backup.
         let temp_dir = tempdir().expect("Failed to create temporary directory");

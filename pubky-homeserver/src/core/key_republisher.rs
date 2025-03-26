@@ -126,7 +126,7 @@ pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
 
     // `SVCB` record pointing to the icann http port and the ICANN domain for legacy browsers support.
     // Low priority to not override the `SVCB(HTTPS)` record.
-    if let Some(domain) = context.config_toml.drive.icann_domain {
+    if let Some(domain) = &context.config_toml.drive.icann_domain {
         let mut svcb = SVCB::new(10, root_name.clone());
 
         let http_port_be_bytes = public_icann_http_port.to_be_bytes();

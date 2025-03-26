@@ -54,6 +54,7 @@ public_pubky_tls_port = 6287
 public_icann_http_port = 80
 
 # The interval at which user keys are republished to the DHT.
+# 0 means disabled.
 user_keys_republisher_interval = 14400  # 4 hours in seconds
 
 # List of bootstrap nodes for the DHT.

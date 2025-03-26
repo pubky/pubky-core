@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use super::http::HttpServers;
-use crate::{admin::run_admin_server, context::AppContext, data_directory::DataDir, FullConfig, SignupMode};
+use crate::{context::AppContext, data_directory::DataDir, SignupMode};
 use anyhow::Result;
 use pkarr::{Keypair, PublicKey};
 use tracing::info;
@@ -20,32 +20,12 @@ pub struct Homeserver {
 }
 
 impl Homeserver {
-    /// Returns a Homeserver builder.
-    pub fn builder() -> HomeserverBuilder {
-        HomeserverBuilder::default()
-    }
 
     /// Run the homeserver with configurations from a data directory.
     pub async fn run_with_data_dir(dir_path: PathBuf) -> Result<Self> {
         let data_dir = DataDir::new(dir_path);
-        let config = Config::try_from(data_dir)?;
-        unsafe { Self::run(config) }.await
-    }
-
-    /// Run a Homeserver with configurations suitable for ephemeral tests.
-    pub async fn run_test(bootstrap: &[String]) -> Result<Self> {
-        let config = Config::test(bootstrap);
-
-        unsafe { Self::run(config) }.await
-    }
-
-    /// Run a Homeserver with configurations suitable for ephemeral tests.
-    /// That requires signup tokens.
-    pub async fn run_test_with_signup_tokens(bootstrap: &[String]) -> Result<Self> {
-        let mut config = Config::test(bootstrap);
-        config.admin.signup_mode = SignupMode::TokenRequired;
-
-        unsafe { Self::run(config) }.await
+        let context = AppContext::try_from(data_dir)?;
+        Self::run(context).await
     }
 
     /// Run a Homeserver
@@ -53,10 +33,10 @@ impl Homeserver {
     /// # Safety
     /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    async unsafe fn run(context: AppContext) -> Result<Self> {
+    async fn run(context: AppContext) -> Result<Self> {
         tracing::debug!(?context, "Running homeserver with configurations");
 
-        let core = unsafe { HomeserverCore::new(context)? }.await;
+        let core = HomeserverCore::new(&context).await?;
 
         // let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 
@@ -92,112 +72,5 @@ impl Homeserver {
     /// Send a shutdown signal to all open resources
     pub async fn shutdown(&self) {
         self.http_servers.shutdown();
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IoConfig {
-    pub http_port: u16,
-    pub https_port: u16,
-    pub public_addr: Option<SocketAddr>,
-    pub domain: Option<String>,
-
-    /// Bootstrapping DHT nodes.
-    ///
-    /// Helpful to run the server locally or in testnet.
-    pub bootstrap: Option<Vec<String>>,
-    pub dht_request_timeout: Option<Duration>,
-}
-
-impl Default for IoConfig {
-    fn default() -> Self {
-        IoConfig {
-            https_port: DEFAULT_HTTPS_PORT,
-            http_port: DEFAULT_HTTP_PORT,
-            public_addr: None,
-            domain: None,
-            bootstrap: None,
-            dht_request_timeout: None,
-        }
-    }
-}
-
-/// Server configuration
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Config {
-    /// Server keypair.
-    ///
-    /// Defaults to a random keypair.
-    pub keypair: Keypair,
-    pub io: IoConfig,
-    pub core: CoreConfig,
-    pub admin: AdminConfig,
-}
-
-impl Config {
-    /// Create test configurations
-    pub fn test(bootstrap: &[String]) -> Self {
-        let bootstrap = Some(bootstrap.to_vec());
-
-        Self {
-            io: IoConfig {
-                bootstrap,
-                http_port: 0,
-                https_port: 0,
-                ..Default::default()
-            },
-            core: CoreConfig::test(),
-            admin: AdminConfig::test(),
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            keypair: Keypair::random(),
-            io: IoConfig::default(),
-            core: CoreConfig::default(),
-            admin: AdminConfig::default(),
-        }
-    }
-}
-
-impl TryFrom<FullConfig> for Config {
-    type Error = anyhow::Error;
-
-    fn try_from(conf: FullConfig) -> Result<Self, Self::Error> {
-
-        // TODO: Needs refactoring of the Homeserver Config struct. I am not doing
-        // it yet because I am concentrating on the config currently.
-        let io = IoConfig {
-            http_port: conf.toml.drive.icann_listen_socket.port(),
-            https_port: conf.toml.drive.pubky_listen_socket.port(),
-            domain: conf.toml.drive.icann_domain,
-            public_addr: Some(conf.toml.pkdns.public_socket),
-            ..Default::default()
-        };
-
-        let core = CoreConfig {
-            storage: ,
-            user_keys_republisher_interval: Some(Duration::from_secs(
-                conf.toml.pkdns.user_keys_republisher_interval.into(),
-            )),
-            ..Default::default()
-        };
-
-        let admin = AdminConfig {
-            signup_mode: conf.general.signup_mode,
-            password: conf.admin.admin_password,
-            listen: conf.admin.listen_socket,
-        };
-
-        Ok(Config {
-            keypair,
-            io,
-            core,
-            admin,
-        })
     }
 }
