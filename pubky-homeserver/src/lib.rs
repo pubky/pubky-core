@@ -11,6 +11,7 @@ mod data_directory;
 mod admin;
 mod homeserver;
 mod pkarr;
+pub(crate)mod constants;
 
 pub use data_directory::*;
 pub use homeserver::Homeserver;

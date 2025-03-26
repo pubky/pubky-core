@@ -1,13 +1,16 @@
-use std::time::Duration;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::{net::IpAddr, time::Duration};
 
-use crate::persistence::lmdb::LmDB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
-use crate::SignupMode;
+use crate::{SignupMode};
+use crate::{persistence::lmdb::LmDB, Domain};
 use anyhow::Result;
 use axum::Router;
 use pkarr::Keypair;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
+use tracing::dispatcher::get_default;
+use crate::constants::{default_keypair, DEFAULT_ICANN_HTTP_LISTEN_SOCKET, DEFAULT_PUBKY_TLS_LISTEN_SOCKET};
 
 use super::key_republisher::{HomeserverKeyRepublisher, HomeserverKeyRepublisherConfig};
 
@@ -33,6 +36,7 @@ const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 pub struct HomeserverCore {
     pub(crate) router: Router,
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+    pub(crate) key_republisher: HomeserverKeyRepublisher,
 }
 
 impl HomeserverCore {
@@ -42,7 +46,6 @@ impl HomeserverCore {
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async unsafe fn new(config: CoreConfig) -> Result<Self> {
-
         let state = AppState {
             verifier: AuthVerifier::default(),
             db: config.db.clone(),
@@ -52,17 +55,25 @@ impl HomeserverCore {
         let router = super::routes::create_app(state.clone());
 
         let pkarr_client = config.pkarr_builder.build()?;
-        let republisher_config = HomeserverKeyRepublisherConfig::new(config.keypair.clone(), public_ip, pubky_https_port, icann_http_port, pkarr_client);
-        let dht_republisher = HomeserverKeyRepublisher::new(republisher_config)?;
-        dht_republisher.start_periodic_republish().await?;
 
+        // Background task to republish the homeserver's pkarr packet to the DHT.
+        let key_republisher_config = HomeserverKeyRepublisherConfig::new(
+            config.keypair.clone(),
+            config.public_ip,
+            config.get_public_pubky_tls_port(),
+            config.get_public_icann_http_port(),
+            pkarr_client,
+        );
+        let key_republisher = HomeserverKeyRepublisher::new(key_republisher_config)?;
+        key_republisher.start_periodic_republish().await?;
+
+        // Background task to republish the user keys to the DHT.
         let user_keys_republisher = UserKeysRepublisher::new(
             config.db.clone(),
             config
                 .user_keys_republisher_interval
                 .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
         );
-
         let user_keys_republisher_clone = user_keys_republisher.clone();
         if config.is_user_keys_republisher_enabled() {
             // Delayed start of the republisher to give time for the homeserver to start.
@@ -71,24 +82,26 @@ impl HomeserverCore {
                 user_keys_republisher_clone.run().await;
             });
         }
+
         Ok(Self {
             router,
             user_keys_republisher,
+            key_republisher,
         })
     }
 
     /// Stop the home server background tasks.
     #[allow(dead_code)]
     pub async fn stop(&mut self) {
+        self.key_republisher.stop_periodic_republish().await;
         self.user_keys_republisher.stop().await;
     }
 }
 
-
-
 #[derive(Debug, Clone)]
-/// Database configurations
+/// Homeserver core configuration
 pub struct CoreConfig {
+    /// The keypair of the homeserver
     pub(crate) keypair: Keypair,
 
     /// The database to use
@@ -99,21 +112,57 @@ pub struct CoreConfig {
     /// Defaults to `60*60*4` (4 hours)
     pub(crate) user_keys_republisher_interval: Option<Duration>,
 
+    /// The mode of the signup.
     pub(crate) signup_mode: SignupMode,
 
+    /// The builder for the pkarr client.
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
+
+    /// The public ip address of the homeserver.
+    /// Default: 127.0.0.1
+    pub(crate) public_ip: IpAddr,
+
+    /// The port of the pubky tls server.
+    /// If not set, pubky_tls_listen.port() is used.
+    pub(crate) public_pubky_tls_port: Option<u16>,
+
+    /// The port of the icann http server.
+    /// If not set, icann_http_listen.port() is used.
+    pub(crate) public_icann_http_port: Option<u16>,
+
+    /// The domain of the homeserver.
+    /// Default: "localhost"
+    pub(crate) domain: Domain,
+
+    /// The socket address of the pubky tls server.
+    pub(crate) pubky_tls_listen: SocketAddr,
+
+    /// The socket address of the icann http server.
+    pub(crate) icann_http_listen: SocketAddr,
 }
 
-
 impl CoreConfig {
-    pub fn new(keypair: Keypair, db: LmDB) -> Self {
+    pub fn new(
+        db: LmDB
+    ) -> Self {
         Self {
-            keypair,
+            keypair: default_keypair(),
             db,
             user_keys_republisher_interval: None,
-            signup_mode: SignupMode::Open,
+            signup_mode: SignupMode::TokenRequired,
             pkarr_builder: pkarr::ClientBuilder::default(),
+            public_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            public_pubky_tls_port: None,
+            public_icann_http_port: None,
+            domain: Domain::default(),
+            pubky_tls_listen: DEFAULT_PUBKY_TLS_LISTEN_SOCKET,
+            icann_http_listen: DEFAULT_ICANN_HTTP_LISTEN_SOCKET,
         }
+    }
+
+    pub fn keypair(&mut self, keypair: Keypair) -> &mut Self {
+        self.keypair = keypair;
+        self
     }
 
     pub fn signup_mode(&mut self, signup_mode: SignupMode) -> &mut Self {
@@ -135,18 +184,82 @@ impl CoreConfig {
         self
     }
 
+    /// Set the public ip address of the homeserver so others can find it.
+    /// Default: 127.0.0.1
+    pub fn public_ip(&mut self, public_ip: IpAddr) -> &mut Self {
+        self.public_ip = public_ip;
+        self
+    }
+
+    /// Set the port of the pubky tls server so others can find it.
+    /// If not set, pubky_tls_listen.port() is used.
+    pub fn public_pubky_tls_port(&mut self, public_pubky_tls_port: u16) -> &mut Self {
+        self.public_pubky_tls_port = Some(public_pubky_tls_port);
+        self
+    }
+
+    /// Set the port of the icann http server so others can find it.
+    /// If not set, icann_http_listen.port() is used.
+    pub fn public_icann_http_port(&mut self, public_icann_http_port: u16) -> &mut Self {
+        self.public_icann_http_port = Some(public_icann_http_port);
+        self
+    }
+
+    /// Set the domain of the homeserver so others can find it.
+    /// Default: "localhost"
+    pub fn domain(&mut self, domain: Domain) -> &mut Self {
+        self.domain = domain;
+        self
+    }
+
+    /// Set the socket listen address of the pubky tls server.
+    pub fn pubky_tls_listen(&mut self, pubky_tls_listen: SocketAddr) -> &mut Self {
+        self.pubky_tls_listen = pubky_tls_listen;
+        self
+    }
+
+    /// Set the socket listen address of the icann http server.
+    pub fn icann_http_listen(&mut self, icann_http_listen: SocketAddr) -> &mut Self {
+        self.icann_http_listen = icann_http_listen;
+        self
+    }
+
+    /// Derive the public ports from the listen and override ports.
+    pub fn get_public_pubky_tls_port(&self) -> u16 {
+        self.public_pubky_tls_port
+            .unwrap_or(self.pubky_tls_listen.port())
+    }
+
+    /// Derive the public ports from the listen and override ports.
+    pub fn get_public_icann_http_port(&self) -> u16 {
+        self.public_icann_http_port
+            .unwrap_or(self.icann_http_listen.port())
+    }
+
+
+
+
     #[cfg(test)]
     pub fn test() -> Self {
+        use std::net::{Ipv4Addr, SocketAddrV4};
+
+
+
         Self {
             keypair: Keypair::random(),
             db: LmDB::test(),
             user_keys_republisher_interval: None,
-            signup_mode: SignupMode::Open,
+            signup_mode: SignupMode::TokenRequired,
             pkarr_builder: pkarr::ClientBuilder::default(),
+            public_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            public_pubky_tls_port: None,
+            public_icann_http_port: None,
+            domain: Domain::default(),
+            pubky_tls_listen: DEFAULT_PUBKY_TLS_LISTEN_SOCKET,
+            icann_http_listen: DEFAULT_ICANN_HTTP_LISTEN_SOCKET,
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -166,8 +279,8 @@ mod tests {
 
     impl HomeserverCore {
         /// Test version of [HomeserverCore::new], using an ephemeral small storage.
-        pub fn test() -> Result<Self> {
-            unsafe { Self::new(CoreConfig::test()) }
+        pub async fn test() -> Result<Self> {
+            unsafe { Self::new(CoreConfig::test()).await }
         }
 
         // === Public Methods ===

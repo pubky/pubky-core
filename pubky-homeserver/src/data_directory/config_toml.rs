@@ -1,6 +1,8 @@
 //!
 //! Configuration file for the homeserver.
 //!
+use crate::constants::{DEFAULT_ADMIN_LISTEN_SOCKET, DEFAULT_ICANN_HTTP_LISTEN_SOCKET, DEFAULT_PUBKY_TLS_LISTEN_SOCKET};
+
 use super::{domain_port::DomainPort, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -65,12 +67,6 @@ fn default_user_keys_republisher_interval() -> NonZeroU64 {
     NonZeroU64::new(14400).expect("14400 is a valid non-zero u64")
 }
 
-fn default_pubky_drive_listen_socket() -> SocketAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6287;
-    SocketAddr::from((ip, port))
-}
-
 /// All configuration related to file drive
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct DriveToml {
@@ -85,10 +81,12 @@ pub struct DriveToml {
     pub icann_domain: Option<String>,
 }
 
+fn default_pubky_drive_listen_socket() -> SocketAddr {
+    DEFAULT_PUBKY_TLS_LISTEN_SOCKET
+}
+
 fn default_icann_drive_listen_socket() -> SocketAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6286;
-    SocketAddr::from((ip, port))
+    DEFAULT_ICANN_HTTP_LISTEN_SOCKET
 }
 
 fn default_icann_drive_domain() -> Option<String> {
@@ -111,9 +109,7 @@ fn default_admin_password() -> String {
 }
 
 fn default_admin_listen_socket() -> SocketAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6288;
-    SocketAddr::from((ip, port))
+    DEFAULT_ADMIN_LISTEN_SOCKET
 }
 
 /// All configuration related to the admin API

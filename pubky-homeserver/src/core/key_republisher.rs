@@ -1,8 +1,10 @@
 //! Pkarr related task
 
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use anyhow::Result;
+use pkarr::dns::Name;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
 
@@ -17,7 +19,7 @@ pub (crate) struct HomeserverKeyRepublisherConfig {
     pub(crate) keypair: Keypair,
     pub(crate) client: pkarr::Client,
     pub(crate) public_ip: IpAddr,
-    pub(crate) pubky_https_port: u16,
+    pub(crate) pubky_tls_port: u16,
     pub(crate) icann_http_port: u16,
     pub(crate) domain: Option<Domain>,
 }
@@ -26,14 +28,14 @@ impl HomeserverKeyRepublisherConfig {
     pub fn new(
         keypair: Keypair,
         public_ip: IpAddr,
-        pubky_https_port: u16,
+        pubky_tls_port: u16,
         icann_http_port: u16,
         client: pkarr::Client,
     ) -> Self {
         Self {
             keypair,
             public_ip,
-            pubky_https_port,
+            pubky_tls_port,
             icann_http_port,
             domain: None,
             client,
@@ -48,11 +50,11 @@ impl HomeserverKeyRepublisherConfig {
 }
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HomeserverKeyRepublisher {
     client: pkarr::Client,
     signed_packet: SignedPacket,
-    republish_task: Mutex<Option<JoinHandle<()>>>,
+    republish_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl HomeserverKeyRepublisher {
@@ -65,7 +67,7 @@ impl HomeserverKeyRepublisher {
         Ok(Self {
             client: config.client,
             signed_packet,
-            republish_task: Mutex::new(None),
+            republish_task: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -133,34 +135,34 @@ impl HomeserverKeyRepublisher {
 pub fn create_signed_packet(
     config: &HomeserverKeyRepublisherConfig
 ) -> Result<SignedPacket> {
-    // TODO: Check if this is all correct with the new config.
+    let root_name: Name = ".".try_into().expect(". is the root domain and always valid");
 
     let mut signed_packet_builder = SignedPacket::builder();
 
-    let mut svcb = SVCB::new(0, ".".try_into()?);
-
-    // Set the public Ip or localhost
-    signed_packet_builder = signed_packet_builder.address(
-        ".".try_into().expect(". is valid domain and therefore always succeeds"),
-        config.public_ip,
-        60 * 60,
-    );
-
-    // Set the public port or the local https_port
+    // `SVCB(HTTPS)` record pointing to the pubky tls port and the public ip address
+    let mut svcb = SVCB::new(0, root_name.clone());
     svcb.set_port(
-        config.pubky_https_port,
+        config.pubky_tls_port,
     );
-
+    match &config.public_ip {
+        IpAddr::V4(ip) => {
+            svcb.set_ipv4hint([ip.to_bits()]);
+        },
+        IpAddr::V6(_) => {
+            // TODO: Implement ipv6 support
+            tracing::warn!("IPv6 is not supported yet. Ignoring ipv6 hint in homeserver's pkarr packet.");
+        },
+    };
     signed_packet_builder = signed_packet_builder.https(
-        ".".try_into()
-            .expect(". is valid domain and therefore always succeeds"),
+        root_name.clone(),
         svcb,
         60 * 60,
     );
 
-    // Set low priority https record for legacy browsers support
+    // `SVCB` record pointing to the icann http port and the ICANN domain for legacy browsers support.
+    // Low priority to not override the `SVCB(HTTPS)` record.
     if let Some(ref domain) = config.domain {
-        let mut svcb = SVCB::new(10, ".".try_into()?);
+        let mut svcb = SVCB::new(10, root_name.clone());
 
         let http_port_be_bytes = config.icann_http_port.to_be_bytes();
         if domain.0 == "localhost" {
@@ -169,16 +171,40 @@ pub fn create_signed_packet(
                 &http_port_be_bytes,
             )?;
         }
-
         svcb.target = domain.0.as_str().try_into()?;
-
         signed_packet_builder = signed_packet_builder.https(
-            ".".try_into()
-                .expect(". is valid domain and therefore always succeeds"),
+            root_name.clone(),
             svcb,
             60 * 60,
         );
     }
 
+    // `A` record to the public IP. This is used for regular browser connections.
+    signed_packet_builder = signed_packet_builder.address(
+        root_name.clone(),
+        config.public_ip.clone(),
+        60 * 60,
+    );
+
     Ok(signed_packet_builder.build(&config.keypair)?)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use pkarr::PublicKey;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn pull_homeserver_packet_from_dht() {
+        let client = pkarr::ClientBuilder::default().build().unwrap();
+        let public_key_str = "8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty";
+        let public_key = PublicKey::from_str(public_key_str).unwrap();
+        let packet = client.resolve(&public_key).await.unwrap();
+        println!("{:?}", packet);
+    }
+    
 }

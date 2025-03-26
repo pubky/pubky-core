@@ -200,7 +200,7 @@ mod tests {
 
     #[tokio::test]
     async fn if_last_modified() {
-        let mut server = HomeserverCore::test().unwrap();
+        let mut server = HomeserverCore::test().await.unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
@@ -256,7 +256,7 @@ mod tests {
 
     #[tokio::test]
     async fn if_none_match() {
-        let mut server = HomeserverCore::test().unwrap();
+        let mut server = HomeserverCore::test().await.unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();

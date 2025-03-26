@@ -1,7 +1,6 @@
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use super::http::HttpServers;
-use super::key_republisher::HomeserverKeyRepublisher;
 use crate::{admin::run_admin_server, data_directory::DataDir, FullConfig, SignupMode};
 use anyhow::Result;
 use pkarr::{Keypair, PublicKey};
@@ -82,7 +81,6 @@ impl HomeserverBuilder {
 pub struct Homeserver {
     http_servers: HttpServers,
     keypair: Keypair,
-    key_republisher: HomeserverKeyRepublisher,
 }
 
 impl Homeserver {
@@ -124,19 +122,13 @@ impl Homeserver {
 
         let keypair = config.keypair;
 
-        let core = unsafe { HomeserverCore::new(config.core, config.admin.signup_mode)? };
+        // let core = unsafe { HomeserverCore::new(config.core, config.admin.signup_mode)? }.await;
 
-        let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
+        // let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
 
-        let admin_server = run_admin_server(ase, config.admin.password.as_str(), config.admin.listen).await?;
+        // let admin_server = run_admin_server(ase, config.admin.password.as_str(), config.admin.listen).await?;
 
-        let dht_republisher = HomeserverKeyRepublisher::new(
-            &keypair,
-            &config.io,
-            http_servers.https_address().port(),
-            http_servers.http_address().port(),
-        )?;
-        dht_republisher.start_periodic_republish().await?;
+
         info!(
             "Homeserver listening on http://localhost:{}",
             http_servers.http_address().port()
@@ -146,7 +138,6 @@ impl Homeserver {
         Ok(Self {
             http_servers,
             keypair,
-            key_republisher: dht_republisher,
         })
     }
 
@@ -167,7 +158,6 @@ impl Homeserver {
     /// Send a shutdown signal to all open resources
     pub async fn shutdown(&self) {
         self.http_servers.shutdown();
-        self.key_republisher.stop_periodic_republish().await;
     }
 }
 
