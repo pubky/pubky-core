@@ -30,11 +30,11 @@ pub struct PkdnsToml {
     pub user_keys_republisher_interval: NonZeroU64,
 
     /// The list of bootstrap nodes for the DHT. If None, the default pkarr bootstrap nodes will be used.
-    #[serde(default = "default_dht_bootstrap_nodes")]
+    #[serde(default)]
     pub dht_bootstrap_nodes: Option<Vec<DomainPort>>,
 
     /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
-    #[serde(default = "default_dht_relay_nodes")]
+    #[serde(default)]
     pub dht_relay_nodes: Option<Vec<Url>>,
 }
 
@@ -42,14 +42,6 @@ fn default_public_socket() -> SocketAddr {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = 6286;
     SocketAddr::from((ip, port))
-}
-
-fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
-    None
-}
-
-fn default_dht_relay_nodes() -> Option<Vec<Url>> {
-    None
 }
 
 fn default_user_keys_republisher_interval() -> NonZeroU64 {
@@ -73,7 +65,7 @@ pub struct DriveToml {
     #[serde(default = "default_icann_drive_listen_socket")]
     pub icann_listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
-    #[serde(default = "default_icann_drive_domain")]
+    #[serde(default)]
     pub icann_domain: Option<String>,
 }
 
@@ -81,10 +73,6 @@ fn default_icann_drive_listen_socket() -> SocketAddr {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = 6286;
     SocketAddr::from((ip, port))
-}
-
-fn default_icann_drive_domain() -> Option<String> {
-    None
 }
 
 /// All configuration related to the admin API
@@ -112,19 +100,11 @@ fn default_admin_listen_socket() -> SocketAddr {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct GeneralToml {
     /// The mode of the signup.
-    #[serde(default = "default_signup_mode")]
+    #[serde(default)]
     pub signup_mode: SignupMode,
     /// LMDB backup interval in seconds. 0 means disabled.
-    #[serde(default = "default_lmdb_backup_interval_s")]
+    #[serde(default)]
     pub lmdb_backup_interval_s: u64,
-}
-
-fn default_signup_mode() -> SignupMode {
-    SignupMode::TokenRequired
-}
-
-fn default_lmdb_backup_interval_s() -> u64 {
-    0
 }
 
 /// The error that can occur when reading the config file
