@@ -58,3 +58,6 @@ dht_relay_nodes = [
     "https://relay.pkarr.org", 
     "https://pkarr.pubky.org"
 ]
+
+# Default UDP request timeout for the DHT
+dht_request_timeout = 2

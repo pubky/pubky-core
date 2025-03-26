@@ -1,12 +1,15 @@
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use crate::persistence::lmdb::LmDB;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::SignupMode;
 use anyhow::Result;
 use axum::Router;
+use pkarr::Keypair;
 use pubky_common::auth::AuthVerifier;
 use tokio::time::sleep;
+
+use super::key_republisher::HomeserverKeyRepublisher;
 
 pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
 
@@ -20,7 +23,7 @@ pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: LmDB,
-    pub(crate) admin: AdminConfig,
+    pub(crate) signup_mode: SignupMode,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -38,19 +41,27 @@ impl HomeserverCore {
     /// # Safety
     /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(config: CoreConfig, admin: AdminConfig) -> Result<Self> {
-        let db = unsafe { LmDB::open(config.storage.clone())? };
+    pub unsafe fn new(config: CoreConfig) -> Result<Self> {
 
         let state = AppState {
             verifier: AuthVerifier::default(),
-            db: db.clone(),
-            admin,
+            db: config.db.clone(),
+            signup_mode: config.signup_mode.clone(),
         };
 
         let router = super::routes::create_app(state.clone());
 
+
+        let dht_republisher = HomeserverKeyRepublisher::new(
+            &config.keypair,
+            &config.io,
+            http_servers.https_address().port(),
+            http_servers.http_address().port(),
+        )?;
+        dht_republisher.start_periodic_republish().await?;
+
         let user_keys_republisher = UserKeysRepublisher::new(
-            db.clone(),
+            config.db.clone(),
             config
                 .user_keys_republisher_interval
                 .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
@@ -77,92 +88,60 @@ impl HomeserverCore {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AdminConfig {
-    /// The password used to authorize admin endpoints.
-    pub password: Option<String>,
-    /// Determines whether new signups require a valid token.
-    pub signup_mode: SignupMode,
-}
 
-impl AdminConfig {
-    pub fn test() -> Self {
-        AdminConfig {
-            password: Some("admin".to_string()),
-            signup_mode: SignupMode::Open,
-        }
-    }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 /// Database configurations
 pub struct CoreConfig {
-    /// Path to the storage directory.
-    ///
-    /// Defaults to a directory in the OS data directory
-    pub storage: PathBuf,
-    pub db_map_size: usize,
+    pub(crate) keypair: Keypair,
 
-    /// The default limit of a list api if no `limit` query parameter is provided.
-    ///
-    /// Defaults to `100`
-    pub default_list_limit: u16,
-    /// The maximum limit of a list api, even if a `limit` query parameter is provided.
-    ///
-    /// Defaults to `1000`
-    pub max_list_limit: u16,
+    /// The database to use
+    pub(crate) db: LmDB,
 
     /// The interval at which the user keys republisher runs. None is disabled.
     ///
     /// Defaults to `60*60*4` (4 hours)
-    pub user_keys_republisher_interval: Option<Duration>,
+    pub(crate) user_keys_republisher_interval: Option<Duration>,
+
+    pub(crate) signup_mode: SignupMode,
 }
 
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            storage: storage(None)
-                .expect("operating environment provides no directory for application data"),
-            db_map_size: DEFAULT_MAP_SIZE,
-
-            default_list_limit: DEFAULT_LIST_LIMIT,
-            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
-
-            user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
-        }
-    }
-}
 
 impl CoreConfig {
-    pub fn test() -> Self {
-        let storage = std::env::temp_dir()
-            .join(pubky_common::timestamp::Timestamp::now().to_string())
-            .join(DEFAULT_STORAGE_DIR);
-
+    pub fn new(keypair: Keypair, db: LmDB) -> Self {
         Self {
-            storage,
-            db_map_size: 10485760,
-
-            ..Default::default()
+            keypair,
+            db,
+            user_keys_republisher_interval: None,
+            signup_mode: SignupMode::Open,
         }
+    }
+
+    pub fn signup_mode(&mut self, signup_mode: SignupMode) -> &mut Self {
+        self.signup_mode = signup_mode;
+        self
+    }
+
+    pub fn user_keys_republisher_interval(&mut self, interval: Option<Duration>) -> &mut Self {
+        self.user_keys_republisher_interval = interval;
+        self
     }
 
     pub fn is_user_keys_republisher_enabled(&self) -> bool {
         self.user_keys_republisher_interval.is_some()
     }
-}
 
-pub fn storage(storage: Option<String>) -> anyhow::Result<PathBuf> {
-    if let Some(storage) = storage {
-        Ok(PathBuf::from(storage))
-    } else {
-        dirs::home_dir()
-            .map(|dir| dir.join(".pubky/data/lmdb"))
-            .ok_or_else(|| {
-                anyhow::anyhow!("operating environment provides no directory for application data")
-            })
+    #[cfg(test)]
+    pub fn test() -> Self {
+        Self {
+            keypair: Keypair::random(),
+            db: LmDB::test(),
+            user_keys_republisher_interval: None,
+            signup_mode: SignupMode::Open,
+        }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -183,7 +162,7 @@ mod tests {
     impl HomeserverCore {
         /// Test version of [HomeserverCore::new], using an ephemeral small storage.
         pub fn test() -> Result<Self> {
-            unsafe { HomeserverCore::new(CoreConfig::test(), AdminConfig::test()) }
+            unsafe { Self::new(CoreConfig::test()) }
         }
 
         // === Public Methods ===

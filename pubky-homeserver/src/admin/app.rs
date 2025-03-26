@@ -1,52 +1,81 @@
-// use axum::{
-//     body::Body,
-//     extract::Request,
-//     http::{header, HeaderValue},
-//     middleware::{self, Next},
-//     response::Response,
-//     routing::{get, post},
-//     Router,
-// };
-// use tower::ServiceBuilder;
-// use tower_cookies::CookieManagerLayer;
-// use tower_http::cors::CorsLayer;
+use std::net::SocketAddr;
 
-// use super::app_state::AppState;
+use axum::{
+    routing::get,
+    Router,
+};
+use crate::persistence::lmdb::LmDB;
+use super::{auth_middleware::AdminAuthLayer, app_state::AppState};
+use super::routes::{generate_signup_token, root};
 
 
-// fn routes() -> Router<AppState> {
-//     Router::new()
-//         .route("/", get(root::handler))
-//         .route("/signup", post(auth::signup))
-//         .route("/session", post(auth::signin))
-//         // Events
-//         .route("/events/", get(feed::feed))
-//     // TODO: add size limit
-//     // TODO: revisit if we enable streaming big payloads
-//     // TODO: maybe add to a separate router (drive router?).
-// }
+/// Folder /admin router
+/// Admin password required.
+fn create_admin_router(password: &str) -> Router<AppState> {
+    let router = Router::new()
+    .route("/generate_signup_token", get(generate_signup_token::generate_signup_token))
+    .layer(AdminAuthLayer::new(password.to_string()));
+    router
+}
 
-// pub fn create_app(state: AppState) -> Router {
-//     let app = base()
-//         .merge(tenants::router(state.clone()))
-//         .nest("/admin", admin::router(state.clone()))
-//         .layer(CookieManagerLayer::new())
-//         .layer(CorsLayer::very_permissive())
-//         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
-//         .with_state(state);
 
-//     // Apply trace and pubky host layers to the complete router.
-//     with_trace_layer(app, &TRACING_EXCLUDED_PATHS).layer(PubkyHostLayer)
-// }
+/// main / router
+/// This part is not protected by the admin auth middleware
+fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService<Router> {
+    let admin_router = create_admin_router(password);
 
-// // Middleware to add a `Server` header to all responses
-// async fn add_server_header(request: Request<Body>, next: Next) -> Response {
-//     let mut response = next.run(request).await;
+    Router::new()
+    .nest("/admin", admin_router)
+    .route("/", get(root::root))
+    .with_state(state)
+    .into_make_service()
+}
 
-//     // Add a custom header to the response
-//     response
-//         .headers_mut()
-//         .insert(header::SERVER, HeaderValue::from_static(HOMESERVER_VERSION));
+/// Run the admin server
+/// 
+/// # Arguments
+/// 
+/// * `db` - The database to use
+/// * `password` - The password to protect the admin routes
+/// * `listen` - The address to listen on
+pub async fn run_admin_server(db: LmDB, password: &str, listen: SocketAddr) -> anyhow::Result<()> {
+    let state = AppState::new(db);
+    let app = create_app(state, password);
+    let listener = tokio::net::TcpListener::bind(listen).await?;
+    tracing::debug!("Admin server listening on {}", listen);
+    axum::serve(listener, app).await?;
+    Ok(())
+}
 
-//     response
-// }
+#[cfg(test)]
+mod tests {
+    use axum_test::TestServer;
+
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_root() {
+        let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
+        let response = server.get("/").expect_success().await;
+        response.assert_status_ok();
+    }
+
+    #[tokio::test]
+    async fn test_generate_signup_token_fail() {
+        let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
+        // No password
+        let response = server.get("/admin/generate_signup_token").expect_failure().await;
+        response.assert_status_unauthorized();
+
+        // wrong password
+        let response = server.get("/admin/generate_signup_token").add_header("X-Admin-Password", "wrongpassword").expect_failure().await;
+        response.assert_status_unauthorized();
+    }
+
+    #[tokio::test]
+    async fn test_generate_signup_token_success() {
+        let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
+        let response = server.get("/admin/generate_signup_token").add_header("X-Admin-Password", "test").expect_success().await;
+        response.assert_status_ok();
+    }
+}

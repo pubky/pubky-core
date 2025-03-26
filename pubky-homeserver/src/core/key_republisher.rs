@@ -1,5 +1,7 @@
 //! Pkarr related task
 
+use std::net::IpAddr;
+
 use anyhow::Result;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, Keypair, SignedPacket};
@@ -8,7 +10,42 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
-use super::IoConfig;
+use crate::Domain;
+
+
+pub (crate) struct HomeserverKeyRepublisherConfig {
+    pub(crate) keypair: Keypair,
+    pub(crate) client: pkarr::Client,
+    pub(crate) public_ip: IpAddr,
+    pub(crate) pubky_https_port: u16,
+    pub(crate) icann_http_port: u16,
+    pub(crate) domain: Option<Domain>,
+}
+
+impl HomeserverKeyRepublisherConfig {
+    pub fn new(
+        keypair: Keypair,
+        public_ip: IpAddr,
+        pubky_https_port: u16,
+        icann_http_port: u16,
+        client: pkarr::Client,
+    ) -> Self {
+        Self {
+            keypair,
+            public_ip,
+            pubky_https_port,
+            icann_http_port,
+            domain: None,
+            client,
+        }
+    }
+
+    pub fn domain(&mut self, domain: Domain) -> &mut Self {
+        self.domain = Some(domain);
+        self
+    }
+
+}
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
 #[derive(Debug)]
@@ -20,27 +57,13 @@ pub struct HomeserverKeyRepublisher {
 
 impl HomeserverKeyRepublisher {
     pub fn new(
-        keypair: &Keypair,
-        config: &IoConfig,
-        https_port: u16,
-        http_port: u16,
+        config: HomeserverKeyRepublisherConfig,
     ) -> Result<Self> {
-        let mut builder = pkarr::Client::builder();
 
-        if let Some(bootstrap) = &config.bootstrap {
-            builder.bootstrap(bootstrap);
-        }
-
-        if let Some(request_timeout) = config.dht_request_timeout {
-            builder.request_timeout(request_timeout);
-        }
-
-        let client = builder.build()?;
-
-        let signed_packet = create_signed_packet(keypair, config, https_port, http_port)?;
+        let signed_packet = create_signed_packet(&config)?;
 
         Ok(Self {
-            client,
+            client: config.client,
             signed_packet,
             republish_task: Mutex::new(None),
         })
@@ -108,12 +131,9 @@ impl HomeserverKeyRepublisher {
 }
 
 pub fn create_signed_packet(
-    keypair: &Keypair,
-    config: &IoConfig,
-    https_port: u16,
-    http_port: u16,
+    config: &HomeserverKeyRepublisherConfig
 ) -> Result<SignedPacket> {
-    // TODO: Try to resolve first before publishing.
+    // TODO: Check if this is all correct with the new config.
 
     let mut signed_packet_builder = SignedPacket::builder();
 
@@ -121,21 +141,14 @@ pub fn create_signed_packet(
 
     // Set the public Ip or localhost
     signed_packet_builder = signed_packet_builder.address(
-        ".".try_into()
-            .expect(". is valid domain and therefore always succeeds"),
-        config
-            .public_addr
-            .map(|addr| addr.ip())
-            .unwrap_or("127.0.0.1".parse().expect("localhost is valid ip")),
+        ".".try_into().expect(". is valid domain and therefore always succeeds"),
+        config.public_ip,
         60 * 60,
     );
 
     // Set the public port or the local https_port
     svcb.set_port(
-        config
-            .public_addr
-            .map(|addr| addr.port())
-            .unwrap_or(https_port),
+        config.pubky_https_port,
     );
 
     signed_packet_builder = signed_packet_builder.https(
@@ -149,15 +162,15 @@ pub fn create_signed_packet(
     if let Some(ref domain) = config.domain {
         let mut svcb = SVCB::new(10, ".".try_into()?);
 
-        let http_port_be_bytes = http_port.to_be_bytes();
-        if domain == "localhost" {
+        let http_port_be_bytes = config.icann_http_port.to_be_bytes();
+        if domain.0 == "localhost" {
             svcb.set_param(
                 pubky_common::constants::reserved_param_keys::HTTP_PORT,
                 &http_port_be_bytes,
             )?;
         }
 
-        svcb.target = domain.as_str().try_into()?;
+        svcb.target = domain.0.as_str().try_into()?;
 
         signed_packet_builder = signed_packet_builder.https(
             ".".try_into()
@@ -167,5 +180,5 @@ pub fn create_signed_packet(
         );
     }
 
-    Ok(signed_packet_builder.build(keypair)?)
+    Ok(signed_packet_builder.build(&config.keypair)?)
 }

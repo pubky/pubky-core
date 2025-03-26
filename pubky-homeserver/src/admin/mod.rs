@@ -1,5 +1,7 @@
-mod admin_auth_middleware;
+mod auth_middleware;
 mod server;
-mod generate_signup_token;
+mod routes;
 mod app;
 mod app_state;
+
+pub use app::run_admin_server;

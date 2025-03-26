@@ -2,12 +2,12 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use super::http::HttpServers;
 use super::key_republisher::HomeserverKeyRepublisher;
-use crate::{data_directory::DataDir, SignupMode};
+use crate::{admin::run_admin_server, data_directory::DataDir, FullConfig, SignupMode};
 use anyhow::Result;
 use pkarr::{Keypair, PublicKey};
 use tracing::info;
 
-use crate::core::{AdminConfig, CoreConfig, HomeserverCore};
+use crate::core::{CoreConfig, HomeserverCore};
 
 pub const DEFAULT_HTTP_PORT: u16 = 6286;
 pub const DEFAULT_HTTPS_PORT: u16 = 6287;
@@ -62,7 +62,7 @@ impl HomeserverBuilder {
 
     /// Set a password to protect admin endpoints
     pub fn admin_password(&mut self, password: String) -> &mut Self {
-        self.0.admin.password = Some(password);
+        self.0.admin.password = password;
 
         self
     }
@@ -124,9 +124,11 @@ impl Homeserver {
 
         let keypair = config.keypair;
 
-        let core = unsafe { HomeserverCore::new(config.core, config.admin)? };
+        let core = unsafe { HomeserverCore::new(config.core, config.admin.signup_mode)? };
 
         let http_servers = HttpServers::run(&keypair, &config.io, &core.router).await?;
+
+        let admin_server = run_admin_server(ase, config.admin.password.as_str(), config.admin.listen).await?;
 
         let dht_republisher = HomeserverKeyRepublisher::new(
             &keypair,
@@ -238,35 +240,33 @@ impl Default for Config {
     }
 }
 
-impl TryFrom<DataDir> for Config {
+impl TryFrom<FullConfig> for Config {
     type Error = anyhow::Error;
 
-    fn try_from(dir: DataDir) -> Result<Self, Self::Error> {
-        dir.ensure_data_dir_exists_and_is_writable()?;
-        let conf = dir.read_or_create_config_file()?;
-        let keypair = dir.read_or_create_keypair()?;
+    fn try_from(conf: FullConfig) -> Result<Self, Self::Error> {
 
         // TODO: Needs refactoring of the Homeserver Config struct. I am not doing
         // it yet because I am concentrating on the config currently.
         let io = IoConfig {
-            http_port: conf.drive.icann_listen_socket.port(),
-            https_port: conf.drive.pubky_listen_socket.port(),
-            domain: conf.drive.icann_domain,
-            public_addr: Some(conf.pkdns.public_socket),
+            http_port: conf.toml.drive.icann_listen_socket.port(),
+            https_port: conf.toml.drive.pubky_listen_socket.port(),
+            domain: conf.toml.drive.icann_domain,
+            public_addr: Some(conf.toml.pkdns.public_socket),
             ..Default::default()
         };
 
         let core = CoreConfig {
-            storage: dir.path().join("data/lmdb"),
+            storage: ,
             user_keys_republisher_interval: Some(Duration::from_secs(
-                conf.pkdns.user_keys_republisher_interval.into(),
+                conf.toml.pkdns.user_keys_republisher_interval.into(),
             )),
             ..Default::default()
         };
 
         let admin = AdminConfig {
             signup_mode: conf.general.signup_mode,
-            password: Some(conf.admin.admin_password),
+            password: conf.admin.admin_password,
+            listen: conf.admin.listen_socket,
         };
 
         Ok(Config {

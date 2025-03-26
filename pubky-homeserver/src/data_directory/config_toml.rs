@@ -7,7 +7,7 @@ use std::{
     fmt::Debug,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroU64,
-    str::FromStr,
+    str::FromStr, time::Duration,
 };
 use url::Url;
 
@@ -36,6 +36,10 @@ pub struct PkdnsToml {
     /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
     #[serde(default = "default_dht_relay_nodes")]
     pub dht_relay_nodes: Option<Vec<Url>>,
+
+    /// The request timeout for the DHT. If None, the default pkarr request timeout will be used.
+    #[serde(default = "default_dht_request_timeout")]
+    pub dht_request_timeout: Option<Duration>,
 }
 
 fn default_public_socket() -> SocketAddr {
@@ -49,6 +53,10 @@ fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
 }
 
 fn default_dht_relay_nodes() -> Option<Vec<Url>> {
+    None
+}
+
+fn default_dht_request_timeout() -> Option<Duration> {
     None
 }
 
@@ -239,6 +247,8 @@ mod tests {
                 Url::parse("https://pkarr.pubky.org").unwrap(),
             ])
         );
+
+        assert_eq!(c.pkdns.dht_request_timeout.unwrap().as_secs(), 2);
     }
 
     #[test]
