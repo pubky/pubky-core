@@ -123,12 +123,11 @@ fn default_admin_listen_socket() -> SocketAddr {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct GeneralToml {
     /// The mode of the signup.
-    #[serde(default = "default_signup_mode")]
+    #[serde(default)]
     pub signup_mode: SignupMode,
-}
-
-fn default_signup_mode() -> SignupMode {
-    SignupMode::TokenRequired
+    /// LMDB backup interval in seconds. 0 means disabled.
+    #[serde(default)]
+    pub lmdb_backup_interval_s: u64,
 }
 
 /// The error that can occur when reading the config file
@@ -186,8 +185,6 @@ impl ConfigToml {
             .collect::<Vec<String>>()
             .join("\n")
     }
-
-
 }
 
 impl Default for ConfigToml {
@@ -216,6 +213,7 @@ mod tests {
         let c: ConfigToml = ConfigToml::default();
 
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
+        assert_eq!(c.general.lmdb_backup_interval_s, 0);
         assert_eq!(
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()

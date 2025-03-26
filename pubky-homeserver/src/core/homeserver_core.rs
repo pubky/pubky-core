@@ -52,6 +52,16 @@ impl HomeserverCore {
             signup_mode: context.config_toml.general.signup_mode.clone(),
         };
 
+        // Spawn the backup process. This task will run forever.
+        if let Some(backup_interval) = config.lmdb_backup_interval {
+            let backup_path = config.storage.join("backup");
+            tokio::spawn(backup_lmdb_periodically(
+                db.clone(),
+                backup_path,
+                backup_interval,
+            ));
+        }
+
         let router = super::routes::create_app(state.clone());
 
         let pkarr_client = context.pkarr_builder.build()?;
@@ -110,7 +120,10 @@ pub struct CoreConfig {
     /// The interval at which the user keys republisher runs. None is disabled.
     ///
     /// Defaults to `60*60*4` (4 hours)
-    pub(crate) user_keys_republisher_interval: Option<Duration>,
+    pub (crate) user_keys_republisher_interval: Option<Duration>,
+
+    /// The interval at which the LMDB backup is performed. None means disabled.
+    pub (crate) lmdb_backup_interval: Option<Duration>,
 
     /// The mode of the signup.
     pub(crate) signup_mode: SignupMode,
@@ -139,6 +152,9 @@ pub struct CoreConfig {
 
     /// The socket address of the icann http server.
     pub(crate) icann_http_listen: SocketAddr,
+
+    /// The interval at which the LMDB backup is performed. None means disabled.
+    pub (crate) lmdb_backup_interval: Option<Duration>,
 }
 
 impl CoreConfig {
@@ -157,6 +173,7 @@ impl CoreConfig {
             domain: Domain::default(),
             pubky_tls_listen: DEFAULT_PUBKY_TLS_LISTEN_SOCKET,
             icann_http_listen: DEFAULT_ICANN_HTTP_LISTEN_SOCKET,
+            lmdb_backup_interval: None,
         }
     }
 
@@ -240,8 +257,6 @@ impl CoreConfig {
     pub fn test() -> Self {
         use std::net::{Ipv4Addr, SocketAddrV4};
 
-
-
         Self {
             keypair: Keypair::random(),
             db: LmDB::test(),
@@ -254,6 +269,7 @@ impl CoreConfig {
             domain: Domain::default(),
             pubky_tls_listen: DEFAULT_PUBKY_TLS_LISTEN_SOCKET,
             icann_http_listen: DEFAULT_ICANN_HTTP_LISTEN_SOCKET,
+            lmdb_backup_interval: None,
         }
     }
 }

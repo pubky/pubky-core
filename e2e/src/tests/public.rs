@@ -29,7 +29,30 @@ async fn put_get_delete() {
         .error_for_status()
         .unwrap();
 
+    // Use Pubky native method to get data from homeserver
     let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
+
+    assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+
+    // Use regular web method to get data from homeserver (with query pubky-host)
+    let regular_url = format!(
+        "{}pub/foo.txt?pubky-host={}",
+        server.url(),
+        keypair.public_key()
+    );
+
+    // We set `non.pubky.host` header as otherwise he client will use by default
+    // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
+    // the wrong tenant user
+    let response = client
+        .get(regular_url)
+        .header("Host", "non.pubky.host")
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
 
     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 

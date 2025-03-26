@@ -1,10 +1,8 @@
-use core::fmt;
-use std::{fmt::Display, str::FromStr};
-
 use serde::{Deserialize, Serialize};
 
 /// The mode of signup.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SignupMode {
     /// Everybody can signup.
     Open,
@@ -13,62 +11,28 @@ pub enum SignupMode {
     TokenRequired,
 }
 
-impl Display for SignupMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Open => write!(f, "open"),
-            Self::TokenRequired => write!(f, "token_required"),
-        }
-    }
-}
-
-impl FromStr for SignupMode {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "open" => Self::Open,
-            "token_required" => Self::TokenRequired,
-            _ => return Err(anyhow::anyhow!("Invalid signup mode: {}", s)),
-        })
-    }
-}
-
-impl Serialize for SignupMode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.to_string().as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for SignupMode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&s).unwrap())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_signup_mode_from_str() {
-        assert_eq!(SignupMode::from_str("open").unwrap(), SignupMode::Open);
-        assert_eq!(
-            SignupMode::from_str("token_required").unwrap(),
-            SignupMode::TokenRequired
-        );
+    #[derive(Default, Serialize, Deserialize)]
+    struct TestToml {
+        #[serde(default)]
+        signup_mode: SignupMode,
     }
 
     #[test]
-    fn test_signup_mode_display() {
-        assert_eq!(SignupMode::Open.to_string(), "open");
-        assert_eq!(SignupMode::TokenRequired.to_string(), "token_required");
+    fn test_signup_mode_serde() {
+        let test_toml = TestToml::default();
+        assert_eq!(test_toml.signup_mode, SignupMode::TokenRequired);
+
+        let test_toml_str = toml::to_string(&test_toml).unwrap();
+        assert_eq!(test_toml_str, "signup_mode = \"token_required\"\n");
+
+        let test_toml_2: TestToml = toml::from_str(&test_toml_str).unwrap();
+        assert_eq!(test_toml_2.signup_mode, SignupMode::TokenRequired);
+
+        let test_toml_3: TestToml = toml::from_str("\n").unwrap();
+        assert_eq!(test_toml_3.signup_mode, SignupMode::TokenRequired);
     }
 }
