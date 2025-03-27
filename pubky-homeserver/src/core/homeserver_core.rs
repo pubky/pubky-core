@@ -177,11 +177,14 @@ mod tests {
     use pubky_common::{auth::AuthToken, capabilities::Capability};
     use tower::ServiceExt;
 
+    use crate::DataDirMock;
+
     use super::*;
 
     impl HomeserverCore {
         /// Test version of [HomeserverCore::new], using an ephemeral small storage.
         pub async fn test() -> Result<Self> {
+            // let mock_dir = DataDirMock::test();
             let context = AppContext::test();
             Self::new(&context).await
         }

@@ -4,13 +4,13 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::time::Duration;
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{ClientBuilder, Keypair};
 use pubky_common::timestamp::Timestamp;
-use pubky_homeserver::HomeserverSuite;
+use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverSuite, SignupMode};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -68,16 +68,12 @@ impl Testnet {
             });
         let relay = unsafe { builder.run() }.await?;
 
-        let mut builder = HomeserverSuite::builder();
-        builder
-            .keypair(Keypair::from_secret_key(&[0; 32]))
-            .storage(storage)
-            .bootstrap(&dht.bootstrap)
-            .relays(&[relay.local_url()])
-            .domain("localhost")
-            .close_signups()
-            .admin_password("admin".to_string());
-        unsafe { builder.run().await }?;
+        let mut config = ConfigToml::test();
+        config.pkdns.dht_bootstrap_nodes = Some(Self::bootstrap_to_domain_port(&dht.bootstrap));
+        config.general.signup_mode = SignupMode::TokenRequired;
+        config.admin.admin_password = "admin".to_string();
+        let mock_dir = DataDirMock::new(config, Keypair::from_secret_key(&[0; 32]))?;
+        let homeserver = HomeserverSuite::run_with_data_dir_trait(Arc::new(mock_dir)).await?;
 
         HttpRelay::builder().http_port(15412).run().await?;
 
@@ -89,11 +85,15 @@ impl Testnet {
         Ok(testnet)
     }
 
+    fn bootstrap_to_domain_port(bootstrap: &[String]) -> Vec<DomainPort> {
+        bootstrap.iter().map(|s| DomainPort::from_str(s).expect("boostrap nodes are always valid domain:port pairs")).collect()
+    }
+
     // === Getters ===
 
     /// Returns a list of DHT bootstrapping nodes.
-    pub fn bootstrap(&self) -> &[String] {
-        &self.dht.bootstrap
+    pub fn bootstrap(&self) -> Vec<DomainPort> {
+        Self::bootstrap_to_domain_port(&self.dht.bootstrap)
     }
 
     /// Returns a list of pkarr relays.
@@ -105,12 +105,15 @@ impl Testnet {
 
     /// Run a Pubky Homeserver
     pub async fn run_homeserver(&self) -> Result<HomeserverSuite> {
-        HomeserverSuite::run_test(&self.dht.bootstrap).await
+        self.run_homeserver_with_config(ConfigToml::test()).await
     }
 
     /// Run a Pubky Homeserver that requires signup tokens
-    pub async fn run_homeserver_with_signup_tokens(&self) -> Result<HomeserverSuite> {
-        HomeserverSuite::run_test_with_signup_tokens(&self.dht.bootstrap).await
+    pub async fn run_homeserver_with_config(&self, mut config: ConfigToml) -> Result<HomeserverSuite> {
+        config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap());
+        let mock_dir = DataDirMock::new(config, Keypair::from_secret_key(&[0; 32]))?;
+        let homeserver = HomeserverSuite::run_with_data_dir_trait(Arc::new(mock_dir)).await?;
+        Ok(homeserver)
     }
 
     /// Run an HTTP Relay
@@ -120,13 +123,12 @@ impl Testnet {
 
     /// Create a [ClientBuilder] and configure it to use this local test network.
     pub fn client_builder(&self) -> ClientBuilder {
-        let bootstrap = self.bootstrap();
         let relays = self.relays();
 
         let mut builder = pubky::Client::builder();
         builder.pkarr(|builder| {
             builder
-                .bootstrap(bootstrap)
+                .bootstrap(&self.dht.bootstrap)
                 .relays(&relays)
                 .expect("testnet relays should be valid urls")
         });

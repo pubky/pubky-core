@@ -179,6 +179,15 @@ impl ConfigToml {
             .collect::<Vec<String>>()
             .join("\n")
     }
+
+    /// Returns a default config appropriate for testing.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test() -> Self {
+        let mut config = Self::default();
+        config.pkdns.dht_bootstrap_nodes = Some(vec![]);
+        config.general.signup_mode = SignupMode::Open;
+        config
+    }
 }
 
 impl Default for ConfigToml {

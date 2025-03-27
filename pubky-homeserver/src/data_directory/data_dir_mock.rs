@@ -6,6 +6,7 @@ use super::DataDirTrait;
 /// 
 /// It uses a temporary directory to store all data in. The data is removed as soon as the object is dropped.
 /// 
+#[cfg(any(test, feature = "testing"))]
 #[derive(Debug, Clone)]
 pub struct DataDirMock {
     pub(crate) temp_dir: std::sync::Arc<tempfile::TempDir>,
@@ -17,6 +18,14 @@ impl DataDirMock {
     /// Create a new DataDirMock with a temporary directory.
     pub fn new(config_toml: super::ConfigToml, keypair: pkarr::Keypair) -> anyhow::Result<Self> {
         Ok(Self { temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?), config_toml, keypair })
+    }
+
+    /// Creates a mock data directory with a config and keypair appropriate for testing.
+
+    pub fn test() -> Self {
+        let config = super::ConfigToml::test();
+        let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
+        Self::new(config, keypair).unwrap()
     }
 }
 

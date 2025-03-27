@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 
     tracing::debug!("Using data dir: {}", args.data_dir.display());
 
-    let mut server = HomeserverSuite::run_with_data_dir(args.data_dir).await?;
+    let mut server = HomeserverSuite::run_with_data_dir_path(args.data_dir).await?;
 
     tokio::signal::ctrl_c().await?;
 
