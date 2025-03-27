@@ -1,4 +1,3 @@
-mod http;
-mod server;
+mod suite;
 
-pub use server::*;
+pub use suite::*;

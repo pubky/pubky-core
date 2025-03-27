@@ -1,10 +1,8 @@
-use std::net::SocketAddr;
-
 use axum::{
     routing::get,
     Router,
 };
-use crate::persistence::lmdb::LmDB;
+use crate::context::AppContext;
 use super::{auth_middleware::AdminAuthLayer, app_state::AppState};
 use super::routes::{generate_signup_token, root};
 
@@ -38,11 +36,11 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
 /// * `db` - The database to use
 /// * `password` - The password to protect the admin routes
 /// * `listen` - The address to listen on
-pub async fn run_admin_server(db: LmDB, password: &str, listen: SocketAddr) -> anyhow::Result<()> {
-    let state = AppState::new(db);
-    let app = create_app(state, password);
-    let listener = tokio::net::TcpListener::bind(listen).await?;
-    tracing::debug!("Admin server listening on {}", listen);
+pub async fn run_admin_server(context: &AppContext) -> anyhow::Result<()> {
+    let state = AppState::new(context.db.clone());
+    let app = create_app(state, &context.config_toml.admin.admin_password.as_str());
+    let listener = tokio::net::TcpListener::bind(context.config_toml.admin.listen_socket).await?;
+    tracing::debug!("Admin server listening on {}", context.config_toml.admin.listen_socket);
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -50,6 +48,8 @@ pub async fn run_admin_server(db: LmDB, password: &str, listen: SocketAddr) -> a
 #[cfg(test)]
 mod tests {
     use axum_test::TestServer;
+
+    use crate::persistence::lmdb::LmDB;
 
     use super::*;
     

@@ -1,14 +1,11 @@
 //!
 //! Configuration file for the homeserver.
 //!
-use crate::constants::{DEFAULT_ADMIN_LISTEN_SOCKET, DEFAULT_ICANN_HTTP_LISTEN_SOCKET, DEFAULT_PUBKY_TLS_LISTEN_SOCKET};
-
 use super::{domain_port::DomainPort, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    num::NonZeroU64,
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
     str::FromStr, time::Duration,
 };
 use url::Url;
@@ -90,11 +87,11 @@ pub struct DriveToml {
 }
 
 fn default_pubky_drive_listen_socket() -> SocketAddr {
-    DEFAULT_PUBKY_TLS_LISTEN_SOCKET
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6287))
 }
 
 fn default_icann_drive_listen_socket() -> SocketAddr {
-    DEFAULT_ICANN_HTTP_LISTEN_SOCKET
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6286))
 }
 
 /// All configuration related to the admin API
@@ -113,7 +110,7 @@ fn default_admin_password() -> String {
 }
 
 fn default_admin_listen_socket() -> SocketAddr {
-    DEFAULT_ADMIN_LISTEN_SOCKET
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6288))
 }
 
 /// All configuration related to the admin API

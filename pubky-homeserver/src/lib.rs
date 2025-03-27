@@ -14,4 +14,4 @@ pub(crate) mod context;
 pub(crate) mod constants;
 
 pub use data_directory::*;
-pub use homeserver::Homeserver;
+pub use homeserver::HomeserverSuite;

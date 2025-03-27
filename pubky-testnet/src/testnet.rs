@@ -10,7 +10,7 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{ClientBuilder, Keypair};
 use pubky_common::timestamp::Timestamp;
-use pubky_homeserver::Homeserver;
+use pubky_homeserver::HomeserverSuite;
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -68,7 +68,7 @@ impl Testnet {
             });
         let relay = unsafe { builder.run() }.await?;
 
-        let mut builder = Homeserver::builder();
+        let mut builder = HomeserverSuite::builder();
         builder
             .keypair(Keypair::from_secret_key(&[0; 32]))
             .storage(storage)
@@ -104,13 +104,15 @@ impl Testnet {
     // === Public Methods ===
 
     /// Run a Pubky Homeserver
-    pub async fn run_homeserver(&self) -> Result<Homeserver> {
-        Homeserver::run_test(&self.dht.bootstrap).await
+    pub async fn run_homeserver(&self) -> Result<HomeserverSuite> {
+        let context = AppContext::test();
+        
+        HomeserverSuite::run_test(&self.dht.bootstrap).await
     }
 
     /// Run a Pubky Homeserver that requires signup tokens
-    pub async fn run_homeserver_with_signup_tokens(&self) -> Result<Homeserver> {
-        Homeserver::run_test_with_signup_tokens(&self.dht.bootstrap).await
+    pub async fn run_homeserver_with_signup_tokens(&self) -> Result<HomeserverSuite> {
+        HomeserverSuite::run_test_with_signup_tokens(&self.dht.bootstrap).await
     }
 
     /// Run an HTTP Relay

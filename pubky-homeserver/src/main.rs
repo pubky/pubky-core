@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use pubky_homeserver::Homeserver;
+use pubky_homeserver::HomeserverSuite;
 use tracing_subscriber::EnvFilter;
 
 fn default_config_dir_path() -> PathBuf {
@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 
     tracing::debug!("Using data dir: {}", args.data_dir.display());
 
-    let server = Homeserver::run_with_data_dir(args.data_dir).await?;
+    let mut server = HomeserverSuite::run_with_data_dir(args.data_dir).await?;
 
     tokio::signal::ctrl_c().await?;
 
