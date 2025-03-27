@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::context::AppContext;
+use crate::app_context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
 use crate::SignupMode;
@@ -34,7 +34,7 @@ pub struct HomeserverCore {
     pub(crate) key_republisher: HomeserverKeyRepublisher,
     pub(crate) icann_http_handle: Handle,
     pub(crate) pubky_tls_handle: Handle,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) router: Router,
 }
 
@@ -53,7 +53,7 @@ impl HomeserverCore {
             key_republisher,
             icann_http_handle,
             pubky_tls_handle,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             router,
         })
     }

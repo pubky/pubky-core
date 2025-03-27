@@ -2,7 +2,7 @@ use axum::{
     routing::get,
     Router,
 };
-use crate::context::AppContext;
+use crate::app_context::AppContext;
 use super::{auth_middleware::AdminAuthLayer, app_state::AppState};
 use super::routes::{generate_signup_token, root};
 

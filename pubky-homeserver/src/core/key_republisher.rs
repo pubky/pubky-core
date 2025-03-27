@@ -11,7 +11,7 @@ use pkarr::{dns::rdata::SVCB, SignedPacket};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
-use crate::context::AppContext;
+use crate::app_context::AppContext;
 
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.

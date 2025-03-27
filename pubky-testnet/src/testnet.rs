@@ -105,8 +105,6 @@ impl Testnet {
 
     /// Run a Pubky Homeserver
     pub async fn run_homeserver(&self) -> Result<HomeserverSuite> {
-        let context = AppContext::test();
-        
         HomeserverSuite::run_test(&self.dht.bootstrap).await
     }
 

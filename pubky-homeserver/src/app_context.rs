@@ -3,9 +3,10 @@ use pkarr::Keypair;
 use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir};
 
 /// The application context shared between all components.
+/// Think of it as a simple Dependency Injection container.
 /// 
-/// Created by a `DataDir` instance.
-/// `AppContext::try_from(data_dir)`
+/// Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
+/// 
 #[derive(Debug, Clone)]
 pub(crate) struct AppContext {
     /// A list of all shared resources.
@@ -20,7 +21,7 @@ pub(crate) struct AppContext {
 }
 
 impl AppContext {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         use crate::DataDir;
         let data_dir = DataDir::test();

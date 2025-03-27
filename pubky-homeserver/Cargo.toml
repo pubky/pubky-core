@@ -49,8 +49,11 @@ thiserror = "2.0.12"
 dirs = "6.0.0"
 hostname-validator = "1.1.1"
 axum-test = "17.2.0"
+tempfile = { version = "3.10.1", optional = true}
 
 [dev-dependencies]
-tempfile = "3.10.1"
 
+
+[features]
+testing = ["dep:tempfile"]
 
