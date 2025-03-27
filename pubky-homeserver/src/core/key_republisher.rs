@@ -2,6 +2,7 @@
 
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::fmt::Debug;
 
 use anyhow::Result;
 use pkarr::dns::Name;
@@ -9,9 +10,9 @@ use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, SignedPacket};
 
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 use crate::app_context::AppContext;
+use crate::common::{HandleHolder, HandleHolderError};
 
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
@@ -19,7 +20,7 @@ use crate::app_context::AppContext;
 pub struct HomeserverKeyRepublisher {
     client: pkarr::Client,
     signed_packet: SignedPacket,
-    republish_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    republish_task: Arc<Mutex<Option<HandleHolder<()>>>>,
 }
 
 impl HomeserverKeyRepublisher {
@@ -81,17 +82,19 @@ impl HomeserverKeyRepublisher {
             }
         });
 
-        *task_guard = Some(handle);
+        *task_guard = Some(HandleHolder::new(handle));
         Ok(())
     }
 
     /// Stop the periodic republish task.
-    pub async fn stop_periodic_republish(&self) {
+    pub async fn stop_periodic_republish(&self) -> Result<(), HandleHolderError> {
         let mut task_guard = self.republish_task.lock().await;
 
         if let Some(handle) = task_guard.take() {
-            handle.abort();
+            let join_handle = handle.dissolve().await?;
+            join_handle.abort();
         }
+        Ok(())
     }
 }
 

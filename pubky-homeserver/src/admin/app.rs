@@ -40,7 +40,7 @@ pub async fn run_admin_server(context: &AppContext) -> anyhow::Result<()> {
     let state = AppState::new(context.db.clone());
     let app = create_app(state, &context.config_toml.admin.admin_password.as_str());
     let listener = tokio::net::TcpListener::bind(context.config_toml.admin.listen_socket).await?;
-    tracing::debug!("Admin server listening on {}", context.config_toml.admin.listen_socket);
+    tracing::debug!("Admin server listening on http://{}", context.config_toml.admin.listen_socket);
     axum::serve(listener, app).await?;
     Ok(())
 }

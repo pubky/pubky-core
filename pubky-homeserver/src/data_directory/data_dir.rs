@@ -1,5 +1,5 @@
 use super::{data_dir_trait::DataDirTrait, ConfigToml};
-use std::{io::Write, os::unix::fs::PermissionsExt, path::{Path, PathBuf}, sync::Arc};
+use std::{io::Write, os::unix::fs::PermissionsExt, path::{Path, PathBuf}};
 
 /// The data directory for the homeserver.
 ///
