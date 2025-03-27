@@ -1,5 +1,5 @@
-use super::ConfigToml;
-use std::{io::Write, os::unix::fs::PermissionsExt, path::PathBuf, sync::Arc};
+use super::{data_dir_trait::DataDirTrait, ConfigToml};
+use std::{io::Write, os::unix::fs::PermissionsExt, path::{Path, PathBuf}, sync::Arc};
 
 /// The data directory for the homeserver.
 ///
@@ -8,7 +8,8 @@ use std::{io::Write, os::unix::fs::PermissionsExt, path::PathBuf, sync::Arc};
 #[derive(Debug, Clone)]
 pub struct DataDir {
     expanded_path: PathBuf,
-    #[cfg(any(test, feature = "testing"))] // Only used in tests to keep the temporary directory alive
+    #[cfg(any(test, feature = "testing"))]
+    // Only used in tests to keep the temporary directory alive
     temp_dir: Arc<Option<tempfile::TempDir>>,
 }
 
@@ -21,11 +22,6 @@ impl DataDir {
             #[cfg(any(test, feature = "testing"))]
             temp_dir: Arc::new(None),
         }
-    }
-
-    /// Returns the full path to the data directory.
-    pub fn path(&self) -> &PathBuf {
-        &self.expanded_path
     }
 
     /// Expands the data directory to the home directory if it starts with "~".
@@ -49,36 +45,9 @@ impl DataDir {
         PathBuf::from(path)
     }
 
-    /// Makes sure the data directory exists.
-    /// Create the directory if it doesn't exist.
-    pub fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
-        std::fs::create_dir_all(&self.expanded_path)?;
-
-        // Check if we can write to the data directory
-        let test_file_path = self
-            .expanded_path
-            .join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
-        std::fs::write(test_file_path.clone(), b"test")
-            .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
-        std::fs::remove_file(test_file_path)
-            .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
-        Ok(())
-    }
-
     /// Returns the config file path in this directory.
     pub fn get_config_file_path(&self) -> PathBuf {
         self.expanded_path.join("config.toml")
-    }
-
-    /// Reads the config file from the data directory.
-    /// Creates a default config file if it doesn't exist.
-    pub fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
-        let config_file_path = self.get_config_file_path();
-        if !config_file_path.exists() {
-            self.write_default_config_file()?;
-        }
-        let config = ConfigToml::from_file(config_file_path)?;
-        Ok(config)
     }
 
     fn write_default_config_file(&self) -> anyhow::Result<()> {
@@ -93,9 +62,43 @@ impl DataDir {
     pub fn get_secret_file_path(&self) -> PathBuf {
         self.expanded_path.join("secret")
     }
+}
+
+impl DataDirTrait for DataDir {
+    /// Returns the full path to the data directory.
+    fn path(&self) -> &Path {
+        &self.expanded_path
+    }
+
+    /// Makes sure the data directory exists.
+    /// Create the directory if it doesn't exist.
+    fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
+        std::fs::create_dir_all(&self.expanded_path)?;
+
+        // Check if we can write to the data directory
+        let test_file_path = self
+            .expanded_path
+            .join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
+        std::fs::write(test_file_path.clone(), b"test")
+            .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+        std::fs::remove_file(test_file_path)
+            .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+        Ok(())
+    }
+
+    /// Reads the config file from the data directory.
+    /// Creates a default config file if it doesn't exist.
+    fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
+        let config_file_path = self.get_config_file_path();
+        if !config_file_path.exists() {
+            self.write_default_config_file()?;
+        }
+        let config = ConfigToml::from_file(config_file_path)?;
+        Ok(config)
+    }
 
     /// Reads the secret file. Creates a new secret file if it doesn't exist.
-    pub fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair> {
+    fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair> {
         let secret_file_path = self.get_secret_file_path();
         if !secret_file_path.exists() {
             // Create a new secret file

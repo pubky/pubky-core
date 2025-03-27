@@ -1,6 +1,15 @@
+//!
+//! The application context shared between all components.
+//! Think of it as a simple Dependency Injection container.
+//! 
+//! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
+//! 
+
+use std::sync::Arc;
+
 use pkarr::Keypair;
 
-use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir};
+use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir, DataDirMock, DataDirTrait};
 
 /// The application context shared between all components.
 /// Think of it as a simple Dependency Injection container.
@@ -12,7 +21,7 @@ pub(crate) struct AppContext {
     /// A list of all shared resources.
     pub(crate) db: LmDB,
     pub(crate) config_toml: ConfigToml,
-    pub(crate) data_dir: DataDir,
+    pub(crate) data_dir: Arc<dyn DataDirTrait>,
     pub(crate) keypair: Keypair,
     /// Main pkarr client instance.
     pub(crate) pkarr_client: pkarr::Client,
@@ -29,10 +38,10 @@ impl AppContext {
     }
 }
 
-impl TryFrom<DataDir> for AppContext {
+impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
     type Error = anyhow::Error;
 
-    fn try_from(dir: DataDir) -> Result<Self, Self::Error> {
+    fn try_from(dir: Arc<dyn DataDirTrait>) -> Result<Self, Self::Error> {
         dir.ensure_data_dir_exists_and_is_writable()?;
         let conf = dir.read_or_create_config_file()?;
         let keypair = dir.read_or_create_keypair()?;
@@ -46,10 +55,30 @@ impl TryFrom<DataDir> for AppContext {
             config_toml: conf,
             keypair,
             data_dir: dir,
-
         })
     }
 }
+
+impl TryFrom<DataDir> for AppContext {
+    type Error = anyhow::Error;
+
+    fn try_from(dir: DataDir) -> Result<Self, Self::Error> {
+        let arc_dir: Arc<dyn DataDirTrait> = Arc::new(dir);
+        Self::try_from(arc_dir)
+    }
+}
+
+impl TryFrom<DataDirMock> for AppContext {
+    type Error = anyhow::Error;
+
+    fn try_from(dir: DataDirMock) -> Result<Self, Self::Error> {
+        let arc_dir: Arc<dyn DataDirTrait> = Arc::new(dir);
+        Self::try_from(arc_dir)
+    }
+}
+
+
+
 
 impl AppContext {
     /// Build the pkarr client builder based on the config.

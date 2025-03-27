@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::app_context::AppContext;
+use crate::{app_context::AppContext, DataDirTrait};
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
 use crate::SignupMode;

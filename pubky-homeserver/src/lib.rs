@@ -10,7 +10,7 @@ mod persistence;
 mod data_directory;
 mod admin;
 mod homeserver;
-pub(crate) mod app_context;
+pub mod app_context;
 pub(crate) mod constants;
 
 pub use data_directory::*;
