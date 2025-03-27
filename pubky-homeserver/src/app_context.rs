@@ -5,7 +5,7 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //! 
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use pkarr::Keypair;
 
@@ -30,10 +30,10 @@ pub(crate) struct AppContext {
 }
 
 impl AppContext {
-    #[cfg(any(test, feature = "testing"))]
+
     pub fn test() -> Self {
-        use crate::DataDir;
-        let data_dir = DataDir::test();
+        use crate::DataDirMock;
+        let data_dir = DataDirMock::test();
         Self::try_from(data_dir).unwrap()
     }
 }
@@ -94,8 +94,9 @@ impl AppContext {
         if let Some(relays) = &config_toml.pkdns.dht_relay_nodes {
             builder.relays(relays);
         }
-        if let Some(request_timeout) = &config_toml.pkdns.dht_request_timeout {
-            builder.request_timeout(request_timeout.clone());
+        if let Some(request_timeout) = &config_toml.pkdns.dht_request_timeout_ms {
+            let duration = Duration::from_millis(request_timeout.get());
+            builder.request_timeout(duration);
         }
         builder
     }

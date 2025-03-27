@@ -21,6 +21,6 @@ url = "2.5.4"
 
 pubky = { version = "0.4.2", path = "../pubky-client" }
 pubky-common = { version = "0.3.1", path = "../pubky-common" }
-pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver", features = ["testing"] }
+pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver"}
 
 

@@ -74,4 +74,4 @@ dht_relay_nodes = [
 ]
 
 # Default UDP request timeout for the DHT
-dht_request_timeout = 2
+dht_request_timeout = 2000

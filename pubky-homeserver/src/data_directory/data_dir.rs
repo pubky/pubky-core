@@ -8,9 +8,6 @@ use std::{io::Write, os::unix::fs::PermissionsExt, path::{Path, PathBuf}, sync::
 #[derive(Debug, Clone)]
 pub struct DataDir {
     expanded_path: PathBuf,
-    #[cfg(any(test, feature = "testing"))]
-    // Only used in tests to keep the temporary directory alive
-    temp_dir: Arc<Option<tempfile::TempDir>>,
 }
 
 impl DataDir {
@@ -19,8 +16,6 @@ impl DataDir {
     pub fn new(path: PathBuf) -> Self {
         Self {
             expanded_path: Self::expand_home_dir(path),
-            #[cfg(any(test, feature = "testing"))]
-            temp_dir: Arc::new(None),
         }
     }
 
@@ -126,17 +121,6 @@ impl Default for DataDir {
     }
 }
 
-impl DataDir {
-    /// Creates a new data directory in a temporary directory.
-    /// The temporary directory will be cleaned up when the DataDir is dropped.
-    #[cfg(any(test, feature = "testing"))]
-    pub fn test() -> Self {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let mut dir = Self::new(PathBuf::from(temp_dir.path()));
-        dir.temp_dir = Arc::new(Some(temp_dir));
-        dir
-    }
-}
 
 #[cfg(test)]
 mod tests {

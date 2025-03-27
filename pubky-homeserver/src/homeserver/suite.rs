@@ -49,7 +49,7 @@ impl HomeserverSuite {
     }
 
     /// Run a Homeserver with configurations suitable for ephemeral tests.
-    #[cfg(any(test, feature = "testing"))]
+
     pub async fn run_test(bootstrap: &[String]) -> Result<Self> {
         use crate::DomainPort;
         use std::str::FromStr;
@@ -66,7 +66,6 @@ impl HomeserverSuite {
 
     /// Run a Homeserver with configurations suitable for ephemeral tests.
     /// That requires signup tokens.
-    #[cfg(any(test, feature = "testing"))]
     pub async fn run_test_with_signup_tokens(bootstrap: &[String]) -> Result<Self> {
         use crate::DomainPort;
         use std::str::FromStr;

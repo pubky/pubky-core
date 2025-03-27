@@ -4,9 +4,7 @@
 use super::{domain_port::DomainPort, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
-    str::FromStr, time::Duration,
+    fmt::Debug, net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4}, num::NonZeroU64, str::FromStr
 };
 use url::Url;
 
@@ -47,7 +45,7 @@ pub struct PkdnsToml {
 
     /// The request timeout for the DHT. If None, the default pkarr request timeout will be used.
     #[serde(default = "default_dht_request_timeout")]
-    pub dht_request_timeout: Option<Duration>,
+    pub dht_request_timeout_ms: Option<NonZeroU64>,
 }
 
 fn default_public_ip() -> IpAddr {
@@ -63,7 +61,7 @@ fn default_dht_relay_nodes() -> Option<Vec<Url>> {
     None
 }
 
-fn default_dht_request_timeout() -> Option<Duration> {
+fn default_dht_request_timeout() -> Option<NonZeroU64> {
     None
 }
 
@@ -181,7 +179,6 @@ impl ConfigToml {
     }
 
     /// Returns a default config appropriate for testing.
-    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let mut config = Self::default();
         config.pkdns.dht_bootstrap_nodes = Some(vec![]);
@@ -256,7 +253,7 @@ mod tests {
             ])
         );
 
-        assert_eq!(c.pkdns.dht_request_timeout.unwrap().as_secs(), 2);
+        assert_eq!(c.pkdns.dht_request_timeout_ms.unwrap().get(), 2000);
     }
 
     #[test]

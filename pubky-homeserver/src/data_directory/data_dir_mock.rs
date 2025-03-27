@@ -6,7 +6,7 @@ use super::DataDirTrait;
 /// 
 /// It uses a temporary directory to store all data in. The data is removed as soon as the object is dropped.
 /// 
-#[cfg(any(test, feature = "testing"))]
+
 #[derive(Debug, Clone)]
 pub struct DataDirMock {
     pub(crate) temp_dir: std::sync::Arc<tempfile::TempDir>,

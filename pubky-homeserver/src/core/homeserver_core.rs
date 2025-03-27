@@ -1,22 +1,24 @@
 use std::time::Duration;
 
-use crate::{app_context::AppContext, DataDirTrait};
+use super::backup::backup_lmdb_periodically;
+use super::key_republisher::HomeserverKeyRepublisher;
+use crate::app_context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
 use crate::SignupMode;
 use anyhow::Result;
 use axum::Router;
-use axum_server::{tls_rustls::{RustlsAcceptor, RustlsConfig}, Handle};
-use pubky_common::auth::AuthVerifier;
-use tokio::time::sleep;
+use axum_server::{
+    tls_rustls::{RustlsAcceptor, RustlsConfig},
+    Handle,
+};
 use futures_util::TryFutureExt;
-use super::backup::backup_lmdb_periodically;
-use super::key_republisher::HomeserverKeyRepublisher;
+use pubky_common::auth::AuthVerifier;
 use std::{
     net::{SocketAddr, TcpListener},
     sync::Arc,
 };
-
+use tokio::time::sleep;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -34,8 +36,6 @@ pub struct HomeserverCore {
     pub(crate) key_republisher: HomeserverKeyRepublisher,
     pub(crate) icann_http_handle: Handle,
     pub(crate) pubky_tls_handle: Handle,
-    #[cfg(any(test, feature = "testing"))]
-    pub(crate) router: Router,
 }
 
 impl HomeserverCore {
@@ -46,15 +46,13 @@ impl HomeserverCore {
         Self::start_backup_task(context).await;
         let user_keys_republisher = Self::start_user_keys_republisher(context).await?;
 
-        let (icann_http_handle, pubky_tls_handle, router) = Self::start_server_tasks(context).await?;
+        let (icann_http_handle, pubky_tls_handle) = Self::start_server_tasks(context).await?;
 
         Ok(Self {
             user_keys_republisher,
             key_republisher,
             icann_http_handle,
             pubky_tls_handle,
-            #[cfg(any(test, feature = "testing"))]
-            router,
         })
     }
 
@@ -98,14 +96,18 @@ impl HomeserverCore {
         Ok(user_keys_republisher)
     }
 
-    /// Start the http and tls servers.
-    async fn start_server_tasks(context: &AppContext) -> Result<(Handle, Handle, Router)> {
+    pub(crate) fn create_router(context: &AppContext) -> Router {
         let state = AppState {
             verifier: AuthVerifier::default(),
             db: context.db.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
         };
-        let router = super::routes::create_app(state.clone());
+        super::routes::create_app(state.clone())
+    }
+
+    /// Start the http and tls servers.
+    async fn start_server_tasks(context: &AppContext) -> Result<(Handle, Handle)> {
+        let router = Self::create_router(context);
 
         // Icann http server
         let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
@@ -118,7 +120,7 @@ impl HomeserverCore {
                         .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
-                .map_err(|error| tracing::error!(?error, "Homeserver icann http server error"))
+                .map_err(|error| tracing::error!(?error, "Homeserver icann http server error")),
         );
 
         tracing::info!(
@@ -127,8 +129,7 @@ impl HomeserverCore {
         );
 
         // Pubky tls server
-        let https_listener =
-            TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
+        let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
 
         let https_handle = Handle::new();
         tokio::spawn(
@@ -142,15 +143,22 @@ impl HomeserverCore {
                         .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
-                .map_err(|error| tracing::error!(?error, "Homeserver pubky tls server error"))    
+                .map_err(|error| tracing::error!(?error, "Homeserver pubky tls server error")),
         );
-        tracing::info!("Homeserver Pubky TLS listening on https://{} and http://{}", context.keypair.public_key(), context.config_toml.drive.icann_listen_socket);
+        tracing::info!(
+            "Homeserver Pubky TLS listening on https://{} and http://{}",
+            context.keypair.public_key(),
+            context.config_toml.drive.icann_listen_socket
+        );
 
-        Ok((
-            http_handle,
-            https_handle,
-            router,
-        ))
+        Ok((http_handle, https_handle))
+    }
+
+    /// Test version of [HomeserverCore::new], using an ephemeral small storage.
+    pub async fn test() -> Result<Self> {
+        // let mock_dir = DataDirMock::test();
+        let context = AppContext::test();
+        Self::new(&context).await
     }
 
     /// Stop the home server background tasks.
@@ -160,63 +168,5 @@ impl HomeserverCore {
         self.user_keys_republisher.stop().await;
         self.icann_http_handle.shutdown();
         self.pubky_tls_handle.shutdown();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use anyhow::Result;
-    use axum::{
-        body::Body,
-        extract::Request,
-        http::{header, Method},
-        response::Response,
-    };
-    use pkarr::Keypair;
-    use pubky_common::{auth::AuthToken, capabilities::Capability};
-    use tower::ServiceExt;
-
-    use crate::DataDirMock;
-
-    use super::*;
-
-    impl HomeserverCore {
-        /// Test version of [HomeserverCore::new], using an ephemeral small storage.
-        pub async fn test() -> Result<Self> {
-            // let mock_dir = DataDirMock::test();
-            let context = AppContext::test();
-            Self::new(&context).await
-        }
-
-        // === Public Methods ===
-
-        pub async fn create_root_user(&mut self, keypair: &Keypair) -> Result<String> {
-            let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
-
-            let response = self
-                .call(
-                    Request::builder()
-                        .uri("/signup")
-                        .header("host", keypair.public_key().to_string())
-                        .method(Method::POST)
-                        .body(Body::from(auth_token.serialize()))
-                        .unwrap(),
-                )
-                .await?;
-
-            let header_value = response
-                .headers()
-                .get(header::SET_COOKIE)
-                .and_then(|h| h.to_str().ok())
-                .expect("should return a set-cookie header")
-                .to_string();
-
-            Ok(header_value)
-        }
-
-        pub async fn call(&self, request: Request) -> Result<Response> {
-            Ok(self.router.clone().oneshot(request).await?)
-        }
     }
 }
