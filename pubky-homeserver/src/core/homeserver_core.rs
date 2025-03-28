@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::backup::backup_lmdb_periodically;
+use super::periodic_backup::PeriodicBackup;
 use super::key_republisher::HomeserverKeyRepublisher;
 use crate::app_context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
@@ -18,7 +18,6 @@ use std::{
     net::{SocketAddr, TcpListener},
     sync::Arc,
 };
-use tokio::time::sleep;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -29,11 +28,14 @@ pub(crate) struct AppState {
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Clone)]
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
+    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
     pub(crate) key_republisher: HomeserverKeyRepublisher,
+    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the PeriodicBackup is dropped.
+    pub(crate) periodic_backup: PeriodicBackup,
     pub(crate) icann_http_handle: Handle,
     pub(crate) pubky_tls_handle: Handle,
 }
@@ -41,59 +43,19 @@ pub struct HomeserverCore {
 impl HomeserverCore {
     /// Create a side-effect-free Homeserver core.
     pub async fn new(context: &AppContext) -> Result<Self> {
-        // TODO: Tasks get started here. But if new() fails due to an error, the tasks should be stopped.
-        let key_republisher = Self::start_key_republisher(context).await?;
-        Self::start_backup_task(context).await;
-        let user_keys_republisher = Self::start_user_keys_republisher(context).await?;
+        let key_republisher = HomeserverKeyRepublisher::run(context).await?;
+        let user_keys_republisher = UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
+        let periodic_backup = PeriodicBackup::run(context);
 
         let (icann_http_handle, pubky_tls_handle) = Self::start_server_tasks(context).await?;
 
         Ok(Self {
             user_keys_republisher,
             key_republisher,
+            periodic_backup,
             icann_http_handle,
             pubky_tls_handle,
         })
-    }
-
-    /// Background task to republish the homeserver's pkarr packet to the DHT.
-    async fn start_key_republisher(context: &AppContext) -> Result<HomeserverKeyRepublisher> {
-        let key_republisher = HomeserverKeyRepublisher::new(context)?;
-        key_republisher.start_periodic_republish().await?;
-        Ok(key_republisher)
-    }
-
-    /// Spawn the backup process. This task will run forever.
-    async fn start_backup_task(context: &AppContext) {
-        let backup_interval = context.config_toml.general.lmdb_backup_interval_s;
-        if backup_interval > 0 {
-            let backup_path = context.data_dir.path().join("backup");
-            tokio::spawn(backup_lmdb_periodically(
-                context.db.clone(),
-                backup_path,
-                Duration::from_secs(backup_interval),
-            ));
-        }
-    }
-
-    /// Background task to republish the user keys to the DHT.
-    async fn start_user_keys_republisher(context: &AppContext) -> Result<UserKeysRepublisher> {
-        // Background task to republish the user keys to the DHT.
-        let user_keys_republisher_interval =
-            context.config_toml.pkdns.user_keys_republisher_interval;
-        let user_keys_republisher = UserKeysRepublisher::new(
-            context.db.clone(),
-            Duration::from_secs(user_keys_republisher_interval),
-        );
-        if user_keys_republisher_interval > 0 {
-            // Delayed start of the republisher to give time for the homeserver to start.
-            let user_keys_republisher_clone = user_keys_republisher.clone();
-            tokio::spawn(async move {
-                sleep(INITIAL_DELAY_BEFORE_REPUBLISH).await;
-                user_keys_republisher_clone.run().await;
-            });
-        }
-        Ok(user_keys_republisher)
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
@@ -163,9 +125,7 @@ impl HomeserverCore {
 
     /// Stop the home server background tasks.
     #[allow(dead_code)]
-    pub async fn stop(&mut self) {
-        self.key_republisher.stop_periodic_republish().await;
-        self.user_keys_republisher.stop().await;
+    pub fn stop(self) {
         self.icann_http_handle.shutdown();
         self.pubky_tls_handle.shutdown();
     }

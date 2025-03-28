@@ -8,10 +8,10 @@ use pkarr::PublicKey;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Debug)]
 /// Homeserver Core + I/O (http server and pkarr publishing).
 pub struct HomeserverSuite {
     context: AppContext,
+    #[allow(dead_code)] // Keep this alive. When dropped, the homeserver will stop.
     core: HomeserverCore,
 }
 
@@ -93,10 +93,4 @@ impl HomeserverSuite {
         url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
     }
 
-    // === Public Methods ===
-
-    /// Send a shutdown signal to all open resources
-    pub async fn shutdown(&mut self) {
-        self.core.stop().await;
-    }
 }

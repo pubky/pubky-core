@@ -1,9 +1,40 @@
-use crate::persistence::lmdb::LmDB;
+use crate::{app_context::AppContext, persistence::lmdb::LmDB};
 use heed::CompactionOption;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::time::interval;
+use tokio::{task::JoinHandle, time::interval};
 use tracing::{error, info};
+
+
+pub (crate) struct PeriodicBackup {
+    handle: Option<JoinHandle<()>>,
+}
+
+impl PeriodicBackup {
+    pub fn run(context: &AppContext) -> Self {
+        let is_disabled = context.config_toml.general.lmdb_backup_interval_s == 0;
+        if is_disabled {
+            tracing::info!("LMDB backup is disabled.");
+            return Self { handle: None };
+        }
+        let db = context.db.clone();
+        let backup_path = context.data_dir.path().join("backup");
+        let period = Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
+        tracing::info!("Starting LMDB backup with interval {}s", context.config_toml.general.lmdb_backup_interval_s);
+        let handle = tokio::spawn(async move {
+            backup_lmdb_periodically(db, backup_path, period).await;
+        });
+        Self { handle: Some(handle) }
+    }
+}
+
+impl Drop for PeriodicBackup {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
 
 /// Periodically creates a backup of the LMDB environment every 4 hours.
 ///

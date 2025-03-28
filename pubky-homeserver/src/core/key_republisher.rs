@@ -1,37 +1,35 @@
-//! Pkarr related task
+//! Background task to republish the homeserver's pkarr packet to the DHT.
+//! 
+//! This task is started by the [crate::HomeserverCore] and runs until the homeserver is stopped.
+//! 
+//! The task is responsible for:
+//! - Republishing the homeserver's pkarr packet to the DHT every hour.
+//! - Stopping the task when the homeserver is stopped.
 
 use std::net::IpAddr;
-use std::sync::Arc;
-use std::fmt::Debug;
 
 use anyhow::Result;
 use pkarr::dns::Name;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, SignedPacket};
 
-use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 use crate::app_context::AppContext;
-use crate::common::{HandleHolder, HandleHolderError};
 
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
-#[derive(Debug, Clone)]
 pub struct HomeserverKeyRepublisher {
-    client: pkarr::Client,
-    signed_packet: SignedPacket,
-    republish_task: Arc<Mutex<Option<HandleHolder<()>>>>,
+    join_handle: JoinHandle<()>,
 }
 
 impl HomeserverKeyRepublisher {
-    pub fn new(context: &AppContext) -> Result<Self> {
+    pub async fn run(context: &AppContext) -> Result<Self> {    
 
         let signed_packet = create_signed_packet(context)?;
-
+        let join_handle = Self::start_periodic_republish(context.pkarr_client.clone(), &signed_packet).await?;
         Ok(Self {
-            client: context.pkarr_client.clone(),
-            signed_packet,
-            republish_task: Arc::new(Mutex::new(None)),
+            join_handle,
         })
     }
 
@@ -56,23 +54,14 @@ impl HomeserverKeyRepublisher {
     /// # Errors
     /// - Throws an error if the initial publish fails.
     /// - Throws an error if the periodic republish task is already running.
-    pub async fn start_periodic_republish(&self) -> anyhow::Result<()> {
-        let mut task_guard = self.republish_task.lock().await;
-
-        if task_guard.is_some() {
-            return Err(anyhow::anyhow!(
-                "Periodic republish task is already running"
-            ));
-        }
-
+    async fn start_periodic_republish(client: pkarr::Client, signed_packet: &SignedPacket) -> anyhow::Result<JoinHandle<()>> {
         // Publish once to make sure the packet is published to the DHT before this
         // function returns.
         // Throws an error if the packet is not published to the DHT.
-        Self::publish_once(&self.client, &self.signed_packet).await?;
+        Self::publish_once(&client, signed_packet).await?;
 
         // Start the periodic republish task.
-        let client = self.client.clone();
-        let signed_packet = self.signed_packet.clone();
+        let signed_packet = signed_packet.clone();
         let handle = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60 * 60)); // 1 hour in seconds
             interval.tick().await; // This ticks immediatly. Wait for first interval before starting the loop.
@@ -82,21 +71,21 @@ impl HomeserverKeyRepublisher {
             }
         });
 
-        *task_guard = Some(HandleHolder::new(handle));
-        Ok(())
+        Ok(handle)
     }
 
     /// Stop the periodic republish task.
-    pub async fn stop_periodic_republish(&self) -> Result<(), HandleHolderError> {
-        let mut task_guard = self.republish_task.lock().await;
-
-        if let Some(handle) = task_guard.take() {
-            let join_handle = handle.dissolve().await?;
-            join_handle.abort();
-        }
-        Ok(())
+    pub fn stop(&self) {
+        self.join_handle.abort();
     }
 }
+
+impl Drop for HomeserverKeyRepublisher {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 
 pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
     let root_name: Name = ".".try_into().expect(". is the root domain and always valid");
@@ -114,7 +103,7 @@ pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
     );
     match &public_ip {
         IpAddr::V4(ip) => {
-            svcb.set_ipv4hint([ip.to_bits()]);
+            svcb.set_ipv4hint([ip.to_bits()])?;
         },
         IpAddr::V6(_) => {
             // TODO: Implement ipv6 support

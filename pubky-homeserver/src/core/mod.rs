@@ -1,4 +1,4 @@
-mod backup;
+mod periodic_backup;
 mod error;
 mod extractors;
 mod homeserver_core;

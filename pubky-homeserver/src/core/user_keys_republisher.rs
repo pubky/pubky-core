@@ -1,9 +1,5 @@
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
     time::Duration,
 };
 
@@ -12,15 +8,14 @@ use pkarr_republisher::{
     MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
 };
 use tokio::{
-    sync::RwLock,
     task::JoinHandle,
     time::{interval, Instant},
 };
 
-use crate::persistence::lmdb::LmDB;
+use crate::{app_context::AppContext, persistence::lmdb::LmDB};
 
 #[derive(Debug, thiserror::Error)]
-pub enum UserKeysRepublisherError {
+pub(crate) enum UserKeysRepublisherError {
     #[error(transparent)]
     DB(heed::Error),
     #[error(transparent)]
@@ -28,41 +23,33 @@ pub enum UserKeysRepublisherError {
 }
 
 /// Publishes the pkarr keys of all users to the Mainline DHT.
-#[derive(Debug, Clone)]
-pub struct UserKeysRepublisher {
-    db: LmDB,
-    handle: Arc<RwLock<Option<JoinHandle<()>>>>,
-    is_running: Arc<AtomicBool>,
-    republish_interval: Duration,
+pub(crate) struct UserKeysRepublisher {
+    handle: Option<JoinHandle<()>>,
 }
 
 impl UserKeysRepublisher {
-    pub fn new(db: LmDB, republish_interval: Duration) -> Self {
-        Self {
-            db,
-            handle: Arc::new(RwLock::new(None)),
-            is_running: Arc::new(AtomicBool::new(false)),
-            republish_interval,
+    /// Run the user keys republisher with an initial delay.
+    pub fn run_delayed(context: &AppContext, initial_delay: Duration) -> Self {
+        let db = context.db.clone();
+        let is_disabled = context.config_toml.pkdns.user_keys_republisher_interval == 0;
+        if is_disabled {
+            tracing::info!("User keys republisher is disabled.");
+            return Self {
+                handle: None,
+            };
         }
-    }
-
-    /// Run the user keys republisher.
-    pub async fn run(&self) {
+        let republish_interval = Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
         tracing::info!(
             "Initialize user keys republisher with interval {:?}",
-            self.republish_interval
+            republish_interval
         );
-        let mut lock = self.handle.write().await;
-        if lock.is_some() {
-            return;
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(initial_delay).await;
+            Self::run_loop(db, republish_interval).await
+        });
+        Self {
+            handle: Some(handle),
         }
-        let db = self.db.clone();
-        let republish_interval = self.republish_interval;
-        let handle: JoinHandle<()> =
-            tokio::spawn(async move { Self::run_loop(db, republish_interval).await });
-
-        *lock = Some(handle);
-        self.is_running.store(true, Ordering::Relaxed);
     }
 
     // Get all user public keys from the database.
@@ -83,7 +70,9 @@ impl UserKeysRepublisher {
     ///
     /// - If the database cannot be read, an error is returned.
     /// - If the pkarr keys cannot be republished, an error is returned.
-    async fn republish_keys_once(db: LmDB) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
+    async fn republish_keys_once(
+        db: LmDB,
+    ) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
         let keys = Self::get_all_user_keys(db)
             .await
             .map_err(UserKeysRepublisherError::DB)?;
@@ -141,42 +130,22 @@ impl UserKeysRepublisher {
             }
         }
     }
+}
 
-    /// Stop the user keys republisher.
-    #[allow(dead_code)]
-    pub async fn stop(&mut self) {
-        let mut lock = self.handle.write().await;
-
-        if let Some(handle) = lock.take() {
+impl Drop for UserKeysRepublisher {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
             handle.abort();
-            *lock = None;
-            self.is_running.store(false, Ordering::Relaxed);
-        }
-    }
-
-    /// Stops the republisher synchronously.
-    #[allow(dead_code)]
-    pub fn stop_sync(&mut self) {
-        let mut lock = self.handle.blocking_write();
-
-        if let Some(handle) = lock.take() {
-            handle.abort();
-            *lock = None;
-            self.is_running.store(false, Ordering::Relaxed);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use pkarr::Keypair;
-    use tokio::time::Instant;
-
-    use crate::persistence::lmdb::LmDB;
-    use crate::persistence::lmdb::tables::users::User;
     use crate::core::user_keys_republisher::UserKeysRepublisher;
+    use crate::persistence::lmdb::tables::users::User;
+    use crate::persistence::lmdb::LmDB;
 
     async fn init_db_with_users(count: usize) -> LmDB {
         let db = LmDB::test();
@@ -199,19 +168,5 @@ mod tests {
         assert_eq!(result.success().len(), 0);
         assert_eq!(result.missing().len(), 10);
         assert_eq!(result.publishing_failed().len(), 0);
-    }
-
-    /// Test that the republisher stops instantly.
-    #[tokio::test]
-    async fn start_and_stop() {
-        let mut republisher =
-            UserKeysRepublisher::new(init_db_with_users(1000).await, Duration::from_secs(1));
-        let start = Instant::now();
-        republisher.run().await;
-        assert!(republisher.handle.read().await.is_some());
-        republisher.stop().await;
-        let elapsed = start.elapsed();
-        assert!(elapsed < Duration::from_secs(1));
-        assert!(republisher.handle.read().await.is_none());
     }
 }

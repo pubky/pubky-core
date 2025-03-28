@@ -10,7 +10,6 @@ mod persistence;
 mod data_directory;
 mod admin;
 mod homeserver;
-mod common;
 pub mod app_context;
 pub(crate) mod constants;
 
