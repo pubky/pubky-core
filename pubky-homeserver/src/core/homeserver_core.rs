@@ -36,7 +36,9 @@ pub struct HomeserverCore {
     pub(crate) key_republisher: HomeserverKeyRepublisher,
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
-    pub(crate) router: Router,
+    pub router: Router,
+
+    context: AppContext,
     pub(crate) icann_http_handle: Option<Handle>,
     pub(crate) pubky_tls_handle: Option<Handle>,
 }
@@ -48,23 +50,29 @@ impl HomeserverCore {
         let user_keys_republisher = UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(context);
         let router = Self::create_router(context);
-        let (icann_http_handle, pubky_tls_handle) = Self::start_server_tasks(context).await?;
 
         Ok(Self {
             user_keys_republisher,
             key_republisher,
             periodic_backup,
             router,
-            icann_http_handle: Some(icann_http_handle),
-            pubky_tls_handle: Some(pubky_tls_handle),
+            context: context.clone(),
+            icann_http_handle: None,
+            pubky_tls_handle: None,
         })
     }
 
-    pub(crate) async fn listen(&mut self, context: &AppContext) -> Result<()> {
-        let (icann_http_handle, pubky_tls_handle) = Self::start_server_tasks(context).await?;
+    /// Start listening on the http and tls sockets.
+    pub async fn listen(&mut self) -> Result<()> {
+        let (icann_http_handle, pubky_tls_handle) = self.start_server_tasks().await?;
         self.icann_http_handle = Some(icann_http_handle);
         self.pubky_tls_handle = Some(pubky_tls_handle);
         Ok(())
+    }
+
+    /// Check if the http and tls servers are listening.
+    pub async fn is_listening(&self) -> bool {
+        self.icann_http_handle.is_some()
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
@@ -77,11 +85,11 @@ impl HomeserverCore {
     }
 
     /// Start the http and tls servers.
-    async fn start_server_tasks(context: &AppContext) -> Result<(Handle, Handle)> {
-        let router = Self::create_router(context);
+    async fn start_server_tasks(&self) -> Result<(Handle, Handle)> {
+        let router = Self::create_router(&self.context);
 
         // Icann http server
-        let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
+        let http_listener = TcpListener::bind(self.context.config_toml.drive.icann_listen_socket)?;
         let http_handle = Handle::new();
         tokio::spawn(
             axum_server::from_tcp(http_listener)
@@ -96,17 +104,17 @@ impl HomeserverCore {
 
         tracing::info!(
             "Homeserver HTTP listening on http://{}",
-            context.config_toml.drive.icann_listen_socket
+            self.context.config_toml.drive.icann_listen_socket
         );
 
         // Pubky tls server
-        let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
+        let https_listener = TcpListener::bind(self.context.config_toml.drive.pubky_listen_socket)?;
 
         let https_handle = Handle::new();
         tokio::spawn(
             axum_server::from_tcp(https_listener)
                 .acceptor(RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
-                    context.keypair.to_rpk_rustls_server_config(),
+                    self.context.keypair.to_rpk_rustls_server_config(),
                 ))))
                 .handle(https_handle.clone())
                 .serve(
@@ -118,8 +126,8 @@ impl HomeserverCore {
         );
         tracing::info!(
             "Homeserver Pubky TLS listening on https://{} and http://{}",
-            context.keypair.public_key(),
-            context.config_toml.drive.icann_listen_socket
+            self.context.keypair.public_key(),
+            self.context.config_toml.drive.icann_listen_socket
         );
 
         Ok((http_handle, https_handle))
@@ -133,9 +141,18 @@ impl HomeserverCore {
     }
 
     /// Stop the home server background tasks.
-    #[allow(dead_code)]
-    pub fn stop(self) {
-        self.icann_http_handle.shutdown();
-        self.pubky_tls_handle.shutdown();
+    pub fn stop(&mut self) {
+        if let Some(handle) = self.icann_http_handle.take() {
+            handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        }
+        if let Some(handle) = self.pubky_tls_handle.take() {
+            handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        }
+    }
+}
+
+impl Drop for HomeserverCore {
+    fn drop(&mut self) {
+        self.stop();
     }
 }

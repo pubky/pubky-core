@@ -1,18 +1,23 @@
+use crate::admin::AdminServer;
 use crate::core::HomeserverCore;
 use crate::DataDirTrait;
-use crate::{
-    admin::run_admin_server, app_context::AppContext, data_directory::DataDir, SignupMode,
+use crate::{app_context::AppContext, data_directory::DataDir, SignupMode,
 };
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Homeserver Core + I/O (http server and pkarr publishing).
+/// Homeserver with all bells and whistles.
+/// Core + Admin server.
+/// 
+/// When dropped, the homeserver will stop.
 pub struct HomeserverSuite {
     context: AppContext,
     #[allow(dead_code)] // Keep this alive. When dropped, the homeserver will stop.
     core: HomeserverCore,
+    #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
+    admin_server: AdminServer,
 }
 
 impl HomeserverSuite {
@@ -42,10 +47,11 @@ impl HomeserverSuite {
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     async fn run(context: AppContext) -> Result<Self> {
         tracing::debug!(?context, "Running homeserver with configurations");
-        let core = HomeserverCore::new(&context).await?;
-        run_admin_server(&context).await?;
+        let mut core = HomeserverCore::new(&context).await?;
+        core.listen().await?;
+        let admin_server = AdminServer::run(&context).await?;
 
-        Ok(Self { context, core })
+        Ok(Self { context, core, admin_server })
     }
 
     /// Run a Homeserver with configurations suitable for ephemeral tests.

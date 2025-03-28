@@ -4,4 +4,4 @@ mod routes;
 mod app;
 mod app_state;
 
-pub use app::run_admin_server;
+pub use app::AdminServer;

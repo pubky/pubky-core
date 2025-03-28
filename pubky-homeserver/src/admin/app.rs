@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use axum::{
     routing::get,
     Router,
 };
+use axum_server::Handle;
 use crate::app_context::AppContext;
 use super::{auth_middleware::AdminAuthLayer, app_state::AppState};
 use super::routes::{generate_signup_token, root};
@@ -29,6 +32,36 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
     .into_make_service()
 }
 
+/// Admin server
+/// 
+/// This server is protected by the admin auth middleware.
+/// 
+/// When dropped, the server will stop.
+pub struct AdminServer {
+    handle: Handle,
+}
+
+impl AdminServer {
+    pub async fn run(context: &AppContext) -> anyhow::Result<Self> {
+        let state = AppState::new(context.db.clone());
+        let app = create_app(state, &context.config_toml.admin.admin_password.as_str());
+        let listener = std::net::TcpListener::bind(context.config_toml.admin.listen_socket)?;
+        let http_handle = Handle::new();
+        tracing::debug!("Admin server listening on http://{}", context.config_toml.admin.listen_socket);
+        axum_server::from_tcp(listener).handle(http_handle.clone()).serve(app).await?;
+        Ok(Self {
+            handle: http_handle,
+        })
+    }
+    
+}
+
+impl Drop for AdminServer {
+    fn drop(&mut self) {
+        self.handle.graceful_shutdown(Some(Duration::from_secs(5)));
+    }
+}
+
 /// Run the admin server
 /// 
 /// # Arguments
@@ -36,13 +69,14 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
 /// * `db` - The database to use
 /// * `password` - The password to protect the admin routes
 /// * `listen` - The address to listen on
-pub async fn run_admin_server(context: &AppContext) -> anyhow::Result<()> {
+pub async fn run_admin_server(context: &AppContext) -> anyhow::Result<Handle> {
     let state = AppState::new(context.db.clone());
     let app = create_app(state, &context.config_toml.admin.admin_password.as_str());
-    let listener = tokio::net::TcpListener::bind(context.config_toml.admin.listen_socket).await?;
+    let listener = std::net::TcpListener::bind(context.config_toml.admin.listen_socket)?;
+    let http_handle = Handle::new();
     tracing::debug!("Admin server listening on http://{}", context.config_toml.admin.listen_socket);
-    axum::serve(listener, app).await?;
-    Ok(())
+    axum_server::from_tcp(listener).handle(http_handle.clone()).serve(app).await?;
+    Ok(http_handle)
 }
 
 #[cfg(test)]
