@@ -71,6 +71,7 @@ impl HomeserverCore {
     }
 
     /// Check if the http and tls servers are listening.
+    #[allow(dead_code)]
     pub async fn is_listening(&self) -> bool {
         self.icann_http_handle.is_some()
     }
@@ -102,11 +103,6 @@ impl HomeserverCore {
                 .map_err(|error| tracing::error!(?error, "Homeserver icann http server error")),
         );
 
-        tracing::info!(
-            "Homeserver HTTP listening on http://{}",
-            self.context.config_toml.drive.icann_listen_socket
-        );
-
         // Pubky tls server
         let https_listener = TcpListener::bind(self.context.config_toml.drive.pubky_listen_socket)?;
 
@@ -124,35 +120,33 @@ impl HomeserverCore {
                 )
                 .map_err(|error| tracing::error!(?error, "Homeserver pubky tls server error")),
         );
-        tracing::info!(
-            "Homeserver Pubky TLS listening on https://{} and http://{}",
-            self.context.keypair.public_key(),
-            self.context.config_toml.drive.icann_listen_socket
-        );
 
         Ok((http_handle, https_handle))
     }
 
-    /// Test version of [HomeserverCore::new], using an ephemeral small storage.
-    pub async fn test() -> Result<Self> {
-        // let mock_dir = DataDirMock::test();
-        let context = AppContext::test();
-        Self::new(&context).await
+    /// Get the URL of the icann http server.
+    pub fn icann_http_url(&self) -> String {
+        format!("http://{}", self.context.config_toml.drive.icann_listen_socket)
     }
 
-    /// Stop the home server background tasks.
-    pub fn stop(&mut self) {
+    /// Get the URL of the pubky tls server with the Pubky DNS name.
+    pub fn pubky_tls_dns_url(&self) -> String {
+        format!("https://{}", self.context.keypair.public_key())
+    }
+
+    /// Get the URL of the pubky tls server with the Pubky IP address.
+    pub fn pubky_tls_ip_url(&self) -> String {
+        format!("https://{}", self.context.config_toml.drive.pubky_listen_socket)
+    }
+}
+
+impl Drop for HomeserverCore {
+    fn drop(&mut self) {
         if let Some(handle) = self.icann_http_handle.take() {
             handle.graceful_shutdown(Some(Duration::from_secs(5)));
         }
         if let Some(handle) = self.pubky_tls_handle.take() {
             handle.graceful_shutdown(Some(Duration::from_secs(5)));
         }
-    }
-}
-
-impl Drop for HomeserverCore {
-    fn drop(&mut self) {
-        self.stop();
     }
 }

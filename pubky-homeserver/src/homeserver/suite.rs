@@ -49,6 +49,16 @@ impl HomeserverSuite {
         tracing::debug!(?context, "Running homeserver with configurations");
         let mut core = HomeserverCore::new(&context).await?;
         core.listen().await?;
+        tracing::info!(
+            "Homeserver HTTP listening on {}",
+            core.icann_http_url()
+        );
+
+        tracing::info!(
+            "Homeserver Pubky TLS listening on {} and {}",
+            core.pubky_tls_dns_url(),
+            core.pubky_tls_ip_url()
+        );
         let admin_server = AdminServer::run(&context).await?;
 
         Ok(Self { context, core, admin_server })
