@@ -1,235 +1,152 @@
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
-use super::backup::backup_lmdb_periodically;
-use crate::core::database::DB;
+use super::periodic_backup::PeriodicBackup;
+use super::key_republisher::HomeserverKeyRepublisher;
+use crate::app_context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
+use crate::persistence::lmdb::LmDB;
 use crate::SignupMode;
 use anyhow::Result;
 use axum::Router;
+use axum_server::{
+    tls_rustls::{RustlsAcceptor, RustlsConfig},
+    Handle,
+};
+use futures_util::TryFutureExt;
 use pubky_common::auth::AuthVerifier;
-use tokio::time::sleep;
-
-pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
-
-pub const DEFAULT_STORAGE_DIR: &str = "pubky";
-pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
-
-pub const DEFAULT_LIST_LIMIT: u16 = 100;
-pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
+use std::{
+    net::{SocketAddr, TcpListener},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
-    pub(crate) db: DB,
-    pub(crate) admin: AdminConfig,
+    pub(crate) db: LmDB,
+    pub(crate) signup_mode: SignupMode,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Clone)]
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
-    pub(crate) router: Router,
+    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
+    pub(crate) key_republisher: HomeserverKeyRepublisher,
+    #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
+    pub(crate) periodic_backup: PeriodicBackup,
+    pub router: Router,
+
+    context: AppContext,
+    pub(crate) icann_http_handle: Option<Handle>,
+    pub(crate) pubky_tls_handle: Option<Handle>,
 }
 
 impl HomeserverCore {
     /// Create a side-effect-free Homeserver core.
-    ///
-    /// # Safety
-    /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(config: CoreConfig, admin: AdminConfig) -> Result<Self> {
-        let db = unsafe { DB::open(config.clone())? };
+    pub async fn new(context: &AppContext) -> Result<Self> {
+        let key_republisher = HomeserverKeyRepublisher::run(context).await?;
+        let user_keys_republisher = UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
+        let periodic_backup = PeriodicBackup::run(context);
+        let router = Self::create_router(context);
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            db: db.clone(),
-            admin,
-        };
-
-        // Spawn the backup process. This task will run forever.
-        if let Some(backup_interval) = config.lmdb_backup_interval {
-            let backup_path = config.storage.join("backup");
-            tokio::spawn(backup_lmdb_periodically(
-                db.clone(),
-                backup_path,
-                backup_interval,
-            ));
-        }
-
-        let router = super::routes::create_app(state.clone());
-
-        let user_keys_republisher = UserKeysRepublisher::new(
-            db.clone(),
-            config
-                .user_keys_republisher_interval
-                .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
-        );
-
-        let user_keys_republisher_clone = user_keys_republisher.clone();
-        if config.is_user_keys_republisher_enabled() {
-            // Delayed start of the republisher to give time for the homeserver to start.
-            tokio::spawn(async move {
-                sleep(INITIAL_DELAY_BEFORE_REPUBLISH).await;
-                user_keys_republisher_clone.run().await;
-            });
-        }
         Ok(Self {
-            router,
             user_keys_republisher,
+            key_republisher,
+            periodic_backup,
+            router,
+            context: context.clone(),
+            icann_http_handle: None,
+            pubky_tls_handle: None,
         })
     }
 
-    /// Stop the home server background tasks.
+    /// Start listening on the http and tls sockets.
+    pub async fn listen(&mut self) -> Result<()> {
+        let (icann_http_handle, pubky_tls_handle) = self.start_server_tasks().await?;
+        self.icann_http_handle = Some(icann_http_handle);
+        self.pubky_tls_handle = Some(pubky_tls_handle);
+        Ok(())
+    }
+
+    /// Check if the http and tls servers are listening.
     #[allow(dead_code)]
-    pub async fn stop(&mut self) {
-        self.user_keys_republisher.stop().await;
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AdminConfig {
-    /// The password used to authorize admin endpoints.
-    pub password: Option<String>,
-    /// Determines whether new signups require a valid token.
-    pub signup_mode: SignupMode,
-}
-
-impl AdminConfig {
-    pub fn test() -> Self {
-        AdminConfig {
-            password: Some("admin".to_string()),
-            signup_mode: SignupMode::Open,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Database configurations
-pub struct CoreConfig {
-    /// Path to the storage directory.
-    ///
-    /// Defaults to a directory in the OS data directory
-    pub storage: PathBuf,
-    pub db_map_size: usize,
-
-    /// The default limit of a list api if no `limit` query parameter is provided.
-    ///
-    /// Defaults to `100`
-    pub default_list_limit: u16,
-    /// The maximum limit of a list api, even if a `limit` query parameter is provided.
-    ///
-    /// Defaults to `1000`
-    pub max_list_limit: u16,
-
-    /// The interval at which the user keys republisher runs. None is disabled.
-    ///
-    /// Defaults to `60*60*4` (4 hours)
-    pub user_keys_republisher_interval: Option<Duration>,
-
-    /// The interval at which the LMDB backup is performed. None means disabled.
-    pub lmdb_backup_interval: Option<Duration>,
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            storage: storage(None)
-                .expect("operating environment provides no directory for application data"),
-            db_map_size: DEFAULT_MAP_SIZE,
-
-            default_list_limit: DEFAULT_LIST_LIMIT,
-            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
-
-            user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
-
-            lmdb_backup_interval: None,
-        }
-    }
-}
-
-impl CoreConfig {
-    pub fn test() -> Self {
-        let storage = std::env::temp_dir()
-            .join(pubky_common::timestamp::Timestamp::now().to_string())
-            .join(DEFAULT_STORAGE_DIR);
-
-        Self {
-            storage,
-            db_map_size: 10485760,
-            lmdb_backup_interval: None,
-            ..Default::default()
-        }
+    pub async fn is_listening(&self) -> bool {
+        self.icann_http_handle.is_some()
     }
 
-    pub fn is_user_keys_republisher_enabled(&self) -> bool {
-        self.user_keys_republisher_interval.is_some()
+    pub(crate) fn create_router(context: &AppContext) -> Router {
+        let state = AppState {
+            verifier: AuthVerifier::default(),
+            db: context.db.clone(),
+            signup_mode: context.config_toml.general.signup_mode.clone(),
+        };
+        super::routes::create_app(state.clone())
     }
-}
 
-pub fn storage(storage: Option<String>) -> anyhow::Result<PathBuf> {
-    if let Some(storage) = storage {
-        Ok(PathBuf::from(storage))
-    } else {
-        dirs::home_dir()
-            .map(|dir| dir.join(".pubky/data/lmdb"))
-            .ok_or_else(|| {
-                anyhow::anyhow!("operating environment provides no directory for application data")
-            })
-    }
-}
+    /// Start the http and tls servers.
+    async fn start_server_tasks(&self) -> Result<(Handle, Handle)> {
+        let router = Self::create_router(&self.context);
 
-#[cfg(test)]
-mod tests {
-
-    use anyhow::Result;
-    use axum::{
-        body::Body,
-        extract::Request,
-        http::{header, Method},
-        response::Response,
-    };
-    use pkarr::Keypair;
-    use pubky_common::{auth::AuthToken, capabilities::Capability};
-    use tower::ServiceExt;
-
-    use super::*;
-
-    impl HomeserverCore {
-        /// Test version of [HomeserverCore::new], using an ephemeral small storage.
-        pub fn test() -> Result<Self> {
-            unsafe { HomeserverCore::new(CoreConfig::test(), AdminConfig::test()) }
-        }
-
-        // === Public Methods ===
-
-        pub async fn create_root_user(&mut self, keypair: &Keypair) -> Result<String> {
-            let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
-
-            let response = self
-                .call(
-                    Request::builder()
-                        .uri("/signup")
-                        .header("host", keypair.public_key().to_string())
-                        .method(Method::POST)
-                        .body(Body::from(auth_token.serialize()))
-                        .unwrap(),
+        // Icann http server
+        let http_listener = TcpListener::bind(self.context.config_toml.drive.icann_listen_socket)?;
+        let http_handle = Handle::new();
+        tokio::spawn(
+            axum_server::from_tcp(http_listener)
+                .handle(http_handle.clone())
+                .serve(
+                    router
+                        .clone()
+                        .into_make_service_with_connect_info::<SocketAddr>(),
                 )
-                .await?;
+                .map_err(|error| tracing::error!(?error, "Homeserver icann http server error")),
+        );
 
-            let header_value = response
-                .headers()
-                .get(header::SET_COOKIE)
-                .and_then(|h| h.to_str().ok())
-                .expect("should return a set-cookie header")
-                .to_string();
+        // Pubky tls server
+        let https_listener = TcpListener::bind(self.context.config_toml.drive.pubky_listen_socket)?;
 
-            Ok(header_value)
+        let https_handle = Handle::new();
+        tokio::spawn(
+            axum_server::from_tcp(https_listener)
+                .acceptor(RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
+                    self.context.keypair.to_rpk_rustls_server_config(),
+                ))))
+                .handle(https_handle.clone())
+                .serve(
+                    router
+                        .clone()
+                        .into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .map_err(|error| tracing::error!(?error, "Homeserver pubky tls server error")),
+        );
+
+        Ok((http_handle, https_handle))
+    }
+
+    /// Get the URL of the icann http server.
+    pub fn icann_http_url(&self) -> String {
+        format!("http://{}", self.context.config_toml.drive.icann_listen_socket)
+    }
+
+    /// Get the URL of the pubky tls server with the Pubky DNS name.
+    pub fn pubky_tls_dns_url(&self) -> String {
+        format!("https://{}", self.context.keypair.public_key())
+    }
+
+    /// Get the URL of the pubky tls server with the Pubky IP address.
+    pub fn pubky_tls_ip_url(&self) -> String {
+        format!("https://{}", self.context.config_toml.drive.pubky_listen_socket)
+    }
+}
+
+impl Drop for HomeserverCore {
+    fn drop(&mut self) {
+        if let Some(handle) = self.icann_http_handle.take() {
+            handle.graceful_shutdown(Some(Duration::from_secs(5)));
         }
-
-        pub async fn call(&self, request: Request) -> Result<Response> {
-            Ok(self.router.clone().oneshot(request).await?)
+        if let Some(handle) = self.pubky_tls_handle.take() {
+            handle.graceful_shutdown(Some(Duration::from_secs(5)));
         }
     }
 }

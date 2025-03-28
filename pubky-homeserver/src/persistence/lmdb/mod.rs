@@ -2,4 +2,4 @@
 mod db;
 mod migrations;
 pub mod tables;
-pub use db::DB;
+pub use db::LmDB;

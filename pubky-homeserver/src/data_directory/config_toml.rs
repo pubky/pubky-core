@@ -1,13 +1,10 @@
 //!
 //! Configuration file for the homeserver.
 //!
-use super::{domain_port::DomainPort, SignupMode};
+use super::{domain_port::DomainPort, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    num::NonZeroU64,
-    str::FromStr,
+    fmt::Debug, net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4}, num::NonZeroU64, str::FromStr
 };
 use url::Url;
 
@@ -22,37 +19,55 @@ pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PkdnsToml {
     /// The public IP address and port of the server to be advertised in the DHT.
-    #[serde(default = "default_public_socket")]
-    pub public_socket: SocketAddr,
+    #[serde(default = "default_public_ip")]
+    pub public_ip: IpAddr,
+
+    /// The public port of the Pubky TLS Drive API in case it's different from the listening port.
+    #[serde(default)]
+    pub public_pubky_tls_port: Option<u16>,
+
+    /// The public port of the regular http API in case it's different from the listening port.
+    #[serde(default)]
+    pub public_icann_http_port: Option<u16>,
 
     /// The interval at which the user keys are republished in the DHT.
+    /// 0 means disabled.
     #[serde(default = "default_user_keys_republisher_interval")]
-    pub user_keys_republisher_interval: NonZeroU64,
+    pub user_keys_republisher_interval: u64,
 
     /// The list of bootstrap nodes for the DHT. If None, the default pkarr bootstrap nodes will be used.
-    #[serde(default)]
+    #[serde(default = "default_dht_bootstrap_nodes")]
     pub dht_bootstrap_nodes: Option<Vec<DomainPort>>,
 
     /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
-    #[serde(default)]
+    #[serde(default = "default_dht_relay_nodes")]
     pub dht_relay_nodes: Option<Vec<Url>>,
+
+    /// The request timeout for the DHT. If None, the default pkarr request timeout will be used.
+    #[serde(default = "default_dht_request_timeout")]
+    pub dht_request_timeout_ms: Option<NonZeroU64>,
 }
 
-fn default_public_socket() -> SocketAddr {
+fn default_public_ip() -> IpAddr {
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6286;
-    SocketAddr::from((ip, port))
+    ip
 }
 
-fn default_user_keys_republisher_interval() -> NonZeroU64 {
+fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
+    None
+}
+
+fn default_dht_relay_nodes() -> Option<Vec<Url>> {
+    None
+}
+
+fn default_dht_request_timeout() -> Option<NonZeroU64> {
+    None
+}
+
+fn default_user_keys_republisher_interval() -> u64 {
     // 4 hours
-    NonZeroU64::new(14400).expect("14400 is a valid non-zero u64")
-}
-
-fn default_pubky_drive_listen_socket() -> SocketAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6287;
-    SocketAddr::from((ip, port))
+    14400
 }
 
 /// All configuration related to file drive
@@ -66,13 +81,15 @@ pub struct DriveToml {
     pub icann_listen_socket: SocketAddr,
     /// Optional domain name of the regular http API.
     #[serde(default)]
-    pub icann_domain: Option<String>,
+    pub icann_domain: Option<Domain>,
+}
+
+fn default_pubky_drive_listen_socket() -> SocketAddr {
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6287))
 }
 
 fn default_icann_drive_listen_socket() -> SocketAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6286;
-    SocketAddr::from((ip, port))
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6286))
 }
 
 /// All configuration related to the admin API
@@ -91,9 +108,7 @@ fn default_admin_password() -> String {
 }
 
 fn default_admin_listen_socket() -> SocketAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let port = 6288;
-    SocketAddr::from((ip, port))
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6288))
 }
 
 /// All configuration related to the admin API
@@ -162,6 +177,14 @@ impl ConfigToml {
             .collect::<Vec<String>>()
             .join("\n")
     }
+
+    /// Returns a default config appropriate for testing.
+    pub fn test() -> Self {
+        let mut config = Self::default();
+        config.pkdns.dht_bootstrap_nodes = Some(vec![]);
+        config.general.signup_mode = SignupMode::Open;
+        config
+    }
 }
 
 impl Default for ConfigToml {
@@ -190,11 +213,12 @@ mod tests {
         let c: ConfigToml = ConfigToml::default();
 
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
+        assert_eq!(c.general.lmdb_backup_interval_s, 0);
         assert_eq!(
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(c.drive.icann_domain, Some("example.com".to_string()));
+        assert_eq!(c.drive.icann_domain, Some(Domain::from_str("example.com").unwrap()));
 
         assert_eq!(
             c.drive.pubky_listen_socket,
@@ -205,7 +229,9 @@ mod tests {
         assert_eq!(c.admin.admin_password, default_admin_password());
 
         // Verify pkdns config
-        assert_eq!(c.pkdns.public_socket, default_public_socket());
+        assert_eq!(c.pkdns.public_ip, default_public_ip());
+        assert_eq!(c.pkdns.public_pubky_tls_port, Some(6287));
+        assert_eq!(c.pkdns.public_icann_http_port, Some(80));
         assert_eq!(
             c.pkdns.user_keys_republisher_interval,
             default_user_keys_republisher_interval()
@@ -226,6 +252,8 @@ mod tests {
                 Url::parse("https://pkarr.pubky.org").unwrap(),
             ])
         );
+
+        assert_eq!(c.pkdns.dht_request_timeout_ms.unwrap().get(), 2000);
     }
 
     #[test]

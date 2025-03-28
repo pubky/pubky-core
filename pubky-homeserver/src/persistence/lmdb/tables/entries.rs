@@ -18,7 +18,9 @@ use pubky_common::{
     timestamp::Timestamp,
 };
 
-use crate::core::database::DB;
+use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+
+use super::super::LmDB;
 
 use super::events::Event;
 
@@ -27,7 +29,7 @@ pub type EntriesTable = Database<Str, Bytes>;
 
 pub const ENTRIES_TABLE: &str = "entries";
 
-impl DB {
+impl LmDB {
     /// Write an entry by an author at a given path.
     ///
     /// The path has to start with a forward slash `/`
@@ -127,8 +129,8 @@ impl DB {
         let mut results = Vec::new();
 
         let limit = limit
-            .unwrap_or(self.config().default_list_limit)
-            .min(self.config().max_list_limit);
+            .unwrap_or(DEFAULT_LIST_LIMIT)
+            .min(DEFAULT_MAX_LIST_LIMIT);
 
         // TODO: make this more performant than split and allocations?
 
@@ -303,7 +305,7 @@ impl Entry {
 
     pub fn read_content<'txn>(
         &self,
-        db: &'txn DB,
+        db: &'txn LmDB,
         rtxn: &'txn RoTxn,
     ) -> anyhow::Result<impl Iterator<Item = Result<&'txn [u8], heed::Error>> + 'txn> {
         db.read_entry_content(rtxn, self)
@@ -323,7 +325,7 @@ impl Entry {
 }
 
 pub struct EntryWriter<'db> {
-    db: &'db DB,
+    db: &'db LmDB,
     buffer: File,
     hasher: Hasher,
     buffer_path: PathBuf,
@@ -333,7 +335,7 @@ pub struct EntryWriter<'db> {
 }
 
 impl<'db> EntryWriter<'db> {
-    pub fn new(db: &'db DB, public_key: &PublicKey, path: &str) -> anyhow::Result<Self> {
+    pub fn new(db: &'db LmDB, public_key: &PublicKey, path: &str) -> anyhow::Result<Self> {
         let hasher = Hasher::new();
 
         let timestamp = Timestamp::now();
@@ -453,11 +455,11 @@ mod tests {
     use bytes::Bytes;
     use pkarr::Keypair;
 
-    use super::DB;
+    use super::LmDB;
 
     #[tokio::test]
     async fn entries() -> anyhow::Result<()> {
-        let mut db = DB::test();
+        let mut db = LmDB::test();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
@@ -499,7 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn chunked_entry() -> anyhow::Result<()> {
-        let mut db = DB::test();
+        let mut db = LmDB::test();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();

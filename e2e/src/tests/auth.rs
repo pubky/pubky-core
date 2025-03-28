@@ -246,7 +246,9 @@ async fn authz_timeout_reconnect() {
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver_with_signup_tokens().await.unwrap();
+    let mut config = ConfigToml::test();
+    config.general.signup_mode = SignupMode::TokenRequired;
+    let server = testnet.run_homeserver_with_config(config).await.unwrap();
 
     let admin_password = "admin";
 
