@@ -34,10 +34,11 @@ pub struct HomeserverCore {
     pub(crate) user_keys_republisher: UserKeysRepublisher,
     #[allow(dead_code)] // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
     pub(crate) key_republisher: HomeserverKeyRepublisher,
-    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the PeriodicBackup is dropped.
+    #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
-    pub(crate) icann_http_handle: Handle,
-    pub(crate) pubky_tls_handle: Handle,
+    pub(crate) router: Router,
+    pub(crate) icann_http_handle: Option<Handle>,
+    pub(crate) pubky_tls_handle: Option<Handle>,
 }
 
 impl HomeserverCore {
@@ -46,16 +47,24 @@ impl HomeserverCore {
         let key_republisher = HomeserverKeyRepublisher::run(context).await?;
         let user_keys_republisher = UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(context);
-
+        let router = Self::create_router(context);
         let (icann_http_handle, pubky_tls_handle) = Self::start_server_tasks(context).await?;
 
         Ok(Self {
             user_keys_republisher,
             key_republisher,
             periodic_backup,
-            icann_http_handle,
-            pubky_tls_handle,
+            router,
+            icann_http_handle: Some(icann_http_handle),
+            pubky_tls_handle: Some(pubky_tls_handle),
         })
+    }
+
+    pub(crate) async fn listen(&mut self, context: &AppContext) -> Result<()> {
+        let (icann_http_handle, pubky_tls_handle) = Self::start_server_tasks(context).await?;
+        self.icann_http_handle = Some(icann_http_handle);
+        self.pubky_tls_handle = Some(pubky_tls_handle);
+        Ok(())
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
