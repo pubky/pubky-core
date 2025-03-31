@@ -250,7 +250,6 @@ mod tests {
 
     use crate::republisher::{Republisher, RepublisherSettings};
     use pkarr::{dns::Name, Keypair, PublicKey};
-    use pubky_testnet::Testnet;
 
     async fn publish_sample_packets(client: &pkarr::Client) -> PublicKey {
         let key = Keypair::random();
@@ -269,9 +268,10 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_success() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = publish_sample_packets(&pkarr_client).await;
 
         let required_nodes = 1;
@@ -288,9 +288,10 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_missing() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = Keypair::random().public_key();
 
         let required_nodes = 1;
@@ -308,9 +309,10 @@ mod tests {
 
     #[tokio::test]
     async fn retry_delay() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = Keypair::random().public_key();
 
         let required_nodes = 1;
@@ -337,9 +339,10 @@ mod tests {
 
     #[tokio::test]
     async fn republish_retry_missing() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = Keypair::random().public_key();
 
         let required_nodes = 1;
@@ -360,9 +363,10 @@ mod tests {
 
     #[tokio::test]
     async fn republish_with_condition_fail() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = publish_sample_packets(&pkarr_client).await;
 
         let required_nodes = 1;
@@ -383,9 +387,10 @@ mod tests {
 
     #[tokio::test]
     async fn republish_with_condition_success() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = publish_sample_packets(&pkarr_client).await;
 
         let required_nodes = 1;

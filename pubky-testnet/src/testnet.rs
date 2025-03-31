@@ -23,7 +23,6 @@ impl Testnet {
     /// Run a new testnet.
     pub async fn run() -> Result<Self> {
         let dht = mainline::Testnet::new(3)?;
-
         let mut testnet = Self {
             dht,
             relays: vec![],
@@ -69,7 +68,7 @@ impl Testnet {
         let relay = unsafe { builder.run() }.await?;
 
         let mut config = ConfigToml::test();
-        config.pkdns.dht_bootstrap_nodes = Some(Self::bootstrap_to_domain_port(&dht.bootstrap));
+        config.pkdns.dht_bootstrap_nodes = Some(Self::bootstrap_domain_port(&dht.bootstrap));
         config.general.signup_mode = SignupMode::TokenRequired;
         config.admin.admin_password = "admin".to_string();
         let mock_dir = DataDirMock::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
@@ -85,7 +84,7 @@ impl Testnet {
         Ok(testnet)
     }
 
-    fn bootstrap_to_domain_port(bootstrap: &[String]) -> Vec<DomainPort> {
+    fn bootstrap_domain_port(bootstrap: &[String]) -> Vec<DomainPort> {
         bootstrap
             .iter()
             .map(|s| {
@@ -98,7 +97,7 @@ impl Testnet {
 
     /// Returns a list of DHT bootstrapping nodes.
     pub fn bootstrap(&self) -> Vec<DomainPort> {
-        Self::bootstrap_to_domain_port(&self.dht.bootstrap)
+        Self::bootstrap_domain_port(&self.dht.bootstrap)
     }
 
     /// Returns a list of pkarr relays.
@@ -106,27 +105,35 @@ impl Testnet {
         self.relays.iter().map(|r| r.local_url()).collect()
     }
 
+    /// Run a Pubky HomeserverCore.
+    /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
+    pub async fn run_homeserver_core(&self) -> Result<HomeserverCore> {
+        self.run_homeserver_core_with_config(ConfigToml::test()).await
+    }
 
-    /// Run a Pubky HomeserverCore. Doesn't listen on any ports.
-    /// Use `axum_test` on `core.router` to test the router.
+    /// Run a Pubky HomeserverCore.
+    /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn run_homeserver_core_with_config(&self, mut config: ConfigToml) -> Result<HomeserverCore> {
         config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap());
         if !self.relays().is_empty() {
             config.pkdns.dht_relay_nodes = Some(self.relays().to_vec());
         }
         let mock_dir = DataDirMock::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
-        let homeserver = HomeserverCore::from_mock_dir(mock_dir).await?;
+        let mut homeserver = HomeserverCore::from_mock_dir(mock_dir).await?;
+        homeserver.listen().await?;
         Ok(homeserver)
     }
 
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the default ports.
+    /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn run_homeserver_suite(&self) -> Result<HomeserverSuite> {
         self.run_homeserver_suite_with_config(ConfigToml::test()).await
     }
 
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the configured ports.
+    /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn run_homeserver_suite_with_config(
         &self,
         mut config: ConfigToml,

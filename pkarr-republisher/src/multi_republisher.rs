@@ -187,8 +187,7 @@ impl MultiRepublisher {
 mod tests {
     use std::num::NonZeroU8;
 
-    use pkarr::{dns::Name, ClientBuilder, Keypair, PublicKey};
-    use pubky_testnet::Testnet;
+    use pkarr::{dns::Name, Keypair, PublicKey};
 
     use crate::{multi_republisher::MultiRepublisher, republisher::RepublisherSettings};
 
@@ -207,10 +206,9 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_success() {
-        let testnet = Testnet::run().await.unwrap();
-        // Create testnet pkarr builder
-        let mut pkarr_builder = ClientBuilder::default();
-        pkarr_builder.bootstrap(&testnet.bootstrap()).no_relays();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
 
         let public_keys = publish_sample_packets(&pkarr_client, 1).await;
@@ -231,13 +229,12 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_insufficient() {
-        let testnet = Testnet::run().await.unwrap();
-        // Create testnet pkarr builder
-        let mut pkarr_builder = ClientBuilder::default();
-        pkarr_builder.bootstrap(&testnet.bootstrap()).no_relays();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
-        let public_keys = publish_sample_packets(&pkarr_client, 1).await;
 
+        let public_keys = publish_sample_packets(&pkarr_client, 1).await;
         let public_key = public_keys.first().unwrap().clone();
 
         let mut settings = RepublisherSettings::default();
