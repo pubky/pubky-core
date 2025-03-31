@@ -1,15 +1,15 @@
 use pkarr::Keypair;
 use pubky_common::capabilities::{Capabilities, Capability};
-use pubky_testnet::{pubky_homeserver::{ConfigToml, SignupMode}, FlexibleTestnet};
+use pubky_testnet::{pubky_homeserver::{DataDirMock, SignupMode}, FlexibleTestnet, SimpleTestnet};
 use reqwest::StatusCode;
 use std::time::Duration;
 
 #[tokio::test]
 async fn basic_authn() {
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let server = testnet.run_homeserver_suite().await.unwrap();
+    let testnet = SimpleTestnet::run().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -50,10 +50,10 @@ async fn basic_authn() {
 
 #[tokio::test]
 async fn authz() {
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let server = testnet.run_homeserver_suite().await.unwrap();
+    let testnet = SimpleTestnet::run().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let http_relay = testnet.run_http_relay().await.unwrap();
+    let http_relay = testnet.http_relay();
     let http_relay_url = http_relay.local_link_url();
 
     let keypair = Keypair::random();
@@ -62,13 +62,13 @@ async fn authz() {
     // Third party app side
     let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let pubky_auth_request = client.auth_request(http_relay_url, &capabilities).unwrap();
 
     // Authenticator side
     {
-        let client = testnet.client_builder().build().unwrap();
+        let client = testnet.pubky_client_builder().build().unwrap();
 
         client
             .signup(&keypair, &server.public_key(), None)
@@ -124,10 +124,10 @@ async fn authz() {
 
 #[tokio::test]
 async fn multiple_users() {
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let server = testnet.run_homeserver_suite().await.unwrap();
+    let testnet = SimpleTestnet::run().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let first_keypair = Keypair::random();
     let second_keypair = Keypair::random();
@@ -163,10 +163,10 @@ async fn multiple_users() {
 
 #[tokio::test]
 async fn authz_timeout_reconnect() {
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let server = testnet.run_homeserver_suite().await.unwrap();
+    let testnet = SimpleTestnet::run().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let http_relay = testnet.run_http_relay().await.unwrap();
+    let http_relay = testnet.http_relay();
     let http_relay_url = http_relay.local_link_url();
 
     let keypair = Keypair::random();
@@ -176,7 +176,7 @@ async fn authz_timeout_reconnect() {
     let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
 
     let client = testnet
-        .client_builder()
+        .pubky_client_builder()
         .request_timeout(Duration::from_millis(1000))
         .build()
         .unwrap();
@@ -187,7 +187,7 @@ async fn authz_timeout_reconnect() {
     {
         let url = pubky_auth_request.url().clone();
 
-        let client = testnet.client_builder().build().unwrap();
+        let client = testnet.pubky_client_builder().build().unwrap();
         client
             .signup(&keypair, &server.public_key(), None)
             .await
@@ -245,14 +245,14 @@ async fn authz_timeout_reconnect() {
 #[tokio::test]
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let mut config = ConfigToml::test();
-    config.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet.run_homeserver_suite_with_config(config).await.unwrap();
-
     let admin_password = "admin";
+    let mut testnet = FlexibleTestnet::new().await.unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
-    let client = testnet.client_builder().build().unwrap();
+    let mut mock_dir = DataDirMock::test();
+    mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
+    mock_dir.config_toml.admin.admin_password = admin_password.to_string();
+    let server = testnet.create_homeserver_suite_with_mock(mock_dir).await.unwrap();
     let keypair = Keypair::random();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
@@ -325,14 +325,15 @@ async fn test_signup_with_token() {
 #[tokio::test]
 async fn test_republish_on_signin() {
     // Setup the testnet and run a homeserver.
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let server = testnet.run_homeserver_suite().await.unwrap();
+    let mut testnet = FlexibleTestnet::new().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
-        .client_builder()
+        .pubky_client_builder()
         .max_record_age(Duration::from_secs(1))
         .build()
         .unwrap();
+
+    let server = testnet.create_homeserver_suite().await.unwrap();
     let keypair = Keypair::random();
 
     // Signup publishes a new record.
@@ -389,14 +390,15 @@ async fn test_republish_on_signin() {
 #[tokio::test]
 async fn test_republish_homeserver() {
     // Setup the testnet and run a homeserver.
-    let testnet = FlexibleTestnet::new().await.unwrap();
-    let server = testnet.run_homeserver_suite().await.unwrap();
+    let mut testnet = FlexibleTestnet::new().await.unwrap();
+
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
-        .client_builder()
+        .pubky_client_builder()
         .max_record_age(Duration::from_secs(1))
         .build()
         .unwrap();
+    let server = testnet.create_homeserver_suite().await.unwrap();
     let keypair = Keypair::random();
 
     // Signup publishes a new record.

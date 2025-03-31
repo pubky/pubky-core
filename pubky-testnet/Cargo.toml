@@ -12,7 +12,6 @@ categories = ["web-programming", "authentication", "cryptography"]
 
 [dependencies]
 anyhow = "1.0.95"
-http-relay = "0.2.0"
 mainline = "5.2.0"
 pkarr-relay = "0.5.7"
 tokio = { version = "1.43.0", features = ["full"] }
@@ -22,6 +21,7 @@ url = "2.5.4"
 pubky = { version = "0.4.2", path = "../pubky-client" }
 pubky-common = { version = "0.3.1", path = "../pubky-common" }
 pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver"}
+http-relay = { version = "0.2.0", path = "../http-relay"}
 tempfile = "3.19.1"
 tracing = "0.1.41"
 

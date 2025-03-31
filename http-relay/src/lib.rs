@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener},
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 
 use anyhow::Result;
@@ -23,7 +23,6 @@ use axum::{
 use axum_server::Handle;
 use tokio::{sync::{oneshot, Mutex}, task::JoinHandle};
 
-use futures_util::TryFutureExt;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use url::Url;
 
@@ -66,7 +65,7 @@ impl HttpRelayBuilder {
 /// An implementation of _some_ of [Http relay spec](https://httprelay.io/).
 pub struct HttpRelay {
     pub(crate) http_handle: Handle,
-    pub(crate) join_handle: JoinHandle<Result<(), ()>>,
+    pub(crate) join_handle: Option<JoinHandle<Result<(), ()>>>,
     http_address: SocketAddr,
 }
 
@@ -81,20 +80,21 @@ impl HttpRelay {
             .with_state(shared_state);
 
         let http_handle = Handle::new();
+        let shutdown_handle = http_handle.clone();
 
         let http_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
         let http_address = http_listener.local_addr()?;
 
-        let join_handle =tokio::spawn(
+        let join_handle = tokio::spawn( async move {
             axum_server::from_tcp(http_listener)
                 .handle(http_handle.clone())
-                .serve(app.into_make_service())
-                .map_err(|error| tracing::error!(?error, "HttpRelay http server error")),
-        );
+                .serve(app.into_make_service()).await
+                .map_err(|error| tracing::error!(?error, "HttpRelay http server error"))
+        });
 
         Ok(Self {
-            http_handle,
-            join_handle,
+            http_handle: shutdown_handle,
+            join_handle: Some(join_handle),
             http_address,
         })
     }
@@ -129,12 +129,24 @@ impl HttpRelay {
 
         url
     }
+
+    /// Gracefully shuts down the HTTP relay.
+    pub async fn shutdown(mut self) -> anyhow::Result<()> {
+        self.http_handle.graceful_shutdown(Some(Duration::from_secs(1)));
+        if let Some(handle) = self.join_handle.take() {
+            handle.await?.map_err(|e| anyhow::anyhow!("HttpRelay join handle error: {:?}", e))?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for HttpRelay {
     fn drop(&mut self) {
         self.http_handle.shutdown();
-        self.join_handle.abort();
+        if let Some(handle) = self.join_handle.take() {
+            handle.abort();
+        }
     }
 }
 
@@ -193,6 +205,25 @@ mod link {
                 let _ = completion_receiver.await;
                 (StatusCode::OK, ())
             }
+        }
+    }
+}
+
+
+
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_two_relays_drop_in_a_row() {
+        {
+            let r = HttpRelay::builder().http_port(15412).run().await.unwrap();
+            r.shutdown().await.unwrap();
+        }
+
+        {
+            let r = HttpRelay::builder().http_port(15412).run().await.unwrap();
+            r.shutdown().await.unwrap();
         }
     }
 }

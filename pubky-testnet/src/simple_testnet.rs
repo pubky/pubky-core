@@ -27,7 +27,7 @@ impl SimpleTestnet {
 
         me.run_fixed_pkarr_relays().await?;
         me.run_fixed_http_relay().await?;
-        me.flexible_testnet.run_homeserver_suite().await?;
+        me.flexible_testnet.create_homeserver_suite().await?;
 
         Ok(me)
     }
@@ -86,5 +86,20 @@ impl SimpleTestnet {
         .run().await?;
         self.flexible_testnet.http_relays.push(relay);
         Ok(())
+    }
+}
+
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_two_testnet_in_a_row() {
+        {
+            let _ = SimpleTestnet::run().await.unwrap();
+        }
+
+        {
+            let _ = SimpleTestnet::run().await.unwrap();
+        }
     }
 }
