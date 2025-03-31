@@ -1,9 +1,11 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use super::routes::{generate_signup_token, root};
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
+use crate::{DataDir, DataDirMock};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 
@@ -41,6 +43,25 @@ pub struct AdminServer {
 }
 
 impl AdminServer {
+    /// Create a new admin server from a data directory.
+    pub async fn from_data_dir(data_dir: DataDir) -> anyhow::Result<Self> {
+        let context = AppContext::try_from(data_dir)?;
+        Self::run(&context).await
+    }
+
+    /// Create a new admin server from a data directory path.
+    pub async fn from_data_dir_path(data_dir_path: PathBuf) -> anyhow::Result<Self> {
+        let data_dir = DataDir::new(data_dir_path);
+        Self::from_data_dir(data_dir).await
+    }
+
+    /// Create a new admin server from a mock data directory.
+    pub async fn from_mock_dir(mock_dir: DataDirMock) -> anyhow::Result<Self> {
+        let context = AppContext::try_from(mock_dir)?;
+        Self::run(&context).await
+    }
+
+    /// Run the admin server.
     pub async fn run(context: &AppContext) -> anyhow::Result<Self> {
         let state = AppState::new(context.db.clone());
         let socket = context.config_toml.admin.listen_socket;
@@ -57,6 +78,7 @@ impl AdminServer {
         })
     }
 
+    /// Get the socket address of the admin server.
     pub fn listen_socket(&self) -> SocketAddr {
         self.socket
     }
@@ -67,7 +89,6 @@ impl Drop for AdminServer {
         self.handle.graceful_shutdown(Some(Duration::from_secs(5)));
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -6,12 +6,15 @@
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
 mod admin;
-pub mod app_context;
+mod app_context;
 mod constants;
 mod core;
 mod data_directory;
-mod homeserver;
+mod homeserver_suite;
 mod persistence;
 
+pub use admin::AdminServer;
+pub use app_context::AppContext;
+pub use core::HomeserverCore;
 pub use data_directory::*;
-pub use homeserver::HomeserverSuite;
+pub use homeserver_suite::HomeserverSuite;

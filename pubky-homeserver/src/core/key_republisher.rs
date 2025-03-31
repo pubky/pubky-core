@@ -138,8 +138,7 @@ pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
     }
 
     // `A` record to the public IP. This is used for regular browser connections.
-    signed_packet_builder =
-        signed_packet_builder.address(root_name.clone(), public_ip, 60 * 60);
+    signed_packet_builder = signed_packet_builder.address(root_name.clone(), public_ip, 60 * 60);
 
     Ok(signed_packet_builder.build(&context.keypair)?)
 }

@@ -1,7 +1,7 @@
 use crate::admin::AdminServer;
 use crate::core::HomeserverCore;
 use crate::DataDirTrait;
-use crate::{app_context::AppContext, data_directory::DataDir, SignupMode};
+use crate::{app_context::AppContext, data_directory::DataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
@@ -40,13 +40,8 @@ impl HomeserverSuite {
     }
 
     /// Run a Homeserver
-    ///
-    /// # Safety
-    /// Homeserver uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    async fn run(context: AppContext) -> Result<Self> {
-        tracing::debug!(?context, "Running homeserver with configurations");
-        let mut core = HomeserverCore::new(&context).await?;
+    pub async fn run(context: AppContext) -> Result<Self> {
+        let mut core = HomeserverCore::new(context.clone()).await?;
         core.listen().await?;
         tracing::info!("Homeserver HTTP listening on {}", core.icann_http_url());
 
@@ -68,39 +63,15 @@ impl HomeserverSuite {
         })
     }
 
-    /// Run a Homeserver with configurations suitable for ephemeral tests.
-    pub async fn run_test(bootstrap: &[String]) -> Result<Self> {
-        use crate::DomainPort;
-        use std::str::FromStr;
-
-        let mut context = AppContext::test();
-        context.config_toml.pkdns.dht_bootstrap_nodes = Some(
-            bootstrap
-                .iter()
-                .map(|s| DomainPort::from_str(s).unwrap())
-                .collect(),
-        );
-        Self::run(context).await
+    /// Get the core of the homeserver suite.
+    pub fn core(&self) -> &HomeserverCore {
+        &self.core
     }
 
-    /// Run a Homeserver with configurations suitable for ephemeral tests.
-    /// That requires signup tokens.
-    pub async fn run_test_with_signup_tokens(bootstrap: &[String]) -> Result<Self> {
-        use crate::DomainPort;
-        use std::str::FromStr;
-
-        let mut context = AppContext::test();
-        context.config_toml.pkdns.dht_bootstrap_nodes = Some(
-            bootstrap
-                .iter()
-                .map(|s| DomainPort::from_str(s).unwrap())
-                .collect(),
-        );
-        context.config_toml.general.signup_mode = SignupMode::TokenRequired;
-        Self::run(context).await
+    /// Get the admin server of the homeserver suite.
+    pub fn admin(&self) -> &AdminServer {
+        &self.admin_server
     }
-
-    // === Getters ===
 
     /// Returns the public_key of this server.
     pub fn public_key(&self) -> PublicKey {

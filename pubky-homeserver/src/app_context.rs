@@ -17,20 +17,23 @@ use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir, DataDirMock, DataDirTr
 /// Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 ///
 #[derive(Debug, Clone)]
-pub(crate) struct AppContext {
+pub struct AppContext {
     /// A list of all shared resources.
     pub(crate) db: LmDB,
     pub(crate) config_toml: ConfigToml,
+    /// Keep data_dir alive. The mock dir will cleanup on drop.
     pub(crate) data_dir: Arc<dyn DataDirTrait>,
     pub(crate) keypair: Keypair,
     /// Main pkarr instance. This will automatically turn into a DHT server after 15 minutes after startup.
     /// We need to keep this alive.
     pub(crate) pkarr_client: pkarr::Client,
     /// pkarr client builder in case we need to create a more instances.
+    /// Comes ready with the correct bootstrap nodes and relays.
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
 }
 
 impl AppContext {
+    /// Create a new AppContext for testing.
     pub fn test() -> Self {
         use crate::DataDirMock;
         let data_dir = DataDirMock::test();
@@ -89,7 +92,9 @@ impl AppContext {
             builder.bootstrap(&nodes);
         }
         if let Some(relays) = &config_toml.pkdns.dht_relay_nodes {
-            builder.relays(relays).expect("parameters are already urls and therefore valid.");
+            builder
+                .relays(relays)
+                .expect("parameters are already urls and therefore valid.");
         }
         if let Some(request_timeout) = &config_toml.pkdns.dht_request_timeout_ms {
             let duration = Duration::from_millis(request_timeout.get());

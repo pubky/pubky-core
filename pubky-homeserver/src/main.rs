@@ -38,8 +38,22 @@ async fn main() -> Result<()> {
         .init();
 
     tracing::debug!("Using data dir: {}", args.data_dir.display());
+    let server = HomeserverSuite::run_with_data_dir_path(args.data_dir).await?;
 
-    let _server = HomeserverSuite::run_with_data_dir_path(args.data_dir).await?;
+    tracing::info!(
+        "Homeserver HTTP listening on {}",
+        server.core().icann_http_url()
+    );
+
+    tracing::info!(
+        "Homeserver Pubky TLS listening on {} and {}",
+        server.core().pubky_tls_dns_url(),
+        server.core().pubky_tls_ip_url()
+    );
+    tracing::debug!(
+        "Admin server listening on http://{}",
+        server.admin().listen_socket()
+    );
 
     tokio::signal::ctrl_c().await?;
 

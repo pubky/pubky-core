@@ -1,11 +1,12 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
-use crate::app_context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
-use crate::SignupMode;
+use crate::{app_context::AppContext, DataDir};
+use crate::{DataDirMock, DataDirTrait, SignupMode};
 use anyhow::Result;
 use axum::Router;
 use axum_server::{
@@ -38,22 +39,49 @@ pub struct HomeserverCore {
     pub(crate) key_republisher: HomeserverKeyRepublisher,
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
-    #[allow(dead_code)] // Keep this for testing.
+    /// The web server (router) for testing. Use `listen` to start the server.
+    #[allow(dead_code)]
     pub router: Router,
-
+    /// Keep context alive.
     context: AppContext,
     pub(crate) icann_http_handle: Option<Handle>,
     pub(crate) pubky_tls_handle: Option<Handle>,
 }
 
 impl HomeserverCore {
-    /// Create a side-effect-free Homeserver core.
-    pub async fn new(context: &AppContext) -> Result<Self> {
-        let key_republisher = HomeserverKeyRepublisher::run(context).await?;
+    /// Create a Homeserver from a data directory path like `~/.pubky`.
+    pub async fn from_data_dir_path(dir_path: PathBuf) -> Result<Self> {
+        let data_dir = DataDir::new(dir_path);
+        Self::from_data_dir(data_dir).await
+    }
+
+    /// Create a Homeserver from a data directory.
+    pub async fn from_data_dir(data_dir: DataDir) -> Result<Self> {
+        Self::from_data_dir_trait(Arc::new(data_dir)).await
+    }
+
+    /// Create a Homeserver from a mock data directory.
+    pub async fn from_mock_dir(mock_dir: DataDirMock) -> Result<Self> {
+        Self::from_data_dir_trait(Arc::new(mock_dir)).await
+    }
+
+    /// Run the homeserver with configurations from a data directory.
+    pub(crate) async fn from_data_dir_trait(dir: Arc<dyn DataDirTrait>) -> Result<Self> {
+        let context = AppContext::try_from(dir)?;
+        Self::new(context).await
+    }
+
+    /// Create a Homeserver from an AppContext.
+    /// - Publishes the homeserver's pkarr packet to the DHT.
+    /// - (Optional) Publishes the user's keys to the DHT.
+    /// - (Optional) Runs a periodic backup of the database.
+    /// - Creates the web server (router) for testing. Use `listen` to start the server.
+    pub async fn new(context: AppContext) -> Result<Self> {
+        let key_republisher = HomeserverKeyRepublisher::run(&context).await?;
         let user_keys_republisher =
-            UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
-        let periodic_backup = PeriodicBackup::run(context);
-        let router = Self::create_router(context);
+            UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
+        let periodic_backup = PeriodicBackup::run(&context);
+        let router = Self::create_router(&context);
 
         Ok(Self {
             user_keys_republisher,

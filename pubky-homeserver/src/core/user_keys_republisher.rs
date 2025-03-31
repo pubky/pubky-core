@@ -36,8 +36,9 @@ impl UserKeysRepublisher {
         let republish_interval =
             Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
         tracing::info!(
-            "Initialize user keys republisher with interval {:?}",
-            republish_interval
+            "Initialize user keys republisher with an interval of {:?} and an initial delay of {:?}",
+            republish_interval,
+            initial_delay
         );
         let pkarr_builder = context.pkarr_builder.clone();
         let handle = tokio::spawn(async move {
@@ -162,7 +163,9 @@ mod tests {
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
         let pkarr_builder = pkarr::ClientBuilder::default();
-        let result = UserKeysRepublisher::republish_keys_once(db, pkarr_builder).await.unwrap();
+        let result = UserKeysRepublisher::republish_keys_once(db, pkarr_builder)
+            .await
+            .unwrap();
         assert_eq!(result.len(), 10);
         assert_eq!(result.success().len(), 0);
         assert_eq!(result.missing().len(), 10);
