@@ -28,7 +28,7 @@ pub struct FlexibleTestnet {
 
 impl FlexibleTestnet {
     /// Run a new testnet with a local DHT.
-    pub async fn run() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         let dht = mainline::Testnet::new(3)?;
         let testnet = Self {
             dht,
@@ -180,3 +180,15 @@ impl FlexibleTestnet {
     }
 }
 
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_keep_relays_alive_even_when_dropped() {
+        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        {
+            let _relay = testnet.run_http_relay().await.unwrap();
+        }
+        assert_eq!(testnet.http_relays.len(), 1);
+    }
+}

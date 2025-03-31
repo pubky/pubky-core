@@ -2384,6 +2384,7 @@ dependencies = [
  "pubky-homeserver",
  "tempfile",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "url",
 ]

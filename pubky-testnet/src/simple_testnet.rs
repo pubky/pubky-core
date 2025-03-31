@@ -5,11 +5,15 @@ use http_relay::HttpRelay;
 use crate::FlexibleTestnet;
 
 /// A simple testnet with
-/// - pkarr relay on port 15411
-/// - http relay on port 15412
-/// - A homeserver with the admin server.
+/// - A local DHT with bootstrapping nodes: `&["localhost:6881"]`.
+/// - pkarr relay on port 15411.
+/// - http relay on port 15412.
+/// - A homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
+/// - An admin server for the homeserver.
 pub struct SimpleTestnet {
-    flexible_testnet: FlexibleTestnet,
+    /// Inner flexible testnet.
+    pub flexible_testnet: FlexibleTestnet,
+    #[allow(dead_code)]
     temp_dirs: Vec<tempfile::TempDir>, // Keep temp dirs alive for the pkarr relay
 }
 
@@ -17,7 +21,7 @@ impl SimpleTestnet {
     /// Run a new simple testnet.
     pub async fn run() -> anyhow::Result<Self> {
         let mut me = Self { 
-            flexible_testnet: FlexibleTestnet::run().await?,
+            flexible_testnet: FlexibleTestnet::new().await?,
             temp_dirs: vec![],
         };
 
