@@ -253,7 +253,7 @@ mod tests {
             ])
         );
 
-        assert_eq!(c.pkdns.dht_request_timeout_ms.unwrap().get(), 2000);
+        assert_eq!(c.pkdns.dht_request_timeout_ms, Some(NonZeroU64::new(2000).unwrap()));
     }
 
     #[test]
