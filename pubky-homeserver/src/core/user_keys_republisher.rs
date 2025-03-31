@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 
 use pkarr::PublicKey;
 use pkarr_republisher::{
@@ -34,18 +31,18 @@ impl UserKeysRepublisher {
         let is_disabled = context.config_toml.pkdns.user_keys_republisher_interval == 0;
         if is_disabled {
             tracing::info!("User keys republisher is disabled.");
-            return Self {
-                handle: None,
-            };
+            return Self { handle: None };
         }
-        let republish_interval = Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
+        let republish_interval =
+            Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
         tracing::info!(
             "Initialize user keys republisher with interval {:?}",
             republish_interval
         );
+        let pkarr_builder = context.pkarr_builder.clone();
         let handle = tokio::spawn(async move {
             tokio::time::sleep(initial_delay).await;
-            Self::run_loop(db, republish_interval).await
+            Self::run_loop(db, republish_interval, pkarr_builder).await
         });
         Self {
             handle: Some(handle),
@@ -72,6 +69,7 @@ impl UserKeysRepublisher {
     /// - If the pkarr keys cannot be republished, an error is returned.
     async fn republish_keys_once(
         db: LmDB,
+        pkarr_builder: pkarr::ClientBuilder,
     ) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
         let keys = Self::get_all_user_keys(db)
             .await
@@ -82,7 +80,7 @@ impl UserKeysRepublisher {
         }
         let mut settings = RepublisherSettings::default();
         settings.republish_condition(|_| true);
-        let republisher = MultiRepublisher::new_with_settings(settings, None);
+        let republisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
         // TODO: Only publish if user points to this home server.
         let results = republisher
             .run(keys, 12)
@@ -92,13 +90,13 @@ impl UserKeysRepublisher {
     }
 
     /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
-    async fn run_loop(db: LmDB, republish_interval: Duration) {
+    async fn run_loop(db: LmDB, republish_interval: Duration, pkarr_builder: pkarr::ClientBuilder) {
         let mut interval = interval(republish_interval);
         loop {
             interval.tick().await;
             let start = Instant::now();
             tracing::info!("Republishing user keys...");
-            let result = match Self::republish_keys_once(db.clone()).await {
+            let result = match Self::republish_keys_once(db.clone(), pkarr_builder.clone()).await {
                 Ok(result) => result,
                 Err(e) => {
                     tracing::error!("Error republishing user keys: {:?}", e);
@@ -142,10 +140,10 @@ impl Drop for UserKeysRepublisher {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
     use crate::core::user_keys_republisher::UserKeysRepublisher;
     use crate::persistence::lmdb::tables::users::User;
     use crate::persistence::lmdb::LmDB;
+    use pkarr::Keypair;
 
     async fn init_db_with_users(count: usize) -> LmDB {
         let db = LmDB::test();
@@ -163,7 +161,8 @@ mod tests {
     #[tokio::test]
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
-        let result = UserKeysRepublisher::republish_keys_once(db).await.unwrap();
+        let pkarr_builder = pkarr::ClientBuilder::default();
+        let result = UserKeysRepublisher::republish_keys_once(db, pkarr_builder).await.unwrap();
         assert_eq!(result.len(), 10);
         assert_eq!(result.success().len(), 0);
         assert_eq!(result.missing().len(), 10);

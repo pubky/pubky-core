@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use super::periodic_backup::PeriodicBackup;
 use super::key_republisher::HomeserverKeyRepublisher;
+use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContext;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
@@ -30,12 +30,15 @@ const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
-    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
+    #[allow(dead_code)]
+    // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
-    #[allow(dead_code)] // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
+    #[allow(dead_code)]
+    // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
     pub(crate) key_republisher: HomeserverKeyRepublisher,
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
+    #[allow(dead_code)] // Keep this for testing.
     pub router: Router,
 
     context: AppContext,
@@ -47,7 +50,8 @@ impl HomeserverCore {
     /// Create a side-effect-free Homeserver core.
     pub async fn new(context: &AppContext) -> Result<Self> {
         let key_republisher = HomeserverKeyRepublisher::run(context).await?;
-        let user_keys_republisher = UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
+        let user_keys_republisher =
+            UserKeysRepublisher::run_delayed(context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(context);
         let router = Self::create_router(context);
 
@@ -126,7 +130,10 @@ impl HomeserverCore {
 
     /// Get the URL of the icann http server.
     pub fn icann_http_url(&self) -> String {
-        format!("http://{}", self.context.config_toml.drive.icann_listen_socket)
+        format!(
+            "http://{}",
+            self.context.config_toml.drive.icann_listen_socket
+        )
     }
 
     /// Get the URL of the pubky tls server with the Pubky DNS name.
@@ -136,7 +143,10 @@ impl HomeserverCore {
 
     /// Get the URL of the pubky tls server with the Pubky IP address.
     pub fn pubky_tls_ip_url(&self) -> String {
-        format!("https://{}", self.context.config_toml.drive.pubky_listen_socket)
+        format!(
+            "https://{}",
+            self.context.config_toml.drive.pubky_listen_socket
+        )
     }
 }
 

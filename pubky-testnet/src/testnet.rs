@@ -86,7 +86,12 @@ impl Testnet {
     }
 
     fn bootstrap_to_domain_port(bootstrap: &[String]) -> Vec<DomainPort> {
-        bootstrap.iter().map(|s| DomainPort::from_str(s).expect("boostrap nodes are always valid domain:port pairs")).collect()
+        bootstrap
+            .iter()
+            .map(|s| {
+                DomainPort::from_str(s).expect("boostrap nodes are always valid domain:port pairs")
+            })
+            .collect()
     }
 
     // === Getters ===
@@ -109,7 +114,10 @@ impl Testnet {
     }
 
     /// Run a Pubky Homeserver that requires signup tokens
-    pub async fn run_homeserver_with_config(&self, mut config: ConfigToml) -> Result<HomeserverSuite> {
+    pub async fn run_homeserver_with_config(
+        &self,
+        mut config: ConfigToml,
+    ) -> Result<HomeserverSuite> {
         config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap());
         let mock_dir = DataDirMock::new(config, Keypair::from_secret_key(&[0; 32]))?;
         let homeserver = HomeserverSuite::run_with_data_dir_trait(Arc::new(mock_dir)).await?;

@@ -1,7 +1,7 @@
 use super::tables::{Tables, TABLES_COUNT};
 use heed::{Env, EnvOpenOptions};
-use std::{fs, path::PathBuf};
 use std::sync::Arc;
+use std::{fs, path::PathBuf};
 
 use super::migrations;
 
@@ -14,6 +14,7 @@ pub struct LmDB {
     pub(crate) buffers_dir: PathBuf,
     pub(crate) max_chunk_size: usize,
     // Only used for testing purposes to keep the testdir alive.
+    #[allow(dead_code)]
     test_dir: Option<Arc<tempfile::TempDir>>,
 }
 

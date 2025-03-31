@@ -4,7 +4,10 @@
 use super::{domain_port::DomainPort, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug, net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4}, num::NonZeroU64, str::FromStr
+    fmt::Debug,
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    num::NonZeroU64,
+    str::FromStr,
 };
 use url::Url;
 
@@ -49,8 +52,7 @@ pub struct PkdnsToml {
 }
 
 fn default_public_ip() -> IpAddr {
-    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    ip
+    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
 }
 
 fn default_dht_bootstrap_nodes() -> Option<Vec<DomainPort>> {
@@ -218,7 +220,10 @@ mod tests {
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(c.drive.icann_domain, Some(Domain::from_str("example.com").unwrap()));
+        assert_eq!(
+            c.drive.icann_domain,
+            Some(Domain::from_str("example.com").unwrap())
+        );
 
         assert_eq!(
             c.drive.pubky_listen_socket,
@@ -253,7 +258,10 @@ mod tests {
             ])
         );
 
-        assert_eq!(c.pkdns.dht_request_timeout_ms, Some(NonZeroU64::new(2000).unwrap()));
+        assert_eq!(
+            c.pkdns.dht_request_timeout_ms,
+            Some(NonZeroU64::new(2000).unwrap())
+        );
     }
 
     #[test]

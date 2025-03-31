@@ -1,9 +1,9 @@
 //!
 //! The application context shared between all components.
 //! Think of it as a simple Dependency Injection container.
-//! 
+//!
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
-//! 
+//!
 
 use std::{sync::Arc, time::Duration};
 
@@ -13,9 +13,9 @@ use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir, DataDirMock, DataDirTr
 
 /// The application context shared between all components.
 /// Think of it as a simple Dependency Injection container.
-/// 
+///
 /// Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
-/// 
+///
 #[derive(Debug, Clone)]
 pub(crate) struct AppContext {
     /// A list of all shared resources.
@@ -23,14 +23,14 @@ pub(crate) struct AppContext {
     pub(crate) config_toml: ConfigToml,
     pub(crate) data_dir: Arc<dyn DataDirTrait>,
     pub(crate) keypair: Keypair,
-    /// Main pkarr client instance.
+    /// Main pkarr instance. This will automatically turn into a DHT server after 15 minutes after startup.
+    /// We need to keep this alive.
     pub(crate) pkarr_client: pkarr::Client,
     /// pkarr client builder in case we need to create a more instances.
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
 }
 
 impl AppContext {
-
     pub fn test() -> Self {
         use crate::DataDirMock;
         let data_dir = DataDirMock::test();
@@ -51,7 +51,7 @@ impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
         Ok(Self {
             db: unsafe { LmDB::open(db_path)? },
             pkarr_client: pkarr_builder.clone().build()?,
-            pkarr_builder: pkarr_builder,
+            pkarr_builder,
             config_toml: conf,
             keypair,
             data_dir: dir,
@@ -77,9 +77,6 @@ impl TryFrom<DataDirMock> for AppContext {
     }
 }
 
-
-
-
 impl AppContext {
     /// Build the pkarr client builder based on the config.
     fn build_pkarr_builder_from_config(config_toml: &ConfigToml) -> pkarr::ClientBuilder {
@@ -92,7 +89,7 @@ impl AppContext {
             builder.bootstrap(&nodes);
         }
         if let Some(relays) = &config_toml.pkdns.dht_relay_nodes {
-            builder.relays(relays);
+            builder.relays(relays).expect("parameters are already urls and therefore valid.");
         }
         if let Some(request_timeout) = &config_toml.pkdns.dht_request_timeout_ms {
             let duration = Duration::from_millis(request_timeout.get());

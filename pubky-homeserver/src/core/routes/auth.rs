@@ -1,3 +1,4 @@
+use crate::persistence::lmdb::tables::users::User;
 use crate::{
     core::{
         error::{Error, Result},
@@ -5,7 +6,6 @@ use crate::{
     },
     SignupMode,
 };
-use crate::persistence::lmdb::tables::users::User;
 use axum::{
     extract::{Query, State},
     http::StatusCode,

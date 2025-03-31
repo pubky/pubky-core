@@ -196,7 +196,10 @@ mod tests {
 
     use crate::{app_context::AppContext, core::HomeserverCore};
 
-    pub async fn create_root_user(server: &axum_test::TestServer, keypair: &Keypair) -> anyhow::Result<String> {
+    pub async fn create_root_user(
+        server: &axum_test::TestServer,
+        keypair: &Keypair,
+    ) -> anyhow::Result<String> {
         let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
         let body_bytes: axum::body::Bytes = auth_token.serialize().into();
         let response = server
@@ -225,7 +228,10 @@ mod tests {
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
-        let cookie = create_root_user(&server, &keypair).await.unwrap().to_string();
+        let cookie = create_root_user(&server, &keypair)
+            .await
+            .unwrap()
+            .to_string();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -251,7 +257,8 @@ mod tests {
             .add_header(
                 header::IF_MODIFIED_SINCE,
                 response.headers().get(header::LAST_MODIFIED).unwrap(),
-            ).await;
+            )
+            .await;
 
         response.assert_status(StatusCode::NOT_MODIFIED);
     }
@@ -265,7 +272,10 @@ mod tests {
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
 
-        let cookie = create_root_user(&server, &keypair).await.unwrap().to_string();
+        let cookie = create_root_user(&server, &keypair)
+            .await
+            .unwrap()
+            .to_string();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -294,6 +304,6 @@ mod tests {
             )
             .await;
 
-            response.assert_status(StatusCode::NOT_MODIFIED);
+        response.assert_status(StatusCode::NOT_MODIFIED);
     }
 }

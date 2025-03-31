@@ -1,10 +1,10 @@
-use std::path::Path;
 use super::ConfigToml;
 use dyn_clone::DynClone;
+use std::path::Path;
 
 /// A trait for the data directory.
 /// Used to abstract the data directory from the rest of the code.
-/// 
+///
 /// To create a real dir and a test dir.
 pub trait DataDirTrait: std::fmt::Debug + DynClone {
     /// Returns the path to the data directory.
@@ -12,7 +12,6 @@ pub trait DataDirTrait: std::fmt::Debug + DynClone {
     /// Makes sure the data directory exists.
     /// Create the directory if it doesn't exist.
     fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()>;
-
 
     /// Reads the config file from the data directory.
     /// Creates a default config file if it doesn't exist.

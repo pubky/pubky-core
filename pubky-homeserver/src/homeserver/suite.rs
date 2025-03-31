@@ -1,8 +1,7 @@
 use crate::admin::AdminServer;
 use crate::core::HomeserverCore;
 use crate::DataDirTrait;
-use crate::{app_context::AppContext, data_directory::DataDir, SignupMode,
-};
+use crate::{app_context::AppContext, data_directory::DataDir, SignupMode};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
@@ -10,7 +9,7 @@ use std::sync::Arc;
 
 /// Homeserver with all bells and whistles.
 /// Core + Admin server.
-/// 
+///
 /// When dropped, the homeserver will stop.
 pub struct HomeserverSuite {
     context: AppContext,
@@ -49,10 +48,7 @@ impl HomeserverSuite {
         tracing::debug!(?context, "Running homeserver with configurations");
         let mut core = HomeserverCore::new(&context).await?;
         core.listen().await?;
-        tracing::info!(
-            "Homeserver HTTP listening on {}",
-            core.icann_http_url()
-        );
+        tracing::info!("Homeserver HTTP listening on {}", core.icann_http_url());
 
         tracing::info!(
             "Homeserver Pubky TLS listening on {} and {}",
@@ -60,12 +56,19 @@ impl HomeserverSuite {
             core.pubky_tls_ip_url()
         );
         let admin_server = AdminServer::run(&context).await?;
+        tracing::debug!(
+            "Admin server listening on http://{}",
+            admin_server.listen_socket()
+        );
 
-        Ok(Self { context, core, admin_server })
+        Ok(Self {
+            context,
+            core,
+            admin_server,
+        })
     }
 
     /// Run a Homeserver with configurations suitable for ephemeral tests.
-
     pub async fn run_test(bootstrap: &[String]) -> Result<Self> {
         use crate::DomainPort;
         use std::str::FromStr;
@@ -108,5 +111,4 @@ impl HomeserverSuite {
     pub fn url(&self) -> url::Url {
         url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
     }
-
 }

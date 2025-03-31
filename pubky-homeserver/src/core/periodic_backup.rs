@@ -5,8 +5,7 @@ use std::time::Duration;
 use tokio::{task::JoinHandle, time::interval};
 use tracing::{error, info};
 
-
-pub (crate) struct PeriodicBackup {
+pub(crate) struct PeriodicBackup {
     handle: Option<JoinHandle<()>>,
 }
 
@@ -20,11 +19,16 @@ impl PeriodicBackup {
         let db = context.db.clone();
         let backup_path = context.data_dir.path().join("backup");
         let period = Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
-        tracing::info!("Starting LMDB backup with interval {}s", context.config_toml.general.lmdb_backup_interval_s);
+        tracing::info!(
+            "Starting LMDB backup with interval {}s",
+            context.config_toml.general.lmdb_backup_interval_s
+        );
         let handle = tokio::spawn(async move {
             backup_lmdb_periodically(db, backup_path, period).await;
         });
-        Self { handle: Some(handle) }
+        Self {
+            handle: Some(handle),
+        }
     }
 }
 

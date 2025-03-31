@@ -1,5 +1,9 @@
 use super::{data_dir_trait::DataDirTrait, ConfigToml};
-use std::{io::Write, os::unix::fs::PermissionsExt, path::{Path, PathBuf}};
+use std::{
+    io::Write,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 /// The data directory for the homeserver.
 ///
@@ -120,7 +124,6 @@ impl Default for DataDir {
         Self::new(PathBuf::from("~/.pubky"))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
