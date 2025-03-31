@@ -1,6 +1,6 @@
 use pkarr::Keypair;
 use pubky_common::capabilities::{Capabilities, Capability};
-use pubky_testnet::Testnet;
+use pubky_testnet::{pubky_homeserver::{ConfigToml, SignupMode}, Testnet};
 use reqwest::StatusCode;
 use std::time::Duration;
 
