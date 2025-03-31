@@ -1,12 +1,12 @@
 use pkarr::Keypair;
 use pubky_common::capabilities::{Capabilities, Capability};
-use pubky_testnet::{pubky_homeserver::{ConfigToml, SignupMode}, Testnet};
+use pubky_testnet::{pubky_homeserver::{ConfigToml, SignupMode}, FlexibleTestnet};
 use reqwest::StatusCode;
 use std::time::Duration;
 
 #[tokio::test]
 async fn basic_authn() {
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let server = testnet.run_homeserver_suite().await.unwrap();
 
     let client = testnet.client_builder().build().unwrap();
@@ -50,7 +50,7 @@ async fn basic_authn() {
 
 #[tokio::test]
 async fn authz() {
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let server = testnet.run_homeserver_suite().await.unwrap();
 
     let http_relay = testnet.run_http_relay().await.unwrap();
@@ -124,7 +124,7 @@ async fn authz() {
 
 #[tokio::test]
 async fn multiple_users() {
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let server = testnet.run_homeserver_suite().await.unwrap();
 
     let client = testnet.client_builder().build().unwrap();
@@ -163,7 +163,7 @@ async fn multiple_users() {
 
 #[tokio::test]
 async fn authz_timeout_reconnect() {
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let server = testnet.run_homeserver_suite().await.unwrap();
 
     let http_relay = testnet.run_http_relay().await.unwrap();
@@ -245,7 +245,7 @@ async fn authz_timeout_reconnect() {
 #[tokio::test]
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let mut config = ConfigToml::test();
     config.general.signup_mode = SignupMode::TokenRequired;
     let server = testnet.run_homeserver_suite_with_config(config).await.unwrap();
@@ -325,7 +325,7 @@ async fn test_signup_with_token() {
 #[tokio::test]
 async fn test_republish_on_signin() {
     // Setup the testnet and run a homeserver.
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let server = testnet.run_homeserver_suite().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
@@ -389,7 +389,7 @@ async fn test_republish_on_signin() {
 #[tokio::test]
 async fn test_republish_homeserver() {
     // Setup the testnet and run a homeserver.
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = FlexibleTestnet::run().await.unwrap();
     let server = testnet.run_homeserver_suite().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet

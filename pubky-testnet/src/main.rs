@@ -1,5 +1,5 @@
 use anyhow::Result;
-use pubky_testnet::Testnet;
+use pubky_testnet::FlexibleTestnet;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    Testnet::run_with_hardcoded_configurations().await?;
+    FlexibleTestnet::run_with_hardcoded_configurations().await?;
 
     tokio::signal::ctrl_c().await?;
 

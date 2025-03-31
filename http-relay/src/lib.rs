@@ -21,7 +21,7 @@ use axum::{
     Router,
 };
 use axum_server::Handle;
-use tokio::sync::{oneshot, Mutex};
+use tokio::{sync::{oneshot, Mutex}, task::JoinHandle};
 
 use futures_util::TryFutureExt;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -66,7 +66,7 @@ impl HttpRelayBuilder {
 /// An implementation of _some_ of [Http relay spec](https://httprelay.io/).
 pub struct HttpRelay {
     pub(crate) http_handle: Handle,
-
+    pub(crate) join_handle: JoinHandle<Result<(), ()>>,
     http_address: SocketAddr,
 }
 
@@ -85,7 +85,7 @@ impl HttpRelay {
         let http_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
         let http_address = http_listener.local_addr()?;
 
-        tokio::spawn(
+        let join_handle =tokio::spawn(
             axum_server::from_tcp(http_listener)
                 .handle(http_handle.clone())
                 .serve(app.into_make_service())
@@ -94,6 +94,7 @@ impl HttpRelay {
 
         Ok(Self {
             http_handle,
+            join_handle,
             http_address,
         })
     }
@@ -128,10 +129,12 @@ impl HttpRelay {
 
         url
     }
+}
 
-    /// Shut down this http relay server.
-    pub fn shutdown(&self) {
+impl Drop for HttpRelay {
+    fn drop(&mut self) {
         self.http_handle.shutdown();
+        self.join_handle.abort();
     }
 }
 
