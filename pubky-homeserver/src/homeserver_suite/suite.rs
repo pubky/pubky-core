@@ -1,6 +1,6 @@
 use crate::admin::AdminServer;
 use crate::core::HomeserverCore;
-use crate::DataDirTrait;
+use crate::{DataDirMock, DataDirTrait};
 use crate::{app_context::AppContext, data_directory::DataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
@@ -39,22 +39,17 @@ impl HomeserverSuite {
         Self::run(context).await
     }
 
+    /// Run the homeserver with configurations from a data directory mock.
+    pub async fn run_with_data_dir_mock(dir: DataDirMock) -> Result<Self> {
+        let context = AppContext::try_from(dir)?;
+        Self::run(context).await
+    }
+
     /// Run a Homeserver
     pub async fn run(context: AppContext) -> Result<Self> {
         let mut core = HomeserverCore::new(context.clone()).await?;
         core.listen().await?;
-        tracing::info!("Homeserver HTTP listening on {}", core.icann_http_url());
-
-        tracing::info!(
-            "Homeserver Pubky TLS listening on {} and {}",
-            core.pubky_tls_dns_url(),
-            core.pubky_tls_ip_url()
-        );
         let admin_server = AdminServer::run(&context).await?;
-        tracing::debug!(
-            "Admin server listening on http://{}",
-            admin_server.listen_socket()
-        );
 
         Ok(Self {
             context,
@@ -83,3 +78,5 @@ impl HomeserverSuite {
         url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
     }
 }
+
+

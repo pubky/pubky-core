@@ -10,7 +10,7 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{ClientBuilder, Keypair};
 use pubky_common::timestamp::Timestamp;
-use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverSuite, SignupMode};
+use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverCore, HomeserverSuite, SignupMode};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -72,7 +72,7 @@ impl Testnet {
         config.pkdns.dht_bootstrap_nodes = Some(Self::bootstrap_to_domain_port(&dht.bootstrap));
         config.general.signup_mode = SignupMode::TokenRequired;
         config.admin.admin_password = "admin".to_string();
-        let mock_dir = DataDirMock::new(config, Keypair::from_secret_key(&[0; 32]))?;
+        let mock_dir = DataDirMock::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
         let homeserver = HomeserverSuite::run_with_data_dir_trait(Arc::new(mock_dir)).await?;
 
         HttpRelay::builder().http_port(15412).run().await?;
@@ -106,20 +106,36 @@ impl Testnet {
         self.relays.iter().map(|r| r.local_url()).collect()
     }
 
-    // === Public Methods ===
 
-    /// Run a Pubky Homeserver
-    pub async fn run_homeserver(&self) -> Result<HomeserverSuite> {
-        self.run_homeserver_with_config(ConfigToml::test()).await
+    /// Run a Pubky HomeserverCore. Doesn't listen on any ports.
+    /// Use `axum_test` on `core.router` to test the router.
+    pub async fn run_homeserver_core_with_config(&self, mut config: ConfigToml) -> Result<HomeserverCore> {
+        config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap());
+        if !self.relays().is_empty() {
+            config.pkdns.dht_relay_nodes = Some(self.relays().to_vec());
+        }
+        let mock_dir = DataDirMock::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
+        let homeserver = HomeserverCore::from_mock_dir(mock_dir).await?;
+        Ok(homeserver)
     }
 
-    /// Run a Pubky Homeserver that requires signup tokens
-    pub async fn run_homeserver_with_config(
+    /// Run the full homeserver suite with core and admin server
+    /// Automatically listens on the default ports.
+    pub async fn run_homeserver_suite(&self) -> Result<HomeserverSuite> {
+        self.run_homeserver_suite_with_config(ConfigToml::test()).await
+    }
+
+    /// Run the full homeserver suite with core and admin server
+    /// Automatically listens on the configured ports.
+    pub async fn run_homeserver_suite_with_config(
         &self,
         mut config: ConfigToml,
     ) -> Result<HomeserverSuite> {
         config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap());
-        let mock_dir = DataDirMock::new(config, Keypair::from_secret_key(&[0; 32]))?;
+        if !self.relays().is_empty() {
+            config.pkdns.dht_relay_nodes = Some(self.relays().to_vec());
+        }
+        let mock_dir = DataDirMock::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
         let homeserver = HomeserverSuite::run_with_data_dir_trait(Arc::new(mock_dir)).await?;
         Ok(homeserver)
     }

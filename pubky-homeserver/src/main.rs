@@ -46,15 +46,19 @@ async fn main() -> Result<()> {
     );
 
     tracing::info!(
-        "Homeserver Pubky TLS listening on {} and {}",
+        "Homeserver Pubky TLS listening on {}",
         server.core().pubky_tls_dns_url(),
+    );
+    tracing::info!(
+        "Homeserver Pubky TLS listening on {}",
         server.core().pubky_tls_ip_url()
     );
-    tracing::debug!(
+    tracing::info!(
         "Admin server listening on http://{}",
         server.admin().listen_socket()
     );
 
+    tracing::info!("Press Ctrl+C to stop the Homeserver");
     tokio::signal::ctrl_c().await?;
 
     tracing::info!("Shutting down Homeserver");

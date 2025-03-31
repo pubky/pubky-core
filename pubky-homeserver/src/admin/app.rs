@@ -8,6 +8,7 @@ use crate::app_context::AppContext;
 use crate::{DataDir, DataDirMock};
 use axum::{routing::get, Router};
 use axum_server::Handle;
+use tokio::task::JoinHandle;
 
 /// Folder /admin router
 /// Admin password required.
@@ -38,7 +39,8 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
 ///
 /// When dropped, the server will stop.
 pub struct AdminServer {
-    handle: Handle,
+    http_handle: Handle,
+    join_handle: JoinHandle<()>,
     socket: SocketAddr,
 }
 
@@ -68,13 +70,16 @@ impl AdminServer {
         let app = create_app(state, context.config_toml.admin.admin_password.as_str());
         let listener = std::net::TcpListener::bind(socket)?;
         let http_handle = Handle::new();
-        axum_server::from_tcp(listener)
-            .handle(http_handle.clone())
-            .serve(app)
-            .await?;
+        let inner_http_handle = http_handle.clone();
+        let join_handle = tokio::spawn( async move {
+            axum_server::from_tcp(listener)
+                .handle(inner_http_handle)
+                .serve(app).await.unwrap_or_else(|e| tracing::error!("Admin server error: {}", e));
+        });
         Ok(Self {
-            handle: http_handle,
+            http_handle,
             socket,
+            join_handle,
         })
     }
 
@@ -86,7 +91,8 @@ impl AdminServer {
 
 impl Drop for AdminServer {
     fn drop(&mut self) {
-        self.handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        self.http_handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        self.join_handle.abort();
     }
 }
 

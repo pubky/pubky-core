@@ -10,13 +10,18 @@ use super::DataDirTrait;
 #[derive(Debug, Clone)]
 pub struct DataDirMock {
     pub(crate) temp_dir: std::sync::Arc<tempfile::TempDir>,
-    pub(crate) config_toml: super::ConfigToml,
-    pub(crate) keypair: pkarr::Keypair,
+    /// The configuration for the homeserver.
+    pub config_toml: super::ConfigToml,
+    /// The keypair for the homeserver.
+    pub keypair: pkarr::Keypair,
 }
 
 impl DataDirMock {
     /// Create a new DataDirMock with a temporary directory.
-    pub fn new(config_toml: super::ConfigToml, keypair: pkarr::Keypair) -> anyhow::Result<Self> {
+    /// 
+    /// If keypair is not provided, a new one will be generated.
+    pub fn new(config_toml: super::ConfigToml, keypair: Option<pkarr::Keypair>) -> anyhow::Result<Self> {
+        let keypair = keypair.unwrap_or_else(|| pkarr::Keypair::random());
         Ok(Self {
             temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?),
             config_toml,
@@ -28,7 +33,7 @@ impl DataDirMock {
     pub fn test() -> Self {
         let config = super::ConfigToml::test();
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
-        Self::new(config, keypair).unwrap()
+        Self::new(config, Some(keypair)).unwrap()
     }
 }
 

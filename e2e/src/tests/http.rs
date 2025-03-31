@@ -3,7 +3,7 @@ use pubky_testnet::Testnet;
 #[tokio::test]
 async fn http_get_pubky() {
     let testnet = Testnet::run().await.unwrap();
-    let homeserver = testnet.run_homeserver().await.unwrap();
+    let homeserver = testnet.run_homeserver_suite().await.unwrap();
 
     let client = testnet.client_builder().build().unwrap();
 

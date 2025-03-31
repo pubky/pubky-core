@@ -7,7 +7,7 @@ use std::time::Duration;
 #[tokio::test]
 async fn basic_authn() {
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let server = testnet.run_homeserver_suite().await.unwrap();
 
     let client = testnet.client_builder().build().unwrap();
 
@@ -51,7 +51,7 @@ async fn basic_authn() {
 #[tokio::test]
 async fn authz() {
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let server = testnet.run_homeserver_suite().await.unwrap();
 
     let http_relay = testnet.run_http_relay().await.unwrap();
     let http_relay_url = http_relay.local_link_url();
@@ -125,7 +125,7 @@ async fn authz() {
 #[tokio::test]
 async fn multiple_users() {
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let server = testnet.run_homeserver_suite().await.unwrap();
 
     let client = testnet.client_builder().build().unwrap();
 
@@ -164,7 +164,7 @@ async fn multiple_users() {
 #[tokio::test]
 async fn authz_timeout_reconnect() {
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let server = testnet.run_homeserver_suite().await.unwrap();
 
     let http_relay = testnet.run_http_relay().await.unwrap();
     let http_relay_url = http_relay.local_link_url();
@@ -248,7 +248,7 @@ async fn test_signup_with_token() {
     let testnet = Testnet::run().await.unwrap();
     let mut config = ConfigToml::test();
     config.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet.run_homeserver_with_config(config).await.unwrap();
+    let server = testnet.run_homeserver_suite_with_config(config).await.unwrap();
 
     let admin_password = "admin";
 
@@ -326,7 +326,7 @@ async fn test_signup_with_token() {
 async fn test_republish_on_signin() {
     // Setup the testnet and run a homeserver.
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let server = testnet.run_homeserver_suite().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
         .client_builder()
@@ -390,7 +390,7 @@ async fn test_republish_on_signin() {
 async fn test_republish_homeserver() {
     // Setup the testnet and run a homeserver.
     let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let server = testnet.run_homeserver_suite().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
         .client_builder()

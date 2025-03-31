@@ -63,6 +63,12 @@ impl DataDir {
     }
 }
 
+impl Default for DataDir {
+    fn default() -> Self {
+        Self::new(PathBuf::from("~/.pubky"))
+    }
+}
+
 impl DataDirTrait for DataDir {
     /// Returns the full path to the data directory.
     fn path(&self) -> &Path {
@@ -119,11 +125,7 @@ impl DataDirTrait for DataDir {
     }
 }
 
-impl Default for DataDir {
-    fn default() -> Self {
-        Self::new(PathBuf::from("~/.pubky"))
-    }
-}
+
 
 #[cfg(test)]
 mod tests {

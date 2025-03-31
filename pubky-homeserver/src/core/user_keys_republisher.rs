@@ -76,7 +76,7 @@ impl UserKeysRepublisher {
             .await
             .map_err(UserKeysRepublisherError::DB)?;
         if keys.is_empty() {
-            tracing::info!("No user keys to republish.");
+            tracing::debug!("No user keys to republish.");
             return Ok(MultiRepublishResult::new(HashMap::new()));
         }
         let mut settings = RepublisherSettings::default();
@@ -96,7 +96,7 @@ impl UserKeysRepublisher {
         loop {
             interval.tick().await;
             let start = Instant::now();
-            tracing::info!("Republishing user keys...");
+            tracing::debug!("Republishing user keys...");
             let result = match Self::republish_keys_once(db.clone(), pkarr_builder.clone()).await {
                 Ok(result) => result,
                 Err(e) => {
@@ -109,7 +109,7 @@ impl UserKeysRepublisher {
                 continue;
             }
             if result.missing().is_empty() {
-                tracing::info!(
+                tracing::debug!(
                     "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
                     result.len(),
                     elapsed.as_secs_f32(),
