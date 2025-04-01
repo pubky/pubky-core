@@ -4,7 +4,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::{net::SocketAddr, str::FromStr};
+use std::str::FromStr;
 
 use anyhow::Result;
 use http_relay::HttpRelay;
@@ -105,7 +105,7 @@ impl FlexibleTestnet {
     }
 
     /// Returns a list of pkarr relays.
-    pub fn dht_relay_urls(&self) -> Box<[Url]> {
+    pub fn dht_relay_urls(&self) -> Vec<Url> {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
@@ -115,18 +115,25 @@ impl FlexibleTestnet {
 
         let mut builder = pubky::Client::builder();
         builder.pkarr(|builder| {
+            builder.bootstrap(&self.dht.bootstrap);
+            if !relays.is_empty() {
+                builder.relays(&relays)
+                    .expect("testnet relays should be valid urls");
+            };
             builder
-                .bootstrap(&self.dht.bootstrap)
-                .relays(&relays)
-                .expect("testnet relays should be valid urls")
         });
 
         builder
     }
 }
 
+#[cfg(test)]
 mod test {
-    use super::*;
+    use pubky::Keypair;
+
+    use crate::FlexibleTestnet;
+
+
 
     #[tokio::test]
     async fn test_keep_relays_alive_even_when_dropped() {
@@ -135,6 +142,21 @@ mod test {
             let _relay = testnet.create_http_relay().await.unwrap();
         }
         assert_eq!(testnet.http_relays.len(), 1);
+    }
+
+    /// Test that a user can signup in the testnet.
+    /// This is an e2e tests to check if everything is correct.
+    #[tokio::test]
+    async fn test_signup() {
+        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        testnet.create_homeserver_suite().await.unwrap();
+        let client = testnet.pubky_client_builder().build().unwrap();
+        let hs = testnet.homeservers.first().unwrap();
+        let keypair = Keypair::random();
+        let pubky = keypair.public_key();
+
+        let session = client.signup(&keypair, &hs.public_key(), None).await.unwrap();
+        assert_eq!(session.pubky(), &pubky);
     }
 
 }

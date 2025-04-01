@@ -90,6 +90,7 @@ impl FixedTestnet {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 

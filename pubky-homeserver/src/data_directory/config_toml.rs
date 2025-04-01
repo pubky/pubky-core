@@ -187,6 +187,8 @@ impl ConfigToml {
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        config.pkdns.public_icann_http_port = None;
+        config.pkdns.public_pubky_tls_port = None;
         config
     }
 }

@@ -42,6 +42,7 @@ pub struct AdminServer {
     http_handle: Handle,
     join_handle: JoinHandle<()>,
     socket: SocketAddr,
+    password: String,
 }
 
 impl AdminServer {
@@ -65,22 +66,26 @@ impl AdminServer {
 
     /// Run the admin server.
     pub async fn run(context: &AppContext) -> anyhow::Result<Self> {
+        let password = context.config_toml.admin.admin_password.clone();
         let state = AppState::new(context.db.clone());
         let socket = context.config_toml.admin.listen_socket;
-        let app = create_app(state, context.config_toml.admin.admin_password.as_str());
+        let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)?;
         let socket = listener.local_addr()?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
-        let join_handle = tokio::spawn( async move {
+        let join_handle = tokio::spawn(async move {
             axum_server::from_tcp(listener)
                 .handle(inner_http_handle)
-                .serve(app).await.unwrap_or_else(|e| tracing::error!("Admin server error: {}", e));
+                .serve(app)
+                .await
+                .unwrap_or_else(|e| tracing::error!("Admin server error: {}", e));
         });
         Ok(Self {
             http_handle,
             socket,
             join_handle,
+            password,
         })
     }
 
@@ -88,11 +93,26 @@ impl AdminServer {
     pub fn listen_socket(&self) -> SocketAddr {
         self.socket
     }
+
+    /// Create a signup token for the given homeserver.
+    pub async fn create_signup_token(&self) -> anyhow::Result<String> {
+        let admin_socket = self.listen_socket();
+        let url = format!("http://{}/admin/generate_signup_token", admin_socket);
+        let response = reqwest::Client::new()
+            .get(url)
+            .header("X-Admin-Password", &self.password)
+            .send()
+            .await?;
+        let response = response.error_for_status()?;
+        let body = response.text().await?;
+        Ok(body)
+    }
 }
 
 impl Drop for AdminServer {
     fn drop(&mut self) {
-        self.http_handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        self.http_handle
+            .graceful_shutdown(Some(Duration::from_secs(5)));
         self.join_handle.abort();
     }
 }

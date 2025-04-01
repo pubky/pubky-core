@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use http_relay::HttpRelay;
 
 use crate::FlexibleTestnet;
@@ -22,7 +20,7 @@ impl SimpleTestnet {
         let mut me = Self { 
             flexible_testnet: FlexibleTestnet::new().await?,
         };
-        
+
         me.flexible_testnet.create_http_relay().await?;
         me.flexible_testnet.create_pkarr_relay().await?;
         me.flexible_testnet.create_homeserver_suite().await?;
@@ -51,9 +49,15 @@ impl SimpleTestnet {
     }
 }
 
+#[cfg(test)]
 mod test {
+    use pubky::Keypair;
+
     use super::*;
 
+    /// Test that two testnets can be run in a row.
+    /// This is to prevent the case where the testnet is not cleaned up properly.
+    /// For example, if the port is not released after the testnet is stopped.
     #[tokio::test]
     async fn test_two_testnet_in_a_row() {
         {
@@ -64,4 +68,5 @@ mod test {
             let _ = SimpleTestnet::run().await.unwrap();
         }
     }
+
 }

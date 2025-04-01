@@ -2342,6 +2342,7 @@ dependencies = [
  "pkarr-republisher",
  "postcard",
  "pubky-common",
+ "reqwest",
  "serde",
  "tempfile",
  "thiserror 2.0.12",

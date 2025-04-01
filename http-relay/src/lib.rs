@@ -210,9 +210,9 @@ mod link {
 }
 
 
-
+#[cfg(test)]
 mod test {
-    use super::*;
+    use crate::HttpRelay;
 
     #[tokio::test]
     async fn test_two_relays_drop_in_a_row() {

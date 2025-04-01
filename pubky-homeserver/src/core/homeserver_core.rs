@@ -76,16 +76,18 @@ impl HomeserverCore {
     /// - (Optional) Runs a periodic backup of the database.
     /// - Creates the web server (router) for testing. Use `listen` to start the server.
     pub async fn new(context: AppContext) -> Result<Self> {
-        let key_republisher = HomeserverKeyRepublisher::run(&context).await?;
+        let (icann_http_handle, pubky_tls_handle, icann_http_socket, pubky_tls_socket) = Self::start_server_tasks(&context).await?;
+
+        let key_republisher = HomeserverKeyRepublisher::run(&context, icann_http_socket.port(), pubky_tls_socket.port()).await?;
         let user_keys_republisher =
             UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(&context);
-        let (icann_http_handle, pubky_tls_handle, icann_http_socket, pubky_tls_socket) = Self::start_server_tasks(&context).await?;
+
         Ok(Self {
             user_keys_republisher,
             key_republisher,
             periodic_backup,
-            context: context.clone(),
+            context,
             icann_http_handle,
             pubky_tls_handle,
             icann_http_socket,
@@ -118,7 +120,10 @@ impl HomeserverCore {
                         .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
-                .map_err(|error| tracing::error!(?error, "Homeserver icann http server error")),
+                .map_err(|error| {
+                    tracing::error!(?error, "Homeserver icann http server error");
+                    println!("Homeserver icann http server error: {:?}", error);
+                }),
         );
 
         // Pubky tls server
@@ -136,7 +141,10 @@ impl HomeserverCore {
                         .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
-                .map_err(|error| tracing::error!(?error, "Homeserver pubky tls server error")),
+                .map_err(|error| {
+                    tracing::error!(?error, "Homeserver pubky tls server error");
+                    println!("Homeserver pubky tls server error: {:?}", error);
+                }),
         );
 
         Ok((http_handle, https_handle, http_socket, https_socket))

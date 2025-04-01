@@ -23,8 +23,8 @@ pub struct HomeserverKeyRepublisher {
 }
 
 impl HomeserverKeyRepublisher {
-    pub async fn run(context: &AppContext) -> Result<Self> {
-        let signed_packet = create_signed_packet(context)?;
+    pub async fn run(context: &AppContext, icann_http_port: u16, pubky_tls_port: u16) -> Result<Self> {
+        let signed_packet = create_signed_packet(context, icann_http_port, pubky_tls_port)?;
         let join_handle =
             Self::start_periodic_republish(context.pkarr_client.clone(), &signed_packet).await?;
         Ok(Self { join_handle })
@@ -86,7 +86,7 @@ impl Drop for HomeserverKeyRepublisher {
     }
 }
 
-pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
+pub fn create_signed_packet(context: &AppContext, local_icann_http_port: u16, local_pubky_tls_port: u16) -> Result<SignedPacket> {
     let root_name: Name = "."
         .try_into()
         .expect(". is the root domain and always valid");
@@ -98,12 +98,12 @@ pub fn create_signed_packet(context: &AppContext) -> Result<SignedPacket> {
         .config_toml
         .pkdns
         .public_pubky_tls_port
-        .unwrap_or(context.config_toml.drive.pubky_listen_socket.port());
+        .unwrap_or(local_pubky_tls_port);
     let public_icann_http_port = context
         .config_toml
         .pkdns
         .public_icann_http_port
-        .unwrap_or(context.config_toml.drive.icann_listen_socket.port());
+        .unwrap_or(local_icann_http_port);
 
     // `SVCB(HTTPS)` record pointing to the pubky tls port and the public ip address
     let mut svcb = SVCB::new(0, root_name.clone());

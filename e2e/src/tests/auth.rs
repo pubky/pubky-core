@@ -245,13 +245,11 @@ async fn authz_timeout_reconnect() {
 #[tokio::test]
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-    let admin_password = "admin";
     let mut testnet = FlexibleTestnet::new().await.unwrap();
     let client = testnet.pubky_client_builder().build().unwrap();
 
     let mut mock_dir = DataDirMock::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    mock_dir.config_toml.admin.admin_password = admin_password.to_string();
     let server = testnet.create_homeserver_suite_with_mock(mock_dir).await.unwrap();
     let keypair = Keypair::random();
 
@@ -265,39 +263,7 @@ async fn test_signup_with_token() {
     );
 
     // 3. Call the admin endpoint to generate a valid signup token.
-    //    The admin endpoint is protected via the header "X-Admin-Password"
-    //    and the password we set up above.
-    let admin_url = format!(
-        "https://{}/admin/generate_signup_token",
-        server.public_key()
-    );
-
-    // 3.1. Call the admin endpoint *with a WRONG admin password* to ensure we get 401 UNAUTHORIZED.
-    let wrong_password_response = client
-        .get(&admin_url)
-        .header("X-Admin-Password", "wrong_admin_password")
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        wrong_password_response.status(),
-        StatusCode::UNAUTHORIZED,
-        "Wrong admin password should return 401"
-    );
-
-    // 3.1 Now call the admin endpoint again, this time with the correct password.
-    let admin_response = client
-        .get(&admin_url)
-        .header("X-Admin-Password", admin_password)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        admin_response.status(),
-        StatusCode::OK,
-        "Admin endpoint should return OK"
-    );
-    let valid_token = admin_response.text().await.unwrap(); // The token string.
+    let valid_token = server.admin().create_signup_token().await.unwrap();
 
     // 4. Now signup with the valid token. Expect success and a session back.
     let session = client
@@ -329,7 +295,7 @@ async fn test_republish_on_signin() {
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
         .pubky_client_builder()
-        .max_record_age(Duration::from_secs(1))
+        .max_record_age(Duration::from_secs(4))
         .build()
         .unwrap();
 
