@@ -4,7 +4,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::str::FromStr;
+use std::{net::SocketAddr, str::FromStr};
 
 use anyhow::Result;
 use http_relay::HttpRelay;

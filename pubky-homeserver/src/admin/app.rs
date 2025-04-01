@@ -69,6 +69,7 @@ impl AdminServer {
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, context.config_toml.admin.admin_password.as_str());
         let listener = std::net::TcpListener::bind(socket)?;
+        let socket = listener.local_addr()?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
         let join_handle = tokio::spawn( async move {

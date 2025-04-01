@@ -47,8 +47,7 @@ impl HomeserverSuite {
 
     /// Run a Homeserver
     pub async fn run(context: AppContext) -> Result<Self> {
-        let mut core = HomeserverCore::new(context.clone()).await?;
-        core.listen().await?;
+        let core = HomeserverCore::new(context.clone()).await?;
         let admin_server = AdminServer::run(&context).await?;
 
         Ok(Self {

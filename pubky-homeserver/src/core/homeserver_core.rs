@@ -39,13 +39,12 @@ pub struct HomeserverCore {
     pub(crate) key_republisher: HomeserverKeyRepublisher,
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
-    /// The web server (router) for testing. Use `listen` to start the server.
-    #[allow(dead_code)]
-    pub router: Router,
     /// Keep context alive.
     context: AppContext,
-    pub(crate) icann_http_handle: Option<Handle>,
-    pub(crate) pubky_tls_handle: Option<Handle>,
+    pub(crate) icann_http_handle: Handle,
+    pub(crate) pubky_tls_handle: Handle,
+    pub(crate) icann_http_socket: SocketAddr,
+    pub(crate) pubky_tls_socket: SocketAddr,
 }
 
 impl HomeserverCore {
@@ -81,31 +80,17 @@ impl HomeserverCore {
         let user_keys_republisher =
             UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(&context);
-        let router = Self::create_router(&context);
-
+        let (icann_http_handle, pubky_tls_handle, icann_http_socket, pubky_tls_socket) = Self::start_server_tasks(&context).await?;
         Ok(Self {
             user_keys_republisher,
             key_republisher,
             periodic_backup,
-            router,
             context: context.clone(),
-            icann_http_handle: None,
-            pubky_tls_handle: None,
+            icann_http_handle,
+            pubky_tls_handle,
+            icann_http_socket,
+            pubky_tls_socket,
         })
-    }
-
-    /// Start listening on the http and tls sockets.
-    pub async fn listen(&mut self) -> Result<()> {
-        let (icann_http_handle, pubky_tls_handle) = self.start_server_tasks().await?;
-        self.icann_http_handle = Some(icann_http_handle);
-        self.pubky_tls_handle = Some(pubky_tls_handle);
-        Ok(())
-    }
-
-    /// Check if the http and tls servers are listening.
-    #[allow(dead_code)]
-    pub async fn is_listening(&self) -> bool {
-        self.icann_http_handle.is_some()
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
@@ -117,12 +102,13 @@ impl HomeserverCore {
         super::routes::create_app(state.clone())
     }
 
-    /// Start the http and tls servers.
-    async fn start_server_tasks(&self) -> Result<(Handle, Handle)> {
-        let router = Self::create_router(&self.context);
+    /// Start listening on the http and tls sockets.
+    async fn start_server_tasks(context: &AppContext) -> Result<(Handle, Handle, SocketAddr, SocketAddr)> {
+        let router = Self::create_router(context);
 
         // Icann http server
-        let http_listener = TcpListener::bind(self.context.config_toml.drive.icann_listen_socket)?;
+        let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
+        let http_socket = http_listener.local_addr()?;
         let http_handle = Handle::new();
         tokio::spawn(
             axum_server::from_tcp(http_listener)
@@ -136,13 +122,13 @@ impl HomeserverCore {
         );
 
         // Pubky tls server
-        let https_listener = TcpListener::bind(self.context.config_toml.drive.pubky_listen_socket)?;
-
+        let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
+        let https_socket = https_listener.local_addr()?;
         let https_handle = Handle::new();
         tokio::spawn(
             axum_server::from_tcp(https_listener)
                 .acceptor(RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
-                    self.context.keypair.to_rpk_rustls_server_config(),
+                    context.keypair.to_rpk_rustls_server_config(),
                 ))))
                 .handle(https_handle.clone())
                 .serve(
@@ -153,14 +139,14 @@ impl HomeserverCore {
                 .map_err(|error| tracing::error!(?error, "Homeserver pubky tls server error")),
         );
 
-        Ok((http_handle, https_handle))
+        Ok((http_handle, https_handle, http_socket, https_socket))
     }
 
     /// Get the URL of the icann http server.
     pub fn icann_http_url(&self) -> String {
         format!(
             "http://{}",
-            self.context.config_toml.drive.icann_listen_socket
+            self.icann_http_socket
         )
     }
 
@@ -173,18 +159,19 @@ impl HomeserverCore {
     pub fn pubky_tls_ip_url(&self) -> String {
         format!(
             "https://{}",
-            self.context.config_toml.drive.pubky_listen_socket
+            self.pubky_tls_socket
         )
+    }
+
+    /// Shutdown the http and tls servers.
+    pub fn shutdown(&self) {
+        self.icann_http_handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        self.pubky_tls_handle.graceful_shutdown(Some(Duration::from_secs(5)));
     }
 }
 
 impl Drop for HomeserverCore {
     fn drop(&mut self) {
-        if let Some(handle) = self.icann_http_handle.take() {
-            handle.graceful_shutdown(Some(Duration::from_secs(5)));
-        }
-        if let Some(handle) = self.pubky_tls_handle.take() {
-            handle.graceful_shutdown(Some(Duration::from_secs(5)));
-        }
+        self.shutdown();
     }
 }

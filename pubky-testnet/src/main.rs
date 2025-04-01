@@ -1,5 +1,5 @@
 use anyhow::Result;
-use pubky_testnet::SimpleTestnet;
+use pubky_testnet::FixedTestnet;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let testnet = SimpleTestnet::run().await?;
+    let testnet = FixedTestnet::run().await?;
     tracing::info!("Testnet running");
     tracing::info!("DHT Bootstrap Nodes: {}", testnet.flexible_testnet.dht_bootstrap_nodes().into_iter().map(|node| node.to_string()).collect::<Vec<String>>().join(", "));
     tracing::info!("Pkarr Relay: {}", testnet.pkarr_relay().local_url());

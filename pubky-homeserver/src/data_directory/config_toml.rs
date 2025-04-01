@@ -183,8 +183,10 @@ impl ConfigToml {
     /// Returns a default config appropriate for testing.
     pub fn test() -> Self {
         let mut config = Self::default();
-        config.pkdns.dht_bootstrap_nodes = Some(vec![]);
         config.general.signup_mode = SignupMode::Open;
+        config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config
     }
 }
