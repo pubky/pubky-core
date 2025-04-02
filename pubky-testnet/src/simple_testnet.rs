@@ -22,7 +22,6 @@ impl SimpleTestnet {
         };
 
         me.flexible_testnet.create_http_relay().await?;
-        me.flexible_testnet.create_pkarr_relay().await?;
         me.flexible_testnet.create_homeserver_suite().await?;
 
         Ok(me)
@@ -42,17 +41,10 @@ impl SimpleTestnet {
     pub fn http_relay(&self) -> &HttpRelay {
         self.flexible_testnet.http_relays.first().expect("http relays should be non-empty")
     }
-
-    /// Get the pkarr relay in the testnet.
-    pub fn pkarr_relay(&self) -> &pkarr_relay::Relay {
-        self.flexible_testnet.pkarr_relays.first().expect("pkarr relays should be non-empty")
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use pubky::Keypair;
-
     use super::*;
 
     /// Test that two testnets can be run in a row.

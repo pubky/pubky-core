@@ -1,8 +1,13 @@
-use pkarr::Keypair;
-use pubky_common::capabilities::{Capabilities, Capability};
-use pubky_testnet::{pubky_homeserver::{DataDirMock, SignupMode}, FlexibleTestnet, SimpleTestnet};
-use reqwest::StatusCode;
-use std::time::Duration;
+
+
+#[cfg(test)]
+mod test {
+    use pkarr::Keypair;
+    use pubky_common::capabilities::{Capabilities, Capability};
+    use pubky_testnet::{pubky_homeserver::{DataDirMock, SignupMode}, FlexibleTestnet, SimpleTestnet};
+    use reqwest::StatusCode;
+    use std::time::Duration;
+
 
 #[tokio::test]
 async fn basic_authn() {
@@ -290,12 +295,13 @@ async fn test_signup_with_token() {
 // the record is republished (its timestamp increases).
 #[tokio::test]
 async fn test_republish_on_signin() {
+    let max_record_age = Duration::from_secs(4);
     // Setup the testnet and run a homeserver.
     let mut testnet = FlexibleTestnet::new().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
         .pubky_client_builder()
-        .max_record_age(Duration::from_secs(4))
+        .max_record_age(max_record_age)
         .build()
         .unwrap();
 
@@ -335,7 +341,7 @@ async fn test_republish_on_signin() {
     );
 
     // Wait long enough for the record to be considered 'old' (greater than 1 second).
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(max_record_age).await;
     // Sign in again. Now the background task should trigger a republish.
     client.signin(&keypair).await.unwrap();
     tokio::time::sleep(Duration::from_millis(5)).await;
@@ -414,4 +420,6 @@ async fn test_republish_homeserver() {
         ts3 > ts2,
         "Record was not republished after threshold exceeded"
     );
+}
+
 }

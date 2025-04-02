@@ -1,4 +1,5 @@
 use pubky_testnet::SimpleTestnet;
+use reqwest::Method;
 
 #[tokio::test]
 async fn http_get_pubky() {
@@ -23,7 +24,7 @@ async fn http_get_icann() {
     let client = testnet.pubky_client_builder().build().unwrap();
 
     let response = client
-        .request(Default::default(), "https://example.com/")
+        .request(Method::GET, "https://example.com/")
         .send()
         .await
         .unwrap();

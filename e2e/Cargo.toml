@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 pubky-testnet = { path = "../pubky-testnet" }
 pubky-common = { path = "../pubky-common" }
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.43.0", features = ["full", "test-util"] }
 tracing-subscriber = "0.3.19"
 pkarr = "3.6.0"
 reqwest = "0.12.15"

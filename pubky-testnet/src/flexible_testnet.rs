@@ -4,7 +4,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
@@ -116,10 +116,15 @@ impl FlexibleTestnet {
         let mut builder = pubky::Client::builder();
         builder.pkarr(|builder| {
             builder.bootstrap(&self.dht.bootstrap);
-            if !relays.is_empty() {
+            if relays.is_empty() {
+                builder.no_relays();
+            } else {
                 builder.relays(&relays)
-                    .expect("testnet relays should be valid urls");
-            };
+                .expect("testnet relays should be valid urls");
+            }
+            // 100ms timeout for requests. This makes methods like `resolve_most_recent` fast 
+            // because it doesn't need to wait the default 2s which would slow down the tests.
+            builder.request_timeout(Duration::from_millis(3000)); 
             builder
         });
 
