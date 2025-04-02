@@ -26,6 +26,7 @@ impl Client {
         let url = url.as_str();
 
         if url.starts_with("pubky://") {
+            // Rewrite pubky:// urls to https://_pubky.
             let url = format!("https://_pubky.{}", url.split_at(8).1);
 
             return self.http.request(method, url);

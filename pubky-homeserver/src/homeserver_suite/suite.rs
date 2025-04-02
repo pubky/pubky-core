@@ -74,7 +74,7 @@ impl HomeserverSuite {
 
     /// Returns the `https://<server public key>` url
     pub fn pubky_url(&self) -> url::Url {
-        url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
+        url::Url::parse(&format!("pubky://{}", self.public_key())).expect("valid url")
     }
 
     /// Returns the `https://<server public key>` url

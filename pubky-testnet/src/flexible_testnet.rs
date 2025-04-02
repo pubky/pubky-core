@@ -28,6 +28,7 @@ impl FlexibleTestnet {
     /// Run a new testnet with a local DHT.
     pub async fn new() -> Result<Self> {
         let dht = mainline::Testnet::new(3)?;
+        dht.leak();
         let testnet = Self {
             dht,
             pkarr_relays: vec![],
@@ -90,6 +91,27 @@ impl FlexibleTestnet {
         Ok(url)
     }
 
+    /// Run a new Pkarr relay.
+    ///
+    /// You can access the list of relays at [Self::relays].
+    pub async fn create_pkarr_relay2(&mut self) -> Result<Url> {
+        let mut builder =pkarr_relay::Relay::builder();
+        builder
+        .disable_rate_limiter()
+        .cache_size(0)
+        .http_port(0)
+        .pkarr(|builder| {
+            builder.bootstrap(&self.dht.bootstrap);
+            builder.request_timeout(Duration::from_millis(2000));
+            builder
+        });
+        let relay = unsafe { builder.run().await? };
+        let url = relay.local_url();
+        self.pkarr_relays.push(relay);
+
+        Ok(url)
+    }
+
     // === Getters ===
 
     /// Returns a list of DHT bootstrapping nodes.
@@ -124,10 +146,23 @@ impl FlexibleTestnet {
             }
             // 100ms timeout for requests. This makes methods like `resolve_most_recent` fast 
             // because it doesn't need to wait the default 2s which would slow down the tests.
-            builder.request_timeout(Duration::from_millis(3000)); 
+            builder.request_timeout(Duration::from_millis(2000)); 
             builder
         });
 
+        builder
+    }
+
+    /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
+    pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
+        let relays = self.dht_relay_urls();
+        let mut builder = pkarr::Client::builder();
+        if relays.is_empty() {
+            builder.no_relays();
+        } else {
+            builder.relays(&relays).expect("Testnet relays should be valid urls");
+        }
+        builder.bootstrap(&self.dht.bootstrap);
         builder
     }
 }
@@ -135,11 +170,9 @@ impl FlexibleTestnet {
 #[cfg(test)]
 mod test {
     use pubky::Keypair;
-
     use crate::FlexibleTestnet;
 
-
-
+    /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
     async fn test_keep_relays_alive_even_when_dropped() {
         let mut testnet = FlexibleTestnet::new().await.unwrap();
@@ -162,6 +195,29 @@ mod test {
 
         let session = client.signup(&keypair, &hs.public_key(), None).await.unwrap();
         assert_eq!(session.pubky(), &pubky);
+    }
+
+    #[tokio::test]
+    async fn test_independent_dhts() {
+        let t1 = FlexibleTestnet::new().await.unwrap();
+        let t2 = FlexibleTestnet::new().await.unwrap();
+        
+        assert_ne!(t1.dht.bootstrap, t2.dht.bootstrap);
+    }
+
+    /// If everything is linked correctly, the hs_pubky should be resolvable from the pkarr client.
+    #[tokio::test]
+    async fn test_homeserver_resolvable() {
+        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        let hs_pubky = testnet.create_homeserver_suite().await.unwrap().public_key();
+
+        // Make sure the pkarr packet of the hs is resolvable.
+        let pkarr_client = testnet.pkarr_client_builder().build().unwrap();
+        let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
+        
+        // Make sure the pkarr can resolve the hs_pubky.
+        let pubkey = format!("{}", hs_pubky);
+        let _endpoint = pkarr_client.resolve_https_endpoint(pubkey.as_str()).await.unwrap();
     }
 
 }

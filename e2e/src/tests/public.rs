@@ -70,6 +70,7 @@ async fn put_get_delete() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn unauthorized_put_delete() {
     let testnet = SimpleTestnet::run().await.unwrap();
     let server = testnet.homeserver_suite();

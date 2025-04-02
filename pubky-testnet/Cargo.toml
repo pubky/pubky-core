@@ -24,5 +24,6 @@ pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver"}
 http-relay = { version = "0.2.0", path = "../http-relay"}
 tempfile = "3.19.1"
 tracing = "0.1.41"
+pkarr = "3.6.0"
 
 

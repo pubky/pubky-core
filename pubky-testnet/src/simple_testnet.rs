@@ -22,6 +22,7 @@ impl SimpleTestnet {
         };
 
         me.flexible_testnet.create_http_relay().await?;
+        // me.flexible_testnet.create_pkarr_relay2().await?;
         me.flexible_testnet.create_homeserver_suite().await?;
 
         Ok(me)
@@ -30,6 +31,11 @@ impl SimpleTestnet {
     /// Create a new pubky client builder.
     pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
         self.flexible_testnet.pubky_client_builder()
+    }
+
+    /// Create a new pkarr client builder.
+    pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
+        self.flexible_testnet.pkarr_client_builder()
     }
 
     /// Get the homeserver in the testnet.
@@ -61,4 +67,6 @@ mod test {
         }
     }
 
+
 }
+

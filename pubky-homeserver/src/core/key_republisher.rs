@@ -142,3 +142,25 @@ pub fn create_signed_packet(context: &AppContext, local_icann_http_port: u16, lo
 
     Ok(signed_packet_builder.build(&context.keypair)?)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_resolve_https_endpoint_with_pkarr_client() {
+        let context = AppContext::test();
+        let _republisher = HomeserverKeyRepublisher::run(&context, 8080, 8080).await.unwrap();
+        let pkarr_client = context.pkarr_client.clone();
+        let hs_pubky = context.keypair.public_key();
+        // Make sure the pkarr packet of the hs is resolvable.
+        let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
+        // Make sure the pkarr client can resolve the endpoint of the hs.
+        let qname = format!("{}", hs_pubky);
+        let endpoint = pkarr_client.resolve_https_endpoint(qname.as_str()).await.unwrap();
+        assert_eq!(endpoint.to_socket_addrs().first().unwrap().clone(), SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080));
+    }
+}

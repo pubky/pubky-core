@@ -1,13 +1,12 @@
 
-
-#[cfg(test)]
-mod test {
-    use pkarr::Keypair;
-    use pubky_common::capabilities::{Capabilities, Capability};
-    use pubky_testnet::{pubky_homeserver::{DataDirMock, SignupMode}, FlexibleTestnet, SimpleTestnet};
-    use reqwest::StatusCode;
-    use std::time::Duration;
-
+use pkarr::Keypair;
+use pubky_common::capabilities::{Capabilities, Capability};
+use pubky_testnet::{
+    pubky_homeserver::{DataDirMock, SignupMode},
+    FlexibleTestnet, SimpleTestnet,
+};
+use reqwest::StatusCode;
+use std::time::Duration;
 
 #[tokio::test]
 async fn basic_authn() {
@@ -255,7 +254,10 @@ async fn test_signup_with_token() {
 
     let mut mock_dir = DataDirMock::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet.create_homeserver_suite_with_mock(mock_dir).await.unwrap();
+    let server = testnet
+        .create_homeserver_suite_with_mock(mock_dir)
+        .await
+        .unwrap();
     let keypair = Keypair::random();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
@@ -295,7 +297,7 @@ async fn test_signup_with_token() {
 // the record is republished (its timestamp increases).
 #[tokio::test]
 async fn test_republish_on_signin() {
-    let max_record_age = Duration::from_secs(4);
+    let max_record_age = Duration::from_secs(2);
     // Setup the testnet and run a homeserver.
     let mut testnet = FlexibleTestnet::new().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1 second
@@ -323,9 +325,8 @@ async fn test_republish_on_signin() {
 
     // Immediately sign in. This spawns a background task to update the record
     // with PublishStrategy::IfOlderThan.
-    client.signin(&keypair).await.unwrap();
-    // Wait a short time to let the background task complete.
-    tokio::time::sleep(Duration::from_millis(5)).await;
+    client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
+
     let record2 = client
         .pkarr()
         .resolve_most_recent(&keypair.public_key())
@@ -343,8 +344,7 @@ async fn test_republish_on_signin() {
     // Wait long enough for the record to be considered 'old' (greater than 1 second).
     tokio::time::sleep(max_record_age).await;
     // Sign in again. Now the background task should trigger a republish.
-    client.signin(&keypair).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(5)).await;
+    client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
     let record3 = client
         .pkarr()
         .resolve_most_recent(&keypair.public_key())
@@ -363,11 +363,12 @@ async fn test_republish_on_signin() {
 async fn test_republish_homeserver() {
     // Setup the testnet and run a homeserver.
     let mut testnet = FlexibleTestnet::new().await.unwrap();
+    let max_record_age = Duration::from_secs(5);
 
     // Create a client that will republish conditionally if a record is older than 1 second
     let client = testnet
         .pubky_client_builder()
-        .max_record_age(Duration::from_secs(1))
+        .max_record_age(max_record_age)
         .build()
         .unwrap();
     let server = testnet.create_homeserver_suite().await.unwrap();
@@ -404,7 +405,7 @@ async fn test_republish_homeserver() {
     );
 
     // Wait long enough for the record to be considered 'old'.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    tokio::time::sleep(max_record_age).await;
     // Call republish_homeserver again; now the record should be updated.
     client
         .republish_homeserver(&keypair, &server.public_key())
@@ -420,6 +421,4 @@ async fn test_republish_homeserver() {
         ts3 > ts2,
         "Record was not republished after threshold exceeded"
     );
-}
-
 }

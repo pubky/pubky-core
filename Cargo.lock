@@ -2363,6 +2363,7 @@ dependencies = [
  "anyhow",
  "http-relay",
  "mainline",
+ "pkarr",
  "pkarr-relay",
  "pubky",
  "pubky-common",
