@@ -68,6 +68,7 @@ dht_bootstrap_nodes = [
 
 # Relay node urls for the DHT.
 # Improves the availability of pkarr packets.
+# If not set and no bootstrap nodes are set, the default pkarr relay nodes will be used.
 dht_relay_nodes = [
     "https://relay.pkarr.org", 
     "https://pkarr.pubky.org"

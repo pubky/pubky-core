@@ -90,7 +90,13 @@ impl AppContext {
                 .map(|node| node.to_string())
                 .collect::<Vec<String>>();
             builder.bootstrap(&nodes);
+            
+            // If we set custom bootstrap nodes, we don't want to use the default pkarr relay nodes.
+            // Otherwise, we could end up with a DHT with testnet boostrap nodes and mainnet relays
+            // which would give very weird results.
+            builder.no_relays();
         }
+        
         if let Some(relays) = &config_toml.pkdns.dht_relay_nodes {
             builder
                 .relays(relays)

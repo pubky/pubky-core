@@ -1716,26 +1716,6 @@ checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
 [[package]]
 name = "mainline"
 version = "5.4.0"
-dependencies = [
- "crc",
- "document-features",
- "dyn-clone",
- "ed25519-dalek",
- "flume",
- "futures-lite",
- "getrandom 0.2.15",
- "lru",
- "serde",
- "serde_bencode",
- "serde_bytes",
- "sha1_smol",
- "thiserror 2.0.12",
- "tracing",
-]
-
-[[package]]
-name = "mainline"
-version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c258b001fa52b7270dc1a239b36a9b608b024e68733648c1757b025204fdc248"
 dependencies = [
@@ -2136,7 +2116,7 @@ dependencies = [
  "heed",
  "log",
  "lru",
- "mainline 5.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mainline",
  "ntimestamp",
  "page_size",
  "reqwest",
@@ -2302,7 +2282,7 @@ dependencies = [
  "getrandom 0.3.1",
  "js-sys",
  "log",
- "mainline 5.4.0",
+ "mainline",
  "pkarr",
  "pubky-common",
  "pubky-testnet",
@@ -2381,7 +2361,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "http-relay",
- "mainline 5.4.0",
+ "mainline",
  "pkarr",
  "pkarr-relay",
  "pubky",

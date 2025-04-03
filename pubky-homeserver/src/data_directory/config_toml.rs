@@ -42,7 +42,8 @@ pub struct PkdnsToml {
     #[serde(default = "default_dht_bootstrap_nodes")]
     pub dht_bootstrap_nodes: Option<Vec<DomainPort>>,
 
-    /// The list of relay nodes for the DHT. If None, the default pkarr relay nodes will be used.
+    /// The list of relay nodes for the DHT. 
+    /// If not set and no bootstrap nodes are set, the default pkarr relay nodes will be used.
     #[serde(default = "default_dht_relay_nodes")]
     pub dht_relay_nodes: Option<Vec<Url>>,
 
@@ -168,9 +169,12 @@ impl ConfigToml {
         DEFAULT_CONFIG
             .split("\n")
             .map(|line| {
-                let is_not_commented_variable =
-                    !line.starts_with("#") && !line.starts_with("[") && line.is_empty();
-                if is_not_commented_variable {
+                let is_title = line.starts_with("[");
+                let is_comment = line.starts_with("#");
+                let is_empty = line.is_empty();
+
+                let is_other = !is_title && !is_comment && !is_empty;
+                if is_other {
                     format!("# {}", line)
                 } else {
                     line.to_string()
@@ -183,20 +187,19 @@ impl ConfigToml {
     /// Returns a default config appropriate for testing.
     pub fn test() -> Self {
         let mut config = Self::default();
+        // For easy testing, we set the signup mode to open.
         config.general.signup_mode = SignupMode::Open;
+        // Set the listen ports to randomly available ports so they don't conflict.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        config.pkdns.public_icann_http_port = None;
-        config.pkdns.public_pubky_tls_port = None;
-        config.drive.icann_domain = None;
         config
     }
 }
 
 impl Default for ConfigToml {
     fn default() -> Self {
-        DEFAULT_CONFIG
+        ConfigToml::default_string()
             .parse()
             .expect("Default config is always valid")
     }
@@ -274,6 +277,7 @@ mod tests {
         // Sanity check that the default config is valid
         // even when the variables are commented out.
         let s = ConfigToml::default_string();
-        let _: ConfigToml = s.parse().expect("Failed to parse config");
+        let parsed: ConfigToml = s.parse().expect("Failed to parse config");
+        assert_eq!(parsed.pkdns.dht_bootstrap_nodes, None, "dht_bootstrap_nodes not commented out");
     }
 }

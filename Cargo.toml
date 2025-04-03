@@ -17,6 +17,6 @@ opt-level = 'z'
 
 [workspace.dependencies]
 pkarr = { version = "3.7.0" }
-# mainline = { version = "5.4.0" }
-mainline = { path = "/Users/severinbuhler/git/pknames/mainline" }
+mainline = { version = "5.4.0" }
+# mainline = { path = "/Users/severinbuhler/git/pknames/mainline" }
 pkarr-relay = { version = "0.9.0" }
