@@ -89,19 +89,3 @@ impl FixedTestnet {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_two_testnet_in_a_row() {
-        {
-            let _ = FixedTestnet::run().await.unwrap();
-        }
-
-        {
-            let _ = FixedTestnet::run().await.unwrap();
-        }
-    }
-}

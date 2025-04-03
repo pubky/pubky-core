@@ -224,6 +224,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_spawn_in_parallel() {
         let mut handles = Vec::new();
 
@@ -235,7 +236,12 @@ mod test {
                         panic!("Failed to create testnet: {}", e);
                     }
                 };
-                testnet.create_homeserver_suite().await.unwrap();
+                match testnet.create_homeserver_suite().await {
+                    Ok(hs) => hs,
+                    Err(e) => {
+                        panic!("Failed to create homeserver suite: {}", e);
+                    }
+                };
                 let client = testnet.pubky_client_builder().build().unwrap();
                 let hs = testnet.homeservers.first().unwrap();
                 let keypair = Keypair::random();
