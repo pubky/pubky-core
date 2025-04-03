@@ -12,8 +12,7 @@ categories = ["web-programming", "authentication", "cryptography"]
 
 [dependencies]
 anyhow = "1.0.95"
-mainline = "5.2.0"
-pkarr-relay = "0.5.7"
+pkarr-relay = { workspace = true }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"
 url = "2.5.4"
@@ -24,6 +23,7 @@ pubky-homeserver = { version = "0.1.2", path = "../pubky-homeserver"}
 http-relay = { version = "0.2.0", path = "../http-relay"}
 tempfile = "3.19.1"
 tracing = "0.1.41"
-pkarr = "3.6.0"
+pkarr = {workspace = true}
+mainline = {workspace = true}
 
 

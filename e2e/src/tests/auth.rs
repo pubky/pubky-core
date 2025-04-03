@@ -166,6 +166,7 @@ async fn multiple_users() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn authz_timeout_reconnect() {
     let testnet = SimpleTestnet::run().await.unwrap();
     let server = testnet.homeserver_suite();

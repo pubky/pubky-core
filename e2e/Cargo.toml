@@ -8,6 +8,6 @@ pubky-testnet = { path = "../pubky-testnet" }
 pubky-common = { path = "../pubky-common" }
 tokio = { version = "1.43.0", features = ["full", "test-util"] }
 tracing-subscriber = "0.3.19"
-pkarr = "3.6.0"
+pkarr = {workspace = true}
 reqwest = "0.12.15"
 bytes = "1.10.1"

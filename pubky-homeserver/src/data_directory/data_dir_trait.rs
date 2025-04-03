@@ -6,7 +6,7 @@ use std::path::Path;
 /// Used to abstract the data directory from the rest of the code.
 ///
 /// To create a real dir and a test dir.
-pub trait DataDirTrait: std::fmt::Debug + DynClone {
+pub trait DataDirTrait: std::fmt::Debug + DynClone + Send + Sync {
     /// Returns the path to the data directory.
     fn path(&self) -> &Path;
     /// Makes sure the data directory exists.
@@ -21,3 +21,5 @@ pub trait DataDirTrait: std::fmt::Debug + DynClone {
     /// Creates a new secret file if it doesn't exist.
     fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair>;
 }
+
+dyn_clone::clone_trait_object!(DataDirTrait);

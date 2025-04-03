@@ -1715,9 +1715,29 @@ checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
 
 [[package]]
 name = "mainline"
-version = "5.3.1"
+version = "5.4.0"
+dependencies = [
+ "crc",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "flume",
+ "futures-lite",
+ "getrandom 0.2.15",
+ "lru",
+ "serde",
+ "serde_bencode",
+ "serde_bytes",
+ "sha1_smol",
+ "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
+name = "mainline"
+version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fae24c3d129b92c8cfea92a9e2014052371a2835e4a6d66dfdb00238e389e56"
+checksum = "c258b001fa52b7270dc1a239b36a9b608b024e68733648c1757b025204fdc248"
 dependencies = [
  "crc",
  "document-features",
@@ -2097,9 +2117,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7288f55e8981cce659ff14e05bbc0ade2d3015e45601ed4eb8ae8736c55c2a5b"
+checksum = "24978a42d7bc028516e83fd67696db8bd81d79c0743b9d2fd078e277d7b78494"
 dependencies = [
  "async-compat",
  "base32",
@@ -2116,7 +2136,7 @@ dependencies = [
  "heed",
  "log",
  "lru",
- "mainline",
+ "mainline 5.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ntimestamp",
  "page_size",
  "reqwest",
@@ -2135,9 +2155,9 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.5.7"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "431e2bb798f7dbc155644552ceef790e66b12a7c1c10ccd34d175148af3ba882"
+checksum = "fa52d5c630c85d587597f8641126e317e720f4893302b14268c5849cfd554545"
 dependencies = [
  "anyhow",
  "axum",
@@ -2148,7 +2168,6 @@ dependencies = [
  "governor",
  "http",
  "httpdate",
- "mainline",
  "pkarr",
  "rustls",
  "serde",
@@ -2283,7 +2302,7 @@ dependencies = [
  "getrandom 0.3.1",
  "js-sys",
  "log",
- "mainline",
+ "mainline 5.4.0",
  "pkarr",
  "pubky-common",
  "pubky-testnet",
@@ -2362,7 +2381,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "http-relay",
- "mainline",
+ "mainline 5.4.0",
  "pkarr",
  "pkarr-relay",
  "pubky",

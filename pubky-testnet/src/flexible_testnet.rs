@@ -18,7 +18,7 @@ use url::Url;
 /// Keeps track of the components and can create new ones.
 /// Cleans up all resources when dropped.
 pub struct FlexibleTestnet {
-    pub(crate) dht: mainline::Testnet,
+    pub(crate) dht: pkarr::mainline::Testnet,
     pub(crate) pkarr_relays: Vec<pkarr_relay::Relay>,
     pub(crate) http_relays: Vec<HttpRelay>,
     pub(crate) homeservers: Vec<HomeserverSuite>,
@@ -27,8 +27,7 @@ pub struct FlexibleTestnet {
 impl FlexibleTestnet {
     /// Run a new testnet with a local DHT.
     pub async fn new() -> Result<Self> {
-        let dht = mainline::Testnet::new(3)?;
-        dht.leak();
+        let dht = pkarr::mainline::Testnet::new_async(3).await?;
         let testnet = Self {
             dht,
             pkarr_relays: vec![],
@@ -101,6 +100,7 @@ impl FlexibleTestnet {
         .cache_size(0)
         .http_port(0)
         .pkarr(|builder| {
+            builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
             builder.request_timeout(Duration::from_millis(2000));
             builder
@@ -137,6 +137,7 @@ impl FlexibleTestnet {
 
         let mut builder = pubky::Client::builder();
         builder.pkarr(|builder| {
+            builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
             if relays.is_empty() {
                 builder.no_relays();
@@ -157,6 +158,7 @@ impl FlexibleTestnet {
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
         let relays = self.dht_relay_urls();
         let mut builder = pkarr::Client::builder();
+        builder.no_default_network();
         if relays.is_empty() {
             builder.no_relays();
         } else {
@@ -169,6 +171,8 @@ impl FlexibleTestnet {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use pubky::Keypair;
     use crate::FlexibleTestnet;
 
@@ -220,4 +224,99 @@ mod test {
         let _endpoint = pkarr_client.resolve_https_endpoint(pubkey.as_str()).await.unwrap();
     }
 
+    #[tokio::test]
+    async fn test_spawn_in_parallel() {
+        let mut handles = Vec::new();
+
+        for _ in 0..3 {
+            let handle = tokio::spawn(async move {
+                let mut testnet = match FlexibleTestnet::new().await {
+                    Ok(testnet) => testnet,
+                    Err(e) => {
+                        panic!("Failed to create testnet: {}", e);
+                    }
+                };
+                let _hs = match testnet.create_homeserver_suite().await {
+                    Ok(hs) => hs,
+                    Err(e) => {
+                        panic!("Failed to create homeserver suite: {}", e);
+                    }
+                };
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            match handle.await {
+                Ok(_) => {}
+                Err(e) => {
+                    panic!("{}", e);
+                }
+            }
+        }
+    }
+
+
+    #[tokio::test]
+    async fn test_spawn_dht_in_parallel() {
+        let mut handles = Vec::new();
+
+        for _ in 0..3 {
+            let handle = tokio::spawn(async move {
+                let dht = match mainline::Testnet::new_async(3).await {
+                    Ok(dht) => dht,
+                    Err(e) => {
+                        panic!("Failed to create dht: {}", e);
+                    }
+                };
+
+                let client = pkarr::Client::builder().no_default_network().bootstrap(&dht.bootstrap).build().unwrap();
+                let keypair = Keypair::from_secret_key(&[0; 32]);
+
+
+                if let Some(packet) = client.resolve(&keypair.public_key()).await {
+                    panic!("Packet should not be resolvable: {:?}", packet);
+                };
+
+                let signed_packet = pkarr::SignedPacket::builder()
+                .cname(".".try_into().unwrap(), "example.com".try_into().unwrap(), 600)
+                .sign(&keypair).unwrap();
+                if let Err(e) = client.publish(&signed_packet, None).await {
+                        panic!("Failed to publish packet: {}", e);
+                }
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            match handle.await {
+                Ok(_) => {}
+                Err(e) => {
+                    panic!("{}", e);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_spawn_dht_single() {
+        let dht = match pkarr::mainline::Testnet::new_async(3).await {
+            Ok(dht) => dht,
+            Err(e) => {
+                panic!("Failed to create dht: {}", e);
+            }
+        };
+
+        let client = pkarr::Client::builder().bootstrap(&dht.bootstrap).build().unwrap();
+        let keypair = Keypair::from_secret_key(&[0; 32]);
+        let signed_packet = pkarr::SignedPacket::builder()
+        .cname(".".try_into().unwrap(), "example.com".try_into().unwrap(), 600)
+        .sign(&keypair).unwrap();
+        if let Err(e) = client.publish(&signed_packet, None).await {
+                panic!("Failed to publish packet: {}", e);
+        }
+    }
+    
 }

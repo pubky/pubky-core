@@ -66,7 +66,5 @@ mod test {
             let _ = SimpleTestnet::run().await.unwrap();
         }
     }
-
-
 }
 
