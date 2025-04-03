@@ -297,18 +297,17 @@ async fn test_signup_with_token() {
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
 #[tokio::test]
-async fn test_republish_on_signin() {
-    let max_record_age = Duration::from_secs(2);
+async fn test_republish_on_signin_old_enough() {
     // Setup the testnet and run a homeserver.
-    let mut testnet = FlexibleTestnet::new().await.unwrap();
-    // Create a client that will republish conditionally if a record is older than 1 second
+    let testnet = SimpleTestnet::run().await.unwrap();
+    // Create a client that will republish conditionally if a record is older than 1ms.
     let client = testnet
         .pubky_client_builder()
-        .max_record_age(max_record_age)
+        .max_record_age(Duration::from_millis(1))
         .build()
         .unwrap();
 
-    let server = testnet.create_homeserver_suite().await.unwrap();
+    let server = testnet.homeserver_suite();
     let keypair = Keypair::random();
 
     // Signup publishes a new record.
@@ -324,7 +323,56 @@ async fn test_republish_on_signin() {
         .unwrap();
     let ts1 = record1.timestamp().as_u64();
 
-    // Immediately sign in. This spawns a background task to update the record
+    // Immediately sign in. This should update the record
+    // with PublishStrategy::IfOlderThan.
+    client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
+
+    let record2 = client
+        .pkarr()
+        .resolve_most_recent(&keypair.public_key())
+        .await
+        .unwrap();
+    let ts2 = record2.timestamp().as_u64();
+
+    // Because the signin happened after max_age(Duration::from_millis(1)),
+    // the record should have been republished.
+    assert_ne!(
+        ts1, ts2,
+        "Record was not republished after threshold exceeded"
+    );
+}
+
+// This test verifies that when a signin happens immediately after signup,
+// the record is not republished on signin (its timestamp remains unchanged)
+// but when a signin happens after the record is “old” (in test, after 1 second),
+// the record is republished (its timestamp increases).
+#[tokio::test]
+async fn test_republish_on_signin_not_old_enough() {
+    // Setup the testnet and run a homeserver.
+    let testnet = SimpleTestnet::run().await.unwrap();
+    // Create a client that will republish conditionally if a record is older than 1hr.
+    let client = testnet
+        .pubky_client_builder()
+        .build()
+        .unwrap();
+
+    let server = testnet.homeserver_suite();
+    let keypair = Keypair::random();
+
+    // Signup publishes a new record.
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+    // Resolve the record and get its timestamp.
+    let record1 = client
+        .pkarr()
+        .resolve_most_recent(&keypair.public_key())
+        .await
+        .unwrap();
+    let ts1 = record1.timestamp().as_u64();
+
+    // Immediately sign in. This updates the record
     // with PublishStrategy::IfOlderThan.
     client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
 
@@ -340,23 +388,6 @@ async fn test_republish_on_signin() {
     assert_eq!(
         ts1, ts2,
         "Record republished too early; timestamps should be equal"
-    );
-
-    // Wait long enough for the record to be considered 'old' (greater than 1 second).
-    tokio::time::sleep(max_record_age).await;
-    // Sign in again. Now the background task should trigger a republish.
-    client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
-    let record3 = client
-        .pkarr()
-        .resolve_most_recent(&keypair.public_key())
-        .await
-        .unwrap();
-    let ts3 = record3.timestamp().as_u64();
-
-    // Now the republished record's timestamp should be greater than before.
-    assert!(
-        ts3 > ts2,
-        "Record was not republished after threshold exceeded"
     );
 }
 
