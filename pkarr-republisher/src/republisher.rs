@@ -268,9 +268,9 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_success() {
-        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        pkarr_builder.no_default_network().bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = publish_sample_packets(&pkarr_client).await;
 
@@ -288,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_missing() {
-        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
@@ -309,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn retry_delay() {
-        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
@@ -339,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn republish_retry_missing() {
-        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
@@ -363,7 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn republish_with_condition_fail() {
-        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
@@ -387,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn republish_with_condition_success() {
-        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
