@@ -166,7 +166,6 @@ async fn multiple_users() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn authz_timeout_reconnect() {
     let testnet = SimpleTestnet::run().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -199,7 +198,7 @@ async fn authz_timeout_reconnect() {
             .unwrap();
 
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            tokio::time::sleep(Duration::from_millis(1000)).await;
             // loop {
             client.send_auth_token(&keypair, &url).await.unwrap();
             //     }

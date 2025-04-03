@@ -37,7 +37,7 @@ async fn put_get_delete() {
     // Use regular web method to get data from homeserver (with query pubky-host)
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
-        server.pubky_url(),
+        server.icann_http_url(),
         keypair.public_key()
     );
 
@@ -70,7 +70,6 @@ async fn put_get_delete() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn unauthorized_put_delete() {
     let testnet = SimpleTestnet::run().await.unwrap();
     let server = testnet.homeserver_suite();
