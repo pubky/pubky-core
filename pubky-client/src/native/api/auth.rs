@@ -114,26 +114,45 @@ impl Client {
 
     /// Signin to a homeserver.
     /// After a successful signin, a background task is spawned to republish the user's
-    /// PKarr record if it is missing or older than 6 hours. We don't mind if it succeed
+    /// PKarr record if it is missing or older than 1 hour. We don't mind if it succeed
     /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
+        self.signin_and_ensure_record_published(keypair, false).await
+    }
+
+    /// Signin to a homeserver and ensure the user's PKarr record is published.
+    /// 
+    /// Same as `signin(keypair)` but gives the option to wait for the pkarr packet to be
+    /// published in sync. `signin(keypair)` does publish the packet async.
+    pub async fn signin_and_ensure_record_published(
+        &self,
+        keypair: &Keypair,
+        publish_sync: bool,
+    ) -> Result<Session> {
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
         let session = self.signin_with_authtoken(&token).await?;
 
         // Spawn a background task to republish the record.
         let client_clone = self.clone();
         let keypair_clone = keypair.clone();
+
         let future = async move {
             // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
-            let _ = client_clone
+            client_clone
                 .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
-                .await;
+                .await
         };
 
-        #[cfg(not(wasm_browser))]
-        tokio::spawn(future);
-        #[cfg(wasm_browser)]
-        wasm_bindgen_futures::spawn_local(future);
+        if publish_sync {
+            // Wait for the publish to complete.
+            future.await?;
+        } else {
+            // Spawn a background task to republish the record.
+            #[cfg(not(wasm_browser))]
+            tokio::spawn(future);
+            #[cfg(wasm_browser)]
+            wasm_bindgen_futures::spawn_local(future);
+        }
 
         Ok(session)
     }
@@ -294,6 +313,7 @@ impl Client {
                     break Ok(response);
                 }
                 Err(error) => {
+                    println!("error while receiving auth response: {:?}", error);
                     // TODO: test again after Rqewest support timeout
                     if error.is_timeout() && !tx.is_disconnected() {
                         cross_debug!("Connection to HttpRelay timedout, reconnecting...");

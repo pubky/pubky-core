@@ -4,14 +4,14 @@ use heed::{
 };
 use pubky_common::session::Session;
 
-use crate::core::database::DB;
+use super::super::LmDB;
 
 /// session secret => Session.
 pub type SessionsTable = Database<Str, Bytes>;
 
 pub const SESSIONS_TABLE: &str = "sessions";
 
-impl DB {
+impl LmDB {
     pub fn get_session(&self, session_secret: &str) -> anyhow::Result<Option<Session>> {
         let rtxn = self.env.read_txn()?;
 
