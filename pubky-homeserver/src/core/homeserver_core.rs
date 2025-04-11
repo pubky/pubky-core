@@ -92,7 +92,7 @@ impl HomeserverCore {
     pub(crate) async fn from_data_dir_trait(
         dir: Arc<dyn DataDirTrait>,
     ) -> std::result::Result<Self, HomeserverBuildError> {
-        let context = AppContext::try_from(dir).map_err(|e| HomeserverBuildError::AppContext(e))?;
+        let context = AppContext::try_from(dir).map_err(HomeserverBuildError::AppContext)?;
         Self::new(context).await
     }
 
@@ -106,10 +106,10 @@ impl HomeserverCore {
         let (icann_http_handle, icann_http_socket) =
             Self::start_icann_http_server(&context, router.clone())
                 .await
-                .map_err(|e| HomeserverBuildError::IcannWebServer(e))?;
+                .map_err(HomeserverBuildError::IcannWebServer)?;
         let (pubky_tls_handle, pubky_tls_socket) = Self::start_pubky_tls_server(&context, router)
             .await
-            .map_err(|e| HomeserverBuildError::PubkyTlsServer(e))?;
+            .map_err(HomeserverBuildError::PubkyTlsServer)?;
 
         let key_republisher = HomeserverKeyRepublisher::run(
             &context,
@@ -117,7 +117,7 @@ impl HomeserverCore {
             pubky_tls_socket.port(),
         )
         .await
-        .map_err(|e| HomeserverBuildError::KeyRepublisher(e))?;
+        .map_err(HomeserverBuildError::KeyRepublisher)?;
         let user_keys_republisher =
             UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(&context);

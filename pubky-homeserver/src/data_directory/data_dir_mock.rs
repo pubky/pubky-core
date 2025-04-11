@@ -24,7 +24,7 @@ impl DataDirMock {
         config_toml: super::ConfigToml,
         keypair: Option<pkarr::Keypair>,
     ) -> anyhow::Result<Self> {
-        let keypair = keypair.unwrap_or_else(|| pkarr::Keypair::random());
+        let keypair = keypair.unwrap_or_else(pkarr::Keypair::random);
         Ok(Self {
             temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?),
             config_toml,

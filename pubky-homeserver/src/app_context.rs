@@ -66,22 +66,22 @@ impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
 
     fn try_from(dir: Arc<dyn DataDirTrait>) -> Result<Self, Self::Error> {
         dir.ensure_data_dir_exists_and_is_writable()
-            .map_err(|e| AppContextConversionError::DataDir(e))?;
+            .map_err(AppContextConversionError::DataDir)?;
         let conf = dir
             .read_or_create_config_file()
-            .map_err(|e| AppContextConversionError::Config(e))?;
+            .map_err(AppContextConversionError::Config)?;
         let keypair = dir
             .read_or_create_keypair()
-            .map_err(|e| AppContextConversionError::Keypair(e))?;
+            .map_err(AppContextConversionError::Keypair)?;
 
         let db_path = dir.path().join("data/lmdb");
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {
-            db: unsafe { LmDB::open(db_path).map_err(|e| AppContextConversionError::LmDB(e))? },
+            db: unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? },
             pkarr_client: pkarr_builder
                 .clone()
                 .build()
-                .map_err(|e| AppContextConversionError::Pkarr(e))?,
+                .map_err(AppContextConversionError::Pkarr)?,
             pkarr_builder,
             config_toml: conf,
             keypair,
