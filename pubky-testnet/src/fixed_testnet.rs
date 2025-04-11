@@ -1,7 +1,5 @@
-use std::time::Duration;
-
 use http_relay::HttpRelay;
-
+use pubky_homeserver::{ConfigToml, DataDirMock, HomeserverSuite};
 use crate::FlexibleTestnet;
 
 /// A simple testnet with
@@ -28,7 +26,7 @@ impl FixedTestnet {
 
         me.run_fixed_pkarr_relays().await?;
         me.run_fixed_http_relay().await?;
-        me.flexible_testnet.create_homeserver_suite().await?;
+        me.run_fixed_homeserver().await?;
 
         Ok(me)
     }
@@ -72,24 +70,8 @@ impl FixedTestnet {
             .disable_rate_limiter()
             .pkarr(|pkarr| {
                 pkarr
-                    .request_timeout(Duration::from_millis(100))
                     .bootstrap(&self.flexible_testnet.dht.bootstrap)
-                    .dht(|builder| {
-                        if !self
-                            .flexible_testnet
-                            .dht
-                            .bootstrap
-                            .first()
-                            .unwrap()
-                            .contains("6881")
-                        {
-                            builder.server_mode().port(6881);
-                        }
 
-                        builder
-                            .bootstrap(&self.flexible_testnet.dht.bootstrap)
-                            .request_timeout(Duration::from_millis(200))
-                    })
             });
         let relay = unsafe { builder.run() }.await?;
         self.flexible_testnet.pkarr_relays.push(relay);
@@ -103,6 +85,17 @@ impl FixedTestnet {
             .run()
             .await?;
         self.flexible_testnet.http_relays.push(relay);
+        Ok(())
+    }
+
+    async fn run_fixed_homeserver(&mut self) -> anyhow::Result<()> {
+        let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
+        let config = ConfigToml::default();
+        let mock = DataDirMock::new(config, Some(keypair))?;
+
+
+        let homeserver = HomeserverSuite::run_with_data_dir_mock(mock).await?;
+        self.flexible_testnet.homeservers.push(homeserver);
         Ok(())
     }
 }
