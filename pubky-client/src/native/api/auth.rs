@@ -133,21 +133,21 @@ impl Client {
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
         let session = self.signin_with_authtoken(&token).await?;
 
-        // Spawn a background task to republish the record.
-        let client_clone = self.clone();
-        let keypair_clone = keypair.clone();
-
-        let future = async move {
-            // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
-            client_clone
-                .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
-                .await
-        };
-
         if publish_sync {
             // Wait for the publish to complete.
-            future.await?;
+            self.publish_homeserver(&keypair, None, PublishStrategy::IfOlderThan)
+                .await?;
         } else {
+            // Spawn a background task to republish the record.
+            let client_clone = self.clone();
+            let keypair_clone = keypair.clone();
+
+            let future = async move {
+                // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
+                let _ = client_clone
+                    .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
+                    .await;
+            };
             // Spawn a background task to republish the record.
             #[cfg(not(wasm_browser))]
             tokio::spawn(future);
