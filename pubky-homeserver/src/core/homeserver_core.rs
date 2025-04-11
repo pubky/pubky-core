@@ -3,11 +3,12 @@ use std::time::Duration;
 
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
+use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
 use crate::{app_context::AppContext, DataDir};
 use crate::{DataDirMock, DataDirTrait, SignupMode};
-use anyhow::Result;
+use anyhow::{Error, Result};
 use axum::Router;
 use axum_server::{
     tls_rustls::{RustlsAcceptor, RustlsConfig},
@@ -29,6 +30,24 @@ pub(crate) struct AppState {
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
+/// Errors that can occur when building a `HomeserverCore`.
+#[derive(Debug, thiserror::Error)]
+pub enum HomeserverBuildError {
+    /// Failed to run the key republisher.
+    #[error("Key republisher error: {0}")]
+    KeyRepublisher(anyhow::Error),
+    /// Failed to run the ICANN web server.
+    #[error("ICANN web server error: {0}")]
+    IcannWebServer(anyhow::Error),
+    /// Failed to run the Pubky TLS web server.
+    #[error("Pubky TLS web server error: {0}")]
+    PubkyTlsServer(anyhow::Error),
+    /// Failed to convert the data directory to an AppContext.
+    #[error("AppContext conversion error: {0}")]
+    AppContext(AppContextConversionError),
+}
+
+
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
     #[allow(dead_code)]
@@ -49,24 +68,24 @@ pub struct HomeserverCore {
 
 impl HomeserverCore {
     /// Create a Homeserver from a data directory path like `~/.pubky`.
-    pub async fn from_data_dir_path(dir_path: PathBuf) -> Result<Self> {
+    pub async fn from_data_dir_path(dir_path: PathBuf) -> std::result::Result<Self, HomeserverBuildError> {
         let data_dir = DataDir::new(dir_path);
         Self::from_data_dir(data_dir).await
     }
 
     /// Create a Homeserver from a data directory.
-    pub async fn from_data_dir(data_dir: DataDir) -> Result<Self> {
+    pub async fn from_data_dir(data_dir: DataDir) -> std::result::Result<Self, HomeserverBuildError> {
         Self::from_data_dir_trait(Arc::new(data_dir)).await
     }
 
     /// Create a Homeserver from a mock data directory.
-    pub async fn from_mock_dir(mock_dir: DataDirMock) -> Result<Self> {
+    pub async fn from_mock_dir(mock_dir: DataDirMock) -> std::result::Result<Self, HomeserverBuildError> {
         Self::from_data_dir_trait(Arc::new(mock_dir)).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub(crate) async fn from_data_dir_trait(dir: Arc<dyn DataDirTrait>) -> Result<Self> {
-        let context = AppContext::try_from(dir)?;
+    pub(crate) async fn from_data_dir_trait(dir: Arc<dyn DataDirTrait>) -> std::result::Result<Self, HomeserverBuildError> {
+        let context = AppContext::try_from(dir).map_err(|e| HomeserverBuildError::AppContext(e))?;
         Self::new(context).await
     }
 
@@ -75,10 +94,16 @@ impl HomeserverCore {
     /// - (Optional) Publishes the user's keys to the DHT.
     /// - (Optional) Runs a periodic backup of the database.
     /// - Creates the web server (router) for testing. Use `listen` to start the server.
-    pub async fn new(context: AppContext) -> Result<Self> {
-        let (icann_http_handle, pubky_tls_handle, icann_http_socket, pubky_tls_socket) = Self::start_server_tasks(&context).await?;
+    pub async fn new(context: AppContext) -> std::result::Result<Self, HomeserverBuildError> {
+        let router = Self::create_router(&context);
+        let (icann_http_handle, icann_http_socket) = Self::start_icann_http_server(&context, router.clone()).await
+            .map_err(|e| HomeserverBuildError::IcannWebServer(e))?;
+        let (pubky_tls_handle, pubky_tls_socket) = Self::start_pubky_tls_server(&context, router).await
+            .map_err(|e| HomeserverBuildError::PubkyTlsServer(e))?;
 
-        let key_republisher = HomeserverKeyRepublisher::run(&context, icann_http_socket.port(), pubky_tls_socket.port()).await?;
+        let key_republisher = 
+        HomeserverKeyRepublisher::run(&context, icann_http_socket.port(), pubky_tls_socket.port()).await
+        .map_err(|e| HomeserverBuildError::KeyRepublisher(e))?;
         let user_keys_republisher =
             UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::run(&context);
@@ -104,10 +129,8 @@ impl HomeserverCore {
         super::routes::create_app(state.clone())
     }
 
-    /// Start listening on the http and tls sockets.
-    async fn start_server_tasks(context: &AppContext) -> Result<(Handle, Handle, SocketAddr, SocketAddr)> {
-        let router = Self::create_router(context);
-
+    /// Start the ICANN HTTP server
+    async fn start_icann_http_server(context: &AppContext, router: Router) -> Result<(Handle, SocketAddr)> {
         // Icann http server
         let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
         let http_socket = http_listener.local_addr()?;
@@ -117,7 +140,6 @@ impl HomeserverCore {
                 .handle(http_handle.clone())
                 .serve(
                     router
-                        .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
                 .map_err(|error| {
@@ -126,6 +148,11 @@ impl HomeserverCore {
                 }),
         );
 
+        Ok((http_handle, http_socket))
+    }
+
+    /// Start the Pubky TLS server
+    async fn start_pubky_tls_server(context: &AppContext, router: Router) -> Result<(Handle, SocketAddr)> {
         // Pubky tls server
         let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
         let https_socket = https_listener.local_addr()?;
@@ -138,7 +165,6 @@ impl HomeserverCore {
                 .handle(https_handle.clone())
                 .serve(
                     router
-                        .clone()
                         .into_make_service_with_connect_info::<SocketAddr>(),
                 )
                 .map_err(|error| {
@@ -147,7 +173,7 @@ impl HomeserverCore {
                 }),
         );
 
-        Ok((http_handle, https_handle, http_socket, https_socket))
+        Ok((https_handle, https_socket))
     }
 
     /// Get the URL of the icann http server.

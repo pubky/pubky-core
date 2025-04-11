@@ -19,8 +19,8 @@ mod data_directory;
 mod homeserver_suite;
 mod persistence;
 
-pub use admin::AdminServer;
-pub use app_context::AppContext;
-pub use core::HomeserverCore;
+pub use admin::{AdminServerBuildError, AdminServer};
+pub use app_context::{AppContext, AppContextConversionError};
+pub use core::{HomeserverBuildError, HomeserverCore};
 pub use data_directory::*;
-pub use homeserver_suite::HomeserverSuite;
+pub use homeserver_suite::{HomeserverSuite, HomeserverSuiteBuildError};

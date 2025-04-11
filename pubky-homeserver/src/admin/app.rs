@@ -33,6 +33,12 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
         .into_make_service()
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum AdminServerBuildError {
+    #[error("Failed to create admin server: {0}")]
+    BuildError(anyhow::Error),
+}
+
 /// Admin server
 ///
 /// This server is protected by the admin auth middleware.
@@ -70,8 +76,8 @@ impl AdminServer {
         let state = AppState::new(context.db.clone());
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
-        let listener = std::net::TcpListener::bind(socket)?;
-        let socket = listener.local_addr()?;
+        let listener = std::net::TcpListener::bind(socket).map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
+        let socket = listener.local_addr().map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
         let join_handle = tokio::spawn(async move {

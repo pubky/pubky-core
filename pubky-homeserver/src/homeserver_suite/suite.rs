@@ -1,11 +1,22 @@
-use crate::admin::AdminServer;
-use crate::core::HomeserverCore;
+use crate::admin::{AdminServer, AdminServerBuildError};
+use crate::core::{HomeserverBuildError, HomeserverCore};
 use crate::{DataDirMock, DataDirTrait};
 use crate::{app_context::AppContext, data_directory::DataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+/// Errors that can occur when building a `HomeserverSuite`.
+#[derive(thiserror::Error, Debug)]
+pub enum HomeserverSuiteBuildError {
+    /// Failed to build the homeserver.
+    #[error("Failed to build homeserver: {0}")]
+    Homeserver(HomeserverBuildError),
+    /// Failed to build the admin server.
+    #[error("Failed to build admin server: {0}")]
+    Admin(AdminServerBuildError),
+}
 
 /// Homeserver with all bells and whistles.
 /// Core + Admin server.
