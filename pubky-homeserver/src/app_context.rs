@@ -66,17 +66,22 @@ impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
 
     fn try_from(dir: Arc<dyn DataDirTrait>) -> Result<Self, Self::Error> {
         dir.ensure_data_dir_exists_and_is_writable()
-        .map_err(|e| AppContextConversionError::DataDir(e))?;
-        let conf = dir.read_or_create_config_file()
-        .map_err(|e| AppContextConversionError::Config(e))?;
-        let keypair = dir.read_or_create_keypair()
-        .map_err(|e| AppContextConversionError::Keypair(e))?;
+            .map_err(|e| AppContextConversionError::DataDir(e))?;
+        let conf = dir
+            .read_or_create_config_file()
+            .map_err(|e| AppContextConversionError::Config(e))?;
+        let keypair = dir
+            .read_or_create_keypair()
+            .map_err(|e| AppContextConversionError::Keypair(e))?;
 
         let db_path = dir.path().join("data/lmdb");
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {
             db: unsafe { LmDB::open(db_path).map_err(|e| AppContextConversionError::LmDB(e))? },
-            pkarr_client: pkarr_builder.clone().build().map_err(|e| AppContextConversionError::Pkarr(e))?,
+            pkarr_client: pkarr_builder
+                .clone()
+                .build()
+                .map_err(|e| AppContextConversionError::Pkarr(e))?,
             pkarr_builder,
             config_toml: conf,
             keypair,
@@ -113,13 +118,13 @@ impl AppContext {
                 .map(|node| node.to_string())
                 .collect::<Vec<String>>();
             builder.bootstrap(&nodes);
-            
+
             // If we set custom bootstrap nodes, we don't want to use the default pkarr relay nodes.
             // Otherwise, we could end up with a DHT with testnet boostrap nodes and mainnet relays
             // which would give very weird results.
             builder.no_relays();
         }
-        
+
         if let Some(relays) = &config_toml.pkdns.dht_relay_nodes {
             builder
                 .relays(relays)

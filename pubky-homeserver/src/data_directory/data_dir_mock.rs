@@ -18,9 +18,12 @@ pub struct DataDirMock {
 
 impl DataDirMock {
     /// Create a new DataDirMock with a temporary directory.
-    /// 
+    ///
     /// If keypair is not provided, a new one will be generated.
-    pub fn new(config_toml: super::ConfigToml, keypair: Option<pkarr::Keypair>) -> anyhow::Result<Self> {
+    pub fn new(
+        config_toml: super::ConfigToml,
+        keypair: Option<pkarr::Keypair>,
+    ) -> anyhow::Result<Self> {
         let keypair = keypair.unwrap_or_else(|| pkarr::Keypair::random());
         Ok(Self {
             temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?),

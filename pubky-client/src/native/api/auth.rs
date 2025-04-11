@@ -117,11 +117,12 @@ impl Client {
     /// PKarr record if it is missing or older than 1 hour. We don't mind if it succeed
     /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
-        self.signin_and_ensure_record_published(keypair, false).await
+        self.signin_and_ensure_record_published(keypair, false)
+            .await
     }
 
     /// Signin to a homeserver and ensure the user's PKarr record is published.
-    /// 
+    ///
     /// Same as `signin(keypair)` but gives the option to wait for the pkarr packet to be
     /// published in sync. `signin(keypair)` does publish the packet async.
     pub async fn signin_and_ensure_record_published(

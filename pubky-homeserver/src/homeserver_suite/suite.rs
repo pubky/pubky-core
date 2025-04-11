@@ -1,7 +1,7 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
-use crate::{DataDirMock, DataDirTrait};
 use crate::{app_context::AppContext, data_directory::DataDir};
+use crate::{DataDirMock, DataDirTrait};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
@@ -93,5 +93,3 @@ impl HomeserverSuite {
         url::Url::parse(&self.core.icann_http_url()).expect("valid url")
     }
 }
-
-

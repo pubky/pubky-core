@@ -12,12 +12,30 @@ async fn main() -> Result<()> {
 
     let testnet = FixedTestnet::run().await?;
     tracing::info!("Testnet running");
-    tracing::info!("DHT Bootstrap Nodes: {}", testnet.flexible_testnet.dht_bootstrap_nodes().into_iter().map(|node| node.to_string()).collect::<Vec<String>>().join(", "));
+    tracing::info!(
+        "DHT Bootstrap Nodes: {}",
+        testnet
+            .flexible_testnet
+            .dht_bootstrap_nodes()
+            .into_iter()
+            .map(|node| node.to_string())
+            .collect::<Vec<String>>()
+            .join(", ")
+    );
     tracing::info!("Pkarr Relay: {}", testnet.pkarr_relay().local_url());
     tracing::info!("Http Relay: {}", testnet.http_relay().local_url());
-    tracing::info!("Homeserver ICANN HTTP: {}", testnet.homeserver_suite().icann_http_url());
-    tracing::info!("Homeserver Pubky HTTPS: {}", testnet.homeserver_suite().pubky_url());
-    tracing::info!("Homeserver admin: http://{}", testnet.homeserver_suite().admin().listen_socket());
+    tracing::info!(
+        "Homeserver ICANN HTTP: {}",
+        testnet.homeserver_suite().icann_http_url()
+    );
+    tracing::info!(
+        "Homeserver Pubky HTTPS: {}",
+        testnet.homeserver_suite().pubky_url()
+    );
+    tracing::info!(
+        "Homeserver admin: http://{}",
+        testnet.homeserver_suite().admin().listen_socket()
+    );
 
     tokio::signal::ctrl_c().await?;
 

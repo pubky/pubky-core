@@ -78,8 +78,11 @@ impl AdminServer {
         let state = AppState::new(context.db.clone());
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
-        let listener = std::net::TcpListener::bind(socket).map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
-        let socket = listener.local_addr().map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
+        let listener = std::net::TcpListener::bind(socket)
+            .map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
+        let socket = listener
+            .local_addr()
+            .map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
         let join_handle = tokio::spawn(async move {

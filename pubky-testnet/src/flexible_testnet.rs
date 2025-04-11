@@ -94,17 +94,17 @@ impl FlexibleTestnet {
     ///
     /// You can access the list of relays at [Self::relays].
     pub async fn create_pkarr_relay2(&mut self) -> Result<Url> {
-        let mut builder =pkarr_relay::Relay::builder();
+        let mut builder = pkarr_relay::Relay::builder();
         builder
-        .disable_rate_limiter()
-        .cache_size(0)
-        .http_port(0)
-        .pkarr(|builder| {
-            builder.no_default_network();
-            builder.bootstrap(&self.dht.bootstrap);
-            builder.request_timeout(Duration::from_millis(2000));
-            builder
-        });
+            .disable_rate_limiter()
+            .cache_size(0)
+            .http_port(0)
+            .pkarr(|builder| {
+                builder.no_default_network();
+                builder.bootstrap(&self.dht.bootstrap);
+                builder.request_timeout(Duration::from_millis(2000));
+                builder
+            });
         let relay = unsafe { builder.run().await? };
         let url = relay.local_url();
         self.pkarr_relays.push(relay);
@@ -142,12 +142,13 @@ impl FlexibleTestnet {
             if relays.is_empty() {
                 builder.no_relays();
             } else {
-                builder.relays(&relays)
-                .expect("testnet relays should be valid urls");
+                builder
+                    .relays(&relays)
+                    .expect("testnet relays should be valid urls");
             }
-            // 100ms timeout for requests. This makes methods like `resolve_most_recent` fast 
+            // 100ms timeout for requests. This makes methods like `resolve_most_recent` fast
             // because it doesn't need to wait the default 2s which would slow down the tests.
-            builder.request_timeout(Duration::from_millis(2000)); 
+            builder.request_timeout(Duration::from_millis(2000));
             builder
         });
 
@@ -161,7 +162,9 @@ impl FlexibleTestnet {
         builder.no_default_network();
         builder.bootstrap(&self.dht.bootstrap);
         if !relays.is_empty() {
-            builder.relays(&relays).expect("Testnet relays should be valid urls");
+            builder
+                .relays(&relays)
+                .expect("Testnet relays should be valid urls");
         }
 
         builder
@@ -172,8 +175,8 @@ impl FlexibleTestnet {
 mod test {
     use std::time::Duration;
 
-    use pubky::Keypair;
     use crate::FlexibleTestnet;
+    use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
@@ -196,7 +199,10 @@ mod test {
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
 
-        let session = client.signup(&keypair, &hs.public_key(), None).await.unwrap();
+        let session = client
+            .signup(&keypair, &hs.public_key(), None)
+            .await
+            .unwrap();
         assert_eq!(session.pubky(), &pubky);
     }
 
@@ -204,7 +210,7 @@ mod test {
     async fn test_independent_dhts() {
         let t1 = FlexibleTestnet::new().await.unwrap();
         let t2 = FlexibleTestnet::new().await.unwrap();
-        
+
         assert_ne!(t1.dht.bootstrap, t2.dht.bootstrap);
     }
 
@@ -212,15 +218,22 @@ mod test {
     #[tokio::test]
     async fn test_homeserver_resolvable() {
         let mut testnet = FlexibleTestnet::new().await.unwrap();
-        let hs_pubky = testnet.create_homeserver_suite().await.unwrap().public_key();
+        let hs_pubky = testnet
+            .create_homeserver_suite()
+            .await
+            .unwrap()
+            .public_key();
 
         // Make sure the pkarr packet of the hs is resolvable.
         let pkarr_client = testnet.pkarr_client_builder().build().unwrap();
         let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
-        
+
         // Make sure the pkarr can resolve the hs_pubky.
         let pubkey = format!("{}", hs_pubky);
-        let _endpoint = pkarr_client.resolve_https_endpoint(pubkey.as_str()).await.unwrap();
+        let _endpoint = pkarr_client
+            .resolve_https_endpoint(pubkey.as_str())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -246,8 +259,11 @@ mod test {
                 let hs = testnet.homeservers.first().unwrap();
                 let keypair = Keypair::random();
                 let pubky = keypair.public_key();
-        
-                let session = client.signup(&keypair, &hs.public_key(), None).await.unwrap();
+
+                let session = client
+                    .signup(&keypair, &hs.public_key(), None)
+                    .await
+                    .unwrap();
                 assert_eq!(session.pubky(), &pubky);
                 tokio::time::sleep(Duration::from_secs(3)).await;
             });

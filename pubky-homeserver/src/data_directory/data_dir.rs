@@ -125,8 +125,6 @@ impl DataDirTrait for DataDir {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use std::io::Write;

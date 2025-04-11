@@ -44,7 +44,7 @@ impl Client {
             Some(ref record) => {
                 let elapsed = Timestamp::now() - record.timestamp();
                 Duration::from_micros(elapsed.as_u64())
-            },
+            }
             None => Duration::from_secs(u64::MAX), // Use max duration if no record exists.
         };
 

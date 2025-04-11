@@ -270,7 +270,10 @@ mod tests {
     async fn single_key_republish_success() {
         let dht = pkarr::mainline::Testnet::new(1).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.no_default_network().bootstrap(&dht.bootstrap).no_relays();
+        pkarr_builder
+            .no_default_network()
+            .bootstrap(&dht.bootstrap)
+            .no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_key = publish_sample_packets(&pkarr_client).await;
 

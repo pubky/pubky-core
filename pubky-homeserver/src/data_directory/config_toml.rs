@@ -42,7 +42,7 @@ pub struct PkdnsToml {
     #[serde(default = "default_dht_bootstrap_nodes")]
     pub dht_bootstrap_nodes: Option<Vec<DomainPort>>,
 
-    /// The list of relay nodes for the DHT. 
+    /// The list of relay nodes for the DHT.
     /// If not set and no bootstrap nodes are set, the default pkarr relay nodes will be used.
     #[serde(default = "default_dht_relay_nodes")]
     pub dht_relay_nodes: Option<Vec<Url>>,
@@ -228,10 +228,7 @@ mod tests {
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(
-            c.drive.icann_domain,
-            None
-        );
+        assert_eq!(c.drive.icann_domain, None);
 
         assert_eq!(
             c.drive.pubky_listen_socket,
@@ -249,19 +246,10 @@ mod tests {
             c.pkdns.user_keys_republisher_interval,
             default_user_keys_republisher_interval()
         );
-        assert_eq!(
-            c.pkdns.dht_bootstrap_nodes,
-            None
-        );
-        assert_eq!(
-            c.pkdns.dht_relay_nodes,
-            None
-        );
+        assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
+        assert_eq!(c.pkdns.dht_relay_nodes, None);
 
-        assert_eq!(
-            c.pkdns.dht_request_timeout_ms,
-            None
-        );
+        assert_eq!(c.pkdns.dht_request_timeout_ms, None);
     }
 
     #[test]
@@ -270,6 +258,9 @@ mod tests {
         // even when the variables are commented out.
         let s = ConfigToml::default_string();
         let parsed: ConfigToml = s.parse().expect("Failed to parse config");
-        assert_eq!(parsed.pkdns.dht_bootstrap_nodes, None, "dht_bootstrap_nodes not commented out");
+        assert_eq!(
+            parsed.pkdns.dht_bootstrap_nodes, None,
+            "dht_bootstrap_nodes not commented out"
+        );
     }
 }

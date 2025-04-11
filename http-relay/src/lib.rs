@@ -8,7 +8,8 @@
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener},
-    sync::Arc, time::Duration,
+    sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -84,10 +85,11 @@ impl HttpRelay {
         let http_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
         let http_address = http_listener.local_addr()?;
 
-        tokio::spawn( async move {
+        tokio::spawn(async move {
             axum_server::from_tcp(http_listener)
                 .handle(http_handle.clone())
-                .serve(app.into_make_service()).await
+                .serve(app.into_make_service())
+                .await
                 .map_err(|error| tracing::error!(?error, "HttpRelay http server error"))
         });
 
@@ -130,7 +132,8 @@ impl HttpRelay {
 
     /// Gracefully shuts down the HTTP relay.
     pub async fn shutdown(self) -> anyhow::Result<()> {
-        self.http_handle.graceful_shutdown(Some(Duration::from_secs(1)));
+        self.http_handle
+            .graceful_shutdown(Some(Duration::from_secs(1)));
         Ok(())
     }
 }

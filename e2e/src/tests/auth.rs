@@ -1,4 +1,3 @@
-
 use pkarr::Keypair;
 use pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
@@ -324,7 +323,10 @@ async fn test_republish_on_signin_old_enough() {
 
     // Immediately sign in. This should update the record
     // with PublishStrategy::IfOlderThan.
-    client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
+    client
+        .signin_and_ensure_record_published(&keypair, true)
+        .await
+        .unwrap();
 
     let record2 = client
         .pkarr()
@@ -350,10 +352,7 @@ async fn test_republish_on_signin_not_old_enough() {
     // Setup the testnet and run a homeserver.
     let testnet = SimpleTestnet::run().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1hr.
-    let client = testnet
-        .pubky_client_builder()
-        .build()
-        .unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let server = testnet.homeserver_suite();
     let keypair = Keypair::random();
@@ -373,7 +372,10 @@ async fn test_republish_on_signin_not_old_enough() {
 
     // Immediately sign in. This updates the record
     // with PublishStrategy::IfOlderThan.
-    client.signin_and_ensure_record_published(&keypair, true).await.unwrap();
+    client
+        .signin_and_ensure_record_published(&keypair, true)
+        .await
+        .unwrap();
 
     let record2 = client
         .pkarr()

@@ -3,7 +3,7 @@ use http_relay::HttpRelay;
 use crate::FlexibleTestnet;
 
 /// A simple testnet with random ports assigned for all components.
-/// 
+///
 /// - A local DHT with bootstrapping nodes.
 /// - pkarr relay.
 /// - http relay.
@@ -17,7 +17,7 @@ pub struct SimpleTestnet {
 impl SimpleTestnet {
     /// Run a new simple testnet.
     pub async fn run() -> anyhow::Result<Self> {
-        let mut me = Self { 
+        let mut me = Self {
             flexible_testnet: FlexibleTestnet::new().await?,
         };
 
@@ -40,12 +40,18 @@ impl SimpleTestnet {
 
     /// Get the homeserver in the testnet.
     pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
-        self.flexible_testnet.homeservers.first().expect("homeservers should be non-empty")
+        self.flexible_testnet
+            .homeservers
+            .first()
+            .expect("homeservers should be non-empty")
     }
 
     /// Get the http relay in the testnet.
     pub fn http_relay(&self) -> &HttpRelay {
-        self.flexible_testnet.http_relays.first().expect("http relays should be non-empty")
+        self.flexible_testnet
+            .http_relays
+            .first()
+            .expect("http relays should be non-empty")
     }
 }
 
@@ -67,4 +73,3 @@ mod test {
         }
     }
 }
-
