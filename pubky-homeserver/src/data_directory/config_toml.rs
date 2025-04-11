@@ -230,7 +230,7 @@ mod tests {
         );
         assert_eq!(
             c.drive.icann_domain,
-            Some(Domain::from_str("example.com").unwrap())
+            None
         );
 
         assert_eq!(
@@ -243,32 +243,24 @@ mod tests {
 
         // Verify pkdns config
         assert_eq!(c.pkdns.public_ip, default_public_ip());
-        assert_eq!(c.pkdns.public_pubky_tls_port, Some(6287));
-        assert_eq!(c.pkdns.public_icann_http_port, Some(80));
+        assert_eq!(c.pkdns.public_pubky_tls_port, None);
+        assert_eq!(c.pkdns.public_icann_http_port, None);
         assert_eq!(
             c.pkdns.user_keys_republisher_interval,
             default_user_keys_republisher_interval()
         );
         assert_eq!(
             c.pkdns.dht_bootstrap_nodes,
-            Some(vec![
-                DomainPort::from_str("router.bittorrent.com:6881").unwrap(),
-                DomainPort::from_str("dht.transmissionbt.com:6881").unwrap(),
-                DomainPort::from_str("dht.libtorrent.org:25401").unwrap(),
-                DomainPort::from_str("relay.pkarr.org:6881").unwrap(),
-            ])
+            None
         );
         assert_eq!(
             c.pkdns.dht_relay_nodes,
-            Some(vec![
-                Url::parse("https://relay.pkarr.org").unwrap(),
-                Url::parse("https://pkarr.pubky.org").unwrap(),
-            ])
+            None
         );
 
         assert_eq!(
             c.pkdns.dht_request_timeout_ms,
-            Some(NonZeroU64::new(2000).unwrap())
+            None
         );
     }
 

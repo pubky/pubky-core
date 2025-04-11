@@ -8,7 +8,7 @@ use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
 use crate::{app_context::AppContext, DataDir};
 use crate::{DataDirMock, DataDirTrait, SignupMode};
-use anyhow::{Error, Result};
+use anyhow::Result;
 use axum::Router;
 use axum_server::{
     tls_rustls::{RustlsAcceptor, RustlsConfig},
