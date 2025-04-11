@@ -1,17 +1,23 @@
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::result::Result;
 use std::str::FromStr;
 
 use super::domain::Domain;
 
 /// A domain and port pair.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct DomainPort {
     /// The domain name.
     pub domain: Domain,
     /// The port number.
     pub port: u16,
+}
+
+impl Debug for DomainPort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.domain, self.port)
+    }
 }
 
 impl TryFrom<&str> for DomainPort {

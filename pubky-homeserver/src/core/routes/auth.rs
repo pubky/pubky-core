@@ -1,6 +1,6 @@
+use crate::persistence::lmdb::tables::users::User;
 use crate::{
     core::{
-        database::tables::users::User,
         error::{Error, Result},
         AppState,
     },
@@ -50,7 +50,7 @@ pub async fn signup(
     txn.commit()?;
 
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
-    if state.admin.signup_mode == SignupMode::TokenRequired {
+    if state.signup_mode == SignupMode::TokenRequired {
         let signup_token_param = params
             .get("signup_token")
             .ok_or_else(|| Error::new(StatusCode::BAD_REQUEST, Some("signup_token required")))?;

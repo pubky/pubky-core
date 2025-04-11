@@ -1,9 +1,44 @@
-use crate::core::database::DB;
+use crate::{app_context::AppContext, persistence::lmdb::LmDB};
 use heed::CompactionOption;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::time::interval;
+use tokio::{task::JoinHandle, time::interval};
 use tracing::{error, info};
+
+pub(crate) struct PeriodicBackup {
+    handle: Option<JoinHandle<()>>,
+}
+
+impl PeriodicBackup {
+    pub fn run(context: &AppContext) -> Self {
+        let is_disabled = context.config_toml.general.lmdb_backup_interval_s == 0;
+        if is_disabled {
+            tracing::info!("LMDB backup is disabled.");
+            return Self { handle: None };
+        }
+        let db = context.db.clone();
+        let backup_path = context.data_dir.path().join("backup");
+        let period = Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
+        tracing::info!(
+            "Starting LMDB backup with interval {}s",
+            context.config_toml.general.lmdb_backup_interval_s
+        );
+        let handle = tokio::spawn(async move {
+            backup_lmdb_periodically(db, backup_path, period).await;
+        });
+        Self {
+            handle: Some(handle),
+        }
+    }
+}
+
+impl Drop for PeriodicBackup {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
 
 /// Periodically creates a backup of the LMDB environment every 4 hours.
 ///
@@ -16,7 +51,7 @@ use tracing::{error, info};
 ///
 /// * `db` - The LMDB database handle.
 /// * `backup_path` - The base path for the backup file (extensions will be appended).
-pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf, period: Duration) {
+pub async fn backup_lmdb_periodically(db: LmDB, backup_path: PathBuf, period: Duration) {
     let mut interval_timer = interval(period);
 
     interval_timer.tick().await; // Ignore the first tick as it is instant.
@@ -48,7 +83,7 @@ pub async fn backup_lmdb_periodically(db: DB, backup_path: PathBuf, period: Dura
 ///
 /// * `db` - The LMDB database handle.
 /// * `backup_path` - The base path for the backup file (extensions will be appended).
-fn do_backup(db: DB, backup_path: PathBuf) {
+fn do_backup(db: LmDB, backup_path: PathBuf) {
     // Define file paths for the temporary and final backup files.
     let final_backup_path = backup_path.with_extension("mdb");
     let temp_backup_path = backup_path.with_extension("tmp");
@@ -90,7 +125,7 @@ mod tests {
     #[test]
     fn test_do_backup_creates_backup_file() {
         // Create a test DB instance.
-        let db = DB::test();
+        let db = LmDB::test();
 
         // Create a temporary directory to store the backup.
         let temp_dir = tempdir().expect("Failed to create temporary directory");
