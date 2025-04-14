@@ -4,14 +4,16 @@ use crate::FlexibleTestnet;
 
 /// A simple testnet with
 ///
-/// - A local DHT with bootstrapping nodes: `&["localhost:6881"]`.
+/// - A local DHT with a boostrap node on port 6881.
 /// - pkarr relay on port 15411.
 /// - http relay on port 15412.
 /// - A homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
-/// - An admin server for the homeserver.
+/// - An admin server for the homeserver on port 6288.
 pub struct FixedTestnet {
     /// Inner flexible testnet.
     pub flexible_testnet: FlexibleTestnet,
+    #[allow(dead_code)]
+    fixed_bootstrap_node: Option<pkarr::mainline::Dht>, // Keep alive
     #[allow(dead_code)]
     temp_dirs: Vec<tempfile::TempDir>, // Keep temp dirs alive for the pkarr relay
 }
@@ -19,14 +21,21 @@ pub struct FixedTestnet {
 impl FixedTestnet {
     /// Run a new simple testnet.
     pub async fn run() -> anyhow::Result<Self> {
+        let testnet = FlexibleTestnet::new().await?;
+        let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
+        .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
         let mut me = Self {
-            flexible_testnet: FlexibleTestnet::new().await?,
+            flexible_testnet: testnet,
+            fixed_bootstrap_node: fixed_boostrap,
             temp_dirs: vec![],
         };
 
-        me.run_fixed_pkarr_relays().await?;
-        me.run_fixed_http_relay().await?;
-        me.run_fixed_homeserver().await?;
+        me.run_fixed_pkarr_relays().await
+        .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port 15411: {}", e))?;
+        me.run_fixed_http_relay().await
+        .map_err(|e| anyhow::anyhow!("Failed to run http relay on port 15412: {}", e))?;
+        me.run_fixed_homeserver().await
+        .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
 
         Ok(me)
     }
@@ -60,6 +69,31 @@ impl FixedTestnet {
             .expect("pkarr relays should be non-empty")
     }
 
+    /// Get the bootstrap nodes for the testnet.
+    pub fn bootstrap_nodes(&self) -> Vec<String> {
+        let mut nodes = vec![];
+        if let Some(dht) = &self.fixed_bootstrap_node {
+            nodes.push(dht.info().local_addr().to_string());
+        }
+        nodes.extend(self.flexible_testnet.dht_bootstrap_nodes().iter().map(|node| node.to_string()));
+        nodes
+    }
+
+    /// Create a fixed bootstrap node on port 6881 if it is not already running.
+    /// If it's already running, return None.
+    fn run_fixed_boostrap_node(other_bootstrap_nodes: &Vec<String>) -> anyhow::Result<Option<pkarr::mainline::Dht>> {
+        if other_bootstrap_nodes.iter().any(|node| node.contains("6881")) {
+            return Ok(None);
+        }
+        let mut builder = pkarr::mainline::Dht::builder();
+        builder
+        .port(6881)
+        .bootstrap(other_bootstrap_nodes)
+        .server_mode();
+        let dht = builder.build()?;
+        Ok(Some(dht))
+    }
+
     /// Creates a fixed pkarr relay on port 15411 with a temporary storage directory.
     async fn run_fixed_pkarr_relays(&mut self) -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?; // Gets cleaned up automatically when it drops
@@ -69,12 +103,14 @@ impl FixedTestnet {
             .storage(temp_dir.path().to_path_buf())
             .disable_rate_limiter()
             .pkarr(|pkarr| {
+                pkarr.no_default_network();
                 pkarr
                     .bootstrap(&self.flexible_testnet.dht.bootstrap)
 
             });
         let relay = unsafe { builder.run() }.await?;
         self.flexible_testnet.pkarr_relays.push(relay);
+        self.temp_dirs.push(temp_dir);
         Ok(())
     }
 

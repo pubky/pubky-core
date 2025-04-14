@@ -15,11 +15,7 @@ async fn main() -> Result<()> {
     tracing::info!(
         "DHT Bootstrap Nodes: {}",
         testnet
-            .flexible_testnet
-            .dht_bootstrap_nodes()
-            .into_iter()
-            .map(|node| node.to_string())
-            .collect::<Vec<String>>()
+            .bootstrap_nodes()
             .join(", ")
     );
     tracing::info!("Pkarr Relay: {}", testnet.pkarr_relay().local_url());

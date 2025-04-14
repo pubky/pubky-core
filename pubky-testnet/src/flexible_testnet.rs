@@ -22,17 +22,20 @@ pub struct FlexibleTestnet {
     pub(crate) pkarr_relays: Vec<pkarr_relay::Relay>,
     pub(crate) http_relays: Vec<HttpRelay>,
     pub(crate) homeservers: Vec<HomeserverSuite>,
+
+    temp_dirs: Vec<tempfile::TempDir>,
 }
 
 impl FlexibleTestnet {
     /// Run a new testnet with a local DHT.
     pub async fn new() -> Result<Self> {
-        let dht = pkarr::mainline::Testnet::new_async(3).await?;
+        let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet = Self {
             dht,
             pkarr_relays: vec![],
             http_relays: vec![],
             homeservers: vec![],
+            temp_dirs: vec![],
         };
 
         Ok(testnet)
@@ -83,22 +86,13 @@ impl FlexibleTestnet {
     ///
     /// You can access the list of relays at [Self::relays].
     pub async fn create_pkarr_relay(&mut self) -> Result<Url> {
-        let relay = pkarr_relay::Relay::run_test(&self.dht).await?;
-        let url = relay.local_url();
-        self.pkarr_relays.push(relay);
-
-        Ok(url)
-    }
-
-    /// Run a new Pkarr relay.
-    ///
-    /// You can access the list of relays at [Self::relays].
-    pub async fn create_pkarr_relay2(&mut self) -> Result<Url> {
+        let dir = tempfile::tempdir()?;
         let mut builder = pkarr_relay::Relay::builder();
         builder
             .disable_rate_limiter()
             .cache_size(0)
             .http_port(0)
+            .storage(dir.path().to_path_buf())
             .pkarr(|builder| {
                 builder.no_default_network();
                 builder.bootstrap(&self.dht.bootstrap);
@@ -108,7 +102,7 @@ impl FlexibleTestnet {
         let relay = unsafe { builder.run().await? };
         let url = relay.local_url();
         self.pkarr_relays.push(relay);
-
+        self.temp_dirs.push(dir);
         Ok(url)
     }
 
@@ -117,10 +111,11 @@ impl FlexibleTestnet {
     /// Returns a list of DHT bootstrapping nodes.
     pub fn dht_bootstrap_nodes(&self) -> Vec<DomainPort> {
         self.dht
-            .bootstrap
+            .nodes
             .iter()
-            .map(|s| {
-                DomainPort::from_str(s)
+            .map(|node| {
+                let addr = node.info().local_addr();
+                DomainPort::from_str(&format!("{}:{}", addr.ip(), addr.port()))
                     .expect("boostrap nodes from the pkarr dht are always valid domain:port pairs")
             })
             .collect()
@@ -159,7 +154,7 @@ impl FlexibleTestnet {
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
         let relays = self.dht_relay_urls();
         let mut builder = pkarr::Client::builder();
-        builder.no_default_network();
+        builder.no_default_network(); // Remove DHT bootstrap nodes and relays
         builder.bootstrap(&self.dht.bootstrap);
         if !relays.is_empty() {
             builder
@@ -176,6 +171,7 @@ mod test {
     use std::time::Duration;
 
     use crate::FlexibleTestnet;
+    use pkarr::dns::rdata::TXT;
     use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
@@ -186,6 +182,14 @@ mod test {
             let _relay = testnet.create_http_relay().await.unwrap();
         }
         assert_eq!(testnet.http_relays.len(), 1);
+    }
+
+    /// Boostrap node conversion
+    #[tokio::test]
+    async fn test_boostrap_node_conversion() {
+        let testnet = FlexibleTestnet::new().await.unwrap();
+        let nodes = testnet.dht_bootstrap_nodes();
+        assert_eq!(nodes.len(), 2);
     }
 
     /// Test that a user can signup in the testnet.
@@ -278,5 +282,35 @@ mod test {
                 }
             }
         }
+    }
+
+    /// Test relay resolvable.
+    /// This simulates pkarr clients in a browser.
+    #[tokio::test]
+    async fn test_pkarr_relay_resolvable() {
+        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        testnet.create_pkarr_relay().await.unwrap();
+        
+        let keypair = Keypair::random();
+
+        // Publish packet on the DHT without using the relay.
+        let client = testnet.pkarr_client_builder().build().unwrap();
+        let signed = pkarr::SignedPacket::builder()
+        .txt(pkarr::dns::Name::new("example.com").unwrap(), TXT::default(), 300)
+        .sign(&keypair).unwrap();
+        client.publish(&signed, None).await.unwrap();
+
+        // Resolve packet with a new client to prevent caching
+        // Only use the DHT, no relays
+        let client = testnet.pkarr_client_builder().no_relays().build().unwrap();
+        let packet = client.resolve(&keypair.public_key()).await;
+        assert!(packet.is_some(), "Published packet is not available over the DHT.");
+
+        // Resolve packet with a new client to prevent caching
+        // Only use the relay, no DHT
+        // This simulates pkarr clients in a browser.
+        let client = testnet.pkarr_client_builder().no_dht().build().unwrap();
+        let packet = client.resolve(&keypair.public_key()).await;
+        assert!(packet.is_some(), "Published packet is not available over the relay only.");
     }
 }
