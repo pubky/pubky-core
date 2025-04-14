@@ -45,6 +45,10 @@ impl FixedTestnet {
         self.flexible_testnet.pubky_client_builder()
     }
 
+    pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
+        self.flexible_testnet.pkarr_client_builder()
+    }
+
     /// Get the homeserver in the testnet.
     pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
         self.flexible_testnet

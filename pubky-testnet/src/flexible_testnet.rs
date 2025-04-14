@@ -90,13 +90,11 @@ impl FlexibleTestnet {
         let mut builder = pkarr_relay::Relay::builder();
         builder
             .disable_rate_limiter()
-            .cache_size(0)
             .http_port(0)
             .storage(dir.path().to_path_buf())
             .pkarr(|builder| {
                 builder.no_default_network();
                 builder.bootstrap(&self.dht.bootstrap);
-                builder.request_timeout(Duration::from_millis(2000));
                 builder
             });
         let relay = unsafe { builder.run().await? };
@@ -171,7 +169,6 @@ mod test {
     use std::time::Duration;
 
     use crate::FlexibleTestnet;
-    use pkarr::dns::rdata::TXT;
     use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
@@ -286,6 +283,7 @@ mod test {
 
     /// Test relay resolvable.
     /// This simulates pkarr clients in a browser.
+    /// Made due to https://github.com/pubky/pkarr/issues/140
     #[tokio::test]
     async fn test_pkarr_relay_resolvable() {
         let mut testnet = FlexibleTestnet::new().await.unwrap();
@@ -296,7 +294,6 @@ mod test {
         // Publish packet on the DHT without using the relay.
         let client = testnet.pkarr_client_builder().build().unwrap();
         let signed = pkarr::SignedPacket::builder()
-        .txt(pkarr::dns::Name::new("example.com").unwrap(), TXT::default(), 300)
         .sign(&keypair).unwrap();
         client.publish(&signed, None).await.unwrap();
 
@@ -313,4 +310,5 @@ mod test {
         let packet = client.resolve(&keypair.public_key()).await;
         assert!(packet.is_some(), "Published packet is not available over the relay only.");
     }
+
 }

@@ -22,7 +22,6 @@ impl SimpleTestnet {
         };
 
         me.flexible_testnet.create_http_relay().await?;
-        // me.flexible_testnet.create_pkarr_relay2().await?;
         me.flexible_testnet.create_homeserver_suite().await?;
 
         Ok(me)
