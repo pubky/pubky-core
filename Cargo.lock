@@ -2331,6 +2331,7 @@ dependencies = [
  "dirs",
  "dyn-clone",
  "flume",
+ "futures-lite",
  "futures-util",
  "heed",
  "hex",

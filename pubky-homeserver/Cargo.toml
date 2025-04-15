@@ -53,6 +53,7 @@ tempfile = { version = "3.10.1"}
 dyn-clone = "1.0.19"
 reqwest = "0.12.15"
 
-[dev-dependencies]
 
+[dev-dependencies]
+futures-lite = "2.6.0"
 
