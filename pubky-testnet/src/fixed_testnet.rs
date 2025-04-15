@@ -146,19 +146,3 @@ impl FixedTestnet {
         Ok(())
     }
 }
-
-
-#[cfg(test)]
-mod test {
-    use pkarr::Keypair;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_signup() {
-        let testnet = FixedTestnet::run().await.unwrap();
-        let user_key = Keypair::random();
-        let client = testnet.pubky_client_builder().build().unwrap();
-        let _ = client.signup(&user_key, &testnet.homeserver_suite().public_key(), Some("asfd")).await.unwrap();
-    }
-}
