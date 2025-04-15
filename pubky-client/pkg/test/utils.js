@@ -8,7 +8,7 @@
  * @returns {Promise<string>} - The signup token.
  * @throws Will throw an error if the request fails.
  */
-export async function createSignupToken(client, homeserver_address ="localhost:6286", adminPassword = "admin") {
+export async function createSignupToken(client, homeserver_address ="localhost:6288", adminPassword = "admin") {
   const adminUrl = `http://${homeserver_address}/admin/generate_signup_token`;
   const response = await client.fetch(adminUrl, {
     method: "GET",

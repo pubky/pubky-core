@@ -2097,9 +2097,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.7.0"
+version = "3.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24978a42d7bc028516e83fd67696db8bd81d79c0743b9d2fd078e277d7b78494"
+checksum = "e32222ae3d617bf92414db29085f8a959a4515effce916e038e9399a335a0d6d"
 dependencies = [
  "async-compat",
  "base32",
@@ -2135,9 +2135,9 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa52d5c630c85d587597f8641126e317e720f4893302b14268c5849cfd554545"
+checksum = "63aa8f8cd1693c358a0e9baf5221d56d15123ad8d385631c7277c7560a843fd2"
 dependencies = [
  "anyhow",
  "axum",

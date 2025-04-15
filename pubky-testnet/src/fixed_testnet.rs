@@ -1,5 +1,7 @@
+use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, str::FromStr};
+
 use http_relay::HttpRelay;
-use pubky_homeserver::{ConfigToml, DataDirMock, HomeserverSuite};
+use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverSuite, SignupMode};
 use crate::FlexibleTestnet;
 
 /// A simple testnet with
@@ -130,12 +132,33 @@ impl FixedTestnet {
 
     async fn run_fixed_homeserver(&mut self) -> anyhow::Result<()> {
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
-        let config = ConfigToml::default();
+        let mut config = ConfigToml::test();
+        config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap_nodes().iter().map(|node| DomainPort::from_str(node).unwrap()).collect());
+        config.general.signup_mode = SignupMode::Open;
+        config.drive.icann_listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6286);
+        config.drive.pubky_listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6287);
+        config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6288);
         let mock = DataDirMock::new(config, Some(keypair))?;
 
 
         let homeserver = HomeserverSuite::run_with_data_dir_mock(mock).await?;
         self.flexible_testnet.homeservers.push(homeserver);
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use pkarr::Keypair;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_signup() {
+        let testnet = FixedTestnet::run().await.unwrap();
+        let user_key = Keypair::random();
+        let client = testnet.pubky_client_builder().build().unwrap();
+        let _ = client.signup(&user_key, &testnet.homeserver_suite().public_key(), Some("asfd")).await.unwrap();
     }
 }

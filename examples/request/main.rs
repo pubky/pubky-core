@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
         .init();
 
     let client = if args.testnet {
-        Client::builder().fixed_testnet().build()?
+        Client::builder().testnet().build()?
     } else {
         Client::builder().build()?
     };

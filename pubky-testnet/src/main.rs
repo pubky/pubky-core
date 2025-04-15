@@ -5,7 +5,7 @@ use pubky_testnet::FixedTestnet;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "pubky_homeserver=debug,http_relay=debug,pkarr_relay=debug,tower_http=debug,pubky_testnet=debug"
+            "pubky_homeserver=debug,http_relay=debug,pkarr_relay=info,tower_http=debug,pubky_testnet=debug"
                 .to_string(),
         )
         .init();

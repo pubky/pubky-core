@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
 
     let client = if cli.testnet {
         dbg!("HERE");
-        let client = Client::builder().fixed_testnet().build()?;
+        let client = Client::builder().testnet().build()?;
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
