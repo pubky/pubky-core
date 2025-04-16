@@ -114,6 +114,7 @@ pub fn create_signed_packet(
         .unwrap_or(local_icann_http_port);
 
     // `SVCB(HTTPS)` record pointing to the pubky tls port and the public ip address
+    // This is what is used in all applications expect for browsers.
     let mut svcb = SVCB::new(0, root_name.clone());
     svcb.set_port(public_pubky_tls_port);
     match &public_ip {
@@ -129,8 +130,14 @@ pub fn create_signed_packet(
     };
     signed_packet_builder = signed_packet_builder.https(root_name.clone(), svcb, 60 * 60);
 
-    // `SVCB` record pointing to the icann http port and the ICANN domain for legacy browsers support.
+    // `SVCB` record pointing to the icann http port and the ICANN domain for browsers support.
     // Low priority to not override the `SVCB(HTTPS)` record.
+    // Why are we doing this?
+    // The pubky-client in the browser can only do regular HTTP(s) requests.
+    // Pubky TLS requests are therefore not possible. Therefore, we need to fallback to the ICANN domain./
+    //
+    // TODO: Is it possible to point the SVCB record to the IP address via a `A` record?
+    // This would remove the ICANN domain dependency.
     if let Some(domain) = &context.config_toml.drive.icann_domain {
         let mut svcb = SVCB::new(10, root_name.clone());
 

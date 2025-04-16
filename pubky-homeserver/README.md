@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-Run the suite with a temporary directory and your custom config.
+Run the suite with a temporary directory and your custom config. This is a good way to test the server.
 
 ```rust
 use anyhow::Result;
@@ -44,7 +44,7 @@ use pubky_homeserver::{HomeserverSuite, DataDirMock};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  let mut config = ConfigToml::default();
+  let mut config = ConfigToml::default(); // Use ConfigToml::test() for random ports.
   // Set config values however you like
   config.admin.admin_password = "alternative_password".to_string();
   // Creates a temporary directory that gets cleaned up 
@@ -86,7 +86,7 @@ If homeserver is set to require signup tokens, you can create a new signup token
 
 ```rust,ignore
 let response = pubky_client
-    .get(&format!("https://{homeserver_pubkey}/admin/generate_signup_token"))
+    .get(&format!("https://127.0.0.1:6288/admin/generate_signup_token"))
     .header("X-Admin-Password", "admin") // Use your admin password. This is testnet default pwd.
     .send()
     .await
@@ -97,7 +97,7 @@ let signup_token = response.text().await.unwrap();
 via CLI with `curl`
 
 ```bash
-curl -X GET "https://<homeserver_ip:port>/admin/generate_signup_token" \
+curl -X GET "https://127.0.0.1:6288/admin/generate_signup_token" \
      -H "X-Admin-Password: admin"
      # Use your admin password. This is testnet default pwd.
 ```
@@ -105,7 +105,7 @@ curl -X GET "https://<homeserver_ip:port>/admin/generate_signup_token" \
 or from JS
 
 ```js
-const url = "http://${homeserver_address}/admin/generate_signup_token";
+const url = "http://127.0.0.1:6288/admin/generate_signup_token";
 const response = await client.fetch(url, {
   method: "GET",
   headers: {
