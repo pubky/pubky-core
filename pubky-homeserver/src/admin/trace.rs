@@ -7,8 +7,6 @@ use tower_http::trace::{
 };
 use tracing::{Level, Span};
 
-
-
 pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
     let excluded_paths = Arc::new(
         excluded_paths

@@ -288,27 +288,31 @@ mod test {
     async fn test_pkarr_relay_resolvable() {
         let mut testnet = FlexibleTestnet::new().await.unwrap();
         testnet.create_pkarr_relay().await.unwrap();
-        
+
         let keypair = Keypair::random();
 
         // Publish packet on the DHT without using the relay.
         let client = testnet.pkarr_client_builder().build().unwrap();
-        let signed = pkarr::SignedPacket::builder()
-        .sign(&keypair).unwrap();
+        let signed = pkarr::SignedPacket::builder().sign(&keypair).unwrap();
         client.publish(&signed, None).await.unwrap();
 
         // Resolve packet with a new client to prevent caching
         // Only use the DHT, no relays
         let client = testnet.pkarr_client_builder().no_relays().build().unwrap();
         let packet = client.resolve(&keypair.public_key()).await;
-        assert!(packet.is_some(), "Published packet is not available over the DHT.");
+        assert!(
+            packet.is_some(),
+            "Published packet is not available over the DHT."
+        );
 
         // Resolve packet with a new client to prevent caching
         // Only use the relay, no DHT
         // This simulates pkarr clients in a browser.
         let client = testnet.pkarr_client_builder().no_dht().build().unwrap();
         let packet = client.resolve(&keypair.public_key()).await;
-        assert!(packet.is_some(), "Published packet is not available over the relay only.");
+        assert!(
+            packet.is_some(),
+            "Published packet is not available over the relay only."
+        );
     }
-
 }

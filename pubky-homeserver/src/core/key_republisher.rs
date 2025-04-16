@@ -153,9 +153,9 @@ pub fn create_signed_packet(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, SocketAddr};
     use futures_lite::StreamExt;
     use pkarr::extra::endpoints::Endpoint;
+    use std::net::{Ipv4Addr, SocketAddr};
 
     use super::*;
 
@@ -181,7 +181,6 @@ mod tests {
         );
     }
 
-
     #[tokio::test]
     async fn test_endpoints() {
         let mut context = AppContext::test();
@@ -190,56 +189,59 @@ mod tests {
             .await
             .unwrap();
         let pubkey = context.keypair.public_key();
-        
+
         let client = pkarr::Client::builder().build().unwrap();
         let packet = client.resolve(&pubkey).await.unwrap();
         let rr: Vec<&pkarr::dns::ResourceRecord> = packet.all_resource_records().collect();
         assert_eq!(rr.len(), 3);
 
-        let endpoints: Vec<Endpoint> = client.resolve_https_endpoints(&pubkey.to_z32()).collect().await;
+        let endpoints: Vec<Endpoint> = client
+            .resolve_https_endpoints(&pubkey.to_z32())
+            .collect()
+            .await;
         assert_eq!(endpoints.len(), 2);
 
-        //SignedPacket 
-        //{ 
-        // ResourceRecord { 
-        // name: Name("8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty", "54"), 
-        // class: IN, 
-        // ttl: 3600, 
-        // rdata: A(A { address: 574725291 }), 
-        // cache_flush: false }, 
-        // 
-        // ResourceRecord { 
-        // name: Name("8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty", "54"), 
-        // class: IN, 
-        // ttl: 3600, 
-        // rdata: HTTPS(HTTPS(SVCB { 
-        // priority: 0, 
-        // target: Name("", "1"), 
-        // params: {3: [24, 143]} })), 
-        // cache_flush: false }, 
-        // 
-        // ResourceRecord { 
-        // name: Name("8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty", "54"), 
+        //SignedPacket
+        //{
+        // ResourceRecord {
+        // name: Name("8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty", "54"),
         // class: IN,
-        // ttl: 3600, 
-        // rdata: HTTPS(HTTPS(SVCB { 
-        // priority: 10, 
-        // target: Name("homeserver.pubky.app", "22"), params: {} })), 
-        // cache_flush: false }], 
+        // ttl: 3600,
+        // rdata: A(A { address: 574725291 }),
+        // cache_flush: false },
+        //
+        // ResourceRecord {
+        // name: Name("8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty", "54"),
+        // class: IN,
+        // ttl: 3600,
+        // rdata: HTTPS(HTTPS(SVCB {
+        // priority: 0,
+        // target: Name("", "1"),
+        // params: {3: [24, 143]} })),
+        // cache_flush: false },
+        //
+        // ResourceRecord {
+        // name: Name("8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty", "54"),
+        // class: IN,
+        // ttl: 3600,
+        // rdata: HTTPS(HTTPS(SVCB {
+        // priority: 10,
+        // target: Name("homeserver.pubky.app", "22"), params: {} })),
+        // cache_flush: false }],
         //
         //[
-        // Endpoint { 
-        // target: ".", 
-        // public_key: PublicKey(8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty), 
-        // port: 6287, 
-        // addrs: [34.65.156.171], 
-        // params: {3: [24, 143]} }, 
-        // 
-        // Endpoint { 
-        // target: "homeserver.pubky.app", 
-        // public_key: PublicKey(8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty), 
-        // port: 0, 
-        // addrs: [], 
+        // Endpoint {
+        // target: ".",
+        // public_key: PublicKey(8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty),
+        // port: 6287,
+        // addrs: [34.65.156.171],
+        // params: {3: [24, 143]} },
+        //
+        // Endpoint {
+        // target: "homeserver.pubky.app",
+        // public_key: PublicKey(8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty),
+        // port: 0,
+        // addrs: [],
         // params: {} }]
     }
 }

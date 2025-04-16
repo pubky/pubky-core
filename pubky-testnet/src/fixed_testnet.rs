@@ -1,8 +1,11 @@
-use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, str::FromStr};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    str::FromStr,
+};
 
+use crate::FlexibleTestnet;
 use http_relay::HttpRelay;
 use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverSuite, SignupMode};
-use crate::FlexibleTestnet;
 
 /// A simple testnet with
 ///
@@ -25,19 +28,22 @@ impl FixedTestnet {
     pub async fn run() -> anyhow::Result<Self> {
         let testnet = FlexibleTestnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
-        .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
         let mut me = Self {
             flexible_testnet: testnet,
             fixed_bootstrap_node: fixed_boostrap,
             temp_dirs: vec![],
         };
 
-        me.run_fixed_pkarr_relays().await
-        .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port 15411: {}", e))?;
-        me.run_fixed_http_relay().await
-        .map_err(|e| anyhow::anyhow!("Failed to run http relay on port 15412: {}", e))?;
-        me.run_fixed_homeserver().await
-        .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
+        me.run_fixed_pkarr_relays()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port 15411: {}", e))?;
+        me.run_fixed_http_relay()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to run http relay on port 15412: {}", e))?;
+        me.run_fixed_homeserver()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
 
         Ok(me)
     }
@@ -81,21 +87,31 @@ impl FixedTestnet {
         if let Some(dht) = &self.fixed_bootstrap_node {
             nodes.push(dht.info().local_addr().to_string());
         }
-        nodes.extend(self.flexible_testnet.dht_bootstrap_nodes().iter().map(|node| node.to_string()));
+        nodes.extend(
+            self.flexible_testnet
+                .dht_bootstrap_nodes()
+                .iter()
+                .map(|node| node.to_string()),
+        );
         nodes
     }
 
     /// Create a fixed bootstrap node on port 6881 if it is not already running.
     /// If it's already running, return None.
-    fn run_fixed_boostrap_node(other_bootstrap_nodes: &Vec<String>) -> anyhow::Result<Option<pkarr::mainline::Dht>> {
-        if other_bootstrap_nodes.iter().any(|node| node.contains("6881")) {
+    fn run_fixed_boostrap_node(
+        other_bootstrap_nodes: &Vec<String>,
+    ) -> anyhow::Result<Option<pkarr::mainline::Dht>> {
+        if other_bootstrap_nodes
+            .iter()
+            .any(|node| node.contains("6881"))
+        {
             return Ok(None);
         }
         let mut builder = pkarr::mainline::Dht::builder();
         builder
-        .port(6881)
-        .bootstrap(other_bootstrap_nodes)
-        .server_mode();
+            .port(6881)
+            .bootstrap(other_bootstrap_nodes)
+            .server_mode();
         let dht = builder.build()?;
         Ok(Some(dht))
     }
@@ -110,9 +126,7 @@ impl FixedTestnet {
             .disable_rate_limiter()
             .pkarr(|pkarr| {
                 pkarr.no_default_network();
-                pkarr
-                    .bootstrap(&self.flexible_testnet.dht.bootstrap)
-
+                pkarr.bootstrap(&self.flexible_testnet.dht.bootstrap)
             });
         let relay = unsafe { builder.run() }.await?;
         self.flexible_testnet.pkarr_relays.push(relay);
@@ -133,13 +147,19 @@ impl FixedTestnet {
     async fn run_fixed_homeserver(&mut self) -> anyhow::Result<()> {
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
         let mut config = ConfigToml::test();
-        config.pkdns.dht_bootstrap_nodes = Some(self.bootstrap_nodes().iter().map(|node| DomainPort::from_str(node).unwrap()).collect());
+        config.pkdns.dht_bootstrap_nodes = Some(
+            self.bootstrap_nodes()
+                .iter()
+                .map(|node| DomainPort::from_str(node).unwrap())
+                .collect(),
+        );
         config.general.signup_mode = SignupMode::Open;
-        config.drive.icann_listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6286);
-        config.drive.pubky_listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6287);
+        config.drive.icann_listen_socket =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6286);
+        config.drive.pubky_listen_socket =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6287);
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6288);
         let mock = DataDirMock::new(config, Some(keypair))?;
-
 
         let homeserver = HomeserverSuite::run_with_data_dir_mock(mock).await?;
         self.flexible_testnet.homeservers.push(homeserver);

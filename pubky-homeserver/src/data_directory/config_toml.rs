@@ -193,7 +193,8 @@ impl ConfigToml {
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        config.drive.icann_domain = Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
+        config.drive.icann_domain =
+            Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config
     }
 }

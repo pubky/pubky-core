@@ -14,9 +14,7 @@ async fn main() -> Result<()> {
     tracing::info!("Testnet running");
     tracing::info!(
         "DHT Bootstrap Nodes: {}",
-        testnet
-            .bootstrap_nodes()
-            .join(", ")
+        testnet.bootstrap_nodes().join(", ")
     );
     tracing::info!("Pkarr Relay: {}", testnet.pkarr_relay().local_url());
     tracing::info!("Http Relay: {}", testnet.http_relay().local_url());
