@@ -3,12 +3,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::routes::{generate_signup_token, root};
+use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
 use crate::{DataDir, DataDirMock};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
+use tower_http::cors::CorsLayer;
 
 /// Folder /admin router
 /// Admin password required.
@@ -26,11 +28,14 @@ fn create_admin_router(password: &str) -> Router<AppState> {
 fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService<Router> {
     let admin_router = create_admin_router(password);
 
-    Router::new()
+    let app = Router::new()
         .nest("/admin", admin_router)
         .route("/", get(root::root))
         .with_state(state)
-        .into_make_service()
+        .layer(CorsLayer::very_permissive());
+
+    with_trace_layer(app, &vec![])
+    .into_make_service()
 }
 
 /// Errors that can occur when building a `AdminServer`.

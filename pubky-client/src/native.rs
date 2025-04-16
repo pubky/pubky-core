@@ -44,7 +44,7 @@ impl ClientBuilder {
     /// Creates a client connected to a local test network with hardcoded configurations:
     /// 1. local DHT with bootstrapping nodes: `&["localhost:6881"]`
     /// 2. Pkarr Relay running on port [15411][pubky_common::constants::testnet_ports::PKARR_RELAY]
-    pub fn fixed_testnet(&mut self) -> &mut Self {
+    pub fn testnet(&mut self) -> &mut Self {
         self.pkarr
             .bootstrap(&[format!(
                 "localhost:{}",

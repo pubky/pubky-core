@@ -16,7 +16,6 @@ export async function createSignupToken(client, homeserver_address ="localhost:6
       "X-Admin-Password": adminPassword,
     },
   });
-
   if (!response.ok) {
     throw new Error(`Failed to get signup token: ${response.statusText}`);
   }
