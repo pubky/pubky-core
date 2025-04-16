@@ -14,10 +14,10 @@ impl Client {
     ///
     /// Differs from [reqwest::Client::request], in that it can make requests to:
     /// 1. HTTPs URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    ///     corresponding endpoints, and verifying TLS certificates accordingly.
-    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
@@ -43,10 +43,10 @@ impl Client {
     ///
     /// Differs from [reqwest::Client::get], in that it can make requests to:
     /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    ///     corresponding endpoints, and verifying TLS certificates accordingly.
-    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
@@ -68,10 +68,10 @@ impl Client {
     ///
     /// Differs from [reqwest::Client::put], in that it can make requests to:
     /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    ///     corresponding endpoints, and verifying TLS certificates accordingly.
-    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
@@ -84,10 +84,10 @@ impl Client {
     ///
     /// Differs from [reqwest::Client::patch], in that it can make requests to:
     /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    ///     corresponding endpoints, and verifying TLS certificates accordingly.
-    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
@@ -100,10 +100,10 @@ impl Client {
     ///
     /// Differs from [reqwest::Client::delete], in that it can make requests to:
     /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    ///     corresponding endpoints, and verifying TLS certificates accordingly.
-    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
@@ -116,10 +116,10 @@ impl Client {
     ///
     /// Differs from [reqwest::Client::head], in that it can make requests to:
     /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
-    ///     corresponding endpoints, and verifying TLS certificates accordingly.
-    ///     (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///     by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
