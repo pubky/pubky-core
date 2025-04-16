@@ -99,7 +99,7 @@ impl FixedTestnet {
     /// Create a fixed bootstrap node on port 6881 if it is not already running.
     /// If it's already running, return None.
     fn run_fixed_boostrap_node(
-        other_bootstrap_nodes: &Vec<String>,
+        other_bootstrap_nodes: &[String],
     ) -> anyhow::Result<Option<pkarr::mainline::Dht>> {
         if other_bootstrap_nodes
             .iter()

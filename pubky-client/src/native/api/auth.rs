@@ -135,7 +135,7 @@ impl Client {
 
         if publish_sync {
             // Wait for the publish to complete.
-            self.publish_homeserver(&keypair, None, PublishStrategy::IfOlderThan)
+            self.publish_homeserver(keypair, None, PublishStrategy::IfOlderThan)
                 .await?;
         } else {
             // Spawn a background task to republish the record.
