@@ -33,6 +33,10 @@ pub struct PkdnsToml {
     #[serde(default)]
     pub public_icann_http_port: Option<u16>,
 
+    /// Optional domain name of the regular http API.
+    #[serde(default)]
+    pub icann_domain: Option<Domain>,
+
     /// The interval at which the user keys are republished in the DHT.
     /// 0 means disabled.
     #[serde(default = "default_user_keys_republisher_interval")]
@@ -82,9 +86,6 @@ pub struct DriveToml {
     /// The port on which the regular http API will listen.
     #[serde(default = "default_icann_drive_listen_socket")]
     pub icann_listen_socket: SocketAddr,
-    /// Optional domain name of the regular http API.
-    #[serde(default)]
-    pub icann_domain: Option<Domain>,
 }
 
 fn default_pubky_drive_listen_socket() -> SocketAddr {
@@ -193,7 +194,7 @@ impl ConfigToml {
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        config.drive.icann_domain =
+        config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config
     }
@@ -230,7 +231,7 @@ mod tests {
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(c.drive.icann_domain, None);
+        assert_eq!(c.pkdns.icann_domain, None);
 
         assert_eq!(
             c.drive.pubky_listen_socket,

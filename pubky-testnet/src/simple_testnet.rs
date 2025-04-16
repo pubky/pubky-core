@@ -5,7 +5,6 @@ use crate::FlexibleTestnet;
 /// A simple testnet with random ports assigned for all components.
 ///
 /// - A local DHT with bootstrapping nodes.
-/// - pkarr relay.
 /// - http relay.
 /// - A homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
 /// - An admin server for the homeserver.

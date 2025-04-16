@@ -138,7 +138,7 @@ pub fn create_signed_packet(
     //
     // TODO: Is it possible to point the SVCB record to the IP address via a `A` record?
     // This would remove the ICANN domain dependency.
-    if let Some(domain) = &context.config_toml.drive.icann_domain {
+    if let Some(domain) = &context.config_toml.pkdns.icann_domain {
         let mut svcb = SVCB::new(10, root_name.clone());
 
         let http_port_be_bytes = public_icann_http_port.to_be_bytes();

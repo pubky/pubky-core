@@ -20,17 +20,6 @@ pubky_listen_socket = "127.0.0.1:6287"
 # May be put behind a reverse proxy with TLS enabled.
 icann_listen_socket = "127.0.0.1:6286"
 
-# An ICANN domain name is necessary to support legacy browsers
-#
-# Make sure to setup a domain name and point it the IP
-# address of this machine where you are running this server.
-#
-# This domain should point to the `<public_ip>:<public_port>`.
-# 
-# ICANN TLS is not natively supported, so you should be running
-# a reverse proxy and managing certificates yourself.
-icann_domain = "example.com"
-
 
 [admin]
 # The port number to run the admin HTTP (clear text) server on.
@@ -52,6 +41,17 @@ public_pubky_tls_port = 6287
 # The icann http port in case it differs from the icann_listen_socket port.
 # Defaults to the icann_listen_socket port.
 public_icann_http_port = 80
+
+# An ICANN domain name is necessary to support legacy browsers
+#
+# Make sure to setup a domain name and point it the IP
+# address of this machine where you are running this server.
+#
+# This domain should point to the `<public_ip>:<public_port>`.
+# 
+# ICANN TLS is not natively supported, so you should be running
+# a reverse proxy and managing certificates yourself.
+icann_domain = "example.com"
 
 # The interval at which user keys are republished to the DHT.
 # 0 means disabled.
