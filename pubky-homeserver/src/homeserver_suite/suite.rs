@@ -1,11 +1,10 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
-use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use crate::MockDataDir;
+use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
-
 
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]

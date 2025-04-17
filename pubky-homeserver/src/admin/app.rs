@@ -6,7 +6,7 @@ use super::routes::{generate_signup_token, root};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
-use crate::{PersistentDataDir, MockDataDir};
+use crate::{MockDataDir, PersistentDataDir};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;

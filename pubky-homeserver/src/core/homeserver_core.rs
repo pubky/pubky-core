@@ -7,7 +7,7 @@ use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
 use crate::{app_context::AppContext, PersistentDataDir};
-use crate::{MockDataDir, DataDir, SignupMode};
+use crate::{DataDir, MockDataDir, SignupMode};
 use anyhow::Result;
 use axum::Router;
 use axum_server::{

@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Duration};
 
 use pkarr::Keypair;
 
-use crate::{persistence::lmdb::LmDB, ConfigToml, PersistentDataDir, MockDataDir, DataDir};
+use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
