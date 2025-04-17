@@ -314,7 +314,6 @@ impl Client {
                     break Ok(response);
                 }
                 Err(error) => {
-                    println!("error while receiving auth response: {:?}", error);
                     // TODO: test again after Rqewest support timeout
                     if error.is_timeout() && !tx.is_disconnected() {
                         cross_debug!("Connection to HttpRelay timedout, reconnecting...");
