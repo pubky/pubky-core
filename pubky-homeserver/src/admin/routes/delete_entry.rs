@@ -11,7 +11,8 @@ pub async fn delete_entry(
     State(mut state): State<AppState>,
     Path(path): Path<String>,
 ) -> Result<impl IntoResponse> {
-    println!("Path: {}", path);
+    let full_path = format!("/pub/{}", path);
+    println!("Path: {}", full_path);
     Ok((StatusCode::OK, "Ok"))
 }
 
