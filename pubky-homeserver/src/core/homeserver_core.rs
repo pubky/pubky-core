@@ -6,8 +6,8 @@ use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;
-use crate::{app_context::AppContext, DataDir};
-use crate::{DataDirMock, DataDirTrait, SignupMode};
+use crate::{app_context::AppContext, PersistentDataDir};
+use crate::{MockDataDir, DataDir, SignupMode};
 use anyhow::Result;
 use axum::Router;
 use axum_server::{
@@ -67,30 +67,30 @@ pub struct HomeserverCore {
 
 impl HomeserverCore {
     /// Create a Homeserver from a data directory path like `~/.pubky`.
-    pub async fn from_data_dir_path(
+    pub async fn from_persistent_data_dir_path(
         dir_path: PathBuf,
     ) -> std::result::Result<Self, HomeserverBuildError> {
-        let data_dir = DataDir::new(dir_path);
-        Self::from_data_dir(data_dir).await
+        let data_dir = PersistentDataDir::new(dir_path);
+        Self::from_persistent_data_dir(data_dir).await
     }
 
     /// Create a Homeserver from a data directory.
-    pub async fn from_data_dir(
-        data_dir: DataDir,
+    pub async fn from_persistent_data_dir(
+        data_dir: PersistentDataDir,
     ) -> std::result::Result<Self, HomeserverBuildError> {
-        Self::from_data_dir_trait(Arc::new(data_dir)).await
+        Self::from_data_dir(Arc::new(data_dir)).await
     }
 
     /// Create a Homeserver from a mock data directory.
-    pub async fn from_mock_dir(
-        mock_dir: DataDirMock,
+    pub async fn from_mock_data_dir(
+        mock_dir: MockDataDir,
     ) -> std::result::Result<Self, HomeserverBuildError> {
-        Self::from_data_dir_trait(Arc::new(mock_dir)).await
+        Self::from_data_dir(Arc::new(mock_dir)).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub(crate) async fn from_data_dir_trait(
-        dir: Arc<dyn DataDirTrait>,
+    pub(crate) async fn from_data_dir(
+        dir: Arc<dyn DataDir>,
     ) -> std::result::Result<Self, HomeserverBuildError> {
         let context = AppContext::try_from(dir).map_err(HomeserverBuildError::AppContext)?;
         Self::new(context).await

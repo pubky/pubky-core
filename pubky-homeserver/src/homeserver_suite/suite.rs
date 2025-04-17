@@ -1,11 +1,11 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
-use crate::{app_context::AppContext, data_directory::DataDir};
-use crate::{DataDirMock, DataDirTrait};
+use crate::{app_context::AppContext, data_directory::PersistentDataDir};
+use crate::MockDataDir;
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
-use std::sync::Arc;
+
 
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]
@@ -32,26 +32,20 @@ pub struct HomeserverSuite {
 
 impl HomeserverSuite {
     /// Run the homeserver with configurations from a data directory.
-    pub async fn run_with_data_dir_path(dir_path: PathBuf) -> Result<Self> {
-        let data_dir = DataDir::new(dir_path);
+    pub async fn run_with_persistent_data_dir_path(dir_path: PathBuf) -> Result<Self> {
+        let data_dir = PersistentDataDir::new(dir_path);
         let context = AppContext::try_from(data_dir)?;
         Self::run(context).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub async fn run_with_data_dir_trait(dir: Arc<dyn DataDirTrait>) -> Result<Self> {
-        let context = AppContext::try_from(dir)?;
-        Self::run(context).await
-    }
-
-    /// Run the homeserver with configurations from a data directory.
-    pub async fn run_with_data_dir(dir: DataDir) -> Result<Self> {
+    pub async fn run_with_persistent_data_dir(dir: PersistentDataDir) -> Result<Self> {
         let context = AppContext::try_from(dir)?;
         Self::run(context).await
     }
 
     /// Run the homeserver with configurations from a data directory mock.
-    pub async fn run_with_data_dir_mock(dir: DataDirMock) -> Result<Self> {
+    pub async fn run_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
         let context = AppContext::try_from(dir)?;
         Self::run(context).await
     }

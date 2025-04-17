@@ -1,4 +1,4 @@
-use super::{data_dir_trait::DataDirTrait, ConfigToml};
+use super::{data_dir_trait::DataDir, ConfigToml};
 use std::{
     io::Write,
     os::unix::fs::PermissionsExt,
@@ -10,11 +10,11 @@ use std::{
 /// This is the directory that will store the homeservers data.
 ///
 #[derive(Debug, Clone)]
-pub struct DataDir {
+pub struct PersistentDataDir {
     expanded_path: PathBuf,
 }
 
-impl DataDir {
+impl PersistentDataDir {
     /// Creates a new data directory.
     /// `path` will be expanded to the home directory if it starts with "~".
     pub fn new(path: PathBuf) -> Self {
@@ -63,13 +63,13 @@ impl DataDir {
     }
 }
 
-impl Default for DataDir {
+impl Default for PersistentDataDir {
     fn default() -> Self {
         Self::new(PathBuf::from("~/.pubky"))
     }
 }
 
-impl DataDirTrait for DataDir {
+impl DataDir for PersistentDataDir {
     /// Returns the full path to the data directory.
     fn path(&self) -> &Path {
         &self.expanded_path
@@ -135,7 +135,7 @@ mod tests {
     /// Test that the home directory is expanded correctly.
     #[test]
     pub fn test_expand_home_dir() {
-        let data_dir = DataDir::new(PathBuf::from("~/.pubky"));
+        let data_dir = PersistentDataDir::new(PathBuf::from("~/.pubky"));
         let homedir = dirs::home_dir().unwrap();
         let expanded_path = homedir.join(".pubky");
         assert_eq!(data_dir.expanded_path, expanded_path);
@@ -146,7 +146,7 @@ mod tests {
     pub fn test_ensure_data_dir_exists_and_is_accessible() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let data_dir = DataDir::new(test_path.clone());
+        let data_dir = PersistentDataDir::new(test_path.clone());
 
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         assert!(test_path.exists());
@@ -157,7 +157,7 @@ mod tests {
     pub fn test_get_default_config_file_path_exists() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let data_dir = DataDir::new(test_path.clone());
+        let data_dir = PersistentDataDir::new(test_path.clone());
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         let config_file_path = data_dir.get_config_file_path();
         assert!(!config_file_path.exists()); // Should not exist yet
@@ -172,7 +172,7 @@ mod tests {
     pub fn test_read_or_create_config_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let data_dir = DataDir::new(test_path.clone());
+        let data_dir = PersistentDataDir::new(test_path.clone());
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
         let _ = data_dir.read_or_create_config_file().unwrap(); // Should create a default config file
         assert!(data_dir.get_config_file_path().exists());
@@ -185,7 +185,7 @@ mod tests {
     pub fn test_read_or_create_config_file_dont_override_existing_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let data_dir = DataDir::new(test_path.clone());
+        let data_dir = PersistentDataDir::new(test_path.clone());
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Write a broken config file
@@ -206,7 +206,7 @@ mod tests {
     pub fn test_create_secret_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let data_dir = DataDir::new(test_path.clone());
+        let data_dir = PersistentDataDir::new(test_path.clone());
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
 
         let _ = data_dir.read_or_create_keypair().unwrap();
@@ -217,7 +217,7 @@ mod tests {
     pub fn test_dont_override_existing_secret_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let data_dir = DataDir::new(test_path.clone());
+        let data_dir = PersistentDataDir::new(test_path.clone());
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Create a secret file

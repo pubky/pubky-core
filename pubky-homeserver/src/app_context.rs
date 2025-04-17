@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Duration};
 
 use pkarr::Keypair;
 
-use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir, DataDirMock, DataDirTrait};
+use crate::{persistence::lmdb::LmDB, ConfigToml, PersistentDataDir, MockDataDir, DataDir};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +42,7 @@ pub struct AppContext {
     pub(crate) db: LmDB,
     pub(crate) config_toml: ConfigToml,
     /// Keep data_dir alive. The mock dir will cleanup on drop.
-    pub(crate) data_dir: Arc<dyn DataDirTrait>,
+    pub(crate) data_dir: Arc<dyn DataDir>,
     pub(crate) keypair: Keypair,
     /// Main pkarr instance. This will automatically turn into a DHT server after 15 minutes after startup.
     /// We need to keep this alive.
@@ -55,16 +55,16 @@ pub struct AppContext {
 impl AppContext {
     /// Create a new AppContext for testing.
     pub fn test() -> Self {
-        use crate::DataDirMock;
-        let data_dir = DataDirMock::test();
+        use crate::MockDataDir;
+        let data_dir = MockDataDir::test();
         Self::try_from(data_dir).unwrap()
     }
 }
 
-impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
+impl TryFrom<Arc<dyn DataDir>> for AppContext {
     type Error = AppContextConversionError;
 
-    fn try_from(dir: Arc<dyn DataDirTrait>) -> Result<Self, Self::Error> {
+    fn try_from(dir: Arc<dyn DataDir>) -> Result<Self, Self::Error> {
         dir.ensure_data_dir_exists_and_is_writable()
             .map_err(AppContextConversionError::DataDir)?;
         let conf = dir
@@ -90,20 +90,20 @@ impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
     }
 }
 
-impl TryFrom<DataDir> for AppContext {
+impl TryFrom<PersistentDataDir> for AppContext {
     type Error = AppContextConversionError;
 
-    fn try_from(dir: DataDir) -> Result<Self, Self::Error> {
-        let arc_dir: Arc<dyn DataDirTrait> = Arc::new(dir);
+    fn try_from(dir: PersistentDataDir) -> Result<Self, Self::Error> {
+        let arc_dir: Arc<dyn DataDir> = Arc::new(dir);
         Self::try_from(arc_dir)
     }
 }
 
-impl TryFrom<DataDirMock> for AppContext {
+impl TryFrom<MockDataDir> for AppContext {
     type Error = AppContextConversionError;
 
-    fn try_from(dir: DataDirMock) -> Result<Self, Self::Error> {
-        let arc_dir: Arc<dyn DataDirTrait> = Arc::new(dir);
+    fn try_from(dir: MockDataDir) -> Result<Self, Self::Error> {
+        let arc_dir: Arc<dyn DataDir> = Arc::new(dir);
         Self::try_from(arc_dir)
     }
 }

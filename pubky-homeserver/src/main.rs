@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
         .init();
 
     tracing::debug!("Using data dir: {}", args.data_dir.display());
-    let server = HomeserverSuite::run_with_data_dir_path(args.data_dir).await?;
+    let server = HomeserverSuite::run_with_persistent_data_dir_path(args.data_dir).await?;
 
     tracing::info!(
         "Homeserver HTTP listening on {}",

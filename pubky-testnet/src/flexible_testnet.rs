@@ -9,7 +9,7 @@ use std::{str::FromStr, time::Duration};
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::Keypair;
-use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverSuite};
+use pubky_homeserver::{ConfigToml, MockDataDir, DomainPort, HomeserverSuite};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -46,7 +46,7 @@ impl FlexibleTestnet {
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn create_homeserver_suite(&mut self) -> Result<&HomeserverSuite> {
         let mock_dir =
-            DataDirMock::new(ConfigToml::test(), Some(Keypair::from_secret_key(&[0; 32])))?;
+            MockDataDir::new(ConfigToml::test(), Some(Keypair::from_secret_key(&[0; 32])))?;
         self.create_homeserver_suite_with_mock(mock_dir).await
     }
 
@@ -55,13 +55,13 @@ impl FlexibleTestnet {
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn create_homeserver_suite_with_mock(
         &mut self,
-        mut mock_dir: DataDirMock,
+        mut mock_dir: MockDataDir,
     ) -> Result<&HomeserverSuite> {
         mock_dir.config_toml.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
-        let homeserver = HomeserverSuite::run_with_data_dir_mock(mock_dir).await?;
+        let homeserver = HomeserverSuite::run_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self
             .homeservers

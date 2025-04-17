@@ -5,7 +5,7 @@ use std::{
 
 use crate::FlexibleTestnet;
 use http_relay::HttpRelay;
-use pubky_homeserver::{ConfigToml, DataDirMock, DomainPort, HomeserverSuite, SignupMode};
+use pubky_homeserver::{ConfigToml, MockDataDir, DomainPort, HomeserverSuite, SignupMode};
 
 /// A simple testnet with
 ///
@@ -159,9 +159,9 @@ impl FixedTestnet {
         config.drive.pubky_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6287);
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6288);
-        let mock = DataDirMock::new(config, Some(keypair))?;
+        let mock = MockDataDir::new(config, Some(keypair))?;
 
-        let homeserver = HomeserverSuite::run_with_data_dir_mock(mock).await?;
+        let homeserver = HomeserverSuite::run_with_mock_data_dir(mock).await?;
         self.flexible_testnet.homeservers.push(homeserver);
         Ok(())
     }

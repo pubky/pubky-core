@@ -1,7 +1,7 @@
 use pkarr::Keypair;
 use pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
-    pubky_homeserver::{DataDirMock, SignupMode},
+    pubky_homeserver::{MockDataDir, SignupMode},
     FlexibleTestnet, SimpleTestnet,
 };
 use reqwest::StatusCode;
@@ -251,7 +251,7 @@ async fn test_signup_with_token() {
     let mut testnet = FlexibleTestnet::new().await.unwrap();
     let client = testnet.pubky_client_builder().build().unwrap();
 
-    let mut mock_dir = DataDirMock::test();
+    let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
     let server = testnet
         .create_homeserver_suite_with_mock(mock_dir)

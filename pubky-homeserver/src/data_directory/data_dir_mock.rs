@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::DataDirTrait;
+use super::DataDir;
 
 /// Mock data directory for testing.
 ///
@@ -8,7 +8,7 @@ use super::DataDirTrait;
 ///
 
 #[derive(Debug, Clone)]
-pub struct DataDirMock {
+pub struct MockDataDir {
     pub(crate) temp_dir: std::sync::Arc<tempfile::TempDir>,
     /// The configuration for the homeserver.
     pub config_toml: super::ConfigToml,
@@ -16,7 +16,7 @@ pub struct DataDirMock {
     pub keypair: pkarr::Keypair,
 }
 
-impl DataDirMock {
+impl MockDataDir {
     /// Create a new DataDirMock with a temporary directory.
     ///
     /// If keypair is not provided, a new one will be generated.
@@ -40,7 +40,7 @@ impl DataDirMock {
     }
 }
 
-impl DataDirTrait for DataDirMock {
+impl DataDir for MockDataDir {
     fn path(&self) -> &Path {
         self.temp_dir.path()
     }

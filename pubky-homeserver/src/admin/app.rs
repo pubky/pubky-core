@@ -6,7 +6,7 @@ use super::routes::{generate_signup_token, root};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
-use crate::{DataDir, DataDirMock};
+use crate::{PersistentDataDir, MockDataDir};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
@@ -59,19 +59,19 @@ pub struct AdminServer {
 
 impl AdminServer {
     /// Create a new admin server from a data directory.
-    pub async fn from_data_dir(data_dir: DataDir) -> anyhow::Result<Self> {
+    pub async fn from_data_dir(data_dir: PersistentDataDir) -> anyhow::Result<Self> {
         let context = AppContext::try_from(data_dir)?;
         Self::run(&context).await
     }
 
     /// Create a new admin server from a data directory path.
     pub async fn from_data_dir_path(data_dir_path: PathBuf) -> anyhow::Result<Self> {
-        let data_dir = DataDir::new(data_dir_path);
+        let data_dir = PersistentDataDir::new(data_dir_path);
         Self::from_data_dir(data_dir).await
     }
 
     /// Create a new admin server from a mock data directory.
-    pub async fn from_mock_dir(mock_dir: DataDirMock) -> anyhow::Result<Self> {
+    pub async fn from_mock_dir(mock_dir: MockDataDir) -> anyhow::Result<Self> {
         let context = AppContext::try_from(mock_dir)?;
         Self::run(&context).await
     }
