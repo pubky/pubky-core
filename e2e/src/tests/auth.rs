@@ -9,7 +9,7 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn basic_authn() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -53,7 +53,7 @@ async fn basic_authn() {
 
 #[tokio::test]
 async fn authz() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let http_relay = testnet.http_relay();
@@ -127,7 +127,7 @@ async fn authz() {
 
 #[tokio::test]
 async fn multiple_users() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -166,7 +166,7 @@ async fn multiple_users() {
 
 #[tokio::test]
 async fn authz_timeout_reconnect() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let http_relay = testnet.http_relay();
@@ -297,7 +297,7 @@ async fn test_signup_with_token() {
 #[tokio::test]
 async fn test_republish_on_signin_old_enough() {
     // Setup the testnet and run a homeserver.
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1ms.
     let client = testnet
         .pubky_client_builder()
@@ -350,7 +350,7 @@ async fn test_republish_on_signin_old_enough() {
 #[tokio::test]
 async fn test_republish_on_signin_not_old_enough() {
     // Setup the testnet and run a homeserver.
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1hr.
     let client = testnet.pubky_client_builder().build().unwrap();
 

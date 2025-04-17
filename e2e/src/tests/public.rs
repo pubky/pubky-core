@@ -5,7 +5,7 @@ use reqwest::{Method, StatusCode};
 
 #[tokio::test]
 async fn put_get_delete() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -71,7 +71,7 @@ async fn put_get_delete() {
 
 #[tokio::test]
 async fn unauthorized_put_delete() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -139,7 +139,7 @@ async fn unauthorized_put_delete() {
 
 #[tokio::test]
 async fn list() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -345,7 +345,7 @@ async fn list() {
 
 #[tokio::test]
 async fn list_shallow() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -558,7 +558,7 @@ async fn list_shallow() {
 
 #[tokio::test]
 async fn list_events() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -657,7 +657,7 @@ async fn list_events() {
 
 #[tokio::test]
 async fn read_after_event() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -710,7 +710,7 @@ async fn read_after_event() {
 
 #[tokio::test]
 async fn dont_delete_shared_blobs() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -786,7 +786,7 @@ async fn dont_delete_shared_blobs() {
 #[tokio::test]
 async fn stream() {
     // TODO: test better streaming API
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();

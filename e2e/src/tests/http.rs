@@ -3,7 +3,7 @@ use reqwest::Method;
 
 #[tokio::test]
 async fn http_get_pubky() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -19,7 +19,7 @@ async fn http_get_pubky() {
 
 #[tokio::test]
 async fn http_get_icann() {
-    let testnet = SimpleTestnet::run().await.unwrap();
+    let testnet = SimpleTestnet::start().await.unwrap();
 
     let client = testnet.pubky_client_builder().build().unwrap();
 
