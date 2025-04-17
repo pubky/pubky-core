@@ -119,7 +119,7 @@ impl HomeserverCore {
         .await
         .map_err(HomeserverBuildError::KeyRepublisher)?;
         let user_keys_republisher =
-            UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
+            UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::start(&context);
 
         Ok(Self {

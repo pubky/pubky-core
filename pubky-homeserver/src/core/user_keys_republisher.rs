@@ -19,6 +19,8 @@ pub(crate) enum UserKeysRepublisherError {
     Pkarr(ResilientClientBuilderError),
 }
 
+const MIN_REPUBLISH_INTERVAL: Duration = Duration::from_secs(30 * 60);
+
 /// Publishes the pkarr keys of all users to the Mainline DHT.
 pub(crate) struct UserKeysRepublisher {
     handle: Option<JoinHandle<()>>,
@@ -26,20 +28,35 @@ pub(crate) struct UserKeysRepublisher {
 
 impl UserKeysRepublisher {
     /// Run the user keys republisher with an initial delay.
-    pub fn run_delayed(context: &AppContext, initial_delay: Duration) -> Self {
+    pub fn start_delayed(context: &AppContext, initial_delay: Duration) -> Self {
         let db = context.db.clone();
         let is_disabled = context.config_toml.pkdns.user_keys_republisher_interval == 0;
         if is_disabled {
             tracing::info!("User keys republisher is disabled.");
             return Self { handle: None };
         }
-        let republish_interval =
+        let mut republish_interval =
             Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
+        if republish_interval < MIN_REPUBLISH_INTERVAL {
+            tracing::warn!(
+                "The configured user keys republisher interval is less than {}s. To avoid spamming the Mainline DHT, the value is set to {}s.",
+                MIN_REPUBLISH_INTERVAL.as_secs(),
+                MIN_REPUBLISH_INTERVAL.as_secs()
+            );
+            republish_interval = MIN_REPUBLISH_INTERVAL;
+        }
         tracing::info!(
             "Initialize user keys republisher with an interval of {:?} and an initial delay of {:?}",
             republish_interval,
             initial_delay
         );
+
+        if republish_interval < Duration::from_secs(60 * 60) {
+            tracing::warn!(
+                "User keys republisher interval is less than 60min. This is strongly discouraged "
+            );
+        }
+
         let pkarr_builder = context.pkarr_builder.clone();
         let handle = tokio::spawn(async move {
             tokio::time::sleep(initial_delay).await;

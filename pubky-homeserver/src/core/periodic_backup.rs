@@ -9,22 +9,30 @@ pub(crate) struct PeriodicBackup {
     handle: Option<JoinHandle<()>>,
 }
 
+const BACKUP_INTERVAL_DANGERZONE: Duration = Duration::from_secs(30);
+
 impl PeriodicBackup {
     pub fn start(context: &AppContext) -> Self {
-        let is_disabled = context.config_toml.general.lmdb_backup_interval_s == 0;
+        let backup_interval = Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
+        let is_disabled = backup_interval.as_secs() == 0;
         if is_disabled {
             tracing::info!("LMDB backup is disabled.");
             return Self { handle: None };
         }
+        if backup_interval < BACKUP_INTERVAL_DANGERZONE {
+            tracing::warn!(
+                "The configured LMDB backup interval is less than {}s!.",
+                BACKUP_INTERVAL_DANGERZONE.as_secs(),
+            );
+        }
         let db = context.db.clone();
         let backup_path = context.data_dir.path().join("backup");
-        let period = Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
         tracing::info!(
             "Starting LMDB backup with interval {}s",
-            context.config_toml.general.lmdb_backup_interval_s
+            backup_interval.as_secs()
         );
         let handle = tokio::spawn(async move {
-            backup_lmdb_periodically(db, backup_path, period).await;
+            backup_lmdb_periodically(db, backup_path, backup_interval).await;
         });
         Self {
             handle: Some(handle),
