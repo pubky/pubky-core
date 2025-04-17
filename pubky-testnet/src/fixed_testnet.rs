@@ -5,7 +5,7 @@ use std::{
 
 use crate::FlexibleTestnet;
 use http_relay::HttpRelay;
-use pubky_homeserver::{ConfigToml, MockDataDir, DomainPort, HomeserverSuite, SignupMode};
+use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir, SignupMode};
 
 /// A simple testnet with
 ///
