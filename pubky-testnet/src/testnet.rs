@@ -17,7 +17,7 @@ use url::Url;
 ///
 /// Keeps track of the components and can create new ones.
 /// Cleans up all resources when dropped.
-pub struct FlexibleTestnet {
+pub struct Testnet {
     pub(crate) dht: pkarr::mainline::Testnet,
     pub(crate) pkarr_relays: Vec<pkarr_relay::Relay>,
     pub(crate) http_relays: Vec<HttpRelay>,
@@ -26,7 +26,7 @@ pub struct FlexibleTestnet {
     temp_dirs: Vec<tempfile::TempDir>,
 }
 
-impl FlexibleTestnet {
+impl Testnet {
     /// Run a new testnet with a local DHT.
     pub async fn new() -> Result<Self> {
         let dht = pkarr::mainline::Testnet::new_async(2).await?;
@@ -168,13 +168,13 @@ impl FlexibleTestnet {
 mod test {
     use std::time::Duration;
 
-    use crate::FlexibleTestnet;
+    use crate::Testnet;
     use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
     async fn test_keep_relays_alive_even_when_dropped() {
-        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        let mut testnet = Testnet::new().await.unwrap();
         {
             let _relay = testnet.create_http_relay().await.unwrap();
         }
@@ -184,7 +184,7 @@ mod test {
     /// Boostrap node conversion
     #[tokio::test]
     async fn test_boostrap_node_conversion() {
-        let testnet = FlexibleTestnet::new().await.unwrap();
+        let testnet = Testnet::new().await.unwrap();
         let nodes = testnet.dht_bootstrap_nodes();
         assert_eq!(nodes.len(), 2);
     }
@@ -193,7 +193,7 @@ mod test {
     /// This is an e2e tests to check if everything is correct.
     #[tokio::test]
     async fn test_signup() {
-        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver_suite().await.unwrap();
         let client = testnet.pubky_client_builder().build().unwrap();
         let hs = testnet.homeservers.first().unwrap();
@@ -209,8 +209,8 @@ mod test {
 
     #[tokio::test]
     async fn test_independent_dhts() {
-        let t1 = FlexibleTestnet::new().await.unwrap();
-        let t2 = FlexibleTestnet::new().await.unwrap();
+        let t1 = Testnet::new().await.unwrap();
+        let t2 = Testnet::new().await.unwrap();
 
         assert_ne!(t1.dht.bootstrap, t2.dht.bootstrap);
     }
@@ -218,7 +218,7 @@ mod test {
     /// If everything is linked correctly, the hs_pubky should be resolvable from the pkarr client.
     #[tokio::test]
     async fn test_homeserver_resolvable() {
-        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        let mut testnet = Testnet::new().await.unwrap();
         let hs_pubky = testnet
             .create_homeserver_suite()
             .await
@@ -244,7 +244,7 @@ mod test {
 
         for _ in 0..10 {
             let handle = tokio::spawn(async move {
-                let mut testnet = match FlexibleTestnet::new().await {
+                let mut testnet = match Testnet::new().await {
                     Ok(testnet) => testnet,
                     Err(e) => {
                         panic!("Failed to create testnet: {}", e);
@@ -286,7 +286,7 @@ mod test {
     /// Made due to https://github.com/pubky/pkarr/issues/140
     #[tokio::test]
     async fn test_pkarr_relay_resolvable() {
-        let mut testnet = FlexibleTestnet::new().await.unwrap();
+        let mut testnet = Testnet::new().await.unwrap();
         testnet.create_pkarr_relay().await.unwrap();
 
         let keypair = Keypair::random();

@@ -9,13 +9,13 @@ All resources are ephemeral, databases are in the operating system's temporary d
 ### Inline testing
 
 ```rust
-use pubky_testnet::SimpleTestnet;
+use pubky_testnet::EphemeralTestnet;
 
 #[tokio::main]
 async fn main () {
   // Run a new testnet. This creates a test dht,
   // a homeserver, and a http relay.
-  let testnet = SimpleTestnet::start().await.unwrap();
+  let testnet = EphemeralTestnet::start().await.unwrap();
 
   // Create a Pubky Client from the testnet.
   let client = testnet.pubky_client_builder().build().unwrap();

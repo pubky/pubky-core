@@ -1,10 +1,10 @@
 // Actual testnet exposed in the library
-mod fixed_testnet;
-mod flexible_testnet;
-mod simple_testnet;
-pub use fixed_testnet::FixedTestnet;
-pub use flexible_testnet::FlexibleTestnet;
-pub use simple_testnet::SimpleTestnet;
+mod static_testnet;
+mod testnet;
+mod ephemeral_testnet;
+pub use static_testnet::StaticTestnet;
+pub use testnet::Testnet;
+pub use ephemeral_testnet::EphemeralTestnet;
 
 // Re-export the core crates
 pub use pubky;

@@ -5,13 +5,13 @@ Rust implementation implementation of [Pubky](https://github.com/pubky/pubky-cor
 ## Quick Start
 
 ```rust
-use pubky_testnet::SimpleTestnet;
+use pubky_testnet::EphemeralTestnet;
 use pubky::Keypair;
 
 #[tokio::main]
 async fn main () {
   // Mainline Dht testnet and a temporary homeserver for unit testing.
-  let testnet = SimpleTestnet::start().await.unwrap();
+  let testnet = EphemeralTestnet::start().await.unwrap();
   let client = testnet.pubky_client_builder().build().unwrap();
 
   let homeserver = testnet.homeserver_suite();

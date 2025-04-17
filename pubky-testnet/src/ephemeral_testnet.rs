@@ -1,6 +1,6 @@
 use http_relay::HttpRelay;
 
-use crate::FlexibleTestnet;
+use crate::Testnet;
 
 /// A simple testnet with random ports assigned for all components.
 ///
@@ -8,16 +8,16 @@ use crate::FlexibleTestnet;
 /// - http relay.
 /// - A homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
 /// - An admin server for the homeserver.
-pub struct SimpleTestnet {
+pub struct EphemeralTestnet {
     /// Inner flexible testnet.
-    pub flexible_testnet: FlexibleTestnet,
+    pub flexible_testnet: Testnet,
 }
 
-impl SimpleTestnet {
+impl EphemeralTestnet {
     /// Run a new simple testnet.
     pub async fn start() -> anyhow::Result<Self> {
         let mut me = Self {
-            flexible_testnet: FlexibleTestnet::new().await?,
+            flexible_testnet: Testnet::new().await?,
         };
 
         me.flexible_testnet.create_http_relay().await?;
@@ -63,11 +63,11 @@ mod test {
     #[tokio::test]
     async fn test_two_testnet_in_a_row() {
         {
-            let _ = SimpleTestnet::start().await.unwrap();
+            let _ = EphemeralTestnet::start().await.unwrap();
         }
 
         {
-            let _ = SimpleTestnet::start().await.unwrap();
+            let _ = EphemeralTestnet::start().await.unwrap();
         }
     }
 }

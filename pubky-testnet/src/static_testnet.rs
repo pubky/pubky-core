@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::FlexibleTestnet;
+use crate::Testnet;
 use http_relay::HttpRelay;
 use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir, SignupMode};
 
@@ -14,19 +14,19 @@ use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir, Sig
 /// - http relay on port 15412.
 /// - A homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
 /// - An admin server for the homeserver on port 6288.
-pub struct FixedTestnet {
+pub struct StaticTestnet {
     /// Inner flexible testnet.
-    pub flexible_testnet: FlexibleTestnet,
+    pub flexible_testnet: Testnet,
     #[allow(dead_code)]
     fixed_bootstrap_node: Option<pkarr::mainline::Dht>, // Keep alive
     #[allow(dead_code)]
     temp_dirs: Vec<tempfile::TempDir>, // Keep temp dirs alive for the pkarr relay
 }
 
-impl FixedTestnet {
+impl StaticTestnet {
     /// Run a new simple testnet.
     pub async fn start() -> anyhow::Result<Self> {
-        let testnet = FlexibleTestnet::new().await?;
+        let testnet = Testnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
             .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
         let mut me = Self {

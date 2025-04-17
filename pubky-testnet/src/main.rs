@@ -1,5 +1,5 @@
 use anyhow::Result;
-use pubky_testnet::FixedTestnet;
+use pubky_testnet::StaticTestnet;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let testnet = FixedTestnet::start().await?;
+    let testnet = StaticTestnet::start().await?;
     tracing::info!("Testnet running");
     tracing::info!(
         "DHT Bootstrap Nodes: {}",
