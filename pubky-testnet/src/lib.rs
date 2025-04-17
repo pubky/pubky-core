@@ -1,10 +1,10 @@
 // Actual testnet exposed in the library
+mod ephemeral_testnet;
 mod static_testnet;
 mod testnet;
-mod ephemeral_testnet;
+pub use ephemeral_testnet::EphemeralTestnet;
 pub use static_testnet::StaticTestnet;
 pub use testnet::Testnet;
-pub use ephemeral_testnet::EphemeralTestnet;
 
 // Re-export the core crates
 pub use pubky;
