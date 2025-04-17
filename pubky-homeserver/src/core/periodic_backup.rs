@@ -13,7 +13,8 @@ const BACKUP_INTERVAL_DANGERZONE: Duration = Duration::from_secs(30);
 
 impl PeriodicBackup {
     pub fn start(context: &AppContext) -> Self {
-        let backup_interval = Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
+        let backup_interval =
+            Duration::from_secs(context.config_toml.general.lmdb_backup_interval_s);
         let is_disabled = backup_interval.as_secs() == 0;
         if is_disabled {
             tracing::info!("LMDB backup is disabled.");

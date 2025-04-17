@@ -6,7 +6,6 @@ use tower_http::trace::{
 use tracing::{Level, Span};
 
 pub fn with_trace_layer(router: Router) -> Router {
-
     router.layer(
         TraceLayer::new_for_http()
             .make_span_with(move |request: &Request| {
