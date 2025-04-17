@@ -121,11 +121,8 @@ pub fn create_signed_packet(
         IpAddr::V4(ip) => {
             svcb.set_ipv4hint([ip.to_bits()])?;
         }
-        IpAddr::V6(_) => {
-            // TODO: Implement ipv6 support
-            tracing::warn!(
-                "IPv6 is not supported yet. Ignoring ipv6 hint in homeserver's pkarr packet."
-            );
+        IpAddr::V6(ip) => {
+            svcb.set_ipv6hint([ip.to_bits()])?;
         }
     };
     signed_packet_builder = signed_packet_builder.https(root_name.clone(), svcb, 60 * 60);
