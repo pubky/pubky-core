@@ -36,7 +36,7 @@ impl MockDataDir {
     pub fn test() -> Self {
         let config = super::ConfigToml::test();
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
-        Self::new(config, Some(keypair)).unwrap()
+        Self::new(config, Some(keypair)).expect("failed to create MockDataDir")
     }
 }
 

@@ -57,7 +57,7 @@ impl AppContext {
     pub fn test() -> Self {
         use crate::MockDataDir;
         let data_dir = MockDataDir::test();
-        Self::try_from(data_dir).unwrap()
+        Self::try_from(data_dir).expect("failed to build AppContext from DataDirMock")
     }
 }
 
