@@ -111,7 +111,7 @@ impl HomeserverCore {
             .await
             .map_err(HomeserverBuildError::PubkyTlsServer)?;
 
-        let key_republisher = HomeserverKeyRepublisher::run(
+        let key_republisher = HomeserverKeyRepublisher::start(
             &context,
             icann_http_socket.port(),
             pubky_tls_socket.port(),
@@ -120,7 +120,7 @@ impl HomeserverCore {
         .map_err(HomeserverBuildError::KeyRepublisher)?;
         let user_keys_republisher =
             UserKeysRepublisher::run_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
-        let periodic_backup = PeriodicBackup::run(&context);
+        let periodic_backup = PeriodicBackup::start(&context);
 
         Ok(Self {
             user_keys_republisher,

@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let testnet = FixedTestnet::run().await?;
+    let testnet = FixedTestnet::start().await?;
     tracing::info!("Testnet running");
     tracing::info!(
         "DHT Bootstrap Nodes: {}",

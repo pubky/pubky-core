@@ -32,28 +32,28 @@ pub struct HomeserverSuite {
 
 impl HomeserverSuite {
     /// Run the homeserver with configurations from a data directory.
-    pub async fn run_with_persistent_data_dir_path(dir_path: PathBuf) -> Result<Self> {
+    pub async fn start_with_persistent_data_dir_path(dir_path: PathBuf) -> Result<Self> {
         let data_dir = PersistentDataDir::new(dir_path);
         let context = AppContext::try_from(data_dir)?;
-        Self::run(context).await
+        Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub async fn run_with_persistent_data_dir(dir: PersistentDataDir) -> Result<Self> {
+    pub async fn start_with_persistent_data_dir(dir: PersistentDataDir) -> Result<Self> {
         let context = AppContext::try_from(dir)?;
-        Self::run(context).await
+        Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory mock.
-    pub async fn run_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
+    pub async fn start_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
         let context = AppContext::try_from(dir)?;
-        Self::run(context).await
+        Self::start(context).await
     }
 
     /// Run a Homeserver
-    pub async fn run(context: AppContext) -> Result<Self> {
+    pub async fn start(context: AppContext) -> Result<Self> {
         let core = HomeserverCore::new(context.clone()).await?;
-        let admin_server = AdminServer::run(&context).await?;
+        let admin_server = AdminServer::start(&context).await?;
 
         Ok(Self {
             context,

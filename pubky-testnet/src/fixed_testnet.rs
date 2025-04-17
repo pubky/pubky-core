@@ -25,7 +25,7 @@ pub struct FixedTestnet {
 
 impl FixedTestnet {
     /// Run a new simple testnet.
-    pub async fn run() -> anyhow::Result<Self> {
+    pub async fn start() -> anyhow::Result<Self> {
         let testnet = FlexibleTestnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
             .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
@@ -161,7 +161,7 @@ impl FixedTestnet {
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6288);
         let mock = MockDataDir::new(config, Some(keypair))?;
 
-        let homeserver = HomeserverSuite::run_with_mock_data_dir(mock).await?;
+        let homeserver = HomeserverSuite::start_with_mock_data_dir(mock).await?;
         self.flexible_testnet.homeservers.push(homeserver);
         Ok(())
     }

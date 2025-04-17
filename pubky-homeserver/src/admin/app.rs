@@ -61,7 +61,7 @@ impl AdminServer {
     /// Create a new admin server from a data directory.
     pub async fn from_data_dir(data_dir: PersistentDataDir) -> anyhow::Result<Self> {
         let context = AppContext::try_from(data_dir)?;
-        Self::run(&context).await
+        Self::start(&context).await
     }
 
     /// Create a new admin server from a data directory path.
@@ -73,11 +73,11 @@ impl AdminServer {
     /// Create a new admin server from a mock data directory.
     pub async fn from_mock_dir(mock_dir: MockDataDir) -> anyhow::Result<Self> {
         let context = AppContext::try_from(mock_dir)?;
-        Self::run(&context).await
+        Self::start(&context).await
     }
 
     /// Run the admin server.
-    pub async fn run(context: &AppContext) -> anyhow::Result<Self> {
+    pub async fn start(context: &AppContext) -> anyhow::Result<Self> {
         let password = context.config_toml.admin.admin_password.clone();
         let state = AppState::new(context.db.clone());
         let socket = context.config_toml.admin.listen_socket;

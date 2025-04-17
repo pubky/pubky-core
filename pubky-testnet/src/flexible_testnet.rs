@@ -61,7 +61,7 @@ impl FlexibleTestnet {
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
-        let homeserver = HomeserverSuite::run_with_mock_data_dir(mock_dir).await?;
+        let homeserver = HomeserverSuite::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self
             .homeservers

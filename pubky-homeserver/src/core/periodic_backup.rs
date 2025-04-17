@@ -10,7 +10,7 @@ pub(crate) struct PeriodicBackup {
 }
 
 impl PeriodicBackup {
-    pub fn run(context: &AppContext) -> Self {
+    pub fn start(context: &AppContext) -> Self {
         let is_disabled = context.config_toml.general.lmdb_backup_interval_s == 0;
         if is_disabled {
             tracing::info!("LMDB backup is disabled.");

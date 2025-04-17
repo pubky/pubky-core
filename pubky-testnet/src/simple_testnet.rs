@@ -15,7 +15,7 @@ pub struct SimpleTestnet {
 
 impl SimpleTestnet {
     /// Run a new simple testnet.
-    pub async fn run() -> anyhow::Result<Self> {
+    pub async fn start() -> anyhow::Result<Self> {
         let mut me = Self {
             flexible_testnet: FlexibleTestnet::new().await?,
         };
@@ -63,11 +63,11 @@ mod test {
     #[tokio::test]
     async fn test_two_testnet_in_a_row() {
         {
-            let _ = SimpleTestnet::run().await.unwrap();
+            let _ = SimpleTestnet::start().await.unwrap();
         }
 
         {
-            let _ = SimpleTestnet::run().await.unwrap();
+            let _ = SimpleTestnet::start().await.unwrap();
         }
     }
 }

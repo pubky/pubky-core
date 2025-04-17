@@ -23,7 +23,7 @@ pub struct HomeserverKeyRepublisher {
 }
 
 impl HomeserverKeyRepublisher {
-    pub async fn run(
+    pub async fn start(
         context: &AppContext,
         icann_http_port: u16,
         pubky_tls_port: u16,
@@ -169,7 +169,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_https_endpoint_with_pkarr_client() {
         let context = AppContext::test();
-        let _republisher = HomeserverKeyRepublisher::run(&context, 8080, 8080)
+        let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();
         let pkarr_client = context.pkarr_client.clone();
@@ -192,7 +192,7 @@ mod tests {
     async fn test_endpoints() {
         let mut context = AppContext::test();
         context.keypair = pkarr::Keypair::random();
-        let _republisher = HomeserverKeyRepublisher::run(&context, 8080, 8080)
+        let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();
         let pubkey = context.keypair.public_key();
