@@ -208,7 +208,6 @@ mod tests {
             .bytes(body_bytes)
             .expect_success()
             .await;
-        response.assert_status_ok();
 
         let header_value = response
             .headers()
@@ -235,15 +234,13 @@ mod tests {
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
-        let response = server
+        server
             .put("/pub/foo")
             .add_header("host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
             .await;
-
-        response.assert_status_ok();
 
         let response = server
             .get("/pub/foo")
@@ -279,15 +276,13 @@ mod tests {
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
-        let response = server
+        server
             .put("/pub/foo")
             .add_header("host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
             .await;
-
-        response.assert_status_ok();
 
         let response = server
             .get("/pub/foo")
