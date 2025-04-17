@@ -40,6 +40,12 @@ impl MockDataDir {
     }
 }
 
+impl Default for MockDataDir {
+    fn default() -> Self {
+        Self::test()
+    }
+}
+
 impl DataDir for MockDataDir {
     fn path(&self) -> &Path {
         self.temp_dir.path()
