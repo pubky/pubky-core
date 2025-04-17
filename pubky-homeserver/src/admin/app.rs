@@ -2,11 +2,13 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use super::routes::delete_entry::delete_entry;
 use super::routes::{generate_signup_token, root};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
 use crate::{DataDir, DataDirMock};
+use axum::routing::delete;
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
@@ -31,6 +33,7 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
     let app = Router::new()
         .nest("/admin", admin_router)
         .route("/", get(root::root))
+        .route("/drive/pub/{*path}", delete(delete_entry))
         .with_state(state)
         .layer(CorsLayer::very_permissive());
 
