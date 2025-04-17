@@ -6,7 +6,7 @@ use super::routes::{generate_signup_token, root};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
-use crate::{MockDataDir, PersistentDataDir};
+use crate::{AppContextConversionError, MockDataDir, PersistentDataDir};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
@@ -42,7 +42,11 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
 pub enum AdminServerBuildError {
     /// Failed to create admin server.
     #[error("Failed to create admin server: {0}")]
-    BuildError(anyhow::Error),
+    Server(anyhow::Error),
+
+    /// Failed to boostrap from the data directory.
+    #[error("Failed to boostrap from the data directory: {0}")]
+    DataDir(AppContextConversionError),
 }
 
 /// Admin server
@@ -59,34 +63,34 @@ pub struct AdminServer {
 
 impl AdminServer {
     /// Create a new admin server from a data directory.
-    pub async fn from_data_dir(data_dir: PersistentDataDir) -> anyhow::Result<Self> {
-        let context = AppContext::try_from(data_dir)?;
+    pub async fn from_data_dir(data_dir: PersistentDataDir) -> Result<Self, AdminServerBuildError> {
+        let context = AppContext::try_from(data_dir).map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
     /// Create a new admin server from a data directory path.
-    pub async fn from_data_dir_path(data_dir_path: PathBuf) -> anyhow::Result<Self> {
+    pub async fn from_data_dir_path(data_dir_path: PathBuf) -> Result<Self, AdminServerBuildError> {
         let data_dir = PersistentDataDir::new(data_dir_path);
         Self::from_data_dir(data_dir).await
     }
 
     /// Create a new admin server from a mock data directory.
-    pub async fn from_mock_dir(mock_dir: MockDataDir) -> anyhow::Result<Self> {
-        let context = AppContext::try_from(mock_dir)?;
+    pub async fn from_mock_dir(mock_dir: MockDataDir) -> Result<Self, AdminServerBuildError> {
+        let context = AppContext::try_from(mock_dir).map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
     /// Run the admin server.
-    pub async fn start(context: &AppContext) -> anyhow::Result<Self> {
+    pub async fn start(context: &AppContext) -> Result<Self, AdminServerBuildError> {
         let password = context.config_toml.admin.admin_password.clone();
         let state = AppState::new(context.db.clone());
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)
-            .map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
+            .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let socket = listener
             .local_addr()
-            .map_err(|e| AdminServerBuildError::BuildError(e.into()))?;
+            .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
         let join_handle = tokio::spawn(async move {
