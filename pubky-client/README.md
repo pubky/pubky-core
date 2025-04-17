@@ -11,7 +11,7 @@ use pubky::Keypair;
 #[tokio::main]
 async fn main () {
   // Mainline Dht testnet and a temporary homeserver for unit testing.
-  let testnet = SimpleTestnet::run().await.unwrap();
+  let testnet = SimpleTestnet::start().await.unwrap();
   let client = testnet.pubky_client_builder().build().unwrap();
 
   let homeserver = testnet.homeserver_suite();

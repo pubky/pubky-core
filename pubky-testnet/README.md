@@ -15,7 +15,7 @@ use pubky_testnet::SimpleTestnet;
 async fn main () {
   // Run a new testnet. This creates a test dht,
   // a homeserver, and a http relay.
-  let testnet = SimpleTestnet::run().await.unwrap();
+  let testnet = SimpleTestnet::start().await.unwrap();
 
   // Create a Pubky Client from the testnet.
   let client = testnet.pubky_client_builder().build().unwrap();
