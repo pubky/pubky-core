@@ -1,14 +1,15 @@
-use pubky_testnet::Testnet;
+use pubky_testnet::EphemeralTestnet;
+use reqwest::Method;
 
 #[tokio::test]
 async fn http_get_pubky() {
-    let testnet = Testnet::run().await.unwrap();
-    let homeserver = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let response = client
-        .get(format!("https://{}/", homeserver.public_key()))
+        .get(format!("https://{}/", server.public_key()))
         .send()
         .await
         .unwrap();
@@ -18,12 +19,12 @@ async fn http_get_pubky() {
 
 #[tokio::test]
 async fn http_get_icann() {
-    let testnet = Testnet::run().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let response = client
-        .request(Default::default(), "https://example.com/")
+        .request(Method::GET, "https://example.com/")
         .send()
         .await
         .unwrap();

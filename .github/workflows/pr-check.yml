@@ -114,7 +114,7 @@ jobs:
 
       - name: Wait for testnet homeserver
         run: |
-          until nc -zv 127.0.0.1 6286; do
+          until nc -zv 127.0.0.1 6288; do
             echo "Waiting for testnet homeserver to be ready..."
             sleep 1
           done

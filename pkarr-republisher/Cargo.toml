@@ -12,7 +12,7 @@ categories = ["web-programming"]
 
 [dependencies]
 anyhow = "1.0.95"
-pkarr = "3.5.3"
+pkarr = {workspace = true}
 tokio = { version = "1.43.0", features = ["full"] }
 tracing = "0.1.41"
 futures-lite = { version = "2.6.0"}
@@ -24,7 +24,4 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 ctrlc = "3.4.5"
 hex = "0.4.3"
 rand = "0.9.0"
-
-[dev-dependencies]
-pubky-testnet = { path = "../pubky-testnet" }
 

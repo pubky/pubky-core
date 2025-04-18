@@ -27,6 +27,12 @@ impl Domain {
     }
 }
 
+impl Default for Domain {
+    fn default() -> Self {
+        Self("localhost".to_string())
+    }
+}
+
 impl FromStr for Domain {
     type Err = anyhow::Error;
 

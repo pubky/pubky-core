@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use pubky_homeserver::Homeserver;
+use pubky_homeserver::HomeserverSuite;
 use tracing_subscriber::EnvFilter;
 
 fn default_config_dir_path() -> PathBuf {
@@ -38,14 +38,30 @@ async fn main() -> Result<()> {
         .init();
 
     tracing::debug!("Using data dir: {}", args.data_dir.display());
+    let server = HomeserverSuite::start_with_persistent_data_dir_path(args.data_dir).await?;
 
-    let server = Homeserver::run_with_data_dir(args.data_dir).await?;
+    tracing::info!(
+        "Homeserver HTTP listening on {}",
+        server.core().icann_http_url()
+    );
 
+    tracing::info!(
+        "Homeserver Pubky TLS listening on {}",
+        server.core().pubky_tls_dns_url(),
+    );
+    tracing::info!(
+        "Homeserver Pubky TLS listening on {}",
+        server.core().pubky_tls_ip_url()
+    );
+    tracing::info!(
+        "Admin server listening on http://{}",
+        server.admin().listen_socket()
+    );
+
+    tracing::info!("Press Ctrl+C to stop the Homeserver");
     tokio::signal::ctrl_c().await?;
 
     tracing::info!("Shutting down Homeserver");
-
-    server.shutdown().await;
 
     Ok(())
 }

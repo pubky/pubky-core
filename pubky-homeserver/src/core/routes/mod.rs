@@ -17,7 +17,6 @@ use crate::core::AppState;
 
 use super::layers::{pubky_host::PubkyHostLayer, trace::with_trace_layer};
 
-mod admin;
 mod auth;
 mod feed;
 mod root;
@@ -41,7 +40,6 @@ fn base() -> Router<AppState> {
 pub fn create_app(state: AppState) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
-        .nest("/admin", admin::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))

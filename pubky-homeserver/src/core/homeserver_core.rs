@@ -1,235 +1,221 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
+use std::time::Duration;
 
-use super::backup::backup_lmdb_periodically;
-use crate::core::database::DB;
+use super::key_republisher::HomeserverKeyRepublisher;
+use super::periodic_backup::PeriodicBackup;
+use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
-use crate::SignupMode;
+use crate::persistence::lmdb::LmDB;
+use crate::{app_context::AppContext, PersistentDataDir};
+use crate::{DataDir, MockDataDir, SignupMode};
 use anyhow::Result;
 use axum::Router;
+use axum_server::{
+    tls_rustls::{RustlsAcceptor, RustlsConfig},
+    Handle,
+};
+use futures_util::TryFutureExt;
 use pubky_common::auth::AuthVerifier;
-use tokio::time::sleep;
-
-pub const DEFAULT_REPUBLISHER_INTERVAL: u64 = 4 * 60 * 60; // 4 hours in seconds
-
-pub const DEFAULT_STORAGE_DIR: &str = "pubky";
-pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space used)
-
-pub const DEFAULT_LIST_LIMIT: u16 = 100;
-pub const DEFAULT_MAX_LIST_LIMIT: u16 = 1000;
+use std::{
+    net::{SocketAddr, TcpListener},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
-    pub(crate) db: DB,
-    pub(crate) admin: AdminConfig,
+    pub(crate) db: LmDB,
+    pub(crate) signup_mode: SignupMode,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Clone)]
+/// Errors that can occur when building a `HomeserverCore`.
+#[derive(Debug, thiserror::Error)]
+pub enum HomeserverBuildError {
+    /// Failed to run the key republisher.
+    #[error("Key republisher error: {0}")]
+    KeyRepublisher(anyhow::Error),
+    /// Failed to run the ICANN web server.
+    #[error("ICANN web server error: {0}")]
+    IcannWebServer(anyhow::Error),
+    /// Failed to run the Pubky TLS web server.
+    #[error("Pubky TLS web server error: {0}")]
+    PubkyTlsServer(anyhow::Error),
+    /// Failed to convert the data directory to an AppContext.
+    #[error("AppContext conversion error: {0}")]
+    AppContext(AppContextConversionError),
+}
+
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
-    pub(crate) router: Router,
+    #[allow(dead_code)]
+    // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+    #[allow(dead_code)]
+    // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
+    pub(crate) key_republisher: HomeserverKeyRepublisher,
+    #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
+    pub(crate) periodic_backup: PeriodicBackup,
+    /// Keep context alive.
+    context: AppContext,
+    pub(crate) icann_http_handle: Handle,
+    pub(crate) pubky_tls_handle: Handle,
+    pub(crate) icann_http_socket: SocketAddr,
+    pub(crate) pubky_tls_socket: SocketAddr,
 }
 
 impl HomeserverCore {
-    /// Create a side-effect-free Homeserver core.
-    ///
-    /// # Safety
-    /// HomeserverCore uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(config: CoreConfig, admin: AdminConfig) -> Result<Self> {
-        let db = unsafe { DB::open(config.clone())? };
+    /// Create a Homeserver from a data directory path like `~/.pubky`.
+    pub async fn from_persistent_data_dir_path(
+        dir_path: PathBuf,
+    ) -> std::result::Result<Self, HomeserverBuildError> {
+        let data_dir = PersistentDataDir::new(dir_path);
+        Self::from_persistent_data_dir(data_dir).await
+    }
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            db: db.clone(),
-            admin,
-        };
+    /// Create a Homeserver from a data directory.
+    pub async fn from_persistent_data_dir(
+        data_dir: PersistentDataDir,
+    ) -> std::result::Result<Self, HomeserverBuildError> {
+        Self::from_data_dir(Arc::new(data_dir)).await
+    }
 
-        // Spawn the backup process. This task will run forever.
-        if let Some(backup_interval) = config.lmdb_backup_interval {
-            let backup_path = config.storage.join("backup");
-            tokio::spawn(backup_lmdb_periodically(
-                db.clone(),
-                backup_path,
-                backup_interval,
-            ));
-        }
+    /// Create a Homeserver from a mock data directory.
+    pub async fn from_mock_data_dir(
+        mock_dir: MockDataDir,
+    ) -> std::result::Result<Self, HomeserverBuildError> {
+        Self::from_data_dir(Arc::new(mock_dir)).await
+    }
 
-        let router = super::routes::create_app(state.clone());
+    /// Run the homeserver with configurations from a data directory.
+    pub(crate) async fn from_data_dir(
+        dir: Arc<dyn DataDir>,
+    ) -> std::result::Result<Self, HomeserverBuildError> {
+        let context = AppContext::try_from(dir).map_err(HomeserverBuildError::AppContext)?;
+        Self::new(context).await
+    }
 
-        let user_keys_republisher = UserKeysRepublisher::new(
-            db.clone(),
-            config
-                .user_keys_republisher_interval
-                .unwrap_or(Duration::from_secs(DEFAULT_REPUBLISHER_INTERVAL)),
-        );
+    /// Create a Homeserver from an AppContext.
+    /// - Publishes the homeserver's pkarr packet to the DHT.
+    /// - (Optional) Publishes the user's keys to the DHT.
+    /// - (Optional) Runs a periodic backup of the database.
+    /// - Creates the web server (router) for testing. Use `listen` to start the server.
+    pub async fn new(context: AppContext) -> std::result::Result<Self, HomeserverBuildError> {
+        let router = Self::create_router(&context);
+        let (icann_http_handle, icann_http_socket) =
+            Self::start_icann_http_server(&context, router.clone())
+                .await
+                .map_err(HomeserverBuildError::IcannWebServer)?;
+        let (pubky_tls_handle, pubky_tls_socket) = Self::start_pubky_tls_server(&context, router)
+            .await
+            .map_err(HomeserverBuildError::PubkyTlsServer)?;
 
-        let user_keys_republisher_clone = user_keys_republisher.clone();
-        if config.is_user_keys_republisher_enabled() {
-            // Delayed start of the republisher to give time for the homeserver to start.
-            tokio::spawn(async move {
-                sleep(INITIAL_DELAY_BEFORE_REPUBLISH).await;
-                user_keys_republisher_clone.run().await;
-            });
-        }
+        let key_republisher = HomeserverKeyRepublisher::start(
+            &context,
+            icann_http_socket.port(),
+            pubky_tls_socket.port(),
+        )
+        .await
+        .map_err(HomeserverBuildError::KeyRepublisher)?;
+        let user_keys_republisher =
+            UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
+        let periodic_backup = PeriodicBackup::start(&context);
+
         Ok(Self {
-            router,
             user_keys_republisher,
+            key_republisher,
+            periodic_backup,
+            context,
+            icann_http_handle,
+            pubky_tls_handle,
+            icann_http_socket,
+            pubky_tls_socket,
         })
     }
 
-    /// Stop the home server background tasks.
-    #[allow(dead_code)]
-    pub async fn stop(&mut self) {
-        self.user_keys_republisher.stop().await;
+    pub(crate) fn create_router(context: &AppContext) -> Router {
+        let state = AppState {
+            verifier: AuthVerifier::default(),
+            db: context.db.clone(),
+            signup_mode: context.config_toml.general.signup_mode.clone(),
+        };
+        super::routes::create_app(state.clone())
+    }
+
+    /// Start the ICANN HTTP server
+    async fn start_icann_http_server(
+        context: &AppContext,
+        router: Router,
+    ) -> Result<(Handle, SocketAddr)> {
+        // Icann http server
+        let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
+        let http_socket = http_listener.local_addr()?;
+        let http_handle = Handle::new();
+        tokio::spawn(
+            axum_server::from_tcp(http_listener)
+                .handle(http_handle.clone())
+                .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+                .map_err(|error| {
+                    tracing::error!(?error, "Homeserver icann http server error");
+                    println!("Homeserver icann http server error: {:?}", error);
+                }),
+        );
+
+        Ok((http_handle, http_socket))
+    }
+
+    /// Start the Pubky TLS server
+    async fn start_pubky_tls_server(
+        context: &AppContext,
+        router: Router,
+    ) -> Result<(Handle, SocketAddr)> {
+        // Pubky tls server
+        let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
+        let https_socket = https_listener.local_addr()?;
+        let https_handle = Handle::new();
+        tokio::spawn(
+            axum_server::from_tcp(https_listener)
+                .acceptor(RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
+                    context.keypair.to_rpk_rustls_server_config(),
+                ))))
+                .handle(https_handle.clone())
+                .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+                .map_err(|error| {
+                    tracing::error!(?error, "Homeserver pubky tls server error");
+                    println!("Homeserver pubky tls server error: {:?}", error);
+                }),
+        );
+
+        Ok((https_handle, https_socket))
+    }
+
+    /// Get the URL of the icann http server.
+    pub fn icann_http_url(&self) -> String {
+        format!("http://{}", self.icann_http_socket)
+    }
+
+    /// Get the URL of the pubky tls server with the Pubky DNS name.
+    pub fn pubky_tls_dns_url(&self) -> String {
+        format!("https://{}", self.context.keypair.public_key())
+    }
+
+    /// Get the URL of the pubky tls server with the Pubky IP address.
+    pub fn pubky_tls_ip_url(&self) -> String {
+        format!("https://{}", self.pubky_tls_socket)
+    }
+
+    /// Shutdown the http and tls servers.
+    pub fn shutdown(&self) {
+        self.icann_http_handle
+            .graceful_shutdown(Some(Duration::from_secs(5)));
+        self.pubky_tls_handle
+            .graceful_shutdown(Some(Duration::from_secs(5)));
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AdminConfig {
-    /// The password used to authorize admin endpoints.
-    pub password: Option<String>,
-    /// Determines whether new signups require a valid token.
-    pub signup_mode: SignupMode,
-}
-
-impl AdminConfig {
-    pub fn test() -> Self {
-        AdminConfig {
-            password: Some("admin".to_string()),
-            signup_mode: SignupMode::Open,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Database configurations
-pub struct CoreConfig {
-    /// Path to the storage directory.
-    ///
-    /// Defaults to a directory in the OS data directory
-    pub storage: PathBuf,
-    pub db_map_size: usize,
-
-    /// The default limit of a list api if no `limit` query parameter is provided.
-    ///
-    /// Defaults to `100`
-    pub default_list_limit: u16,
-    /// The maximum limit of a list api, even if a `limit` query parameter is provided.
-    ///
-    /// Defaults to `1000`
-    pub max_list_limit: u16,
-
-    /// The interval at which the user keys republisher runs. None is disabled.
-    ///
-    /// Defaults to `60*60*4` (4 hours)
-    pub user_keys_republisher_interval: Option<Duration>,
-
-    /// The interval at which the LMDB backup is performed. None means disabled.
-    pub lmdb_backup_interval: Option<Duration>,
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            storage: storage(None)
-                .expect("operating environment provides no directory for application data"),
-            db_map_size: DEFAULT_MAP_SIZE,
-
-            default_list_limit: DEFAULT_LIST_LIMIT,
-            max_list_limit: DEFAULT_MAX_LIST_LIMIT,
-
-            user_keys_republisher_interval: Some(Duration::from_secs(60 * 60 * 4)),
-
-            lmdb_backup_interval: None,
-        }
-    }
-}
-
-impl CoreConfig {
-    pub fn test() -> Self {
-        let storage = std::env::temp_dir()
-            .join(pubky_common::timestamp::Timestamp::now().to_string())
-            .join(DEFAULT_STORAGE_DIR);
-
-        Self {
-            storage,
-            db_map_size: 10485760,
-            lmdb_backup_interval: None,
-            ..Default::default()
-        }
-    }
-
-    pub fn is_user_keys_republisher_enabled(&self) -> bool {
-        self.user_keys_republisher_interval.is_some()
-    }
-}
-
-pub fn storage(storage: Option<String>) -> anyhow::Result<PathBuf> {
-    if let Some(storage) = storage {
-        Ok(PathBuf::from(storage))
-    } else {
-        dirs::home_dir()
-            .map(|dir| dir.join(".pubky/data/lmdb"))
-            .ok_or_else(|| {
-                anyhow::anyhow!("operating environment provides no directory for application data")
-            })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use anyhow::Result;
-    use axum::{
-        body::Body,
-        extract::Request,
-        http::{header, Method},
-        response::Response,
-    };
-    use pkarr::Keypair;
-    use pubky_common::{auth::AuthToken, capabilities::Capability};
-    use tower::ServiceExt;
-
-    use super::*;
-
-    impl HomeserverCore {
-        /// Test version of [HomeserverCore::new], using an ephemeral small storage.
-        pub fn test() -> Result<Self> {
-            unsafe { HomeserverCore::new(CoreConfig::test(), AdminConfig::test()) }
-        }
-
-        // === Public Methods ===
-
-        pub async fn create_root_user(&mut self, keypair: &Keypair) -> Result<String> {
-            let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
-
-            let response = self
-                .call(
-                    Request::builder()
-                        .uri("/signup")
-                        .header("host", keypair.public_key().to_string())
-                        .method(Method::POST)
-                        .body(Body::from(auth_token.serialize()))
-                        .unwrap(),
-                )
-                .await?;
-
-            let header_value = response
-                .headers()
-                .get(header::SET_COOKIE)
-                .and_then(|h| h.to_str().ok())
-                .expect("should return a set-cookie header")
-                .to_string();
-
-            Ok(header_value)
-        }
-
-        pub async fn call(&self, request: Request) -> Result<Response> {
-            Ok(self.router.clone().oneshot(request).await?)
-        }
+impl Drop for HomeserverCore {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }

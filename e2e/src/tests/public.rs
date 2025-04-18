@@ -1,14 +1,14 @@
 use bytes::Bytes;
 use pkarr::Keypair;
-use pubky_testnet::Testnet;
+use pubky_testnet::EphemeralTestnet;
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
 async fn put_get_delete() {
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -37,7 +37,7 @@ async fn put_get_delete() {
     // Use regular web method to get data from homeserver (with query pubky-host)
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
-        server.url(),
+        server.icann_http_url(),
         keypair.public_key()
     );
 
@@ -71,10 +71,10 @@ async fn put_get_delete() {
 
 #[tokio::test]
 async fn unauthorized_put_delete() {
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -88,7 +88,7 @@ async fn unauthorized_put_delete() {
     let url = format!("pubky://{public_key}/pub/foo.txt");
     let url = url.as_str();
 
-    let other_client = testnet.client_builder().build().unwrap();
+    let other_client = testnet.pubky_client_builder().build().unwrap();
     {
         let other = Keypair::random();
 
@@ -139,10 +139,10 @@ async fn unauthorized_put_delete() {
 
 #[tokio::test]
 async fn list() {
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -345,10 +345,10 @@ async fn list() {
 
 #[tokio::test]
 async fn list_shallow() {
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -558,10 +558,10 @@ async fn list_shallow() {
 
 #[tokio::test]
 async fn list_events() {
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -592,7 +592,7 @@ async fn list_events() {
 
     let feed_url = format!("https://{}/events/", server.public_key());
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let cursor;
 
@@ -657,10 +657,10 @@ async fn list_events() {
 
 #[tokio::test]
 async fn read_after_event() {
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -677,7 +677,7 @@ async fn read_after_event() {
 
     let feed_url = format!("https://{}/events/", server.public_key());
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     {
         let response = client
@@ -710,10 +710,10 @@ async fn read_after_event() {
 
 #[tokio::test]
 async fn dont_delete_shared_blobs() {
-    let testnet = Testnet::run().await.unwrap();
-    let homeserver = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let homeserver = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let homeserver_pubky = homeserver.public_key();
 
@@ -786,10 +786,10 @@ async fn dont_delete_shared_blobs() {
 #[tokio::test]
 async fn stream() {
     // TODO: test better streaming API
-    let testnet = Testnet::run().await.unwrap();
-    let server = testnet.run_homeserver().await.unwrap();
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-    let client = testnet.client_builder().build().unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
 
     let keypair = Keypair::random();
 
