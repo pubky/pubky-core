@@ -29,20 +29,23 @@ impl StaticTestnet {
         let testnet = Testnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
             .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
-        
+
         let mut testnet = Self {
             flexible_testnet: testnet,
             fixed_bootstrap_node: fixed_boostrap,
             temp_dirs: vec![],
         };
 
-        testnet.run_fixed_pkarr_relays()
+        testnet
+            .run_fixed_pkarr_relays()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port 15411: {}", e))?;
-        testnet.run_fixed_http_relay()
+        testnet
+            .run_fixed_http_relay()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to run http relay on port 15412: {}", e))?;
-        testnet.run_fixed_homeserver()
+        testnet
+            .run_fixed_homeserver()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
 
