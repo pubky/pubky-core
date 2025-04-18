@@ -103,6 +103,7 @@ impl HomeserverCore {
     /// - Creates the web server (router) for testing. Use `listen` to start the server.
     pub async fn new(context: AppContext) -> std::result::Result<Self, HomeserverBuildError> {
         let router = Self::create_router(&context);
+
         let (icann_http_handle, icann_http_socket) =
             Self::start_icann_http_server(&context, router.clone())
                 .await
