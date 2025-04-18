@@ -39,16 +39,19 @@ impl Client {
             None => return Ok(()),
         };
 
+        // Calculate the age of the existing record.
+        let packet_age = match existing {
+            Some(ref record) => {
+                let elapsed = Timestamp::now() - record.timestamp();
+                Duration::from_micros(elapsed.as_u64())
+            }
+            None => Duration::from_secs(u64::MAX), // Use max duration if no record exists.
+        };
+
         // Determine if we should publish based on the given strategy.
         let should_publish = match strategy {
             PublishStrategy::Force => true,
-            PublishStrategy::IfOlderThan => match existing {
-                Some(ref record) => {
-                    let elapsed = Timestamp::now() - record.timestamp();
-                    Duration::from_micros(elapsed.as_u64()) > self.max_record_age
-                }
-                None => true,
-            },
+            PublishStrategy::IfOlderThan => packet_age > self.max_record_age,
         };
 
         if should_publish {

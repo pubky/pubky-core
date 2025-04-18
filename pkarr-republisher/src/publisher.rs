@@ -242,7 +242,6 @@ mod tests {
     use std::{num::NonZeroU8, time::Duration};
 
     use pkarr::{dns::Name, Keypair, PublicKey, SignedPacket};
-    use pubky_testnet::Testnet;
 
     use crate::publisher::{PublishError, Publisher, PublisherSettings};
 
@@ -257,12 +256,13 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_success() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 
-        let required_nodes = 1;
+        let required_nodes = 3;
         let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
@@ -271,17 +271,18 @@ mod tests {
         let res = publisher.publish_once().await;
         assert!(res.is_ok());
         let success = res.unwrap();
-        assert_eq!(success.published_nodes_count, 1);
+        assert_eq!(success.published_nodes_count, 3);
     }
 
     #[tokio::test]
     async fn single_key_republish_insufficient() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 
-        let required_nodes = 2;
+        let required_nodes = 4;
         let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
@@ -296,15 +297,16 @@ mod tests {
             published_nodes_count,
         } = err
         {
-            assert_eq!(published_nodes_count, 1);
+            assert_eq!(published_nodes_count, 3);
         };
     }
 
     #[tokio::test]
     async fn retry_delay() {
-        let testnet = Testnet::run().await.unwrap();
-        let pubky_client = testnet.client_builder().build().unwrap();
-        let pkarr_client = pubky_client.pkarr().clone();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 
         let required_nodes = 1;

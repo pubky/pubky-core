@@ -9,11 +9,11 @@ use pkarr::PublicKey;
 use std::str::FromStr;
 
 use crate::core::{
-    database::tables::entries::Entry,
     error::{Error, Result},
     extractors::{ListQueryParams, PubkyHost},
     AppState,
 };
+use crate::persistence::lmdb::tables::entries::Entry;
 
 pub async fn head(
     State(state): State<AppState>,
@@ -190,124 +190,115 @@ impl From<&Entry> for HeaderMap {
 
 #[cfg(test)]
 mod tests {
-    use axum::{
-        body::Body,
-        http::{header, Method, Request, StatusCode},
-    };
+    use axum::http::{header, StatusCode};
     use pkarr::Keypair;
+    use pubky_common::{auth::AuthToken, capabilities::Capability};
 
-    use crate::core::HomeserverCore;
+    use crate::{app_context::AppContext, core::HomeserverCore};
+
+    pub async fn create_root_user(
+        server: &axum_test::TestServer,
+        keypair: &Keypair,
+    ) -> anyhow::Result<String> {
+        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let body_bytes: axum::body::Bytes = auth_token.serialize().into();
+        let response = server
+            .post("/signup")
+            .add_header("host", keypair.public_key().to_string())
+            .bytes(body_bytes)
+            .expect_success()
+            .await;
+
+        let header_value = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|h| h.to_str().ok())
+            .expect("should return a set-cookie header")
+            .to_string();
+
+        Ok(header_value)
+    }
 
     #[tokio::test]
     async fn if_last_modified() {
-        let mut server = HomeserverCore::test().unwrap();
+        let context = AppContext::test();
+        let router = HomeserverCore::create_router(&context);
+        let server = axum_test::TestServer::new(router).unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
-        let cookie = server.create_root_user(&keypair).await.unwrap().to_string();
+        let cookie = create_root_user(&server, &keypair)
+            .await
+            .unwrap()
+            .to_string();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
-        let response = server
-            .call(
-                Request::builder()
-                    .header("host", public_key.to_string())
-                    .uri("/pub/foo")
-                    .method(Method::PUT)
-                    .header(header::COOKIE, cookie)
-                    .body(Body::from(data))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
+        server
+            .put("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(header::COOKIE, cookie)
+            .bytes(data.into())
+            .expect_success()
+            .await;
 
         let response = server
-            .call(
-                Request::builder()
-                    .header("host", public_key.to_string())
-                    .uri("/pub/foo")
-                    .method(Method::GET)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .expect_success()
+            .await;
 
         let response = server
-            .call(
-                Request::builder()
-                    .header("host", public_key.to_string())
-                    .uri("/pub/foo")
-                    .method(Method::GET)
-                    .header(
-                        header::IF_MODIFIED_SINCE,
-                        response.headers().get(header::LAST_MODIFIED).unwrap(),
-                    )
-                    .body(Body::empty())
-                    .unwrap(),
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(
+                header::IF_MODIFIED_SINCE,
+                response.headers().get(header::LAST_MODIFIED).unwrap(),
             )
-            .await
-            .unwrap();
+            .await;
 
-        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        response.assert_status(StatusCode::NOT_MODIFIED);
     }
 
     #[tokio::test]
     async fn if_none_match() {
-        let mut server = HomeserverCore::test().unwrap();
+        let context = AppContext::test();
+        let router = HomeserverCore::create_router(&context);
+        let server = axum_test::TestServer::new(router).unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
 
-        let cookie = server.create_root_user(&keypair).await.unwrap().to_string();
+        let cookie = create_root_user(&server, &keypair)
+            .await
+            .unwrap()
+            .to_string();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
-        let response = server
-            .call(
-                Request::builder()
-                    .uri("/pub/foo")
-                    .header("host", public_key.to_string())
-                    .method(Method::PUT)
-                    .header(header::COOKIE, cookie)
-                    .body(Body::from(data))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
+        server
+            .put("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(header::COOKIE, cookie)
+            .bytes(data.into())
+            .expect_success()
+            .await;
 
         let response = server
-            .call(
-                Request::builder()
-                    .uri("/pub/foo")
-                    .header("host", public_key.to_string())
-                    .method(Method::GET)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .expect_success()
+            .await;
 
         let response = server
-            .call(
-                Request::builder()
-                    .uri("/pub/foo")
-                    .header("host", public_key.to_string())
-                    .method(Method::GET)
-                    .header(
-                        header::IF_NONE_MATCH,
-                        response.headers().get(header::ETAG).unwrap(),
-                    )
-                    .body(Body::empty())
-                    .unwrap(),
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(
+                header::IF_NONE_MATCH,
+                response.headers().get(header::ETAG).unwrap(),
             )
-            .await
-            .unwrap();
+            .await;
 
-        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        response.assert_status(StatusCode::NOT_MODIFIED);
     }
 }

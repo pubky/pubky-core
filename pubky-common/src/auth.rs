@@ -30,7 +30,7 @@ pub struct AuthToken {
     ///
     /// Version 0:
     /// - Signer is implicitly the same as the root keypair for
-    ///     the [AuthToken::pubky], without any delegation.
+    ///   the [AuthToken::pubky], without any delegation.
     /// - Capabilities are only meant for resoucres on the homeserver.
     version: u8,
     /// Timestamp

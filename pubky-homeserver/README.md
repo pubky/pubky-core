@@ -1,34 +1,92 @@
 # Pubky Homeserver
 
-A pubky-core homeserver that acts as users' agent on the Internet, providing data availability and more.
+Pubky homeserver that acts as user's agent on the Internet, providing data availability and more.
 
 ## Usage
 
 ### Library
 
-You can use the Homeserver as a library in other crates/binaries or for testing purposes.
+Use the Homeserver as a library in other crates/binaries or for testing purposes.
+The `HomeserverSuite` is all bells and wistles included.
 
 ```rust
 use anyhow::Result;
-use pubky_homeserver::Homeserver;
+use pubky_homeserver::HomeserverSuite;
 
 #[tokio::main]
-async fn main() {
-    let homeserver = unsafe {
-        Homeserver::builder().run().await.unwrap()
-    };
+async fn main() -> anyhow::Result<()> {
+  let suite = HomeserverSuite::run_with_data_dir_path(PathBuf::from("~/.pubky")).await?;
+  println!(
+      "Homeserver HTTP listening on {}",
+      server.core().icann_http_url()
+  );
+  println!(
+      "Homeserver Pubky TLS listening on {} and {}",
+      server.core().pubky_tls_dns_url(),
+      server.core().pubky_tls_ip_url()
+  );
+  println!(
+      "Admin server listening on http://{}",
+      server.admin().listen_socket()
+  );
+  tokio::signal::ctrl_c().await?;
 
-    println!("Shutting down Homeserver");
-
-    homeserver.shutdown();
+  println!("Shutting down Homeserver");
+  Ok(())
 }
 ```
+
+Run the suite with a temporary directory and your custom config. This is a good way to test the server.
+
+```rust
+use anyhow::Result;
+use pubky_homeserver::{HomeserverSuite, DataDirMock};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+  let mut config = ConfigToml::default(); // Use ConfigToml::test() for random ports.
+  // Set config values however you like
+  config.admin.admin_password = "alternative_password".to_string();
+  // Creates a temporary directory that gets cleaned up 
+  // as soon as the suite is dropped.
+  let mock_dir = DataDirMock::new(config, None).unwrap(); 
+  let suite = HomeserverSuite::run_with_data_dir_mock(mock_dir).await.unwrap();
+}
+
+
+Run the `HomeserverCore` only without the admin server.
+
+```rust
+use anyhow::Result;
+use pubky_homeserver::HomeserverCore;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let mut core = HomeserverCore::from_data_dir_path(PathBuf::from("~/.pubky")).await?;
+    core.listen().await?;
+    println!(
+        "Homeserver HTTP listening on {}",
+        core().icann_http_url()
+    );
+    println!(
+        "Homeserver Pubky TLS listening on {} and {}",
+        core().pubky_tls_dns_url(),
+        core().pubky_tls_ip_url()
+    );
+}
+```
+
+### Binary
+
+Use `cargo run -- --data-dir=~/.pubky`.
+
+### Signup Token
 
 If homeserver is set to require signup tokens, you can create a new signup token using the admin endpoint:
 
 ```rust,ignore
 let response = pubky_client
-    .get(&format!("https://{homeserver_pubkey}/admin/generate_signup_token"))
+    .get(&format!("https://127.0.0.1:6288/admin/generate_signup_token"))
     .header("X-Admin-Password", "admin") // Use your admin password. This is testnet default pwd.
     .send()
     .await
@@ -39,7 +97,7 @@ let signup_token = response.text().await.unwrap();
 via CLI with `curl`
 
 ```bash
-curl -X GET "https://<homeserver_ip:port>/admin/generate_signup_token" \
+curl -X GET "https://127.0.0.1:6288/admin/generate_signup_token" \
      -H "X-Admin-Password: admin"
      # Use your admin password. This is testnet default pwd.
 ```
@@ -47,7 +105,7 @@ curl -X GET "https://<homeserver_ip:port>/admin/generate_signup_token" \
 or from JS
 
 ```js
-const url = "http://${homeserver_address}/admin/generate_signup_token";
+const url = "http://127.0.0.1:6288/admin/generate_signup_token";
 const response = await client.fetch(url, {
   method: "GET",
   headers: {
@@ -55,26 +113,4 @@ const response = await client.fetch(url, {
   },
 });
 const signupToken = await response.text();
-```
-
-### Binary
-
-Use `cargo run`
-
-```bash
-cargo run -- --config=./src/config.toml
-```
-
-Or Build first then run from target.
-
-Build
-
-```bash
-cargo build --release
-```
-
-Run with an optional config file
-
-```bash
-../target/release/pubky-homeserver --config=./src/config.toml
 ```

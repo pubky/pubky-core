@@ -5,19 +5,16 @@ Rust implementation implementation of [Pubky](https://github.com/pubky/pubky-cor
 ## Quick Start
 
 ```rust
-use pubky_testnet::Testnet;
-use pubky::{Client, Keypair};
+use pubky_testnet::EphemeralTestnet;
+use pubky::Keypair;
 
 #[tokio::main]
 async fn main () {
   // Mainline Dht testnet and a temporary homeserver for unit testing.
-  let testnet = Testnet::run_with_hardcoded_configurations().await.unwrap();
-  let homeserver = testnet.run_homeserver().await.unwrap();
+  let testnet = EphemeralTestnet::start().await.unwrap();
+  let client = testnet.pubky_client_builder().build().unwrap();
 
-  let client = Client::builder().testnet().build().unwrap();
-
-  // Uncomment the following line instead if you are not just testing.
-  // let client Client::builder().build().unwrap();
+  let homeserver = testnet.homeserver_suite();
 
   // Generate a keypair
   let keypair = Keypair::random();

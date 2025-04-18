@@ -1,4 +1,4 @@
-use crate::core::database::DB;
+use super::super::LmDB;
 use base32::{encode, Alphabet};
 use heed::{
     types::{Bytes, Str},
@@ -53,7 +53,7 @@ impl SignupToken {
     }
 }
 
-impl DB {
+impl LmDB {
     pub fn generate_signup_token(&mut self) -> anyhow::Result<String> {
         let signup_token = SignupToken::random();
         let mut wtxn = self.env.write_txn()?;
