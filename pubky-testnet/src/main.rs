@@ -1,8 +1,20 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
+use clap::Parser;
 use pubky_testnet::StaticTestnet;
+
+#[derive(Parser, Debug)]
+struct Cli {
+    /// Optional path to a homeserver config file. This overrides the default config.
+    #[clap(long)]
+    homeserver_config: Option<PathBuf>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Cli::parse();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             "pubky_homeserver=debug,http_relay=debug,pkarr_relay=info,tower_http=debug,pubky_testnet=debug"
@@ -10,7 +22,12 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let testnet = StaticTestnet::start().await?;
+    let testnet = if let Some(config_path) = args.homeserver_config {
+        StaticTestnet::start_with_homeserver_config(config_path).await?
+    } else {
+        StaticTestnet::start().await?
+    };
+
     tracing::info!("Testnet running");
     tracing::info!(
         "DHT Bootstrap Nodes: {}",
