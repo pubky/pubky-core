@@ -149,7 +149,7 @@ fn default_admin_listen_socket() -> SocketAddr {
 }
 
 /// All configuration related to the admin API
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     /// The mode of the signup.
     #[serde(default)]
@@ -157,15 +157,6 @@ pub struct GeneralToml {
     /// LMDB backup interval in seconds. 0 means disabled.
     #[serde(default)]
     pub lmdb_backup_interval_s: u64,
-}
-
-impl Default for GeneralToml {
-    fn default() -> Self {
-        Self {
-            signup_mode: SignupMode::default(),
-            lmdb_backup_interval_s: u64::default(),
-        }
-    }
 }
 
 /// The error that can occur when reading the config file
@@ -320,12 +311,12 @@ mod tests {
         signup_mode = \"open\"
         ";
         let parsed: ConfigToml = s.parse().unwrap();
-        
+
         // Check that explicitly set values are preserved
         assert_eq!(
-            parsed.general.signup_mode, SignupMode::Open,
+            parsed.general.signup_mode,
+            SignupMode::Open,
             "signup_mode not set correctly"
         );
-        
     }
 }
