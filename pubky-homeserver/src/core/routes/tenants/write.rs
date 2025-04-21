@@ -30,11 +30,15 @@ fn existing_len(state: &AppState, pk: &pubky_common::crypto::PublicKey, path: &s
 fn enforce_quota(existing: u64, incoming: u64, current: u64, quota: Option<u64>) -> Result<()> {
     if let Some(max) = quota {
         if current + incoming.saturating_sub(existing) > max {
+            let bytes_in_mb = 1024.0 / 1024.0;
+            let current_mb = current as f64 / bytes_in_mb;
+            let incoming_mb = incoming as f64 / bytes_in_mb;
+            let max_mb = max as f64 / bytes_in_mb;
             return Err(Error::new(
                 StatusCode::INSUFFICIENT_STORAGE,
                 Some(format!(
-                    "Storage quota exceeded ({:.1} MB)",
-                    max as f64 / (1024.0 * 1024.0)
+                    "Quota of {:.1} MB exceeded: you’ve used {:.1} MB, trying to add {:.1} MB",
+                    max_mb, current_mb, incoming_mb
                 )),
             ));
         }
