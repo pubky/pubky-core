@@ -1,13 +1,12 @@
 use std::io::Write;
 
-use futures_util::stream::StreamExt;
-
 use axum::{
     body::{Body, HttpBody},
     extract::{OriginalUri, State},
     http::StatusCode,
     response::IntoResponse,
 };
+use futures_util::stream::StreamExt;
 
 use crate::core::{
     err_if_user_is_invalid::err_if_user_is_invalid,
@@ -16,37 +15,52 @@ use crate::core::{
     AppState,
 };
 
+/// Bytes already stored at `path` for this user (0 if none).
+fn existing_len(state: &AppState, pk: &pubky_common::crypto::PublicKey, path: &str) -> Result<u64> {
+    let rtxn = state.db.env.read_txn()?;
+    Ok(state
+        .db
+        .get_entry(&rtxn, pk, path)?
+        .map(|e| e.content_length() as u64)
+        .unwrap_or(0))
+    // read‑only txns auto‑abort on drop, so no explicit commit needed
+}
+
+/// Fail with 507 if `(current + incoming − existing) > quota`.
+fn enforce_quota(existing: u64, incoming: u64, current: u64, quota: Option<u64>) -> Result<()> {
+    if let Some(max) = quota {
+        if current + incoming.saturating_sub(existing) > max {
+            return Err(Error::new(
+                StatusCode::INSUFFICIENT_STORAGE,
+                Some(format!(
+                    "Storage quota exceeded ({:.1} MB)",
+                    max as f64 / (1024.0 * 1024.0)
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn delete(
     State(mut state): State<AppState>,
     pubky: PubkyHost,
     path: OriginalUri,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
-    let public_key = pubky.public_key().clone();
+    let pk = pubky.public_key();
     let full_path = path.0.path();
+    let existing = existing_len(&state, pk, full_path)?;
 
-    // Gather accounting info
-    let rtxn = state.db.env.read_txn()?;
-    let existing_len = state
-        .db
-        .get_entry(&rtxn, &public_key, full_path)?
-        .map(|e| e.content_length() as u64)
-        .unwrap_or(0);
-    rtxn.commit()?;
-
-    // TODO: should we wrap this with `tokio::task::spawn_blocking` in case it takes too long?
-    let deleted = state.db.delete_entry(&public_key, full_path)?;
-
-    match deleted {
-        false => return Err(Error::with_status(StatusCode::NOT_FOUND)),
-        true => {
-            state
-                .db
-                .update_data_usage(&public_key, -(existing_len as i64))?;
-        }
+    // remove entry
+    if !state.db.delete_entry(pk, full_path)? {
+        return Err(Error::with_status(StatusCode::NOT_FOUND));
     }
 
-    Ok(())
+    // adjust usage counter
+    state.db.update_data_usage(pk, -(existing as i64))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn put(
@@ -56,74 +70,35 @@ pub async fn put(
     body: Body,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
-    let public_key = pubky.public_key().clone();
+    let pk = pubky.public_key().clone();
     let full_path = path.0.path();
+    let existing = existing_len(&state, &pk, full_path)?;
+    let quota = state.user_quota_bytes;
+    let used = state.db.get_user_data_usage(&pk)?;
 
-    // Gather accounting info
-    let existing_len: u64;
-    {
-        let rtxn = state.db.env.read_txn()?;
-        existing_len = state
-            .db
-            .get_entry(&rtxn, &public_key, full_path)
-            .expect("a")
-            .map(|e| e.content_length() as u64)
-            .unwrap_or(0);
-        rtxn.commit()?;
+    // upfront check when we have an exact Content‑Length
+    let hint = body.size_hint().exact();
+    if let Some(exact) = hint {
+        enforce_quota(existing, exact, used, quota)?;
     }
 
-    let quota_bytes = state.user_quota_bytes;
-    let current_usage = state.db.get_user_data_usage(&public_key)?;
-
-    // Compute (or estimate) the size to be written
-    let mut incoming_len: u64 = 0;
-
-    // If the client sent Content‑Length we can check immediately.
-    if let Some(cl) = body.size_hint().exact() {
-        incoming_len = cl;
-        if let Some(max) = quota_bytes {
-            if current_usage + incoming_len.saturating_sub(existing_len) > max {
-                return Err(Error::new(
-                    StatusCode::INSUFFICIENT_STORAGE,
-                    Some(format!(
-                        "Storage quota exceeded ({} MB max)",
-                        max / 1_048_576
-                    )),
-                ));
-            }
-        }
-    }
-
-    // Do the write
-    let mut writer = state.db.write_entry(&public_key, full_path)?;
+    // stream body, counting only when we *didn’t* have a hint
+    let mut writer = state.db.write_entry(&pk, full_path)?;
+    let mut seen: u64 = 0;
     let mut stream = body.into_data_stream();
 
-    while let Some(next) = stream.next().await {
-        let chunk = next?;
-
-        // If we *didn’t* know the length up‑front, count it as we go
-        if incoming_len == 0 {
-            incoming_len += chunk.len() as u64;
-            if let Some(max) = quota_bytes {
-                if current_usage + incoming_len.saturating_sub(existing_len) > max {
-                    return Err(Error::new(
-                        StatusCode::INSUFFICIENT_STORAGE,
-                        "Storage quota exceeded".into(),
-                    ));
-                }
-            }
+    while let Some(chunk) = stream.next().await.transpose()? {
+        if hint.is_none() {
+            seen += chunk.len() as u64;
+            enforce_quota(existing, seen, used, quota)?;
         }
-
         writer.write_all(&chunk)?;
     }
 
-    // Final length when Content‑Length was unknown.
+    // commit & bump usage
     let entry = writer.commit()?;
+    let delta = entry.content_length() as i64 - existing as i64;
+    state.db.update_data_usage(&pk, delta)?;
 
-    // Update disk usage counter
-    let new_len = entry.content_length() as u64;
-    let delta = (new_len as i64) - (existing_len as i64);
-    state.db.update_data_usage(&public_key, delta)?;
-
-    Ok(())
+    Ok(StatusCode::CREATED)
 }
