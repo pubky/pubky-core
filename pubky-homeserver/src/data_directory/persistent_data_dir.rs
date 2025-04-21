@@ -116,7 +116,8 @@ impl DataDir for PersistentDataDir {
         }
         // Read the secret file
         let secret = std::fs::read(secret_file_path)?;
-        let secret_bytes = hex::decode(secret)?;
+        let secret_string = String::from_utf8_lossy(&secret).trim().to_string();
+        let secret_bytes = hex::decode(secret_string)?;
         let secret_bytes: [u8; 32] = secret_bytes.try_into().map_err(|_| {
             anyhow::anyhow!("Failed to convert secret bytes into array of length 32")
         })?;
@@ -229,5 +230,24 @@ mod tests {
         assert!(data_dir.get_secret_file_path().exists());
         let content = std::fs::read_to_string(secret_file_path).unwrap();
         assert_eq!(content, "test");
+    }
+
+    #[test]
+    pub fn test_trim_secret_file_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().join(".pubky");
+        let data_dir = PersistentDataDir::new(test_path.clone());
+        data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
+
+        // Create a secret file
+        let keypair = pkarr::Keypair::random();
+        let secret_file_path = data_dir.get_secret_file_path();
+        let file_content = format!("\n {}\n \n", hex::encode(keypair.secret_key()));
+        std::fs::write(secret_file_path.clone(), file_content).unwrap();
+
+        let result = data_dir.read_or_create_keypair();
+        assert!(result.is_ok());
+        let read_keypair = result.unwrap();
+        assert_eq!(read_keypair.secret_key(), keypair.secret_key());
     }
 }
