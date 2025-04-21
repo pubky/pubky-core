@@ -1,11 +1,12 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
     str::FromStr,
 };
 
 use crate::Testnet;
 use http_relay::HttpRelay;
-use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir, SignupMode};
+use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
 
 /// A simple testnet with
 ///
@@ -16,7 +17,9 @@ use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir, Sig
 /// - An admin server for the homeserver on port 6288.
 pub struct StaticTestnet {
     /// Inner flexible testnet.
-    pub flexible_testnet: Testnet,
+    pub testnet: Testnet,
+    /// Optional path to the homeserver config file if set.
+    pub homeserver_config: Option<PathBuf>,
     #[allow(dead_code)]
     fixed_bootstrap_node: Option<pkarr::mainline::Dht>, // Keep alive
     #[allow(dead_code)]
@@ -24,16 +27,27 @@ pub struct StaticTestnet {
 }
 
 impl StaticTestnet {
-    /// Run a new simple testnet.
+    /// Run a new static testnet with the default homeserver config.
     pub async fn start() -> anyhow::Result<Self> {
+        Self::new(None).await
+    }
+
+    /// Run a new static testnet with a custom homeserver config.
+    pub async fn start_with_homeserver_config(config_path: PathBuf) -> anyhow::Result<Self> {
+        Self::new(Some(config_path)).await
+    }
+
+    /// Run a new simple testnet.
+    pub async fn new(config_path: Option<PathBuf>) -> anyhow::Result<Self> {
         let testnet = Testnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
             .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
 
         let mut testnet = Self {
-            flexible_testnet: testnet,
+            testnet,
             fixed_bootstrap_node: fixed_boostrap,
             temp_dirs: vec![],
+            homeserver_config: config_path,
         };
 
         testnet
@@ -54,16 +68,16 @@ impl StaticTestnet {
 
     /// Create a new pubky client builder.
     pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
-        self.flexible_testnet.pubky_client_builder()
+        self.testnet.pubky_client_builder()
     }
 
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
-        self.flexible_testnet.pkarr_client_builder()
+        self.testnet.pkarr_client_builder()
     }
 
     /// Get the homeserver in the testnet.
     pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
-        self.flexible_testnet
+        self.testnet
             .homeservers
             .first()
             .expect("homeservers should be non-empty")
@@ -71,7 +85,7 @@ impl StaticTestnet {
 
     /// Get the http relay in the testnet.
     pub fn http_relay(&self) -> &HttpRelay {
-        self.flexible_testnet
+        self.testnet
             .http_relays
             .first()
             .expect("http relays should be non-empty")
@@ -79,7 +93,7 @@ impl StaticTestnet {
 
     /// Get the pkarr relay in the testnet.
     pub fn pkarr_relay(&self) -> &pkarr_relay::Relay {
-        self.flexible_testnet
+        self.testnet
             .pkarr_relays
             .first()
             .expect("pkarr relays should be non-empty")
@@ -92,7 +106,7 @@ impl StaticTestnet {
             nodes.push(dht.info().local_addr().to_string());
         }
         nodes.extend(
-            self.flexible_testnet
+            self.testnet
                 .dht_bootstrap_nodes()
                 .iter()
                 .map(|node| node.to_string()),
@@ -130,10 +144,10 @@ impl StaticTestnet {
             .disable_rate_limiter()
             .pkarr(|pkarr| {
                 pkarr.no_default_network();
-                pkarr.bootstrap(&self.flexible_testnet.dht.bootstrap)
+                pkarr.bootstrap(&self.testnet.dht.bootstrap)
             });
         let relay = unsafe { builder.run() }.await?;
-        self.flexible_testnet.pkarr_relays.push(relay);
+        self.testnet.pkarr_relays.push(relay);
         self.temp_dirs.push(temp_dir);
         Ok(())
     }
@@ -144,20 +158,24 @@ impl StaticTestnet {
             .http_port(15412) // Random available port
             .run()
             .await?;
-        self.flexible_testnet.http_relays.push(relay);
+        self.testnet.http_relays.push(relay);
         Ok(())
     }
 
     async fn run_fixed_homeserver(&mut self) -> anyhow::Result<()> {
+        let mut config = if let Some(config_path) = &self.homeserver_config {
+            ConfigToml::from_file(config_path)?
+        } else {
+            ConfigToml::test()
+        };
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
-        let mut config = ConfigToml::test();
         config.pkdns.dht_bootstrap_nodes = Some(
             self.bootstrap_nodes()
                 .iter()
                 .map(|node| DomainPort::from_str(node).unwrap())
                 .collect(),
         );
-        config.general.signup_mode = SignupMode::Open;
+        config.pkdns.dht_relay_nodes = None;
         config.drive.icann_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6286);
         config.drive.pubky_listen_socket =
@@ -166,7 +184,7 @@ impl StaticTestnet {
         let mock = MockDataDir::new(config, Some(keypair))?;
 
         let homeserver = HomeserverSuite::start_with_mock_data_dir(mock).await?;
-        self.flexible_testnet.homeservers.push(homeserver);
+        self.testnet.homeservers.push(homeserver);
         Ok(())
     }
 }

@@ -10,35 +10,35 @@ use crate::Testnet;
 /// - An admin server for the homeserver.
 pub struct EphemeralTestnet {
     /// Inner flexible testnet.
-    pub flexible_testnet: Testnet,
+    pub testnet: Testnet,
 }
 
 impl EphemeralTestnet {
     /// Run a new simple testnet.
     pub async fn start() -> anyhow::Result<Self> {
         let mut me = Self {
-            flexible_testnet: Testnet::new().await?,
+            testnet: Testnet::new().await?,
         };
 
-        me.flexible_testnet.create_http_relay().await?;
-        me.flexible_testnet.create_homeserver_suite().await?;
+        me.testnet.create_http_relay().await?;
+        me.testnet.create_homeserver_suite().await?;
 
         Ok(me)
     }
 
     /// Create a new pubky client builder.
     pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
-        self.flexible_testnet.pubky_client_builder()
+        self.testnet.pubky_client_builder()
     }
 
     /// Create a new pkarr client builder.
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
-        self.flexible_testnet.pkarr_client_builder()
+        self.testnet.pkarr_client_builder()
     }
 
     /// Get the homeserver in the testnet.
     pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
-        self.flexible_testnet
+        self.testnet
             .homeservers
             .first()
             .expect("homeservers should be non-empty")
@@ -46,7 +46,7 @@ impl EphemeralTestnet {
 
     /// Get the http relay in the testnet.
     pub fn http_relay(&self) -> &HttpRelay {
-        self.flexible_testnet
+        self.testnet
             .http_relays
             .first()
             .expect("http relays should be non-empty")
