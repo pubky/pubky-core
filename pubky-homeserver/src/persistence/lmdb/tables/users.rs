@@ -33,6 +33,40 @@ impl Default for User {
     }
 }
 
+impl LmDB {
+    /// Updates a user's data usage by a signed `delta` (bytes).
+    /// Increases or decreases the stored `used_bytes` count for `public_key`.
+    /// Negative results are clamped to zero to prevent underflow.
+    pub fn update_data_usage(&mut self, public_key: &PublicKey, delta: i64) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
+        let mut user = self
+            .tables
+            .users
+            .get(&wtxn, public_key)?
+            .unwrap_or(User::default());
+
+        user.used_bytes = (user.used_bytes as i64 + delta).max(0) as u64; // never negative
+
+        self.tables.users.put(&mut wtxn, public_key, &user)?;
+        wtxn.commit()?;
+        Ok(())
+    }
+
+    /// Retrieves the current data usage (in bytes) for a given user.
+    /// Returns the `used_bytes` value for the specified `public_key`, or zero if no record exists.
+    pub fn get_user_data_usage(&self, pk: &PublicKey) -> anyhow::Result<u64> {
+        let rtxn = self.env.read_txn()?;
+        let usage = self
+            .tables
+            .users
+            .get(&rtxn, pk)?
+            .map(|u| u.used_bytes)
+            .unwrap_or(0);
+        rtxn.commit()?;
+        Ok(usage)
+    }
+}
+
 impl BytesEncode<'_> for User {
     type EItem = Self;
 

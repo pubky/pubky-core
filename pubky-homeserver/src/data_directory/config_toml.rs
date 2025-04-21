@@ -161,6 +161,13 @@ pub struct GeneralToml {
     /// LMDB backup interval in seconds. 0 means disabled.
     #[serde(default)]
     pub lmdb_backup_interval_s: u64,
+    /// Per‑user storage quota in MB (0 = unlimited, defaults to 1024).
+    #[serde(default = "default_user_quota_mb")]
+    pub user_storage_quota_mb: u64,
+}
+
+fn default_user_quota_mb() -> u64 {
+    1024
 }
 
 /// The error that can occur when reading the config file
