@@ -52,12 +52,12 @@ pub async fn delete(
     let full_path = path.0.path();
     let existing = existing_len(&state, pk, full_path)?;
 
-    // remove entry
+    // Remove entry
     if !state.db.delete_entry(pk, full_path)? {
         return Err(Error::with_status(StatusCode::NOT_FOUND));
     }
 
-    // adjust usage counter
+    // Update usage counter
     state.db.update_data_usage(pk, -(existing as i64))?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -76,13 +76,13 @@ pub async fn put(
     let quota = state.user_quota_bytes;
     let used = state.db.get_user_data_usage(&pk)?;
 
-    // upfront check when we have an exact Content‑Length
+    // Upfront check when we have an exact Content‑Length
     let hint = body.size_hint().exact();
     if let Some(exact) = hint {
         enforce_quota(existing, exact, used, quota)?;
     }
 
-    // stream body, counting only when we *didn’t* have a hint
+    // Stream body, counting only when we didn’t have a hint
     let mut writer = state.db.write_entry(&pk, full_path)?;
     let mut seen: u64 = 0;
     let mut stream = body.into_data_stream();
@@ -95,10 +95,42 @@ pub async fn put(
         writer.write_all(&chunk)?;
     }
 
-    // commit & bump usage
+    // Commit & bump usage
     let entry = writer.commit()?;
     let delta = entry.content_length() as i64 - existing as i64;
     state.db.update_data_usage(&pk, delta)?;
 
     Ok(StatusCode::CREATED)
+}
+
+#[cfg(test)]
+mod quota_unit_tests {
+    use super::enforce_quota;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn allows_exact_quota() {
+        // existing=0, incoming=1024, used=0, quota=Some(1024)
+        assert!(enforce_quota(0, 1024, 0, Some(1024)).is_ok());
+    }
+
+    #[tokio::test]
+    async fn blocks_when_over_quota() {
+        let err = enforce_quota(0, 1025, 0, Some(1024)).unwrap_err();
+        // convert to a real HTTP Response
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+    }
+
+    #[tokio::test]
+    async fn considers_existing_size() {
+        // existing=800, incoming=600, used=0, quota=1000 => delta = max(0,600-800)=0
+        assert!(enforce_quota(800, 600, 0, Some(1000)).is_ok());
+    }
+
+    #[tokio::test]
+    async fn unlimited_when_quota_none() {
+        assert!(enforce_quota(0, 10_000_000, 0, None).is_ok());
+    }
 }

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use pkarr::Keypair;
-use pubky_testnet::EphemeralTestnet;
+use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
@@ -67,6 +67,69 @@ async fn put_get_delete() {
     let response = client.get(url).send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn put_quota_applied() {
+    // Start a test homeserver with 1 MB user data limit
+    let mut testnet = Testnet::new().await.unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
+
+    let mut mock_dir = MockDataDir::test();
+    mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
+    let server = testnet
+        .create_homeserver_suite_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let keypair = Keypair::random();
+
+    // Signup
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let url = format!("pubky://{}/pub/data", keypair.public_key());
+
+    // First 600 KB → OK
+    let data: Vec<u8> = vec![0; 600_000];
+    client
+        .put(&url)
+        .body(data.clone())
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // Overwriting the data 600 KB → should 201
+    let resp = client.put(&url).body(data.clone()).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Writing now 600 KB more on a different path (totals 1.2 MB) → should 507
+    let url_2 = format!("pubky://{}/pub/data2", keypair.public_key());
+    let resp = client.put(&url_2).body(data).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+
+    // Overwriting the data 600 KB with 1100KB → should 507
+    let data_2: Vec<u8> = vec![0; 1_100_000];
+    let resp = client.put(&url).body(data_2).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+
+    // Delete the oroginal data of 600 KB → should 205 and user usage go down to 0 bytes
+    let resp = client.delete(&url).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    // Write exactly 1025 KB → should 507 because it exactly exceeds quota
+    let data_3: Vec<u8> = vec![0; 1025 * 1024];
+    let resp = client.put(&url).body(data_3).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+
+    // Write exactly 1 MB → should 201 because it exactly fits within quota
+    let data_3: Vec<u8> = vec![0; 1024 * 1024];
+    let resp = client.put(&url).body(data_3).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
 #[tokio::test]
