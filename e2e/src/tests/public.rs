@@ -94,14 +94,8 @@ async fn put_quota_applied() {
 
     // First 600 KB → OK
     let data: Vec<u8> = vec![0; 600_000];
-    client
-        .put(&url)
-        .body(data.clone())
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
+    let resp = client.put(&url).body(data.clone()).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Overwriting the data 600 KB → should 201
     let resp = client.put(&url).body(data.clone()).send().await.unwrap();
@@ -117,7 +111,7 @@ async fn put_quota_applied() {
     let resp = client.put(&url).body(data_2).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
 
-    // Delete the oroginal data of 600 KB → should 205 and user usage go down to 0 bytes
+    // Delete the original data of 600 KB → should 204 and user usage go down to 0 bytes
     let resp = client.delete(&url).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 

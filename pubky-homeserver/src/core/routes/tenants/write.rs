@@ -30,15 +30,15 @@ fn existing_len(state: &AppState, pk: &pubky_common::crypto::PublicKey, path: &s
 fn enforce_quota(existing: u64, incoming: u64, current: u64, quota: Option<u64>) -> Result<()> {
     if let Some(max) = quota {
         if current + incoming.saturating_sub(existing) > max {
-            let bytes_in_mb = 1024.0 / 1024.0;
+            let bytes_in_mb = 1024.0 * 1024.0;
             let current_mb = current as f64 / bytes_in_mb;
-            let incoming_mb = incoming as f64 / bytes_in_mb;
+            let adding_mb = (incoming - existing) as f64 / bytes_in_mb;
             let max_mb = max as f64 / bytes_in_mb;
             return Err(Error::new(
                 StatusCode::INSUFFICIENT_STORAGE,
                 Some(format!(
                     "Quota of {:.1} MB exceeded: you’ve used {:.1} MB, trying to add {:.1} MB",
-                    max_mb, current_mb, incoming_mb
+                    max_mb, current_mb, adding_mb
                 )),
             ));
         }
@@ -92,10 +92,8 @@ pub async fn put(
     let mut stream = body.into_data_stream();
 
     while let Some(chunk) = stream.next().await.transpose()? {
-        if hint.is_none() {
-            seen += chunk.len() as u64;
-            enforce_quota(existing, seen, used, quota)?;
-        }
+        seen += chunk.len() as u64;
+        enforce_quota(existing, seen, used, quota)?;
         writer.write_all(&chunk)?;
     }
 
