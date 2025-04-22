@@ -12,7 +12,7 @@ use pkarr::PublicKey;
 /// }
 /// ```
 /// 
-/// 
+/// TODO: Add serde deserialization to pkarr::PublicKey itself
 #[derive(Debug)]
 pub(crate)struct Z32Pubkey(pub PublicKey);
 

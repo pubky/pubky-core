@@ -8,12 +8,6 @@ use super::super::app_state::AppState;
 
 
 /// Delete a single entry from the database.
-/// 
-/// # Errors
-/// 
-/// - `400` if the pubkey is invalid.
-/// - `404` if the entry does not exist.
-/// 
 pub async fn delete_entry(
     State(mut state): State<AppState>,
     Path((pubkey, path)): Path<(Z32Pubkey, String)>,

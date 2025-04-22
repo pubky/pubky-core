@@ -35,8 +35,8 @@ impl LmDB {
                 .map_size(DEFAULT_MAP_SIZE)
                 .open(&main_dir)
         }?;
-
-        let tables = migrations::run(&env)?;
+        migrations::run(&env)?;
+        let tables = Tables::new(&env, &mut env.write_txn()?)?;
 
         let db = LmDB {
             env,

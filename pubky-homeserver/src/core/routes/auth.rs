@@ -65,9 +65,7 @@ pub async fn signup(
     users.put(
         &mut wtxn,
         public_key,
-        &User {
-            created_at: Timestamp::now().as_u64(),
-        },
+        &User::new(),
     )?;
     wtxn.commit()?;
 

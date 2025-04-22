@@ -76,8 +76,9 @@ impl TryFrom<Arc<dyn DataDirTrait>> for AppContext {
 
         let db_path = dir.path().join("data/lmdb");
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
+        let mut db = unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? };
         Ok(Self {
-            db: unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? },
+            db,
             pkarr_client: pkarr_builder
                 .clone()
                 .build()
