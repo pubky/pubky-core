@@ -33,7 +33,7 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
     let app = Router::new()
         .nest("/admin", admin_router)
         .route("/", get(root::root))
-        .route("/drive/pub/{*path}", delete(delete_entry))
+        .route("/drive/pub/{pubkey}/{*path}", delete(delete_entry))
         .with_state(state)
         .layer(CorsLayer::very_permissive());
 
