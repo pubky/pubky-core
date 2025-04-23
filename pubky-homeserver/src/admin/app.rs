@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::routes::disable_users::{disable_tenant, enable_tenant};
+use super::routes::disable_users::{disable_user, enable_user};
 use super::routes::{delete_entry, generate_signup_token, root};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -37,8 +37,8 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
             "/webdav/{pubkey}/pub/{*path}",
             delete(delete_entry::delete_entry),
         )
-        .route("/users/{pubkey}/disable", post(disable_tenant))
-        .route("/users/{pubkey}/enable", post(enable_tenant))
+        .route("/users/{pubkey}/disable", post(disable_user))
+        .route("/users/{pubkey}/enable", post(enable_user))
         .with_state(state)
         .layer(CorsLayer::very_permissive());
 

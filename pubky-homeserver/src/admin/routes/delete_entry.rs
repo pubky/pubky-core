@@ -48,7 +48,7 @@ mod tests {
         let mut db = LmDB::test();
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/drive/{pubkey}/pub/{*path}", delete(delete_entry))
+            .route("/webdav/{pubkey}/pub/{*path}", delete(delete_entry))
             .with_state(app_state);
 
         // Write a test file
@@ -58,7 +58,7 @@ mod tests {
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/drive/{}/pub/{}", pubkey, file_path).as_str())
+            .delete(format!("/webdav/{}/pub/{}", pubkey, file_path).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
 
@@ -76,13 +76,13 @@ mod tests {
         let file_path = "my_file.txt";
         let app_state = AppState::new(LmDB::test());
         let router = Router::new()
-            .route("/drive/{pubkey}/pub/{*path}", delete(delete_entry))
+            .route("/webdav/{pubkey}/pub/{*path}", delete(delete_entry))
             .with_state(app_state);
 
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/drive/{}/pub/{}", pubkey, file_path).as_str())
+            .delete(format!("/webdav/{}/pub/{}", pubkey, file_path).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
@@ -93,13 +93,13 @@ mod tests {
         let db = LmDB::test();
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/drive/{pubkey}/pub/{*path}", delete(delete_entry))
+            .route("/webdav/{pubkey}/pub/{*path}", delete(delete_entry))
             .with_state(app_state);
 
         // Delete with invalid pubkey
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/drive/1234/pub/test.txt").as_str())
+            .delete(format!("/webdav/1234/pub/test.txt").as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
     }

@@ -16,7 +16,7 @@ use axum::{
 /// - `400` if the pubkey is invalid.
 /// - `404` if the entry does not exist.
 ///
-pub async fn disable_tenant(
+pub async fn disable_user(
     State(state): State<AppState>,
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
@@ -48,7 +48,7 @@ pub async fn disable_tenant(
 /// - `400` if the pubkey is invalid.
 /// - `404` if the entry does not exist.
 ///
-pub async fn enable_tenant(
+pub async fn enable_user(
     State(state): State<AppState>,
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
@@ -83,7 +83,7 @@ mod tests {
     use pkarr::Keypair;
 
     #[tokio::test]
-    async fn test_disable_enable_tenant() {
+    async fn test_disable_enable_user() {
         let pubkey = Keypair::random().public_key();
 
         // Create new user
@@ -101,8 +101,8 @@ mod tests {
         // Setup server
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/users/{pubkey}/disable", post(disable_tenant))
-            .route("/users/{pubkey}/enable", post(enable_tenant))
+            .route("/users/{pubkey}/disable", post(disable_user))
+            .route("/users/{pubkey}/enable", post(enable_user))
             .with_state(app_state);
 
         // Disable the tenant

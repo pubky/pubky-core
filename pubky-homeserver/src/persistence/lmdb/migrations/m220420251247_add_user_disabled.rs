@@ -77,8 +77,8 @@ fn is_migration_needed(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<bool> {
 
     match new_table.first(wtxn) {
         Ok(Some(_user)) => {
-            // User found. The old schema is valid.
-            // We need to migrate the users to the new schema.
+            // User found. The new schema is valid.
+            // Migrations has already been run.
             Ok(false)
         }
         Ok(None) => {
@@ -86,7 +86,8 @@ fn is_migration_needed(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<bool> {
             Ok(false)
         }
         Err(_e) => {
-            // Failed to deserialize. The migrations has already been run.
+            // Failed to deserialize. It's the old schema.
+            // Migrations is needed.
             Ok(true)
         }
     }
@@ -131,7 +132,6 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to read old users table: {}", e))?;
 
     // Migrate the users to the new schema.
-    // Save into a temporary table.
     let new_users: Vec<(PublicKey, NewUser)> = old_users
         .into_iter()
         .map(|(key, old_user)| (key, old_user.into()))
