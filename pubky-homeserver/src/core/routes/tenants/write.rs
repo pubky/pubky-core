@@ -16,7 +16,7 @@ use crate::core::{
 };
 
 /// Bytes already stored at `path` for this user (0 if none).
-fn existing_len(state: &AppState, pk: &pubky_common::crypto::PublicKey, path: &str) -> Result<u64> {
+fn existing_len(state: &AppState, pk: &pkarr::PublicKey, path: &str) -> Result<u64> {
     let rtxn = state.db.env.read_txn()?;
     Ok(state
         .db
@@ -64,7 +64,7 @@ pub async fn delete(
     // Update usage counter
     state.db.update_data_usage(pk, -(existing as i64))?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok((StatusCode::NO_CONTENT, ()))
 }
 
 pub async fn put(
@@ -102,7 +102,7 @@ pub async fn put(
     let delta = entry.content_length() as i64 - existing as i64;
     state.db.update_data_usage(&pk, delta)?;
 
-    Ok(StatusCode::CREATED)
+    Ok((StatusCode::CREATED, ()))
 }
 
 #[cfg(test)]
