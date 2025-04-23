@@ -1,3 +1,4 @@
+use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::users::User;
 use crate::{
     core::{
@@ -118,6 +119,8 @@ fn create_session_and_cookie(
     capabilities: &[Capability],
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(public_key, &state.db)?;
+
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
     let session = Session::new(
