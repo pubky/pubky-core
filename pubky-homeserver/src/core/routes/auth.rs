@@ -1,8 +1,6 @@
-use crate::persistence::lmdb::tables::users::User;
 use crate::{
     core::{
-        error::{Error, Result},
-        AppState,
+        error::{Error, Result}, err_if_user_is_invalid::err_if_user_is_invalid, AppState
     },
     SignupMode,
 };
@@ -15,9 +13,7 @@ use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
 use base32::{encode, Alphabet};
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{
-    capabilities::Capability, crypto::random_bytes, session::Session, timestamp::Timestamp,
-};
+use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
 use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
@@ -61,13 +57,9 @@ pub async fn signup(
     }
 
     // 4) Create the new user record
-    let mut wtxn = state.db.env.write_txn()?;
-    users.put(
-        &mut wtxn,
-        public_key,
-        &User::new(),
-    )?;
-    wtxn.commit()?;
+    state
+        .db
+        .create_user(public_key, &mut state.db.env.write_txn()?)?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(
@@ -80,7 +72,8 @@ pub async fn signup(
     )
 }
 
-/// Fails if user doesn’t exist, otherwise logs them in by creating a session.
+/// logs the user in by creating a session.
+/// Fails if the user doesn't exist or is disabled.
 pub async fn signin(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
@@ -91,18 +84,6 @@ pub async fn signin(
     // 1) Verify the AuthToken in the request body
     let token = state.verifier.verify(&body)?;
     let public_key = token.pubky();
-
-    // 2) Ensure user *does* exist
-    let txn = state.db.env.read_txn()?;
-    let users = state.db.tables.users;
-    let user_exists = users.get(&txn, public_key)?.is_some();
-    txn.commit()?;
-    if !user_exists {
-        return Err(Error::new(
-            StatusCode::NOT_FOUND,
-            Some("User does not exist"),
-        ));
-    }
 
     // 3) Create the session & set cookie
     create_session_and_cookie(
@@ -116,6 +97,7 @@ pub async fn signin(
 }
 
 /// Creates and stores a session, sets the cookie, returns session as JSON/string.
+/// Fails if the user doesn't exist or is disabled.
 fn create_session_and_cookie(
     state: &AppState,
     cookies: Cookies,
@@ -124,6 +106,9 @@ fn create_session_and_cookie(
     capabilities: &[Capability],
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> Result<impl IntoResponse> {
+
+    err_if_user_is_invalid(&public_key, &state.db)?;
+
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
     let session = Session::new(
