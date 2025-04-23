@@ -1,11 +1,10 @@
+use super::super::app_state::AppState;
 use crate::shared::{HttpError, HttpResult, Z32Pubkey};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
-use super::super::app_state::AppState;
-
 
 /// Delete a single entry from the database.
 pub async fn delete_entry(
@@ -17,19 +16,21 @@ pub async fn delete_entry(
     if deleted {
         Ok((StatusCode::OK, "Ok"))
     } else {
-        Err(HttpError::new(StatusCode::NOT_FOUND, Some("Entry not found")))
+        Err(HttpError::new(
+            StatusCode::NOT_FOUND,
+            Some("Entry not found"),
+        ))
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use super::super::super::app_state::AppState;
+    use super::*;
     use crate::persistence::lmdb::LmDB;
     use axum::{routing::delete, Router};
     use pkarr::{Keypair, PublicKey};
-    use super::super::super::app_state::AppState;
-    use super::*;
+    use std::io::Write;
 
     async fn write_test_file(db: &mut LmDB, pubkey: &PublicKey, path: &str) {
         let mut entry_writer = db.write_entry(pubkey, path).unwrap();
@@ -56,7 +57,9 @@ mod tests {
 
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
-        let response = server.delete(format!("/drive/{}/pub/{}", pubkey, file_path).as_str()).await;
+        let response = server
+            .delete(format!("/drive/{}/pub/{}", pubkey, file_path).as_str())
+            .await;
         assert_eq!(response.status_code(), StatusCode::OK);
 
         // Check that the file is deleted
@@ -78,7 +81,9 @@ mod tests {
 
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
-        let response = server.delete(format!("/drive/{}/pub/{}", pubkey, file_path).as_str()).await;
+        let response = server
+            .delete(format!("/drive/{}/pub/{}", pubkey, file_path).as_str())
+            .await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
 
@@ -93,8 +98,9 @@ mod tests {
 
         // Delete with invalid pubkey
         let server = axum_test::TestServer::new(router).unwrap();
-        let response = server.delete(format!("/drive/1234/pub/test.txt").as_str()).await;
+        let response = server
+            .delete(format!("/drive/1234/pub/test.txt").as_str())
+            .await;
         assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
     }
-    
 }

@@ -15,7 +15,6 @@ pub type UsersTable = Database<PublicKeyCodec, User>;
 
 pub const USERS_TABLE: &str = "users";
 
-
 // TODO: add more adminstration metadata like quota, invitation links, etc..
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct User {
@@ -23,9 +22,8 @@ pub struct User {
     pub disabled: bool,
 }
 
-impl User {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
+impl Default for User {
+    fn default() -> Self {
         Self {
             created_at: Timestamp::now().as_u64(),
             disabled: false,
@@ -79,12 +77,11 @@ pub enum UserQueryError {
     DatabaseError(#[from] heed::Error),
 }
 
-
 impl LmDB {
     /// Disable a user.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// - `UserQueryError::UserNotFound` if the user does not exist.
     /// - `UserQueryError::DatabaseError` if the database operation fails.
     pub fn disable_user(&self, pubkey: &PublicKey, wtxn: &mut RwTxn) -> Result<(), UserQueryError> {
@@ -94,15 +91,15 @@ impl LmDB {
         };
 
         user.disabled = true;
-        self.tables.users.put( wtxn, pubkey, &user)?;
+        self.tables.users.put(wtxn, pubkey, &user)?;
 
         Ok(())
     }
 
     /// Enable a user.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// - `UserQueryError::UserNotFound` if the user does not exist.
     /// - `UserQueryError::DatabaseError` if the database operation fails.
     pub fn enable_user(&self, pubkey: &PublicKey, wtxn: &mut RwTxn) -> Result<(), UserQueryError> {
@@ -118,20 +115,20 @@ impl LmDB {
     }
 
     /// Create a user.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// - `UserQueryError::DatabaseError` if the database operation fails.
     pub fn create_user(&self, pubkey: &PublicKey, wtxn: &mut RwTxn) -> anyhow::Result<()> {
-        let user = User::new();
+        let user = User::default();
         self.tables.users.put(wtxn, pubkey, &user)?;
         Ok(())
     }
 
     /// Get a user.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// - `UserQueryError::UserNotFound` if the user does not exist.
     /// - `UserQueryError::DatabaseError` if the database operation fails.
     pub fn get_user(&self, pubkey: &PublicKey, wtxn: &mut RoTxn) -> Result<User, UserQueryError> {

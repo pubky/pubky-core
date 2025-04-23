@@ -1,11 +1,10 @@
-use std::borrow::Cow;
+use super::super::tables::users;
+use crate::persistence::lmdb::tables::users::PublicKeyCodec;
 use heed::{BoxedError, BytesDecode, BytesEncode, Database, Env, RwTxn};
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
-use crate::persistence::lmdb::tables::users::PublicKeyCodec;
-use super::super::tables::users;
-
+use std::borrow::Cow;
 
 /// Adds the `disabled` field to the `users` table.
 
@@ -73,23 +72,21 @@ impl<'a> BytesDecode<'a> for NewUser {
 /// Tries to read users with the new schema. If it succeeds, the migration is not needed.
 /// If it fails, the migration is needed.
 fn is_migration_needed(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<bool> {
-    let new_table: Database<PublicKeyCodec, NewUser> = env.open_database(
-        wtxn, 
-        Some(users::USERS_TABLE)
-    )?.expect("User database is not available");
+    let new_table: Database<PublicKeyCodec, NewUser> = env
+        .open_database(wtxn, Some(users::USERS_TABLE))?
+        .expect("User database is not available");
 
-    
-    match new_table.first(&wtxn) {
+    match new_table.first(wtxn) {
         Ok(Some(_user)) => {
             // User found. The old schema is valid.
             // We need to migrate the users to the new schema.
             Ok(false)
-        },
+        }
         Ok(None) => {
             // No users found. No need to run the migration.
             Ok(false)
-        },
-        Err(e) => {
+        }
+        Err(_e) => {
             // Failed to deserialize. The migrations has already been run.
             Ok(true)
         }
@@ -97,10 +94,9 @@ fn is_migration_needed(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<bool> {
 }
 
 fn read_old_users_table(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<Vec<(PublicKey, OldUser)>> {
-    let table: Database<PublicKeyCodec, OldUser> = env.open_database(
-        wtxn, 
-        Some(users::USERS_TABLE)
-    )?.expect("User database is not available");
+    let table: Database<PublicKeyCodec, OldUser> = env
+        .open_database(wtxn, Some(users::USERS_TABLE))?
+        .expect("User database is not available");
 
     let mut new_users: Vec<(PublicKey, OldUser)> = vec![];
     for entry in table.iter(wtxn)? {
@@ -111,12 +107,15 @@ fn read_old_users_table(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<Vec<(Publ
     Ok(new_users)
 }
 
-fn write_new_users_table(env: &Env, wtxn: &mut RwTxn, users: Vec<(PublicKey, NewUser)>) -> anyhow::Result<()> {
-    let table: Database<PublicKeyCodec, NewUser> = env.open_database(
-        wtxn, 
-        Some(users::USERS_TABLE)
-    )?.expect("User database is not available");
-    
+fn write_new_users_table(
+    env: &Env,
+    wtxn: &mut RwTxn,
+    users: Vec<(PublicKey, NewUser)>,
+) -> anyhow::Result<()> {
+    let table: Database<PublicKeyCodec, NewUser> = env
+        .open_database(wtxn, Some(users::USERS_TABLE))?
+        .expect("User database is not available");
+
     for (key, new_user) in users {
         table.put(wtxn, &key, &new_user)?;
     }
@@ -130,19 +129,20 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
     }
 
     let old_users = read_old_users_table(env, wtxn)
-    .map_err(|e| anyhow::anyhow!("Failed to read old users table: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to read old users table: {}", e))?;
 
     // Migrate the users to the new schema.
     // Save into a temporary table.
-    let new_users: Vec<(PublicKey, NewUser)> = old_users.into_iter()
-    .map(|(key, old_user)| (key, old_user.into())).collect();
+    let new_users: Vec<(PublicKey, NewUser)> = old_users
+        .into_iter()
+        .map(|(key, old_user)| (key, old_user.into()))
+        .collect();
 
     write_new_users_table(env, wtxn, new_users)
-    .map_err(|e| anyhow::anyhow!("Failed to write new users table: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to write new users table: {}", e))?;
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -152,7 +152,7 @@ mod tests {
     use crate::persistence::lmdb::{db::DEFAULT_MAP_SIZE, migrations::m0};
 
     use super::*;
-    
+
     #[test]
     fn test_is_migration_needed_yes() {
         let tmp_dir = tempfile::tempdir().unwrap();
@@ -161,14 +161,22 @@ mod tests {
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
                 .open(&tmp_dir.path())
-        }.unwrap();
+        }
+        .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the old table.
         let table: Database<PublicKeyCodec, OldUser> = env
-        .create_database(&mut wtxn, Some(users::USERS_TABLE)).unwrap();
-        table.put(&mut wtxn, &Keypair::random().public_key(), &OldUser { created_at: 1 }).unwrap();
+            .create_database(&mut wtxn, Some(users::USERS_TABLE))
+            .unwrap();
+        table
+            .put(
+                &mut wtxn,
+                &Keypair::random().public_key(),
+                &OldUser { created_at: 1 },
+            )
+            .unwrap();
 
         assert!(is_migration_needed(&env, &mut wtxn).unwrap());
     }
@@ -181,13 +189,15 @@ mod tests {
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
                 .open(&tmp_dir.path())
-        }.unwrap();
+        }
+        .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the old table.
         let _: Database<PublicKeyCodec, OldUser> = env
-        .create_database(&mut wtxn, Some(users::USERS_TABLE)).unwrap();
+            .create_database(&mut wtxn, Some(users::USERS_TABLE))
+            .unwrap();
 
         assert!(!is_migration_needed(&env, &mut wtxn).unwrap());
     }
@@ -200,17 +210,30 @@ mod tests {
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
                 .open(&tmp_dir.path())
-        }.unwrap();
+        }
+        .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the new table.
         let table: Database<PublicKeyCodec, NewUser> = env
-        .create_database(&mut wtxn, Some(users::USERS_TABLE)).unwrap();
-            table.put(&mut wtxn, &Keypair::random().public_key(), &NewUser { created_at: 1, disabled: false }).unwrap();
+            .create_database(&mut wtxn, Some(users::USERS_TABLE))
+            .unwrap();
+        table
+            .put(
+                &mut wtxn,
+                &Keypair::random().public_key(),
+                &NewUser {
+                    created_at: 1,
+                    disabled: false,
+                },
+            )
+            .unwrap();
 
-
-        assert!(!is_migration_needed(&env, &mut wtxn).unwrap(), "The migration should not be needed anymore because it's already been run.");
+        assert!(
+            !is_migration_needed(&env, &mut wtxn).unwrap(),
+            "The migration should not be needed anymore because it's already been run."
+        );
     }
 
     #[test]
@@ -221,24 +244,29 @@ mod tests {
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
                 .open(&tmp_dir.path())
-        }.unwrap();
+        }
+        .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the old table.
         let pubkey = Keypair::random().public_key();
         let table: Database<PublicKeyCodec, OldUser> = env
-        .create_database(&mut wtxn, Some(users::USERS_TABLE)).unwrap();
-        table.put(&mut wtxn, &pubkey, &OldUser { created_at: 1 }).unwrap();
+            .create_database(&mut wtxn, Some(users::USERS_TABLE))
+            .unwrap();
+        table
+            .put(&mut wtxn, &pubkey, &OldUser { created_at: 1 })
+            .unwrap();
 
         // Migrate the users to the new schema.
         run(&env, &mut wtxn).unwrap();
 
         // Check that the user has been migrated to the new schema.
         let table: Database<PublicKeyCodec, NewUser> = env
-        .open_database(&mut wtxn, Some(users::USERS_TABLE)).unwrap().unwrap();
+            .open_database(&mut wtxn, Some(users::USERS_TABLE))
+            .unwrap()
+            .unwrap();
         let user = table.get(&mut wtxn, &pubkey).unwrap().unwrap();
         assert_eq!(user.disabled, false, "The user should not be disabled.");
     }
-    
 }

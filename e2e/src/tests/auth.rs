@@ -52,6 +52,66 @@ async fn basic_authn() {
 }
 
 #[tokio::test]
+async fn disabled_user() {
+    let testnet = SimpleTestnet::run().await.unwrap();
+    let server = testnet.homeserver_suite();
+
+    let client = testnet.pubky_client_builder().build().unwrap();
+
+    let keypair = Keypair::random();
+    let pubky = keypair.public_key();
+
+    // Create a new user
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    // Create a test file to make sure the user can write to their account
+    let file_url = format!("pubky://{pubky}/pub/pubky.app/foo");
+    client
+        .put(file_url.clone())
+        .body(vec![])
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // Make sure the user can read their own file
+    let response = client.get(file_url.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let admin_socket = server.admin().listen_socket();
+    let admin_client = reqwest::Client::new();
+
+    // Disable the user
+    let response = admin_client
+        .post(format!("http://{admin_socket}/users/{pubky}/disable"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Make sure the user cannot read their own file
+    let response = client.get(file_url.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Make sure the user cannot write to their own file
+    let response = client
+        .put(file_url.clone())
+        .body(vec![])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Make sure the user cannot sign in
+    let session = client.signin(&keypair).await;
+    assert!(session.is_err());
+}
+
+#[tokio::test]
 async fn authz() {
     let testnet = SimpleTestnet::run().await.unwrap();
     let server = testnet.homeserver_suite();

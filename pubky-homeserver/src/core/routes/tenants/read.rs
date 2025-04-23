@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use axum::{
     body::Body,
     extract::{OriginalUri, State},
@@ -6,9 +8,9 @@ use axum::{
 };
 use httpdate::HttpDate;
 use pkarr::PublicKey;
-use std::str::FromStr;
 
 use crate::core::{
+    err_if_user_is_invalid::err_if_user_is_invalid,
     error::{Error, Result},
     extractors::{ListQueryParams, PubkyHost},
     AppState,
@@ -21,6 +23,7 @@ pub async fn head(
     headers: HeaderMap,
     path: OriginalUri,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     let rtxn = state.db.env.read_txn()?;
 
     get_entry(
@@ -40,6 +43,7 @@ pub async fn get(
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
+    err_if_user_is_invalid(&public_key, &state.db)?;
     let path = path.0.path().to_string();
 
     if path.ends_with('/') {
@@ -82,6 +86,7 @@ pub fn list(
     path: &str,
     params: ListQueryParams,
 ) -> Result<Response<Body>> {
+    err_if_user_is_invalid(public_key, &state.db)?;
     let txn = state.db.env.read_txn()?;
 
     let path = format!("{public_key}{path}");
@@ -206,7 +211,6 @@ mod tests {
             .post("/signup")
             .add_header("host", keypair.public_key().to_string())
             .bytes(body_bytes)
-            .expect_success()
             .await;
         response.assert_status_ok();
 
@@ -240,7 +244,6 @@ mod tests {
             .add_header("host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
-            .expect_success()
             .await;
 
         response.assert_status_ok();

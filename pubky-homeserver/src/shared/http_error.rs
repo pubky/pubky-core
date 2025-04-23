@@ -1,10 +1,6 @@
 //! Server error
 
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-};
-
+use axum::{http::StatusCode, response::IntoResponse};
 
 pub(crate) type HttpResult<T, E = HttpError> = core::result::Result<T, E>;
 
@@ -25,13 +21,6 @@ impl Default for HttpError {
 }
 
 impl HttpError {
-    pub fn with_status(status: StatusCode) -> HttpError {
-        Self {
-            status,
-            detail: None,
-        }
-    }
-
     /// Create a new [`Error`].
     pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> HttpError {
         Self {

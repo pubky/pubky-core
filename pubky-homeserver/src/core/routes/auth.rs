@@ -1,6 +1,8 @@
 use crate::{
     core::{
-        error::{Error, Result}, err_if_user_is_invalid::err_if_user_is_invalid, AppState
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        AppState,
     },
     SignupMode,
 };
@@ -57,9 +59,9 @@ pub async fn signup(
     }
 
     // 4) Create the new user record
-    state
-        .db
-        .create_user(public_key, &mut state.db.env.write_txn()?)?;
+    let mut wtxn = state.db.env.write_txn()?;
+    state.db.create_user(public_key, &mut wtxn)?;
+    wtxn.commit()?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(
@@ -106,8 +108,7 @@ fn create_session_and_cookie(
     capabilities: &[Capability],
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> Result<impl IntoResponse> {
-
-    err_if_user_is_invalid(&public_key, &state.db)?;
+    err_if_user_is_invalid(public_key, &state.db)?;
 
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());

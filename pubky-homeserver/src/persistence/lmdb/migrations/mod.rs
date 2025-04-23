@@ -1,4 +1,3 @@
-use super::tables::Tables;
 use heed::Env;
 
 mod m0;

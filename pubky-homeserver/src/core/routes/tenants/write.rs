@@ -10,6 +10,7 @@ use axum::{
 };
 
 use crate::core::{
+    err_if_user_is_invalid::err_if_user_is_invalid,
     error::{Error, Result},
     extractors::PubkyHost,
     AppState,
@@ -20,6 +21,7 @@ pub async fn delete(
     pubky: PubkyHost,
     path: OriginalUri,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     let public_key = pubky.public_key().clone();
 
     // TODO: should we wrap this with `tokio::task::spawn_blocking` in case it takes too long?
@@ -39,6 +41,7 @@ pub async fn put(
     path: OriginalUri,
     body: Body,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     let public_key = pubky.public_key().clone();
 
     let mut entry_writer = state.db.write_entry(&public_key, path.0.path())?;
