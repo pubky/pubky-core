@@ -34,7 +34,7 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
         .nest("/admin", admin_router)
         .route("/", get(root::root))
         .route(
-            "/drive/pub/{pubkey}/{*path}",
+            "/webdav/{pubkey}/pub/{*path}",
             delete(delete_entry::delete_entry),
         )
         .route("/users/{pubkey}/disable", post(disable_tenant))
