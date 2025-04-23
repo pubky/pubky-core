@@ -18,6 +18,7 @@ mod core;
 mod data_directory;
 mod homeserver_suite;
 mod persistence;
+mod shared;
 
 pub use admin::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};

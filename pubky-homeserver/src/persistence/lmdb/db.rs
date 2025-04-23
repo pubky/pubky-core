@@ -36,7 +36,10 @@ impl LmDB {
                 .open(&main_dir)
         }?;
 
-        let tables = migrations::run(&env)?;
+        migrations::run(&env)?;
+        let mut wtxn = env.write_txn()?;
+        let tables = Tables::new(&env, &mut wtxn)?;
+        wtxn.commit()?;
 
         let db = LmDB {
             env,

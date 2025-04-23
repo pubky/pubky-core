@@ -15,9 +15,7 @@ use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
 use base32::{encode, Alphabet};
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{
-    capabilities::Capability, crypto::random_bytes, session::Session, timestamp::Timestamp,
-};
+use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
 use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
@@ -62,13 +60,7 @@ pub async fn signup(
 
     // 4) Create the new user record
     let mut wtxn = state.db.env.write_txn()?;
-    users.put(
-        &mut wtxn,
-        public_key,
-        &User {
-            created_at: Timestamp::now().as_u64(),
-        },
-    )?;
+    users.put(&mut wtxn, public_key, &User::default())?;
     wtxn.commit()?;
 
     // 5) Create session & set cookie

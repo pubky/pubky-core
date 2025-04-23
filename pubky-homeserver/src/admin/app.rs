@@ -2,11 +2,13 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::routes::{generate_signup_token, root};
+use super::routes::disable_users::{disable_tenant, enable_tenant};
+use super::routes::{delete_entry, generate_signup_token, root};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
 use crate::{AppContextConversionError, MockDataDir, PersistentDataDir};
+use axum::routing::{delete, post};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
@@ -31,6 +33,12 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
     let app = Router::new()
         .nest("/admin", admin_router)
         .route("/", get(root::root))
+        .route(
+            "/drive/pub/{pubkey}/{*path}",
+            delete(delete_entry::delete_entry),
+        )
+        .route("/users/{pubkey}/disable", post(disable_tenant))
+        .route("/users/{pubkey}/enable", post(enable_tenant))
         .with_state(state)
         .layer(CorsLayer::very_permissive());
 
