@@ -56,6 +56,21 @@ pub struct PkdnsToml {
     pub dht_request_timeout_ms: Option<NonZeroU64>,
 }
 
+impl Default for PkdnsToml {
+    fn default() -> Self {
+        Self {
+            public_ip: default_public_ip(),
+            public_pubky_tls_port: Option::default(),
+            public_icann_http_port: Option::default(),
+            icann_domain: Option::default(),
+            user_keys_republisher_interval: default_user_keys_republisher_interval(),
+            dht_bootstrap_nodes: default_dht_bootstrap_nodes(),
+            dht_relay_nodes: default_dht_relay_nodes(),
+            dht_request_timeout_ms: default_dht_request_timeout(),
+        }
+    }
+}
+
 fn default_public_ip() -> IpAddr {
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
 }
@@ -88,6 +103,15 @@ pub struct DriveToml {
     pub icann_listen_socket: SocketAddr,
 }
 
+impl Default for DriveToml {
+    fn default() -> Self {
+        Self {
+            pubky_listen_socket: default_pubky_drive_listen_socket(),
+            icann_listen_socket: default_icann_drive_listen_socket(),
+        }
+    }
+}
+
 fn default_pubky_drive_listen_socket() -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6287))
 }
@@ -107,6 +131,15 @@ pub struct AdminToml {
     pub admin_password: String,
 }
 
+impl Default for AdminToml {
+    fn default() -> Self {
+        Self {
+            listen_socket: default_admin_listen_socket(),
+            admin_password: default_admin_password(),
+        }
+    }
+}
+
 fn default_admin_password() -> String {
     "admin".to_string()
 }
@@ -116,7 +149,7 @@ fn default_admin_listen_socket() -> SocketAddr {
 }
 
 /// All configuration related to the admin API
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     /// The mode of the signup.
     #[serde(default)]
@@ -141,12 +174,16 @@ pub enum ConfigReadError {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
     /// The configuration for the general settings.
+    #[serde(default)]
     pub general: GeneralToml,
     /// The configuration for the drive files.
+    #[serde(default)]
     pub drive: DriveToml,
     /// The configuration for the admin API.
+    #[serde(default)]
     pub admin: AdminToml,
     /// The configuration for the pkdns.
+    #[serde(default)]
     pub pkdns: PkdnsToml,
 }
 
@@ -264,6 +301,22 @@ mod tests {
         assert_eq!(
             parsed.pkdns.dht_bootstrap_nodes, None,
             "dht_bootstrap_nodes not commented out"
+        );
+    }
+
+    #[test]
+    fn test_empty_config() {
+        // Test that a minimal config with only the general section works
+        let s = "[general]
+        signup_mode = \"open\"
+        ";
+        let parsed: ConfigToml = s.parse().unwrap();
+
+        // Check that explicitly set values are preserved
+        assert_eq!(
+            parsed.general.signup_mode,
+            SignupMode::Open,
+            "signup_mode not set correctly"
         );
     }
 }
