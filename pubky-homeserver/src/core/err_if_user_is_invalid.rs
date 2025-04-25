@@ -1,5 +1,5 @@
 use pkarr::PublicKey;
-use reqwest::StatusCode;
+use axum::http::StatusCode;
 
 use crate::persistence::lmdb::{tables::users::UserQueryError, LmDB};
 
