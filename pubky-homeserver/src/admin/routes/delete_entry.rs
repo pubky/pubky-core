@@ -69,7 +69,11 @@ mod tests {
         rtx.commit().unwrap();
 
         let events = db.list_events(None, None).unwrap();
-        assert_eq!(events.len(), 3, "One PUT and one DEL event should be created. Last entry is the cursor.");
+        assert_eq!(
+            events.len(),
+            3,
+            "One PUT and one DEL event should be created. Last entry is the cursor."
+        );
         assert!(events[0].contains("PUT"));
         assert!(events[1].contains("DEL"));
     }
