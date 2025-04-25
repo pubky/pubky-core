@@ -60,12 +60,18 @@ mod tests {
         let response = server
             .delete(format!("/webdav/{}/pub/{}", pubkey, file_path).as_str())
             .await;
-        assert_eq!(response.status_code(), StatusCode::OK);
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // Check that the file is deleted
         let rtx = db.env.read_txn().unwrap();
         let entry = db.get_entry(&rtx, &pubkey, &file_path).unwrap();
         assert!(entry.is_none(), "Entry should be deleted");
+        rtx.commit().unwrap();
+
+        let events = db.list_events(None, None).unwrap();
+        assert_eq!(events.len(), 3, "One PUT and one DEL event should be created. Last entry is the cursor.");
+        assert!(events[0].contains("PUT"));
+        assert!(events[1].contains("DEL"));
     }
 
     #[tokio::test]

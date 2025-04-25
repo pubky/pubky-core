@@ -4,7 +4,7 @@ use pkarr::PublicKey;
 /// Usage:
 /// ```ignore
 /// use axum::response::IntoResponse;
-/// use reqwest::StatusCode;
+/// use axum::http::StatusCode;
 /// use axum::extract::Path;
 /// use crate::shared::pubkey_path_validator::Z32Pubkey;
 /// use crate::shared::http_error::HttpResult;
