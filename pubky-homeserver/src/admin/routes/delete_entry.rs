@@ -14,7 +14,7 @@ pub async fn delete_entry(
     let full_path = format!("/pub/{}", path);
     let deleted = state.db.delete_entry(&pubkey.0, &full_path)?;
     if deleted {
-        Ok((StatusCode::OK, "Ok"))
+        Ok((StatusCode::NO_CONTENT, ()))
     } else {
         Err(HttpError::new(
             StatusCode::NOT_FOUND,
