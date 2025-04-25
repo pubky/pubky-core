@@ -34,7 +34,7 @@ pub struct PkdnsToml {
     pub public_icann_http_port: Option<u16>,
 
     /// Optional domain name of the regular http API.
-    #[serde(default)]
+    #[serde(default = "default_icann_domain")]
     pub icann_domain: Option<Domain>,
 
     /// The interval at which the user keys are republished in the DHT.
@@ -62,7 +62,7 @@ impl Default for PkdnsToml {
             public_ip: default_public_ip(),
             public_pubky_tls_port: Option::default(),
             public_icann_http_port: Option::default(),
-            icann_domain: Option::default(),
+            icann_domain: default_icann_domain(),
             user_keys_republisher_interval: default_user_keys_republisher_interval(),
             dht_bootstrap_nodes: default_dht_bootstrap_nodes(),
             dht_relay_nodes: default_dht_relay_nodes(),
@@ -90,6 +90,10 @@ fn default_dht_request_timeout() -> Option<NonZeroU64> {
 fn default_user_keys_republisher_interval() -> u64 {
     // 4 hours
     14400
+}
+
+fn default_icann_domain() -> Option<Domain> {
+    Some(Domain::from_str("localhost").expect("localhost is a valid domain"))
 }
 
 /// All configuration related to file drive
@@ -268,7 +272,7 @@ mod tests {
             c.drive.icann_listen_socket,
             default_icann_drive_listen_socket()
         );
-        assert_eq!(c.pkdns.icann_domain, None);
+        assert_eq!(c.pkdns.icann_domain, default_icann_domain());
 
         assert_eq!(
             c.drive.pubky_listen_socket,
