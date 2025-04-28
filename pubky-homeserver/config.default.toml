@@ -51,7 +51,7 @@ public_icann_http_port = 80
 # 
 # ICANN TLS is not natively supported, so you should be running
 # a reverse proxy and managing certificates yourself.
-icann_domain = "example.com"
+icann_domain = "localhost"
 
 # The interval at which user keys are republished to the DHT.
 # 0 means disabled.
