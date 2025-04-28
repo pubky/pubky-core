@@ -11,8 +11,14 @@ pub async fn delete_entry(
     State(mut state): State<AppState>,
     Path((pubkey, path)): Path<(Z32Pubkey, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let full_path = format!("/pub/{}", path);
-    let deleted = state.db.delete_entry(&pubkey.0, &full_path)?;
+    let path = format!("/{}", path); // Add missing leading slash
+    if !path.starts_with("/pub/") {
+        return Err(HttpError::new(
+            StatusCode::BAD_REQUEST,
+            Some("Invalid path"),
+        ));
+    }
+    let deleted = state.db.delete_entry(&pubkey.0, &path)?;
     if deleted {
         Ok((StatusCode::NO_CONTENT, ()))
     } else {
@@ -48,7 +54,7 @@ mod tests {
         let mut db = LmDB::test();
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/webdav/{pubkey}/pub/{*path}", delete(delete_entry))
+            .route("/webdav/{pubkey}/{*path}", delete(delete_entry))
             .with_state(app_state);
 
         // Write a test file
