@@ -20,6 +20,7 @@ pub const USERS_TABLE: &str = "users";
 pub struct User {
     pub created_at: u64,
     pub disabled: bool,
+    pub used_bytes: u64,
 }
 
 impl Default for User {
@@ -27,6 +28,7 @@ impl Default for User {
         Self {
             created_at: Timestamp::now().as_u64(),
             disabled: false,
+            used_bytes: 0,
         }
     }
 }

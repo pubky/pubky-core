@@ -36,6 +36,7 @@ impl<'a> BytesDecode<'a> for OldUser {
 struct NewUser {
     pub created_at: u64,
     pub disabled: bool,
+    pub used_bytes: u64
 }
 
 impl BytesEncode<'_> for NewUser {
@@ -53,6 +54,7 @@ impl From<OldUser> for NewUser {
         Self {
             created_at: user.created_at,
             disabled: false,
+            used_bytes: 0,
         }
     }
 }
@@ -128,6 +130,7 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    tracing::info!("Running migration 220420251247_add_user_disabled");
     let old_users = read_old_users_table(env, wtxn)
         .map_err(|e| anyhow::anyhow!("Failed to read old users table: {}", e))?;
 
@@ -137,8 +140,11 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
         .map(|(key, old_user)| (key, old_user.into()))
         .collect();
 
+    tracing::info!("Read {} users", new_users.len());
     write_new_users_table(env, wtxn, new_users)
         .map_err(|e| anyhow::anyhow!("Failed to write new users table: {}", e))?;
+
+    tracing::info!("Successfully migrated");
 
     Ok(())
 }
@@ -225,6 +231,7 @@ mod tests {
                 &NewUser {
                     created_at: 1,
                     disabled: false,
+                    used_bytes: 0,
                 },
             )
             .unwrap();
@@ -267,5 +274,6 @@ mod tests {
             .unwrap();
         let user = table.get(&mut wtxn, &pubkey).unwrap().unwrap();
         assert_eq!(user.disabled, false, "The user should not be disabled.");
+        assert_eq!(user.used_bytes, 0, "The user should have 0 used bytes.");
     }
 }
