@@ -36,7 +36,7 @@ impl<'a> BytesDecode<'a> for OldUser {
 struct NewUser {
     pub created_at: u64,
     pub disabled: bool,
-    pub used_bytes: u64
+    pub used_bytes: u64,
 }
 
 impl BytesEncode<'_> for NewUser {
