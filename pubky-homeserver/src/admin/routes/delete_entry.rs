@@ -64,7 +64,7 @@ mod tests {
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/webdav/{}/pub/{}", pubkey, file_path).as_str())
+            .delete(format!("/webdav/{}{}", pubkey, entry_path).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
@@ -92,7 +92,7 @@ mod tests {
         let file_path = "my_file.txt";
         let app_state = AppState::new(LmDB::test());
         let router = Router::new()
-            .route("/webdav/{pubkey}/pub/{*path}", delete(delete_entry))
+            .route("/webdav/{pubkey}/{*path}", delete(delete_entry))
             .with_state(app_state);
 
         // Delete the file
@@ -109,7 +109,7 @@ mod tests {
         let db = LmDB::test();
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/webdav/{pubkey}/pub/{*path}", delete(delete_entry))
+            .route("/webdav/{pubkey}/{*path}", delete(delete_entry))
             .with_state(app_state);
 
         // Delete with invalid pubkey
