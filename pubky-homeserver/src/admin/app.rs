@@ -167,10 +167,7 @@ mod tests {
     async fn test_generate_signup_token_fail() {
         let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
         // No password
-        let response = server
-            .get("/generate_signup_token")
-            .expect_failure()
-            .await;
+        let response = server.get("/generate_signup_token").expect_failure().await;
         response.assert_status_unauthorized();
 
         // wrong password
