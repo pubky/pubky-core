@@ -168,14 +168,14 @@ mod tests {
         let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
         // No password
         let response = server
-            .get("/admin/generate_signup_token")
+            .get("/generate_signup_token")
             .expect_failure()
             .await;
         response.assert_status_unauthorized();
 
         // wrong password
         let response = server
-            .get("/admin/generate_signup_token")
+            .get("/generate_signup_token")
             .add_header("X-Admin-Password", "wrongpassword")
             .expect_failure()
             .await;
@@ -186,7 +186,7 @@ mod tests {
     async fn test_generate_signup_token_success() {
         let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
         let response = server
-            .get("/admin/generate_signup_token")
+            .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;
