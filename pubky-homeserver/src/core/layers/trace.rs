@@ -7,7 +7,7 @@ use tower_http::trace::{
 };
 use tracing::{Level, Span};
 
-use crate::core::extractors::PubkyHost;
+use crate::shared::PubkyHost;
 
 pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
     let excluded_paths = Arc::new(

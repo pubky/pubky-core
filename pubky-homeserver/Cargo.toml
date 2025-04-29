@@ -56,3 +56,4 @@ reqwest = "0.12.15"
 
 [dev-dependencies]
 futures-lite = "2.6.0"
+axum-extra = { version = "0.10", features = ["cookie"] }

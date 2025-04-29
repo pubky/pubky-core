@@ -12,9 +12,9 @@ use tower_cookies::Cookies;
 
 use crate::core::{
     error::{Error, Result},
-    extractors::PubkyHost,
     AppState,
 };
+use crate::shared::PubkyHost;
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]

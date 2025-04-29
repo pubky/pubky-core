@@ -1,51 +1,14 @@
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use axum::{
     extract::{FromRequestParts, Query},
-    http::{request::Parts, StatusCode},
+    http::request::Parts,
     response::{IntoResponse, Response},
     RequestPartsExt,
 };
 
-use pkarr::PublicKey;
-
 use crate::core::error::Result;
 
-#[derive(Debug, Clone)]
-pub struct PubkyHost(pub(crate) PublicKey);
-
-impl PubkyHost {
-    pub fn public_key(&self) -> &PublicKey {
-        &self.0
-    }
-}
-
-impl Display for PubkyHost {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl<S> FromRequestParts<S> for PubkyHost
-where
-    S: Sync + Send,
-{
-    type Rejection = Response;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let pubky_host = parts
-            .extensions
-            .get::<PubkyHost>()
-            .cloned()
-            .ok_or((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Can't extract PubkyHost. Is `PubkyHostLayer` enabled?",
-            ))
-            .map_err(|e| e.into_response())?;
-
-        Ok(pubky_host)
-    }
-}
 
 #[derive(Debug)]
 pub struct ListQueryParams {

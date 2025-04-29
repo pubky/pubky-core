@@ -13,9 +13,9 @@ use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use crate::core::AppState;
+use crate::{core::AppState, shared::PubkyHostLayer};
 
-use super::layers::{pubky_host::PubkyHostLayer, trace::with_trace_layer};
+use super::layers::trace::with_trace_layer;
 
 mod auth;
 mod feed;
