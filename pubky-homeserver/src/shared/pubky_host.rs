@@ -1,16 +1,15 @@
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;
+use std::fmt::Display;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
-use std::fmt::Display;
 
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
 };
-
 
 /// A Tower Layer to extract and inject the PubkyHost into request extensions.
 /// This is added to the router so the host is extracted automatically for each request.
@@ -89,9 +88,6 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
     }
     pubky
 }
-
-
-
 
 /// Extractor for the PubkyHost.
 #[derive(Debug, Clone)]

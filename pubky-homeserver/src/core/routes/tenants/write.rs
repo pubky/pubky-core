@@ -8,11 +8,14 @@ use axum::{
 };
 use futures_util::stream::StreamExt;
 
-use crate::{core::{
-    err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Error, Result},
-    AppState,
-}, shared::PubkyHost};
+use crate::{
+    core::{
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        AppState,
+    },
+    shared::PubkyHost,
+};
 
 /// Fail with 507 if `(current + incoming − existing) > quota`.
 fn enforce_user_disk_quota(

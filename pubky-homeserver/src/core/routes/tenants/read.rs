@@ -8,13 +8,16 @@ use httpdate::HttpDate;
 use pkarr::PublicKey;
 use std::str::FromStr;
 
-use crate::{core::{
-    err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Error, Result},
-    extractors::ListQueryParams,
-    AppState,
-}, shared::PubkyHost};
 use crate::persistence::lmdb::tables::entries::Entry;
+use crate::{
+    core::{
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        extractors::ListQueryParams,
+        AppState,
+    },
+    shared::PubkyHost,
+};
 
 pub async fn head(
     State(state): State<AppState>,

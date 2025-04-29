@@ -1,12 +1,15 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use tower_cookies::Cookies;
 
-use crate::{core::{
-    err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Error, Result},
-    layers::authz::session_secret_from_cookies,
-    AppState,
-}, shared::PubkyHost};
+use crate::{
+    core::{
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        layers::authz::session_secret_from_cookies,
+        AppState,
+    },
+    shared::PubkyHost,
+};
 
 pub async fn session(
     State(state): State<AppState>,

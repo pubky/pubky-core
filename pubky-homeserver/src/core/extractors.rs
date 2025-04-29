@@ -9,7 +9,6 @@ use axum::{
 
 use crate::core::error::Result;
 
-
 #[derive(Debug)]
 pub struct ListQueryParams {
     pub limit: Option<u16>,
