@@ -33,7 +33,10 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
     let app = Router::new()
         .nest("/admin", admin_router)
         .route("/", get(root::root))
-        .route("/nginx_auth_request", get(nginx_auth_request::nginx_auth_request))
+        .route(
+            "/nginx_auth_request",
+            get(nginx_auth_request::nginx_auth_request),
+        )
         .route(
             "/webdav/{pubkey}/{*path}",
             delete(delete_entry::delete_entry),
