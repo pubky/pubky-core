@@ -2,6 +2,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use tower_cookies::Cookies;
 
 use crate::core::{
+    err_if_user_is_invalid::err_if_user_is_invalid,
     error::{Error, Result},
     extractors::PubkyHost,
     layers::authz::session_secret_from_cookies,
@@ -13,6 +14,7 @@ pub async fn session(
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Some(session) = state.db.get_session(&secret)? {
             // TODO: add content-type

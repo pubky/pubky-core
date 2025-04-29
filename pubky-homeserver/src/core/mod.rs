@@ -1,3 +1,4 @@
+mod err_if_user_is_invalid;
 mod error;
 mod extractors;
 mod homeserver_core;

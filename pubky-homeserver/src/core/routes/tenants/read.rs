@@ -9,6 +9,7 @@ use pkarr::PublicKey;
 use std::str::FromStr;
 
 use crate::core::{
+    err_if_user_is_invalid::err_if_user_is_invalid,
     error::{Error, Result},
     extractors::{ListQueryParams, PubkyHost},
     AppState,
@@ -21,8 +22,9 @@ pub async fn head(
     headers: HeaderMap,
     path: OriginalUri,
 ) -> Result<impl IntoResponse> {
-    let rtxn = state.db.env.read_txn()?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
 
+    let rtxn = state.db.env.read_txn()?;
     get_entry(
         headers,
         state
@@ -39,6 +41,8 @@ pub async fn get(
     path: OriginalUri,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
+
     let public_key = pubky.public_key().clone();
     let path = path.0.path().to_string();
 
@@ -82,8 +86,9 @@ pub fn list(
     path: &str,
     params: ListQueryParams,
 ) -> Result<Response<Body>> {
-    let txn = state.db.env.read_txn()?;
+    err_if_user_is_invalid(public_key, &state.db)?;
 
+    let txn = state.db.env.read_txn()?;
     let path = format!("{public_key}{path}");
 
     if !state.db.contains_directory(&txn, &path)? {
