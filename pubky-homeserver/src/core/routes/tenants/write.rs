@@ -72,9 +72,9 @@ pub async fn put(
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     let public_key = pubky.public_key();
     let full_path = path.0.path();
-    let existing_entry_bytes = state.db.get_entry_content_length(&public_key, full_path)?;
+    let existing_entry_bytes = state.db.get_entry_content_length(public_key, full_path)?;
     let quota_bytes = state.user_quota_bytes;
-    let used_bytes = state.db.get_user_data_usage(&public_key)?;
+    let used_bytes = state.db.get_user_data_usage(public_key)?;
 
     // Upfront check when we have an exact Content‑Length
     let hint = body.size_hint().exact();
@@ -83,7 +83,7 @@ pub async fn put(
     }
 
     // Stream body
-    let mut writer = state.db.write_entry(&public_key, full_path)?;
+    let mut writer = state.db.write_entry(public_key, full_path)?;
     let mut seen_bytes: u64 = 0;
     let mut stream = body.into_data_stream();
 
@@ -96,7 +96,7 @@ pub async fn put(
     // Commit & bump usage
     let entry = writer.commit()?;
     let delta = entry.content_length() as i64 - existing_entry_bytes as i64;
-    state.db.update_data_usage(&public_key, delta)?;
+    state.db.update_data_usage(public_key, delta)?;
 
     Ok((StatusCode::CREATED, ()))
 }
