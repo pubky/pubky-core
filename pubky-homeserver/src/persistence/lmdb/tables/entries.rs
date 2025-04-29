@@ -109,6 +109,20 @@ impl LmDB {
         Ok(None)
     }
 
+    /// Bytes stored at `path` for this user (0 if none).
+    pub fn get_entry_content_length(
+        &self,
+        public_key: &PublicKey,
+        path: &str,
+    ) -> anyhow::Result<u64> {
+        let txn = self.env.read_txn()?;
+        let content_length = self
+            .get_entry(&txn, public_key, path)?
+            .map(|e| e.content_length() as u64)
+            .unwrap_or(0);
+        Ok(content_length)
+    }
+
     pub fn contains_directory(&self, txn: &RoTxn, path: &str) -> anyhow::Result<bool> {
         Ok(self.tables.entries.get_greater_than(txn, path)?.is_some())
     }

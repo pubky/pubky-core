@@ -161,6 +161,9 @@ pub struct GeneralToml {
     /// LMDB backup interval in seconds. 0 means disabled.
     #[serde(default)]
     pub lmdb_backup_interval_s: u64,
+    /// Per‑user storage quota in MB (0 = unlimited, defaults 0).
+    #[serde(default)]
+    pub user_storage_quota_mb: u64,
 }
 
 /// The error that can occur when reading the config file
@@ -267,6 +270,7 @@ mod tests {
         let c: ConfigToml = ConfigToml::default();
 
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
+        assert_eq!(c.general.user_storage_quota_mb, 0);
         assert_eq!(c.general.lmdb_backup_interval_s, 0);
         assert_eq!(
             c.drive.icann_listen_socket,

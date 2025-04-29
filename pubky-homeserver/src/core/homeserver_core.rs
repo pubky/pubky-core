@@ -26,6 +26,8 @@ pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: LmDB,
     pub(crate) signup_mode: SignupMode,
+    /// If `Some(bytes)` the quota is enforced, else unlimited.
+    pub(crate) user_quota_bytes: Option<u64>,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -136,10 +138,18 @@ impl HomeserverCore {
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
+        let quota_mb = context.config_toml.general.user_storage_quota_mb;
+        let quota_bytes = if quota_mb == 0 {
+            None
+        } else {
+            Some(quota_mb * 1024 * 1024)
+        };
+
         let state = AppState {
             verifier: AuthVerifier::default(),
             db: context.db.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
+            user_quota_bytes: quota_bytes,
         };
         super::routes::create_app(state.clone())
     }

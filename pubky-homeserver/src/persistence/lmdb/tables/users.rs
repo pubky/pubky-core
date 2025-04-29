@@ -80,6 +80,42 @@ pub enum UserQueryError {
 }
 
 impl LmDB {
+    /// Updates a user's data usage by a signed `delta` (bytes).
+    /// Increases or decreases the stored `used_bytes` count for `public_key`.
+    /// Negative results are clamped to zero to prevent underflow.
+    pub fn update_data_usage(&mut self, public_key: &PublicKey, delta: i64) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
+        let mut user = self
+            .tables
+            .users
+            .get(&wtxn, public_key)?
+            .ok_or_else(|| anyhow::anyhow!("no user found for public key {:?}", public_key))?;
+
+        if delta >= 0 {
+            user.used_bytes = user.used_bytes.saturating_add(delta as u64);
+        } else {
+            user.used_bytes = user.used_bytes.saturating_sub((-delta) as u64);
+        }
+
+        self.tables.users.put(&mut wtxn, public_key, &user)?;
+        wtxn.commit()?;
+        Ok(())
+    }
+
+    /// Retrieves the current data usage (in bytes) for a given user.
+    /// Returns the `used_bytes` value for the specified `public_key`, or zero if no record exists.
+    pub fn get_user_data_usage(&self, pk: &PublicKey) -> anyhow::Result<u64> {
+        let rtxn = self.env.read_txn()?;
+        let usage = self
+            .tables
+            .users
+            .get(&rtxn, pk)?
+            .map(|u| u.used_bytes)
+            .unwrap_or(0);
+        rtxn.commit()?;
+        Ok(usage)
+    }
+
     /// Disable a user.
     ///
     /// # Errors
@@ -139,5 +175,30 @@ impl LmDB {
             None => return Err(UserQueryError::UserNotFound),
         };
         Ok(user)
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use crate::persistence::lmdb::LmDB;
+    use pkarr::Keypair;
+
+    #[test]
+    fn test_update_and_get_usage() {
+        let mut db = LmDB::test();
+        let key = Keypair::random().public_key();
+
+        // create user
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&key, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        // initially zero
+        assert_eq!(db.get_user_data_usage(&key).unwrap(), 0);
+        db.update_data_usage(&key, 500).unwrap();
+        assert_eq!(db.get_user_data_usage(&key).unwrap(), 500);
+        // clamp at zero
+        db.update_data_usage(&key, -600).unwrap();
+        assert_eq!(db.get_user_data_usage(&key).unwrap(), 0);
     }
 }
