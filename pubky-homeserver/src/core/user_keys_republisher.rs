@@ -167,7 +167,7 @@ mod tests {
         let db = LmDB::test();
         let mut wtxn = db.env.write_txn().unwrap();
         for _ in 0..count {
-            let user = User::new();
+            let user = User::default();
             let public_key = Keypair::random().public_key();
             db.tables.users.put(&mut wtxn, &public_key, &user).unwrap();
         }

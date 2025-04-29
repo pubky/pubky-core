@@ -1,3 +1,4 @@
+use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::users::User;
 use crate::{
     core::{
@@ -15,9 +16,7 @@ use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
 use base32::{encode, Alphabet};
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{
-    capabilities::Capability, crypto::random_bytes, session::Session, timestamp::Timestamp,
-};
+use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
 use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
@@ -62,13 +61,7 @@ pub async fn signup(
 
     // 4) Create the new user record
     let mut wtxn = state.db.env.write_txn()?;
-    users.put(
-        &mut wtxn,
-        public_key,
-        &User {
-            created_at: Timestamp::now().as_u64(),
-        },
-    )?;
+    users.put(&mut wtxn, public_key, &User::default())?;
     wtxn.commit()?;
 
     // 5) Create session & set cookie
@@ -126,6 +119,8 @@ fn create_session_and_cookie(
     capabilities: &[Capability],
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> Result<impl IntoResponse> {
+    err_if_user_is_invalid(public_key, &state.db)?;
+
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
     let session = Session::new(
