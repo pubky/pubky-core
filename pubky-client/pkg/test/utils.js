@@ -9,7 +9,7 @@
  * @throws Will throw an error if the request fails.
  */
 export async function createSignupToken(client, homeserver_address ="localhost:6288", adminPassword = "admin") {
-  const adminUrl = `http://${homeserver_address}/admin/generate_signup_token`;
+  const adminUrl = `http://${homeserver_address}/generate_signup_token`;
   const response = await client.fetch(adminUrl, {
     method: "GET",
     headers: {

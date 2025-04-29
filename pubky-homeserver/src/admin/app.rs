@@ -14,31 +14,35 @@ use axum_server::Handle;
 use tokio::task::JoinHandle;
 use tower_http::cors::CorsLayer;
 
-/// Folder /admin router
-/// Admin password required.
-fn create_admin_router(password: &str) -> Router<AppState> {
+/// Admin password protected router.
+fn create_protected_router(password: &str) -> Router<AppState> {
     Router::new()
         .route(
             "/generate_signup_token",
             get(generate_signup_token::generate_signup_token),
         )
-        .layer(AdminAuthLayer::new(password.to_string()))
-}
-
-/// main / router
-/// This part is not protected by the admin auth middleware
-fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService<Router> {
-    let admin_router = create_admin_router(password);
-
-    let app = Router::new()
-        .nest("/admin", admin_router)
-        .route("/", get(root::root))
         .route(
             "/webdav/{pubkey}/{*path}",
             delete(delete_entry::delete_entry),
         )
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
+        .layer(AdminAuthLayer::new(password.to_string()))
+}
+
+/// Public router without any authentication.
+/// NO PASSWORD PROTECTION!
+fn create_public_router() -> Router<AppState> {
+    Router::new().route("/", get(root::root))
+}
+
+/// Create the app
+fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService<Router> {
+    let admin_router = create_protected_router(password);
+    let public_router = create_public_router();
+    let app = Router::new()
+        .merge(admin_router)
+        .merge(public_router)
         .with_state(state)
         .layer(CorsLayer::very_permissive());
 
@@ -124,7 +128,7 @@ impl AdminServer {
     /// Create a signup token for the given homeserver.
     pub async fn create_signup_token(&self) -> anyhow::Result<String> {
         let admin_socket = self.listen_socket();
-        let url = format!("http://{}/admin/generate_signup_token", admin_socket);
+        let url = format!("http://{}/generate_signup_token", admin_socket);
         let response = reqwest::Client::new()
             .get(url)
             .header("X-Admin-Password", &self.password)
@@ -163,15 +167,12 @@ mod tests {
     async fn test_generate_signup_token_fail() {
         let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
         // No password
-        let response = server
-            .get("/admin/generate_signup_token")
-            .expect_failure()
-            .await;
+        let response = server.get("/generate_signup_token").expect_failure().await;
         response.assert_status_unauthorized();
 
         // wrong password
         let response = server
-            .get("/admin/generate_signup_token")
+            .get("/generate_signup_token")
             .add_header("X-Admin-Password", "wrongpassword")
             .expect_failure()
             .await;
@@ -182,7 +183,7 @@ mod tests {
     async fn test_generate_signup_token_success() {
         let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
         let response = server
-            .get("/admin/generate_signup_token")
+            .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;

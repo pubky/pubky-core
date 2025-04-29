@@ -88,6 +88,7 @@ async fn disabled_user() {
     // Disable the user
     let response = admin_client
         .post(format!("http://{admin_socket}/users/{pubky}/disable"))
+        .header("X-Admin-Password", "admin")
         .send()
         .await
         .unwrap();
