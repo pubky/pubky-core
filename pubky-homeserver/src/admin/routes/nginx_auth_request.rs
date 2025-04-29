@@ -19,7 +19,7 @@ use tower_cookies::Cookies;
 /// Usage:
 /// ```nginx
 /// location /protected/ {
-///     auth_request /extract_pubky_from_session_cookie;
+///     auth_request /nginx_auth_request;
 ///     # Set $user_id from the x-user-id header returned by the homeserver
 ///     auth_request_set $user_id $upstream_http_x_user_id;
 ///
