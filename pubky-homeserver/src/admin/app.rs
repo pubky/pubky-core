@@ -22,6 +22,12 @@ fn create_admin_router(password: &str) -> Router<AppState> {
             "/generate_signup_token",
             get(generate_signup_token::generate_signup_token),
         )
+        .route(
+            "/webdav/{pubkey}/{*path}",
+            delete(delete_entry::delete_entry),
+        )
+        .route("/users/{pubkey}/disable", post(disable_user))
+        .route("/users/{pubkey}/enable", post(enable_user))
         .layer(AdminAuthLayer::new(password.to_string()))
 }
 
@@ -33,12 +39,6 @@ fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService
     let app = Router::new()
         .nest("/admin", admin_router)
         .route("/", get(root::root))
-        .route(
-            "/webdav/{pubkey}/{*path}",
-            delete(delete_entry::delete_entry),
-        )
-        .route("/users/{pubkey}/disable", post(disable_user))
-        .route("/users/{pubkey}/enable", post(enable_user))
         .with_state(state)
         .layer(CorsLayer::very_permissive());
 
