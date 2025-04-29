@@ -89,7 +89,7 @@ impl LmDB {
             .tables
             .users
             .get(&wtxn, public_key)?
-            .unwrap_or(User::default());
+            .ok_or_else(|| anyhow::anyhow!("no user found for public key {:?}", public_key))?;
 
         if delta >= 0 {
             user.used_bytes = user.used_bytes.saturating_add(delta as u64);
@@ -187,6 +187,12 @@ mod unit_tests {
     fn test_update_and_get_usage() {
         let mut db = LmDB::test();
         let key = Keypair::random().public_key();
+
+        // create user
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&key, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
         // initially zero
         assert_eq!(db.get_user_data_usage(&key).unwrap(), 0);
         db.update_data_usage(&key, 500).unwrap();
