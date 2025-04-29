@@ -33,8 +33,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
 /// Public router without any authentication.
 /// NO PASSWORD PROTECTION!
 fn create_public_router() -> Router<AppState> {
-    Router::new()
-    .route("/", get(root::root))
+    Router::new().route("/", get(root::root))
 }
 
 /// Create the app
