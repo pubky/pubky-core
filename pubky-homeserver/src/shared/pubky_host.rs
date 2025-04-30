@@ -95,11 +95,11 @@ impl Display for ParamName {
 
 #[derive(thiserror::Error, Debug)]
 enum ExtractPubKeyError {
-    #[error("{1} {0} not found")]
+    #[error("{1} '{0}' not found")]
     NotFound(ParamName, ExtractPubKeySource),
-    #[error("{1} {0} is not valid UTF-8")]
+    #[error("{1} '{0}' is not valid UTF-8")]
     InvalidUtf8(ParamName, ExtractPubKeySource),
-    #[error("{1} {0} failed to parse public key: {2} {3}")]
+    #[error("{1} '{0}' value '{2}' failed to parse public key: {3}")]
     InvalidPublicKey(ParamName, ExtractPubKeySource, String, pkarr::errors::PublicKeyError),
 }
 
