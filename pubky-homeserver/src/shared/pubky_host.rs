@@ -56,6 +56,7 @@ where
             Err(errors) => {
                 return Box::pin(async move {
                     let error_message = errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ");
+                    let error_message = format!("Missing or invalid pubky_host header or query param:\n{}", error_message);
                     tracing::error!("Failed to extract PubkyHost: {}", error_message);
                     Ok(HttpError::new(StatusCode::BAD_REQUEST, Some(error_message)).into_response())
                 });
@@ -83,14 +84,23 @@ impl std::fmt::Display for ExtractPubKeySource {
     }
 }
 
+#[derive(Debug)]
+struct ParamName(String);
+
+impl Display for ParamName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 enum ExtractPubKeyError {
     #[error("{1} {0} not found")]
-    NotFound(String, ExtractPubKeySource),
-    #[error("{1} {0} is not valid UTF-8.")]
-    InvalidUtf8(String, ExtractPubKeySource),
-    #[error("{1} {0} failed to parse public key: {2}")]
-    InvalidPublicKey(String, ExtractPubKeySource, pkarr::errors::PublicKeyError),
+    NotFound(ParamName, ExtractPubKeySource),
+    #[error("{1} {0} is not valid UTF-8")]
+    InvalidUtf8(ParamName, ExtractPubKeySource),
+    #[error("{1} {0} failed to parse public key: {2} {3}")]
+    InvalidPublicKey(ParamName, ExtractPubKeySource, String, pkarr::errors::PublicKeyError),
 }
 
 
@@ -99,19 +109,19 @@ enum ExtractPubKeyError {
 fn extract_pubky_from_header(req: &Request<Body>, header_name: &str) -> Result<PublicKey, ExtractPubKeyError> {
     let val = match req.headers().get(header_name) {
         Some(val) => val,
-        None => return Err(ExtractPubKeyError::NotFound(header_name.to_string(), ExtractPubKeySource::Header)),
+        None => return Err(ExtractPubKeyError::NotFound(ParamName(header_name.to_string()), ExtractPubKeySource::Header)),
     };
     let val_str = match val.to_str() {
         Ok(val_str) => val_str,
-        Err(_e) => return Err(ExtractPubKeyError::InvalidUtf8(header_name.to_string(), ExtractPubKeySource::Header)),
+        Err(_e) => return Err(ExtractPubKeyError::InvalidUtf8(ParamName(header_name.to_string()), ExtractPubKeySource::Header)),
     };
-    let key = PublicKey::try_from(val_str).map_err(|e| ExtractPubKeyError::InvalidPublicKey(header_name.to_string(), ExtractPubKeySource::Header, e))?;
+    let key = PublicKey::try_from(val_str).map_err(|e| ExtractPubKeyError::InvalidPublicKey(ParamName(header_name.to_string()), ExtractPubKeySource::Header, val_str.to_string(), e))?;
     Ok(key)
 }
 
 /// Extracts a PublicKey from a query parameter.
 fn extract_pubky_from_query_param(req: &Request<Body>, query_name: &str) -> Result<PublicKey, ExtractPubKeyError> {
-    let query = req.uri().query().ok_or(ExtractPubKeyError::NotFound(query_name.to_string(), ExtractPubKeySource::QueryParam))?;
+    let query = req.uri().query().ok_or(ExtractPubKeyError::NotFound(ParamName(query_name.to_string()), ExtractPubKeySource::QueryParam))?;
     let mut key_values = query.split('&').filter_map(|pair| {
         let parts = pair.split('=').collect::<Vec<_>>();
         if parts.len() != 2 {
@@ -123,11 +133,11 @@ fn extract_pubky_from_query_param(req: &Request<Body>, query_name: &str) -> Resu
     let target_key_value = key_values.find(|(key, _)| *key == query_name);
     let target_value = match target_key_value {
         Some((_, val)) => val,
-        None => return Err(ExtractPubKeyError::NotFound(query_name.to_string(), ExtractPubKeySource::QueryParam)),
+        None => return Err(ExtractPubKeyError::NotFound(ParamName(query_name.to_string()), ExtractPubKeySource::QueryParam)),
     };
 
     let key = PublicKey::try_from(target_value)
-    .map_err(|e| ExtractPubKeyError::InvalidPublicKey(query_name.to_string(), ExtractPubKeySource::QueryParam, e))?;
+    .map_err(|e| ExtractPubKeyError::InvalidPublicKey(ParamName(query_name.to_string()), ExtractPubKeySource::QueryParam, target_value.to_string(), e))?;
     Ok(key)
 }
 
