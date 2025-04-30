@@ -120,7 +120,10 @@ where
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Can't extract PubkyHost. Is `PubkyHostLayer` enabled?",
             ))
-            .map_err(|e| e.into_response())?;
+            .map_err(|e| {
+                tracing::debug!("Failed to extract PubkyHost.");
+                e.into_response()
+            })?;
 
         Ok(pubky_host)
     }
