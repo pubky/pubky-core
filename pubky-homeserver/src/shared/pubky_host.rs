@@ -11,9 +11,12 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+use crate::shared::HttpError;
+
 /// A Tower Layer to extract and inject the PubkyHost into request extensions.
 /// This is added to the router so the host is extracted automatically for each request.
 /// You then can use `PubkyHost` extractor to get the host from the request.
+/// Will return a 400 Bad Request if the host is not found or not a valid public key.
 #[derive(Debug, Clone)]
 pub struct PubkyHostLayer;
 
@@ -48,45 +51,110 @@ where
     }
 
     fn call(&mut self, mut req: Request<Body>) -> Self::Future {
-        if let Some(public_key) = extract_pubky(&req) {
-            req.extensions_mut().insert(PubkyHost(public_key));
-        }
+        let pubky_host = match extract_pubky_from_request(&req) {
+            Ok(key) => key,
+            Err(errors) => {
+                return Box::pin(async move {
+                    let error_message = errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ");
+                    tracing::error!("Failed to extract PubkyHost: {}", error_message);
+                    Ok(HttpError::new(StatusCode::BAD_REQUEST, Some(error_message)).into_response())
+                });
+            }
+        };
+        req.extensions_mut().insert(PubkyHost(pubky_host));
+        
         let mut inner = self.inner.clone();
         Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) })
     }
 }
 
-/// Extracts a PublicKey by checking, in order:
-/// 1. The "host" header.
-/// 2. The "pubky-host" header (which overwrites any previously found key).
-/// 3. The query parameter "pubky-host" if none was found in headers.
-fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
-    let mut pubky = None;
-    // Check headers in order: "host" then "pubky-host".
-    for header in ["host", "pubky-host"].iter() {
-        if let Some(val) = req.headers().get(*header) {
-            if let Ok(s) = val.to_str() {
-                if let Ok(key) = PublicKey::try_from(s) {
-                    pubky = Some(key);
-                }
-            }
+#[derive(Debug)]
+enum ExtractPubKeySource {
+    Header,
+    QueryParam,
+}
+
+impl std::fmt::Display for ExtractPubKeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) ->  std::fmt::Result {
+        match self {
+            ExtractPubKeySource::Header => write!(f, "Header"),
+            ExtractPubKeySource::QueryParam => write!(f, "QueryParam"),
         }
     }
-    // If still no key, fall back to query parameter.
-    if pubky.is_none() {
-        pubky = req.uri().query().and_then(|query| {
-            query.split('&').find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
-                    if key == "pubky-host" {
-                        return PublicKey::try_from(val).ok();
-                    }
-                }
-                None
-            })
-        });
+}
+
+#[derive(thiserror::Error, Debug)]
+enum ExtractPubKeyError {
+    #[error("{1} {0} not found")]
+    NotFound(String, ExtractPubKeySource),
+    #[error("{1} {0} is not valid UTF-8.")]
+    InvalidUtf8(String, ExtractPubKeySource),
+    #[error("{1} {0} failed to parse public key: {2}")]
+    InvalidPublicKey(String, ExtractPubKeySource, pkarr::errors::PublicKeyError),
+}
+
+
+
+/// Extracts a PublicKey from a header.
+fn extract_pubky_from_header(req: &Request<Body>, header_name: &str) -> Result<PublicKey, ExtractPubKeyError> {
+    let val = match req.headers().get(header_name) {
+        Some(val) => val,
+        None => return Err(ExtractPubKeyError::NotFound(header_name.to_string(), ExtractPubKeySource::Header)),
+    };
+    let val_str = match val.to_str() {
+        Ok(val_str) => val_str,
+        Err(_e) => return Err(ExtractPubKeyError::InvalidUtf8(header_name.to_string(), ExtractPubKeySource::Header)),
+    };
+    let key = PublicKey::try_from(val_str).map_err(|e| ExtractPubKeyError::InvalidPublicKey(header_name.to_string(), ExtractPubKeySource::Header, e))?;
+    Ok(key)
+}
+
+/// Extracts a PublicKey from a query parameter.
+fn extract_pubky_from_query_param(req: &Request<Body>, query_name: &str) -> Result<PublicKey, ExtractPubKeyError> {
+    let query = req.uri().query().ok_or(ExtractPubKeyError::NotFound(query_name.to_string(), ExtractPubKeySource::QueryParam))?;
+    let mut key_values = query.split('&').filter_map(|pair| {
+        let parts = pair.split('=').collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return None;
+        }
+        return Some((parts[0], parts[1]));
+    });
+
+    let target_key_value = key_values.find(|(key, _)| *key == query_name);
+    let target_value = match target_key_value {
+        Some((_, val)) => val,
+        None => return Err(ExtractPubKeyError::NotFound(query_name.to_string(), ExtractPubKeySource::QueryParam)),
+    };
+
+    let key = PublicKey::try_from(target_value)
+    .map_err(|e| ExtractPubKeyError::InvalidPublicKey(query_name.to_string(), ExtractPubKeySource::QueryParam, e))?;
+    Ok(key)
+}
+
+/// Extracts a PublicKey by checking, in order:
+/// 1. The "pubky-host" header.
+/// 2. The "host" header.
+/// 3. The query parameter "pubky-host".
+fn extract_pubky_from_request(req: &Request<Body>) -> Result<PublicKey, Vec<ExtractPubKeyError>> {
+    let mut errors = vec![];
+    // Check headers in order: "host" then "pubky-host".
+    for header in ["pubky-host", "host"].iter() {
+        match extract_pubky_from_header(req, header) {
+            Ok(key) => {
+                return Ok(key);
+            }
+            Err(e) => errors.push(e),
+        }
     }
-    pubky
+
+    match extract_pubky_from_query_param(req, "pubky-host") {
+        Ok(key) => {
+            return Ok(key);
+        }
+        Err(e) => errors.push(e),
+    }
+    
+    Err(errors)
 }
 
 /// Extractor for the PubkyHost.
