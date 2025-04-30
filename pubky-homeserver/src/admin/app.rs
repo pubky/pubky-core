@@ -22,10 +22,6 @@ fn create_protected_router(password: &str) -> Router<AppState> {
             get(generate_signup_token::generate_signup_token),
         )
         .route(
-            "/nginx_auth_request",
-            get(nginx_auth_request::nginx_auth_request),
-        )
-        .route(
             "/webdav/{pubkey}/{*path}",
             delete(delete_entry::delete_entry),
         )
@@ -37,7 +33,12 @@ fn create_protected_router(password: &str) -> Router<AppState> {
 /// Public router without any authentication.
 /// NO PASSWORD PROTECTION!
 fn create_public_router() -> Router<AppState> {
-    Router::new().route("/", get(root::root))
+    Router::new()
+    .route("/", get(root::root))
+    .route(
+        "/nginx_auth_request",
+        get(nginx_auth_request::nginx_auth_request),
+    )
 }
 
 /// Create the app
