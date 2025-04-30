@@ -1,3 +1,10 @@
+//! Configuration file for the homeserver.
+//!
+//! All default values live exclusively in `config.default.toml`.
+//! This module embeds that file at compile-time, parses it once,
+//! and lets callers optionally layer their own TOML on top.
+
+use super::{domain_port::DomainPort, Domain, SignupMode};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,16 +17,13 @@ use std::{
 };
 use url::Url;
 
-use super::{domain_port::DomainPort, Domain, SignupMode};
-
 /// Embedded copy of the default configuration (single source of truth for defaults)
 pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
 
 /// Parsed, ready-to-clone version of the default config.
 /// Parsing happens exactly once at program start-up.
 static BASE_CONFIG: Lazy<ConfigToml> = Lazy::new(|| {
-    toml::from_str::<ConfigToml>(DEFAULT_CONFIG)
-        .expect("embedded `config.default.toml` must be valid")
+    ConfigToml::from_str(DEFAULT_CONFIG).expect("Embedded config.default.toml must be valid")
 });
 
 /// Helper: merge two arbitrary `toml::Value` trees (recursive)
@@ -57,7 +61,7 @@ pub enum ConfigReadError {
     ConfigFileNotValid(#[from] toml::de::Error),
 }
 
-/// Config structs (data-only)
+/// Config structs
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PkdnsToml {
@@ -103,11 +107,9 @@ pub struct ConfigToml {
     pub pkdns: PkdnsToml,
 }
 
-/// Default impls – all clone from `BASE_CONFIG`
-
 impl Default for ConfigToml {
     fn default() -> Self {
-        BASE_CONFIG.clone()
+        BASE_CONFIG.to_owned()
     }
 }
 
@@ -130,7 +132,13 @@ impl Default for PkdnsToml {
 }
 
 impl ConfigToml {
-    /// Parse a configuration file, overlaying it on top of the embedded defaults.
+    /// Read and parse a configuration file, overlaying it on top of the embedded defaults.
+    ///
+    /// # Arguments
+    /// * `path` - The path to the TOML configuration file
+    ///
+    /// # Returns
+    /// * `Result<ConfigToml>` - The parsed configuration or an error if reading/parsing fails
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ConfigReadError> {
         let raw = fs::read_to_string(path)?;
         Self::from_raw_str(&raw)
@@ -165,14 +173,14 @@ impl ConfigToml {
                 if !is_title && !is_comment && !trimmed.is_empty() {
                     format!("# {}", line)
                 } else {
-                    line.to_owned()
+                    line.to_string()
                 }
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<String>>()
             .join("\n")
     }
 
-    /// Convenience: a default config tuned for unit tests.
+    /// Returns a default config tuned for unit tests.
     pub fn test() -> Self {
         let mut config = Self::default();
         config.general.signup_mode = SignupMode::Open;
@@ -199,7 +207,6 @@ impl FromStr for ConfigToml {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use super::*;
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -251,6 +258,7 @@ mod tests {
 
     #[test]
     fn test_default_config_commented_out() {
+        // Sanity check that the default config is valid even when the variables are commented out.
         // An empty or fully commented out .toml should still be equal to the default ConfigToml
         let s = ConfigToml::default_string();
         let parsed: ConfigToml = ConfigToml::from_raw_str(&s).expect("Should be parseable");
@@ -259,8 +267,10 @@ mod tests {
 
     #[test]
     fn test_empty_config() {
+        // Test that a minimal config with only the general section works
         let s = "[general]\nsignup_mode = \"open\"\n";
         let parsed: ConfigToml = ConfigToml::from_raw_str(s).unwrap();
+        // Check that explicitly set values are preserved
         assert_eq!(parsed.general.signup_mode, SignupMode::Open);
         // Other fields that were not set (left empty) should still match the default.
         assert_eq!(parsed.admin, ConfigToml::default().admin);
