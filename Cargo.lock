@@ -2345,6 +2345,7 @@ dependencies = [
  "pubky-common",
  "reqwest",
  "serde",
+ "serde-toml-merge",
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
@@ -2897,6 +2898,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8dfc9d19bdbf6d17e22319da49161d5d0108e4188e8b680aef6299eed22df60"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-toml-merge"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5817202d670278fb4dded71a70bae5181e00112543b1313463b02d43fc2d9243"
+dependencies = [
+ "toml",
 ]
 
 [[package]]

@@ -26,30 +26,6 @@ static BASE_CONFIG: Lazy<ConfigToml> = Lazy::new(|| {
     ConfigToml::from_str(DEFAULT_CONFIG).expect("Embedded config.default.toml must be valid")
 });
 
-/// Helper: merge two arbitrary `toml::Value` trees (recursive)
-fn merge_toml(base: &mut toml::Value, overlay: toml::Value) {
-    use toml::Value::{Array, Table};
-
-    match (base, overlay) {
-        (Table(b), Table(o)) => {
-            for (k, v) in o {
-                match b.get_mut(&k) {
-                    Some(bv) => merge_toml(bv, v),
-                    None => {
-                        b.insert(k, v);
-                    }
-                }
-            }
-        }
-        // For arrays we simply replace; customise if “extend” semantics are preferred.
-        (Array(b), Array(o)) => {
-            *b = o;
-        }
-        // Scalar or type mismatch → overlay wins.
-        (b, o) => *b = o,
-    }
-}
-
 /// Error that can occur when reading a configuration file.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigReadError {
@@ -59,6 +35,9 @@ pub enum ConfigReadError {
     /// The TOML was syntactically invalid.
     #[error("config file is not valid TOML: {0}")]
     ConfigFileNotValid(#[from] toml::de::Error),
+    /// Failed to merge defaults with overrides.
+    #[error("failed to merge embedded and user TOML: {0}")]
+    ConfigMergeError(String),
 }
 
 /// Config structs
@@ -146,19 +125,20 @@ impl ConfigToml {
 
     /// Parse a raw TOML string, overlaying it on top of the embedded defaults.
     pub fn from_raw_str(raw: &str) -> Result<Self, ConfigReadError> {
-        // 1. Start with the default tree.
-        let mut merged: toml::Value = DEFAULT_CONFIG
+        // 1. Parse the embedded defaults
+        let default_val: toml::Value = DEFAULT_CONFIG
             .parse()
             .expect("embedded defaults invalid TOML");
 
-        // 2. Parse and merge the user's overrides.
+        // 2. Parse the user's overrides
         let user_val: toml::Value = raw.parse()?;
-        merge_toml(&mut merged, user_val);
 
-        // 3. Deserialize into our strong types.
-        merged
-            .try_into()
-            .map_err(ConfigReadError::ConfigFileNotValid)
+        // 3. Deep‐merge
+        let merged_val = serde_toml_merge::merge(default_val, user_val)
+            .map_err(|e| ConfigReadError::ConfigMergeError(e.to_string()))?;
+
+        // 4. Deserialize into our strongly typed struct (can fail with toml::de::Error)
+        Ok(merged_val.try_into()?)
     }
 
     /// Render the embedded default config but comment out every value,
