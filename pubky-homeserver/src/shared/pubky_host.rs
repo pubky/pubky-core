@@ -55,7 +55,7 @@ where
             Ok(key) => key,
             Err(errors) => {
                 return Box::pin(async move {
-                    let error_message = errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ");
+                    let error_message = errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(".\n");
                     let error_message = format!("Missing or invalid pubky_host header or query param:\n{}", error_message);
                     tracing::error!("Failed to extract PubkyHost: {}", error_message);
                     Ok(HttpError::new(StatusCode::BAD_REQUEST, Some(error_message)).into_response())
