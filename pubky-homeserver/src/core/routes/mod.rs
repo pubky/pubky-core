@@ -13,7 +13,7 @@ use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use crate::{core::AppState, shared::PubkyHostLayer};
+use crate::core::AppState;
 
 use super::layers::trace::with_trace_layer;
 
@@ -46,7 +46,7 @@ pub fn create_app(state: AppState) -> Router {
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS).layer(PubkyHostLayer)
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
 }
 
 // Middleware to add a `Server` header to all responses

@@ -9,7 +9,7 @@ use axum::{
     Router,
 };
 
-use crate::core::{layers::authz::AuthorizationLayer, AppState};
+use crate::{core::{layers::authz::AuthorizationLayer, AppState}, shared::PubkyHostLayer};
 
 pub mod read;
 pub mod session;
@@ -30,4 +30,5 @@ pub fn router(state: AppState) -> Router<AppState> {
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(AuthorizationLayer::new(state.clone()))
+        .layer(PubkyHostLayer)
 }

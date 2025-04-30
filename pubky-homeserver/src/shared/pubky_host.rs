@@ -189,7 +189,7 @@ where
                 "Can't extract PubkyHost. Is `PubkyHostLayer` enabled?",
             ))
             .map_err(|e| {
-                tracing::debug!("Failed to extract PubkyHost.");
+                tracing::debug!("Failed to extract PubkyHost for {} {}.", parts.method, parts.uri);
                 e.into_response()
             })?;
 

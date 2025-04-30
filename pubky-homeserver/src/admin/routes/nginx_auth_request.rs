@@ -89,9 +89,9 @@ mod tests {
         let db = LmDB::test();
         let state = AppState::new(db.clone());
         let app = Router::new()
-            .route("/nginx_auth_request", get(nginx_auth_request))
+            .route("/nginx_auth_request", get(nginx_auth_request).layer(PubkyHostLayer))
             .with_state(state)
-            .layer(PubkyHostLayer)
+
             .layer(CookieManagerLayer::new());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
