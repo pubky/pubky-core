@@ -40,11 +40,11 @@ public_ip = "127.0.0.1"
 
 # The pubky tls port in case it differs from the pubky_listen_socket port.
 # Defaults to the pubky_listen_socket port.
-public_pubky_tls_port = 6287
+# public_pubky_tls_port = 6287
 
 # The icann http port in case it differs from the icann_listen_socket port.
 # Defaults to the icann_listen_socket port.
-public_icann_http_port = 80
+# public_icann_http_port = 80
 
 # An ICANN domain name is necessary to support legacy browsers
 #
