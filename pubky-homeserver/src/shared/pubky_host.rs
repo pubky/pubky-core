@@ -168,6 +168,18 @@ fn extract_pubky_from_request(req: &Request<Body>) -> Result<PublicKey, Vec<Extr
 }
 
 /// Extractor for the PubkyHost.
+/// 
+/// Usage example:
+/// ```ignore
+/// pub async fn request_handler(
+///     State(state): State<AppState>,
+///     pubky: PubkyHost,
+/// ) -> HttpResult<impl IntoResponse> {
+/// ```
+/// 
+/// 
+/// Required the `PubkyHostLayer` to be added to the router.
+/// 
 #[derive(Debug, Clone)]
 pub struct PubkyHost(pub(crate) PublicKey);
 
@@ -199,7 +211,7 @@ where
                 "Can't extract PubkyHost. Is `PubkyHostLayer` enabled?",
             ))
             .map_err(|e| {
-                tracing::debug!("Failed to extract PubkyHost for {} {}.", parts.method, parts.uri);
+                tracing::error!("Failed to extract PubkyHost for {} {}. Is `PubkyHostLayer` enabled?", parts.method, parts.uri);
                 e.into_response()
             })?;
 

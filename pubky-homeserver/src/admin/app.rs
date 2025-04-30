@@ -7,6 +7,7 @@ use super::routes::{delete_entry, generate_signup_token, nginx_auth_request, roo
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
+use crate::shared::PubkyHostLayer;
 use crate::{AppContextConversionError, MockDataDir, PersistentDataDir};
 use axum::routing::{delete, post};
 use axum::{routing::get, Router};
@@ -37,7 +38,7 @@ fn create_public_router() -> Router<AppState> {
     .route("/", get(root::root))
     .route(
         "/nginx_auth_request",
-        get(nginx_auth_request::nginx_auth_request),
+        get(nginx_auth_request::nginx_auth_request).layer(PubkyHostLayer),
     )
 }
 
