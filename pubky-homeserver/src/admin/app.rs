@@ -13,6 +13,7 @@ use axum::routing::{delete, post};
 use axum::{routing::get, Router};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
+use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
 /// Admin password protected router.
@@ -34,12 +35,13 @@ fn create_protected_router(password: &str) -> Router<AppState> {
 /// Public router without any authentication.
 /// NO PASSWORD PROTECTION!
 fn create_public_router() -> Router<AppState> {
+    let pubky_host_router = Router::new()
+        .route("/nginx_auth_request", get(nginx_auth_request::nginx_auth_request))
+        .layer(PubkyHostLayer).layer(CookieManagerLayer::new());
+
     Router::new()
     .route("/", get(root::root))
-    .route(
-        "/nginx_auth_request",
-        get(nginx_auth_request::nginx_auth_request).layer(PubkyHostLayer),
-    )
+    .merge(pubky_host_router)
 }
 
 /// Create the app
