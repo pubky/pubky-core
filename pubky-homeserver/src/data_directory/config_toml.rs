@@ -120,11 +120,11 @@ impl ConfigToml {
     /// * `Result<ConfigToml>` - The parsed configuration or an error if reading/parsing fails
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ConfigReadError> {
         let raw = fs::read_to_string(path)?;
-        Self::from_raw_str(&raw)
+        Self::from_str_with_defaults(&raw)
     }
 
     /// Parse a raw TOML string, overlaying it on top of the embedded defaults.
-    pub fn from_raw_str(raw: &str) -> Result<Self, ConfigReadError> {
+    pub fn from_str_with_defaults(raw: &str) -> Result<Self, ConfigReadError> {
         // 1. Parse the embedded defaults
         let default_val: toml::Value = DEFAULT_CONFIG
             .parse()
@@ -170,9 +170,6 @@ impl ConfigToml {
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
-        config.pkdns.dht_relay_nodes = None;
-        config.pkdns.dht_request_timeout_ms = None;
-        config.pkdns.dht_bootstrap_nodes = None;
         config
     }
 }
@@ -190,7 +187,6 @@ mod tests {
     use super::*;
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
-        num::NonZeroU64,
         str::FromStr,
     };
 
@@ -221,19 +217,9 @@ mod tests {
         assert_eq!(c.pkdns.public_pubky_tls_port, None);
         assert_eq!(c.pkdns.public_icann_http_port, None);
         assert_eq!(c.pkdns.user_keys_republisher_interval, 14400);
-        let dht_bootstrap_nodes = vec![
-            DomainPort::from_str("router.bittorrent.com:6881").unwrap(),
-            DomainPort::from_str("dht.transmissionbt.com:6881").unwrap(),
-            DomainPort::from_str("dht.libtorrent.org:25401").unwrap(),
-            DomainPort::from_str("relay.pkarr.org:6881").unwrap(),
-        ];
-        assert_eq!(c.pkdns.dht_bootstrap_nodes, Some(dht_bootstrap_nodes));
-        let dht_relay_nodes = vec![
-            Url::parse("https://relay.pkarr.org").unwrap(),
-            Url::parse("https://pkarr.pubky.org").unwrap(),
-        ];
-        assert_eq!(c.pkdns.dht_relay_nodes, Some(dht_relay_nodes));
-        assert_eq!(c.pkdns.dht_request_timeout_ms, NonZeroU64::new(2000));
+        assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
+        assert_eq!(c.pkdns.dht_relay_nodes, None);
+        assert_eq!(c.pkdns.dht_request_timeout_ms, None);
     }
 
     #[test]
@@ -241,7 +227,8 @@ mod tests {
         // Sanity check that the default config is valid even when the variables are commented out.
         // An empty or fully commented out .toml should still be equal to the default ConfigToml
         let s = ConfigToml::default_string();
-        let parsed: ConfigToml = ConfigToml::from_raw_str(&s).expect("Should be parseable");
+        let parsed: ConfigToml =
+            ConfigToml::from_str_with_defaults(&s).expect("Should be parseable");
         assert_eq!(parsed, ConfigToml::default());
     }
 
@@ -249,7 +236,7 @@ mod tests {
     fn test_empty_config() {
         // Test that a minimal config with only the general section works
         let s = "[general]\nsignup_mode = \"open\"\n";
-        let parsed: ConfigToml = ConfigToml::from_raw_str(s).unwrap();
+        let parsed: ConfigToml = ConfigToml::from_str_with_defaults(s).unwrap();
         // Check that explicitly set values are preserved
         assert_eq!(parsed.general.signup_mode, SignupMode::Open);
         // Other fields that were not set (left empty) should still match the default.
