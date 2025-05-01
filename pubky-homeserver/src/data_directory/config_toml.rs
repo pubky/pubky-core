@@ -17,7 +17,7 @@ use std::{
 use url::Url;
 
 /// Embedded copy of the default configuration (single source of truth for defaults)
-pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
+pub const DEFAULT_CONFIG: &str = include_str!("config.default.toml");
 
 /// Error that can occur when reading a configuration file.
 #[derive(Debug, thiserror::Error)]
