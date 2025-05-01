@@ -57,7 +57,8 @@ impl UserKeysRepublisher {
             );
         }
 
-        let pkarr_builder = context.pkarr_builder.clone();
+        let mut pkarr_builder = context.pkarr_builder.clone();
+        pkarr_builder.no_relays(); // Disable relays to avoid their rate limiting.
         let handle = tokio::spawn(async move {
             tokio::time::sleep(initial_delay).await;
             Self::run_loop(db, republish_interval, pkarr_builder).await
