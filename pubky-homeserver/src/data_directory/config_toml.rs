@@ -5,7 +5,6 @@
 //! and lets callers optionally layer their own TOML on top.
 
 use super::{domain_port::DomainPort, Domain, SignupMode};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -19,12 +18,6 @@ use url::Url;
 
 /// Embedded copy of the default configuration (single source of truth for defaults)
 pub const DEFAULT_CONFIG: &str = include_str!("../../config.default.toml");
-
-/// Parsed, ready-to-clone version of the default config.
-/// Parsing happens exactly once at program start-up.
-static BASE_CONFIG: Lazy<ConfigToml> = Lazy::new(|| {
-    ConfigToml::from_str(DEFAULT_CONFIG).expect("Embedded config.default.toml must be valid")
-});
 
 /// Error that can occur when reading a configuration file.
 #[derive(Debug, thiserror::Error)]
@@ -88,7 +81,7 @@ pub struct ConfigToml {
 
 impl Default for ConfigToml {
     fn default() -> Self {
-        BASE_CONFIG.to_owned()
+        ConfigToml::from_str(DEFAULT_CONFIG).expect("Embedded config.default.toml must be valid")
     }
 }
 

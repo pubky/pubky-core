@@ -2337,7 +2337,6 @@ dependencies = [
  "hex",
  "hostname-validator",
  "httpdate",
- "once_cell",
  "page_size",
  "pkarr",
  "pkarr-republisher",
