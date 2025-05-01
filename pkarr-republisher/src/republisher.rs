@@ -164,7 +164,7 @@ impl Republisher {
     ) -> Result<Self, pkarr::errors::BuildError> {
         let client = match &settings.client {
             Some(c) => c.clone(),
-            None => pkarr::Client::builder().build()?,
+            None => pkarr::Client::builder().no_relays().build()?,
         };
         Ok(Republisher {
             public_key,

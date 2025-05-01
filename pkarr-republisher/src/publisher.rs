@@ -160,7 +160,7 @@ impl Publisher {
     ) -> Result<Self, pkarr::errors::BuildError> {
         let client = match &settings.client {
             Some(c) => c.clone(),
-            None => pkarr::Client::builder().build()?,
+            None => pkarr::Client::builder().no_relays().build()?,
         };
         let dht = client.dht().expect("infallible").as_async();
         Ok(Self {

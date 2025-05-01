@@ -30,7 +30,7 @@ pub struct ResilientClient {
 
 impl ResilientClient {
     pub fn new() -> Result<Self, ResilientClientBuilderError> {
-        let client = pkarr::Client::builder().build()?;
+        let client = pkarr::Client::builder().no_relays().build()?;
         Self::new_with_client(client, RetrySettings::default())
     }
 
