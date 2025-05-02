@@ -39,11 +39,11 @@ admin_password = "admin"
 public_ip = "127.0.0.1"
 
 # The pubky tls port in case it differs from the pubky_listen_socket port.
-# Defaults to the pubky_listen_socket port.
+# If not set defaults to the pubky_listen_socket port.
 public_pubky_tls_port = 6287
 
 # The icann http port in case it differs from the icann_listen_socket port.
-# Defaults to the icann_listen_socket port.
+# If not set defaults to the icann_listen_socket port.
 public_icann_http_port = 80
 
 # An ICANN domain name is necessary to support legacy browsers
@@ -62,6 +62,7 @@ icann_domain = "localhost"
 user_keys_republisher_interval = 14400 # 4 hours in seconds
 
 # List of bootstrap nodes for the DHT.
+# If not set, the default pkarr bootstrap nodes will be used.
 # domain:port format.
 dht_bootstrap_nodes = [
     "router.bittorrent.com:6881",

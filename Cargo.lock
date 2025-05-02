@@ -1899,9 +1899,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.20.3"
+version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "945462a4b81e43c4e3ba96bd7b49d834c6f61198356aa858733bc4acf3cbe62e"
+checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "opaque-debug"
@@ -2344,6 +2344,7 @@ dependencies = [
  "pubky-common",
  "reqwest",
  "serde",
+ "serde-toml-merge",
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
@@ -2896,6 +2897,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8dfc9d19bdbf6d17e22319da49161d5d0108e4188e8b680aef6299eed22df60"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-toml-merge"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5817202d670278fb4dded71a70bae5181e00112543b1313463b02d43fc2d9243"
+dependencies = [
+ "toml",
 ]
 
 [[package]]
