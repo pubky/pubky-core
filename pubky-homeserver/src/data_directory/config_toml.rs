@@ -137,7 +137,7 @@ impl ConfigToml {
         Ok(merged_val.try_into()?)
     }
 
-    /// Render the embedded default config but comment out every value,
+    /// Render the embedded sample config but comment out every value,
     /// producing a handy template for end-users.
     pub fn sample_string() -> String {
         SAMPLE_CONFIG
