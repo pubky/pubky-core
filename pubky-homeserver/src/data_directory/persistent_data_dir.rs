@@ -49,7 +49,7 @@ impl PersistentDataDir {
         self.expanded_path.join("config.toml")
     }
 
-    fn write_default_config_file(&self) -> anyhow::Result<()> {
+    fn write_sample_config_file(&self) -> anyhow::Result<()> {
         let config_string = ConfigToml::sample_string();
         let config_file_path = self.get_config_file_path();
         let mut config_file = std::fs::File::create(config_file_path)?;
