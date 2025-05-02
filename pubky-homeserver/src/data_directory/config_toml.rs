@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_sample_config_commented_out() {
-        // Sanity check that the default config is valid even when the variables are commented out.
+        // Sanity check that the sample config is valid even when the variables are commented out.
         // An empty or fully commented out .toml should still be equal to the default ConfigToml
         let s = ConfigToml::sample_string();
         let parsed: ConfigToml =
