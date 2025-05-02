@@ -19,6 +19,9 @@ use url::Url;
 /// Embedded copy of the default configuration (single source of truth for defaults)
 pub const DEFAULT_CONFIG: &str = include_str!("config.default.toml");
 
+/// Example configuration file
+pub const SAMPLE_CONFIG: &str = include_str!("../../config.sample.toml");
+
 /// Error that can occur when reading a configuration file.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigReadError {
@@ -136,8 +139,8 @@ impl ConfigToml {
 
     /// Render the embedded default config but comment out every value,
     /// producing a handy template for end-users.
-    pub fn default_string() -> String {
-        DEFAULT_CONFIG
+    pub fn sample_string() -> String {
+        SAMPLE_CONFIG
             .lines()
             .map(|line| {
                 let trimmed = line.trim_start();
@@ -216,12 +219,18 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config_commented_out() {
+    fn test_sample_config() {
+        // Validate that the sample config can be parsed
+        ConfigToml::from_str(SAMPLE_CONFIG).expect("Embedded config.default.toml must be valid");
+    }
+
+    #[test]
+    fn test_sample_config_commented_out() {
         // Sanity check that the default config is valid even when the variables are commented out.
         // An empty or fully commented out .toml should still be equal to the default ConfigToml
-        let s = ConfigToml::default_string();
+        let s = ConfigToml::sample_string();
         let parsed: ConfigToml =
-            ConfigToml::from_str_with_defaults(&s).expect("Should be parseable");
+            ConfigToml::from_str_with_defaults(&s).expect("Should be valid config file");
         assert_eq!(parsed, ConfigToml::default());
     }
 
