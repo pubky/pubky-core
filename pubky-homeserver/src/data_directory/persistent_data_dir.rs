@@ -108,7 +108,7 @@ impl DataDir for PersistentDataDir {
     fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
         let config_file_path = self.get_config_file_path();
         if !config_file_path.exists() {
-            self.write_default_config_file()?;
+            self.write_sample_config_file()?;
         }
         let config = ConfigToml::from_file(config_file_path)?;
         Ok(config)
