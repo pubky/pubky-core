@@ -2,8 +2,11 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::routes::disable_users::{disable_user, enable_user};
-use super::routes::{delete_entry, generate_signup_token, root};
+use super::routes::{
+    delete_entry,
+    disable_users::{disable_user, enable_user},
+    generate_signup_token, info, root,
+};
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
@@ -21,6 +24,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
             "/generate_signup_token",
             get(generate_signup_token::generate_signup_token),
         )
+        .route("/info", get(info::info))
         .route(
             "/webdav/{pubkey}/{*path}",
             delete(delete_entry::delete_entry),
