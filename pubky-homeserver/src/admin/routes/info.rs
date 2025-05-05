@@ -39,8 +39,8 @@ pub async fn info(State(state): State<AppState>) -> HttpResult<(StatusCode, Json
     let mut tokens_iter = state.db.tables.signup_tokens.iter(&rtxn)?;
     while let Some(Ok((_token_str, bytes))) = tokens_iter.next() {
         num_signup_codes += 1;
-        let tok = SignupToken::deserialize(&bytes);
-        if !tok.is_used() {
+        let token: SignupToken = SignupToken::deserialize(bytes);
+        if !token.is_used() {
             num_unused_signup_codes += 1;
         }
     }
