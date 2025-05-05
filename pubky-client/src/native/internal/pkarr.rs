@@ -55,8 +55,28 @@ impl Client {
         };
 
         if should_publish {
-            self.publish_homeserver_inner(keypair, &host_str, existing)
-                .await?;
+            // Retry PKARR‐publish up to `pkarr_publish_attempts` with `pkarr_publish_backoff` between tries.
+            let mut last_err = None;
+            for attempt in 1..=self.pkarr_publish_attempts {
+                match self
+                    .publish_homeserver_inner(keypair, &host_str, existing.clone())
+                    .await
+                {
+                    Ok(_) => {
+                        last_err = None;
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        if attempt < self.pkarr_publish_attempts {
+                            tokio::time::sleep(self.pkarr_publish_backoff).await;
+                        }
+                    }
+                }
+            }
+            if let Some(err) = last_err {
+                return Err(err);
+            }
         }
 
         Ok(())
