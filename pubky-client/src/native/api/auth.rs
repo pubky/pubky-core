@@ -13,6 +13,7 @@ use pubky_common::{
 };
 
 use anyhow::Result;
+use tokio::time::{sleep, Duration};
 
 use super::super::{internal::pkarr::PublishStrategy, Client};
 use crate::handle_http_error;
@@ -56,13 +57,38 @@ impl Client {
         // 5) Check for non-2xx status codes
         handle_http_error!(response);
 
-        // 6) Publish the homeserver record
-        self.publish_homeserver(
-            keypair,
-            Some(&homeserver.to_string()),
-            PublishStrategy::Force,
-        )
-        .await?;
+        // 6) Publish the homeserver record, retrying a few times if it fails
+        {
+            let mut last_err = None;
+            let max_attempts = 3;
+            for attempt in 1..=max_attempts {
+                match self
+                    .publish_homeserver(
+                        keypair,
+                        Some(&homeserver.to_string()),
+                        PublishStrategy::Force,
+                    )
+                    .await
+                {
+                    Ok(_) => {
+                        last_err = None;
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        if attempt < max_attempts {
+                            // back off before retrying
+                            sleep(Duration::from_secs(10)).await;
+                        }
+                    }
+                }
+            }
+
+            if let Some(e) = last_err {
+                // all attempts failed
+                return Err(e);
+            }
+        }
 
         // 7) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
