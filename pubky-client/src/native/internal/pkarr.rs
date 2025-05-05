@@ -8,6 +8,13 @@ use std::time::Duration;
 
 use super::super::Client;
 
+// sleep for native
+#[cfg(not(wasm_browser))]
+use tokio::time::sleep;
+// sleep for wasm
+#[cfg(wasm_browser)]
+use gloo_timers::future::sleep;
+
 /// The strategy to decide whether to (re)publish a homeserver record.
 pub(crate) enum PublishStrategy {
     /// Always publish a new record (used on signup).
@@ -69,7 +76,7 @@ impl Client {
                     Err(e) => {
                         last_err = Some(e);
                         if attempt < self.pkarr_publish_attempts {
-                            tokio::time::sleep(self.pkarr_publish_backoff).await;
+                            sleep(self.pkarr_publish_backoff).await;
                         }
                     }
                 }
