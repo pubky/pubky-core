@@ -51,13 +51,13 @@ impl LmDB {
         Ok((SessionId(session_id), session))
     }
 
-    pub fn get_session(&self, session_secret: &str) -> anyhow::Result<Option<Session>> {
+    pub fn get_session(&self, session_id: &str) -> anyhow::Result<Option<Session>> {
         let rtxn = self.env.read_txn()?;
 
         let session = self
             .tables
             .sessions
-            .get(&rtxn, session_secret)?
+            .get(&rtxn, session_id)?
             .map(|s| s.to_vec());
 
         rtxn.commit()?;
@@ -69,10 +69,10 @@ impl LmDB {
         Ok(None)
     }
 
-    pub fn delete_session(&mut self, secret: &str) -> anyhow::Result<bool> {
+    pub fn delete_session(&mut self, session_id: &str) -> anyhow::Result<bool> {
         let mut wtxn = self.env.write_txn()?;
 
-        let deleted = self.tables.sessions.delete(&mut wtxn, secret)?;
+        let deleted = self.tables.sessions.delete(&mut wtxn, session_id)?;
 
         wtxn.commit()?;
 

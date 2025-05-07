@@ -96,8 +96,8 @@ where
 fn authorize(
     state: &AppState,
     method: &Method,
-    cookies: Option<&Cookies>,
-    public_key: &PublicKey,
+    cookies_opt: Option<&Cookies>,
+    user_pubkey: &PublicKey,
     path: &str,
 ) -> Result<()> {
     if path == "/session" {
@@ -114,30 +114,66 @@ fn authorize(
         ));
     }
 
-    if let Some(cookies) = cookies {
-        let session_secret = session_secret_from_cookies(cookies, public_key)
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
-
-        let session = state
-            .db
-            .get_session(&session_secret)?
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
-
-        if session.pubky() == public_key
-            && session.capabilities().iter().any(|cap| {
-                path.starts_with(&cap.scope)
-                    && cap
-                        .actions
-                        .contains(&pubky_common::capabilities::Action::Write)
-            })
-        {
-            return Ok(());
+    let cookies = match cookies_opt {
+        Some(cookies) => cookies,
+        None => {
+            // No cookies means no session
+            return Err(Error::with_status(StatusCode::UNAUTHORIZED));
         }
+    };
 
-        return Err(Error::with_status(StatusCode::FORBIDDEN));
+    let session_id = match state
+        .session_manager
+        .extract_session_id_from_cookies(cookies, Some(user_pubkey))
+    {
+        Some(session_id) => session_id,
+        None => {
+            // Failed to extract session ID from cookies
+            return Err(Error::with_status(StatusCode::UNAUTHORIZED));
+        }
+    };
+
+    let session = state
+        .db
+        .get_session(&session_id)?
+        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+
+    if session.pubky() == user_pubkey
+        && session.capabilities().iter().any(|cap| {
+            path.starts_with(&cap.scope)
+                && cap
+                    .actions
+                    .contains(&pubky_common::capabilities::Action::Write)
+        })
+    {
+        return Ok(());
     }
 
-    Err(Error::with_status(StatusCode::UNAUTHORIZED))
+    return Err(Error::with_status(StatusCode::FORBIDDEN));
+
+    // let session_secret = session_secret_from_cookies(cookies, user_pubkey)
+    //         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+
+    //     let session = state
+    //         .db
+    //         .get_session(&session_secret)?
+    //         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+
+    //     if session.pubky() == user_pubkey
+    //         && session.capabilities().iter().any(|cap| {
+    //             path.starts_with(&cap.scope)
+    //                 && cap
+    //                     .actions
+    //                     .contains(&pubky_common::capabilities::Action::Write)
+    //         })
+    //     {
+    //         return Ok(());
+    //     }
+
+    //     return Err(Error::with_status(StatusCode::FORBIDDEN));
+    // }
+
+    // Err(Error::with_status(StatusCode::UNAUTHORIZED))
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {

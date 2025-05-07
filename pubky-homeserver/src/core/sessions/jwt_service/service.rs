@@ -87,10 +87,6 @@ impl JwtService {
         })
     }
 
-    pub fn generate_session_id(&self) -> String {
-        Uuid::new_v4().to_string()
-    }
-
     /// Creates a JWT token for the given user and capabilities.
     ///
     /// # Arguments
@@ -105,20 +101,19 @@ impl JwtService {
         user_pubkey: &PublicKey,
         capabilities: &[Capability],
         expires_after: Duration,
-        token_id: Option<String>,
+        session_id: String,
     ) -> Result<JwtToken, jsonwebtoken::errors::Error> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as usize;
         let exp = now + expires_after.as_secs() as usize;
-        let jti = token_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let claims = Claims {
             sub: Z32PublicKey(user_pubkey.clone()),
             iss: Z32PublicKey(self.issuer_pubkey.clone()),
             exp,
             iat: now,
-            jti,
+            jti: session_id,
             capabilities: capabilities.to_vec(),
         };
 
@@ -175,7 +170,7 @@ mod tests {
 
         let expires_after = Duration::from_secs(10);
         let capabilities = vec![];
-        let jwt_token = service.create_token(&user_keypair.public_key(), &capabilities, expires_after, None).unwrap();
+        let jwt_token = service.create_token(&user_keypair.public_key(), &capabilities, expires_after, "".to_string()).unwrap();
         let validated_token = service.validate_token(&jwt_token).unwrap();
         assert_eq!(validated_token.claims.sub.0, user_keypair.public_key());
         assert_eq!(validated_token.claims.iss.0, service.issuer_pubkey); 
