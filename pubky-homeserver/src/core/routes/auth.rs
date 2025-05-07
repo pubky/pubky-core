@@ -116,10 +116,11 @@ fn create_session_and_cookies(
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(public_key, &state.db)?;
 
-    let (session_id, session, jwt) = state.session_manager.create_session(public_key, capabilities)?;
+    let (_session_id, session, jwt) = state.session_manager.create_session(public_key, capabilities)?;
 
-    // First, the legacy cookie session id.
-    let mut cookie = Cookie::new(public_key.to_string(), session_id.to_string());
+    // First, the legacy cookie.
+    // Set to jwt. Previously, this was the session id itself.
+    let mut cookie = Cookie::new(public_key.to_string(), jwt.to_string());
     cookie.set_path("/");
     if is_secure(host) {
         cookie.set_secure(true);
@@ -128,7 +129,7 @@ fn create_session_and_cookies(
     cookie.set_http_only(true);
     cookies.add(cookie);
 
-    // Second, the JWT token.
+    // Second, the new standardized cookie with the name `auth_token`.
     let mut cookie = Cookie::new("auth_token", jwt.to_string());
     cookie.set_path("/");
     if is_secure(host) {

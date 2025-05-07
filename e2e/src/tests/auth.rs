@@ -21,6 +21,7 @@ async fn basic_authn() {
         .await
         .unwrap();
 
+
     let session = client
         .session(&keypair.public_key())
         .await

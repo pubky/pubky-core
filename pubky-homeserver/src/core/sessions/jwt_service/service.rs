@@ -17,7 +17,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::ES256KeyPair;
+use crate::{persistence::lmdb::tables::sessions::SessionId, ES256KeyPair};
 
 use super::{JwtToken, Z32PublicKey};
 
@@ -33,8 +33,8 @@ pub(crate) struct Claims {
     pub exp: usize,
     /// The issued at time of the token as unix timestamp (seconds since epoch).
     pub iat: usize,
-    /// The JWT ID. Random UUID at the creation time of the token.
-    pub jti: String,
+    /// The JWT ID. Random 16 bytes base32 encoded.
+    pub jti: SessionId,
     /// The capabilities of the token.
     pub capabilities: Vec<Capability>,
 }
@@ -101,7 +101,7 @@ impl JwtService {
         user_pubkey: &PublicKey,
         capabilities: &[Capability],
         expires_after: Duration,
-        session_id: String,
+        session_id: SessionId,
     ) -> Result<JwtToken, jsonwebtoken::errors::Error> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -170,11 +170,13 @@ mod tests {
 
         let expires_after = Duration::from_secs(10);
         let capabilities = vec![];
-        let jwt_token = service.create_token(&user_keypair.public_key(), &capabilities, expires_after, "".to_string()).unwrap();
+        let session_id = SessionId::random();
+        let jwt_token = service.create_token(&user_keypair.public_key(), &capabilities, expires_after, session_id.clone()).unwrap();
         let validated_token = service.validate_token(&jwt_token).unwrap();
         assert_eq!(validated_token.claims.sub.0, user_keypair.public_key());
         assert_eq!(validated_token.claims.iss.0, service.issuer_pubkey); 
         assert_eq!(validated_token.claims.capabilities.len(), 0);
+        assert_eq!(validated_token.claims.jti, session_id);
     }
 
     #[test]

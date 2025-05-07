@@ -11,14 +11,13 @@ pub async fn session(
     pubky: PubkyHost,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
-        if let Some(session) = state.db.get_session(&secret)? {
-            // TODO: add content-type
-            return Ok(session.serialize());
-        };
-    }
-
-    Err(Error::with_status(StatusCode::NOT_FOUND))
+    let session = match state.session_manager.extract_session_from_cookies(&cookies) {
+        Some(session) => session,
+        None => {
+            return Err(Error::with_status(StatusCode::NOT_FOUND));
+        }
+    };
+    Ok(session.serialize())
 }
 pub async fn signout(
     State(mut state): State<AppState>,

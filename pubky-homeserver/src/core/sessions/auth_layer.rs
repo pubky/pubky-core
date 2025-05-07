@@ -97,7 +97,7 @@ fn authorize(
     state: &AppState,
     method: &Method,
     cookies_opt: Option<&Cookies>,
-    user_pubkey: &PublicKey,
+    host_pubkey: &PublicKey,
     path: &str,
 ) -> Result<()> {
     if path == "/session" {
@@ -122,9 +122,9 @@ fn authorize(
         }
     };
 
-    let session_id = match state
+    let session = match state
         .session_manager
-        .extract_session_id_from_cookies(cookies, Some(user_pubkey))
+        .extract_session_from_cookies(cookies)
     {
         Some(session_id) => session_id,
         None => {
@@ -133,13 +133,12 @@ fn authorize(
         }
     };
 
-    let session = state
-        .db
-        .get_session(&session_id)?
-        .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+    if session.pubky() != host_pubkey {
+        // Session is not for this host
+        return Err(Error::with_status(StatusCode::FORBIDDEN));
+    }
 
-    if session.pubky() == user_pubkey
-        && session.capabilities().iter().any(|cap| {
+    if session.capabilities().iter().any(|cap| {
             path.starts_with(&cap.scope)
                 && cap
                     .actions
@@ -150,30 +149,6 @@ fn authorize(
     }
 
     return Err(Error::with_status(StatusCode::FORBIDDEN));
-
-    // let session_secret = session_secret_from_cookies(cookies, user_pubkey)
-    //         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
-
-    //     let session = state
-    //         .db
-    //         .get_session(&session_secret)?
-    //         .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
-
-    //     if session.pubky() == user_pubkey
-    //         && session.capabilities().iter().any(|cap| {
-    //             path.starts_with(&cap.scope)
-    //                 && cap
-    //                     .actions
-    //                     .contains(&pubky_common::capabilities::Action::Write)
-    //         })
-    //     {
-    //         return Ok(());
-    //     }
-
-    //     return Err(Error::with_status(StatusCode::FORBIDDEN));
-    // }
-
-    // Err(Error::with_status(StatusCode::UNAUTHORIZED))
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {

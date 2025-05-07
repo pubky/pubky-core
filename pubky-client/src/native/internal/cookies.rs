@@ -11,6 +11,38 @@ pub struct CookieJar {
 
 impl CookieJar {
     pub(crate) fn store_session_after_signup(&self, response: &Response, pubky: &PublicKey) {
+        // let cookie_names = vec![ // Cookie names that we are interested in
+        //     pubky.to_string(),
+        //     "auth_token".to_string(),
+        // ];
+
+        // let session_cookies = response.headers().iter().filter_map(|(header_name, header_value)| {
+        //     // Skip if the header name is not set-cookie
+        //     if header_name != "set-cookie" {
+        //         return None;
+        //     };
+
+        //     // Parse the cookie value
+        //     let value_str = match std::str::from_utf8(header_value.as_bytes()) {
+        //         Ok(value) => value,
+        //         Err(_) => return None,
+        //     };
+        //     let cookie =cookie::Cookie::parse(value_str.to_string()).ok()?;
+
+        //     // Only look at cookies with names we are interested in
+        //     if !cookie_names.contains(&cookie.name().to_string()) {
+        //         return None;
+        //     };
+        //     Some(cookie)
+        // });
+
+        // for cookie in session_cookies {
+        //     let domain = format!("_pubky.{pubky}");
+        //     tracing::debug!(?cookie, "Storing coookie after signup");
+            
+        // }
+
+
         for (header_name, header_value) in response.headers() {
             let cookie_name = &pubky.to_string();
 
