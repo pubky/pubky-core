@@ -37,10 +37,6 @@ pub struct ClientBuilder {
     /// Maximum age before a user record should be republished.
     /// Defaults to 1 hour.
     max_record_age: Option<Duration>,
-    /// Number of attempts to retry PKARR publish on failure. Default to 3.
-    pkarr_publish_attempts: Option<usize>,
-    /// Backoff between PKARR publish retries. Default to 10 secs.
-    pkarr_publish_backoff: Option<Duration>,
 }
 
 impl ClientBuilder {
@@ -87,13 +83,6 @@ impl ClientBuilder {
         self
     }
 
-    /// Configure PKARR‐publish retry policy: number of attempts and backoff duration.
-    pub fn pkarr_publish_retries(&mut self, attempts: usize, backoff: Duration) -> &mut Self {
-        self.pkarr_publish_attempts = Some(attempts);
-        self.pkarr_publish_backoff = Some(backoff);
-        self
-    }
-
     /// Build [Client]
     pub fn build(&self) -> Result<Client, BuildError> {
         let pkarr = self.pkarr.build()?;
@@ -132,11 +121,6 @@ impl ClientBuilder {
         // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
         let max_record_age = self.max_record_age.unwrap_or(Duration::from_secs(60 * 60));
 
-        let pkarr_publish_attempts = self.pkarr_publish_attempts.unwrap_or(3);
-        let pkarr_publish_backoff = self
-            .pkarr_publish_backoff
-            .unwrap_or(Duration::from_secs(10));
-
         Ok(Client {
             pkarr,
             http: http_builder.build().expect("config expected to not error"),
@@ -152,8 +136,6 @@ impl ClientBuilder {
             testnet: false,
 
             max_record_age,
-            pkarr_publish_attempts,
-            pkarr_publish_backoff,
         })
     }
 }
@@ -181,11 +163,6 @@ pub struct Client {
 
     /// The record age threshold before republishing.
     pub(crate) max_record_age: Duration,
-
-    /// Number of attempts to retry PKARR publish on failure.
-    pub(crate) pkarr_publish_attempts: usize,
-    /// Backoff duration between PKARR publish retries.
-    pub(crate) pkarr_publish_backoff: Duration,
 }
 
 impl Client {

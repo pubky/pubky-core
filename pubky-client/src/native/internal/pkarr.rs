@@ -1,6 +1,7 @@
 use anyhow::Result;
 use pkarr::{
     dns::rdata::{RData, SVCB},
+    errors::{PublishError, QueryError},
     Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
@@ -62,27 +63,38 @@ impl Client {
         };
 
         if should_publish {
-            // Retry PKARR‐publish up to `pkarr_publish_attempts` with `pkarr_publish_backoff` between tries.
-            let mut last_err = None;
-            for attempt in 1..=self.pkarr_publish_attempts {
+            // Hard-code 3 attempts, 1s back-off, retry only on specific QueryErrors:
+            for attempt in 1..=3 {
                 match self
                     .publish_homeserver_inner(keypair, &host_str, existing.clone())
                     .await
                 {
-                    Ok(_) => {
-                        last_err = None;
-                        break;
-                    }
+                    Ok(()) => break,
                     Err(e) => {
-                        last_err = Some(e);
-                        if attempt < self.pkarr_publish_attempts {
-                            sleep(self.pkarr_publish_backoff).await;
+                        // Only retry on these PublishError::Query variants
+                        // known to be recoverable on a simple retry.
+                        let retryable = e
+                            .downcast_ref::<PublishError>()
+                            .and_then(|pub_err| match pub_err {
+                                PublishError::Query(QueryError::Timeout)
+                                | PublishError::Query(QueryError::NoClosestNodes)
+                                | PublishError::Query(QueryError::DhtErrorResponse(_, _)) => {
+                                    Some(())
+                                }
+                                _ => None,
+                            })
+                            .is_some();
+
+                        if retryable && attempt < 3 {
+                            // back-off 1 second
+                            sleep(Duration::from_secs(1)).await;
+                            continue;
+                        } else {
+                            // non-retryable or final try: bail
+                            return Err(e);
                         }
                     }
                 }
-            }
-            if let Some(err) = last_err {
-                return Err(err);
             }
         }
 
