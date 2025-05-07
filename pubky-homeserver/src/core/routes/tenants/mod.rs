@@ -9,7 +9,7 @@ use axum::{
     Router,
 };
 
-use crate::core::{layers::authz::AuthorizationLayer, AppState};
+use crate::core::{sessions::AuthorizationLayer, AppState};
 
 pub mod read;
 pub mod session;

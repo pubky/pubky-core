@@ -74,6 +74,11 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
             .read_or_create_keypair()
             .map_err(AppContextConversionError::Keypair)?;
 
+        if let Err(e) = dir.create_jwt_public_key_if_not_exist() {
+            // Failing to create the JWT public key file is not a critical error.
+            // We can continue to run the homeserver without it.
+            tracing::warn!("Failed to create JWT public key file: {}", e);
+        };
         let db_path = dir.path().join("data/lmdb");
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {

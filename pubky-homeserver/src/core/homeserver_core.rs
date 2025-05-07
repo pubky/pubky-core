@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use super::sessions::{JwtService, SessionManager};
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
@@ -26,6 +27,7 @@ pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: LmDB,
     pub(crate) signup_mode: SignupMode,
+    pub(crate) session_manager: SessionManager,
     /// If `Some(bytes)` the quota is enforced, else unlimited.
     pub(crate) user_quota_bytes: Option<u64>,
 }
@@ -150,6 +152,7 @@ impl HomeserverCore {
             db: context.db.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
+            session_manager: SessionManager::new(context),
         };
         super::routes::create_app(state.clone())
     }
