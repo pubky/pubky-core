@@ -8,7 +8,7 @@
 //! https://jwt.io/ is a great resource for debugging and understanding JWT tokens.
 //!
 
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, TokenData};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header};
 use pkarr::PublicKey;
 use pubky_common::capabilities::Capability;
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,6 @@ use std::{
     fmt::Debug,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use uuid::Uuid;
 
 use crate::{persistence::lmdb::tables::sessions::SessionId, ES256KeyPair};
 
@@ -128,10 +127,7 @@ impl JwtService {
     /// # Returns
     /// The claims of the JWT token.
     /// Will return an error if the token is expired or invalid.
-    pub fn validate_token(
-        &self,
-        token: &str,
-    ) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
+    pub fn validate_token(&self, token: &str) -> Result<JwtToken, jsonwebtoken::errors::Error> {
         let mut validation = jsonwebtoken::Validation::new(Algorithm::ES256);
         validation.required_spec_claims.insert("sub".to_string());
         validation.required_spec_claims.insert("hs".to_string());
@@ -140,8 +136,9 @@ impl JwtService {
             .required_spec_claims
             .insert("capabilities".to_string());
         validation.iss = Some(HashSet::from([self.issuer_pubkey.to_string()]));
-        println!("validation: {:?}", validation);
-        jsonwebtoken::decode::<Claims>(token, &self.decoding_key, &validation)
+        jsonwebtoken::decode::<Claims>(token, &self.decoding_key, &validation)?;
+
+        JwtToken::new(token.to_string())
     }
 }
 
@@ -179,11 +176,11 @@ mod tests {
             )
             .unwrap();
         println!("jwt_token: {}", jwt_token.raw());
-        let validated_token = service.validate_token(&jwt_token).unwrap();
-        assert_eq!(validated_token.claims.sub.0, user_keypair.public_key());
-        assert_eq!(validated_token.claims.iss.0, service.issuer_pubkey);
-        assert_eq!(validated_token.claims.capabilities.len(), 0);
-        assert_eq!(validated_token.claims.jti, session_id);
+        let token = service.validate_token(&jwt_token).unwrap();
+        assert_eq!(token.decoded().claims.sub.0, user_keypair.public_key());
+        assert_eq!(token.decoded().claims.iss.0, service.issuer_pubkey);
+        assert_eq!(token.decoded().claims.capabilities.len(), 0);
+        assert_eq!(token.decoded().claims.jti, session_id);
     }
 
     #[test]

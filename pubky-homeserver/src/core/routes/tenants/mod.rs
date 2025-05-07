@@ -45,10 +45,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/session", delete(session::signout))
         .layer(SessionRequiredLayer::new(state.clone()));
 
-    let combined = Router::new()
+    Router::new()
         .merge(open_routes)
         .merge(auth_routes)
-        .layer(DefaultBodyLimit::max(100 * 1024 * 1024));
-
-    combined
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
 }

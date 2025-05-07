@@ -36,13 +36,6 @@ impl Deref for Z32PublicKey {
     }
 }
 
-impl Z32PublicKey {
-    /// Pkarr Public Key
-    pub fn public_key(&self) -> &PublicKey {
-        &self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

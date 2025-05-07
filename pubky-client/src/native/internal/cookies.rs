@@ -51,7 +51,7 @@ impl CookieJar {
                     .into_owned(),
             )
         });
-        let session_cookie_names = vec![pubky.to_string(), JWT_COOKIE_NAME.to_string()];
+        let session_cookie_names = [pubky.to_string(), JWT_COOKIE_NAME.to_string()];
         let session_cookies = parsed_cookies
             .filter(|cookie| session_cookie_names.contains(&cookie.name().to_string()));
 

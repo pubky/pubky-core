@@ -128,7 +128,7 @@ async fn disabled_user() {
         .unwrap();
 
     // Access the file from the disabled user
-    let response = client.get(file_url.clone()).send().await.unwrap();
+    let response = client2.get(file_url.clone()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 

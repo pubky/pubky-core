@@ -86,7 +86,8 @@ impl SessionManager {
 
         // Check if the value is a valid JWT token
         // New JWT cookie content.
-        if let Ok(jwt) = JwtToken::new(value) {
+
+        if let Ok(jwt) = self.jwt_service.validate_token(value.as_str()) {
             return Some(jwt.decoded().claims.jti.clone());
         }
 

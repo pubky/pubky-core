@@ -12,11 +12,11 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
-use base32::{encode, Alphabet};
+use axum_extra::extract::Host;
+
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
+use pubky_common::capabilities::Capability;
 use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 

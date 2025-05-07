@@ -42,7 +42,7 @@ impl JwtToken {
         validation.validate_aud = false;
         validation.validate_exp = false;
         let key = DecodingKey::from_secret(&[]); // Fake key. Needed because the method requires a key. It's not validated though.
-        jsonwebtoken::decode::<Claims>(&token, &key, &validation)
+        jsonwebtoken::decode::<Claims>(token, &key, &validation)
     }
 
     /// Get the decoded claims of the JWT token.
@@ -50,6 +50,7 @@ impl JwtToken {
         &self.decoded
     }
 
+    #[allow(dead_code)]
     pub fn raw(&self) -> &str {
         &self.token
     }
