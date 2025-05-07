@@ -67,7 +67,7 @@ impl Client {
         // 7) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
-            .store_session_after_signup(&response, &keypair.public_key());
+            .store_session_after_signup(&response, &keypair.public_key())?;
 
         // 8) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
@@ -107,8 +107,7 @@ impl Client {
         handle_http_error!(response);
 
         #[cfg(not(target_arch = "wasm32"))]
-        self.cookie_store.delete_session_after_signout(pubky);
-
+        self.cookie_store.delete_session_after_signout(pubky)?;
         Ok(())
     }
 

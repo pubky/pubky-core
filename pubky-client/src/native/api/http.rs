@@ -28,7 +28,6 @@ impl Client {
         if url.starts_with("pubky://") {
             // Rewrite pubky:// urls to https://_pubky.
             let url = format!("https://_pubky.{}", url.split_at(8).1);
-
             return self.http.request(method, url);
         } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
             // TODO: remove icann_http when we can control reqwest connection
