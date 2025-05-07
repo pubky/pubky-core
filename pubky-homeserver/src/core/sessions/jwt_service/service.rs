@@ -1,26 +1,27 @@
 //! JWT service for the homeserver.
-//! 
+//!
 //! This service is responsible for creating and verifying JWT tokens.
 //! It uses the ES256 algorithm for signing and verifying tokens.
-//! 
+//!
 //! The JWT tokens are used to authenticate requests to the homeserver.
-//! 
+//!
 //! https://jwt.io/ is a great resource for debugging and understanding JWT tokens.
-//! 
+//!
 
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, TokenData};
 use pkarr::PublicKey;
 use pubky_common::capabilities::Capability;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet, fmt::Debug, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::HashSet,
+    fmt::Debug,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
 
 use crate::{persistence::lmdb::tables::sessions::SessionId, ES256KeyPair};
 
 use super::{JwtToken, Z32PublicKey};
-
 
 /// Claims for the JWT token, using standard JWT naming: 'sub' for subject (user_id), 'iss' for issuer (homeserver_pubkey), 'exp' for expiration, 'iat' for issued at, 'jti' for JWT ID.
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,19 +40,17 @@ pub(crate) struct Claims {
     pub capabilities: Vec<Capability>,
 }
 
-
-
 /// JWT service for the homeserver.
-/// 
+///
 /// This service is responsible for creating and verifying JWT tokens.
 /// It uses the ES256 algorithm for signing and verifying tokens.
-/// 
+///
 /// The JWT tokens are used to authenticate requests to the homeserver.
-/// 
+///
 /// https://jwt.io/ is a great resource for debugging and understanding JWT tokens.
-/// 
+///
 /// Derives the signing keys from the main homeserver keypair.
-/// 
+///
 #[derive(Clone)]
 pub(crate) struct JwtService {
     /// The signing key for the JWT token.
@@ -74,7 +73,6 @@ impl JwtService {
     pub fn new(keypair: &pkarr::Keypair) -> anyhow::Result<Self> {
         let key = ES256KeyPair::derive_from_main_secret_key(&keypair.secret_key())
             .map_err(|e| anyhow::anyhow!("Failed to derive jwt key from pkarr keypair: {}", e))?;
-
 
         let encoding_key = EncodingKey::from_ec_pem(key.private_key_pem()?.as_bytes())
             .map_err(|e| anyhow::anyhow!("Failed to create encoding key: {}", e))?;
@@ -123,26 +121,27 @@ impl JwtService {
     }
 
     /// Validates a JWT token and returns the claims.
-    /// 
+    ///
     /// # Arguments
     /// * `token` - The JWT token to validate.
-    /// 
+    ///
     /// # Returns
     /// The claims of the JWT token.
     /// Will return an error if the token is expired or invalid.
-    pub fn validate_token(&self, token: &str) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
+    pub fn validate_token(
+        &self,
+        token: &str,
+    ) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
         let mut validation = jsonwebtoken::Validation::new(Algorithm::ES256);
         validation.required_spec_claims.insert("sub".to_string());
         validation.required_spec_claims.insert("hs".to_string());
         validation.required_spec_claims.insert("exp".to_string());
-        validation.required_spec_claims.insert("capabilities".to_string());
+        validation
+            .required_spec_claims
+            .insert("capabilities".to_string());
         validation.iss = Some(HashSet::from([self.issuer_pubkey.to_string()]));
         println!("validation: {:?}", validation);
-        jsonwebtoken::decode::<Claims>(
-            token,
-            &self.decoding_key,
-            &validation,
-        )
+        jsonwebtoken::decode::<Claims>(token, &self.decoding_key, &validation)
     }
 }
 
@@ -171,10 +170,18 @@ mod tests {
         let expires_after = Duration::from_secs(10);
         let capabilities = vec![];
         let session_id = SessionId::random();
-        let jwt_token = service.create_token(&user_keypair.public_key(), &capabilities, expires_after, session_id.clone()).unwrap();
+        let jwt_token = service
+            .create_token(
+                &user_keypair.public_key(),
+                &capabilities,
+                expires_after,
+                session_id.clone(),
+            )
+            .unwrap();
+        println!("jwt_token: {}", jwt_token.raw());
         let validated_token = service.validate_token(&jwt_token).unwrap();
         assert_eq!(validated_token.claims.sub.0, user_keypair.public_key());
-        assert_eq!(validated_token.claims.iss.0, service.issuer_pubkey); 
+        assert_eq!(validated_token.claims.iss.0, service.issuer_pubkey);
         assert_eq!(validated_token.claims.capabilities.len(), 0);
         assert_eq!(validated_token.claims.jti, session_id);
     }
@@ -182,7 +189,7 @@ mod tests {
     #[test]
     fn test_validate_expired_token() {
         let service = create_service();
-        let expired_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJudDRtbXFuZXB5OWlwYmV6M3Nmc3J0amtmcHNtZjZ5dXFhdW1xdTh0aWVqZ2pneXdhNXVvIiwiaXNzIjoiOHBpbnh4Z3FzNDFuNGFpZGlkZW53NWFwcXAxdXJmbXpkenRyOGp0NGFicmtkbjQzNWV3byIsImV4cCI6MTc0NjUyODA0MywiaWF0IjoxNzQ2NTI4MDMzLCJqdGkiOiJlM2E2ZmQxZi01M2I1LTQ4ODMtYjc2Yi01MDgzNzVhMjkzMTgiLCJjYXBhYmlsaXRpZXMiOltdfQ.SCnQqWnaKn08MUTE8YWclENMvJWt7TS1-4MnwY7KnqJ1Pmrxntqbx3xg77Cdh196CIbMviEPcSYsUr1dPP8_eg";
+        let expired_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJzdWIiOiI1OWZ0dHR3M3h6Y2JxbmVtenI5ZGVybTc1OGI5ajNzNm1ueDRtbWdkNWZ4anVqeHVwcnJvIiwiaXNzIjoiOHBpbnh4Z3FzNDFuNGFpZGlkZW53NWFwcXAxdXJmbXpkenRyOGp0NGFicmtkbjQzNWV3byIsImV4cCI6MTc0NjYyNzgwNywiaWF0IjoxNzQ2NjI3Nzk3LCJqdGkiOiJNV0Q5MTJRSjJYREswQVNLVkJBOTM0Tk4xTSIsImNhcGFiaWxpdGllcyI6W119.axN_mkl_srALWH0W0Yb_6IVp2Nw5yz_vW_LyLz_4E613Cix9PWcf5BPopF5LZEX_XOOPZPHrdhe_L_9ZlXzpvw";
 
         let result = service.validate_token(&expired_token);
         let error = result.err().expect("Token should be expired");

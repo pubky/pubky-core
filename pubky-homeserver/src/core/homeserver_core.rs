@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::sessions::{JwtService, SessionManager};
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
+use super::sessions::{JwtService, SessionManager};
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::lmdb::LmDB;

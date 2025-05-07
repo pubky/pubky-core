@@ -10,21 +10,21 @@ use tower::{Layer, Service};
 use crate::core::sessions::UserSession;
 use crate::core::{
     error::{Error, Result},
-    extractors::PubkyHost
+    extractors::PubkyHost,
 };
 
 /// A Tower Layer that compares the pubky host with the session's pubky.
-/// 
+///
 /// If the host does not match, it returns a 403 Forbidden error.
-/// 
+///
 /// This ensures that a user cannot write to a different pubky than the one they are logged in with.
-/// 
+///
 #[derive(Debug, Clone)]
 pub struct EnsureHostMatchesUserLayer {}
 
 impl EnsureHostMatchesUserLayer {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 }
 
@@ -32,9 +32,7 @@ impl<S> Layer<S> for EnsureHostMatchesUserLayer {
     type Service = EnsureHostMatchesUserMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        EnsureHostMatchesUserMiddleware {
-            inner,
-        }
+        EnsureHostMatchesUserMiddleware { inner }
     }
 }
 
@@ -64,7 +62,6 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-
             let host = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {

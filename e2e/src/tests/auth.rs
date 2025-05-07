@@ -21,7 +21,6 @@ async fn basic_authn() {
         .await
         .unwrap();
 
-
     let session = client
         .session(&keypair.public_key())
         .await
@@ -112,7 +111,6 @@ async fn disabled_user() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-
     // Let's have a look from another users perspective
     let client2 = testnet.pubky_client_builder().build().unwrap();
     let keypair2 = Keypair::random();
@@ -123,14 +121,15 @@ async fn disabled_user() {
         .await
         .unwrap();
 
-    client2.session(&keypair2.public_key()).await.unwrap().unwrap();
+    client2
+        .session(&keypair2.public_key())
+        .await
+        .unwrap()
+        .unwrap();
 
     // Access the file from the disabled user
     let response = client.get(file_url.clone()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-
-
 }
 
 #[tokio::test]

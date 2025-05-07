@@ -19,11 +19,11 @@ use crate::core::{
 use crate::persistence::lmdb::tables::sessions::SessionId;
 
 /// A Tower Layer that makes sure the request has a valid session.
-/// 
+///
 /// The session is inserted into the request extensions.
-/// 
+///
 /// You can access the session in the request extensions using the `UserSession` extractor.
-/// 
+///
 /// Returns a 401 Unauthorized if the request does not have a valid session.
 #[derive(Debug, Clone)]
 pub struct SessionRequiredLayer {
@@ -74,7 +74,7 @@ where
         let state = self.state.clone();
         let mut inner = self.inner.clone();
 
-        Box::pin(async move {            
+        Box::pin(async move {
             let (session, id) = match authorize(&state, &req) {
                 Ok(session) => session,
                 Err(e) => {
@@ -84,8 +84,8 @@ where
                         // Sev 7th of May 2025
                         return Ok(Error::with_status(StatusCode::NOT_FOUND).into_response());
                     }
-                    return Ok(e.into_response())
-                },
+                    return Ok(e.into_response());
+                }
             };
 
             req.extensions_mut().insert(UserSession::new(session, id));
@@ -97,11 +97,7 @@ where
 }
 
 /// Authorize write (PUT or DELETE) for Public paths.
-fn authorize(
-    state: &AppState,
-    req: &Request<Body>,
-) -> Result<(Session, SessionId)> {
-
+fn authorize(state: &AppState, req: &Request<Body>) -> Result<(Session, SessionId)> {
     let unauthorized_err = Err(Error::with_status(StatusCode::UNAUTHORIZED));
 
     let cookies = match req.extensions().get::<Cookies>() {
@@ -112,10 +108,7 @@ fn authorize(
         }
     };
 
-    let (session, id) = match state
-        .session_manager
-        .extract_session_from_cookies(cookies)
-    {
+    let (session, id) = match state.session_manager.extract_session_from_cookies(cookies) {
         Some(session) => session,
         None => {
             // Failed to extract session ID from cookies
@@ -124,12 +117,15 @@ fn authorize(
     };
 
     // User still active check
-    let user = match state.db.get_user(session.pubky(), &mut state.db.env.read_txn()?) {
+    let user = match state
+        .db
+        .get_user(session.pubky(), &mut state.db.env.read_txn()?)
+    {
         Ok(user) => user,
         Err(_) => {
             // User not found
             return unauthorized_err;
-        },
+        }
     };
     if user.disabled {
         return Err(Error::with_status(StatusCode::FORBIDDEN));
@@ -138,11 +134,10 @@ fn authorize(
     Ok((session, id))
 }
 
-
 /// Axum extractor for the user session.
 /// Use this to access the session in the request extensions.
 #[derive(Debug, Clone)]
-pub struct UserSession{
+pub struct UserSession {
     pub(crate) id: SessionId,
     pub(crate) session: Session,
 }

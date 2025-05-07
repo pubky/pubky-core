@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 
 /// A wrapper around a PublicKey that serializes and deserializes to a z32 string instead of a list of bytes.
 #[derive(Debug)]
-pub (crate)struct Z32PublicKey(pub PublicKey);
+pub(crate) struct Z32PublicKey(pub PublicKey);
 
 impl Serialize for Z32PublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         serializer.serialize_str(&self.0.to_string())
     }
 }
@@ -18,9 +19,12 @@ impl Serialize for Z32PublicKey {
 impl<'de> Deserialize<'de> for Z32PublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de> {
+        D: serde::Deserializer<'de>,
+    {
         let s = String::deserialize(deserializer)?;
-        Ok(Self(PublicKey::from_str(&s).map_err(serde::de::Error::custom)?))
+        Ok(Self(
+            PublicKey::from_str(&s).map_err(serde::de::Error::custom)?,
+        ))
     }
 }
 
@@ -39,19 +43,17 @@ impl Z32PublicKey {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_serialize_deserialize() {
-       let pubkey = PublicKey::from_str("nt4mmqnepy9ipbez3sfsrtjkfpsmf6yuqaumqu8tiejgjgywa5uo").unwrap();
-       let z32_pubkey = Z32PublicKey(pubkey);
-       let serialized = serde_json::to_string(&z32_pubkey).unwrap();
-       let deserialized: Z32PublicKey = serde_json::from_str(&serialized).unwrap();
-       assert_eq!(z32_pubkey.0, deserialized.0);
+        let pubkey =
+            PublicKey::from_str("nt4mmqnepy9ipbez3sfsrtjkfpsmf6yuqaumqu8tiejgjgywa5uo").unwrap();
+        let z32_pubkey = Z32PublicKey(pubkey);
+        let serialized = serde_json::to_string(&z32_pubkey).unwrap();
+        let deserialized: Z32PublicKey = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(z32_pubkey.0, deserialized.0);
     }
-
- 
 }

@@ -64,13 +64,7 @@ pub async fn signup(
     wtxn.commit()?;
 
     // 5) Create session & set cookie
-    create_session_and_cookies(
-        &state,
-        cookies,
-        &host,
-        public_key,
-        token.capabilities(),
-    )
+    create_session_and_cookies(&state, cookies, &host, public_key, token.capabilities())
 }
 
 /// Fails if user doesn’t exist, otherwise logs them in by creating a session.
@@ -97,13 +91,7 @@ pub async fn signin(
     }
 
     // 3) Create the session & set cookies
-    create_session_and_cookies(
-        &state,
-        cookies,
-        &host,
-        public_key,
-        token.capabilities(),
-    )
+    create_session_and_cookies(&state, cookies, &host, public_key, token.capabilities())
 }
 
 /// Creates and stores a session, sets the cookies, returns session as JSON/string.
@@ -116,11 +104,13 @@ fn create_session_and_cookies(
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(public_key, &state.db)?;
 
-    let (_session_id, session, jwt) = state.session_manager.create_session(public_key, capabilities)?;
+    let (_session_id, session, jwt) = state
+        .session_manager
+        .create_session(public_key, capabilities)?;
 
     // First, the legacy cookie.
     // Set to jwt. Previously, this was the session id itself.
-    // We are doing this to keep supporting old pubky clients 
+    // We are doing this to keep supporting old pubky clients
     // that only support the legacy cookie name. Sev 7th of May 2025
     let mut cookie = Cookie::new(public_key.to_string(), jwt.to_string());
     cookie.set_path("/");
@@ -143,8 +133,6 @@ fn create_session_and_cookies(
 
     Ok(session.serialize())
 }
-
-
 
 /// Assuming that if the server is addressed by anything other than
 /// localhost, or IP addresses, it is not addressed from a browser in an

@@ -1,16 +1,11 @@
 use axum::{extract::State, response::IntoResponse};
 
-use crate::core::{
-    error::Result,
-    sessions::UserSession,
-    AppState,
-};
+use crate::core::{error::Result, sessions::UserSession, AppState};
 
 /// Get the information about the current session.
 pub async fn get_session(UserSession { session, .. }: UserSession) -> Result<impl IntoResponse> {
     Ok(session.serialize())
 }
-
 
 pub async fn signout(
     State(mut state): State<AppState>,

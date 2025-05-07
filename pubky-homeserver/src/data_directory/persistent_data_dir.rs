@@ -131,10 +131,14 @@ impl DataDir for PersistentDataDir {
         let keypair = pkarr::Keypair::from_secret_key(&secret_bytes);
         Ok(keypair)
     }
-    
-    fn create_jwt_public_key_if_not_exist(&self) -> anyhow::Result<super::es256_keypair::ES256KeyPair> {
+
+    fn create_jwt_public_key_if_not_exist(
+        &self,
+    ) -> anyhow::Result<super::es256_keypair::ES256KeyPair> {
         let main_homeserver_secret = self.read_or_create_keypair()?.secret_key();
-        let keypair = super::es256_keypair::ES256KeyPair::derive_from_main_secret_key(&main_homeserver_secret)?;
+        let keypair = super::es256_keypair::ES256KeyPair::derive_from_main_secret_key(
+            &main_homeserver_secret,
+        )?;
 
         // Write the public key to the data directory. These key is used for verifying JWT tokens.
         // Devops personal might use the key on other services to validate JWT tokens for example.

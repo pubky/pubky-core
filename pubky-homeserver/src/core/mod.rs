@@ -6,8 +6,8 @@ mod key_republisher;
 mod layers;
 mod periodic_backup;
 mod routes;
-mod user_keys_republisher;
 mod sessions;
+mod user_keys_republisher;
 
 pub use error::*;
 pub use homeserver_core::*;

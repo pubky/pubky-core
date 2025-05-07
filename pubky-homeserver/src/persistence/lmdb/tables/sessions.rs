@@ -48,7 +48,7 @@ impl SessionId {
     }
 
     /// Checks if a session ID is valid.
-    /// 
+    ///
     /// A session ID is valid if it is a base32 encoded string of 16 bytes.
     pub fn is_valid_id(session_id: &str) -> bool {
         match base32::decode(base32::Alphabet::Crockford, session_id) {
@@ -58,10 +58,12 @@ impl SessionId {
     }
 
     pub fn random() -> Self {
-        Self(base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>()))
+        Self(base32::encode(
+            base32::Alphabet::Crockford,
+            &random_bytes::<16>(),
+        ))
     }
 }
-
 
 impl LmDB {
     /// Creates a new session in the database.
@@ -76,8 +78,7 @@ impl LmDB {
 
         // 2) Insert session into DB
         let mut wtxn = self.env.write_txn()?;
-        self
-            .tables
+        self.tables
             .sessions
             .put(&mut wtxn, &session_id, &raw_session)?;
         wtxn.commit()?;
@@ -114,7 +115,6 @@ impl LmDB {
         Ok(deleted)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

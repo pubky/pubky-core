@@ -1,17 +1,19 @@
-use std::{str::FromStr, time::Duration};
+use super::{JwtService, JwtToken};
+use crate::{
+    persistence::lmdb::{tables::sessions::SessionId, LmDB},
+    AppContext,
+};
 use pkarr::PublicKey;
 use pubky_common::{capabilities::Capability, session::Session};
+use std::{str::FromStr, time::Duration};
 use tower_cookies::Cookies;
-use crate::{persistence::lmdb::{tables::sessions::SessionId, LmDB}, AppContext};
-use super::{JwtService, JwtToken};
-
 
 /// Manages all of our different session types.
-/// 
+///
 /// We have:
 /// - Legacy cookie sessions
 /// - Simple JWT sessions
-/// 
+///
 #[derive(Clone, Debug)]
 pub(crate) struct SessionManager {
     jwt_service: JwtService,
@@ -35,7 +37,12 @@ impl SessionManager {
         let (session_id, session) = self.db.create_session(user_pubkey, capabilities)?;
         let one_day = Duration::from_secs(86400);
         let expires_after = one_day * 365;
-        let jwt = self.jwt_service.create_token(user_pubkey, capabilities, expires_after, session_id.clone())?;
+        let jwt = self.jwt_service.create_token(
+            user_pubkey,
+            capabilities,
+            expires_after,
+            session_id.clone(),
+        )?;
         Ok((session_id, session, jwt))
     }
 
@@ -66,9 +73,7 @@ impl SessionManager {
         let (_user_pubkey, value) = cookie_list.iter().find_map(|c| {
             let name = c.name();
             match PublicKey::from_str(name) {
-                Ok(pubkey) => {
-                    Some((pubkey, c.value().to_string()))
-                },
+                Ok(pubkey) => Some((pubkey, c.value().to_string())),
                 Err(_) => None, // Failed to parse as public key, ignore
             }
         })?;
@@ -97,9 +102,8 @@ impl SessionManager {
             Err(e) => {
                 tracing::debug!("Error parsing user session JWT: {}", e);
                 return None;
-            },
+            }
         };
         Some(jwt.decoded().claims.jti.clone())
     }
-
 }

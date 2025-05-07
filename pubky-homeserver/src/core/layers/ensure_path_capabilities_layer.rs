@@ -11,9 +11,9 @@ use crate::core::error::{Error, Result};
 use crate::core::sessions::UserSession;
 
 /// A Tower Layer that ensures the user has write access to the path.
-/// 
+///
 /// Requires the `SessionRequiredLayer` to be applied first.
-/// 
+///
 /// Used by the `write` routes.
 ///
 #[derive(Debug, Clone)]
@@ -64,7 +64,14 @@ where
             let UserSession { session, .. } = match req.extensions().get::<UserSession>() {
                 Some(session) => session,
                 None => {
-                    return Ok(Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some("SessionRequiredLayer is not available. Did you forget to apply it?".to_string())).into_response());
+                    return Ok(Error::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Some(
+                            "SessionRequiredLayer is not available. Did you forget to apply it?"
+                                .to_string(),
+                        ),
+                    )
+                    .into_response());
                 }
             };
 

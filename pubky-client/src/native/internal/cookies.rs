@@ -4,7 +4,7 @@
 //!
 //! Because we need to move the session cookies returned by the homeserver to the domain of the user, we need to
 //! store them in a custom cookie store.
-//! 
+//!
 //! Maybe we can improve the Pubky design to avoid this hack in the future?
 
 use std::sync::RwLock;
@@ -17,36 +17,43 @@ const JWT_COOKIE_NAME: &str = "auth_token";
 
 #[derive(Default, Debug)]
 pub struct CookieJar {
-    pub (crate) store: RwLock<cookie_store::CookieStore>,
+    pub(crate) store: RwLock<cookie_store::CookieStore>,
 }
 
 impl CookieJar {
     /// Stores the session cookies for the given pubky
-    /// 
+    ///
     pub(crate) fn store_session_after_signup(
         &self,
         response: &Response,
         pubky: &PublicKey,
     ) -> Result<(), anyhow::Error> {
         // Extract the session cookies from the response
-        let set_cookie_headers = response.headers().iter().filter_map(|(header_name, header_value)| {
-            if header_name != "set-cookie" {
-                return None;
-            };
+        let set_cookie_headers =
+            response
+                .headers()
+                .iter()
+                .filter_map(|(header_name, header_value)| {
+                    if header_name != "set-cookie" {
+                        return None;
+                    };
 
-            Some(header_value)
-        });
+                    Some(header_value)
+                });
         let parsed_cookies = set_cookie_headers.filter_map(|header_value| {
             let value_str = match std::str::from_utf8(header_value.as_bytes()) {
                 Ok(value) => value,
                 Err(_) => return None,
             };
-            Some(cookie::Cookie::parse(value_str.to_string())
-                        .ok()?
-                        .into_owned())
+            Some(
+                cookie::Cookie::parse(value_str.to_string())
+                    .ok()?
+                    .into_owned(),
+            )
         });
         let session_cookie_names = vec![pubky.to_string(), JWT_COOKIE_NAME.to_string()];
-        let session_cookies = parsed_cookies.filter(|cookie| session_cookie_names.contains(&cookie.name().to_string()));
+        let session_cookies = parsed_cookies
+            .filter(|cookie| session_cookie_names.contains(&cookie.name().to_string()));
 
         // Store the session cookies in the cookie jar
         let mut jar = self
@@ -59,7 +66,7 @@ impl CookieJar {
             tracing::debug!(?cookie, "Storing coookie after signup");
             cookie.set_domain(domain.clone()); // Set them to the domain of the user, not the homeserver
             jar.insert_raw(&cookie, &url)?;
-        };
+        }
 
         Ok(())
     }
@@ -77,18 +84,17 @@ impl CookieJar {
             .map_err(|e| anyhow::anyhow!("Failed to lock inner_jar: {e}"))?;
         for cookie_name in cookie_names {
             jar.remove(&domain, "/", &cookie_name);
-        };
+        }
 
         Ok(())
     }
 }
 
-
 /// Implement the CookieStore trait for the CookieJar
-/// 
+///
 /// The official implementation is using `unwrap()` all over the place, so we need to do the same here.
 /// https://github.com/seanmonstar/reqwest/blob/master/src/cookie.rs#L179
-/// 
+///
 impl CookieStore for CookieJar {
     fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &HeaderValue>, url: &url::Url) {
         let iter = cookie_headers.filter_map(|val| {

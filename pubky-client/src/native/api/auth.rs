@@ -88,7 +88,9 @@ impl Client {
         // NOT_FOUND is the old deprecated behaviour of the homeserver.
         // UNAUTHORIZED is going to be the new behaviour of the homeserver.
         // Check the `SessionRequiredLayer` in the homeserver for more details.
-        if response.status() == StatusCode::UNAUTHORIZED || response.status() == StatusCode::NOT_FOUND {
+        if response.status() == StatusCode::UNAUTHORIZED
+            || response.status() == StatusCode::NOT_FOUND
+        {
             return Ok(None);
         }
 

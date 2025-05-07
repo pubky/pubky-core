@@ -62,12 +62,11 @@ impl DataDir for MockDataDir {
     fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair> {
         Ok(self.keypair.clone())
     }
-    
-    fn create_jwt_public_key_if_not_exist(&self) -> anyhow::Result<super::es256_keypair::ES256KeyPair> {
+
+    fn create_jwt_public_key_if_not_exist(
+        &self,
+    ) -> anyhow::Result<super::es256_keypair::ES256KeyPair> {
         let main_homeserver_secret = self.keypair.secret_key();
         super::es256_keypair::ES256KeyPair::derive_from_main_secret_key(&main_homeserver_secret)
     }
-
- 
 }
-
