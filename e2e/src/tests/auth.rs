@@ -95,9 +95,13 @@ async fn disabled_user() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Make sure the user cannot read their own file
+    // Make sure the user get rejected when trying to do anything requiring auth
     let response = client.get(file_url.clone()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Make sure the user cannot sign in
+    let session = client.signin(&keypair).await;
+    assert!(session.is_err());
 
     // Make sure the user cannot write to their own file
     let response = client
@@ -108,9 +112,25 @@ async fn disabled_user() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    // Make sure the user cannot sign in
-    let session = client.signin(&keypair).await;
-    assert!(session.is_err());
+
+    // Let's have a look from another users perspective
+    let client2 = testnet.pubky_client_builder().build().unwrap();
+    let keypair2 = Keypair::random();
+
+    // Create a new user
+    client2
+        .signup(&keypair2, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    client2.session(&keypair2.public_key()).await.unwrap().unwrap();
+
+    // Access the file from the disabled user
+    let response = client.get(file_url.clone()).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+
+
 }
 
 #[tokio::test]

@@ -6,7 +6,6 @@ use axum::{
     http::{Request, StatusCode},
 };
 use futures_util::future::BoxFuture;
-use pkarr::PublicKey;
 use pubky_common::session::Session;
 use reqwest::Method;
 use std::{convert::Infallible, task::Poll};
@@ -133,7 +132,7 @@ fn authorize(
         },
     };
     if user.disabled {
-        return unauthorized_err;
+        return Err(Error::with_status(StatusCode::FORBIDDEN));
     }
 
     Ok((session, id))
