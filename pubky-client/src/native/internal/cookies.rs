@@ -83,6 +83,12 @@ impl CookieJar {
     }
 }
 
+
+/// Implement the CookieStore trait for the CookieJar
+/// 
+/// The official implementation is using `unwrap()` all over the place, so we need to do the same here.
+/// https://github.com/seanmonstar/reqwest/blob/master/src/cookie.rs#L179
+/// 
 impl CookieStore for CookieJar {
     fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &HeaderValue>, url: &url::Url) {
         let iter = cookie_headers.filter_map(|val| {
@@ -93,7 +99,7 @@ impl CookieStore for CookieJar {
 
         self.store
             .write()
-            .unwrap()
+            .expect("Failed to lock inner_jar")
             .store_response_cookies(iter, url);
     }
 
@@ -101,7 +107,7 @@ impl CookieStore for CookieJar {
         let s = self
             .store
             .read()
-            .unwrap()
+            .expect("Failed to lock inner_jar")
             .get_request_values(url)
             .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
