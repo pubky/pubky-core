@@ -122,7 +122,7 @@ fn authorize(
         }
     };
 
-    let session = match state
+    let (session, _id) = match state
         .session_manager
         .extract_session_from_cookies(cookies)
     {
@@ -149,10 +149,4 @@ fn authorize(
     }
 
     return Err(Error::with_status(StatusCode::FORBIDDEN));
-}
-
-pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {
-    cookies
-        .get(&public_key.to_string())
-        .map(|c| c.value().to_string())
 }

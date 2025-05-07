@@ -1,34 +1,24 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use tower_cookies::Cookies;
+use axum::{extract::State, response::IntoResponse};
 
 use crate::core::{
-    err_if_user_is_invalid::err_if_user_is_invalid, error::{Error, Result}, extractors::PubkyHost, sessions::session_secret_from_cookies, AppState
+    error::Result,
+    sessions::UserSession,
+    AppState,
 };
 
-pub async fn session(
-    State(state): State<AppState>,
-    cookies: Cookies,
-    pubky: PubkyHost,
-) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
-    let session = match state.session_manager.extract_session_from_cookies(&cookies) {
-        Some(session) => session,
-        None => {
-            return Err(Error::with_status(StatusCode::NOT_FOUND));
-        }
-    };
+/// Get the information about the current session.
+pub async fn get_session(UserSession { session, .. }: UserSession) -> Result<impl IntoResponse> {
     Ok(session.serialize())
 }
+
+
 pub async fn signout(
     State(mut state): State<AppState>,
-    cookies: Cookies,
-    pubky: PubkyHost,
+    UserSession { id, .. }: UserSession,
 ) -> Result<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
-        state.db.delete_session(&secret)?;
-    }
+    state.db.delete_session(&id)?;
 
     // Idempotent Success Response (200 OK)
     Ok(())

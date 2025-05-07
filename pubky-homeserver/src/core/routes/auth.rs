@@ -120,6 +120,8 @@ fn create_session_and_cookies(
 
     // First, the legacy cookie.
     // Set to jwt. Previously, this was the session id itself.
+    // We are doing this to keep supporting old pubky clients 
+    // that only support the legacy cookie name. Sev 7th of May 2025
     let mut cookie = Cookie::new(public_key.to_string(), jwt.to_string());
     cookie.set_path("/");
     if is_secure(host) {

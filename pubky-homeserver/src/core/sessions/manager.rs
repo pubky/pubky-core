@@ -50,9 +50,10 @@ impl SessionManager {
     }
 
     /// Extracts the session from the cookie(s).
-    pub fn extract_session_from_cookies(&self, cookies: &Cookies) -> Option<Session> {
+    pub fn extract_session_from_cookies(&self, cookies: &Cookies) -> Option<(Session, SessionId)> {
         let session_id = self.extract_session_id_from_cookies(cookies)?;
-        self.db.get_session(&session_id).ok()?
+        let session = self.db.get_session(&session_id).ok()??;
+        Some((session, session_id))
     }
 
     /// Extracts the session ID from the legacy cookie.

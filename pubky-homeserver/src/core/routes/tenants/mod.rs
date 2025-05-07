@@ -9,13 +9,13 @@ use axum::{
     Router,
 };
 
-use crate::core::{sessions::AuthorizationLayer, AppState};
+use crate::core::{sessions::{AuthorizationLayer, SessionRequiredLayer}, AppState};
 
 pub mod read;
 pub mod session;
 pub mod write;
 
-pub fn router(state: AppState) -> Router<AppState> {
+pub fn router(state: AppState) -> Router<AppState> {    
     Router::new()
         // - Datastore routes
         .route("/pub/", get(read::get))
@@ -24,8 +24,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/pub/{*path}", put(write::put))
         .route("/pub/{*path}", delete(write::delete))
         // - Session routes
-        .route("/session", get(session::session))
-        .route("/session", delete(session::signout))
+        .route("/session", get(session::get_session).layer(SessionRequiredLayer::new(state.clone())))
+        .route("/session", delete(session::signout).layer(SessionRequiredLayer::new(state.clone())))
         // Layers
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
