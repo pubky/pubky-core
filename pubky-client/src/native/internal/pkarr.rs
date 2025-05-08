@@ -1,12 +1,35 @@
 use anyhow::Result;
 use pkarr::{
     dns::rdata::{RData, SVCB},
+    errors::QueryError,
     Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
 use std::time::Duration;
 
 use super::super::Client;
+
+// sleep for native
+#[cfg(not(wasm_browser))]
+use tokio::time::sleep;
+// sleep for wasm
+#[cfg(wasm_browser)]
+use gloo_timers::future::sleep;
+
+/// Helper returns true if this error (or any of its sources) is one of our
+/// three recoverable `QueryError`s with simple retrial.
+fn should_retry(err: &anyhow::Error) -> bool {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<QueryError>())
+        .any(|q| {
+            matches!(
+                q,
+                QueryError::Timeout
+                    | QueryError::NoClosestNodes
+                    | QueryError::DhtErrorResponse(_, _)
+            )
+        })
+}
 
 /// The strategy to decide whether to (re)publish a homeserver record.
 pub(crate) enum PublishStrategy {
@@ -30,16 +53,16 @@ impl Client {
         host: Option<&str>,
         strategy: PublishStrategy,
     ) -> Result<()> {
-        // Resolve the most recent record.
+        // 1) Resolve the most recent record.
         let existing = self.pkarr.resolve_most_recent(&keypair.public_key()).await;
 
-        // Determine which host we should be using.
+        // 2) Determine which host we should be using.
         let host_str = match Self::determine_host(host, existing.as_ref()) {
             Some(host) => host,
             None => return Ok(()),
         };
 
-        // Calculate the age of the existing record.
+        // 3) Calculate age of the existing record.
         let packet_age = match existing {
             Some(ref record) => {
                 let elapsed = Timestamp::now() - record.timestamp();
@@ -48,15 +71,27 @@ impl Client {
             None => Duration::from_secs(u64::MAX), // Use max duration if no record exists.
         };
 
-        // Determine if we should publish based on the given strategy.
-        let should_publish = match strategy {
-            PublishStrategy::Force => true,
-            PublishStrategy::IfOlderThan => packet_age > self.max_record_age,
-        };
+        // 4) Should we publish?
+        let should_publish =
+            matches!(strategy, PublishStrategy::Force) || packet_age > self.max_record_age;
 
-        if should_publish {
-            self.publish_homeserver_inner(keypair, &host_str, existing)
-                .await?;
+        if !should_publish {
+            return Ok(());
+        }
+
+        // 5) Retry loop: up to 3 attempts, 1s back-off, only on specific QueryErrors.
+        for attempt in 1..=3 {
+            match self
+                .publish_homeserver_inner(keypair, &host_str, existing.clone())
+                .await
+            {
+                Ok(()) => break,
+                Err(e) if should_retry(&e) && attempt < 3 => {
+                    sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
         }
 
         Ok(())
