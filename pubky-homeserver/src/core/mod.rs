@@ -6,6 +6,7 @@ mod key_republisher;
 mod layers;
 mod periodic_backup;
 mod routes;
+mod sessions;
 mod user_keys_republisher;
 
 pub use error::*;

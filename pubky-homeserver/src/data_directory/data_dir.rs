@@ -1,4 +1,4 @@
-use super::ConfigToml;
+use super::{es256_keypair, ConfigToml};
 use dyn_clone::DynClone;
 use std::path::Path;
 
@@ -20,6 +20,10 @@ pub trait DataDir: std::fmt::Debug + DynClone + Send + Sync {
     /// Reads the secret file from the data directory.
     /// Creates a new secret file if it doesn't exist.
     fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair>;
+
+    /// Creates a new JWT keypair as pem files if it doesn't exist.
+    /// Returns the derived keypair.
+    fn create_jwt_public_key_if_not_exist(&self) -> anyhow::Result<es256_keypair::ES256KeyPair>;
 }
 
 dyn_clone::clone_trait_object!(DataDir);

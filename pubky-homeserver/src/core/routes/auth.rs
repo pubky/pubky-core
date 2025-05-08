@@ -12,11 +12,11 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
-use base32::{encode, Alphabet};
+use axum_extra::extract::Host;
+
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
+use pubky_common::capabilities::Capability;
 use std::collections::HashMap;
 use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 
@@ -27,7 +27,6 @@ use tower_cookies::{cookie::SameSite, Cookie, Cookies};
 /// 4) Create a session and set the cookie (using the shared helper).
 pub async fn signup(
     State(state): State<AppState>,
-    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
     Host(host): Host,
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
@@ -65,20 +64,12 @@ pub async fn signup(
     wtxn.commit()?;
 
     // 5) Create session & set cookie
-    create_session_and_cookie(
-        &state,
-        cookies,
-        &host,
-        public_key,
-        token.capabilities(),
-        user_agent,
-    )
+    create_session_and_cookies(&state, cookies, &host, public_key, token.capabilities())
 }
 
 /// Fails if user doesn’t exist, otherwise logs them in by creating a session.
 pub async fn signin(
     State(state): State<AppState>,
-    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
     Host(host): Host,
     body: Bytes,
@@ -99,48 +90,29 @@ pub async fn signin(
         ));
     }
 
-    // 3) Create the session & set cookie
-    create_session_and_cookie(
-        &state,
-        cookies,
-        &host,
-        public_key,
-        token.capabilities(),
-        user_agent,
-    )
+    // 3) Create the session & set cookies
+    create_session_and_cookies(&state, cookies, &host, public_key, token.capabilities())
 }
 
-/// Creates and stores a session, sets the cookie, returns session as JSON/string.
-fn create_session_and_cookie(
+/// Creates and stores a session, sets the cookies, returns session as JSON/string.
+fn create_session_and_cookies(
     state: &AppState,
     cookies: Cookies,
     host: &str,
     public_key: &PublicKey,
     capabilities: &[Capability],
-    user_agent: Option<TypedHeader<UserAgent>>,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(public_key, &state.db)?;
 
-    // 1) Create session
-    let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
-    let session = Session::new(
-        public_key,
-        capabilities,
-        user_agent.map(|ua| ua.to_string()),
-    )
-    .serialize();
+    let (_session_id, session, jwt) = state
+        .session_manager
+        .create_session(public_key, capabilities)?;
 
-    // 2) Insert session into DB
-    let mut wtxn = state.db.env.write_txn()?;
-    state
-        .db
-        .tables
-        .sessions
-        .put(&mut wtxn, &session_secret, &session)?;
-    wtxn.commit()?;
-
-    // 3) Build and set cookie
-    let mut cookie = Cookie::new(public_key.to_string(), session_secret);
+    // First, the legacy cookie.
+    // Set to jwt. Previously, this was the session id itself.
+    // We are doing this to keep supporting old pubky clients
+    // that only support the legacy cookie name. Sev 7th of May 2025
+    let mut cookie = Cookie::new(public_key.to_string(), jwt.to_string());
     cookie.set_path("/");
     if is_secure(host) {
         cookie.set_secure(true);
@@ -149,7 +121,17 @@ fn create_session_and_cookie(
     cookie.set_http_only(true);
     cookies.add(cookie);
 
-    Ok(session)
+    // Second, the new standardized cookie with the name `auth_token`.
+    let mut cookie = Cookie::new("auth_token", jwt.to_string());
+    cookie.set_path("/");
+    if is_secure(host) {
+        cookie.set_secure(true);
+        cookie.set_same_site(SameSite::None);
+    }
+    cookie.set_http_only(true);
+    cookies.add(cookie);
+
+    Ok(session.serialize())
 }
 
 /// Assuming that if the server is addressed by anything other than
