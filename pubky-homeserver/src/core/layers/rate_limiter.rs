@@ -5,7 +5,6 @@
 //! https://github.com/benwis/tower-governor/issues/49.
 //!
 //! So we implement our own rate limiter here.
-//! Maybe one day we can switch to tower_governor if the issue is fixed.
 //!
 
 use axum::http::HeaderMap;
@@ -36,7 +35,7 @@ use governor::{Jitter, RateLimiter};
 /// Supports rate limiting by request count and by upload speed.
 ///
 /// Requires a `PubkyHostLayer` to be applied first.
-/// This is the way to extract the user pubkey as the key for the rate limiter.
+/// Used to extract the user pubkey as the key for the rate limiter.
 ///
 /// Returns 400 BAD REQUEST if the user pubkey aka pubky-host cannot be extracted.
 ///
@@ -53,11 +52,11 @@ impl RateLimiterLayer {
         if limits.is_empty() {
             tracing::info!("Rate limiting is disabled.");
         } else {
-            let limit_str = limits
+            let limits_str = limits
                 .iter()
                 .map(|limit| format!("\"{limit}\""))
                 .collect::<Vec<String>>();
-            tracing::info!("Rate limits configured: {}", limit_str.join(", "));
+            tracing::info!("Rate limits configured: {}", limits_str.join(", "));
         }
         Self { limits }
     }
@@ -85,13 +84,13 @@ impl<S> Layer<S> for RateLimiterLayer {
     }
 }
 
+/// A tuple of a path limit and the actual governor rate limiter.
 #[derive(Debug, Clone)]
 struct LimitTuple(
     pub PathLimit,
     pub Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
 );
 
-/// Middleware that performs authorization checks for write operations.
 #[derive(Debug, Clone)]
 pub struct RateLimiterMiddleware<S> {
     inner: S,
@@ -101,7 +100,7 @@ pub struct RateLimiterMiddleware<S> {
 impl<S> RateLimiterMiddleware<S> {
     /// Extract the key from the request.
     ///
-    /// The key is the ip address of the client
+    /// The key is either the ip address of the client
     /// or the user pubkey.
     fn extract_key(&self, req: &Request<Body>, limit: &PathLimit) -> anyhow::Result<String> {
         match limit.key {
@@ -151,6 +150,8 @@ impl<S> RateLimiterMiddleware<S> {
                 async move {
                     match chunk {
                         Ok(actual_chunk) => {
+                            // Round up to the nearest kilobyte.
+                            // important: If the chunk is 10 bytes only, it will be rounded up to 1 kb.
                             let kilobytes = actual_chunk.len().div_ceil(1024);
                             for _ in 0..kilobytes {
                                 // Check each kilobyte
@@ -207,17 +208,20 @@ where
     fn call(&mut self, mut req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
 
+        // Match the request path + method to the defined limits.
         let limits = self.get_limit_matches(&req);
-
         if limits.is_empty() {
             // No limits matched, so we can just call the next layer.
             return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
         }
 
+        // Go through all the limits and check if we need to throttle or reject the request.
         for limit in limits {
             let key = match self.extract_key(&req, &limit.0) {
                 Ok(key) => key,
                 Err(e) => {
+                    // Failed to extract the key, so we reject the request.
+                    // This should only happen if the pubky-host couldn't be extracted.
                     tracing::warn!(
                         "{} {} Failed to extract key for rate limiting: {}",
                         limit.0.path.0,
@@ -241,20 +245,15 @@ where
                 }
                 RateUnit::Request => {
                     // Request limiting is enabled, so we need to limit the number of requests.
-                    match limit.1.check_key(&key) {
-                        Ok(()) => {
-                            // Rate limit not exceeded, call the next layer. All good.
-                        }
-                        Err(e) => {
-                            tracing::debug!("Rate limit exceeded for {key}: {}", e);
-                            return Box::pin(async move {
-                                Ok(Error::new(
-                                    StatusCode::TOO_MANY_REQUESTS,
-                                    Some("rate limit exceeded".to_string()),
-                                )
-                                .into_response())
-                            });
-                        }
+                    if let Err(e) = limit.1.check_key(&key) {
+                        tracing::debug!("Rate limit exceeded for {key}: {}", e);
+                        return Box::pin(async move {
+                            Ok(Error::new(
+                                StatusCode::TOO_MANY_REQUESTS,
+                                Some("rate limit exceeded".to_string()),
+                            )
+                            .into_response())
+                        });
                     };
                 }
             };
@@ -266,7 +265,6 @@ where
 }
 
 // From https://github.com/benwis/tower-governor/blob/main/src/key_extractor.rs#L121
-
 const X_REAL_IP: &str = "x-real-ip";
 const X_FORWARDED_FOR: &str = "x-forwarded-for";
 
