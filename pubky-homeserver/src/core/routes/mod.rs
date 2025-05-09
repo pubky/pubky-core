@@ -9,13 +9,14 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use governor::Quota;
 use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use crate::core::AppState;
+use crate::{core::AppState, AppContext};
 
-use super::layers::{pubky_host::PubkyHostLayer, trace::with_trace_layer};
+use super::layers::{ip_rate_limiter::IpRateLimiterLayer, pubky_host::PubkyHostLayer, trace::with_trace_layer};
 
 mod auth;
 mod feed;
@@ -25,20 +26,20 @@ mod tenants;
 static HOMESERVER_VERSION: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 
-fn base() -> Router<AppState> {
+fn base(context: &AppContext) -> Router<AppState> {
     Router::new()
         .route("/", get(root::handler))
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
         // Events
-        .route("/events/", get(feed::feed))
+        .route("/events/", get(feed::feed).layer(IpRateLimiterLayer::new(context.config_toml.drive.feed_rate_limit.clone())))
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).
 }
 
-pub fn create_app(state: AppState) -> Router {
-    let app = base()
+pub fn create_app(state: AppState, context: &AppContext) -> Router {
+    let app = base(context)
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())

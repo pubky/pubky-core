@@ -4,7 +4,7 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{domain_port::DomainPort, Domain, SignupMode};
+use super::{domain_port::DomainPort, quota_config::QuotaConfig, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -54,6 +54,7 @@ pub struct PkdnsToml {
 pub struct DriveToml {
     pub pubky_listen_socket: SocketAddr,
     pub icann_listen_socket: SocketAddr,
+    pub feed_rate_limit: Option<QuotaConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
