@@ -146,9 +146,8 @@ impl ConfigToml {
             .lines()
             .map(|line| {
                 let trimmed = line.trim_start();
-                let is_title = trimmed.starts_with('[');
                 let is_comment = trimmed.starts_with('#');
-                if !is_title && !is_comment && !trimmed.is_empty() {
+                if !is_comment && !trimmed.is_empty() {
                     format!("# {}", line)
                 } else {
                     line.to_string()
