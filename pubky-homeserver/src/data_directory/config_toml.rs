@@ -81,7 +81,6 @@ pub struct ConfigToml {
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
-
 }
 
 impl Default for ConfigToml {

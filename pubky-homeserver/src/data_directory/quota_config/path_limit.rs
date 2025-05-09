@@ -51,8 +51,7 @@ impl<'de> Deserialize<'de> for HttpMethod {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        HttpMethod::from_str(&s)
-            .map_err(serde::de::Error::custom)
+        HttpMethod::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -109,8 +108,7 @@ impl<'de> Deserialize<'de> for PathRegex {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        PathRegex::from_str(&s)
-            .map_err(serde::de::Error::custom)
+        PathRegex::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -138,7 +136,12 @@ pub struct PathLimit {
 impl PathLimit {
     /// Create a new path limit.
     pub fn new(path: Regex, method: Method, quota: QuotaValue, key: LimitKey) -> Self {
-        Self { path: PathRegex(path), method: HttpMethod(method), quota, key }
+        Self {
+            path: PathRegex(path),
+            method: HttpMethod(method),
+            quota,
+            key,
+        }
     }
 }
 
@@ -148,12 +151,10 @@ impl std::fmt::Display for PathLimit {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_http_method_serde() {
         let method = Method::GET;

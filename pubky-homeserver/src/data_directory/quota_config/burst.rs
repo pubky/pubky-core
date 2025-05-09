@@ -23,11 +23,13 @@ impl FromStr for Burst {
                 Err(_) => Err(format!("Failed to parse burst value from '{}'", s)),
             }
         } else {
-            Err(format!("Invalid burst format: '{}', expected {{number}}burst", s))
+            Err(format!(
+                "Invalid burst format: '{}', expected {{number}}burst",
+                s
+            ))
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -50,5 +52,4 @@ mod tests {
         let burst = Burst(NonZeroU32::new(10).unwrap());
         assert_eq!(burst.to_string(), "10burst");
     }
-    
 }

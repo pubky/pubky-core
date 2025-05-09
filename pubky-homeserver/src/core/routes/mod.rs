@@ -15,7 +15,9 @@ use tower_http::cors::CorsLayer;
 
 use crate::{core::AppState, AppContext};
 
-use super::layers::{pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer};
+use super::layers::{
+    pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
+};
 
 mod auth;
 mod feed;
@@ -44,7 +46,9 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
         .layer(PubkyHostLayer)
-        .layer(RateLimiterLayer::new(context.config_toml.drive.rate_limits.clone()))
+        .layer(RateLimiterLayer::new(
+            context.config_toml.drive.rate_limits.clone(),
+        ))
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.

@@ -53,7 +53,10 @@ impl RateLimiterLayer {
         if limits.is_empty() {
             tracing::info!("Rate limiting is disabled.");
         } else {
-            let limit_str = limits.iter().map(|limit| format!("\"{limit}\"")).collect::<Vec<String>>();
+            let limit_str = limits
+                .iter()
+                .map(|limit| format!("\"{limit}\""))
+                .collect::<Vec<String>>();
             tracing::info!("Rate limits configured: {}", limit_str.join(", "));
         }
         Self { limits }
@@ -64,19 +67,29 @@ impl<S> Layer<S> for RateLimiterLayer {
     type Service = RateLimiterMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        let tuples = self.limits.iter().map(|path| {
-            let limiter = Arc::new(RateLimiter::keyed(governor::Quota::from(
-                path.quota.clone(),
-            )));
-            LimitTuple(path.clone(), limiter)
-        }).collect();
+        let tuples = self
+            .limits
+            .iter()
+            .map(|path| {
+                let limiter = Arc::new(RateLimiter::keyed(governor::Quota::from(
+                    path.quota.clone(),
+                )));
+                LimitTuple(path.clone(), limiter)
+            })
+            .collect();
 
-        RateLimiterMiddleware { inner, limits: tuples }
+        RateLimiterMiddleware {
+            inner,
+            limits: tuples,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-struct LimitTuple(pub PathLimit, pub Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>);
+struct LimitTuple(
+    pub PathLimit,
+    pub Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
+);
 
 /// Middleware that performs authorization checks for write operations.
 #[derive(Debug, Clone)]
@@ -97,7 +110,7 @@ impl<S> RateLimiterMiddleware<S> {
                 let headers = req.headers();
                 maybe_x_forwarded_for(headers)
                     .or_else(|| maybe_x_real_ip(headers))
-                    .or_else(|| maybe_connect_info(&req))
+                    .or_else(|| maybe_connect_info(req))
                     .map(|ip| ip.to_string())
                     .ok_or(anyhow::anyhow!("Failed to extract ip."))
             }
@@ -119,18 +132,18 @@ impl<S> RateLimiterMiddleware<S> {
     fn throttle_upload(
         &self,
         req: Request<Body>,
-        key: &String,
+        key: &str,
         limiter: &Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
     ) -> Request<Body> {
         let (parts, body) = req.into_parts();
 
         let body_stream = body.into_data_stream();
         let limiter = limiter.clone();
-        let key = key.clone();
+        let key = key.to_string();
         let throttled = body_stream
             .map(move |chunk| {
                 let limiter = limiter.clone();
-                let key = key.clone();
+                let key = key.to_string();
                 let jitter = Jitter::new(
                     Duration::from_millis(25),
                     Duration::from_millis(500),
@@ -141,13 +154,13 @@ impl<S> RateLimiterMiddleware<S> {
                             let kilobytes = actual_chunk.len().div_ceil(1024);
                             for _ in 0..kilobytes {
                                 // Check each kilobyte
-                                if let Err(_) = limiter
+                                if limiter
                                     .until_key_n_ready_with_jitter(
                                         &key,
                                         NonZero::new(1).expect("1 is always non zero"),
                                         jitter,
                                     )
-                                    .await
+                                    .await.is_err()
                                 {
                                     unreachable!("Rate limiting is based on the number of kilobytes, not bytes. So 1 kb should always be allowed.");
                                 };
@@ -166,12 +179,13 @@ impl<S> RateLimiterMiddleware<S> {
 
     /// Get the limits that match the request.
     fn get_limit_matches(&self, req: &Request<Body>) -> Vec<&LimitTuple> {
-        self.limits.iter().filter(|limit| {
-            limit.0.path.0.is_match(req.uri().path()) &&
-            limit.0.method.0 == req.method()
-        }).collect()
+        self.limits
+            .iter()
+            .filter(|limit| {
+                limit.0.path.0.is_match(req.uri().path()) && limit.0.method.0 == req.method()
+            })
+            .collect()
     }
-
 }
 
 impl<S> Service<Request<Body>> for RateLimiterMiddleware<S>
@@ -204,7 +218,12 @@ where
             let key = match self.extract_key(&req, &limit.0) {
                 Ok(key) => key,
                 Err(e) => {
-                    tracing::warn!("{} {} Failed to extract key for rate limiting: {}", limit.0.path.0, limit.0.method.0, e);
+                    tracing::warn!(
+                        "{} {} Failed to extract key for rate limiting: {}",
+                        limit.0.path.0,
+                        limit.0.method.0,
+                        e
+                    );
                     return Box::pin(async move {
                         Ok(Error::new(
                             StatusCode::BAD_REQUEST,
@@ -239,10 +258,10 @@ where
                     };
                 }
             };
-        };
+        }
 
         // All good. Call the next layer.
-        return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
+        Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) })
     }
 }
 
@@ -334,7 +353,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_throttle_upload() {
-        let path_limit = PathLimit::new(Regex::new(r"/upload").unwrap(), Method::POST, "1kb/s".parse().unwrap(), LimitKey::Ip);
+        let path_limit = PathLimit::new(
+            Regex::new(r"/upload").unwrap(),
+            Method::POST,
+            "1kb/s".parse().unwrap(),
+            LimitKey::Ip,
+        );
         let socket = start_server(vec![path_limit]).await;
 
         fn upload_data(socket: SocketAddr, kilobytes: usize) -> JoinHandle<()> {
@@ -366,7 +390,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_limit_parallel_requests_with_ip_key() {
-        let path_limit = PathLimit::new(Regex::new(r"/upload").unwrap(), Method::POST, "1r/m".parse().unwrap(), LimitKey::Ip);
+        let path_limit = PathLimit::new(
+            Regex::new(r"/upload").unwrap(),
+            Method::POST,
+            "1r/m".parse().unwrap(),
+            LimitKey::Ip,
+        );
         let socket = start_server(vec![path_limit]).await;
 
         fn send_request(socket: SocketAddr) -> JoinHandle<Response> {
@@ -393,7 +422,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_limit_parallel_requests_with_user_key() {
-        let path_limit = PathLimit::new(Regex::new(r"/upload").unwrap(), Method::POST, "1r/m".parse().unwrap(), LimitKey::User);
+        let path_limit = PathLimit::new(
+            Regex::new(r"/upload").unwrap(),
+            Method::POST,
+            "1r/m".parse().unwrap(),
+            LimitKey::User,
+        );
         let socket = start_server(vec![path_limit]).await;
 
         fn send_request(socket: SocketAddr, user_pubkey: PublicKey) -> JoinHandle<Response> {

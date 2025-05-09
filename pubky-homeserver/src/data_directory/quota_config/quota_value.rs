@@ -1,11 +1,11 @@
-use std::{num::NonZeroU32, time::Duration};
 use std::fmt;
 use std::str::FromStr;
+use std::{num::NonZeroU32, time::Duration};
 
 use super::{Burst, RateUnit, TimeUnit};
 
 /// Quota value
-/// 
+///
 /// Examples:
 /// - 5r/m-1burst
 /// - 5r/s-1burst
@@ -25,25 +25,27 @@ pub struct QuotaValue {
     pub time_unit: TimeUnit,
 }
 
-
 impl From<QuotaValue> for governor::Quota {
     /// Get the quota to do the actual rate limiting.
-    /// 
+    ///
     /// Important: The speed quotas are always in kilobytes, not bytes.
     /// Counting bytes is not practical.
-    /// 
+    ///
     fn from(value: QuotaValue) -> Self {
         let rate_count = value.rate.get();
         let rate_unit = value.rate_unit.multiplier().get();
-        let rate = NonZeroU32::new(rate_count * rate_unit).expect("Is always non-zero because rate count and rate unit multiplier are non-zero");
+        let rate = NonZeroU32::new(rate_count * rate_unit)
+            .expect("Is always non-zero because rate count and rate unit multiplier are non-zero");
         let time_unit = Duration::from_secs(value.time_unit.multiplier_in_seconds().get() as u64);
         let replenish_1_per = time_unit / rate.get();
 
         let base_quota = governor::Quota::with_period(replenish_1_per)
-        .expect("Is always non-zero because replenish_1_per is non-zero");
+            .expect("Is always non-zero because replenish_1_per is non-zero");
         if let Some(burst) = &value.burst {
             let burst_size = NonZeroU32::new(burst.0.get() * value.rate_unit.multiplier().get())
-            .expect("Is always non-zero because burst is non-zero and rate unit multiplier is non-zero");
+                .expect(
+                "Is always non-zero because burst is non-zero and rate unit multiplier is non-zero",
+            );
             base_quota.allow_burst(burst_size)
         } else {
             base_quota.allow_burst(rate)
@@ -68,7 +70,7 @@ impl FromStr for QuotaValue {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Split by '-' to get rate part and burst part (if any)
         let parts: Vec<&str> = s.split('-').collect();
-        
+
         let rate_part = parts[0];
         let burst = if parts.len() > 1 {
             // Parse burst if present
@@ -80,7 +82,10 @@ impl FromStr for QuotaValue {
         // Split rate part by '/' to get rate+unit and time unit
         let rate_parts: Vec<&str> = rate_part.split('/').collect();
         if rate_parts.len() != 2 {
-            return Err(format!("Invalid rate format: '{}', expected {{rate}}{{unit}}/{{time}}", rate_part));
+            return Err(format!(
+                "Invalid rate format: '{}', expected {{rate}}{{unit}}/{{time}}",
+                rate_part
+            ));
         }
 
         let rate_with_unit = rate_parts[0];
@@ -89,7 +94,7 @@ impl FromStr for QuotaValue {
         // Find the boundary between rate digits and unit
         let rate_digit_end = rate_with_unit
             .chars()
-            .position(|c| !c.is_digit(10))
+            .position(|c| !c.is_ascii_digit())
             .unwrap_or(rate_with_unit.len());
 
         if rate_digit_end == 0 {
@@ -99,7 +104,8 @@ impl FromStr for QuotaValue {
         let rate_str = &rate_with_unit[..rate_digit_end];
         let rate_unit_str = &rate_with_unit[rate_digit_end..];
 
-        let rate = rate_str.parse::<NonZeroU32>()
+        let rate = rate_str
+            .parse::<NonZeroU32>()
             .map_err(|_| format!("Failed to parse rate from '{}'", rate_str))?;
         let rate_unit = RateUnit::from_str(rate_unit_str)?;
 
@@ -142,31 +148,62 @@ mod tests {
     #[test]
     fn test_get_quota() {
         let quota = QuotaValue::from_str("5r/s").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_second(NonZeroU32::new(5).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_second(NonZeroU32::new(5).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5r/s-1burst").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_second(NonZeroU32::new(5).unwrap()).allow_burst(NonZeroU32::new(1).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_second(NonZeroU32::new(5).unwrap())
+                .allow_burst(NonZeroU32::new(1).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5r/m").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_minute(NonZeroU32::new(5).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_minute(NonZeroU32::new(5).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5r/m-1burst").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_minute(NonZeroU32::new(5).unwrap()).allow_burst(NonZeroU32::new(1).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_minute(NonZeroU32::new(5).unwrap())
+                .allow_burst(NonZeroU32::new(1).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5r/m").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_minute(NonZeroU32::new(5).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_minute(NonZeroU32::new(5).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5kb/s").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_second(NonZeroU32::new(5).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_second(NonZeroU32::new(5).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5kb/s-1burst").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_second(NonZeroU32::new(5).unwrap()).allow_burst(NonZeroU32::new(1).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_second(NonZeroU32::new(5).unwrap())
+                .allow_burst(NonZeroU32::new(1).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5mb/m").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_minute(NonZeroU32::new(5*1024).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_minute(NonZeroU32::new(5 * 1024).unwrap())
+        );
 
         let quota = QuotaValue::from_str("5mb/m-1burst").unwrap();
-        assert_eq!(governor::Quota::from(quota), governor::Quota::per_minute(NonZeroU32::new(5*1024).unwrap()).allow_burst(NonZeroU32::new(1*1024).unwrap()));
+        assert_eq!(
+            governor::Quota::from(quota),
+            governor::Quota::per_minute(NonZeroU32::new(5 * 1024).unwrap())
+                .allow_burst(NonZeroU32::new(1 * 1024).unwrap())
+        );
     }
 
     #[test]
@@ -181,7 +218,10 @@ mod tests {
         // Test with burst
         let quota = QuotaValue::from_str("10mb/m-2burst").unwrap();
         assert_eq!(quota.rate, NonZeroU32::new(10).unwrap());
-        assert_eq!(quota.rate_unit, RateUnit::SpeedRateUnit(SpeedRateUnit::Megabyte));
+        assert_eq!(
+            quota.rate_unit,
+            RateUnit::SpeedRateUnit(SpeedRateUnit::Megabyte)
+        );
         assert_eq!(quota.time_unit, TimeUnit::Minute);
         assert_eq!(quota.burst, Some(Burst(NonZeroU32::new(2).unwrap())));
     }
@@ -225,4 +265,3 @@ mod tests {
         assert!(QuotaValue::from_str("5r/s-2").is_err());
     }
 }
-

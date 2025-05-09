@@ -15,10 +15,14 @@ pub enum TimeUnit {
 
 impl std::fmt::Display for TimeUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            TimeUnit::Second => "s",
-            TimeUnit::Minute => "m",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                TimeUnit::Second => "s",
+                TimeUnit::Minute => "m",
+            }
+        )
     }
 }
 

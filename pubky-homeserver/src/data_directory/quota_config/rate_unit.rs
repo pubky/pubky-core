@@ -25,11 +25,15 @@ impl SpeedRateUnit {
 
 impl std::fmt::Display for SpeedRateUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            SpeedRateUnit::Kilobyte => "kb",
-            SpeedRateUnit::Megabyte => "mb",
-            SpeedRateUnit::Gigabyte => "gb",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                SpeedRateUnit::Kilobyte => "kb",
+                SpeedRateUnit::Megabyte => "mb",
+                SpeedRateUnit::Gigabyte => "gb",
+            }
+        )
     }
 }
 
@@ -46,7 +50,6 @@ impl FromStr for SpeedRateUnit {
     }
 }
 
-
 /// The unit of the rate.
 ///
 /// Examples:
@@ -58,17 +61,21 @@ impl FromStr for SpeedRateUnit {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RateUnit {
     /// Request
-    Request, 
+    Request,
     /// Speed rate unit
     SpeedRateUnit(SpeedRateUnit),
-} 
+}
 
 impl std::fmt::Display for RateUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            RateUnit::Request => "r".to_string(),
-            RateUnit::SpeedRateUnit(unit) => unit.to_string(),
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                RateUnit::Request => "r".to_string(),
+                RateUnit::SpeedRateUnit(unit) => unit.to_string(),
+            }
+        )
     }
 }
 
@@ -78,11 +85,9 @@ impl FromStr for RateUnit {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "r" => Ok(RateUnit::Request),
-            other => {
-                match SpeedRateUnit::from_str(other) {
-                    Ok(unit) => Ok(RateUnit::SpeedRateUnit(unit)),
-                    Err(_) => Err(format!("Invalid rate unit: {}", s)),
-                }
+            other => match SpeedRateUnit::from_str(other) {
+                Ok(unit) => Ok(RateUnit::SpeedRateUnit(unit)),
+                Err(_) => Err(format!("Invalid rate unit: {}", s)),
             },
         }
     }

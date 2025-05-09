@@ -4,9 +4,9 @@ mod domain;
 mod domain_port;
 mod mock_data_dir;
 mod persistent_data_dir;
-mod signup_mode;
 /// Quota configuration for the TomlConfig.
 pub mod quota_config;
+mod signup_mode;
 
 pub use config_toml::{ConfigReadError, ConfigToml};
 pub use data_dir::DataDir;
