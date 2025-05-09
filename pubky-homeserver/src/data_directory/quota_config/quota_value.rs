@@ -13,7 +13,7 @@ use super::{Burst, RateUnit, TimeUnit};
 /// - 5mb/m-1burst
 /// - 5gb/s
 /// - 5tb/s-1burst
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuotaValue {
     /// The burst size.
     pub burst: Option<Burst>,

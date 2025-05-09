@@ -33,6 +33,7 @@ httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
 pkarr = { workspace = true, features = ["dht", "lmdb-cache", "tls"] }
 pubky-common = { version = "0.4.0-rc.0", path = "../pubky-common" }
+regex = "1.10.4"
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"
@@ -56,6 +57,7 @@ reqwest = "0.12.15"
 governor = "0.10.0"
 async-trait = "0.1.88"
 chrono = { version = "0.4", features = ["serde"] }
+http = "1.3.1"
 
 
 [dev-dependencies]

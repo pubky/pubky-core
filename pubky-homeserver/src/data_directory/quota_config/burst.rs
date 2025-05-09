@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 
 /// Burst size
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Burst(pub NonZeroU32);
 
 impl fmt::Display for Burst {

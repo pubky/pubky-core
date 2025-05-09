@@ -9,13 +9,13 @@ use axum::{
     Router,
 };
 
-use crate::{core::{layers::{authz::AuthorizationLayer, rate_limiter::RateLimiterLayer}, AppState}, quota_config::QuotaConfig, AppContext};
+use crate::core::{layers::authz::AuthorizationLayer, AppState};
 
 pub mod read;
 pub mod session;
 pub mod write;
 
-pub fn router(state: AppState, context: &AppContext) -> Router<AppState> {
+pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         // - Datastore routes
         .route("/pub/", get(read::get))

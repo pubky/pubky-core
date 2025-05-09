@@ -4,7 +4,7 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{domain_port::DomainPort, quota_config::QuotaConfig, Domain, SignupMode};
+use super::{domain_port::DomainPort, quota_config::PathLimit, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -54,6 +54,7 @@ pub struct PkdnsToml {
 pub struct DriveToml {
     pub pubky_listen_socket: SocketAddr,
     pub icann_listen_socket: SocketAddr,
+    pub rate_limits: Vec<PathLimit>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -80,6 +81,7 @@ pub struct ConfigToml {
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
+
 }
 
 impl Default for ConfigToml {
@@ -216,12 +218,13 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_relay_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
+        assert_eq!(c.drive.rate_limits, vec![]);
     }
 
     #[test]
     fn test_sample_config() {
         // Validate that the sample config can be parsed
-        ConfigToml::from_str(SAMPLE_CONFIG).expect("Embedded config.default.toml must be valid");
+        ConfigToml::from_str(SAMPLE_CONFIG).expect("Embedded config.sample.toml must be valid");
     }
 
     #[test]

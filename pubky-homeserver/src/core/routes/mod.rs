@@ -15,7 +15,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::{core::AppState, AppContext};
 
-use super::layers::{rate_limiter::RateLimiterLayer, pubky_host::PubkyHostLayer, trace::with_trace_layer};
+use super::layers::{pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer};
 
 mod auth;
 mod feed;
@@ -25,7 +25,7 @@ mod tenants;
 static HOMESERVER_VERSION: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 
-fn base(context: &AppContext) -> Router<AppState> {
+fn base() -> Router<AppState> {
     Router::new()
         .route("/", get(root::handler))
         .route("/signup", post(auth::signup))
@@ -38,15 +38,17 @@ fn base(context: &AppContext) -> Router<AppState> {
 }
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
-    let app = base(context)
-        .merge(tenants::router(state.clone(), context))
+    let app = base()
+        .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
+        .layer(PubkyHostLayer)
+        .layer(RateLimiterLayer::new(context.config_toml.drive.rate_limits.clone()))
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS).layer(PubkyHostLayer)
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
 }
 
 // Middleware to add a `Server` header to all responses

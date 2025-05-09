@@ -27,26 +27,36 @@ use tower::{Layer, Service};
 use crate::core::error::Result;
 use crate::core::extractors::PubkyHost;
 use crate::core::Error;
-use crate::quota_config::{LimitKey, QuotaConfig, RateUnit};
+use crate::quota_config::{LimitKey, PathLimit, RateUnit};
 use futures_util::StreamExt;
 use governor::{Jitter, RateLimiter};
 
 /// A Tower Layer to handle general rate limiting.
-/// 
+///
 /// Supports rate limiting by request count and by upload speed.
-/// 
-/// The key for the rate limiter can be the ip address or the user pubkey.
+///
+/// Requires a `PubkyHostLayer` to be applied first.
+/// This is the way to extract the user pubkey as the key for the rate limiter.
+///
+/// Returns 400 BAD REQUEST if the user pubkey aka pubky-host cannot be extracted.
+///
 #[derive(Debug, Clone)]
 pub struct RateLimiterLayer {
-    config: Option<QuotaConfig>,
+    limits: Vec<PathLimit>,
 }
 
 impl RateLimiterLayer {
     /// Create a new rate limiter layer with the given quota.
-    /// 
+    ///
     /// If quota is None, rate limiting is disabled.
-    pub fn new(quota: Option<QuotaConfig>) -> Self {
-        Self { config: quota }
+    pub fn new(limits: Vec<PathLimit>) -> Self {
+        if limits.is_empty() {
+            tracing::info!("Rate limiting is disabled.");
+        } else {
+            let limit_str = limits.iter().map(|limit| format!("\"{limit}\"")).collect::<Vec<String>>();
+            tracing::info!("Rate limits configured: {}", limit_str.join(", "));
+        }
+        Self { limits }
     }
 }
 
@@ -54,38 +64,34 @@ impl<S> Layer<S> for RateLimiterLayer {
     type Service = RateLimiterMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        let values = self.config.clone().map(|config| LimiterValues {
-            limiter: Arc::new(RateLimiter::keyed(governor::Quota::from(
-                config.quota_value.clone(),
-            ))),
-            config,
-        });
-        RateLimiterMiddleware { inner, values }
+        let tuples = self.limits.iter().map(|path| {
+            let limiter = Arc::new(RateLimiter::keyed(governor::Quota::from(
+                path.quota.clone(),
+            )));
+            LimitTuple(path.clone(), limiter)
+        }).collect();
+
+        RateLimiterMiddleware { inner, limits: tuples }
     }
 }
 
-
-/// Just a simple struct to store the limiter and the config.
 #[derive(Debug, Clone)]
-struct LimiterValues {
-    pub config: QuotaConfig,
-    pub limiter: Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
-}
+struct LimitTuple(pub PathLimit, pub Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>);
 
 /// Middleware that performs authorization checks for write operations.
 #[derive(Debug, Clone)]
 pub struct RateLimiterMiddleware<S> {
     inner: S,
-    values: Option<LimiterValues>,
+    limits: Vec<LimitTuple>,
 }
 
 impl<S> RateLimiterMiddleware<S> {
     /// Extract the key from the request.
-    /// 
+    ///
     /// The key is the ip address of the client
     /// or the user pubkey.
-    fn extract_key(&self, req: &Request<Body>, values: &LimiterValues) -> Option<String> {
-        match values.config.limit_key {
+    fn extract_key(&self, req: &Request<Body>, limit: &PathLimit) -> anyhow::Result<String> {
+        match limit.key {
             LimitKey::Ip => {
                 // Extract the ip address from the request.
                 let headers = req.headers();
@@ -93,14 +99,16 @@ impl<S> RateLimiterMiddleware<S> {
                     .or_else(|| maybe_x_real_ip(headers))
                     .or_else(|| maybe_connect_info(&req))
                     .map(|ip| ip.to_string())
+                    .ok_or(anyhow::anyhow!("Failed to extract ip."))
             }
             LimitKey::User => {
                 // Extract the user pubkey from the request.
-                req.extensions().get::<PubkyHost>().map(|pk| pk.public_key().to_string())
-
+                req.extensions()
+                    .get::<PubkyHost>()
+                    .map(|pk| pk.public_key().to_string())
+                    .ok_or(anyhow::anyhow!("Failed to extract user pubkey."))
             }
         }
-
     }
 
     /// Throttle the upload body.
@@ -155,6 +163,15 @@ impl<S> RateLimiterMiddleware<S> {
         let new_body = Body::from_stream(throttled);
         Request::from_parts(parts, new_body)
     }
+
+    /// Get the limits that match the request.
+    fn get_limit_matches(&self, req: &Request<Body>) -> Vec<&LimitTuple> {
+        self.limits.iter().filter(|limit| {
+            limit.0.path.0.is_match(req.uri().path()) &&
+            limit.0.method.0 == req.method()
+        }).collect()
+    }
+
 }
 
 impl<S> Service<Request<Body>> for RateLimiterMiddleware<S>
@@ -173,61 +190,59 @@ where
         self.inner.poll_ready(cx).map_err(|_| unreachable!()) // `Infallible` conversion
     }
 
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
 
-        let values = match &self.values {
-            Some(values) => values,
-            None => {
-                // No rate limiting is enabled, so we can just call the next layer.
-                return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
-            }
+        let limits = self.get_limit_matches(&req);
+
+        if limits.is_empty() {
+            // No limits matched, so we can just call the next layer.
+            return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
+        }
+
+        for limit in limits {
+            let key = match self.extract_key(&req, &limit.0) {
+                Ok(key) => key,
+                Err(e) => {
+                    tracing::warn!("{} {} Failed to extract key for rate limiting: {}", limit.0.path.0, limit.0.method.0, e);
+                    return Box::pin(async move {
+                        Ok(Error::new(
+                            StatusCode::BAD_REQUEST,
+                            Some("Failed to extract key for rate limiting".to_string()),
+                        )
+                        .into_response())
+                    });
+                }
+            };
+
+            match limit.0.quota.rate_unit {
+                RateUnit::SpeedRateUnit(_) => {
+                    // Speed limiting is enabled, so we need to throttle the upload.
+                    req = self.throttle_upload(req, &key, &limit.1);
+                }
+                RateUnit::Request => {
+                    // Request limiting is enabled, so we need to limit the number of requests.
+                    match limit.1.check_key(&key) {
+                        Ok(()) => {
+                            // Rate limit not exceeded, call the next layer. All good.
+                        }
+                        Err(e) => {
+                            tracing::debug!("Rate limit exceeded for {key}: {}", e);
+                            return Box::pin(async move {
+                                Ok(Error::new(
+                                    StatusCode::TOO_MANY_REQUESTS,
+                                    Some("rate limit exceeded".to_string()),
+                                )
+                                .into_response())
+                            });
+                        }
+                    };
+                }
+            };
         };
 
-        let key = match self.extract_key(&req, values) {
-            Some(key) => key,
-            None => {
-                tracing::warn!("Failed to extract ip from header for rate limiting.");
-                return Box::pin(async move {
-                    Ok(Error::new(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Some(
-                            "Failed to extract key (ip or user pubkey) for rate limiting."
-                                .to_string(),
-                        ),
-                    )
-                    .into_response())
-                });
-            }
-        };
-
-        match values.config.quota_value.rate_unit {
-            RateUnit::SpeedRateUnit(_) => {
-                // Speed limiting is enabled, so we need to throttle the upload.
-                let req = self.throttle_upload(req, &key, &values.limiter);
-                return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
-            }
-            RateUnit::Request => {
-                // Request limiting is enabled, so we need to limit the number of requests.
-                match values.limiter.check_key(&key) {
-                    Ok(()) => {
-                        // Rate limit not exceeded, call the next layer
-                        return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
-                    }
-                    Err(e) => {
-                        tracing::warn!("Rate limit exceeded for {key}: {}", e);
-                        return Box::pin(async move {
-                            Ok(Error::new(
-                                StatusCode::TOO_MANY_REQUESTS,
-                                Some("rate limit exceeded".to_string()),
-                            )
-                            .into_response())
-                        });
-                    }
-                };
-                
-            }
-        };
+        // All good. Call the next layer.
+        return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
     }
 }
 
@@ -264,7 +279,9 @@ mod tests {
 
     use axum::{routing::post, Router};
     use axum_server::Server;
+    use http::Method;
     use pkarr::{Keypair, PublicKey};
+    use regex::Regex;
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
 
@@ -283,10 +300,12 @@ mod tests {
     }
 
     // Start a server with the given quota config on a random port.
-    async fn start_server(config: QuotaConfig) -> SocketAddr {
+    async fn start_server(config: Vec<PathLimit>) -> SocketAddr {
         let app = Router::new().route(
             "/upload",
-            post(upload_handler).layer(RateLimiterLayer::new(Some(config))).layer(PubkyHostLayer),
+            post(upload_handler)
+                .layer(RateLimiterLayer::new(config))
+                .layer(PubkyHostLayer),
         );
 
         // Create a TCP listener to bind to the socket first
@@ -315,8 +334,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_throttle_upload() {
-        let config: QuotaConfig = "ip:1kb/s".parse().unwrap();
-        let socket = start_server(config).await;
+        let path_limit = PathLimit::new(Regex::new(r"/upload").unwrap(), Method::POST, "1kb/s".parse().unwrap(), LimitKey::Ip);
+        let socket = start_server(vec![path_limit]).await;
 
         fn upload_data(socket: SocketAddr, kilobytes: usize) -> JoinHandle<()> {
             tokio::spawn(async move {
@@ -343,13 +362,12 @@ mod tests {
 
         let time_taken = start.elapsed();
         assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
-        println!("Time taken: {:?}", time_taken);
     }
 
     #[tokio::test]
     async fn test_limit_parallel_requests_with_ip_key() {
-        let config: QuotaConfig = "ip:1r/m".parse().unwrap();
-        let socket = start_server(config).await;
+        let path_limit = PathLimit::new(Regex::new(r"/upload").unwrap(), Method::POST, "1r/m".parse().unwrap(), LimitKey::Ip);
+        let socket = start_server(vec![path_limit]).await;
 
         fn send_request(socket: SocketAddr) -> JoinHandle<Response> {
             tokio::spawn(async move {
@@ -375,8 +393,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_limit_parallel_requests_with_user_key() {
-        let config: QuotaConfig = "user:1r/m".parse().unwrap();
-        let socket = start_server(config).await;
+        let path_limit = PathLimit::new(Regex::new(r"/upload").unwrap(), Method::POST, "1r/m".parse().unwrap(), LimitKey::User);
+        let socket = start_server(vec![path_limit]).await;
 
         fn send_request(socket: SocketAddr, user_pubkey: PublicKey) -> JoinHandle<Response> {
             tokio::spawn(async move {
@@ -398,15 +416,7 @@ mod tests {
         let handle3 = send_request(socket, user2_pubkey.clone());
 
         // Wait for the uploads to finish
-        let (
-            res1, 
-            res2,
-            res3
-        ) = tokio::try_join!(
-            handle1, 
-            handle2,
-            handle3
-        ).unwrap();
+        let (res1, res2, res3) = tokio::try_join!(handle1, handle2, handle3).unwrap();
         assert_eq!(res1.status(), StatusCode::CREATED);
         assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(res3.status(), StatusCode::CREATED);

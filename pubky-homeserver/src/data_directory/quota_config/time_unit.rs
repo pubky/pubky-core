@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 /// Examples:
 /// - "s" -> second
 /// - "m" -> minute
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimeUnit {
     /// Second
     Second,

@@ -1,6 +1,6 @@
 use std::{num::NonZeroU32, str::FromStr};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SpeedRateUnit {
     /// Kilobyte
     Kilobyte,
@@ -55,7 +55,7 @@ impl FromStr for SpeedRateUnit {
 /// - "mb" -> megabyte
 /// - "gb" -> gigabyte
 /// - "tb" -> terabyte
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RateUnit {
     /// Request
     Request, 

@@ -2,7 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 /// The key to limit the quota on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LimitKey {
     /// Limit on the user id    
     User,
@@ -28,5 +28,23 @@ impl FromStr for LimitKey {
             "ip" => Ok(LimitKey::Ip),
             _ => Err(format!("Invalid limit key: {}", s)),
         }
+    }
+}
+
+impl serde::Serialize for LimitKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for LimitKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        LimitKey::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
