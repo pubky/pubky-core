@@ -49,7 +49,7 @@ impl Client {
                 .expect("testnet relays are valid urls")
         });
 
-        let mut client = builder.build().expect("testnet build should be infallibl");
+        let mut client = builder.build().expect("testnet build should be infallible");
 
         client.testnet = true;
 

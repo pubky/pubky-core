@@ -13,9 +13,11 @@ use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use crate::core::AppState;
+use crate::{core::AppState, AppContext};
 
-use super::layers::{pubky_host::PubkyHostLayer, trace::with_trace_layer};
+use super::layers::{
+    pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
+};
 
 mod auth;
 mod feed;
@@ -37,16 +39,20 @@ fn base() -> Router<AppState> {
     // TODO: maybe add to a separate router (drive router?).
 }
 
-pub fn create_app(state: AppState) -> Router {
+pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
+        .layer(PubkyHostLayer)
+        .layer(RateLimiterLayer::new(
+            context.config_toml.drive.rate_limits.clone(),
+        ))
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS).layer(PubkyHostLayer)
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
 }
 
 // Middleware to add a `Server` header to all responses

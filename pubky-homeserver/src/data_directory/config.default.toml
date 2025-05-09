@@ -3,9 +3,11 @@ signup_mode = "token_required"
 lmdb_backup_interval_s = 0
 user_storage_quota_mb = 0
 
+
 [drive]
 pubky_listen_socket = "127.0.0.1:6287"
 icann_listen_socket = "127.0.0.1:6286"
+rate_limits = []
 
 [admin]
 listen_socket = "127.0.0.1:6288"
