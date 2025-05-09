@@ -35,35 +35,35 @@ test('Auth: basic', async (t) => {
   }
 })
 
-// test("Auth: multi-user (cookies)", async (t) => {
-//   const client = Client.testnet();
+test("Auth: multi-user (cookies)", async (t) => {
+  const client = Client.testnet();
 
-//   const alice = Keypair.random()
-//   const bob = Keypair.random()
+  const alice = Keypair.random()
+  const bob = Keypair.random()
 
-//   const aliceSignupToken = await createSignupToken(client)
-//   const bobSignupToken = await createSignupToken(client)
+  const aliceSignupToken = await createSignupToken(client)
+  const bobSignupToken = await createSignupToken(client)
 
-//   await client.signup(alice, HOMESERVER_PUBLICKEY , aliceSignupToken)
+  await client.signup(alice, HOMESERVER_PUBLICKEY , aliceSignupToken)
 
-//   let session = await client.session(alice.publicKey())
-//   t.ok(session, "signup")
+  let session = await client.session(alice.publicKey())
+  t.ok(session, "signup")
 
-//   {
-//     await client.signup(bob, HOMESERVER_PUBLICKEY, bobSignupToken)
+  {
+    await client.signup(bob, HOMESERVER_PUBLICKEY, bobSignupToken)
 
-//     const session = await client.session(bob.publicKey())
-//     t.ok(session, "signup")
-//   }
+    const session = await client.session(bob.publicKey())
+    t.ok(session, "signup")
+  }
 
-//   session = await client.session(alice.publicKey());
-//   t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in")
+  session = await client.session(alice.publicKey());
+  t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in")
 
-//   await client.signout(bob.publicKey());
+  await client.signout(bob.publicKey());
 
-//   session = await client.session(alice.publicKey());
-//   t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in after signout of bob")
-// })
+  session = await client.session(alice.publicKey());
+  t.is(session.pubky().z32(), alice.publicKey().z32(), "alice is still signed in after signout of bob")
+})
 
 test("Auth: 3rd party signin", async (t) => {
   let keypair = Keypair.random();
