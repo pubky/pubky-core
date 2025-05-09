@@ -9,14 +9,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use governor::Quota;
 use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
 use crate::{core::AppState, AppContext};
 
-use super::layers::{ip_rate_limiter::IpRateLimiterLayer, pubky_host::PubkyHostLayer, trace::with_trace_layer};
+use super::layers::{rate_limiter::RateLimiterLayer, pubky_host::PubkyHostLayer, trace::with_trace_layer};
 
 mod auth;
 mod feed;
@@ -32,7 +31,7 @@ fn base(context: &AppContext) -> Router<AppState> {
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
         // Events
-        .route("/events/", get(feed::feed).layer(IpRateLimiterLayer::new(context.config_toml.drive.feed_rate_limit.clone())))
+        .route("/events/", get(feed::feed).layer(RateLimiterLayer::new(context.config_toml.drive.feed_rate_limit.clone())))
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).

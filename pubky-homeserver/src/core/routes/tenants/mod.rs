@@ -9,19 +9,20 @@ use axum::{
     Router,
 };
 
-use crate::core::{layers::authz::AuthorizationLayer, AppState};
+use crate::{core::{layers::{authz::AuthorizationLayer, rate_limiter::RateLimiterLayer}, AppState}, quota_config::QuotaConfig};
 
 pub mod read;
 pub mod session;
 pub mod write;
 
 pub fn router(state: AppState) -> Router<AppState> {
+    let config: QuotaConfig = "ip:1kb/m".parse().unwrap();
     Router::new()
         // - Datastore routes
         .route("/pub/", get(read::get))
         .route("/pub/{*path}", get(read::get))
         .route("/pub/{*path}", head(read::head))
-        .route("/pub/{*path}", put(write::put))
+        .route("/pub/{*path}", put(write::put).layer(RateLimiterLayer::new(Some(config))))
         .route("/pub/{*path}", delete(write::delete))
         // - Session routes
         .route("/session", get(session::session))
