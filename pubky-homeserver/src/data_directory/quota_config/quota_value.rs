@@ -15,9 +15,13 @@ use super::{Burst, RateUnit, TimeUnit};
 /// - 5tb/s-1burst
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuotaValue {
+    /// The burst size.
     pub burst: Option<Burst>,
+    /// The rate.
     pub rate: NonZeroU32,
+    /// The unit of the rate.
     pub rate_unit: RateUnit,
+    /// The unit of the time.
     pub time_unit: TimeUnit,
 }
 

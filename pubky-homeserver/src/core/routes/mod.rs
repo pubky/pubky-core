@@ -31,7 +31,7 @@ fn base(context: &AppContext) -> Router<AppState> {
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
         // Events
-        .route("/events/", get(feed::feed).layer(RateLimiterLayer::new(context.config_toml.drive.feed_rate_limit.clone())))
+        .route("/events/", get(feed::feed))
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).
@@ -39,7 +39,7 @@ fn base(context: &AppContext) -> Router<AppState> {
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base(context)
-        .merge(tenants::router(state.clone()))
+        .merge(tenants::router(state.clone(), context))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))

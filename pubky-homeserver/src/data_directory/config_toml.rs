@@ -54,7 +54,6 @@ pub struct PkdnsToml {
 pub struct DriveToml {
     pub pubky_listen_socket: SocketAddr,
     pub icann_listen_socket: SocketAddr,
-    pub feed_rate_limit: Option<QuotaConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

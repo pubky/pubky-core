@@ -14,7 +14,6 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use chrono::Local;
 use futures_util::future::BoxFuture;
 use governor::clock::QuantaClock;
 use governor::state::keyed::DashMapStateStore;
@@ -26,12 +25,17 @@ use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 
 use crate::core::error::Result;
+use crate::core::extractors::PubkyHost;
 use crate::core::Error;
-use crate::quota_config::{QuotaConfig, RateUnit};
+use crate::quota_config::{LimitKey, QuotaConfig, RateUnit};
 use futures_util::StreamExt;
 use governor::{Jitter, RateLimiter};
 
-/// A Tower Layer to handle ip rate limiting.
+/// A Tower Layer to handle general rate limiting.
+/// 
+/// Supports rate limiting by request count and by upload speed.
+/// 
+/// The key for the rate limiter can be the ip address or the user pubkey.
 #[derive(Debug, Clone)]
 pub struct RateLimiterLayer {
     config: Option<QuotaConfig>,
@@ -39,11 +43,8 @@ pub struct RateLimiterLayer {
 
 impl RateLimiterLayer {
     /// Create a new rate limiter layer with the given quota.
-    ///
-    /// Example quota:
-    /// ```
-    /// let quota = Quota::per_minute(1.try_into().unwrap()).allow_burst(1.try_into().unwrap());
-    /// ```
+    /// 
+    /// If quota is None, rate limiting is disabled.
     pub fn new(quota: Option<QuotaConfig>) -> Self {
         Self { config: quota }
     }
@@ -63,10 +64,12 @@ impl<S> Layer<S> for RateLimiterLayer {
     }
 }
 
+
+/// Just a simple struct to store the limiter and the config.
 #[derive(Debug, Clone)]
 struct LimiterValues {
     pub config: QuotaConfig,
-    pub limiter: Arc<RateLimiter<IpAddr, DashMapStateStore<IpAddr>, QuantaClock>>,
+    pub limiter: Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
 }
 
 /// Middleware that performs authorization checks for write operations.
@@ -77,11 +80,27 @@ pub struct RateLimiterMiddleware<S> {
 }
 
 impl<S> RateLimiterMiddleware<S> {
-    fn extract_key(&self, req: &Request<Body>) -> Option<IpAddr> {
-        let headers = req.headers();
-        maybe_x_forwarded_for(headers)
-            .or_else(|| maybe_x_real_ip(headers))
-            .or_else(|| maybe_connect_info(&req))
+    /// Extract the key from the request.
+    /// 
+    /// The key is the ip address of the client
+    /// or the user pubkey.
+    fn extract_key(&self, req: &Request<Body>, values: &LimiterValues) -> Option<String> {
+        match values.config.limit_key {
+            LimitKey::Ip => {
+                // Extract the ip address from the request.
+                let headers = req.headers();
+                maybe_x_forwarded_for(headers)
+                    .or_else(|| maybe_x_real_ip(headers))
+                    .or_else(|| maybe_connect_info(&req))
+                    .map(|ip| ip.to_string())
+            }
+            LimitKey::User => {
+                // Extract the user pubkey from the request.
+                req.extensions().get::<PubkyHost>().map(|pk| pk.public_key().to_string())
+
+            }
+        }
+
     }
 
     /// Throttle the upload body.
@@ -92,8 +111,8 @@ impl<S> RateLimiterMiddleware<S> {
     fn throttle_upload(
         &self,
         req: Request<Body>,
-        key: &IpAddr,
-        limiter: &Arc<RateLimiter<IpAddr, DashMapStateStore<IpAddr>, QuantaClock>>,
+        key: &String,
+        limiter: &Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
     ) -> Request<Body> {
         let (parts, body) = req.into_parts();
 
@@ -103,9 +122,9 @@ impl<S> RateLimiterMiddleware<S> {
         let throttled = body_stream
             .map(move |chunk| {
                 let limiter = limiter.clone();
-                let key = key;
+                let key = key.clone();
                 let jitter = Jitter::new(
-                    Duration::from_millis(50),
+                    Duration::from_millis(25),
                     Duration::from_millis(500),
                 );
                 async move {
@@ -117,7 +136,7 @@ impl<S> RateLimiterMiddleware<S> {
                                 if let Err(_) = limiter
                                     .until_key_n_ready_with_jitter(
                                         &key,
-                                        NonZero::new(1).expect("1024 is not zero"),
+                                        NonZero::new(1).expect("1 is always non zero"),
                                         jitter,
                                     )
                                     .await
@@ -165,7 +184,7 @@ where
             }
         };
 
-        let key = match self.extract_key(&req) {
+        let key = match self.extract_key(&req, values) {
             Some(key) => key,
             None => {
                 tracing::warn!("Failed to extract ip from header for rate limiting.");
@@ -245,8 +264,11 @@ mod tests {
 
     use axum::{routing::post, Router};
     use axum_server::Server;
+    use pkarr::{Keypair, PublicKey};
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
+
+    use crate::core::layers::pubky_host::PubkyHostLayer;
 
     use super::*;
 
@@ -264,7 +286,7 @@ mod tests {
     async fn start_server(config: QuotaConfig) -> SocketAddr {
         let app = Router::new().route(
             "/upload",
-            post(upload_handler).layer(RateLimiterLayer::new(Some(config))),
+            post(upload_handler).layer(RateLimiterLayer::new(Some(config))).layer(PubkyHostLayer),
         );
 
         // Create a TCP listener to bind to the socket first
@@ -312,6 +334,7 @@ mod tests {
 
         let start = Instant::now();
         // Spawn in the background to test 2 uploads in parallel
+        // Upload 3kb each
         let handle1 = upload_data(socket, 3);
         let handle2 = upload_data(socket, 3);
 
@@ -324,7 +347,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_limit_parallel_requests() {
+    async fn test_limit_parallel_requests_with_ip_key() {
         let config: QuotaConfig = "ip:1r/m".parse().unwrap();
         let socket = start_server(config).await;
 
@@ -345,8 +368,47 @@ mod tests {
         let handle2 = send_request(socket);
 
         // Wait for the uploads to finish
-        let (res1, res2) = tokio::try_join!(handle1, handle2).expect("Should not fail");
+        let (res1, res2) = tokio::try_join!(handle1, handle2).unwrap();
         assert_eq!(res1.status(), StatusCode::CREATED);
         assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn test_limit_parallel_requests_with_user_key() {
+        let config: QuotaConfig = "user:1r/m".parse().unwrap();
+        let socket = start_server(config).await;
+
+        fn send_request(socket: SocketAddr, user_pubkey: PublicKey) -> JoinHandle<Response> {
+            tokio::spawn(async move {
+                let client = Client::new();
+                let response = client
+                    .post(format!("http://{}/upload?pubky-host={user_pubkey}", socket))
+                    .send()
+                    .await
+                    .unwrap();
+                response
+            })
+        }
+
+        // Spawn in the background to test 2 uploads in parallel
+        let user1_pubkey = Keypair::random().public_key();
+        let handle1 = send_request(socket, user1_pubkey.clone());
+        let handle2 = send_request(socket, user1_pubkey.clone());
+        let user2_pubkey = Keypair::random().public_key();
+        let handle3 = send_request(socket, user2_pubkey.clone());
+
+        // Wait for the uploads to finish
+        let (
+            res1, 
+            res2,
+            res3
+        ) = tokio::try_join!(
+            handle1, 
+            handle2,
+            handle3
+        ).unwrap();
+        assert_eq!(res1.status(), StatusCode::CREATED);
+        assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(res3.status(), StatusCode::CREATED);
     }
 }
