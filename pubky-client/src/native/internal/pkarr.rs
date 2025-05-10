@@ -1,7 +1,6 @@
 use anyhow::Result;
 use pkarr::{
     dns::rdata::{RData, SVCB},
-    errors::QueryError,
     Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
@@ -15,21 +14,6 @@ use tokio::time::sleep;
 // sleep for wasm
 #[cfg(wasm_browser)]
 use gloo_timers::future::sleep;
-
-/// Helper returns true if this error (or any of its sources) is one of our
-/// three recoverable `QueryError`s with simple retrial.
-fn should_retry(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|cause| cause.downcast_ref::<QueryError>())
-        .any(|q| {
-            matches!(
-                q,
-                QueryError::Timeout
-                    | QueryError::NoClosestNodes
-                    | QueryError::DhtErrorResponse(_, _)
-            )
-        })
-}
 
 /// The strategy to decide whether to (re)publish a homeserver record.
 pub(crate) enum PublishStrategy {
@@ -79,14 +63,15 @@ impl Client {
             return Ok(());
         }
 
-        // 5) Retry loop: up to 3 attempts, 1s back-off, only on specific QueryErrors.
-        for attempt in 1..=3 {
+        // 5) Experimental. Publish 5 times to cover more nodes. Only for experimentation during stress testing.
+        // We want to observe if this improves reliability of 1st PUT and Nexus indexing.
+        for i in 1..=5 {
             match self
                 .publish_homeserver_inner(keypair, &host_str, existing.clone())
                 .await
             {
-                Ok(()) => break,
-                Err(e) if should_retry(&e) && attempt < 3 => {
+                Ok(()) => continue,
+                Err(_) if i < 4 => {
                     sleep(Duration::from_secs(1)).await;
                     continue;
                 }
