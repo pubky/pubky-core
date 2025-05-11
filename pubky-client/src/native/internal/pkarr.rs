@@ -63,15 +63,15 @@ impl Client {
             return Ok(());
         }
 
-        // 5) Experimental. Publish 5 times to cover more nodes. Only for experimentation during stress testing.
+        // 5) Experimental. Publish 20 times to cover more nodes. Only for experimentation during stress testing.
         // We want to observe if this improves reliability of 1st PUT and Nexus indexing.
-        for i in 1..=5 {
+        for i in 1..=20 {
             match self
                 .publish_homeserver_inner(keypair, &host_str, existing.clone())
                 .await
             {
                 Ok(()) => continue,
-                Err(_) if i < 4 => {
+                Err(_) if i < 20 => {
                     sleep(Duration::from_secs(1)).await;
                     continue;
                 }
