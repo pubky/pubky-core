@@ -42,7 +42,7 @@ impl FromStr for SpeedRateUnit {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "kb" => Ok(SpeedRateUnit::Kilobyte),
             "mb" => Ok(SpeedRateUnit::Megabyte),
             "gb" => Ok(SpeedRateUnit::Gigabyte),
@@ -91,7 +91,7 @@ impl FromStr for RateUnit {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "r" => Ok(RateUnit::Request),
             other => match SpeedRateUnit::from_str(other) {
                 Ok(unit) => Ok(RateUnit::SpeedRateUnit(unit)),
