@@ -36,6 +36,8 @@ icann_listen_socket = "127.0.0.1:6286"
 # `key` defines what who is rate limited. 
 #  - "ip" limits based on the IP address.
 #  - "user" limits based on the user pubkey. Requires the endpoint to have authentication.
+# `burst` is a temporary allowance of quota that is added to the limit. 
+#   By default, burst is equal the quota rate.
 #
 # Limit login attempts to 20 requests per minute per IP. 
 [[drive.rate_limits]]
