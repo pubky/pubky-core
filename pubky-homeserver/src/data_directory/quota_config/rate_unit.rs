@@ -67,6 +67,13 @@ pub enum RateUnit {
     SpeedRateUnit(SpeedRateUnit),
 }
 
+impl RateUnit {
+    /// Returns true if the rate unit is a speed rate unit.
+    pub fn is_speed_rate_unit(&self) -> bool {
+        matches!(self, RateUnit::SpeedRateUnit(_))
+    }
+}
+
 impl std::fmt::Display for RateUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

@@ -2,21 +2,18 @@ use std::fmt;
 use std::str::FromStr;
 use std::{num::NonZeroU32, time::Duration};
 
-use super::{Burst, RateUnit, TimeUnit};
+use super::{RateUnit, TimeUnit};
 
 /// Quota value
 ///
 /// Examples:
-/// - 5r/m-1burst
-/// - 5r/s-1burst
+/// - 5r/m
+/// - 5r/s
 /// - 5kb/m
-/// - 5mb/m-1burst
+/// - 5mb/m
 /// - 5gb/s
-/// - 5tb/s-1burst
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuotaValue {
-    /// The burst size.
-    pub burst: Option<Burst>,
     /// The rate.
     pub rate: NonZeroU32,
     /// The unit of the rate.
@@ -41,26 +38,14 @@ impl From<QuotaValue> for governor::Quota {
 
         let base_quota = governor::Quota::with_period(replenish_1_per)
             .expect("Is always non-zero because replenish_1_per is non-zero");
-        if let Some(burst) = &value.burst {
-            let burst_size = NonZeroU32::new(burst.0.get() * value.rate_unit.multiplier().get())
-                .expect(
-                "Is always non-zero because burst is non-zero and rate unit multiplier is non-zero",
-            );
-            base_quota.allow_burst(burst_size)
-        } else {
-            base_quota.allow_burst(rate)
-        }
+        base_quota.allow_burst(rate)
     }
 }
 
+
 impl fmt::Display for QuotaValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let rate_str = format!("{}{}/{}", self.rate, self.rate_unit, self.time_unit);
-        if let Some(burst) = &self.burst {
-            write!(f, "{}-{}", rate_str, burst)
-        } else {
-            write!(f, "{}", rate_str)
-        }
+        write!(f, "{}{}/{}", self.rate, self.rate_unit, self.time_unit)
     }
 }
 
@@ -68,23 +53,12 @@ impl FromStr for QuotaValue {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Split by '-' to get rate part and burst part (if any)
-        let parts: Vec<&str> = s.split('-').collect();
-
-        let rate_part = parts[0];
-        let burst = if parts.len() > 1 {
-            // Parse burst if present
-            Some(Burst::from_str(parts[1])?)
-        } else {
-            None
-        };
-
         // Split rate part by '/' to get rate+unit and time unit
-        let rate_parts: Vec<&str> = rate_part.split('/').collect();
+        let rate_parts: Vec<&str> = s.split('/').collect();
         if rate_parts.len() != 2 {
             return Err(format!(
                 "Invalid rate format: '{}', expected {{rate}}{{unit}}/{{time}}",
-                rate_part
+                s
             ));
         }
 
@@ -110,7 +84,6 @@ impl FromStr for QuotaValue {
         let rate_unit = RateUnit::from_str(rate_unit_str)?;
 
         Ok(QuotaValue {
-            burst,
             rate,
             rate_unit,
             time_unit,
@@ -153,26 +126,6 @@ mod tests {
             governor::Quota::per_second(NonZeroU32::new(5).unwrap())
         );
 
-        let quota = QuotaValue::from_str("5r/s-1burst").unwrap();
-        assert_eq!(
-            governor::Quota::from(quota),
-            governor::Quota::per_second(NonZeroU32::new(5).unwrap())
-                .allow_burst(NonZeroU32::new(1).unwrap())
-        );
-
-        let quota = QuotaValue::from_str("5r/m").unwrap();
-        assert_eq!(
-            governor::Quota::from(quota),
-            governor::Quota::per_minute(NonZeroU32::new(5).unwrap())
-        );
-
-        let quota = QuotaValue::from_str("5r/m-1burst").unwrap();
-        assert_eq!(
-            governor::Quota::from(quota),
-            governor::Quota::per_minute(NonZeroU32::new(5).unwrap())
-                .allow_burst(NonZeroU32::new(1).unwrap())
-        );
-
         let quota = QuotaValue::from_str("5r/m").unwrap();
         assert_eq!(
             governor::Quota::from(quota),
@@ -185,24 +138,10 @@ mod tests {
             governor::Quota::per_second(NonZeroU32::new(5).unwrap())
         );
 
-        let quota = QuotaValue::from_str("5kb/s-1burst").unwrap();
-        assert_eq!(
-            governor::Quota::from(quota),
-            governor::Quota::per_second(NonZeroU32::new(5).unwrap())
-                .allow_burst(NonZeroU32::new(1).unwrap())
-        );
-
         let quota = QuotaValue::from_str("5mb/m").unwrap();
         assert_eq!(
             governor::Quota::from(quota),
             governor::Quota::per_minute(NonZeroU32::new(5 * 1024).unwrap())
-        );
-
-        let quota = QuotaValue::from_str("5mb/m-1burst").unwrap();
-        assert_eq!(
-            governor::Quota::from(quota),
-            governor::Quota::per_minute(NonZeroU32::new(5 * 1024).unwrap())
-                .allow_burst(NonZeroU32::new(1 * 1024).unwrap())
         );
     }
 
@@ -213,17 +152,15 @@ mod tests {
         assert_eq!(quota.rate, NonZeroU32::new(5).unwrap());
         assert_eq!(quota.rate_unit, RateUnit::Request);
         assert_eq!(quota.time_unit, TimeUnit::Second);
-        assert_eq!(quota.burst, None);
 
-        // Test with burst
-        let quota = QuotaValue::from_str("10mb/m-2burst").unwrap();
+        // Test with burst (should fail or be handled differently)
+        let quota = QuotaValue::from_str("10mb/m").unwrap();
         assert_eq!(quota.rate, NonZeroU32::new(10).unwrap());
         assert_eq!(
             quota.rate_unit,
             RateUnit::SpeedRateUnit(SpeedRateUnit::Megabyte)
         );
         assert_eq!(quota.time_unit, TimeUnit::Minute);
-        assert_eq!(quota.burst, Some(Burst(NonZeroU32::new(2).unwrap())));
     }
 
     #[test]
@@ -233,18 +170,16 @@ mod tests {
             rate: NonZeroU32::new(5).unwrap(),
             rate_unit: RateUnit::Request,
             time_unit: TimeUnit::Second,
-            burst: None,
         };
         assert_eq!(quota.to_string(), "5r/s");
 
-        // Test with burst
+        // Test with burst (should be displayed without burst)
         let quota = QuotaValue {
             rate: NonZeroU32::new(10).unwrap(),
             rate_unit: RateUnit::SpeedRateUnit(SpeedRateUnit::Megabyte),
             time_unit: TimeUnit::Minute,
-            burst: Some(Burst(NonZeroU32::new(2).unwrap())),
         };
-        assert_eq!(quota.to_string(), "10mb/m-2burst");
+        assert_eq!(quota.to_string(), "10mb/m");
     }
 
     #[test]
@@ -261,7 +196,7 @@ mod tests {
         // Invalid format: invalid time unit
         assert!(QuotaValue::from_str("5r/x").is_err());
 
-        // Invalid format: invalid burst
-        assert!(QuotaValue::from_str("5r/s-2").is_err());
+        // Invalid format: invalid burst (this test case might need to be removed or updated)
+        assert!(QuotaValue::from_str("5r/s-2burst").is_err());
     }
 }
