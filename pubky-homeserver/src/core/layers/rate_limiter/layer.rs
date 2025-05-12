@@ -335,7 +335,7 @@ mod tests {
         Router,
     };
     use axum_server::Server;
-    use http::Method;
+    use axum::http::Method;
     use pkarr::{Keypair, PublicKey};
     use regex::Regex;
     use reqwest::{Client, Response};

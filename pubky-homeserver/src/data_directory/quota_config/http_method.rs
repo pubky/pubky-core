@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-use http::Method;
+use axum::http::Method;
 use serde::{Deserialize, Serialize};
 
 /// A wrapper around http::Method to implement serde traits

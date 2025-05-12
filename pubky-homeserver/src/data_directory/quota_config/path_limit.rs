@@ -1,5 +1,5 @@
 use super::{HttpMethod, LimitKey, PathRegex, QuotaValue};
-use http::Method;
+use axum::http::Method;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;

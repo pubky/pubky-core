@@ -2390,7 +2390,6 @@ dependencies = [
  "heed",
  "hex",
  "hostname-validator",
- "http",
  "httpdate",
  "page_size",
  "pkarr",
