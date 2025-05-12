@@ -143,33 +143,53 @@ impl<S> RateLimiterMiddleware<S> {
             .map(move |chunk| {
                 let limiter = limiter.clone();
                 let key = key.to_string();
-                let jitter = Jitter::new(
+                // When the rate limit is exceeded, we wait between 25ms and 500ms before retrying.
+                // This is to avoid overwhelming the server with requests when the rate limit is exceeded.
+                // Randomization is used to avoid thundering herd problem.
+                let jitter = Jitter::new( 
                     Duration::from_millis(25),
                     Duration::from_millis(500),
                 );
                 async move {
-                    match chunk {
+                    let bytes = match chunk {
                         Ok(actual_chunk) => {
-                            // Round up to the nearest kilobyte.
-                            // important: If the chunk is 10 bytes only, it will be rounded up to 1 kb.
-                            let kilobytes = actual_chunk.len().div_ceil(1024);
-                            for _ in 0..kilobytes {
-                                // Check each kilobyte
-                                if limiter
-                                    .until_key_n_ready_with_jitter(
-                                        &key,
-                                        NonZero::new(1).expect("1 is always non zero"),
-                                        jitter,
-                                    )
-                                    .await.is_err()
-                                {
-                                    unreachable!("Rate limiting is based on the number of kilobytes, not bytes. So 1 kb should always be allowed.");
-                                };
-                            }
-                            Ok(actual_chunk)
+                            actual_chunk
                         }
-                        Err(e) => Err(e),
+                        Err(e) => return Err(e),
+                    };
+
+                    // --- Round up to the nearest kilobyte. ---
+                    // Important: If the chunk is < 1KB, it will be rounded up to 1 kb.
+                    // Many small uploads will be counted as more than they actually are.
+                    // I am not too concerned about this though because small random disk writes are stressing 
+                    // the disk more anyway compared to larger writes.
+                    // Why are we doing this? governor::Quota is defined as a u32. u32 can only count up to 4GB.
+                    // To support 4GB/s+ limits we need to count in kilobytes.
+                    //
+                    // --- Chunk Size ---
+                    // The chunk size is determined by the client library.
+                    // Common chunk sizes: 16KB to 10MB. 
+                    // HTTP based uploads are usually between 256KB and 1MB.
+                    // Asking the limiter for 1KB packets is tradeoff between
+                    // - Not calling the limiter too much
+                    // - Guaranteeing the call size (1kb) is low enough to not cause race condition issues.
+                    let chunk_kilobytes = bytes.len().div_ceil(1024);
+                    for _ in 0..chunk_kilobytes {
+                        // Check each kilobyte
+                        if limiter
+                            .until_key_n_ready_with_jitter(
+                                &key,
+                                NonZero::new(1).expect("1 is always non zero"),
+                                jitter,
+                            )
+                            .await.is_err()
+                        {
+                            // Requested rate (1kb) is higher then the set limit (x kb/s).
+                            // This should never happen.
+                            unreachable!("Rate limiting is based on the number of kilobytes, not bytes. So 1 kb should always be allowed.");
+                        };
                     }
+                    Ok(bytes)
                 }
             })
             .buffered(1);
@@ -246,11 +266,11 @@ where
                 RateUnit::Request => {
                     // Request limiting is enabled, so we need to limit the number of requests.
                     if let Err(e) = limit.1.check_key(&key) {
-                        tracing::debug!("Rate limit exceeded for {key}: {}", e);
+                        tracing::debug!("Rate limit of {} exceeded for {key}: {}", limit.0.quota, e);
                         return Box::pin(async move {
                             Ok(Error::new(
                                 StatusCode::TOO_MANY_REQUESTS,
-                                Some("rate limit exceeded".to_string()),
+                                Some("Rate limit exceeded".to_string()),
                             )
                             .into_response())
                         });

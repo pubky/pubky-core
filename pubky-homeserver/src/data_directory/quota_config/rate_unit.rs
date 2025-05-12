@@ -15,7 +15,8 @@ impl SpeedRateUnit {
     pub const fn multiplier(&self) -> NonZeroU32 {
         match self {
             // Speed quotas are always in kilobytes.
-            // Because counting bytes is not practical.
+            // Because counting bytes is not practical and we are limited to u32 = 4GB max.
+            // Counting in kb as more practical and we can count up to 4GB*1024 = 4TB.
             SpeedRateUnit::Kilobyte => NonZeroU32::new(1).expect("Is always non-zero"),
             SpeedRateUnit::Megabyte => NonZeroU32::new(1024).expect("Is always non-zero"),
             SpeedRateUnit::Gigabyte => NonZeroU32::new(1024 * 1024).expect("Is always non-zero"),
