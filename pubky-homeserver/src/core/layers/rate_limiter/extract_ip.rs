@@ -1,6 +1,6 @@
-use std::net::{IpAddr, SocketAddr};
 use axum::extract::Request;
 use http::HeaderMap;
+use std::net::{IpAddr, SocketAddr};
 
 // From https://github.com/benwis/tower-governor/blob/main/src/key_extractor.rs#L121
 const X_REAL_IP: &str = "x-real-ip";

@@ -4,9 +4,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
-
-
-
 /// A limit on a path for a specific method.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct PathLimit {
@@ -24,7 +21,13 @@ pub struct PathLimit {
 
 impl PathLimit {
     /// Create a new path limit.
-    pub fn new(path: Regex, method: Method, quota: QuotaValue, key: LimitKey, burst: Option<NonZeroU32>) -> Self {
+    pub fn new(
+        path: Regex,
+        method: Method,
+        quota: QuotaValue,
+        key: LimitKey,
+        burst: Option<NonZeroU32>,
+    ) -> Self {
         Self {
             path: PathRegex(path),
             method: HttpMethod(method),
@@ -37,7 +40,15 @@ impl PathLimit {
 
 impl std::fmt::Display for PathLimit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}: {}-{} by {}", self.method, self.path, self.quota, self.burst.map_or_else(String::new, |b| b.to_string()), self.key)
+        write!(
+            f,
+            "{} {}: {}-{} by {}",
+            self.method,
+            self.path,
+            self.quota,
+            self.burst.map_or_else(String::new, |b| b.to_string()),
+            self.key
+        )
     }
 }
 

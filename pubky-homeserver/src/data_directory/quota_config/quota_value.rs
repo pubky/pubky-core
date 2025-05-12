@@ -42,7 +42,6 @@ impl From<QuotaValue> for governor::Quota {
     }
 }
 
-
 impl fmt::Display for QuotaValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}/{}", self.rate, self.rate_unit, self.time_unit)

@@ -87,7 +87,7 @@ struct LimitTuple(
 
 impl LimitTuple {
     pub fn new(path_limit: PathLimit) -> Self {
-        let quota: Quota = path_limit.clone().into(); 
+        let quota: Quota = path_limit.clone().into();
         let limiter = Arc::new(RateLimiter::keyed(quota));
         Self(path_limit, limiter)
     }
@@ -98,10 +98,7 @@ impl LimitTuple {
     /// or the user pubkey.
     fn extract_key(&self, req: &Request<Body>) -> anyhow::Result<String> {
         match self.0.key {
-            LimitKey::Ip => {
-                extract_ip(req)
-                    .map(|ip| ip.to_string())
-            }
+            LimitKey::Ip => extract_ip(req).map(|ip| ip.to_string()),
             LimitKey::User => {
                 // Extract the user pubkey from the request.
                 req.extensions()
@@ -125,8 +122,6 @@ pub struct RateLimiterMiddleware<S> {
 }
 
 impl<S> RateLimiterMiddleware<S> {
-
-
     /// Throttle the upload body.
     fn throttle_upload(
         req: Request<Body>,
@@ -169,7 +164,7 @@ impl<S> RateLimiterMiddleware<S> {
                 // When the rate limit is exceeded, we wait between 25ms and 500ms before retrying.
                 // This is to avoid overwhelming the server with requests when the rate limit is exceeded.
                 // Randomization is used to avoid thundering herd problem.
-                let jitter = Jitter::new( 
+                let jitter = Jitter::new(
                     Duration::from_millis(25),
                     Duration::from_millis(500),
                 );
@@ -224,9 +219,7 @@ impl<S> RateLimiterMiddleware<S> {
     fn get_limit_matches(&self, req: &Request<Body>) -> Vec<&LimitTuple> {
         self.limits
             .iter()
-            .filter(|limit| {
-                limit.is_match(req)
-            })
+            .filter(|limit| limit.is_match(req))
             .collect()
     }
 }
@@ -288,7 +281,11 @@ where
                 RateUnit::Request => {
                     // Request limiting is enabled, so we need to limit the number of requests.
                     if let Err(e) = limit.1.check_key(&key) {
-                        tracing::debug!("Rate limit of {} exceeded for {key}: {}", limit.0.quota, e);
+                        tracing::debug!(
+                            "Rate limit of {} exceeded for {key}: {}",
+                            limit.0.quota,
+                            e
+                        );
                         return Box::pin(async move {
                             Ok(Error::new(
                                 StatusCode::TOO_MANY_REQUESTS,
@@ -307,16 +304,16 @@ where
         let req_clone = Request::from_parts(parts.clone(), Body::empty());
         let req = Request::from_parts(parts, body);
 
-        let speed_limits = limits.into_iter().filter(|limit| limit.0.quota.rate_unit.is_speed_rate_unit()).map(|limit| limit.clone()).collect::<Vec<_>>();
-        Box::pin(async move { 
+        let speed_limits = limits
+            .into_iter()
+            .filter(|limit| limit.0.quota.rate_unit.is_speed_rate_unit())
+            .cloned()
+            .collect::<Vec<_>>();
+        Box::pin(async move {
             // Call the next layer and receive the response.
             let mut response = match inner.call(req).await.map_err(|_| unreachable!()) {
-                Ok(response) => {
-                    response
-                }
-                Err(e) => {
-                    return Err(e)
-                }
+                Ok(response) => response,
+                Err(e) => return Err(e),
             };
             // Rate limit the download speed.
             for limit in speed_limits {
@@ -329,12 +326,14 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    use axum::{routing::{get, post}, Router};
+    use axum::{
+        routing::{get, post},
+        Router,
+    };
     use axum_server::Server;
     use http::Method;
     use pkarr::{Keypair, PublicKey};
@@ -358,17 +357,17 @@ mod tests {
 
     // Fake upload handler that just consumes the body.
     pub async fn download_handler() -> Result<impl IntoResponse> {
-        let response_body = vec![0u8; 3*1024]; // 3kb
+        let response_body = vec![0u8; 3 * 1024]; // 3kb
         Ok((StatusCode::OK, response_body))
     }
 
     // Start a server with the given quota config on a random port.
     async fn start_server(config: Vec<PathLimit>) -> SocketAddr {
         let app = Router::new()
-        .route("/upload", post(upload_handler))
-        .route("/download", get(download_handler))
-        .layer(RateLimiterLayer::new(config))
-        .layer(PubkyHostLayer);
+            .route("/upload", post(upload_handler))
+            .route("/download", get(download_handler))
+            .layer(RateLimiterLayer::new(config))
+            .layer(PubkyHostLayer);
 
         // Create a TCP listener to bind to the socket first
         // Use port 0 to let the OS assign a random available port
@@ -401,7 +400,7 @@ mod tests {
             Method::POST,
             "1kb/s".parse().unwrap(),
             LimitKey::Ip,
-            None
+            None,
         );
         let socket = start_server(vec![path_limit]).await;
 
@@ -439,7 +438,7 @@ mod tests {
             Method::GET,
             "1kb/s".parse().unwrap(),
             LimitKey::Ip,
-            None
+            None,
         );
         let socket = start_server(vec![path_limit]).await;
 
@@ -476,7 +475,7 @@ mod tests {
             Method::POST,
             "1r/m".parse().unwrap(),
             LimitKey::Ip,
-            None
+            None,
         );
         let socket = start_server(vec![path_limit]).await;
 
@@ -509,7 +508,7 @@ mod tests {
             Method::POST,
             "1r/m".parse().unwrap(),
             LimitKey::User,
-            None
+            None,
         );
         let socket = start_server(vec![path_limit]).await;
 

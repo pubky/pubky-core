@@ -3,7 +3,6 @@ use std::{fmt::Display, str::FromStr};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-
 /// A wrapper around regex::Regex to implement serde traits
 #[derive(Debug, Clone)]
 pub struct PathRegex(pub Regex);
