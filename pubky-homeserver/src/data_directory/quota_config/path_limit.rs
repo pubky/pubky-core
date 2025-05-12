@@ -1,14 +1,13 @@
-use super::{HttpMethod, LimitKey, PathRegex, QuotaValue};
+use super::{HttpMethod, LimitKey, GlobPattern, QuotaValue};
 use axum::http::Method;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
 /// A limit on a path for a specific method.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct PathLimit {
-    /// The path regex pattern to match against.
-    pub path: PathRegex,
+    /// The path glob pattern to match against.
+    pub path: GlobPattern,
     /// The method to limit.
     pub method: HttpMethod,
     /// The limit to apply.
@@ -22,14 +21,14 @@ pub struct PathLimit {
 impl PathLimit {
     /// Create a new path limit.
     pub fn new(
-        path: Regex,
+        path: GlobPattern,
         method: Method,
         quota: QuotaValue,
         key: LimitKey,
         burst: Option<NonZeroU32>,
     ) -> Self {
         Self {
-            path: PathRegex(path),
+            path,
             method: HttpMethod(method),
             quota,
             key,
@@ -74,29 +73,5 @@ mod tests {
 
         let deserialized: HttpMethod = "GET".parse().unwrap();
         assert_eq!(deserialized, http_method);
-    }
-
-    #[test]
-    fn test_path_regex_serde() {
-        let regex = Regex::new(r"^/api/v1/users/\d+$").unwrap();
-        let path_regex = PathRegex(regex);
-        assert_eq!(path_regex.to_string(), r"^/api/v1/users/\d+$");
-
-        let deserialized: PathRegex = r"^/api/v1/users/\d+$".parse().unwrap();
-        assert_eq!(deserialized, path_regex);
-    }
-
-    #[test]
-    fn test_path_regex_matching() {
-        let path_regex: PathRegex = r"^/api/v1/users/\d+$".parse().unwrap();
-        assert!(path_regex.0.is_match("/api/v1/users/123"));
-        assert!(!path_regex.0.is_match("/api/v1/users/abc"));
-    }
-
-    #[test]
-    fn test_path_regex_matching2() {
-        let path_regex: PathRegex = r"^/pub/.*$".parse().unwrap();
-        assert!(path_regex.0.is_match("/pub/user_pubky/file.txt"));
-        assert!(path_regex.0.is_match("/pub/"));
     }
 }

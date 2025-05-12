@@ -25,7 +25,7 @@ pubky_listen_socket = "127.0.0.1:6287"
 icann_listen_socket = "127.0.0.1:6286"
 
 # Rate limit endpoints dynamically.
-# `path` is a regex pattern of the path.
+# `path` is a glob pattern of the path. See syntax in https://crates.io/crates/fast-glob
 # `method` is the HTTP method. Examples: GET, POST, PUT, HEAD, DELETE
 # `quota` defines the limit itself in the format $rate$rate_unit/$time_unit.
 #  - $rate is a positive integer, max 4'294'967'296.
@@ -41,14 +41,14 @@ icann_listen_socket = "127.0.0.1:6286"
 #
 # Limit login attempts to 20 requests per minute per IP. 
 [[drive.rate_limits]]
-path = "^/session$"
+path = "/session"
 method = "POST"
 quota = "20r/m"
 key = "ip"
 #
 # Limit file uploads to 1 megabyte per second per user with a temporary burst of 10 megabytes.
 [[drive.rate_limits]]
-path = "^/pub/.*$" 
+path = "/pub/**" 
 method = "PUT"
 quota = "1mb/s"
 key = "user"

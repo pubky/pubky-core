@@ -111,7 +111,7 @@ impl LimitTuple {
 
     /// Check if the request matches the limit.
     pub fn is_match(&self, req: &Request<Body>) -> bool {
-        self.0.path.0.is_match(req.uri().path()) && self.0.method.0 == req.method()
+        self.0.path.is_match(req.uri().path()) && self.0.method.0 == req.method()
     }
 }
 
@@ -337,11 +337,10 @@ mod tests {
     use axum_server::Server;
     use axum::http::Method;
     use pkarr::{Keypair, PublicKey};
-    use regex::Regex;
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
 
-    use crate::core::layers::pubky_host::PubkyHostLayer;
+    use crate::{core::layers::pubky_host::PubkyHostLayer, quota_config::GlobPattern};
 
     use super::*;
 
@@ -396,7 +395,7 @@ mod tests {
     #[tokio::test]
     async fn test_throttle_upload() {
         let path_limit = PathLimit::new(
-            Regex::new(r"/upload").unwrap(),
+            GlobPattern::new("/upload"),
             Method::POST,
             "1kb/s".parse().unwrap(),
             LimitKey::Ip,
@@ -434,7 +433,7 @@ mod tests {
     #[tokio::test]
     async fn test_throttle_download() {
         let path_limit = PathLimit::new(
-            Regex::new(r"/download").unwrap(),
+            GlobPattern::new("/download"),
             Method::GET,
             "1kb/s".parse().unwrap(),
             LimitKey::Ip,
@@ -471,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn test_limit_parallel_requests_with_ip_key() {
         let path_limit = PathLimit::new(
-            Regex::new(r"/upload").unwrap(),
+            GlobPattern::new("/upload"),
             Method::POST,
             "1r/m".parse().unwrap(),
             LimitKey::Ip,
@@ -504,7 +503,7 @@ mod tests {
     #[tokio::test]
     async fn test_limit_parallel_requests_with_user_key() {
         let path_limit = PathLimit::new(
-            Regex::new(r"/upload").unwrap(),
+            GlobPattern::new("/upload"),
             Method::POST,
             "1r/m".parse().unwrap(),
             LimitKey::User,
