@@ -330,12 +330,12 @@ where
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+    use axum::http::Method;
     use axum::{
         routing::{get, post},
         Router,
     };
     use axum_server::Server;
-    use axum::http::Method;
     use pkarr::{Keypair, PublicKey};
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};

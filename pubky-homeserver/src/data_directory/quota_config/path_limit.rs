@@ -1,4 +1,4 @@
-use super::{HttpMethod, LimitKey, GlobPattern, QuotaValue};
+use super::{GlobPattern, HttpMethod, LimitKey, QuotaValue};
 use axum::http::Method;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
