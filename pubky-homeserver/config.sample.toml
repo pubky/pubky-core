@@ -31,7 +31,7 @@ icann_listen_socket = "127.0.0.1:6286"
 #  - $rate is a positive integer, max 4'294'967'296.
 #  - $rate_unit is either "r" for requests, "kb" for kilobytes, 
 #    "mb" for megabytes, "gb" for gigabytes.
-#  Speed limits only limit uploads, not downloads.
+#  Speed limits limit download and upload.
 #  - $time_unit is either "s" for second, "m" for minute.
 # `key` defines what who is rate limited. 
 #  - "ip" limits based on the IP address.
