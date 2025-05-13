@@ -53,7 +53,10 @@ axum-test = "17.2.0"
 tempfile = { version = "3.10.1" }
 dyn-clone = "1.0.19"
 reqwest = "0.12.15"
+governor = "0.10.0"
+fast-glob = "0.4.5"
 
 
 [dev-dependencies]
 futures-lite = "2.6.0"
+
