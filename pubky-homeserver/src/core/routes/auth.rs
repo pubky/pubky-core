@@ -18,7 +18,11 @@ use bytes::Bytes;
 use pkarr::PublicKey;
 use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
 use std::collections::HashMap;
-use tower_cookies::{cookie::SameSite, Cookie, Cookies};
+use tower_cookies::{
+    cookie::time::{Duration, OffsetDateTime},
+    cookie::SameSite,
+    Cookie, Cookies,
+};
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
 /// 1) Check if signup tokens are required (signup mode is token_required).
@@ -147,6 +151,10 @@ fn create_session_and_cookie(
         cookie.set_same_site(SameSite::None);
     }
     cookie.set_http_only(true);
+    let one_year = Duration::days(365);
+    let expiry = OffsetDateTime::now_utc() + one_year;
+    cookie.set_max_age(one_year);
+    cookie.set_expires(expiry);
     cookies.add(cookie);
 
     Ok(session)
