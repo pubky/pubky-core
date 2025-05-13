@@ -152,8 +152,9 @@ fn create_session_and_cookie(
     }
     cookie.set_http_only(true);
     // set expiration to 1 month
-    let expiry = OffsetDateTime::now_utc() + Duration::days(30);
-    cookie.set_max_age(Duration::days(30));
+    let one_year = Duration::days(365);
+    let expiry = OffsetDateTime::now_utc() + one_year;
+    cookie.set_max_age(one_year);
     cookie.set_expires(expiry);
     cookies.add(cookie);
 
