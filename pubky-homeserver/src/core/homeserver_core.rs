@@ -151,7 +151,7 @@ impl HomeserverCore {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
         };
-        super::routes::create_app(state.clone())
+        super::routes::create_app(state.clone(), context)
     }
 
     /// Start the ICANN HTTP server

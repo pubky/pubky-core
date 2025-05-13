@@ -24,6 +24,35 @@ pubky_listen_socket = "127.0.0.1:6287"
 # May be put behind a reverse proxy with TLS enabled.
 icann_listen_socket = "127.0.0.1:6286"
 
+# Rate limit endpoints dynamically.
+# `path` is a glob pattern of the path. See syntax in https://crates.io/crates/fast-glob
+# `method` is the HTTP method. Examples: GET, POST, PUT, HEAD, DELETE
+# `quota` defines the limit itself in the format $rate$rate_unit/$time_unit.
+#  - $rate is a positive integer, max 4'294'967'296.
+#  - $rate_unit is either "r" for requests, "kb" for kilobytes, 
+#    "mb" for megabytes, "gb" for gigabytes.
+#  Speed limits limit download and upload.
+#  - $time_unit is either "s" for second, "m" for minute.
+# `key` defines what who is rate limited. 
+#  - "ip" limits based on the IP address.
+#  - "user" limits based on the user pubkey. Requires the endpoint to have authentication.
+# `burst` is a temporary allowance of quota that is added to the limit. 
+#   By default, burst is equal the quota rate.
+#
+# Limit login attempts to 20 requests per minute per IP. 
+[[drive.rate_limits]]
+path = "/session"
+method = "POST"
+quota = "20r/m"
+key = "ip"
+#
+# Limit file uploads to 1 megabyte per second per user with a temporary burst of 10 megabytes.
+[[drive.rate_limits]]
+path = "/pub/**" 
+method = "PUT"
+quota = "1mb/s"
+key = "user"
+burst = 10
 
 [admin]
 # The port number to run the admin HTTP (clear text) server on.
