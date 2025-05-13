@@ -86,4 +86,36 @@ mod tests {
         assert!(!glob_pattern.is_match("/priv/test.pdf"));
         assert!(!glob_pattern.is_match("/session/test.txt"));
     }
+
+    #[test]
+    fn test_glob_pattern2() {
+        let glob_pattern = GlobPattern::from_str("/events/").unwrap();
+        assert!(glob_pattern.is_match("/events/"));
+    }
+
+    #[test]
+    fn test_glob_pattern3() {
+        let glob_pattern = GlobPattern::from_str("/pub/**/*").unwrap();
+        assert!(glob_pattern.is_match("/pub/test.txt"));
+        assert!(glob_pattern.is_match("/pub/test/test.txt"));
+        assert!(glob_pattern.is_match("/pub/"));
+    }
+
+    #[test]
+    fn test_glob_pattern4() {
+        let glob_pattern = GlobPattern::from_str("/pub/**/*/update").unwrap();
+        assert!(glob_pattern.is_match("/pub/test.txt/update"));
+        assert!(glob_pattern.is_match("/pub/test/test.txt/update"));
+        assert!(!glob_pattern.is_match("/pub/test/test.txt"));
+        assert!(!glob_pattern.is_match("/pub/"));
+    }
+
+    #[test]
+    fn test_glob_pattern5() {
+        let glob_pattern = GlobPattern::from_str("/pub/**/*/update/*").unwrap();
+        assert!(glob_pattern.is_match("/pub/test.txt/update/test.txt"));
+        assert!(glob_pattern.is_match("/pub/test/test.txt/update/test.txt"));
+        assert!(!glob_pattern.is_match("/pub/test/test.txt"));
+        assert!(!glob_pattern.is_match("/pub/"));
+    }
 }

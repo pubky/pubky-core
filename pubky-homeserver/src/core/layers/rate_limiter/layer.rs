@@ -80,16 +80,29 @@ impl<S> Layer<S> for RateLimiterLayer {
 
 /// A tuple of a path limit and the actual governor rate limiter.
 #[derive(Debug, Clone)]
-struct LimitTuple(
-    pub PathLimit,
-    pub Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
-);
+struct LimitTuple {
+    pub limit: PathLimit,
+    pub limiter: Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
+}
 
 impl LimitTuple {
     pub fn new(path_limit: PathLimit) -> Self {
         let quota: Quota = path_limit.clone().into();
         let limiter = Arc::new(RateLimiter::keyed(quota));
-        Self(path_limit, limiter)
+
+        // Forget keys that are not used anymore. This is to prevent memory leaks.
+        let limiter_clone = limiter.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                limiter_clone.retain_recent();
+            }
+        });
+
+        Self {
+            limit: path_limit,
+            limiter,
+        }
     }
 
     /// Extract the key from the request.
@@ -97,7 +110,7 @@ impl LimitTuple {
     /// The key is either the ip address of the client
     /// or the user pubkey.
     fn extract_key(&self, req: &Request<Body>) -> anyhow::Result<String> {
-        match self.0.key {
+        match self.limit.key {
             LimitKey::Ip => extract_ip(req).map(|ip| ip.to_string()),
             LimitKey::User => {
                 // Extract the user pubkey from the request.
@@ -111,7 +124,10 @@ impl LimitTuple {
 
     /// Check if the request matches the limit.
     pub fn is_match(&self, req: &Request<Body>) -> bool {
-        self.0.path.is_match(req.uri().path()) && self.0.method.0 == req.method()
+        let path = req.uri().path();
+        let glob_match = self.limit.path.is_match(path);
+        let method_match = self.limit.method.0 == req.method();
+        glob_match && method_match
     }
 }
 
@@ -259,13 +275,13 @@ where
                     // This should only happen if the pubky-host couldn't be extracted.
                     tracing::warn!(
                         "{} {} Failed to extract key for rate limiting: {}",
-                        limit.0.path.0,
-                        limit.0.method.0,
+                        limit.limit.path.0,
+                        limit.limit.method.0,
                         e
                     );
                     return Box::pin(async move {
                         Ok(Error::new(
-                            StatusCode::BAD_REQUEST,
+                            StatusCode::INTERNAL_SERVER_ERROR,
                             Some("Failed to extract key for rate limiting".to_string()),
                         )
                         .into_response())
@@ -273,17 +289,17 @@ where
                 }
             };
 
-            match limit.0.quota.rate_unit {
+            match limit.limit.quota.rate_unit {
                 RateUnit::SpeedRateUnit(_) => {
                     // Speed limiting is enabled, so we need to throttle the upload.
-                    req = Self::throttle_upload(req, &key, &limit.1);
+                    req = Self::throttle_upload(req, &key, &limit.limiter);
                 }
                 RateUnit::Request => {
                     // Request limiting is enabled, so we need to limit the number of requests.
-                    if let Err(e) = limit.1.check_key(&key) {
+                    if let Err(e) = limit.limiter.check_key(&key) {
                         tracing::debug!(
                             "Rate limit of {} exceeded for {key}: {}",
-                            limit.0.quota,
+                            limit.limit.quota,
                             e
                         );
                         return Box::pin(async move {
@@ -306,7 +322,7 @@ where
 
         let speed_limits = limits
             .into_iter()
-            .filter(|limit| limit.0.quota.rate_unit.is_speed_rate_unit())
+            .filter(|limit| limit.limit.quota.rate_unit.is_speed_rate_unit())
             .cloned()
             .collect::<Vec<_>>();
         Box::pin(async move {
@@ -318,7 +334,7 @@ where
             // Rate limit the download speed.
             for limit in speed_limits {
                 if let Ok(key) = limit.extract_key(&req_clone) {
-                    response = Self::throttle_download(response, &key, &limit.1);
+                    response = Self::throttle_download(response, &key, &limit.limiter);
                 };
             }
             Ok(response)
