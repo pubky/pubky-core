@@ -7,7 +7,6 @@ mod layers;
 mod periodic_backup;
 mod routes;
 mod user_keys_republisher;
-mod file_service;
 
 pub use error::*;
 pub use homeserver_core::*;

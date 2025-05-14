@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use tracing::instrument;
 
@@ -20,9 +20,9 @@ use pubky_common::{
 
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 
-use super::super::LmDB;
+use super::{super::super::LmDB};
 
-use super::events::Event;
+use super::super::events::Event;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Str, Bytes>;
@@ -243,7 +243,6 @@ pub struct Entry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
-    // user_metadata: ?
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -278,6 +277,13 @@ impl<'de> Deserialize<'de> for EntryHash {
 impl Entry {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn chunk_key(&self, chunk_index: u32) -> [u8; 12] {
+        let mut chunk_key = [0; 12];
+        chunk_key[0..8].copy_from_slice(&self.timestamp.to_bytes());
+        chunk_key[8..].copy_from_slice(&chunk_index.to_be_bytes());
+        chunk_key
     }
 
     // === Setters ===
@@ -354,7 +360,7 @@ impl<'db> EntryWriter<'db> {
         let hasher = Hasher::new();
         let timestamp = Timestamp::now();
         let buffer_dir = tempfile::tempdir()?;
-        let buffer_path = buffer_dir.path().join("buffer.bin");
+        let buffer_path = Self::buffer_file_path(buffer_dir.path());
         let buffer_file = File::create(&buffer_path)?;
         let entry_key = format!("{public_key}{path}");
 
@@ -368,6 +374,10 @@ impl<'db> EntryWriter<'db> {
         })
     }
 
+    fn buffer_file_path(buffer_dir: &Path) -> PathBuf {
+        buffer_dir.join("buffer.bin")
+    }
+
     /// Same ase [EntryWriter::write_all] but returns a Result of a mutable reference of itself
     /// to enable chaining with [Self::commit].
     pub fn update(&mut self, chunk: &[u8]) -> Result<&mut Self, std::io::Error> {
@@ -376,31 +386,37 @@ impl<'db> EntryWriter<'db> {
         Ok(self)
     }
 
+    /// Create a chunk key from a timestamp and a chunk index.
+    /// Max file size is 2^32 chunks.
+    fn create_chunk_key(timestamp: &Timestamp, chunk_index: u32) -> [u8; 12] {
+        let mut chunk_key = [0; 12];
+        chunk_key[0..8].copy_from_slice(&timestamp.to_bytes());
+        chunk_key[8..].copy_from_slice(&chunk_index.to_be_bytes());
+        chunk_key
+    }
+
     /// Commit blob from the filesystem buffer to LMDB,
     /// write the [Entry], and commit the write transaction.
-    pub fn commit(&self) -> anyhow::Result<Entry> {
+    pub fn commit(&mut self) -> anyhow::Result<Entry> {
         let hash = self.hasher.finalize();
 
-        let mut buffer = self.buffer_file.try_clone()?;
+        // Prepare file to be read again
+        self.buffer_file.flush()?;
+        self.buffer_file = File::open(Self::buffer_file_path(&self.buffer_dir.path()))?;
 
         let mut wtxn = self.db.env.write_txn()?;
-
-        let mut chunk_key = [0; 12];
-        chunk_key[0..8].copy_from_slice(&self.timestamp.to_bytes());
 
         let mut chunk_index: u32 = 0;
 
         loop {
             let mut chunk = vec![0_u8; self.db.max_chunk_size];
-
-            let bytes_read = buffer.read(&mut chunk)?;
-
-            if bytes_read == 0 {
+            let bytes_read = self.buffer_file.read(&mut chunk)?;
+            let is_end_of_file = bytes_read == 0;
+            if is_end_of_file {
                 break; // EOF reached
             }
 
-            chunk_key[8..].copy_from_slice(&chunk_index.to_be_bytes());
-
+            let chunk_key = Self::create_chunk_key(&self.timestamp, chunk_index);
             self.db
                 .tables
                 .blobs
@@ -411,10 +427,9 @@ impl<'db> EntryWriter<'db> {
 
         let mut entry = Entry::new();
         entry.set_timestamp(&self.timestamp);
-
         entry.set_content_hash(hash);
 
-        let length = buffer.metadata()?.len();
+        let length = self.buffer_file.metadata()?.len();
         entry.set_content_length(length as usize);
 
         self.db
@@ -477,9 +492,9 @@ mod tests {
 
         let chunk = Bytes::from(vec![1, 2, 3, 4, 5]);
 
-        db.create_entry_writer(&public_key, path)?
-            .update(&chunk)?
-            .commit()?;
+        let mut writer = db.create_entry_writer(&public_key, path)?;
+        writer.update(&chunk).expect("Failed to write chunk");
+        writer.commit().expect("Failed to commit");
 
         let rtxn = db.env.read_txn().unwrap();
         let entry = db.get_entry(&rtxn, &public_key, path).unwrap().unwrap();

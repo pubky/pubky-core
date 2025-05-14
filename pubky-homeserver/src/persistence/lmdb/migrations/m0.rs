@@ -1,13 +1,13 @@
 use heed::{Env, RwTxn};
 
-use crate::persistence::lmdb::tables::{blobs, entries, events, sessions, signup_tokens, users};
+use crate::persistence::lmdb::tables::{entries, events, sessions, signup_tokens, users};
 
 pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
     let _: users::UsersTable = env.create_database(wtxn, Some(users::USERS_TABLE))?;
 
     let _: sessions::SessionsTable = env.create_database(wtxn, Some(sessions::SESSIONS_TABLE))?;
 
-    let _: blobs::BlobsTable = env.create_database(wtxn, Some(blobs::BLOBS_TABLE))?;
+    let _: entries::BlobsTable = env.create_database(wtxn, Some(entries::BLOBS_TABLE))?;
 
     let _: entries::EntriesTable = env.create_database(wtxn, Some(entries::ENTRIES_TABLE))?;
 
