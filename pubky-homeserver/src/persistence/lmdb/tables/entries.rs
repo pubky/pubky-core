@@ -33,7 +33,7 @@ impl LmDB {
     /// Write an entry by an author at a given path.
     ///
     /// The path has to start with a forward slash `/`
-    pub fn write_entry(
+    pub fn create_entry_writer(
         &mut self,
         public_key: &PublicKey,
         path: &str,
@@ -340,34 +340,31 @@ impl Entry {
 
 pub struct EntryWriter<'db> {
     db: &'db LmDB,
-    buffer: File,
+    buffer_file: File,
     hasher: Hasher,
-    buffer_path: PathBuf,
+    // This directory including the buffer_file is automatically deleted when the EntryWriter is dropped.
+    #[allow(dead_code)]
+    buffer_dir: tempfile::TempDir,
     entry_key: String,
     timestamp: Timestamp,
-    is_public: bool,
 }
 
 impl<'db> EntryWriter<'db> {
     pub fn new(db: &'db LmDB, public_key: &PublicKey, path: &str) -> anyhow::Result<Self> {
         let hasher = Hasher::new();
-
         let timestamp = Timestamp::now();
-
-        let buffer_path = db.buffers_dir.join(timestamp.to_string());
-
-        let buffer = File::create(&buffer_path)?;
-
+        let buffer_dir = tempfile::tempdir()?;
+        let buffer_path = buffer_dir.path().join("buffer.bin");
+        let buffer_file = File::create(&buffer_path)?;
         let entry_key = format!("{public_key}{path}");
 
         Ok(Self {
             db,
-            buffer,
+            buffer_file,
             hasher,
-            buffer_path,
+            buffer_dir,
             entry_key,
             timestamp,
-            is_public: path.starts_with("/pub/"),
         })
     }
 
@@ -384,7 +381,7 @@ impl<'db> EntryWriter<'db> {
     pub fn commit(&self) -> anyhow::Result<Entry> {
         let hash = self.hasher.finalize();
 
-        let mut buffer = File::open(&self.buffer_path)?;
+        let mut buffer = self.buffer_file.try_clone()?;
 
         let mut wtxn = self.db.env.write_txn()?;
 
@@ -426,22 +423,19 @@ impl<'db> EntryWriter<'db> {
             .put(&mut wtxn, &self.entry_key, &entry.serialize())?;
 
         // Write a public [Event].
-        if self.is_public {
-            let url = format!("pubky://{}", self.entry_key);
-            let event = Event::put(&url);
-            let value = event.serialize();
+        let url = format!("pubky://{}", self.entry_key);
+        let event = Event::put(&url);
+        let value = event.serialize();
 
-            let key = entry.timestamp.to_string();
+        let key = entry.timestamp.to_string();
 
-            self.db.tables.events.put(&mut wtxn, &key, &value)?;
+        self.db.tables.events.put(&mut wtxn, &key, &value)?;
 
-            // TODO: delete events older than a threshold.
-            // TODO: move to events.rs
-        }
+        // TODO: delete events older than a threshold.
+        // TODO: move to events.rs
+        
 
         wtxn.commit()?;
-
-        std::fs::remove_file(&self.buffer_path)?;
 
         Ok(entry)
     }
@@ -452,7 +446,7 @@ impl std::io::Write for EntryWriter<'_> {
     #[inline]
     fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
         self.hasher.update(chunk);
-        self.buffer.write_all(chunk)?;
+        self.buffer_file.write_all(chunk)?;
 
         Ok(chunk.len())
     }
@@ -466,6 +460,8 @@ impl std::io::Write for EntryWriter<'_> {
 
 #[cfg(test)]
 mod tests {
+    // use std::io::Write;
+
     use bytes::Bytes;
     use pkarr::Keypair;
 
@@ -481,7 +477,7 @@ mod tests {
 
         let chunk = Bytes::from(vec![1, 2, 3, 4, 5]);
 
-        db.write_entry(&public_key, path)?
+        db.create_entry_writer(&public_key, path)?
             .update(&chunk)?
             .commit()?;
 
@@ -523,7 +519,7 @@ mod tests {
 
         let chunk = Bytes::from(vec![0; 1024 * 1024]);
 
-        db.write_entry(&public_key, path)?
+        db.create_entry_writer(&public_key, path)?
             .update(&chunk)?
             .commit()?;
 

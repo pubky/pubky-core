@@ -83,9 +83,10 @@ pub async fn put(
     }
 
     // Stream body
-    let mut writer = state.db.write_entry(public_key, full_path)?;
+    let mut writer = state.db.create_entry_writer(public_key, full_path)?;
     let mut seen_bytes: u64 = 0;
     let mut stream = body.into_data_stream();
+    
 
     while let Some(chunk) = stream.next().await.transpose()? {
         seen_bytes += chunk.len() as u64;

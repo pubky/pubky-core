@@ -21,4 +21,13 @@ impl LmDB {
             .prefix_iter(rtxn, &entry.timestamp().to_bytes())?
             .map(|i| i.map(|(_, bytes)| bytes)))
     }
+
+    pub async fn read_blob(&self, entry: &Entry) -> anyhow::Result<Option<Vec<u8>>> {
+        // spawn blocking
+        let blob_key = entry.timestamp().to_bytes();
+        let rtxn = self.env.read_txn()?;
+        let blob = self.tables.blobs.get(&rtxn, &blob_key)?.map(|b| b.to_vec());
+        rtxn.commit()?;
+        Ok(blob)
+    }
 }

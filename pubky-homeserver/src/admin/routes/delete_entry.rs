@@ -39,7 +39,7 @@ mod tests {
     use std::io::Write;
 
     async fn write_test_file(db: &mut LmDB, pubkey: &PublicKey, path: &str) {
-        let mut entry_writer = db.write_entry(pubkey, path).unwrap();
+        let mut entry_writer = db.create_entry_writer(pubkey, path).unwrap();
         let content = b"Hello, world!";
         entry_writer.write_all(content).unwrap();
         let _entry = entry_writer.commit().unwrap();
