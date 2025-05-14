@@ -97,7 +97,7 @@ async fn test_limit_upload() {
     let mut config = ConfigToml::test();
     config.drive.rate_limits = vec![
         PathLimit::new(
-            GlobPattern::new("/pub/**/*"),
+            GlobPattern::new("/pub/**"),
             Method::PUT,
             "1kb/s".parse().unwrap(),
             LimitKey::User,

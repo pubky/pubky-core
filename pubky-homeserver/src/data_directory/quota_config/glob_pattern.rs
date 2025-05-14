@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_glob_pattern3() {
-        let glob_pattern = GlobPattern::from_str("/pub/**/*").unwrap();
+        let glob_pattern = GlobPattern::from_str("/pub/**").unwrap();
         assert!(glob_pattern.is_match("/pub/test.txt"));
         assert!(glob_pattern.is_match("/pub/test/test.txt"));
         assert!(glob_pattern.is_match("/pub/"));
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_glob_pattern4() {
-        let glob_pattern = GlobPattern::from_str("/pub/**/*/update").unwrap();
+        let glob_pattern = GlobPattern::from_str("/pub/**/update").unwrap();
         assert!(glob_pattern.is_match("/pub/test.txt/update"));
         assert!(glob_pattern.is_match("/pub/test/test.txt/update"));
         assert!(!glob_pattern.is_match("/pub/test/test.txt"));
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_glob_pattern5() {
-        let glob_pattern = GlobPattern::from_str("/pub/**/*/update/*").unwrap();
+        let glob_pattern = GlobPattern::from_str("/pub/**/update/*").unwrap();
         assert!(glob_pattern.is_match("/pub/test.txt/update/test.txt"));
         assert!(glob_pattern.is_match("/pub/test/test.txt/update/test.txt"));
         assert!(!glob_pattern.is_match("/pub/test/test.txt"));
