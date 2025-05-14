@@ -93,9 +93,12 @@ impl LimitTuple {
         // Forget keys that are not used anymore. This is to prevent memory leaks.
         let limiter_clone = limiter.clone();
         tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            interval.tick().await;
             loop {
-                tokio::time::sleep(Duration::from_secs(10)).await;
+                interval.tick().await;
                 limiter_clone.retain_recent();
+                limiter_clone.shrink_to_fit();
             }
         });
 
