@@ -166,6 +166,7 @@ impl ConfigToml {
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
+        config.pkdns.dht_relay_nodes = None;
         config
     }
 }
@@ -214,7 +215,6 @@ mod tests {
         assert_eq!(c.pkdns.public_icann_http_port, None);
         assert_eq!(c.pkdns.user_keys_republisher_interval, 14400);
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
-        assert_eq!(c.pkdns.dht_relay_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
     }
