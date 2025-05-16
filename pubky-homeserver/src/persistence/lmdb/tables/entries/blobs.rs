@@ -1,9 +1,7 @@
 use super::super::super::LmDB;
-use super::{AsyncInDbTempFileWriter, Entry, InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
+use super::{Entry, InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
 use heed::{types::Bytes, Database, RoTxn};
 use std::io::Read;
-use tokio::runtime::Handle;
-use tokio::task;
 
 /// (entry timestamp | chunk_index BE) => bytes
 pub type BlobsTable = Database<Bytes, Bytes>;
@@ -165,23 +163,5 @@ mod tests {
         let written_file_content = std::fs::read(write_file.path()).unwrap();
         let read_file_content = std::fs::read(read_file.path()).unwrap();
         assert_eq!(written_file_content, read_file_content);
-    }
-
-    #[tokio::test]
-    async fn test_compare_with_entry_writer() {
-        let mut lmdb = LmDB::test();
-
-        let pubkey = Keypair::random().public_key();
-        let path = "/test/path.txt";
-        let mut entry_writer = lmdb.create_entry_writer(&pubkey, path).unwrap();
-
-        let chunk = vec![0; 10];
-        entry_writer.update(&chunk).unwrap();
-        let entry = entry_writer.commit().unwrap();
-        let file_id = InDbFileId::from(entry.timestamp().clone());
-        let read_file = lmdb.read_file(&file_id).await.unwrap();
-        let written_file_content = std::fs::read(read_file.path()).unwrap();
-
-        assert_eq!(written_file_content, chunk);
     }
 }

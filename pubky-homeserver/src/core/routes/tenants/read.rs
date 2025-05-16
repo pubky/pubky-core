@@ -16,7 +16,6 @@ use axum::{
     response::IntoResponse,
 };
 use httpdate::HttpDate;
-use pkarr::PublicKey;
 use std::str::FromStr;
 use tokio_util::io::ReaderStream;
 
@@ -30,7 +29,7 @@ pub async fn head(
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.0);
     let entry = state
         .db
-        .get_entry2(&entry_path)?
+        .get_entry(&entry_path)?
         .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
 
     get_entry(headers, entry, None)
@@ -46,13 +45,14 @@ pub async fn get(
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
     let dav_path = path.0;
-    if dav_path.is_directory() {
-        return list(state, &public_key, &dav_path.as_str(), params);
+    let entry_path = EntryPath::new(public_key.clone(), dav_path);
+    if entry_path.path().is_directory() {
+        return list(state, &entry_path, params);
     }
-    let entry_path = EntryPath::new(pubky.public_key().clone(), dav_path);
+
     let entry = state
         .db
-        .get_entry2(&entry_path)?
+        .get_entry(&entry_path)?
         .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
     let buffer_file = state.db.read_file(&entry.file_id()).await?;
 
@@ -65,14 +65,12 @@ pub async fn get(
 
 pub fn list(
     state: AppState,
-    public_key: &PublicKey,
-    path: &str,
+    entry_path: &EntryPath,
     params: ListQueryParams,
 ) -> Result<Response<Body>> {
     let txn = state.db.env.read_txn()?;
-    let path = format!("{public_key}{path}");
 
-    if !state.db.contains_directory(&txn, &path)? {
+    if !state.db.contains_directory(&txn, entry_path)? {
         return Err(Error::new(
             StatusCode::NOT_FOUND,
             "Directory Not Found".into(),
@@ -80,9 +78,9 @@ pub fn list(
     }
 
     // Handle listing
-    let vec = state.db.list(
+    let vec = state.db.list_entries(
         &txn,
-        &path,
+        entry_path,
         params.reverse,
         params.limit,
         params.cursor,

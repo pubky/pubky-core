@@ -5,7 +5,7 @@
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{delete, get, head, put},
+    routing::get,
     Router,
 };
 
@@ -17,20 +17,14 @@ pub mod write;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        // - Datastore routes
-        .route("/session", get(session::session))
-        .route("/session", delete(session::signout))
-        .route("/{*path}", get(read::get))
-        .route("/{*path}", head(read::head))
-        .route("/{*path}", put(write::put))
-        .route("/{*path}", delete(write::delete))
-        // .route("/pub/", get(read::get))
-        // .route("/pub/{*path}", get(read::get))
-        // .route("/pub/{*path}", head(read::head))
-        // .route("/pub/{*path}", put(write::put))
-        // .route("/pub/{*path}", delete(write::delete))
-        // - Session routes
-        // Layers
+        .route("/session", get(session::session).delete(session::signout))
+        .route(
+            "/{*path}",
+            get(read::get)
+                .head(read::head)
+                .put(write::put)
+                .delete(write::delete),
+        )
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(AuthorizationLayer::new(state.clone()))

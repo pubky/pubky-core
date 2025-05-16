@@ -11,7 +11,6 @@ pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space us
 pub struct LmDB {
     pub(crate) env: Env,
     pub(crate) tables: Tables,
-    pub(crate) buffers_dir: PathBuf,
     pub(crate) max_chunk_size: usize,
     // Only used for testing purposes to keep the testdir alive.
     #[allow(dead_code)]
@@ -44,7 +43,6 @@ impl LmDB {
         let db = LmDB {
             env,
             tables,
-            buffers_dir,
             max_chunk_size: Self::max_chunk_size(),
             test_dir: None,
         };

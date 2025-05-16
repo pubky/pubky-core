@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, str::FromStr};
 
 /// A normalized and validated webdav path.

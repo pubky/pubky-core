@@ -15,7 +15,7 @@ pub async fn delete_entry(
     Path((pubkey, path)): Path<(Z32Pubkey, WebDavPathAxum)>,
 ) -> HttpResult<impl IntoResponse> {
     let entry_path = EntryPath::new(pubkey.0, path.0);
-    let deleted = state.db.delete_entry2(&entry_path).await?;
+    let deleted = state.db.delete_entry(&entry_path).await?;
     if deleted {
         Ok((StatusCode::NO_CONTENT, ()))
     } else {
@@ -38,7 +38,7 @@ mod tests {
 
     async fn write_test_file(db: &mut LmDB, entry_path: &EntryPath) {
         let file = InDbTempFile::zeros(10).await.unwrap();
-        let _entry = db.write_entry2(&entry_path, &file).await.unwrap();
+        let _entry = db.write_entry(&entry_path, &file).await.unwrap();
     }
 
     #[tokio::test]
@@ -67,7 +67,7 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // Check that the file is deleted
-        let entry = db.get_entry2(&entry_path).unwrap();
+        let entry = db.get_entry(&entry_path).unwrap();
         assert!(entry.is_none(), "Entry should be deleted");
 
         let events = db.list_events(None, None).unwrap();

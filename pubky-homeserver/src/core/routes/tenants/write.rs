@@ -53,7 +53,7 @@ pub async fn delete(
     let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
 
     // Remove entry
-    if !state.db.delete_entry2(&entry_path).await? {
+    if !state.db.delete_entry(&entry_path).await? {
         return Err(Error::with_status(StatusCode::NOT_FOUND));
     }
 
@@ -98,7 +98,7 @@ pub async fn put(
     let buffer_file = buffer_file_writer.complete().await?;
 
     // Write file on disk to db
-    state.db.write_entry2(&entry_path, &buffer_file).await?;
+    state.db.write_entry(&entry_path, &buffer_file).await?;
     let delta = buffer_file.len() as i64 - existing_entry_bytes as i64;
     state.db.update_data_usage(public_key, delta)?;
 
