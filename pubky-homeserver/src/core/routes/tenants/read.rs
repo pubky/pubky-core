@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{OriginalUri, State},
+    extract::{OriginalUri, Path, State},
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
 };
@@ -8,12 +8,12 @@ use httpdate::HttpDate;
 use pkarr::PublicKey;
 use std::str::FromStr;
 
-use crate::core::{
+use crate::{core::{
     err_if_user_is_invalid::err_if_user_is_invalid,
     error::{Error, Result},
     extractors::{ListQueryParams, PubkyHost},
     AppState,
-};
+}, persistence::lmdb::tables::entries::WebDavPath};
 use crate::persistence::lmdb::tables::entries::Entry;
 
 pub async fn head(
@@ -24,12 +24,19 @@ pub async fn head(
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
 
+    let dav_path = match WebDavPath::new(path.0.path()) {
+        Ok(dav_path) => dav_path,
+        Err(e) => {
+            return Err(Error::new(StatusCode::BAD_REQUEST, Some(e.to_string())));
+        }
+    };
+
     let rtxn = state.db.env.read_txn()?;
     get_entry(
         headers,
         state
             .db
-            .get_entry(&rtxn, pubky.public_key(), path.0.path())?,
+            .get_entry(&rtxn, pubky.public_key(), dav_path.as_str())?,
         None,
     )
 }
@@ -44,10 +51,15 @@ pub async fn get(
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
 
     let public_key = pubky.public_key().clone();
-    let path = path.0.path().to_string();
+    let dav_path = match WebDavPath::new(path.0.path()) {
+        Ok(dav_path) => dav_path,
+        Err(e) => {
+            return Err(Error::new(StatusCode::BAD_REQUEST, Some(e.to_string())));
+        }
+    };
 
-    if path.ends_with('/') {
-        return list(state, &public_key, &path, params);
+    if dav_path.is_directory() {
+        return list(state, &public_key, &dav_path.as_str(), params);
     }
 
     let (entry_tx, entry_rx) = flume::bounded::<Option<Entry>>(1);
@@ -56,7 +68,7 @@ pub async fn get(
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let rtxn = state.db.env.read_txn()?;
 
-        let option = state.db.get_entry(&rtxn, &public_key, &path)?;
+        let option = state.db.get_entry(&rtxn, &public_key, dav_path.as_str())?;
 
         if let Some(entry) = option {
             let iter = entry.read_content(&state.db, &rtxn)?;

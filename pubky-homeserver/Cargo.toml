@@ -56,6 +56,8 @@ reqwest = "0.12.15"
 governor = "0.10.0"
 fast-glob = "0.4.5"
 tokio-util = "0.7.15"
+percent-encoding = "2.3.1"
+
 
 
 [dev-dependencies]

@@ -7,21 +7,16 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::instrument;
-
 use heed::{
     types::{Bytes, Str},
     Database, RoTxn,
 };
-
 use pubky_common::{
     crypto::{Hash, Hasher},
     timestamp::Timestamp,
 };
-
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
-
 use super::{super::super::LmDB};
-
 use super::super::events::Event;
 
 /// full_path(pubky/*path) => Entry.

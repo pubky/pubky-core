@@ -1,13 +1,16 @@
-use heed::{types::Bytes, Database, RoTxn};
+
+
 
 use super::super::super::LmDB;
-
-use super::Entry;
+use super::{Entry, InDbFileId, InDbTempFile, InDbTempFileWriter};
+use heed::{types::Bytes, Database, RoTxn};
+use std::io::Read;
 
 /// (entry timestamp | chunk_index BE) => bytes
 pub type BlobsTable = Database<Bytes, Bytes>;
-
 pub const BLOBS_TABLE: &str = "blobs";
+
+
 
 impl LmDB {
     pub fn read_entry_content<'txn>(
@@ -21,4 +24,146 @@ impl LmDB {
             .prefix_iter(rtxn, &entry.timestamp().to_bytes())?
             .map(|i| i.map(|(_, bytes)| bytes)))
     }
+
+    /// Read the blobs into a temporary file.
+    ///
+    /// The file is written to disk to minimize the size/duration of the LMDB transaction.
+    pub(crate) fn read_file(
+        &self,
+        id: &InDbFileId,
+    ) -> anyhow::Result<Option<InDbTempFile>> {
+        let mut file_writer = InDbTempFileWriter::new()?;
+        let rtxn = self.env.read_txn()?;
+        let blobs_iter = self
+            .tables
+            .blobs
+            .prefix_iter(&rtxn, &id.bytes())?
+            .map(|i| i.map(|(_, bytes)| bytes));
+        let mut file_exists = false;
+        for read_result in blobs_iter {
+            file_exists = true;
+            let chunk = read_result?;
+            file_writer.write_chunk(chunk)?;
+        }
+
+        if !file_exists {
+            return Ok(None);
+        }
+        
+        let file = file_writer.complete()?;
+        rtxn.commit()?;
+        Ok(Some(file))
+    }
+
+    /// Write the blobs from a temporary file to LMDB.
+    pub(crate) fn write_file<'txn>(
+        &'txn self,
+        file: &InDbTempFile,
+        wtxn: &mut heed::RwTxn<'txn>,
+    ) -> anyhow::Result<InDbFileId> {
+        let id = InDbFileId::new();
+        let mut file_handle = file.open_file_handle()?;
+    
+        let mut blob_index: u32 = 0;
+        loop {
+            let mut blob = vec![0_u8; self.max_chunk_size];
+            let bytes_read = file_handle.read(&mut blob)?;
+            let is_end_of_file = bytes_read == 0;
+            if is_end_of_file {
+                break; // EOF reached
+            }
+    
+            let blob_key = id.get_blob_key(blob_index);
+            self.tables.blobs.put(wtxn, &blob_key, &blob[..bytes_read])?;
+    
+            blob_index += 1;
+        }
+    
+        Ok(id)
+    }
+
+    /// Delete the blobs from LMDB.
+    pub(crate) fn delete_file<'txn>(
+        &'txn self,
+        file: &InDbFileId,
+        wtxn: &mut heed::RwTxn<'txn>,
+    ) -> anyhow::Result<bool> {
+        let mut deleted_chunks = false;
+
+        {
+            let mut iter = self
+                .tables
+                .blobs
+                .prefix_iter_mut(wtxn, &file.bytes())?;
+
+            while iter.next().is_some() {
+                unsafe {
+                    deleted_chunks = iter.del_current()?;
+                }
+            }
+        }
+        Ok(deleted_chunks)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use pkarr::Keypair;
+
+    use super::*;
+
+    #[test]
+    fn test_write_read_delete_file() {
+        let lmdb = LmDB::test();
+
+        // Write file to LMDB
+        let write_file = InDbTempFile::random(50).unwrap();
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let id = lmdb.write_file(&write_file, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        // Read file from LMDB
+        let read_file = lmdb.read_file(&id).unwrap().unwrap();
+
+        assert_eq!(read_file.len(), write_file.len());
+        assert_eq!(read_file.hash(), write_file.hash());
+
+        let written_file_content = std::fs::read(write_file.path()).unwrap();
+        let read_file_content = std::fs::read(read_file.path()).unwrap();
+        assert_eq!(written_file_content, read_file_content);
+
+        // Delete file from LMDB
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let deleted = lmdb.delete_file(&id, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+        assert!(deleted);
+
+        // Try to read file from LMDB
+        let read_file = lmdb.read_file(&id).unwrap();
+        assert!(read_file.is_none());
+
+    }
+
+    #[test]
+    fn test_compare_with_entry_writer() {
+        let mut lmdb = LmDB::test();
+
+        let pubkey = Keypair::random().public_key();
+        let path = "/test/path.txt";
+        let mut entry_writer = lmdb.create_entry_writer(&pubkey, path).unwrap();
+
+        let chunk = vec![0; 10];
+        entry_writer.update(&chunk).unwrap();
+        let entry = entry_writer.commit().unwrap();
+        let file_id = InDbFileId::from(entry.timestamp().clone());
+        let read_file = lmdb.read_file(&file_id).unwrap().unwrap();
+        let written_file_content = std::fs::read(read_file.path()).unwrap();
+
+        assert_eq!(written_file_content, chunk);
+        
+    }
+
+
+     
 }

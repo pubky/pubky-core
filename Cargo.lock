@@ -2402,6 +2402,7 @@ dependencies = [
  "hostname-validator",
  "httpdate",
  "page_size",
+ "percent-encoding",
  "pkarr",
  "pkarr-republisher",
  "postcard",

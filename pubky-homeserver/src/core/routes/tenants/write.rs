@@ -8,12 +8,12 @@ use axum::{
 };
 use futures_util::stream::StreamExt;
 
-use crate::core::{
+use crate::{core::{
     err_if_user_is_invalid::err_if_user_is_invalid,
     error::{Error, Result},
     extractors::PubkyHost,
     AppState,
-};
+}, persistence::lmdb::tables::entries::WebDavPath};
 
 /// Fail with 507 if `(current + incoming − existing) > quota`.
 fn enforce_user_disk_quota(
@@ -47,11 +47,17 @@ pub async fn delete(
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     let public_key = pubky.public_key();
-    let full_path = path.0.path();
-    let existing_bytes = state.db.get_entry_content_length(public_key, full_path)?;
+
+    let dav_path = match WebDavPath::new(path.0.path()) {
+        Ok(dav_path) => dav_path,
+        Err(e) => {
+            return Err(Error::new(StatusCode::BAD_REQUEST, Some(e.to_string())));
+        }
+    };
+    let existing_bytes = state.db.get_entry_content_length(public_key, dav_path.as_str())?;
 
     // Remove entry
-    if !state.db.delete_entry(public_key, full_path)? {
+    if !state.db.delete_entry(public_key, dav_path.as_str())? {
         return Err(Error::with_status(StatusCode::NOT_FOUND));
     }
 
@@ -71,8 +77,13 @@ pub async fn put(
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
     let public_key = pubky.public_key();
-    let full_path = path.0.path();
-    let existing_entry_bytes = state.db.get_entry_content_length(public_key, full_path)?;
+    let dav_path = match WebDavPath::new(path.0.path()) {
+        Ok(dav_path) => dav_path,
+        Err(e) => {
+            return Err(Error::new(StatusCode::BAD_REQUEST, Some(e.to_string())));
+        }
+    };
+    let existing_entry_bytes = state.db.get_entry_content_length(public_key, dav_path.as_str())?;
     let quota_bytes = state.user_quota_bytes;
     let used_bytes = state.db.get_user_data_usage(public_key)?;
 
@@ -83,7 +94,7 @@ pub async fn put(
     }
 
     // Stream body
-    let mut writer = state.db.create_entry_writer(public_key, full_path)?;
+    let mut writer = state.db.create_entry_writer(public_key, dav_path.as_str())?;
     let mut seen_bytes: u64 = 0;
     let mut stream = body.into_data_stream();
     

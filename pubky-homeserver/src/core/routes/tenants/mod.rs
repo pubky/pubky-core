@@ -18,11 +18,15 @@ pub mod write;
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         // - Datastore routes
-        .route("/pub/", get(read::get))
-        .route("/pub/{*path}", get(read::get))
-        .route("/pub/{*path}", head(read::head))
-        .route("/pub/{*path}", put(write::put))
-        .route("/pub/{*path}", delete(write::delete))
+        .route("{*path}", get(read::get))
+        .route("{*path}", head(read::head))
+        .route("{*path}", put(write::put))
+        .route("{*path}", delete(write::delete))
+        // .route("/pub/", get(read::get))
+        // .route("/pub/{*path}", get(read::get))
+        // .route("/pub/{*path}", head(read::head))
+        // .route("/pub/{*path}", put(write::put))
+        // .route("/pub/{*path}", delete(write::delete))
         // - Session routes
         .route("/session", get(session::session))
         .route("/session", delete(session::signout))
