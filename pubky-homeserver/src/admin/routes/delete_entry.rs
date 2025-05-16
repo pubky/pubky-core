@@ -1,5 +1,5 @@
 use super::super::app_state::AppState;
-use crate::shared::{HttpError, HttpResult, Z32Pubkey};
+use crate::{persistence::lmdb::tables::entries::EntryPath, shared::{HttpError, HttpResult, WebDavPathAxum, Z32Pubkey}};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -9,16 +9,11 @@ use axum::{
 /// Delete a single entry from the database.
 pub async fn delete_entry(
     State(mut state): State<AppState>,
-    Path((pubkey, path)): Path<(Z32Pubkey, String)>,
+    Path((pubkey, path)): Path<(Z32Pubkey, WebDavPathAxum)>,
 ) -> HttpResult<impl IntoResponse> {
-    let path = format!("/{}", path); // Add missing leading slash
-    if !path.starts_with("/pub/") {
-        return Err(HttpError::new(
-            StatusCode::BAD_REQUEST,
-            Some("Invalid path"),
-        ));
-    }
-    let deleted = state.db.delete_entry(&pubkey.0, &path)?;
+
+    let entry_path = EntryPath::new(pubkey.0, path.0);
+    let deleted = state.db.delete_entry2(&entry_path).await?;
     if deleted {
         Ok((StatusCode::NO_CONTENT, ()))
     } else {
@@ -33,16 +28,15 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::lmdb::LmDB;
+    use crate::persistence::lmdb::{tables::entries::InDbTempFile, LmDB};
+    use crate::persistence::lmdb::tables::entries::{EntryPath};
+    use crate::shared::WebDavPath;
     use axum::{routing::delete, Router};
-    use pkarr::{Keypair, PublicKey};
-    use std::io::Write;
+    use pkarr::Keypair;
 
-    async fn write_test_file(db: &mut LmDB, pubkey: &PublicKey, path: &str) {
-        let mut entry_writer = db.create_entry_writer(pubkey, path).unwrap();
-        let content = b"Hello, world!";
-        entry_writer.write_all(content).unwrap();
-        let _entry = entry_writer.commit().unwrap();
+    async fn write_test_file(db: &mut LmDB, entry_path: &EntryPath) {
+        let file = InDbTempFile::zeroes(10).await.unwrap();
+        let _entry = db.write_entry2(&entry_path, &file).await.unwrap();
     }
 
     #[tokio::test]
@@ -58,21 +52,21 @@ mod tests {
             .with_state(app_state);
 
         // Write a test file
-        let entry_path = format!("/pub/{}", file_path);
-        write_test_file(&mut db, &pubkey, &entry_path).await;
+        let webdav_path = WebDavPath::new(format!("/pub/{}", file_path).as_str()).unwrap();
+        let entry_path = EntryPath::new(pubkey.clone(), webdav_path);
+
+        write_test_file(&mut db, &entry_path).await;
 
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/webdav/{}{}", pubkey, entry_path).as_str())
+            .delete(format!("/webdav/{}{}", pubkey, entry_path.path().as_str()).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // Check that the file is deleted
-        let rtx = db.env.read_txn().unwrap();
-        let entry = db.get_entry(&rtx, &pubkey, &file_path).unwrap();
+        let entry = db.get_entry2(&entry_path).unwrap();
         assert!(entry.is_none(), "Entry should be deleted");
-        rtx.commit().unwrap();
 
         let events = db.list_events(None, None).unwrap();
         assert_eq!(
@@ -96,10 +90,12 @@ mod tests {
             .with_state(app_state);
 
         // Delete the file
+        let url = format!("/webdav/{}/pub/{}", pubkey, file_path);
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/webdav/{}/pub/{}", pubkey, file_path).as_str())
+            .delete(url.as_str())
             .await;
+        println!("response: {:?}", response.text());
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
 

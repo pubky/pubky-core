@@ -1,94 +1,66 @@
 use axum::{
     body::Body,
-    extract::{OriginalUri, Path, State},
+    extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
 };
 use httpdate::HttpDate;
 use pkarr::PublicKey;
 use std::str::FromStr;
+use tokio_util::io::ReaderStream;
 
-use crate::{core::{
-    err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Error, Result},
-    extractors::{ListQueryParams, PubkyHost},
-    AppState,
-}, persistence::lmdb::tables::entries::WebDavPath};
 use crate::persistence::lmdb::tables::entries::Entry;
+use crate::{
+    core::{
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        extractors::{ListQueryParams, PubkyHost},
+        AppState,
+    },
+    persistence::lmdb::tables::entries::EntryPath,
+    shared::WebDavPathAxum,
+};
 
 pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
     headers: HeaderMap,
-    path: OriginalUri,
+    Path(path): Path<WebDavPathAxum>,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
+    let entry_path = EntryPath::new(pubky.public_key().clone(), path.0);
+    let entry = state.db.get_entry2(&entry_path)?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
 
-    let dav_path = match WebDavPath::new(path.0.path()) {
-        Ok(dav_path) => dav_path,
-        Err(e) => {
-            return Err(Error::new(StatusCode::BAD_REQUEST, Some(e.to_string())));
-        }
-    };
-
-    let rtxn = state.db.env.read_txn()?;
-    get_entry(
-        headers,
-        state
-            .db
-            .get_entry(&rtxn, pubky.public_key(), dav_path.as_str())?,
-        None,
-    )
+    get_entry(headers, entry, None)
 }
 
+#[axum::debug_handler]
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
     pubky: PubkyHost,
-    path: OriginalUri,
+    Path(path): Path<WebDavPathAxum>,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db)?;
 
     let public_key = pubky.public_key().clone();
-    let dav_path = match WebDavPath::new(path.0.path()) {
-        Ok(dav_path) => dav_path,
-        Err(e) => {
-            return Err(Error::new(StatusCode::BAD_REQUEST, Some(e.to_string())));
-        }
-    };
-
+    let dav_path = path.0;
     if dav_path.is_directory() {
         return list(state, &public_key, &dav_path.as_str(), params);
     }
+    let entry_path = EntryPath::new(pubky.public_key().clone(), dav_path);
+    let entry = state.db.get_entry2(&entry_path)?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+    let buffer_file = state.db.read_file(&entry.file_id()).await?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
 
-    let (entry_tx, entry_rx) = flume::bounded::<Option<Entry>>(1);
-    let (chunks_tx, chunks_rx) = flume::unbounded::<std::result::Result<Vec<u8>, heed::Error>>();
-
-    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-        let rtxn = state.db.env.read_txn()?;
-
-        let option = state.db.get_entry(&rtxn, &public_key, dav_path.as_str())?;
-
-        if let Some(entry) = option {
-            let iter = entry.read_content(&state.db, &rtxn)?;
-
-            entry_tx.send(Some(entry))?;
-
-            for next in iter {
-                chunks_tx.send(next.map(|b| b.to_vec()))?;
-            }
-        };
-
-        entry_tx.send(None)?;
-
-        Ok(())
-    });
-
+    let file_handle = buffer_file.open_file_handle()?;
+    // Async stream the file
+    let tokio_file_handle = tokio::fs::File::from_std(file_handle);
+    let body_stream = Body::from_stream(ReaderStream::new(tokio_file_handle));
     get_entry(
         headers,
-        entry_rx.recv_async().await?,
-        Some(Body::from_stream(chunks_rx.into_stream())),
+        entry,
+        Some(body_stream),
     )
 }
 
@@ -126,54 +98,44 @@ pub fn list(
         .body(Body::from(vec.join("\n")))?)
 }
 
-pub fn get_entry(
-    headers: HeaderMap,
-    entry: Option<Entry>,
-    body: Option<Body>,
-) -> Result<Response<Body>> {
-    if let Some(entry) = entry {
-        // TODO: Enable seek API (range requests)
-        // TODO: Gzip? or brotli?
+pub fn get_entry(headers: HeaderMap, entry: Entry, body: Option<Body>) -> Result<Response<Body>> {
+    // TODO: Enable seek API (range requests)
+    // TODO: Gzip? or brotli?
 
-        let mut response = HeaderMap::from(&entry).into_response();
+    let mut response = HeaderMap::from(&entry).into_response();
 
-        // Handle IF_MODIFIED_SINCE
-        if let Some(condition_http_date) = headers
-            .get(header::IF_MODIFIED_SINCE)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| HttpDate::from_str(s).ok())
-        {
-            let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+    // Handle IF_MODIFIED_SINCE
+    if let Some(condition_http_date) = headers
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| HttpDate::from_str(s).ok())
+    {
+        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
 
-            if condition_http_date >= entry_http_date {
-                *response.status_mut() = StatusCode::NOT_MODIFIED;
-            }
-        };
-
-        // Handle IF_NONE_MATCH
-        if let Some(str) = headers
-            .get(header::IF_NONE_MATCH)
-            .and_then(|h| h.to_str().ok())
-        {
-            let etag = format!("\"{}\"", entry.content_hash());
-            if str
-                .trim()
-                .split(',')
-                .collect::<Vec<_>>()
-                .contains(&etag.as_str())
-            {
-                *response.status_mut() = StatusCode::NOT_MODIFIED;
-            };
+        if condition_http_date >= entry_http_date {
+            *response.status_mut() = StatusCode::NOT_MODIFIED;
         }
+    };
 
-        if let Some(body) = body {
-            *response.body_mut() = body;
+    // Handle IF_NONE_MATCH
+    if let Some(str) = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|h| h.to_str().ok())
+    {
+        let etag = format!("\"{}\"", entry.content_hash());
+        if str
+            .trim()
+            .split(',')
+            .collect::<Vec<_>>()
+            .contains(&etag.as_str())
+        {
+            *response.status_mut() = StatusCode::NOT_MODIFIED;
         };
-
-        Ok(response)
-    } else {
-        Err(Error::with_status(StatusCode::NOT_FOUND))?
     }
+    if let Some(body) = body {
+        *response.body_mut() = body;
+    }
+    Ok(response)
 }
 
 impl From<&Entry> for HeaderMap {

@@ -1,10 +1,9 @@
 mod in_db_file;
-mod table;
+mod entries;
 mod blobs;
 mod entry_path;
-mod webdav_path;
 
-pub use webdav_path::WebDavPath;
-pub (crate) use in_db_file::*;
-pub use table::{Entry, EntryWriter, EntriesTable, ENTRIES_TABLE};
+pub use in_db_file::*;
+pub use entry_path::{EntryPath, EntryPathError};
+pub use entries::{Entry, EntryWriter, EntriesTable, ENTRIES_TABLE};
 pub use blobs::{BlobsTable, BLOBS_TABLE};

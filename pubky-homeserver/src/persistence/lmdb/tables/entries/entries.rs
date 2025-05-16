@@ -1,5 +1,16 @@
+use super::super::events::Event;
+use super::{super::super::LmDB, EntryPath, InDbFileId, InDbTempFile};
+use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use heed::{
+    types::{Bytes, Str},
+    Database, RoTxn,
+};
 use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
+use pubky_common::{
+    crypto::{Hash, Hasher},
+    timestamp::Timestamp,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -7,17 +18,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::instrument;
-use heed::{
-    types::{Bytes, Str},
-    Database, RoTxn,
-};
-use pubky_common::{
-    crypto::{Hash, Hasher},
-    timestamp::Timestamp,
-};
-use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
-use super::{super::super::LmDB};
-use super::super::events::Event;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Str, Bytes>;
@@ -28,6 +28,7 @@ impl LmDB {
     /// Write an entry by an author at a given path.
     ///
     /// The path has to start with a forward slash `/`
+    #[cfg(test)]
     pub fn create_entry_writer(
         &mut self,
         public_key: &PublicKey,
@@ -36,9 +37,119 @@ impl LmDB {
         EntryWriter::new(self, public_key, path)
     }
 
+    /// Writes an entry to the database.
+    ///
+    /// The entry is written to the database and the file is written to the blob store.
+    /// An event is written to the events table.
+    /// The entry is returned.
+    pub async fn write_entry2(
+        &mut self,
+        path: &EntryPath,
+        file: &InDbTempFile,
+    ) -> anyhow::Result<Entry> {
+        let mut db = self.clone();
+        let path = path.clone();
+        let file = file.clone();
+        tokio::task::spawn_blocking(move || -> anyhow::Result<Entry> {
+            db.write_entry2_sync(&path, &file)
+        })
+        .await?
+    }
+
+    /// Writes an entry to the database.
+    ///
+    /// The entry is written to the database and the file is written to the blob store.
+    /// An event is written to the events table.
+    /// The entry is returned.
+    pub fn write_entry2_sync(
+        &mut self,
+        path: &EntryPath,
+        file: &InDbTempFile,
+    ) -> anyhow::Result<Entry> {
+        let mut wtxn = self.env.write_txn()?;
+        let mut entry = Entry::new();
+        entry.set_content_hash(*file.hash());
+        entry.set_content_length(file.len());
+        let file_id = self.write_file_sync(&file, &mut wtxn)?;
+        entry.set_timestamp(file_id.timestamp());
+        let entry_key = path.key();
+        self.tables
+            .entries
+            .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
+
+        // Write a public [Event].
+        let url = format!("pubky://{}", entry_key);
+        let event = Event::put(&url);
+        let value = event.serialize();
+
+        self.tables
+            .events
+            .put(&mut wtxn, file_id.timestamp().to_string().as_str(), &value)?;
+        wtxn.commit()?;
+        Ok(entry)
+    }
+
+    /// Get an entry from the database.
+    /// This doesn't include the file but only metadata.
+    pub fn get_entry2(&self, path: &EntryPath) -> anyhow::Result<Option<Entry>> {
+        let txn = self.env.read_txn()?;
+        let key = path.key();
+        let entry = match self.tables.entries.get(&txn, key.as_str())? {
+            Some(bytes) => Entry::deserialize(bytes)?,
+            None => return Ok(None),
+        };
+        Ok(Some(entry))
+    }
+
+    /// Delete an entry including the associated file from the database.
+    pub async fn delete_entry2(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
+        let mut db = self.clone();
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
+            db.delete_entry2_sync(&path)
+        })
+        .await?
+    }
+
+    /// Delete an entry including the associated file from the database.
+    pub fn delete_entry2_sync(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
+        let entry = match self.get_entry2(path)? {
+            Some(entry) => entry,
+            None => return Ok(false),
+        };
+
+        let mut wtxn = self.env.write_txn()?;
+        let deleted = self.delete_file(&entry.file_id(), &mut wtxn)?;
+        if !deleted {
+            wtxn.abort();
+            return Ok(false);
+        }
+
+        let key = path.key();
+        let deleted = self.tables.entries.delete(&mut wtxn, key.as_str())?;
+        if !deleted {
+            wtxn.abort();
+            return Ok(false);
+        }
+
+        // create DELETE event
+        let url = format!("pubky://{key}");
+
+        let event = Event::delete(&url);
+        let value = event.serialize();
+
+        let key = Timestamp::now().to_string();
+
+        self.tables.events.put(&mut wtxn, &key, &value)?;
+
+        wtxn.commit()?;
+        Ok(true)
+    }
+
     /// Delete an entry by an author at a given path.
     ///
     /// The path has to start with a forward slash `/`
+    #[cfg(test)]
     pub fn delete_entry(&mut self, public_key: &PublicKey, path: &str) -> anyhow::Result<bool> {
         let mut wtxn = self.env.write_txn()?;
 
@@ -105,14 +216,9 @@ impl LmDB {
     }
 
     /// Bytes stored at `path` for this user (0 if none).
-    pub fn get_entry_content_length(
-        &self,
-        public_key: &PublicKey,
-        path: &str,
-    ) -> anyhow::Result<u64> {
-        let txn = self.env.read_txn()?;
+    pub fn get_entry_content_length(&self, path: &EntryPath) -> anyhow::Result<u64> {
         let content_length = self
-            .get_entry(&txn, public_key, path)?
+            .get_entry2(path)?
             .map(|e| e.content_length() as u64)
             .unwrap_or(0);
         Ok(content_length)
@@ -316,6 +422,10 @@ impl Entry {
         &self.content_type
     }
 
+    pub fn file_id(&self) -> InDbFileId {
+        InDbFileId::from(self.timestamp)
+    }
+
     // === Public Method ===
 
     pub fn read_content<'txn>(
@@ -443,7 +553,6 @@ impl<'db> EntryWriter<'db> {
 
         // TODO: delete events older than a threshold.
         // TODO: move to events.rs
-        
 
         wtxn.commit()?;
 
@@ -472,10 +581,112 @@ impl std::io::Write for EntryWriter<'_> {
 mod tests {
     // use std::io::Write;
 
+    use std::io::Read;
+
     use bytes::Bytes;
     use pkarr::Keypair;
 
+    use crate::{
+        persistence::lmdb::tables::entries::{EntryPath, InDbTempFile},
+        shared::WebDavPath,
+    };
+
     use super::LmDB;
+
+    #[tokio::test]
+    async fn test_write_read_delete_method() {
+        let mut db = LmDB::test();
+
+        let path = EntryPath::new(
+            Keypair::random().public_key(),
+            WebDavPath::new("/pub/foo.txt").unwrap(),
+        );
+        let file = InDbTempFile::zeroes(5).await.unwrap();
+        let entry = db.write_entry2_sync(&path, &file).unwrap();
+
+        let read_entry = db.get_entry2(&path).unwrap().expect("Entry doesn't exist");
+        assert_eq!(entry.content_hash(), read_entry.content_hash());
+        assert_eq!(entry.content_length(), read_entry.content_length());
+        assert_eq!(entry.timestamp(), read_entry.timestamp());
+
+        let read_file = db
+            .read_file(&entry.file_id())
+            .await
+            .unwrap()
+            .expect("File not found");
+        let mut file_handle = read_file.open_file_handle().unwrap();
+        let mut content = vec![];
+        file_handle.read_to_end(&mut content).unwrap();
+        assert_eq!(content, vec![0, 0, 0, 0, 0]);
+
+        let deleted = db.delete_entry2_sync(&path).unwrap();
+        assert!(deleted);
+
+        // Verify the entry and file are deleted
+        let read_entry = db.get_entry2(&path).unwrap();
+        assert!(read_entry.is_none());
+        let read_file = db.read_file(&entry.file_id()).await.unwrap();
+        assert!(read_file.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_read_new_method() {
+        let mut db = LmDB::test();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let path = "/pub/foo.txt";
+        let chunk = Bytes::from(vec![1, 2, 3, 4, 5]);
+
+        // Write with the old method
+        let mut writer = db.create_entry_writer(&public_key, path).unwrap();
+        writer.update(&chunk).expect("Failed to write chunk");
+        writer.commit().expect("Failed to commit");
+
+        // Check read with the new methods
+        let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
+        let entry = db
+            .get_entry2(&entry_path)
+            .unwrap()
+            .expect("Entry not found");
+        assert_eq!(entry.content_hash(), entry.content_hash());
+
+        let file = db
+            .read_file(&entry.file_id())
+            .await
+            .unwrap()
+            .expect("File not found");
+        assert_eq!(file.hash(), &entry.content_hash.0);
+        let mut file_handle = file.open_file_handle().unwrap();
+        let mut content = vec![];
+        file_handle.read_to_end(&mut content).unwrap();
+        assert_eq!(content, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[tokio::test]
+    async fn test_write_new_method() {
+        let mut db = LmDB::test();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let path = "/pub/foo.txt";
+
+        // Write with new method
+        let entry_path = EntryPath::new(public_key.clone(), WebDavPath::new(path).unwrap());
+        let file = InDbTempFile::zeroes(5).await.unwrap();
+        let new_entry = db.write_entry2_sync(&entry_path, &file).unwrap();
+
+        // Check read with the old methods
+        let rtxn = db.env.read_txn().unwrap();
+        let entry = db.get_entry(&rtxn, &public_key, path).unwrap().unwrap();
+        assert_eq!(entry.content_hash(), new_entry.content_hash());
+        assert_eq!(entry.content_length(), new_entry.content_length());
+        assert_eq!(entry.timestamp(), new_entry.timestamp());
+        assert_eq!(
+            entry.content_hash().to_hex().as_str(),
+            "cdc96eca844d7912acdbb3dca677757d0db5747a1df61166339cfc7156d4880f"
+        );
+    }
 
     #[tokio::test]
     async fn entries() -> anyhow::Result<()> {

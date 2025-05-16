@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use pkarr::PublicKey;
 
-use super::WebDavPath;
+use crate::shared::WebDavPath;
 
 #[derive(thiserror::Error, Debug)]
 pub enum EntryPathError {
@@ -16,7 +16,8 @@ pub enum EntryPathError {
 /// A path to an entry.
 ///
 /// The path as a string is used to identify the entry.
-struct EntryPath {
+#[derive(Debug, Clone)]
+pub struct EntryPath {
     pubkey: PublicKey,
     path: WebDavPath,
 }
@@ -36,11 +37,14 @@ impl EntryPath {
     pub fn path(&self) -> &WebDavPath {
         &self.path
     }
-}
 
-impl std::fmt::Display for EntryPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.pubkey, self.path)
+    /// The key of the entry.
+    /// 
+    /// The key is the pubkey and the path concatenated.
+    /// 
+    /// Example: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/folder/file.txt`
+    pub fn key(&self) -> String {
+        format!("{}{}", self.pubkey, self.path)
     }
 }
 
@@ -67,10 +71,10 @@ mod tests {
     #[test]
     fn test_entry_path_from_str() {
         let pubkey = PublicKey::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo").unwrap();
-        let path = "/folder/file.txt";
+        let path = WebDavPath::new("/folder/file.txt").unwrap();
         let key = format!("{pubkey}{path}");
-        let entry_path = EntryPath::from_str(&key).unwrap();
-        assert_eq!(entry_path.to_string(), key);
+        let entry_path = EntryPath::new(pubkey, path);
+        assert_eq!(entry_path.key(), key);
     }
 
 

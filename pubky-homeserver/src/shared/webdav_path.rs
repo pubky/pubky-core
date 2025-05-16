@@ -1,4 +1,5 @@
 use std::{path::PathBuf, str::FromStr};
+use serde::{Deserialize, Serialize};
 
 /// A normalized and validated webdav path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -59,6 +60,7 @@ impl FromStr for WebDavPath {
         Self::new(s)
     }
 }
+
 
 // Encode all non-unreserved characters, except '/'.
 // See RFC3986, and https://en.wikipedia.org/wiki/Percent-encoding .
