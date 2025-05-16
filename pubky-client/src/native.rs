@@ -18,10 +18,7 @@ use std::time::Duration;
 
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
-static DEFAULT_RELAYS: &[&str] = &[
-    "https://pkarr.pubky.org/",
-    "https://pkarr.pubky.app/",
-];
+static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 
 #[macro_export]
 macro_rules! handle_http_error {
@@ -174,9 +171,7 @@ impl Client {
     /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> ClientBuilder {
         let mut builder = ClientBuilder::default();
-        builder.pkarr(|pkarr| {
-            pkarr.relays(DEFAULT_RELAYS).expect("infallible")
-        });
+        builder.pkarr(|pkarr| pkarr.relays(DEFAULT_RELAYS).expect("infallible"));
         builder
     }
 
@@ -188,16 +183,14 @@ impl Client {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_fetch() {
         let client = Client::builder().build().unwrap();
         let response = client.get("https://google.ch/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }
-    
 }
