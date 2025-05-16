@@ -35,7 +35,7 @@ mod tests {
     use pkarr::Keypair;
 
     async fn write_test_file(db: &mut LmDB, entry_path: &EntryPath) {
-        let file = InDbTempFile::zeroes(10).await.unwrap();
+        let file = InDbTempFile::zeros(10).await.unwrap();
         let _entry = db.write_entry2(&entry_path, &file).await.unwrap();
     }
 
@@ -95,7 +95,6 @@ mod tests {
         let response = server
             .delete(url.as_str())
             .await;
-        println!("response: {:?}", response.text());
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
 

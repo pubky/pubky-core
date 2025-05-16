@@ -30,7 +30,7 @@ impl LmDB {
     pub(crate) fn read_file_sync(
         &self,
         id: &InDbFileId,
-    ) -> anyhow::Result<Option<InDbTempFile>> {
+    ) -> anyhow::Result<InDbTempFile> {
         let mut file_writer = SyncInDbTempFileWriter::new()?;
         let rtxn = self.env.read_txn()?;
         let blobs_iter = self
@@ -46,22 +46,22 @@ impl LmDB {
         }
 
         if !file_exists {
-            return Ok(None);
+            return Ok(InDbTempFile::empty()?);
         }
         
         let file = file_writer.complete()?;
         rtxn.commit()?;
-        Ok(Some(file))
+        Ok(file)
     }
 
     /// Read the blobs into a temporary file asynchronously.
     pub(crate) async fn read_file(
         &self,
         id: &InDbFileId,
-    ) -> anyhow::Result<Option<InDbTempFile>> {
+    ) -> anyhow::Result<InDbTempFile> {
         let db = self.clone();
         let id = id.clone();
-        tokio::task::spawn_blocking(move || -> anyhow::Result<Option<InDbTempFile>> {
+        tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
             db.read_file_sync(&id)
         }).await?
     }
@@ -129,13 +129,13 @@ mod tests {
         let lmdb = LmDB::test();
 
         // Write file to LMDB
-        let write_file = InDbTempFile::zeroes(50).await.unwrap();
+        let write_file = InDbTempFile::zeros(50).await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
         wtxn.commit().unwrap();
 
         // Read file from LMDB
-        let read_file = lmdb.read_file(&id).await.unwrap().unwrap();
+        let read_file = lmdb.read_file(&id).await.unwrap();
 
         assert_eq!(read_file.len(), write_file.len());
         assert_eq!(read_file.hash(), write_file.hash());
@@ -152,8 +152,29 @@ mod tests {
 
         // Try to read file from LMDB
         let read_file = lmdb.read_file(&id).await.unwrap();
-        assert!(read_file.is_none());
+        assert_eq!(read_file.len(), 0);
 
+    }
+
+    #[tokio::test]
+    async fn test_write_empty_file() {
+        let lmdb = LmDB::test();
+
+        // Write file to LMDB
+        let write_file = InDbTempFile::empty().unwrap();
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        // Read file from LMDB
+        let read_file = lmdb.read_file(&id).await.unwrap();
+
+        assert_eq!(read_file.len(), write_file.len());
+        assert_eq!(read_file.hash(), write_file.hash());
+
+        let written_file_content = std::fs::read(write_file.path()).unwrap();
+        let read_file_content = std::fs::read(read_file.path()).unwrap();
+        assert_eq!(written_file_content, read_file_content);
     }
 
     #[tokio::test]
@@ -168,7 +189,7 @@ mod tests {
         entry_writer.update(&chunk).unwrap();
         let entry = entry_writer.commit().unwrap();
         let file_id = InDbFileId::from(entry.timestamp().clone());
-        let read_file = lmdb.read_file(&file_id).await.unwrap().unwrap();
+        let read_file = lmdb.read_file(&file_id).await.unwrap();
         let written_file_content = std::fs::read(read_file.path()).unwrap();
 
         assert_eq!(written_file_content, chunk);

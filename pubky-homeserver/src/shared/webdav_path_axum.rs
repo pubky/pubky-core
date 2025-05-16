@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn test_webdav_path_axum() {
-        let path = WebDavPathAxum::from_str("foo/bar").unwrap();
-        assert_eq!(path.0.as_str(), "/foo/bar");
+        let path = WebDavPathAxum::from_str("pub/foo/bar").unwrap();
+        assert_eq!(path.0.as_str(), "/pub/foo/bar");
     }
 }

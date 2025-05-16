@@ -86,6 +86,7 @@ impl LmDB {
             .events
             .put(&mut wtxn, file_id.timestamp().to_string().as_str(), &value)?;
         wtxn.commit()?;
+
         Ok(entry)
     }
 
@@ -601,7 +602,7 @@ mod tests {
             Keypair::random().public_key(),
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
-        let file = InDbTempFile::zeroes(5).await.unwrap();
+        let file = InDbTempFile::zeros(5).await.unwrap();
         let entry = db.write_entry2_sync(&path, &file).unwrap();
 
         let read_entry = db.get_entry2(&path).unwrap().expect("Entry doesn't exist");
@@ -612,8 +613,7 @@ mod tests {
         let read_file = db
             .read_file(&entry.file_id())
             .await
-            .unwrap()
-            .expect("File not found");
+            .unwrap();
         let mut file_handle = read_file.open_file_handle().unwrap();
         let mut content = vec![];
         file_handle.read_to_end(&mut content).unwrap();
@@ -626,7 +626,7 @@ mod tests {
         let read_entry = db.get_entry2(&path).unwrap();
         assert!(read_entry.is_none());
         let read_file = db.read_file(&entry.file_id()).await.unwrap();
-        assert!(read_file.is_none());
+        assert_eq!(read_file.len(), 0);
     }
 
     #[tokio::test]
@@ -654,8 +654,7 @@ mod tests {
         let file = db
             .read_file(&entry.file_id())
             .await
-            .unwrap()
-            .expect("File not found");
+            .unwrap();
         assert_eq!(file.hash(), &entry.content_hash.0);
         let mut file_handle = file.open_file_handle().unwrap();
         let mut content = vec![];
@@ -673,7 +672,7 @@ mod tests {
 
         // Write with new method
         let entry_path = EntryPath::new(public_key.clone(), WebDavPath::new(path).unwrap());
-        let file = InDbTempFile::zeroes(5).await.unwrap();
+        let file = InDbTempFile::zeros(5).await.unwrap();
         let new_entry = db.write_entry2_sync(&entry_path, &file).unwrap();
 
         // Check read with the old methods

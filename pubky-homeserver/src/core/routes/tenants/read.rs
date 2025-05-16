@@ -51,7 +51,7 @@ pub async fn get(
     }
     let entry_path = EntryPath::new(pubky.public_key().clone(), dav_path);
     let entry = state.db.get_entry2(&entry_path)?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
-    let buffer_file = state.db.read_file(&entry.file_id()).await?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+    let buffer_file = state.db.read_file(&entry.file_id()).await?;
 
     let file_handle = buffer_file.open_file_handle()?;
     // Async stream the file

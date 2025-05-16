@@ -203,8 +203,24 @@ impl InDbTempFile {
     /// Create a new BlobsTempFile with random content.
     /// Convenient method used for testing.
     #[cfg(test)]
-    pub async fn zeroes(size_bytes: usize) -> Result<Self, std::io::Error> {
+    pub async fn zeros(size_bytes: usize) -> Result<Self, std::io::Error> {
         AsyncInDbTempFileWriter::zeros(size_bytes).await
+    }
+
+    /// Create a new InDbTempFile with zero content.
+    pub fn empty() -> Result<Self, std::io::Error> {
+        let dir = tempfile::tempdir()?;
+        let file_path = dir.path().join("entry.bin");
+        std::fs::File::create(file_path.clone())?;
+        let file_size = 0;
+        let hasher = Hasher::new();
+        let file_hash = hasher.finalize();
+        Ok(Self {
+            dir: Arc::new(dir),
+            file_path,
+            file_size,
+            file_hash,
+        })
     }
 
     pub fn len(&self) -> usize {
