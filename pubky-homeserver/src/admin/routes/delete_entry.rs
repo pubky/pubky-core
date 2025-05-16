@@ -1,5 +1,8 @@
 use super::super::app_state::AppState;
-use crate::{persistence::lmdb::tables::entries::EntryPath, shared::{HttpError, HttpResult, WebDavPathAxum, Z32Pubkey}};
+use crate::{
+    persistence::lmdb::tables::entries::EntryPath,
+    shared::{HttpError, HttpResult, WebDavPathAxum, Z32Pubkey},
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -11,7 +14,6 @@ pub async fn delete_entry(
     State(mut state): State<AppState>,
     Path((pubkey, path)): Path<(Z32Pubkey, WebDavPathAxum)>,
 ) -> HttpResult<impl IntoResponse> {
-
     let entry_path = EntryPath::new(pubkey.0, path.0);
     let deleted = state.db.delete_entry2(&entry_path).await?;
     if deleted {
@@ -28,8 +30,8 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
+    use crate::persistence::lmdb::tables::entries::EntryPath;
     use crate::persistence::lmdb::{tables::entries::InDbTempFile, LmDB};
-    use crate::persistence::lmdb::tables::entries::{EntryPath};
     use crate::shared::WebDavPath;
     use axum::{routing::delete, Router};
     use pkarr::Keypair;
@@ -92,9 +94,7 @@ mod tests {
         // Delete the file
         let url = format!("/webdav/{}/pub/{}", pubkey, file_path);
         let server = axum_test::TestServer::new(router).unwrap();
-        let response = server
-            .delete(url.as_str())
-            .await;
+        let response = server.delete(url.as_str()).await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
 

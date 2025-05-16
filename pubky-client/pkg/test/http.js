@@ -9,7 +9,7 @@ test("basic fetch", async (t) => {
 
   // Normal TLD
   {
-    let response = await client.fetch(`https://relay.pkarr.org/`);
+    let response = await client.fetch(`https://google.com/`);
 
     t.equal(response.status, 200);
   }

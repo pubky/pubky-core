@@ -17,9 +17,11 @@ admin_password = "admin"
 public_ip = "127.0.0.1"
 icann_domain = "localhost"
 user_keys_republisher_interval = 14400 # 4 hours in seconds
+dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
+
+
 # The following params exist, but the default value is None. 
 # See ./sample.config.toml for usage
 # public_icann_http_port =
 # dht_bootstrap_nodes =
-# dht_relay_nodes =
 # dht_request_timeout_ms =

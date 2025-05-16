@@ -14,7 +14,7 @@ pub async fn session(
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Some(session) = state.db.get_session(&secret)? {
             // TODO: add content-type

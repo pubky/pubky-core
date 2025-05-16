@@ -1,14 +1,21 @@
 use axum::{
     body::{Body, HttpBody},
-    extract::{ Path, State},
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
 use futures_util::stream::StreamExt;
 
-use crate::{core::{
-    err_if_user_is_invalid::err_if_user_is_invalid, error::{Error, Result}, extractors::PubkyHost, AppState
-}, persistence::lmdb::tables::entries::{EntryPath, AsyncInDbTempFileWriter}, shared::WebDavPathAxum};
+use crate::{
+    core::{
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        extractors::PubkyHost,
+        AppState,
+    },
+    persistence::lmdb::tables::entries::{AsyncInDbTempFileWriter, EntryPath},
+    shared::WebDavPathAxum,
+};
 
 /// Fail with 507 if `(current + incoming − existing) > quota`.
 fn enforce_user_disk_quota(
@@ -41,7 +48,7 @@ pub async fn delete(
     Path(path): Path<WebDavPathAxum>,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key();
-    err_if_user_is_invalid(public_key, &state.db)?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(public_key.clone(), path.0);
     let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
 
@@ -65,7 +72,7 @@ pub async fn put(
     body: Body,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key();
-    err_if_user_is_invalid(public_key, &state.db)?;
+    err_if_user_is_invalid(public_key, &state.db, true)?;
     let entry_path = EntryPath::new(public_key.clone(), path.0);
 
     let existing_entry_bytes = state.db.get_entry_content_length(&entry_path)?;
@@ -82,7 +89,6 @@ pub async fn put(
     let mut seen_bytes: u64 = 0;
     let mut stream = body.into_data_stream();
     let mut buffer_file_writer = AsyncInDbTempFileWriter::new().await?;
-    
 
     while let Some(chunk) = stream.next().await.transpose()? {
         seen_bytes += chunk.len() as u64;

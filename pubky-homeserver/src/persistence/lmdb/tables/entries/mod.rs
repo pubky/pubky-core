@@ -1,9 +1,9 @@
-mod in_db_file;
-mod entries;
 mod blobs;
+mod entries;
 mod entry_path;
+mod in_db_file;
 
-pub use in_db_file::*;
-pub use entry_path::{EntryPath, EntryPathError};
-pub use entries::{Entry, EntryWriter, EntriesTable, ENTRIES_TABLE};
 pub use blobs::{BlobsTable, BLOBS_TABLE};
+pub use entries::{EntriesTable, Entry, EntryWriter, ENTRIES_TABLE};
+pub use entry_path::{EntryPath, EntryPathError};
+pub use in_db_file::*;

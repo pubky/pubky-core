@@ -45,10 +45,10 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
-        .layer(PubkyHostLayer)
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
         ))
+        .layer(PubkyHostLayer)
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.

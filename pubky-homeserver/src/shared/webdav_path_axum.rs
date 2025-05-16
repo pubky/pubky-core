@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 use super::WebDavPath;
 
 /// A webdav path that can be used with axum.
-/// 
+///
 /// When using `.route("/{*path}", your_handler)` in axum, the path is passed without the leading slash.
 /// This struct adds the leading slash back and therefore allows direct validation of the path.
-/// 
+///
 /// Usage in handler:
-/// 
+///
 /// `Path(path): Path<WebDavPathAxum>`
 pub struct WebDavPathAxum(pub WebDavPath);
 
@@ -36,7 +36,8 @@ impl FromStr for WebDavPathAxum {
 impl Serialize for WebDavPathAxum {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         serializer.serialize_str(self.0.as_str())
     }
 }
@@ -44,7 +45,8 @@ impl Serialize for WebDavPathAxum {
 impl<'de> Deserialize<'de> for WebDavPathAxum {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de> {
+        D: serde::Deserializer<'de>,
+    {
         let s = String::deserialize(deserializer)?;
         Self::from_str(&s).map_err(serde::de::Error::custom)
     }

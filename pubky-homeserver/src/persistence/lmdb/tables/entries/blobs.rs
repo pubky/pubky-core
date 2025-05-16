@@ -9,8 +9,6 @@ use tokio::task;
 pub type BlobsTable = Database<Bytes, Bytes>;
 pub const BLOBS_TABLE: &str = "blobs";
 
-
-
 impl LmDB {
     pub fn read_entry_content<'txn>(
         &self,
@@ -27,10 +25,7 @@ impl LmDB {
     /// Read the blobs into a temporary file.
     ///
     /// The file is written to disk to minimize the size/duration of the LMDB transaction.
-    pub(crate) fn read_file_sync(
-        &self,
-        id: &InDbFileId,
-    ) -> anyhow::Result<InDbTempFile> {
+    pub(crate) fn read_file_sync(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
         let mut file_writer = SyncInDbTempFileWriter::new()?;
         let rtxn = self.env.read_txn()?;
         let blobs_iter = self
@@ -48,22 +43,20 @@ impl LmDB {
         if !file_exists {
             return Ok(InDbTempFile::empty()?);
         }
-        
+
         let file = file_writer.complete()?;
         rtxn.commit()?;
         Ok(file)
     }
 
     /// Read the blobs into a temporary file asynchronously.
-    pub(crate) async fn read_file(
-        &self,
-        id: &InDbFileId,
-    ) -> anyhow::Result<InDbTempFile> {
+    pub(crate) async fn read_file(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
         let db = self.clone();
         let id = id.clone();
         tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
             db.read_file_sync(&id)
-        }).await?
+        })
+        .await?
     }
 
     /// Write the blobs from a temporary file to LMDB.
@@ -74,7 +67,7 @@ impl LmDB {
     ) -> anyhow::Result<InDbFileId> {
         let id = InDbFileId::new();
         let mut file_handle = file.open_file_handle()?;
-    
+
         let mut blob_index: u32 = 0;
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];
@@ -83,13 +76,15 @@ impl LmDB {
             if is_end_of_file {
                 break; // EOF reached
             }
-    
+
             let blob_key = id.get_blob_key(blob_index);
-            self.tables.blobs.put(wtxn, &blob_key, &blob[..bytes_read])?;
-    
+            self.tables
+                .blobs
+                .put(wtxn, &blob_key, &blob[..bytes_read])?;
+
             blob_index += 1;
         }
-    
+
         Ok(id)
     }
 
@@ -102,10 +97,7 @@ impl LmDB {
         let mut deleted_chunks = false;
 
         {
-            let mut iter = self
-                .tables
-                .blobs
-                .prefix_iter_mut(wtxn, &file.bytes())?;
+            let mut iter = self.tables.blobs.prefix_iter_mut(wtxn, &file.bytes())?;
 
             while iter.next().is_some() {
                 unsafe {
@@ -116,7 +108,6 @@ impl LmDB {
         Ok(deleted_chunks)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -153,7 +144,6 @@ mod tests {
         // Try to read file from LMDB
         let read_file = lmdb.read_file(&id).await.unwrap();
         assert_eq!(read_file.len(), 0);
-
     }
 
     #[tokio::test]
@@ -193,9 +183,5 @@ mod tests {
         let written_file_content = std::fs::read(read_file.path()).unwrap();
 
         assert_eq!(written_file_content, chunk);
-        
     }
-
-
-     
 }

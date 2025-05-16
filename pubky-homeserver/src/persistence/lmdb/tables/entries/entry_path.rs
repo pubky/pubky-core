@@ -1,5 +1,5 @@
-use std::str::FromStr;
 use pkarr::PublicKey;
+use std::str::FromStr;
 
 use crate::shared::WebDavPath;
 
@@ -24,10 +24,7 @@ pub struct EntryPath {
 
 impl EntryPath {
     pub fn new(pubkey: PublicKey, path: WebDavPath) -> Self {
-        Self {
-            pubkey,
-            path,
-        }
+        Self { pubkey, path }
     }
 
     pub fn pubkey(&self) -> &PublicKey {
@@ -39,9 +36,9 @@ impl EntryPath {
     }
 
     /// The key of the entry.
-    /// 
+    ///
     /// The key is the pubkey and the path concatenated.
-    /// 
+    ///
     /// Example: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/folder/file.txt`
     pub fn key(&self) -> String {
         format!("{}{}", self.pubkey, self.path)
@@ -52,7 +49,9 @@ impl FromStr for EntryPath {
     type Err = EntryPathError;
 
     fn from_str(s: &str) -> Result<Self, EntryPathError> {
-        let first_slash_index = s.find('/').ok_or(EntryPathError::Invalid("Missing '/'".to_string()))?;
+        let first_slash_index = s
+            .find('/')
+            .ok_or(EntryPathError::Invalid("Missing '/'".to_string()))?;
         let (pubkey, path) = match s.split_at_checked(first_slash_index) {
             Some((pubkey, path)) => (pubkey, path),
             None => return Err(EntryPathError::Invalid("Missing '/'".to_string())),
@@ -63,19 +62,17 @@ impl FromStr for EntryPath {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_entry_path_from_str() {
-        let pubkey = PublicKey::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo").unwrap();
+        let pubkey =
+            PublicKey::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo").unwrap();
         let path = WebDavPath::new("/folder/file.txt").unwrap();
         let key = format!("{pubkey}{path}");
         let entry_path = EntryPath::new(pubkey, path);
         assert_eq!(entry_path.key(), key);
     }
-
-
 }

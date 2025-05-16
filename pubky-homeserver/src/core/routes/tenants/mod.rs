@@ -30,7 +30,6 @@ pub fn router(state: AppState) -> Router<AppState> {
         // .route("/pub/{*path}", put(write::put))
         // .route("/pub/{*path}", delete(write::delete))
         // - Session routes
-
         // Layers
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))

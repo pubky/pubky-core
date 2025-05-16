@@ -4,7 +4,7 @@
 //!
 //! - `InDbFileId` is the identifier of a file that consists of multiple blobs.
 //! - `InDbTempFile` is a helper to read/write a file to/from disk.
-//! 
+//!
 use pubky_common::crypto::{Hash, Hasher};
 use pubky_common::timestamp::Timestamp;
 
@@ -48,7 +48,6 @@ use std::{fs::File, io::Write, path::PathBuf};
 use tokio::fs::File as AsyncFile;
 use tokio::io::AsyncWriteExt;
 use tokio::task;
-
 
 /// Writes a temp file to disk asynchronously.
 #[derive(Debug)]
@@ -178,8 +177,6 @@ impl SyncInDbTempFileWriter {
     }
 }
 
-
-
 /// A temporary file helper for Entry.
 ///
 /// Every file in LMDB is first written to disk before being written to LMDB.
@@ -188,7 +185,7 @@ impl SyncInDbTempFileWriter {
 /// This is to keep the LMDB transaction small and fast.
 ///
 /// As soon as EntryTempFile is dropped, the file on disk is deleted.
-/// 
+///
 #[derive(Debug, Clone)]
 pub struct InDbTempFile {
     // Temp dir is automatically deleted when the EntryTempFile is dropped.

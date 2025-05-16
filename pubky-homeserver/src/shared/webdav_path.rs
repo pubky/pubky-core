@@ -1,5 +1,5 @@
-use std::{path::PathBuf, str::FromStr};
 use serde::{Deserialize, Serialize};
+use std::{path::PathBuf, str::FromStr};
 
 /// A normalized and validated webdav path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -8,17 +8,18 @@ pub struct WebDavPath {
 }
 
 impl WebDavPath {
-
     /// Create a new WebDavPath from a already normalized path.
     /// Make sure the path is 100% normalized, and valid before using this constructor.
-    /// 
+    ///
     /// Use `WebDavPath::new` to create a new WebDavPath from an unnormalized path.
     pub fn new_unchecked(normalized_path: String) -> Self {
-        Self { normalized_path: normalized_path.to_string() }
+        Self {
+            normalized_path: normalized_path.to_string(),
+        }
     }
 
     /// Create a new WebDavPath from an unnormalized path.
-    /// 
+    ///
     /// The path will be normalized and validated.
     pub fn new(unnormalized_path: &str) -> anyhow::Result<Self> {
         let normalized_path = normalize_and_validate_webdav_path(unnormalized_path)?;
@@ -27,7 +28,7 @@ impl WebDavPath {
 
     pub fn url_encode(&self) -> String {
         percent_encoding::utf8_percent_encode(self.normalized_path.as_str(), PATH_ENCODE_SET)
-        .to_string()
+            .to_string()
     }
 
     pub fn as_str(&self) -> &str {
@@ -60,7 +61,6 @@ impl FromStr for WebDavPath {
         Self::new(s)
     }
 }
-
 
 // Encode all non-unreserved characters, except '/'.
 // See RFC3986, and https://en.wikipedia.org/wiki/Percent-encoding .
@@ -112,7 +112,7 @@ fn normalize_and_validate_webdav_path(path: &str) -> anyhow::Result<String> {
             continue;
         } else if segment == ".." {
             if normalized_segments.len() < 2 {
-                return Err(anyhow::anyhow!("Failed to normalize path: '..'."));  
+                return Err(anyhow::anyhow!("Failed to normalize path: '..'."));
             }
             normalized_segments.pop();
             normalized_segments.pop();
@@ -140,8 +140,6 @@ fn normalize_and_validate_webdav_path(path: &str) -> anyhow::Result<String> {
     Ok(full_path)
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,7 +158,6 @@ mod tests {
         };
     }
 
-        
     fn assert_invalid_path(path: &str) {
         if let Ok(normalized_path) = normalize_and_validate_webdav_path(path) {
             assert!(
@@ -229,12 +226,12 @@ mod tests {
     fn test_wildcard_is_valid() {
         assert_valid_path("/dav/file*.txt", "/dav/file*.txt");
     }
-    
+
     #[test]
     fn test_two_slashes_in_the_middle_with_slash_is_valid() {
         assert_valid_path("/dav//folder/", "/dav/folder/");
     }
-    
+
     #[test]
     fn test_script_tag_is_valid() {
         assert_valid_path("/dav/<script>", "/dav/<script>");
@@ -244,7 +241,7 @@ mod tests {
     fn test_null_is_invalid() {
         assert_invalid_path("/dav/file\0");
     }
-    
+
     #[test]
     fn test_empty_path_is_invalid() {
         assert_invalid_path("");
@@ -298,9 +295,12 @@ mod tests {
     #[test]
     fn test_url_encode() {
         let url_encoded = "/folder/file%25.txt";
-        let url_decoded = percent_encoding::percent_decode_str(url_encoded).decode_utf8().unwrap().to_string();
+        let url_decoded = percent_encoding::percent_decode_str(url_encoded)
+            .decode_utf8()
+            .unwrap()
+            .to_string();
         let path = WebDavPath::new(url_decoded.as_str()).unwrap();
-        let normalized = path.to_string();  
+        let normalized = path.to_string();
         assert_eq!(normalized, "/folder/file%.txt");
         assert_eq!(path.url_encode(), url_encoded);
     }
@@ -321,9 +321,11 @@ mod tests {
     }
 
     #[test]
-    fn test_total_path_too_long() { 
+    fn test_total_path_too_long() {
         let num_segments = MAX_WEBDAV_PATH_TOTAL_LENGTH; // This will create path like "/a/a/.../a"
-        let segments: Vec<String> = std::iter::repeat("a".to_string()).take(num_segments).collect();
+        let segments: Vec<String> = std::iter::repeat("a".to_string())
+            .take(num_segments)
+            .collect();
         let path = format!("/{}", segments.join("/"));
         assert_invalid_path(&path);
 

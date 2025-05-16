@@ -24,7 +24,7 @@ async fn http_get_icann() {
     let client = testnet.pubky_client_builder().build().unwrap();
 
     let response = client
-        .request(Method::GET, "https://example.com/")
+        .request(Method::GET, "https://google.com/")
         .send()
         .await
         .unwrap();

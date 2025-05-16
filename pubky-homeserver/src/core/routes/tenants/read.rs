@@ -1,14 +1,3 @@
-use axum::{
-    body::Body,
-    extract::{Path, State},
-    http::{header, HeaderMap, HeaderValue, Response, StatusCode},
-    response::IntoResponse,
-};
-use httpdate::HttpDate;
-use pkarr::PublicKey;
-use std::str::FromStr;
-use tokio_util::io::ReaderStream;
-
 use crate::persistence::lmdb::tables::entries::Entry;
 use crate::{
     core::{
@@ -20,6 +9,16 @@ use crate::{
     persistence::lmdb::tables::entries::EntryPath,
     shared::WebDavPathAxum,
 };
+use axum::{
+    body::Body,
+    extract::{Path, State},
+    http::{header, HeaderMap, HeaderValue, Response, StatusCode},
+    response::IntoResponse,
+};
+use httpdate::HttpDate;
+use pkarr::PublicKey;
+use std::str::FromStr;
+use tokio_util::io::ReaderStream;
 
 pub async fn head(
     State(state): State<AppState>,
@@ -27,9 +26,12 @@ pub async fn head(
     headers: HeaderMap,
     Path(path): Path<WebDavPathAxum>,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.0);
-    let entry = state.db.get_entry2(&entry_path)?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+    let entry = state
+        .db
+        .get_entry2(&entry_path)?
+        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
 
     get_entry(headers, entry, None)
 }
@@ -42,26 +44,23 @@ pub async fn get(
     Path(path): Path<WebDavPathAxum>,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
-
     let public_key = pubky.public_key().clone();
     let dav_path = path.0;
     if dav_path.is_directory() {
         return list(state, &public_key, &dav_path.as_str(), params);
     }
     let entry_path = EntryPath::new(pubky.public_key().clone(), dav_path);
-    let entry = state.db.get_entry2(&entry_path)?.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+    let entry = state
+        .db
+        .get_entry2(&entry_path)?
+        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
     let buffer_file = state.db.read_file(&entry.file_id()).await?;
 
     let file_handle = buffer_file.open_file_handle()?;
     // Async stream the file
     let tokio_file_handle = tokio::fs::File::from_std(file_handle);
     let body_stream = Body::from_stream(ReaderStream::new(tokio_file_handle));
-    get_entry(
-        headers,
-        entry,
-        Some(body_stream),
-    )
+    get_entry(headers, entry, Some(body_stream))
 }
 
 pub fn list(
@@ -70,8 +69,6 @@ pub fn list(
     path: &str,
     params: ListQueryParams,
 ) -> Result<Response<Body>> {
-    err_if_user_is_invalid(public_key, &state.db)?;
-
     let txn = state.db.env.read_txn()?;
     let path = format!("{public_key}{path}");
 

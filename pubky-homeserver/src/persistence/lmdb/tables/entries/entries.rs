@@ -610,10 +610,7 @@ mod tests {
         assert_eq!(entry.content_length(), read_entry.content_length());
         assert_eq!(entry.timestamp(), read_entry.timestamp());
 
-        let read_file = db
-            .read_file(&entry.file_id())
-            .await
-            .unwrap();
+        let read_file = db.read_file(&entry.file_id()).await.unwrap();
         let mut file_handle = read_file.open_file_handle().unwrap();
         let mut content = vec![];
         file_handle.read_to_end(&mut content).unwrap();
@@ -651,10 +648,7 @@ mod tests {
             .expect("Entry not found");
         assert_eq!(entry.content_hash(), entry.content_hash());
 
-        let file = db
-            .read_file(&entry.file_id())
-            .await
-            .unwrap();
+        let file = db.read_file(&entry.file_id()).await.unwrap();
         assert_eq!(file.hash(), &entry.content_hash.0);
         let mut file_handle = file.open_file_handle().unwrap();
         let mut content = vec![];
