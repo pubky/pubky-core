@@ -8,7 +8,7 @@ mod time_unit;
 
 pub use glob_pattern::GlobPattern;
 pub use http_method::HttpMethod;
-pub use limit_key::LimitKey;
+pub use limit_key::{LimitKey, LimitKeyType};
 pub use path_limit::*;
 pub use quota_value::QuotaValue;
 pub use rate_unit::RateUnit;
