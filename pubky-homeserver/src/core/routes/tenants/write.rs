@@ -45,7 +45,7 @@ pub async fn delete(
     pubky: PubkyHost,
     path: OriginalUri,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let public_key = pubky.public_key();
     let full_path = path.0.path();
     let existing_bytes = state.db.get_entry_content_length(public_key, full_path)?;
@@ -69,7 +69,7 @@ pub async fn put(
     path: OriginalUri,
     body: Body,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db)?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db, true)?;
     let public_key = pubky.public_key();
     let full_path = path.0.path();
     let existing_entry_bytes = state.db.get_entry_content_length(public_key, full_path)?;
