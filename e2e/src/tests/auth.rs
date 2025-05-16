@@ -94,11 +94,11 @@ async fn disabled_user() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Make sure the user cannot read their own file
+    // Make sure the user can still read their own file
     let response = client.get(file_url.clone()).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
 
-    // Make sure the user cannot write to their own file
+    // Make sure the user cannot write a new file
     let response = client
         .put(file_url.clone())
         .body(vec![])
@@ -107,9 +107,11 @@ async fn disabled_user() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    // Make sure the user cannot sign in
-    let session = client.signin(&keypair).await;
-    assert!(session.is_err());
+    // Make sure the user can still sign in
+    client
+        .signin(&keypair)
+        .await
+        .expect("Signin should succeed");
 }
 
 #[tokio::test]

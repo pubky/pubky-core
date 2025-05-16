@@ -123,7 +123,7 @@ fn create_session_and_cookie(
     capabilities: &[Capability],
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(public_key, &state.db)?;
+    err_if_user_is_invalid(public_key, &state.db, false)?;
 
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
