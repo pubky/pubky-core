@@ -1,6 +1,6 @@
 use super::super::app_state::AppState;
 use crate::{
-    persistence::lmdb::tables::entries::EntryPath,
+    persistence::lmdb::tables::files::EntryPath,
     shared::{HttpError, HttpResult, WebDavPathAxum, Z32Pubkey},
 };
 use axum::{
@@ -30,8 +30,8 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::lmdb::tables::entries::EntryPath;
-    use crate::persistence::lmdb::{tables::entries::InDbTempFile, LmDB};
+    use crate::persistence::lmdb::tables::files::EntryPath;
+    use crate::persistence::lmdb::{tables::files::InDbTempFile, LmDB};
     use crate::shared::WebDavPath;
     use axum::{routing::delete, Router};
     use pkarr::Keypair;

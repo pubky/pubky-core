@@ -43,6 +43,12 @@ impl From<Timestamp> for InDbFileId {
     }
 }
 
+impl Default for InDbFileId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 use std::sync::Arc;
 use std::{fs::File, io::Write, path::PathBuf};
 use tokio::fs::File as AsyncFile;
@@ -69,8 +75,7 @@ impl AsyncInDbTempFileWriter {
                     std::io::ErrorKind::Other,
                     format!("Task join error for tempdir creation: {}", join_error),
                 )
-            })? // Handles JoinError
-            .map_err(|io_error| io_error)?; // Handles the Result from tempfile::tempdir()
+            })??; // Handles the Result from tempfile::tempdir()
 
         let file_path = dir.path().join("entry.bin");
         let writer_file = AsyncFile::create(file_path.clone()).await?;

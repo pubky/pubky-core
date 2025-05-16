@@ -1,4 +1,4 @@
-use crate::persistence::lmdb::tables::entries::Entry;
+use crate::persistence::lmdb::tables::files::Entry;
 use crate::{
     core::{
         err_if_user_is_invalid::err_if_user_is_invalid,
@@ -6,7 +6,7 @@ use crate::{
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
-    persistence::lmdb::tables::entries::EntryPath,
+    persistence::lmdb::tables::files::EntryPath,
     shared::WebDavPathAxum,
 };
 use axum::{

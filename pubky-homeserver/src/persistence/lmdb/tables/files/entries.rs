@@ -6,10 +6,7 @@ use heed::{
     Database, RoTxn,
 };
 use postcard::{from_bytes, to_allocvec};
-use pubky_common::{
-    crypto::{Hash},
-    timestamp::Timestamp,
-};
+use pubky_common::{crypto::Hash, timestamp::Timestamp};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -19,7 +16,6 @@ pub type EntriesTable = Database<Str, Bytes>;
 pub const ENTRIES_TABLE: &str = "entries";
 
 impl LmDB {
-
     /// Writes an entry to the database.
     ///
     /// The entry is written to the database and the file is written to the blob store.
@@ -53,7 +49,7 @@ impl LmDB {
         let mut entry = Entry::new();
         entry.set_content_hash(*file.hash());
         entry.set_content_length(file.len());
-        let file_id = self.write_file_sync(&file, &mut wtxn)?;
+        let file_id = self.write_file_sync(file, &mut wtxn)?;
         entry.set_timestamp(file_id.timestamp());
         let entry_key = path.key();
         self.tables
@@ -89,10 +85,8 @@ impl LmDB {
     pub async fn delete_entry(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
         let mut db = self.clone();
         let path = path.clone();
-        tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
-            db.delete_entry_sync(&path)
-        })
-        .await?
+        tokio::task::spawn_blocking(move || -> anyhow::Result<bool> { db.delete_entry_sync(&path) })
+            .await?
     }
 
     /// Delete an entry including the associated file from the database.
@@ -140,7 +134,11 @@ impl LmDB {
     }
 
     pub fn contains_directory(&self, txn: &RoTxn, entry_path: &EntryPath) -> anyhow::Result<bool> {
-        Ok(self.tables.entries.get_greater_than(txn, entry_path.key().as_str())?.is_some())
+        Ok(self
+            .tables
+            .entries
+            .get_greater_than(txn, entry_path.key().as_str())?
+            .is_some())
     }
 
     /// Return a list of pubky urls.
@@ -171,7 +169,10 @@ impl LmDB {
                 let mut file_or_directory = cursor.trim_start_matches('/');
 
                 if cursor.starts_with("pubky://") {
-                    file_or_directory = cursor.split(entry_key.as_str()).last().expect("should not be reachable")
+                    file_or_directory = cursor
+                        .split(entry_key.as_str())
+                        .last()
+                        .expect("should not be reachable")
                 };
 
                 next_threshold(
@@ -182,7 +183,13 @@ impl LmDB {
                     shallow,
                 )
             })
-            .unwrap_or(next_threshold(entry_key.as_str(), "", false, reverse, shallow));
+            .unwrap_or(next_threshold(
+                entry_key.as_str(),
+                "",
+                false,
+                reverse,
+                shallow,
+            ));
 
         for _ in 0..limit {
             if let Some((key, _)) = if reverse {
@@ -200,8 +207,13 @@ impl LmDB {
 
                     let is_directory = split.next().is_some();
 
-                    threshold =
-                        next_threshold(entry_key.as_str(), file_or_directory, is_directory, reverse, shallow);
+                    threshold = next_threshold(
+                        entry_key.as_str(),
+                        file_or_directory,
+                        is_directory,
+                        reverse,
+                        shallow,
+                    );
 
                     results.push(format!(
                         "pubky://{entry_key}{file_or_directory}{}",
@@ -367,14 +379,14 @@ impl Entry {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
-    use bytes::Bytes;
-    use pkarr::Keypair;
+    use super::LmDB;
     use crate::{
-        persistence::lmdb::tables::entries::{EntryPath, InDbTempFile, SyncInDbTempFileWriter},
+        persistence::lmdb::tables::files::{EntryPath, InDbTempFile, SyncInDbTempFileWriter},
         shared::WebDavPath,
     };
-    use super::LmDB;
+    use bytes::Bytes;
+    use pkarr::Keypair;
+    use std::io::Read;
 
     #[tokio::test]
     async fn test_write_read_delete_method() {
@@ -407,7 +419,6 @@ mod tests {
         let read_file = db.read_file(&entry.file_id()).await.unwrap();
         assert_eq!(read_file.len(), 0);
     }
-
 
     #[tokio::test]
     async fn entries() -> anyhow::Result<()> {

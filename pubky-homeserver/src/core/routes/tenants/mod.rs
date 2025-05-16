@@ -3,11 +3,7 @@
 //! Every route here is relative to a tenant's Pubky host,
 //! as opposed to routes relative to the Homeserver's owner.
 
-use axum::{
-    extract::DefaultBodyLimit,
-    routing::get,
-    Router,
-};
+use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
 use crate::core::{layers::authz::AuthorizationLayer, AppState};
 

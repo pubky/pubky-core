@@ -13,7 +13,7 @@ use crate::{
         extractors::PubkyHost,
         AppState,
     },
-    persistence::lmdb::tables::entries::{AsyncInDbTempFileWriter, EntryPath},
+    persistence::lmdb::tables::files::{AsyncInDbTempFileWriter, EntryPath},
     shared::WebDavPathAxum,
 };
 

@@ -50,7 +50,7 @@ impl LmDB {
     /// Read the blobs into a temporary file asynchronously.
     pub(crate) async fn read_file(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
         let db = self.clone();
-        let id = id.clone();
+        let id = *id;
         tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
             db.read_file_sync(&id)
         })
