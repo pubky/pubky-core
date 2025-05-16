@@ -190,7 +190,7 @@ mod test {
     #[tokio::test]
     async fn test_fetch() {
         let client = Client::builder().build().unwrap();
-        let response = client.get("https://google.ch/").send().await.unwrap();
+        let response = client.get("https://google.com/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }
 }
