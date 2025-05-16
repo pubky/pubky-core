@@ -103,7 +103,7 @@ dht_bootstrap_nodes = [
 # Relay node urls for the DHT.
 # Improves the availability of pkarr packets.
 # If not set and no bootstrap nodes are set, the default pkarr relay nodes will be used.
-dht_relay_nodes = ["https://relay.pkarr.org", "https://pkarr.pubky.org"]
+dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
 # Default UDP request timeout for the DHT
 dht_request_timeout_ms = 2000
