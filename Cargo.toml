@@ -7,8 +7,20 @@ members = [
   "e2e",
 ]
 
-# See: https://github.com/rust-lang/rust/issues/90148#issuecomment-949194352
 resolver = "2"
+
+[workspace.package]
+version = "0.5.0-rc.0"
+edition = "2021"
+authors = [
+    "Severin Bühler <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+    "Nuh <nuh@nuh.dev>"
+]
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+
 
 [profile.release]
 lto = true
@@ -19,3 +31,11 @@ opt-level = 'z'
 pkarr = { version = "3.7.1" }
 mainline = { version = "5.4.0" }
 pkarr-relay = { version = "0.9.1" }
+
+# Workspace Members
+pubky-common = { path = "pubky-common" }
+http-relay = { path = "http-relay" }
+pubky = { path = "pubky-client" }
+pubky-homeserver = { path = "pubky-homeserver" }
+pubky-testnet = {path = "pubky-testnet"}
+pkarr-republisher = { path = "pkarr-republisher"}
