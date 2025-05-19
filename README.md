@@ -25,9 +25,9 @@
 </div>
 
 [![GitHub Release](https://img.shields.io/github/v/release/pubky/pkdns)](https://github.com/pubky/pubky-core/releases/latest/)
-![Crates.io Version](https://img.shields.io/crates/v/pubky)
+[![Crates.io Version](https://img.shields.io/crates/v/pubky)](https://crates.io/crates/pubky)
 [![Telegram Chat Group](https://img.shields.io/badge/Chat-Telegram-violet)](https://t.me/pubkycore)
-![GitHub License](https://img.shields.io/github/license/pubky/pubky-core)
+[![GitHub License](https://img.shields.io/github/license/pubky/pubky-core)](https://github.com/pubky/pubky-core/blob/main/LICENSE)
 
 > The Web, long centralized, must decentralize; Long decentralized, must centralize.
 
