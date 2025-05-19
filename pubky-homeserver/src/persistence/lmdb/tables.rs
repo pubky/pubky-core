@@ -1,5 +1,5 @@
-pub mod files;
 pub mod events;
+pub mod files;
 pub mod sessions;
 pub mod signup_tokens;
 pub mod users;

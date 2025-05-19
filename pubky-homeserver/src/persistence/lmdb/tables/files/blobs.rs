@@ -109,8 +109,6 @@ impl LmDB {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
-
     use super::*;
 
     #[tokio::test]

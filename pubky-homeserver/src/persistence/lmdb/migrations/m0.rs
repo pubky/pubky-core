@@ -1,6 +1,6 @@
 use heed::{Env, RwTxn};
 
-use crate::persistence::lmdb::tables::{files, events, sessions, signup_tokens, users};
+use crate::persistence::lmdb::tables::{events, files, sessions, signup_tokens, users};
 
 pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
     let _: users::UsersTable = env.create_database(wtxn, Some(users::USERS_TABLE))?;

@@ -1,7 +1,5 @@
 use super::super::app_state::AppState;
-use crate::{
-    shared::{HttpError, HttpResult, webdav::{EntryPath}}
-};
+use crate::shared::{webdav::EntryPath, HttpError, HttpResult};
 use axum::{
     extract::{Path, State},
     http::StatusCode,

@@ -29,12 +29,8 @@ pub struct EntryPath {
 
 impl EntryPath {
     pub fn new(pubkey: PublicKey, path: WebDavPath) -> Self {
-        let cached_key_str = format!("{}{}", pubkey, path);
-        Self {
-            pubkey,
-            path,
-            key: cached_key_str,
-        }
+        let key = format!("{}{}", pubkey, path);
+        Self { pubkey, path, key }
     }
 
     pub fn pubkey(&self) -> &PublicKey {
@@ -99,10 +95,9 @@ impl<'de> serde::Deserialize<'de> for EntryPath {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&s).map_err(serde::de::Error::custom)?)
+        Self::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -71,8 +71,7 @@ impl AsyncInDbTempFileWriter {
         let dir = task::spawn_blocking(tempfile::tempdir)
             .await
             .map_err(|join_error| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                std::io::Error::other(
                     format!("Task join error for tempdir creation: {}", join_error),
                 )
             })??; // Handles the Result from tempfile::tempdir()
@@ -147,16 +146,6 @@ impl SyncInDbTempFileWriter {
             file_path,
             hasher,
         })
-    }
-
-    /// Create a new BlobsTempFile with zero content.
-    /// Convenient method used for testing.
-    #[cfg(test)]
-    pub fn zeros(size_bytes: usize) -> Result<InDbTempFile, std::io::Error> {
-        let mut file = Self::new()?;
-        let buffer = vec![0u8; size_bytes];
-        file.write_chunk(&buffer)?;
-        file.complete()
     }
 
     /// Write a chunk to the file.

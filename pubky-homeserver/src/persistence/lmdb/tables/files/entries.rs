@@ -1,11 +1,11 @@
 use super::super::events::Event;
 use super::{super::super::LmDB, InDbFileId, InDbTempFile};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
     Database, RoTxn,
 };
-use crate::shared::webdav::EntryPath;
 use postcard::{from_bytes, to_allocvec};
 use pubky_common::{crypto::Hash, timestamp::Timestamp};
 use serde::{Deserialize, Serialize};
@@ -152,7 +152,6 @@ impl LmDB {
         cursor: Option<String>,
         shallow: bool,
     ) -> anyhow::Result<Vec<String>> {
-        let entry_key = entry_path.as_str();
         // Vector to store results
         let mut results = Vec::new();
 
@@ -169,13 +168,13 @@ impl LmDB {
 
                 if cursor.starts_with("pubky://") {
                     file_or_directory = cursor
-                        .split(entry_key)
+                        .split(entry_path.as_str())
                         .last()
                         .expect("should not be reachable")
                 };
 
                 next_threshold(
-                    entry_key,
+                    entry_path.as_str(),
                     file_or_directory,
                     file_or_directory.ends_with('/'),
                     reverse,
@@ -183,7 +182,7 @@ impl LmDB {
                 )
             })
             .unwrap_or(next_threshold(
-                entry_key,
+                entry_path.as_str(),
                 "",
                 false,
                 reverse,
@@ -196,18 +195,18 @@ impl LmDB {
             } else {
                 self.tables.entries.get_greater_than(txn, &threshold)?
             } {
-                if !key.starts_with(entry_key) {
+                if !key.starts_with(entry_path.as_str()) {
                     break;
                 }
 
                 if shallow {
-                    let mut split = key[entry_key.len()..].split('/');
+                    let mut split = key[entry_path.as_str().len()..].split('/');
                     let file_or_directory = split.next().expect("should not be reachable");
 
                     let is_directory = split.next().is_some();
 
                     threshold = next_threshold(
-                        entry_key,
+                        entry_path.as_str(),
                         file_or_directory,
                         is_directory,
                         reverse,
@@ -215,7 +214,8 @@ impl LmDB {
                     );
 
                     results.push(format!(
-                        "pubky://{entry_key}{file_or_directory}{}",
+                        "pubky://{}{file_or_directory}{}",
+                        entry_path.as_str(),
                         if is_directory { "/" } else { "" }
                     ));
                 } else {
