@@ -65,24 +65,24 @@ Then in a different terminal window:
 npm test
 ```
 
-### Docker & Podman
+### Docker
 
 An alternative way to start tinkering with Pubky is to build an isolated container and run it locally. Here is an 
 example command how to build an image:
 
 ```bash
-podman build --build-arg TARGETARCH=x86_64 -t pubky:core .
+docker build --build-arg TARGETARCH=x86_64 -t pubky:core .
 ```
 
 A command for running it in isolated environment with log output:
 
 ```bash
-podman run -it pubky:core
+docker run -it pubky:core
 ```
 
 Some more optional arguments could allow to run it in the background but the most important is `--network=host` which 
 allows container to access network and provide admin endpoint accessible from the host machine. Please refer to 
-Docker/Podman documentation for extended options.
+Docker documentation for extended options.
 
 ## Links
 
