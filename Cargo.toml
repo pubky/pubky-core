@@ -13,7 +13,7 @@ resolver = "2"
 version = "0.5.0-rc.0"
 edition = "2021"
 authors = [
-    "Severin Bühler <severin@synonym.to>",
+    "SeverinAlexB <severin@synonym.to>",
     "SHAcollision <shacollision@synonym.to>",
     "Nuh <nuh@nuh.dev>"
 ]
@@ -32,10 +32,10 @@ pkarr = { version = "3.7.1" }
 mainline = { version = "5.4.0" }
 pkarr-relay = { version = "0.9.1" }
 
-# Workspace Members
-pubky-common = { path = "pubky-common" }
-http-relay = { path = "http-relay" }
-pubky = { path = "pubky-client" }
-pubky-homeserver = { path = "pubky-homeserver" }
-pubky-testnet = {path = "pubky-testnet"}
-pkarr-republisher = { path = "pkarr-republisher"}
+# Workspace Members Dependencies
+pubky-common = { version = "0.5.0-rc.0", path = "pubky-common" }
+http-relay = { version = "0.5.0-rc.0", path = "http-relay" }
+pubky = { version = "0.5.0-rc.0", path = "pubky-client" }
+pubky-homeserver = { version = "0.5.0-rc.0", path = "pubky-homeserver" }
+pubky-testnet = { version = "0.5.0-rc.0", path = "pubky-testnet"}
+pkarr-republisher = { version = "0.5.0-rc.0", path = "pkarr-republisher"}

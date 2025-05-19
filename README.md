@@ -59,3 +59,8 @@ Then in a different terminal window:
 ```bash
 npm test
 ```
+
+
+## Links
+
+- [Contributors Guide](./CONTRIBUTORS.md)
