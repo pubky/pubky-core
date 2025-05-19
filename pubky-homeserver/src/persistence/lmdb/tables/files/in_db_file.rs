@@ -71,9 +71,10 @@ impl AsyncInDbTempFileWriter {
         let dir = task::spawn_blocking(tempfile::tempdir)
             .await
             .map_err(|join_error| {
-                std::io::Error::other(
-                    format!("Task join error for tempdir creation: {}", join_error),
-                )
+                std::io::Error::other(format!(
+                    "Task join error for tempdir creation: {}",
+                    join_error
+                ))
             })??; // Handles the Result from tempfile::tempdir()
 
         let file_path = dir.path().join("entry.bin");
