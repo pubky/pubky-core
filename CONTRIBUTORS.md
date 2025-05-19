@@ -22,12 +22,18 @@
 ## Versioning
 
 1. Merge all PRs in the main branch that you want to include in the next version.
-2. Update versions in client and service by running `npm run version -- <x.x.x|major|minor|patch>` from the repository root.
-3. Update `CHANGELOG.md` with the given format. Use the commit history on the master to determine the changes.
+2. Update versions in the workspace [Config.toml](./Cargo.toml). Use [SemVer](https://semver.org/).
+    - Update the member dependencies too. 
 4. Create a PR with the title: `chore: vx.x.x`.
 5. Let the PR review and squash + merge.
-6. Publish the client library with `cd client && npm publish`.
-7. Create a [new Github release](https://github.com/synonymdev/blocktank-lsp-ln2/releases/new).
+6. Publish each **changed** member with cargo publish
+    - `cargo publish -p http-relay`
+    - `cargo publish -p pkarr-republisher`
+    - `cargo publish -p pubky-common`
+    - `cargo publish -p pubky-homeserver`
+    - `cargo publish -p pubky`
+    - `cargo publish -p pubky-testnet`
+7. Create a [new Github release](https://github.com/pubky/pubky-core/releases/new).
     - Tag: `vx.x.x`
     - Title: `vx.x.x`
     - Description: Changelog for the current version.

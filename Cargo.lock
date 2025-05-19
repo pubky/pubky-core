@@ -2347,7 +2347,6 @@ dependencies = [
  "mainline",
  "pkarr",
  "pubky-common",
- "pubky-testnet",
  "reqwest",
  "thiserror 2.0.12",
  "tokio",

@@ -1,5 +1,6 @@
 [package]
 name = "pubky"
+description = "Pubky-Core Client"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -58,7 +59,6 @@ web-sys = "0.3.77"
 [dev-dependencies]
 anyhow = "1.0.95"
 futures-lite = "2.6.0"
-pubky-testnet = { workspace = true }
 tokio = "1.43.0"
 tracing-subscriber = "0.3.19"
 mainline = { workspace = true }
