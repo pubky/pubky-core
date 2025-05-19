@@ -1,12 +1,12 @@
 [package]
 name = "pubky-common"
-version = "0.4.0-rc.0"
-edition = "2021"
-authors = ["Nuh <nuh@nuh.dev>"]
 description = "Types and struct in common between Pubky client and homeserver"
-license = "MIT"
-homepage = "https://github.com/pubky/pubky-core"
-repository = "https://github.com/pubky/pubky-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 keywords = ["pkarr", "pubky", "auth", "pubkey"]
 categories = ["web-programming", "authentication", "cryptography"]
 
