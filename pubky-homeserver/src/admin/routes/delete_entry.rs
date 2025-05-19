@@ -1,7 +1,6 @@
 use super::super::app_state::AppState;
 use crate::{
-    persistence::lmdb::tables::files::EntryPath,
-    shared::{HttpError, HttpResult, WebDavPathAxum, Z32Pubkey},
+    shared::{HttpError, HttpResult, webdav::{EntryPath}}
 };
 use axum::{
     extract::{Path, State},
@@ -12,9 +11,8 @@ use axum::{
 /// Delete a single entry from the database.
 pub async fn delete_entry(
     State(mut state): State<AppState>,
-    Path((pubkey, path)): Path<(Z32Pubkey, WebDavPathAxum)>,
+    Path(entry_path): Path<EntryPath>,
 ) -> HttpResult<impl IntoResponse> {
-    let entry_path = EntryPath::new(pubkey.0, path.0);
     let deleted = state.db.delete_entry(&entry_path).await?;
     if deleted {
         Ok((StatusCode::NO_CONTENT, ()))
@@ -30,9 +28,8 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::lmdb::tables::files::EntryPath;
     use crate::persistence::lmdb::{tables::files::InDbTempFile, LmDB};
-    use crate::shared::WebDavPath;
+    use crate::shared::webdav::{EntryPath, WebDavPath};
     use axum::{routing::delete, Router};
     use pkarr::Keypair;
 
@@ -50,7 +47,7 @@ mod tests {
         let mut db = LmDB::test();
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/webdav/{pubkey}/{*path}", delete(delete_entry))
+            .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
 
         // Write a test file
@@ -88,7 +85,7 @@ mod tests {
         let file_path = "my_file.txt";
         let app_state = AppState::new(LmDB::test());
         let router = Router::new()
-            .route("/webdav/{pubkey}/{*path}", delete(delete_entry))
+            .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
 
         // Delete the file
@@ -104,7 +101,7 @@ mod tests {
         let db = LmDB::test();
         let app_state = AppState::new(db.clone());
         let router = Router::new()
-            .route("/webdav/{pubkey}/{*path}", delete(delete_entry))
+            .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
 
         // Delete with invalid pubkey

@@ -13,8 +13,8 @@ use crate::{
         extractors::PubkyHost,
         AppState,
     },
-    persistence::lmdb::tables::files::{AsyncInDbTempFileWriter, EntryPath},
-    shared::WebDavPathAxum,
+    persistence::lmdb::tables::files::AsyncInDbTempFileWriter,
+    shared::webdav::{EntryPath, WebDavPathAxum},
 };
 
 /// Fail with 507 if `(current + incoming − existing) > quota`.

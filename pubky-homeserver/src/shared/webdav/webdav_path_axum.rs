@@ -25,9 +25,6 @@ impl FromStr for WebDavPathAxum {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let with_slash = format!("/{}", s);
-        if !with_slash.starts_with("/pub/") {
-            return Err(anyhow::anyhow!("Webdav path must start with /pub/"));
-        }
         let inner = WebDavPath::new(&with_slash)?;
         Ok(Self(inner))
     }

@@ -26,7 +26,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
         )
         .route("/info", get(info::info))
         .route(
-            "/webdav/{pubkey}/{*path}",
+            "/webdav/{*entry_path}",
             delete(delete_entry::delete_entry),
         )
         .route("/users/{pubkey}/disable", post(disable_user))

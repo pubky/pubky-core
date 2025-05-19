@@ -22,6 +22,9 @@ impl WebDavPath {
     /// The path will be normalized and validated.
     pub fn new(unnormalized_path: &str) -> anyhow::Result<Self> {
         let normalized_path = normalize_and_validate_webdav_path(unnormalized_path)?;
+        if !normalized_path.starts_with("/pub/") {
+            return Err(anyhow::anyhow!("Path must start with /pub/"));
+        }
         Ok(Self::new_unchecked(normalized_path))
     }
 
@@ -292,15 +295,21 @@ mod tests {
     }
 
     #[test]
+    fn test_webdav_pub_required() {
+        WebDavPath::from_str("/pub/file.txt").expect("Should be valid");
+        WebDavPath::from_str("/file.txt").expect_err("Should not be valid. /pub/ required.");
+    }
+
+    #[test]
     fn test_url_encode() {
-        let url_encoded = "/folder/file%25.txt";
+        let url_encoded = "/pub/file%25.txt";
         let url_decoded = percent_encoding::percent_decode_str(url_encoded)
             .decode_utf8()
             .unwrap()
             .to_string();
         let path = WebDavPath::new(url_decoded.as_str()).unwrap();
         let normalized = path.to_string();
-        assert_eq!(normalized, "/folder/file%.txt");
+        assert_eq!(normalized, "/pub/file%.txt");
         assert_eq!(path.url_encode(), url_encoded);
     }
 

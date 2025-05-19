@@ -1,10 +1,11 @@
 use super::super::events::Event;
-use super::{super::super::LmDB, EntryPath, InDbFileId, InDbTempFile};
+use super::{super::super::LmDB, InDbFileId, InDbTempFile};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use heed::{
     types::{Bytes, Str},
     Database, RoTxn,
 };
+use crate::shared::webdav::EntryPath;
 use postcard::{from_bytes, to_allocvec};
 use pubky_common::{crypto::Hash, timestamp::Timestamp};
 use serde::{Deserialize, Serialize};
@@ -51,7 +52,7 @@ impl LmDB {
         entry.set_content_length(file.len());
         let file_id = self.write_file_sync(file, &mut wtxn)?;
         entry.set_timestamp(file_id.timestamp());
-        let entry_key = path.key();
+        let entry_key = path.to_string();
         self.tables
             .entries
             .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
@@ -73,8 +74,7 @@ impl LmDB {
     /// This doesn't include the file but only metadata.
     pub fn get_entry(&self, path: &EntryPath) -> anyhow::Result<Option<Entry>> {
         let txn = self.env.read_txn()?;
-        let key = path.key();
-        let entry = match self.tables.entries.get(&txn, key.as_str())? {
+        let entry = match self.tables.entries.get(&txn, path.as_str())? {
             Some(bytes) => Entry::deserialize(bytes)?,
             None => return Ok(None),
         };
@@ -103,15 +103,14 @@ impl LmDB {
             return Ok(false);
         }
 
-        let key = path.key();
-        let deleted = self.tables.entries.delete(&mut wtxn, key.as_str())?;
+        let deleted = self.tables.entries.delete(&mut wtxn, path.as_str())?;
         if !deleted {
             wtxn.abort();
             return Ok(false);
         }
 
         // create DELETE event
-        let url = format!("pubky://{key}");
+        let url = format!("pubky://{}", path.as_str());
 
         let event = Event::delete(&url);
         let value = event.serialize();
@@ -124,7 +123,7 @@ impl LmDB {
         Ok(true)
     }
 
-    /// Bytes stored at `path` for this user (0 if none).
+    /// Bytes stored at `path` for this user (0 if none).
     pub fn get_entry_content_length(&self, path: &EntryPath) -> anyhow::Result<u64> {
         let content_length = self
             .get_entry(path)?
@@ -137,7 +136,7 @@ impl LmDB {
         Ok(self
             .tables
             .entries
-            .get_greater_than(txn, entry_path.key().as_str())?
+            .get_greater_than(txn, entry_path.as_str())?
             .is_some())
     }
 
@@ -153,7 +152,7 @@ impl LmDB {
         cursor: Option<String>,
         shallow: bool,
     ) -> anyhow::Result<Vec<String>> {
-        let entry_key = entry_path.key();
+        let entry_key = entry_path.as_str();
         // Vector to store results
         let mut results = Vec::new();
 
@@ -170,13 +169,13 @@ impl LmDB {
 
                 if cursor.starts_with("pubky://") {
                     file_or_directory = cursor
-                        .split(entry_key.as_str())
+                        .split(entry_key)
                         .last()
                         .expect("should not be reachable")
                 };
 
                 next_threshold(
-                    entry_key.as_str(),
+                    entry_key,
                     file_or_directory,
                     file_or_directory.ends_with('/'),
                     reverse,
@@ -184,7 +183,7 @@ impl LmDB {
                 )
             })
             .unwrap_or(next_threshold(
-                entry_key.as_str(),
+                entry_key,
                 "",
                 false,
                 reverse,
@@ -197,7 +196,7 @@ impl LmDB {
             } else {
                 self.tables.entries.get_greater_than(txn, &threshold)?
             } {
-                if !key.starts_with(entry_key.as_str()) {
+                if !key.starts_with(entry_key) {
                     break;
                 }
 
@@ -208,7 +207,7 @@ impl LmDB {
                     let is_directory = split.next().is_some();
 
                     threshold = next_threshold(
-                        entry_key.as_str(),
+                        entry_key,
                         file_or_directory,
                         is_directory,
                         reverse,
@@ -381,8 +380,8 @@ impl Entry {
 mod tests {
     use super::LmDB;
     use crate::{
-        persistence::lmdb::tables::files::{EntryPath, InDbTempFile, SyncInDbTempFileWriter},
-        shared::WebDavPath,
+        persistence::lmdb::tables::files::{InDbTempFile, SyncInDbTempFileWriter},
+        shared::webdav::{EntryPath, WebDavPath},
     };
     use bytes::Bytes;
     use pkarr::Keypair;

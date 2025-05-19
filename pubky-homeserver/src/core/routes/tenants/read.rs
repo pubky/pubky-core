@@ -6,8 +6,7 @@ use crate::{
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
-    persistence::lmdb::tables::files::EntryPath,
-    shared::WebDavPathAxum,
+    shared::webdav::{EntryPath, WebDavPathAxum},
 };
 use axum::{
     body::Body,

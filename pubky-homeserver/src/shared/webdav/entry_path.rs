@@ -1,7 +1,7 @@
 use pkarr::PublicKey;
 use std::str::FromStr;
 
-use crate::shared::WebDavPath;
+use super::WebDavPath;
 
 #[derive(thiserror::Error, Debug)]
 pub enum EntryPathError {
@@ -20,11 +20,21 @@ pub enum EntryPathError {
 pub struct EntryPath {
     pubkey: PublicKey,
     path: WebDavPath,
+    /// The key of the entry represented as a string.
+    /// The key is the pubkey and the path concatenated.
+    /// Example: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/folder/file.txt`
+    /// This is cached/redundant to avoid reallocating the string on every access.
+    key: String,
 }
 
 impl EntryPath {
     pub fn new(pubkey: PublicKey, path: WebDavPath) -> Self {
-        Self { pubkey, path }
+        let cached_key_str = format!("{}{}", pubkey, path);
+        Self {
+            pubkey,
+            path,
+            key: cached_key_str,
+        }
     }
 
     pub fn pubkey(&self) -> &PublicKey {
@@ -40,8 +50,14 @@ impl EntryPath {
     /// The key is the pubkey and the path concatenated.
     ///
     /// Example: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/folder/file.txt`
-    pub fn key(&self) -> String {
-        format!("{}{}", self.pubkey, self.path)
+    pub fn as_str(&self) -> &str {
+        &self.key
+    }
+}
+
+impl AsRef<str> for EntryPath {
+    fn as_ref(&self) -> &str {
+        &self.key
     }
 }
 
@@ -62,6 +78,32 @@ impl FromStr for EntryPath {
     }
 }
 
+impl std::fmt::Display for EntryPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
+impl serde::Serialize for EntryPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_ref())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EntryPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Self::from_str(&s).map_err(serde::de::Error::custom)?)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,9 +112,16 @@ mod tests {
     fn test_entry_path_from_str() {
         let pubkey =
             PublicKey::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo").unwrap();
-        let path = WebDavPath::new("/folder/file.txt").unwrap();
+        let path = WebDavPath::new("/pub/folder/file.txt").unwrap();
         let key = format!("{pubkey}{path}");
         let entry_path = EntryPath::new(pubkey, path);
-        assert_eq!(entry_path.key(), key);
+        assert_eq!(entry_path.as_ref(), key);
+    }
+
+    #[test]
+    fn test_entry_path_serde() {
+        let string = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/pub/folder/file.txt";
+        let entry_path = EntryPath::from_str(string).unwrap();
+        assert_eq!(entry_path.to_string(), string);
     }
 }
