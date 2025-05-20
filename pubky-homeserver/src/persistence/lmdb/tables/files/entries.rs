@@ -355,14 +355,6 @@ impl Entry {
 
     // === Public Method ===
 
-    pub fn read_content<'txn>(
-        &self,
-        db: &'txn LmDB,
-        rtxn: &'txn RoTxn,
-    ) -> anyhow::Result<impl Iterator<Item = Result<&'txn [u8], heed::Error>> + 'txn> {
-        db.read_entry_content(rtxn, self)
-    }
-
     pub fn serialize(&self) -> Vec<u8> {
         to_allocvec(self).expect("Session::serialize")
     }

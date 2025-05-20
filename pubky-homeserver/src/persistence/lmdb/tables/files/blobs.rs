@@ -1,6 +1,6 @@
 use super::super::super::LmDB;
-use super::{Entry, InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
-use heed::{types::Bytes, Database, RoTxn};
+use super::{InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
+use heed::{types::Bytes, Database};
 use std::io::Read;
 
 /// (entry timestamp | chunk_index BE) => bytes
@@ -8,17 +8,6 @@ pub type BlobsTable = Database<Bytes, Bytes>;
 pub const BLOBS_TABLE: &str = "blobs";
 
 impl LmDB {
-    pub fn read_entry_content<'txn>(
-        &self,
-        rtxn: &'txn RoTxn,
-        entry: &Entry,
-    ) -> anyhow::Result<impl Iterator<Item = Result<&'txn [u8], heed::Error>> + 'txn> {
-        Ok(self
-            .tables
-            .blobs
-            .prefix_iter(rtxn, &entry.timestamp().to_bytes())?
-            .map(|i| i.map(|(_, bytes)| bytes)))
-    }
 
     /// Read the blobs into a temporary file.
     ///
