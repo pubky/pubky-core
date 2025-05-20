@@ -74,7 +74,7 @@ example command how to build an image:
 docker build --build-arg TARGETARCH=x86_64 -t pubky:core .
 ```
 
-A command for running it in isolated environment with log output:
+A command for running it in an isolated environment with log output:
 
 ```bash
 docker run -it pubky:core
