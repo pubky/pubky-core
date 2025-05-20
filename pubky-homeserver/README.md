@@ -86,7 +86,7 @@ If homeserver is set to require signup tokens, you can create a new signup token
 
 ```rust,ignore
 let response = pubky_client
-    .get(&format!("https://127.0.0.1:6288/admin/generate_signup_token"))
+    .get(&format!("https://127.0.0.1:6288/generate_signup_token"))
     .header("X-Admin-Password", "admin") // Use your admin password. This is testnet default pwd.
     .send()
     .await
@@ -97,7 +97,7 @@ let signup_token = response.text().await.unwrap();
 via CLI with `curl`
 
 ```bash
-curl -X GET "https://127.0.0.1:6288/admin/generate_signup_token" \
+curl -X GET "https://127.0.0.1:6288/generate_signup_token" \
      -H "X-Admin-Password: admin"
      # Use your admin password. This is testnet default pwd.
 ```
@@ -105,7 +105,7 @@ curl -X GET "https://127.0.0.1:6288/admin/generate_signup_token" \
 or from JS
 
 ```js
-const url = "http://127.0.0.1:6288/admin/generate_signup_token";
+const url = "http://127.0.0.1:6288/generate_signup_token";
 const response = await client.fetch(url, {
   method: "GET",
   headers: {

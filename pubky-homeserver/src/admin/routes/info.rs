@@ -1,5 +1,3 @@
-// src/admin/routes/info.rs
-
 use super::super::app_state::AppState;
 use crate::persistence::lmdb::tables::signup_tokens::SignupToken;
 use crate::shared::HttpResult;

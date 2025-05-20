@@ -65,6 +65,22 @@ Then in a different terminal window:
 npm test
 ```
 
+### Docker
+
+An alternative way to start tinkering with Pubky is to build an isolated container and run it locally. Here is an 
+example command how to build an image:
+
+```bash
+docker build --build-arg TARGETARCH=x86_64 -t pubky:core .
+```
+
+A command for running it in an isolated environment with log output:
+
+```bash
+docker run -it pubky:core
+```
+
+Additional optional arguments can be used to run it in the background, but the most important is `--network=host`, which allows the container to access the network and provides an admin endpoint accessible from the host machine. Please refer to the Docker documentation for more detailed options.
 
 ## Links
 
