@@ -80,9 +80,7 @@ A command for running it in isolated environment with log output:
 docker run -it pubky:core
 ```
 
-Some more optional arguments could allow to run it in the background but the most important is `--network=host` which 
-allows container to access network and provide admin endpoint accessible from the host machine. Please refer to 
-Docker documentation for extended options.
+Additional optional arguments can be used to run it in the background, but the most important is `--network=host`, which allows the container to access the network and provides an admin endpoint accessible from the host machine. Please refer to the Docker documentation for more detailed options.
 
 ## Links
 
