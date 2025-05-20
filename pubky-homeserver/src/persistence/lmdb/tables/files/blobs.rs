@@ -8,7 +8,6 @@ pub type BlobsTable = Database<Bytes, Bytes>;
 pub const BLOBS_TABLE: &str = "blobs";
 
 impl LmDB {
-
     /// Read the blobs into a temporary file.
     ///
     /// The file is written to disk to minimize the size/duration of the LMDB transaction.

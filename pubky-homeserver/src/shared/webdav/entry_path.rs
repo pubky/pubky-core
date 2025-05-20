@@ -18,6 +18,7 @@ pub enum EntryPathError {
 /// The path as a string is used to identify the entry.
 #[derive(Debug, Clone)]
 pub struct EntryPath {
+    #[allow(dead_code)]
     pubkey: PublicKey,
     path: WebDavPath,
     /// The key of the entry represented as a string.
@@ -33,6 +34,7 @@ impl EntryPath {
         Self { pubkey, path, key }
     }
 
+    #[allow(dead_code)]
     pub fn pubkey(&self) -> &PublicKey {
         &self.pubkey
     }

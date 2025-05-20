@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 /// A normalized and validated webdav path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -28,6 +28,7 @@ impl WebDavPath {
         Ok(Self::new_unchecked(normalized_path))
     }
 
+    #[allow(dead_code)]
     pub fn url_encode(&self) -> String {
         percent_encoding::utf8_percent_encode(self.normalized_path.as_str(), PATH_ENCODE_SET)
             .to_string()
@@ -37,14 +38,12 @@ impl WebDavPath {
         self.normalized_path.as_str()
     }
 
-    pub fn as_pathbuf(&self) -> PathBuf {
-        PathBuf::from(self.normalized_path.as_str())
-    }
-
     pub fn is_directory(&self) -> bool {
         self.normalized_path.ends_with('/')
     }
 
+    /// Check if the path is a file.
+    #[allow(dead_code)]
     pub fn is_file(&self) -> bool {
         !self.is_directory()
     }
