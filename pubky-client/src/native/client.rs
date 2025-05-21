@@ -1,20 +1,9 @@
-pub mod internal {
-    #[cfg(not(wasm_browser))]
-    pub mod cookies;
-    pub mod pkarr;
-}
-pub mod api {
-    pub mod auth;
-    #[cfg(not(wasm_browser))]
-    pub mod http;
-    pub mod public;
-}
-
 use std::fmt::Debug;
 
 #[cfg(not(wasm_browser))]
 use std::sync::Arc;
 use std::time::Duration;
+use super::internal::cookies::CookieJar;
 
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
@@ -90,7 +79,7 @@ impl ClientBuilder {
         let pkarr = self.pkarr.build()?;
 
         #[cfg(not(wasm_browser))]
-        let cookie_store = Arc::new(internal::cookies::CookieJar::default());
+        let cookie_store = Arc::new(CookieJar::default());
 
         // TODO: allow custom user agent, but force a Pubky user agent information
         let user_agent = DEFAULT_USER_AGENT;
@@ -156,7 +145,7 @@ pub struct Client {
     pub(crate) pkarr: pkarr::Client,
 
     #[cfg(not(wasm_browser))]
-    pub(crate) cookie_store: std::sync::Arc<internal::cookies::CookieJar>,
+    pub(crate) cookie_store: std::sync::Arc<CookieJar>,
     #[cfg(not(wasm_browser))]
     pub(crate) icann_http: reqwest::Client,
 
@@ -183,6 +172,7 @@ impl Client {
     }
 }
 
+#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod test {
     use super::*;

@@ -398,6 +398,8 @@ impl AuthRequest {
     }
 }
 
+
+#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;

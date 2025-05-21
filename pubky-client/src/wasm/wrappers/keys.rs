@@ -1,5 +1,7 @@
 use wasm_bindgen::prelude::*;
 
+use crate::wasm::js_result::JsResult;
+
 #[wasm_bindgen]
 pub struct Keypair(pkarr::Keypair);
 
@@ -11,28 +13,36 @@ impl Keypair {
         Self(pkarr::Keypair::random())
     }
 
+    // /// Generate a [Keypair] from a secret key.
+    // #[wasm_bindgen(js_name = "fromSecretKey")]
+    // pub fn from_secret_key(secret_key: js_sys::Uint8Array) -> Result<Keypair, JsValue> {
+    //     if !js_sys::Uint8Array::instanceof(&secret_key) {
+    //         return Err("Expected secret_key to be an instance of Uint8Array".into());
+    //     }
+
+    //     let len = secret_key.byte_length();
+    //     if len != 32 {
+    //         return Err(format!("Expected secret_key to be 32 bytes, got {len}"))?;
+    //     }
+
+    //     let mut bytes = [0; 32];
+    //     secret_key.copy_to(&mut bytes);
+
+    //     Ok(Self(pkarr::Keypair::from_secret_key(&bytes)))
+    // }
+
     /// Generate a [Keypair] from a secret key.
     #[wasm_bindgen(js_name = "fromSecretKey")]
-    pub fn from_secret_key(secret_key: js_sys::Uint8Array) -> Result<Keypair, JsValue> {
-        if !js_sys::Uint8Array::instanceof(&secret_key) {
-            return Err("Expected secret_key to be an instance of Uint8Array".into());
-        }
-
-        let len = secret_key.byte_length();
-        if len != 32 {
-            return Err(format!("Expected secret_key to be 32 bytes, got {len}"))?;
-        }
-
-        let mut bytes = [0; 32];
-        secret_key.copy_to(&mut bytes);
-
-        Ok(Self(pkarr::Keypair::from_secret_key(&bytes)))
+    pub fn from_secret_key(secret_key: Vec<u8>) -> Result<Keypair, JsValue> {
+        let secret_len = secret_key.len();
+        let secret: [u8; 32] = secret_key.try_into().map_err(|_| format!("Expected secret_key to be 32 bytes, got {}", secret_len))?;
+        Ok(Self(pkarr::Keypair::from_secret_key(&secret)))
     }
 
     /// Returns the secret key of this keypair.
     #[wasm_bindgen(js_name = "secretKey")]
-    pub fn secret_key(&self) -> js_sys::Uint8Array {
-        self.0.secret_key().as_slice().into()
+    pub fn secret_key(&self) -> Vec<u8> {
+        self.0.secret_key().into_iter().collect()
     }
 
     /// Returns the [PublicKey] of this keypair.
@@ -61,8 +71,8 @@ pub struct PublicKey(pub(crate) pkarr::PublicKey);
 impl PublicKey {
     #[wasm_bindgen]
     /// Convert the PublicKey to Uint8Array
-    pub fn to_uint8array(&self) -> js_sys::Uint8Array {
-        js_sys::Uint8Array::from(self.0.as_bytes().as_slice())
+    pub fn to_uint8array(&self) -> Vec<u8> {
+        self.0.as_bytes().to_vec()
     }
 
     #[wasm_bindgen]
@@ -73,12 +83,8 @@ impl PublicKey {
 
     #[wasm_bindgen(js_name = "from")]
     /// @throws
-    pub fn try_from(value: JsValue) -> Result<PublicKey, JsValue> {
-        let string = value
-            .as_string()
-            .ok_or("Couldn't create a PublicKey from this type of value")?;
-
-        Ok(PublicKey(pkarr::PublicKey::try_from(string).map_err(
+    pub fn try_from(value: String) -> JsResult<PublicKey> {
+        Ok(PublicKey(pkarr::PublicKey::try_from(value).map_err(
             |_| "Couldn't create a PublicKey from this type of value",
         )?))
     }

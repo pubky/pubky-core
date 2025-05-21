@@ -1,6 +1,6 @@
 import test from 'tape'
 
-import { Keypair } from '../index.cjs'
+import { Keypair, PublicKey } from '../index.cjs'
 
 test('generate keys from a seed', async (t) => {
   const secretkey = Buffer.from('5aa93b299a343aa2691739771f2b5b85e740ca14c685793d67870f88fa89dc51', 'hex')
@@ -16,6 +16,13 @@ test('fromSecretKey error', async (t) => {
   const secretkey = Buffer.from('5aa93b299a343aa2691739771f2b5b', 'hex')
 
 
-  t.throws(() => Keypair.fromSecretKey(null), /Expected secret_key to be an instance of Uint8Array/)
+  t.throws(() => Keypair.fromSecretKey(null), "Expected secret_key to be an instance of Uint8Array");
   t.throws(() => Keypair.fromSecretKey(secretkey), /Expected secret_key to be 32 bytes, got 15/)
+})
+
+test('PublicKey from', async (t) => {
+  const z32 = "gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o";
+  const publicKey = PublicKey.from(z32)
+  t.is(publicKey.z32(), z32)
+  t.deepEqual(publicKey.toUint8Array(), Buffer.from(z32, 'base32'))
 })

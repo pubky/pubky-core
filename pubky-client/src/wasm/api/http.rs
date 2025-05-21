@@ -11,7 +11,9 @@ use futures_lite::StreamExt;
 use pkarr::extra::endpoints::Endpoint;
 use pkarr::PublicKey;
 
-use super::super::Client;
+use crate::wasm::js_result::JsResult;
+
+use super::super::constructor::Client;
 
 #[wasm_bindgen]
 impl Client {
@@ -20,7 +22,7 @@ impl Client {
         &self,
         url: &str,
         request_init: Option<RequestInit>,
-    ) -> Result<js_sys::Promise, JsValue> {
+    ) -> JsResult<js_sys::Promise> {
         let mut url: Url = url.try_into().map_err(|err| {
             JsValue::from_str(&format!("pubky::Client::fetch(): Invalid `url`; {:?}", err))
         })?;

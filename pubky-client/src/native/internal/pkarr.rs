@@ -7,14 +7,10 @@ use pkarr::{
 use std::convert::TryInto;
 use std::time::Duration;
 
+use crate::shared::sleep;
+
 use super::super::Client;
 
-// sleep for native
-#[cfg(not(wasm_browser))]
-use tokio::time::sleep;
-// sleep for wasm
-#[cfg(wasm_browser)]
-use gloo_timers::future::sleep;
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.
@@ -150,6 +146,8 @@ impl Client {
     }
 }
 
+
+#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod tests {
     use super::*;
