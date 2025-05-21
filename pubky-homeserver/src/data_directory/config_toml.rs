@@ -117,13 +117,7 @@ impl Default for PkdnsToml {
 
 impl Default for LoggingToml {
     fn default() -> Self {
-        Self {
-            level: Some("info".to_string()),
-            filters: Some(vec![
-                "pubky_homeserver=debug".to_string(),
-                "tower_http=debug".to_string(),
-            ]),
-        }
+        ConfigToml::default().logging
     }
 }
 
@@ -187,6 +181,8 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
+        config.logging.level = None;
+        config.logging.filters = None;
         config
     }
 }
@@ -237,6 +233,8 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
+        assert_eq!(c.logging.level, None);
+        assert_eq!(c.logging.filters, None);
     }
 
     #[test]
@@ -264,5 +262,6 @@ mod tests {
         assert_eq!(parsed.general.signup_mode, SignupMode::Open);
         // Other fields that were not set (left empty) should still match the default.
         assert_eq!(parsed.admin, ConfigToml::default().admin);
+        assert_eq!(parsed.logging, ConfigToml::default().logging);
     }
 }
