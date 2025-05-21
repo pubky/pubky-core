@@ -3,6 +3,14 @@ name = "pubky"
 description = "Pubky-Core Client"
 version = "0.5.0-rc.0"
 edition = "2024"
+authors = [
+    "SeverinAlexB <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+    "Nuh <nuh@nuh.dev>"
+]
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
 
 keywords = ["web", "dht", "dns", "decentralized", "identity"]
 categories = [

@@ -4,10 +4,13 @@ use url::Url;
 
 use pubky_common::capabilities::Capabilities;
 
-use crate::wasm::{js_result::JsResult, wrappers::{
-    keys::{Keypair, PublicKey},
-    session::Session,
-}};
+use crate::wasm::{
+    js_result::JsResult,
+    wrappers::{
+        keys::{Keypair, PublicKey},
+        session::Session,
+    },
+};
 
 use super::super::constructor::Client;
 
@@ -91,11 +94,7 @@ impl Client {
     /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
     /// source of the pubkyauth request url.
     #[wasm_bindgen(js_name = "sendAuthToken")]
-    pub async fn send_auth_token(
-        &self,
-        keypair: &Keypair,
-        pubkyauth_url: &str,
-    ) -> JsResult<()> {
+    pub async fn send_auth_token(&self, keypair: &Keypair, pubkyauth_url: &str) -> JsResult<()> {
         let pubkyauth_url: Url = pubkyauth_url.try_into().map_err(|_| "Invalid relay Url")?;
 
         self.0
@@ -131,11 +130,7 @@ impl Client {
     /// republishing. On a failed signin due to homeserver resolution failure, a key
     /// manager should always attempt to republish the last known homeserver.
     #[wasm_bindgen(js_name = "republishHomeserver")]
-    pub async fn republish_homeserver(
-        &self,
-        keypair: &Keypair,
-        host: &PublicKey,
-    ) -> JsResult<()> {
+    pub async fn republish_homeserver(&self, keypair: &Keypair, host: &PublicKey) -> JsResult<()> {
         self.0
             .republish_homeserver(keypair.as_inner(), host.as_inner())
             .await

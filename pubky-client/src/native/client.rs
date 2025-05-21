@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 
 #[cfg(not(wasm_browser))]
+use super::internal::cookies::CookieJar;
+#[cfg(not(wasm_browser))]
 use std::sync::Arc;
 use std::time::Duration;
-#[cfg(not(wasm_browser))]
-use super::internal::cookies::CookieJar;
 
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 

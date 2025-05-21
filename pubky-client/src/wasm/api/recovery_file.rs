@@ -1,5 +1,5 @@
 use js_sys::Uint8Array;
-use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
+use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
 use crate::wasm::{js_result::JsResult, wrappers::keys::Keypair};
 

@@ -1,15 +1,15 @@
 use std::{num::NonZeroU64, time::Duration};
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
+use wasm_bindgen::prelude::*;
 
 use super::js_result::JsResult;
 
 static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/"];
 
 #[wasm_bindgen]
-pub struct Client(pub(crate)crate::NativeClient);
+pub struct Client(pub(crate) crate::NativeClient);
 
 impl Default for Client {
     fn default() -> Self {
@@ -26,7 +26,13 @@ impl Client {
 
         let config = match config_opt {
             Some(config) => config,
-            None => return Ok(Self(builder.build().expect("building a default NativeClient should be infallible"))),
+            None => {
+                return Ok(Self(
+                    builder
+                        .build()
+                        .expect("building a default NativeClient should be infallible"),
+                ));
+            }
         };
 
         if let Some(pkarr) = config.pkarr {
@@ -36,7 +42,8 @@ impl Client {
                 builder.pkarr(|pkarr_builder| {
                     pkarr_builder.no_relays(); // Remove default pkarr config
                     if let Err(e) = pkarr_builder.relays(&relays) {
-                        relay_set_error = Some(JsValue::from_str(&format!("Failed to set relays. {}", e)));
+                        relay_set_error =
+                            Some(JsValue::from_str(&format!("Failed to set relays. {}", e)));
                     }
                     pkarr_builder
                 });
@@ -58,9 +65,9 @@ impl Client {
             builder.max_record_age(Duration::from_secs(max_record_age.get()));
         }
 
-        let native_client = builder.build().map_err(|e| {
-            JsValue::from_str(&format!("Failed to build client. {}", e))
-        })?;
+        let native_client = builder
+            .build()
+            .map_err(|e| JsValue::from_str(&format!("Failed to build client. {}", e)))?;
         Ok(Self(native_client))
     }
 

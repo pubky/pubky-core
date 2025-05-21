@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use base64::{alphabet::URL_SAFE, engine::general_purpose::NO_PAD, Engine};
+use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
 use url::Url;
 
@@ -14,7 +14,7 @@ use pubky_common::{
 
 use anyhow::Result;
 
-use super::super::{internal::pkarr::PublishStrategy, Client};
+use super::super::{Client, internal::pkarr::PublishStrategy};
 use crate::handle_http_error;
 
 impl Client {
@@ -398,13 +398,12 @@ impl AuthRequest {
     }
 }
 
-
 #[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
 
-    use crate::{native::internal::pkarr::PublishStrategy, Client};
+    use crate::{Client, native::internal::pkarr::PublishStrategy};
 
     #[tokio::test]
     async fn test_get_homeserver() {

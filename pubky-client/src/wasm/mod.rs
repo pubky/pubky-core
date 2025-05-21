@@ -1,11 +1,9 @@
 use wasm_bindgen::prelude::*;
 
 pub mod api;
-pub mod wrappers;
 pub mod constructor;
 mod js_result;
-
-
+pub mod wrappers;
 
 #[wasm_bindgen(js_name = "setLogLevel")]
 pub fn set_log_level(level: &str) -> Result<(), JsValue> {

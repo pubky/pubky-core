@@ -8,8 +8,8 @@ use reqwest::{IntoUrl, Method, RequestBuilder, Url};
 
 use futures_lite::StreamExt;
 
-use pkarr::extra::endpoints::Endpoint;
 use pkarr::PublicKey;
+use pkarr::extra::endpoints::Endpoint;
 
 use crate::wasm::js_result::JsResult;
 

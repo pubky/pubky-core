@@ -17,7 +17,9 @@ impl Keypair {
     #[wasm_bindgen(js_name = "fromSecretKey")]
     pub fn from_secret_key(secret_key: Vec<u8>) -> Result<Keypair, JsValue> {
         let secret_len = secret_key.len();
-        let secret: [u8; 32] = secret_key.try_into().map_err(|_| format!("Expected secret_key to be 32 bytes, got {}", secret_len))?;
+        let secret: [u8; 32] = secret_key
+            .try_into()
+            .map_err(|_| format!("Expected secret_key to be 32 bytes, got {}", secret_len))?;
         Ok(Self(pkarr::Keypair::from_secret_key(&secret)))
     }
 
