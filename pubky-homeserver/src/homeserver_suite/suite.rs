@@ -5,6 +5,7 @@ use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
+use tracing_subscriber::EnvFilter;
 
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]
@@ -51,6 +52,30 @@ impl HomeserverSuite {
 
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
+        let env_filter = match EnvFilter::try_from_default_env() {
+            Ok(f) => f,
+            Err(_) => {
+                // create from configuration
+                let mut filter = EnvFilter::new("");
+
+                if let Some(level) = &context.config_toml.logging.level {
+                    filter = filter.add_directive(level.parse()?);
+                };
+
+                // Add any specific filters
+                if let Some(filters) = &context.config_toml.logging.filters {
+                    for filter_str in filters {
+                        filter = filter.add_directive(filter_str.parse()?);
+                    }
+                };
+                filter
+            }
+        };
+
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+
+        tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
+
         let core = HomeserverCore::new(context.clone()).await?;
         let admin_server = AdminServer::start(&context).await?;
 

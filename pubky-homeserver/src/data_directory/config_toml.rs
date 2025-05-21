@@ -70,6 +70,12 @@ pub struct GeneralToml {
     pub user_storage_quota_mb: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct LoggingToml {
+    pub level: Option<String>,
+    pub filters: Option<Vec<String>>,
+}
+
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
@@ -81,6 +87,8 @@ pub struct ConfigToml {
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
+    /// Logging configuration. Environment variables override config settings
+    pub logging: LoggingToml,
 }
 
 impl Default for ConfigToml {
@@ -104,6 +112,18 @@ impl Default for AdminToml {
 impl Default for PkdnsToml {
     fn default() -> Self {
         ConfigToml::default().pkdns
+    }
+}
+
+impl Default for LoggingToml {
+    fn default() -> Self {
+        Self {
+            level: Some("info".to_string()),
+            filters: Some(vec![
+                "pubky_homeserver=debug".to_string(),
+                "tower_http=debug".to_string(),
+            ]),
+        }
     }
 }
 
