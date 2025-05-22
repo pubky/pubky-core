@@ -85,6 +85,7 @@ pub fn list(
     let path = format!("{public_key}{path}");
 
     if !state.db.contains_directory(&txn, &path)? {
+        tracing::error!("requested path does not exist in storage");
         return Err(Error::new(
             StatusCode::NOT_FOUND,
             "Directory Not Found".into(),
