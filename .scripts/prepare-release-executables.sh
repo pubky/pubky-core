@@ -1,17 +1,25 @@
 #!/bin/bash
 
-
 # -------------------------------------------------------------------------------------------------
 # This script prepares the release binaries for the current project.
-# It builds all the binaries and the npm package tarball.
+# It builds all the binaries and prepares them for upload as a Github Release.
 # The end result will be a target/github-release directory with the following structure:
 #
 # target/github-release/$version/
-# ├── pubky-homeserver
+# ├── pubky-core-linux-amd64-v0.5.0-rc.0.tar.gz
+# ├── pubky-core-osx-arm64-v0.5.0-rc.0.tar.gz
+# ├── pubky-core-windows-amd64-v0.5.0-rc.0.tar.gz
 # └── ...
 #
 # Make sure you installed https://github.com/cross-rs/cross for cross-compilation.
 # -------------------------------------------------------------------------------------------------
+
+# fail the script if any command fails
+set -e
+# fail the script if any variable is not set
+set -u
+# fail the script if any pipe command fails
+set -o pipefail
 
 # Read the version from the homeserver
 VERSION=$(cargo pkgid -p pubky-homeserver | awk -F# '{print $NF}')
@@ -23,9 +31,15 @@ builds=(
 "x86_64-unknown-linux-musl,linux-amd64"
 "aarch64-unknown-linux-musl,linux-arm64"
 "x86_64-pc-windows-gnu,windows-amd64"
-"armv7-unknown-linux-musleabihf,linux-armv7hf"
-"arm-unknown-linux-musleabihf,linux-armhf"
+
+# LMDB mapsize is a usize and is too big for armv7hf and armhf
+# So we can't build these yet with LMDB.
+# "armv7-unknown-linux-musleabihf,linux-armv7hf"
+# "arm-unknown-linux-musleabihf,linux-armhf"
 )
+
+# List of artifacts to build.
+artifcats=("pubky-homeserver")
 
 echo "Create the github-release directory..."
 rm -rf target/github-release
@@ -40,12 +54,14 @@ for BUILD in "${builds[@]}"; do
     echo "Build $NICKNAME with $TARGET"
     FOLDER="pubky-core-$NICKNAME-v$VERSION"
     DICT="target/github-release/$FOLDER"
-    cross build -p pubky-homeserver --release --target $TARGET
-    if [[ $TARGET == *"windows"* ]]; then
-        cp target/$TARGET/release/$ARTIFACT.exe $DICT
-    else
-        cp target/$TARGET/release/$ARTIFACT $DICT
-    fi
+    for ARTIFACT in "${artifcats[@]}"; do
+        cross build -p $ARTIFACT --release --target $TARGET
+        if [[ $TARGET == *"windows"* ]]; then
+            cp target/$TARGET/release/$ARTIFACT.exe $DICT
+        else
+            cp target/$TARGET/release/$ARTIFACT $DICT
+        fi
+    done;
     (cd target/github-release && tar -czf $FOLDER.tar.gz $FOLDER && rm -rf $FOLDER)
 done
 
