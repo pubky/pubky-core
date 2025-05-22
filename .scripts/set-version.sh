@@ -38,11 +38,14 @@ then
     exit 1
 fi
 
-# Set the version of all rust members of the workspace
-#cargo set-version $NEW_VERSION
-
 # Update the pubky-client package.json
 echo "Updating pubky-client package.json version to $NEW_VERSION..."
 (cd pubky-client/pkg && npm version --no-git-tag-version --allow-same-version "$NEW_VERSION")
+
+# Set the version of all rust members of the workspace
+echo "Setting the version of all rust members of the workspace to $NEW_VERSION..."
+cargo set-version $NEW_VERSION
+
+
 
 echo Done
