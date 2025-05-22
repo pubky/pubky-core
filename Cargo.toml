@@ -26,10 +26,3 @@ pkarr = { version = "3.7.2" }
 mainline = { version = "5.4.0" }
 pkarr-relay = { version = "0.9.2" }
 
-# Workspace Members Dependencies
-pubky-common = { version = "0.5.0-rc.0", path = "pubky-common" }
-http-relay = { version = "0.5.0-rc.0", path = "http-relay" }
-pubky = { version = "0.5.0-rc.0", path = "pubky-client" }
-pubky-homeserver = { version = "0.5.0-rc.0", path = "pubky-homeserver" }
-pubky-testnet = { version = "0.5.0-rc.0", path = "pubky-testnet" }
-pkarr-republisher = { version = "0.5.0-rc.0", path = "pkarr-republisher" }

@@ -1,0 +1,4 @@
+pre-release-replacements = [
+  # Bump workspace dependency versions
+  {file="Cargo.toml", search="^(?<prefix>.*version ?=) ?(?<version>\".*\") ?(?<suffix>.*path.*)$", replace="$prefix \"{{version}}\"$suffix", prerelease = true, min=0},
+]
