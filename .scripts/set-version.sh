@@ -1,18 +1,38 @@
 #!/bin/bash
 
-NEW_VERSION=$1
+# Check if cargo-set-version is installed
+if ! cargo --list | grep -q "set-version"; then
+  echo "Error: cargo-set-version is not installed but required."
+  echo "Please install it first by running:"
+  echo "  cargo install cargo-set-version"
+  exit 1
+fi
 
+
+# Check if the version is provided
+NEW_VERSION=$1
 if [ -z "$NEW_VERSION" ]; then
   echo "Error: New version not specified."
   echo "Usage: $0 <new_version>"
   exit 1
 fi
 
-# Update Cargo.toml
-find . -name "Cargo.toml" -type f -exec sed -i "s/^version = .*/version = \"$NEW_VERSION\"/" {} +
+# Rough semver format validation
+SEMVER_REGEX="^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?(\+([0-9A-Za-z.-]+))?$"
+if [[ ! "$NEW_VERSION" =~ $SEMVER_REGEX ]]; then
+  echo "Error: Version '$NEW_VERSION' is not in semver format (e.g., 1.2.3, 1.0.0-alpha, 2.0.1+build.123)."
+  exit 1
+fi
 
-# Update pubky-client/package.json
-sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" pubky-client/package.json
+# Ask for confirmation to update the version
+read -p "Are you sure you want to set the version to $NEW_VERSION? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]
+then
+    echo "Version change cancelled."
+    exit 1
+fi
 
-# Update pubky-client/release.toml
+cargo set-version $NEW_VERSION
 
+echo Done
