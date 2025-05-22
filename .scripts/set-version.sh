@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# -------------------------------------------------------------------------------------------------
+# This script sets the version of all members of the workspace.
+# It also updates the inner member dependency versions.
+# -------------------------------------------------------------------------------------------------
+
 # Check if cargo-set-version is installed
 if ! cargo --list | grep -q "set-version"; then
   echo "Error: cargo-set-version is not installed but required."
@@ -33,6 +38,11 @@ then
     exit 1
 fi
 
-cargo set-version $NEW_VERSION
+# Set the version of all rust members of the workspace
+#cargo set-version $NEW_VERSION
+
+# Update the pubky-client package.json
+echo "Updating pubky-client package.json version to $NEW_VERSION..."
+(cd pubky-client/pkg && npm version --no-git-tag-version --allow-same-version "$NEW_VERSION")
 
 echo Done
