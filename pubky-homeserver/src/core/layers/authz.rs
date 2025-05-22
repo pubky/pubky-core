@@ -107,7 +107,7 @@ fn authorize(
         return Ok(());
     } else if path.starts_with("/pub/") {
         if method == Method::GET {
-            tracing::debug!("skipping authorization for pub path");
+            tracing::debug!("skipping authorization for reading pub path");
             return Ok(());
         }
     } else {
