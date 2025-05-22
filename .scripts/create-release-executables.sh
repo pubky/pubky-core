@@ -5,7 +5,7 @@
 # It builds all the binaries and prepares them for upload as a Github Release.
 # The end result will be a target/github-release directory with the following structure:
 #
-# target/github-release/$version/
+# target/github-release/
 # ├── pubky-core-linux-amd64-v0.5.0-rc.0.tar.gz
 # ├── pubky-core-osx-arm64-v0.5.0-rc.0.tar.gz
 # ├── pubky-core-windows-amd64-v0.5.0-rc.0.tar.gz
@@ -14,15 +14,22 @@
 # Make sure you installed https://github.com/cross-rs/cross for cross-compilation.
 # -------------------------------------------------------------------------------------------------
 
-# fail the script if any command fails
-set -e
-# fail the script if any variable is not set
-set -u
-# fail the script if any pipe command fails
-set -o pipefail
+
+set -e # fail the script if any command fails
+set -u # fail the script if any variable is not set
+set -o pipefail # fail the script if any pipe command fails
+
+
+# Check if cross is installed
+if ! command -v cross &> /dev/null
+then
+    echo "cross executable not be found. It is required to cross-compile the binaries. Please install it from https://github.com/cross-rs/cross"
+    exit 1
+fi
 
 # Read the version from the homeserver
 VERSION=$(cargo pkgid -p pubky-homeserver | awk -F# '{print $NF}')
+echo "Preparing release executables for version $VERSION..."
 
 builds=(
 # target, nickname
