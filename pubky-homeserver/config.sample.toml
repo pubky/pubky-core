@@ -110,4 +110,4 @@ dht_request_timeout_ms = 2000
 
 [logging]
 level = "info"
-filters = ["pubky_homeserver=debug", "tower_http=debug"]
+filters = ["pubky_homeserver=debug", "tower_http=debug", "http_relay=debug","pkarr_relay=info","pubky_testnet=debug"]

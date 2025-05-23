@@ -72,7 +72,15 @@ impl HomeserverSuite {
             }
         };
 
-        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .try_init()
+            .map_err(|_| {
+                tracing::debug!(
+                    "Instance {} trace config will be ignored",
+                    &context.keypair.public_key()
+                )
+            });
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
