@@ -1,12 +1,12 @@
 [package]
 name = "e2e"
 edition.workspace = true
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.1"
 publish = false
 
 [dependencies]
-pubky-testnet = { path = "../pubky-testnet", version = "0.5.0-rc.0" }
-pubky-common = { path = "../pubky-common", version = "0.5.0-rc.0" }
+pubky-testnet = { path = "../pubky-testnet", version = "0.5.0-rc.1" }
+pubky-common = { path = "../pubky-common", version = "0.5.0-rc.1" }
 tokio = { version = "1.43.0", features = ["full", "test-util"] }
 tracing-subscriber = "0.3.19"
 pkarr = {workspace = true}
