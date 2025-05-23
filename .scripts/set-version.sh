@@ -5,6 +5,10 @@
 # It also updates the inner member dependency versions.
 # -------------------------------------------------------------------------------------------------
 
+set -e # fail the script if any command fails
+set -u # fail the script if any variable is not set
+set -o pipefail # fail the script if any pipe command fails
+
 # Check if cargo-set-version is installed
 if ! cargo --list | grep -q "set-version"; then
   echo "Error: cargo-set-version is not installed but required."
