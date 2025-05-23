@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -------------------------------------------------------------------------------------------------
-# This script prepares the release binaries for the current project.
+# This script prepares the artifacts for the current project.
 # It builds all the binaries and prepares them for upload as a Github Release.
 # The end result will be a target/github-release directory with the following structure:
 #
@@ -41,14 +41,9 @@ builds=(
 # "aarch64-apple-darwin,osx-arm64" 
 # "x86_64-apple-darwin,osx-amd64"
 
-
+# We should support these in the future.
 # "aarch64-unknown-linux-musl,linux-arm64"
 # "x86_64-pc-windows-gnu,windows-amd64"
-
-# LMDB mapsize is a usize and is too big for armv7hf and armhf
-# So we can't build these yet with LMDB.
-# "armv7-unknown-linux-musleabihf,linux-armv7hf"
-# "arm-unknown-linux-musleabihf,linux-armhf"
 )
 
 # List of binaries to build.
@@ -65,14 +60,15 @@ for BUILD in "${builds[@]}"; do
     IFS=',' read -r TARGET NICKNAME <<< "$BUILD"
 
     echo "Build $NICKNAME with $TARGET"
-    FOLDER="pubky-core-$NICKNAME-v$VERSION"
+    FOLDER="pubky-core-v$VERSION-$NICKNAME"
     DICT="target/github-release/$FOLDER"
+    mkdir -p $DICT
     for ARTIFACT in "${artifcats[@]}"; do
         cross build -p $ARTIFACT --release --target $TARGET
         if [[ $TARGET == *"windows"* ]]; then
-            cp target/$TARGET/release/$ARTIFACT.exe $DICT
+            cp target/$TARGET/release/$ARTIFACT.exe $DICT/
         else
-            cp target/$TARGET/release/$ARTIFACT $DICT
+            cp target/$TARGET/release/$ARTIFACT $DICT/
         fi
     done;
     (cd target/github-release && tar -czf $FOLDER.tar.gz $FOLDER && rm -rf $FOLDER)

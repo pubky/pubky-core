@@ -4,3 +4,4 @@ storage/
 .cursorrules
 .cursor/*
 .vscode/*
+.DS_Store
