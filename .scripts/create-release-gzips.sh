@@ -33,7 +33,7 @@ echo "Preparing release executables for version $VERSION..."
 
 builds=(
 # target, nickname
-"aarch64-apple-darwin,osx-arm64" 
+#"aarch64-apple-darwin,osx-arm64" 
 "x86_64-apple-darwin,osx-amd64"
 "x86_64-unknown-linux-musl,linux-amd64"
 "aarch64-unknown-linux-musl,linux-arm64"
