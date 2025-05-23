@@ -174,7 +174,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "pubky",
- "pubky-common 0.5.0-rc.0",
+ "pubky-common",
  "reqwest",
  "rpassword",
  "tokio",
@@ -2358,7 +2358,7 @@ dependencies = [
  "log",
  "mainline",
  "pkarr",
- "pubky-common 0.5.0-rc.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pubky-common",
  "reqwest",
  "serde",
  "serde-wasm-bindgen",
@@ -2376,27 +2376,6 @@ dependencies = [
 [[package]]
 name = "pubky-common"
 version = "0.5.0-rc.0"
-dependencies = [
- "argon2",
- "base32",
- "blake3",
- "crypto_secretbox",
- "ed25519-dalek",
- "js-sys",
- "once_cell",
- "pkarr",
- "postcard",
- "pubky-timestamp",
- "rand 0.9.0",
- "serde",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "pubky-common"
-version = "0.5.0-rc.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a735e8b1e3c8614d61b8045f5771b4dddcd7791f6733361f86ca7ffde5ee57f9"
 dependencies = [
  "argon2",
  "base32",
@@ -2440,7 +2419,7 @@ dependencies = [
  "pkarr",
  "pkarr-republisher",
  "postcard",
- "pubky-common 0.5.0-rc.0",
+ "pubky-common",
  "reqwest",
  "serde",
  "serde-toml-merge",
@@ -2468,7 +2447,7 @@ dependencies = [
  "pkarr",
  "pkarr-relay",
  "pubky",
- "pubky-common 0.5.0-rc.0",
+ "pubky-common",
  "pubky-homeserver",
  "tempfile",
  "tokio",

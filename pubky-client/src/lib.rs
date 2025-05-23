@@ -34,7 +34,6 @@ pub use wasm::constructor::Client;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
-pub use pubky_common;
 pub use pubky_common::recovery_file;
 
 pub mod errors {

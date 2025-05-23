@@ -8,5 +8,5 @@ pub use testnet::Testnet;
 
 // Re-export the core crates
 pub use pubky;
-pub use pubky::pubky_common;
+pub use pubky_common;
 pub use pubky_homeserver;
