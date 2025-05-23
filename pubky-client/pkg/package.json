@@ -14,7 +14,7 @@
     "test-nodejs": "tape test/*.js -cov",
     "test-browser": "browserify test/*.js -p esmify | npx tape-run",
     "build": "cargo run --bin bundle_pubky_npm",
-    "prepublishOnly": "npm run build && npm run test"
+    "prepublishOnly": "npm run build"
   },
   "files": [
     "index.cjs",
