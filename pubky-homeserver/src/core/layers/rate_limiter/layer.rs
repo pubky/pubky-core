@@ -446,7 +446,6 @@ mod tests {
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
-        println!("Time taken: {:?}", time_taken);
         assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
     }
 
@@ -484,7 +483,6 @@ mod tests {
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
-        println!("Time taken: {:?}", time_taken);
         assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because downloads are limited to 1kb/s and the sum of the downloads is 6kb");
     }
 
