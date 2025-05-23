@@ -1,3 +1,8 @@
+use crate::core::{
+    error::{Error, Result},
+    extractors::PubkyHost,
+    AppState,
+};
 use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
@@ -9,12 +14,6 @@ use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
-
-use crate::core::{
-    error::{Error, Result},
-    extractors::PubkyHost,
-    AppState,
-};
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -72,10 +71,11 @@ where
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
+                    tracing::error!("missing host key in path {}", path);
                     return Ok(
                         Error::new(StatusCode::NOT_FOUND, "Pubky Host is missing".into())
                             .into_response(),
-                    )
+                    );
                 }
             };
 
@@ -83,6 +83,7 @@ where
 
             // Authorize the request
             if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
+                tracing::debug!("not authorized");
                 return Ok(e.into_response());
             }
 
@@ -102,12 +103,15 @@ fn authorize(
 ) -> Result<()> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
+        tracing::debug!("session does exist");
         return Ok(());
     } else if path.starts_with("/pub/") {
         if method == Method::GET {
+            tracing::debug!("skipping authorization for reading pub path");
             return Ok(());
         }
     } else {
+        tracing::debug!("rejected attempt to write in non-pub directory");
         return Err(Error::new(
             StatusCode::FORBIDDEN,
             "Writing to directories other than '/pub/' is forbidden".into(),
@@ -115,9 +119,11 @@ fn authorize(
     }
 
     if let Some(cookies) = cookies {
+        tracing::debug!("looking up for session secret");
         let session_secret = session_secret_from_cookies(cookies, public_key)
             .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
+        tracing::debug!("retrieving session");
         let session = state
             .db
             .get_session(&session_secret)?
@@ -132,11 +138,13 @@ fn authorize(
             })
         {
             return Ok(());
-        }
+        };
 
+        tracing::debug!("requested action does not match to permissions");
         return Err(Error::with_status(StatusCode::FORBIDDEN));
     }
 
+    tracing::debug!("session pk does not match to provided pk");
     Err(Error::with_status(StatusCode::UNAUTHORIZED))
 }
 
