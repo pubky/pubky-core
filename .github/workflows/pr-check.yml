@@ -114,10 +114,18 @@ jobs:
 
       - name: Wait for testnet homeserver
         run: |
+          timeout=180
+          count=0
           until nc -zv 127.0.0.1 6288; do
-            echo "Waiting for testnet homeserver to be ready..."
+            if [ $count -ge $timeout ]; then
+              echo "Timeout: Testnet homeserver did not start within 3 minutes."
+              exit 1
+            fi
+            echo "Waiting for testnet homeserver to be ready... ($count/$timeout)"
             sleep 1
+            count=$((count + 1))
           done
+          echo "Testnet homeserver is ready."
 
       - name: Run Tests (only node-js)
         working-directory: pubky-client/pkg

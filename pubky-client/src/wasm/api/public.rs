@@ -3,7 +3,9 @@
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use super::super::Client;
+use crate::wasm::js_result::JsResult;
+
+use super::super::constructor::Client;
 
 #[wasm_bindgen]
 impl Client {
@@ -23,7 +25,7 @@ impl Client {
         reverse: Option<bool>,
         limit: Option<u16>,
         shallow: Option<bool>,
-    ) -> Result<Array, JsValue> {
+    ) -> JsResult<Array> {
         // TODO: try later to return Vec<String> from async function.
 
         if let Some(cursor) = cursor {
