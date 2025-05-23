@@ -72,8 +72,8 @@ pub struct GeneralToml {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct LoggingToml {
-    pub level: Option<String>,
-    pub filters: Option<Vec<String>>,
+    pub level: String,
+    pub filters: Vec<String>,
 }
 
 /// The overall application configuration, composed of several subsections.
@@ -112,12 +112,6 @@ impl Default for AdminToml {
 impl Default for PkdnsToml {
     fn default() -> Self {
         ConfigToml::default().pkdns
-    }
-}
-
-impl Default for LoggingToml {
-    fn default() -> Self {
-        ConfigToml::default().logging
     }
 }
 
@@ -181,8 +175,8 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
-        config.logging.level = None;
-        config.logging.filters = None;
+        config.logging.level = "info".to_string();
+        config.logging.filters = vec![];
         config
     }
 }
@@ -233,8 +227,8 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
-        assert_eq!(c.logging.level, None);
-        assert_eq!(c.logging.filters, None);
+        assert_eq!(c.logging.level, LevelFilter::Info);
+        assert_eq!(c.logging.filters, vec![]);
     }
 
     #[test]
