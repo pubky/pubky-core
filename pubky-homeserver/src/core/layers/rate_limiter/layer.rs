@@ -23,7 +23,7 @@ use tower::{Layer, Service};
 use crate::core::error::Result;
 use crate::core::extractors::PubkyHost;
 use crate::core::Error;
-use crate::quota_config::{LimitKey, PathLimit, RateUnit};
+use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
 use futures_util::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 
@@ -82,7 +82,7 @@ impl<S> Layer<S> for RateLimiterLayer {
 #[derive(Debug, Clone)]
 struct LimitTuple {
     pub limit: PathLimit,
-    pub limiter: Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
+    pub limiter: Arc<RateLimiter<LimitKey, DashMapStateStore<LimitKey>, QuantaClock>>,
 }
 
 impl LimitTuple {
@@ -112,14 +112,14 @@ impl LimitTuple {
     ///
     /// The key is either the ip address of the client
     /// or the user pubkey.
-    fn extract_key(&self, req: &Request<Body>) -> anyhow::Result<String> {
+    fn extract_key(&self, req: &Request<Body>) -> anyhow::Result<LimitKey> {
         match self.limit.key {
-            LimitKey::Ip => extract_ip(req).map(|ip| ip.to_string()),
-            LimitKey::User => {
+            LimitKeyType::Ip => extract_ip(req).map(LimitKey::Ip),
+            LimitKeyType::User => {
                 // Extract the user pubkey from the request.
                 req.extensions()
                     .get::<PubkyHost>()
-                    .map(|pk| pk.public_key().to_string())
+                    .map(|pk| LimitKey::User(pk.public_key().clone()))
                     .ok_or(anyhow::anyhow!("Failed to extract user pubkey."))
             }
         }
@@ -144,8 +144,8 @@ impl<S> RateLimiterMiddleware<S> {
     /// Throttle the upload body.
     fn throttle_upload(
         req: Request<Body>,
-        key: &str,
-        limiter: &Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
+        key: &LimitKey,
+        limiter: &Arc<RateLimiter<LimitKey, DashMapStateStore<LimitKey>, QuantaClock>>,
     ) -> Request<Body> {
         let (parts, body) = req.into_parts();
         let new_body = Self::throttle_body(body, key, limiter);
@@ -155,8 +155,8 @@ impl<S> RateLimiterMiddleware<S> {
     /// Throttle the download body.
     fn throttle_download(
         res: Response<Body>,
-        key: &str,
-        limiter: &Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
+        key: &LimitKey,
+        limiter: &Arc<RateLimiter<LimitKey, DashMapStateStore<LimitKey>, QuantaClock>>,
     ) -> Response<Body> {
         let (parts, body) = res.into_parts();
         let new_body = Self::throttle_body(body, key, limiter);
@@ -170,16 +170,16 @@ impl<S> RateLimiterMiddleware<S> {
     ///
     fn throttle_body(
         body: Body,
-        key: &str,
-        limiter: &Arc<RateLimiter<String, DashMapStateStore<String>, QuantaClock>>,
+        key: &LimitKey,
+        limiter: &Arc<RateLimiter<LimitKey, DashMapStateStore<LimitKey>, QuantaClock>>,
     ) -> Body {
         let body_stream = body.into_data_stream();
         let limiter = limiter.clone();
-        let key = key.to_string();
+        let key = key.clone();
         let throttled = body_stream
             .map(move |chunk| {
                 let limiter = limiter.clone();
-                let key = key.to_string();
+                let key = key.clone();
                 // When the rate limit is exceeded, we wait between 25ms and 500ms before retrying.
                 // This is to avoid overwhelming the server with requests when the rate limit is exceeded.
                 // Randomization is used to avoid thundering herd problem.
@@ -291,6 +291,10 @@ where
                     });
                 }
             };
+
+            if limit.limit.is_whitelisted(&key) {
+                continue;
+            }
 
             match limit.limit.quota.rate_unit {
                 RateUnit::SpeedRateUnit(_) => {
@@ -417,7 +421,7 @@ mod tests {
             GlobPattern::new("/upload"),
             Method::POST,
             "1kb/s".parse().unwrap(),
-            LimitKey::Ip,
+            LimitKeyType::Ip,
             None,
         );
         let socket = start_server(vec![path_limit]).await;
@@ -455,7 +459,7 @@ mod tests {
             GlobPattern::new("/download"),
             Method::GET,
             "1kb/s".parse().unwrap(),
-            LimitKey::Ip,
+            LimitKeyType::Ip,
             None,
         );
         let socket = start_server(vec![path_limit]).await;
@@ -492,7 +496,7 @@ mod tests {
             GlobPattern::new("/upload"),
             Method::POST,
             "1r/m".parse().unwrap(),
-            LimitKey::Ip,
+            LimitKeyType::Ip,
             None,
         );
         let socket = start_server(vec![path_limit]).await;
@@ -525,7 +529,7 @@ mod tests {
             GlobPattern::new("/upload"),
             Method::POST,
             "1r/m".parse().unwrap(),
-            LimitKey::User,
+            LimitKeyType::User,
             None,
         );
         let socket = start_server(vec![path_limit]).await;

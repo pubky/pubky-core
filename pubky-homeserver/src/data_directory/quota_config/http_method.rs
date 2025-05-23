@@ -53,3 +53,18 @@ impl<'de> Deserialize<'de> for HttpMethod {
         HttpMethod::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_http_method_serde() {
+        let method = Method::GET;
+        let http_method = HttpMethod(method);
+        assert_eq!(http_method.to_string(), "GET");
+
+        let deserialized: HttpMethod = "GET".parse().unwrap();
+        assert_eq!(deserialized, http_method);
+    }
+}
