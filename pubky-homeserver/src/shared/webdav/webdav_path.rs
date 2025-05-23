@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+
 /// A normalized and validated webdav path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WebDavPath {
@@ -22,6 +23,9 @@ impl WebDavPath {
     /// The path will be normalized and validated.
     pub fn new(unnormalized_path: &str) -> anyhow::Result<Self> {
         let normalized_path = normalize_and_validate_webdav_path(unnormalized_path)?;
+        if !normalized_path.starts_with("/pub/") {
+            return Err(anyhow::anyhow!("Path must start with /pub/"));
+        }
         Ok(Self::new_unchecked(normalized_path))
     }
 
