@@ -4,12 +4,15 @@ use url::Url;
 
 use pubky_common::capabilities::Capabilities;
 
-use crate::wasm::wrappers::{
-    keys::{Keypair, PublicKey},
-    session::Session,
+use crate::wasm::{
+    js_result::JsResult,
+    wrappers::{
+        keys::{Keypair, PublicKey},
+        session::Session,
+    },
 };
 
-use super::super::Client;
+use super::super::constructor::Client;
 
 use wasm_bindgen::prelude::*;
 
@@ -25,7 +28,7 @@ impl Client {
         keypair: &Keypair,
         homeserver: &PublicKey,
         signup_token: Option<String>,
-    ) -> Result<Session, JsValue> {
+    ) -> JsResult<Session> {
         Ok(Session(
             self.0
                 .signup(
@@ -43,7 +46,7 @@ impl Client {
     /// Returns [Session] or `None` (if received `404 NOT_FOUND`),
     /// or throws the received error if the response has any other `>=400` status code.
     #[wasm_bindgen]
-    pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>, JsValue> {
+    pub async fn session(&self, pubky: &PublicKey) -> JsResult<Option<Session>> {
         self.0
             .session(pubky.as_inner())
             .await
@@ -53,7 +56,7 @@ impl Client {
 
     /// Signout from a homeserver.
     #[wasm_bindgen]
-    pub async fn signout(&self, pubky: &PublicKey) -> Result<(), JsValue> {
+    pub async fn signout(&self, pubky: &PublicKey) -> JsResult<()> {
         self.0
             .signout(pubky.as_inner())
             .await
@@ -62,7 +65,7 @@ impl Client {
 
     /// Signin to a homeserver using the root Keypair.
     #[wasm_bindgen]
-    pub async fn signin(&self, keypair: &Keypair) -> Result<(), JsValue> {
+    pub async fn signin(&self, keypair: &Keypair) -> JsResult<()> {
         self.0
             .signin(keypair.as_inner())
             .await
@@ -76,7 +79,7 @@ impl Client {
     ///
     /// Returns a [AuthRequest]
     #[wasm_bindgen(js_name = "authRequest")]
-    pub fn auth_request(&self, relay: &str, capabilities: &str) -> Result<AuthRequest, JsValue> {
+    pub fn auth_request(&self, relay: &str, capabilities: &str) -> JsResult<AuthRequest> {
         let auth_request = self
             .0
             .auth_request(
@@ -91,11 +94,7 @@ impl Client {
     /// Sign an [pubky_common::auth::AuthToken], encrypt it and send it to the
     /// source of the pubkyauth request url.
     #[wasm_bindgen(js_name = "sendAuthToken")]
-    pub async fn send_auth_token(
-        &self,
-        keypair: &Keypair,
-        pubkyauth_url: &str,
-    ) -> Result<(), JsValue> {
+    pub async fn send_auth_token(&self, keypair: &Keypair, pubkyauth_url: &str) -> JsResult<()> {
         let pubkyauth_url: Url = pubkyauth_url.try_into().map_err(|_| "Invalid relay Url")?;
 
         self.0
@@ -110,14 +109,12 @@ impl Client {
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
     /// Throws an error if no homeserver is found.
     #[wasm_bindgen(js_name = "getHomeserver")]
-    pub async fn get_homeserver(&self, public_key: &PublicKey) -> Result<PublicKey, JsValue> {
-        let val = self.0.get_homeserver(public_key.as_inner()).await;
-        if val.is_none() {
-            return Err(JsValue::from_str("No homeserver found"));
-        }
-        let val = val.unwrap();
-        let js_val = JsValue::from_str(val.as_str());
-        PublicKey::try_from(js_val)
+    pub async fn get_homeserver(&self, public_key: &PublicKey) -> JsResult<PublicKey> {
+        let hs_z32 = match self.0.get_homeserver(public_key.as_inner()).await {
+            Some(hs_z32) => hs_z32,
+            None => return Err(JsValue::from_str("No homeserver found")),
+        };
+        PublicKey::try_from(hs_z32)
     }
 
     /// Republish the user's PKarr record pointing to their homeserver.
@@ -133,15 +130,11 @@ impl Client {
     /// republishing. On a failed signin due to homeserver resolution failure, a key
     /// manager should always attempt to republish the last known homeserver.
     #[wasm_bindgen(js_name = "republishHomeserver")]
-    pub async fn republish_homeserver(
-        &self,
-        keypair: &Keypair,
-        host: &PublicKey,
-    ) -> Result<(), JsValue> {
+    pub async fn republish_homeserver(&self, keypair: &Keypair, host: &PublicKey) -> JsResult<()> {
         self.0
             .republish_homeserver(keypair.as_inner(), host.as_inner())
             .await
-            .map_err(|e| JsValue::from_str(&e.to_string()));
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         Ok(())
     }
@@ -167,7 +160,7 @@ impl AuthRequest {
     ///
     /// Otherwise it will throw an error.
     #[wasm_bindgen]
-    pub async fn response(&self) -> Result<PublicKey, JsValue> {
+    pub async fn response(&self) -> JsResult<PublicKey> {
         self.0
             .response()
             .await

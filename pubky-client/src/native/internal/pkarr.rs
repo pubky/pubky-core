@@ -1,20 +1,15 @@
 use anyhow::Result;
 use pkarr::{
+    Keypair, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
     errors::QueryError,
-    Keypair, SignedPacket, Timestamp,
 };
 use std::convert::TryInto;
 use std::time::Duration;
 
-use super::super::Client;
+use crate::shared::sleep;
 
-// sleep for native
-#[cfg(not(wasm_browser))]
-use tokio::time::sleep;
-// sleep for wasm
-#[cfg(wasm_browser)]
-use gloo_timers::future::sleep;
+use super::super::Client;
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.
@@ -150,12 +145,13 @@ impl Client {
     }
 }
 
+#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Client;
-    use pkarr::dns::rdata::SVCB;
     use pkarr::Keypair;
+    use pkarr::dns::rdata::SVCB;
 
     #[tokio::test]
     async fn test_extract_host_from_packet() -> Result<()> {
