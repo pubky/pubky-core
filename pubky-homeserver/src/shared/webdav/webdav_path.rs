@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-
 /// A normalized and validated webdav path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WebDavPath {
