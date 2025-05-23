@@ -39,7 +39,7 @@ builds=(
 # "x86_64-apple-darwin,osx-amd64"
 "x86_64-unknown-linux-musl,linux-amd64"
 #"aarch64-unknown-linux-musl,linux-arm64"
-"x86_64-pc-windows-gnu,windows-amd64"
+# "x86_64-pc-windows-gnu,windows-amd64"
 
 # LMDB mapsize is a usize and is too big for armv7hf and armhf
 # So we can't build these yet with LMDB.
