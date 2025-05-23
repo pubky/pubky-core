@@ -1,3 +1,8 @@
+use crate::core::{
+    error::{Error, Result},
+    extractors::PubkyHost,
+    AppState,
+};
 use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
@@ -9,11 +14,6 @@ use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
-use crate::core::{
-    error::{Error, Result},
-    extractors::PubkyHost,
-    AppState,
-};
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -75,7 +75,7 @@ where
                     return Ok(
                         Error::new(StatusCode::NOT_FOUND, "Pubky Host is missing".into())
                             .into_response(),
-                    )
+                    );
                 }
             };
 
@@ -129,15 +129,15 @@ fn authorize(
             .get_session(&session_secret)?
             .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
 
-        if session.pubky() == public_key {
-            if session.capabilities().iter().any(|cap| {
+        if session.pubky() == public_key
+            && session.capabilities().iter().any(|cap| {
                 path.starts_with(&cap.scope)
                     && cap
-                    .actions
-                    .contains(&pubky_common::capabilities::Action::Write)
-            }) {
-                return Ok(())
-            }
+                        .actions
+                        .contains(&pubky_common::capabilities::Action::Write)
+            })
+        {
+            return Ok(());
         };
 
         tracing::debug!("requested action does not match to permissions");
