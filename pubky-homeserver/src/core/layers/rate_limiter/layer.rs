@@ -439,15 +439,15 @@ mod tests {
         let start = Instant::now();
         // Spawn in the background to test 2 uploads in parallel
         // Upload 3kb each
-        let handle1 = upload_data(socket, 3);
-        let handle2 = upload_data(socket, 3);
+        let handle1 = upload_data(socket, 4);
+        let handle2 = upload_data(socket, 4);
 
         // Wait for the uploads to finish
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
         println!("Time taken: {:?}", time_taken);
-        assert!(time_taken > Duration::from_secs(3), "Should at least take 6s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
+        assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
     }
 
     #[tokio::test]
@@ -485,7 +485,7 @@ mod tests {
 
         let time_taken = start.elapsed();
         println!("Time taken: {:?}", time_taken);
-        assert!(time_taken > Duration::from_secs(3), "Should at least take 6s because downloads are limited to 1kb/s and the sum of the downloads is 6kb");
+        assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because downloads are limited to 1kb/s and the sum of the downloads is 6kb");
     }
 
     #[tokio::test]
