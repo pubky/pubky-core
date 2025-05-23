@@ -1,7 +1,12 @@
+# This workflow builds the artifacts for the release.
+# It creates the gzips and uploads them as artifacts.
+# The artifacts are then used to create a release on Github.
+
 name: Build Artifacts
 
 on:
-  pull_request:
+  # This workflow is triggered every time a push is made to the main branch.
+  # Aka when a PR is merged.
   push:
     branches: [main]
 
@@ -15,18 +20,15 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-      - name: Install cross
+      - name: Install cross # Tool to cross-compile the binaries
         run: cargo install cross --locked
-      - name: Add MacOS target
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - name: Build Artifacts
         run: .scripts/create-release-gzips.sh
-      - name: Upload binary
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          path: target/github-release/*
+          path: target/github-release/
           if-no-files-found: error
-          compression-level: 0
           overwrite: true
 
 
