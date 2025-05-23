@@ -28,7 +28,8 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          path: target/github-release/
+          name: pubky-core-artifacts
+          path: target/github-release/*
           if-no-files-found: error
           overwrite: true
 
