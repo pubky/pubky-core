@@ -24,7 +24,7 @@ jobs:
       - name: Install cross # Tool to cross-compile the binaries
         run: cargo install cross --locked
       - name: Build Artifacts
-        run: .scripts/create-release-gzips.sh
+        run: .scripts/build-artifacts.sh
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
