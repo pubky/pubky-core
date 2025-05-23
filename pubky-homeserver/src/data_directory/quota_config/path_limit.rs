@@ -73,22 +73,10 @@ impl std::fmt::Display for PathLimit {
             .burst
             .map(|b| format!(" burst {}", b))
             .unwrap_or("".to_string());
-        let whitelist_str = if self.whitelist.is_empty() {
-            "".to_string()
-        } else {
-            format!(
-                " whitelist: {}",
-                self.whitelist
-                    .iter()
-                    .map(|k| k.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            )
-        };
         write!(
             f,
-            "{} {}: {}{burst_str} by {}.{whitelist_str}",
-            self.method, self.path, self.quota, self.key,
+            "{} {}: {}{burst_str} by {}.whitelist: {:?}",
+            self.method, self.path, self.quota, self.key, self.whitelist
         )
     }
 }
