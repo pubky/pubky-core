@@ -39,10 +39,17 @@ impl LmDB {
     pub(crate) async fn read_file(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
         let db = self.clone();
         let id = *id;
-        tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
+        let join_handle =tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
             db.read_file_sync(&id)
         })
-        .await?
+        .await;
+        match join_handle {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::error!("Error reading file. JoinError: {:?}", e);
+                return Err(e.into())
+            },
+        }
     }
 
     /// Write the blobs from a temporary file to LMDB.

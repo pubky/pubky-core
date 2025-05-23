@@ -30,10 +30,17 @@ impl LmDB {
         let mut db = self.clone();
         let path = path.clone();
         let file = file.clone();
-        tokio::task::spawn_blocking(move || -> anyhow::Result<Entry> {
+        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<Entry> {
             db.write_entry_sync(&path, &file)
         })
-        .await?
+        .await;
+        match join_handle {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::error!("Error writing entry. JoinError: {:?}", e);
+                return Err(e.into())
+            },
+        }
     }
 
     /// Writes an entry to the database.
@@ -85,8 +92,15 @@ impl LmDB {
     pub async fn delete_entry(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
         let mut db = self.clone();
         let path = path.clone();
-        tokio::task::spawn_blocking(move || -> anyhow::Result<bool> { db.delete_entry_sync(&path) })
-            .await?
+        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> { db.delete_entry_sync(&path) })
+            .await;
+        match join_handle {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::error!("Error deleting entry. JoinError: {:?}", e);
+                return Err(e.into())
+            },
+        }
     }
 
     /// Delete an entry including the associated file from the database.
