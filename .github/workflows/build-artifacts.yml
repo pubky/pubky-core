@@ -25,11 +25,13 @@ jobs:
         run: cargo install cross --locked
       - name: Build Artifacts
         run: .scripts/build-artifacts.sh
+      - name: gzip all the artifacts
+        run: (cd target && tar -czf github-release.tar.gz github-release)
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pubky-core-artifacts
-          path: target/github-release/*
+          name: pubky-core-artifacts.tar.gz
+          path: target/github-release.tar.gz
           if-no-files-found: error
           overwrite: true
 
