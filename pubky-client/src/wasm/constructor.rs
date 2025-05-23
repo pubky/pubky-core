@@ -8,6 +8,38 @@ use super::js_result::JsResult;
 
 static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/"];
 
+// ------------------------------------------------------------------------------------------------
+// JS style config objects for the client.
+// ------------------------------------------------------------------------------------------------
+
+/// Pkarr Config
+#[derive(Tsify, Serialize, Deserialize, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct PkarrConfig {
+    /// The list of relays to access the DHT with.
+    pub(crate) relays: Option<Vec<String>>,
+    /// The timeout for DHT requests in milliseconds.
+    /// Default is 2000ms.
+    pub(crate) request_timeout: Option<NonZeroU64>,
+}
+
+/// Pubky Client Config
+#[derive(Tsify, Serialize, Deserialize, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct PubkyClientConfig {
+    /// Configuration on how to access pkarr packets on the mainline DHT.
+    pub(crate) pkarr: Option<PkarrConfig>,
+    /// The maximum age of a record in seconds.
+    /// If the user pkarr record is older than this, it will be automatically refreshed.
+    pub(crate) user_max_record_age: Option<NonZeroU64>,
+}
+
+// ------------------------------------------------------------------------------------------------
+// JS Client constructor
+// ------------------------------------------------------------------------------------------------
+
 #[wasm_bindgen]
 pub struct Client(pub(crate) crate::NativeClient);
 
@@ -91,32 +123,4 @@ impl Client {
 
         Self(client)
     }
-}
-
-// ------------------------------------------------------------------------------------------------
-// JS style config objects for the client.
-// ------------------------------------------------------------------------------------------------
-
-/// Pkarr Config
-#[derive(Tsify, Serialize, Deserialize, Debug)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
-#[serde(rename_all = "camelCase")]
-pub struct PkarrConfig {
-    /// The list of relays to access the DHT with.
-    pub(crate) relays: Option<Vec<String>>,
-    /// The timeout for DHT requests in milliseconds.
-    /// Default is 2000ms.
-    pub(crate) request_timeout: Option<NonZeroU64>,
-}
-
-/// Pubky Client Config
-#[derive(Tsify, Serialize, Deserialize, Debug)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
-#[serde(rename_all = "camelCase")]
-pub struct PubkyClientConfig {
-    /// Configuration on how to access pkarr packets on the mainline DHT.
-    pub(crate) pkarr: Option<PkarrConfig>,
-    /// The maximum age of a record in seconds.
-    /// If the user pkarr record is older than this, it will be automatically refreshed.
-    pub(crate) user_max_record_age: Option<NonZeroU64>,
 }
