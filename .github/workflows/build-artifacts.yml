@@ -18,6 +18,6 @@ jobs:
       - name: Install cross
         run: cargo install cross --locked
       - name: Build Artifacts
-        run: .scripts/build-artifacts.sh
+        run: .scripts/create-release-gzips.sh
 
 
