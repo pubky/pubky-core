@@ -64,7 +64,7 @@ impl LmDB {
     /// calculate optimal chunk size:
     /// - <https://lmdb.readthedocs.io/en/release/#storage-efficiency-limits>
     /// - <https://github.com/lmdbjava/benchmarks/blob/master/results/20160710/README.md#test-2-determine-24816-kb-byte-values>
-    pub fn max_chunk_size() -> usize {
+    fn max_chunk_size() -> usize {
         let page_size = page_size::get();
 
         // - 16 bytes Header  per page (LMDB)
