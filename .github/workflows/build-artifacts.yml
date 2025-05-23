@@ -17,6 +17,8 @@ jobs:
           toolchain: stable
       - name: Install cross
         run: cargo install cross --locked
+      - name: Add MacOS target
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - name: Build Artifacts
         run: .scripts/create-release-gzips.sh
 
