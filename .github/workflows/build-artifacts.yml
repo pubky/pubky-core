@@ -1,0 +1,37 @@
+# This workflow builds the artifacts for the release.
+# It creates the gzips and uploads them as artifacts.
+# The artifacts are then used to create a release on Github.
+
+name: Build Artifacts
+
+on:
+  # This workflow is triggered every time a push is made to the main branch.
+  # Aka when a PR is merged.
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - name: Install cross # Tool to cross-compile the binaries
+        run: cargo install cross --locked
+      - name: Build Artifacts
+        run: .scripts/build-artifacts.sh
+      - name: gzip all the artifacts
+        run: (cd target && tar -czf github-release.tar.gz github-release)
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubky-core-artifacts.tar.gz
+          path: target/github-release.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+
