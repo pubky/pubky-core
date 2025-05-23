@@ -38,8 +38,8 @@ impl LmDB {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Error writing entry. JoinError: {:?}", e);
-                return Err(e.into())
-            },
+                Err(e.into())
+            }
         }
     }
 
@@ -92,14 +92,16 @@ impl LmDB {
     pub async fn delete_entry(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
         let mut db = self.clone();
         let path = path.clone();
-        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> { db.delete_entry_sync(&path) })
-            .await;
+        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
+            db.delete_entry_sync(&path)
+        })
+        .await;
         match join_handle {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Error deleting entry. JoinError: {:?}", e);
-                return Err(e.into())
-            },
+                Err(e.into())
+            }
         }
     }
 

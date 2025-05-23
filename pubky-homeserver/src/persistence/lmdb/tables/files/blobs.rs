@@ -39,7 +39,7 @@ impl LmDB {
     pub(crate) async fn read_file(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
         let db = self.clone();
         let id = *id;
-        let join_handle =tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
+        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
             db.read_file_sync(&id)
         })
         .await;
@@ -47,8 +47,8 @@ impl LmDB {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Error reading file. JoinError: {:?}", e);
-                return Err(e.into())
-            },
+                Err(e.into())
+            }
         }
     }
 
