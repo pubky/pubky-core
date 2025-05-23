@@ -33,10 +33,12 @@ echo "Preparing release executables for version $VERSION..."
 
 builds=(
 # target, nickname
+# Apple targets are a pain in the butt.
+# See https://github.com/cross-rs/cross-toolchains?tab=readme-ov-file#apple-targets
 # "aarch64-apple-darwin,osx-arm64" 
 # "x86_64-apple-darwin,osx-amd64"
 "x86_64-unknown-linux-musl,linux-amd64"
-"aarch64-unknown-linux-musl,linux-arm64"
+#"aarch64-unknown-linux-musl,linux-arm64"
 "x86_64-pc-windows-gnu,windows-amd64"
 
 # LMDB mapsize is a usize and is too big for armv7hf and armhf
