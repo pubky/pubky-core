@@ -1,5 +1,5 @@
 use pkarr::Keypair;
-use pubky_common::capabilities::{Capabilities, Capability};
+use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,

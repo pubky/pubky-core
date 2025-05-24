@@ -4,7 +4,7 @@ use pkarr::{Keypair, PublicKey};
 use pubky_testnet::{
     pubky::Client,
     pubky_homeserver::{
-        quota_config::{GlobPattern, LimitKey, PathLimit},
+        quota_config::{GlobPattern, LimitKey, LimitKeyType, PathLimit},
         ConfigToml, MockDataDir,
     },
     Testnet,
@@ -23,14 +23,14 @@ async fn test_limit_signin_get_session() {
             GlobPattern::new("/session"),
             Method::POST,
             "1r/m".parse().unwrap(),
-            LimitKey::Ip,
+            LimitKeyType::Ip,
             None,
         ), // Limit signins
         PathLimit::new(
             GlobPattern::new("/session"),
             Method::GET,
             "1r/m".parse().unwrap(),
-            LimitKey::User,
+            LimitKeyType::User,
             None,
         ), // Limit decode sessions
     ];
@@ -62,6 +62,62 @@ async fn test_limit_signin_get_session() {
 }
 
 #[tokio::test]
+async fn test_limit_signin_get_session_whitelist() {
+    let keypair = Keypair::random();
+    let mut testnet = Testnet::new().await.unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
+
+    let mut config = ConfigToml::test();
+    let mut limit = PathLimit::new(
+        GlobPattern::new("/session"),
+        Method::GET,
+        "1r/m".parse().unwrap(),
+        LimitKeyType::User,
+        None,
+    );
+    limit.whitelist.push(LimitKey::User(keypair.public_key()));
+    config.drive.rate_limits = vec![
+        limit, // Limit decode sessions
+    ];
+    let mock_dir = MockDataDir::new(config, None).unwrap();
+    let server = testnet
+        .create_homeserver_suite_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    // Create a new user
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    client
+        .session(&keypair.public_key())
+        .await
+        .expect("Should not be rate limited anyway");
+    client
+        .session(&keypair.public_key())
+        .await
+        .expect("Should not be rate limited because on whitelist");
+
+    // Create another new user, not on the whitelist
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    client
+        .session(&keypair.public_key())
+        .await
+        .expect("Should not be rate limited anyway");
+    client
+        .session(&keypair.public_key())
+        .await
+        .expect_err("Should be rate limited because not on whitelist");
+}
+
+#[tokio::test]
 async fn test_limit_events() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client_builder().build().unwrap();
@@ -72,7 +128,7 @@ async fn test_limit_events() {
             GlobPattern::new("/events/"),
             Method::GET,
             "1r/m".parse().unwrap(),
-            LimitKey::Ip,
+            LimitKeyType::Ip,
             None,
         ), // Limit events
     ];
@@ -101,7 +157,7 @@ async fn test_limit_upload() {
             GlobPattern::new("/pub/**"),
             Method::PUT,
             "1kb/s".parse().unwrap(),
-            LimitKey::User,
+            LimitKeyType::User,
             None,
         ), // Limit events
     ];

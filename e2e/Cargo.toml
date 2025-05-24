@@ -1,11 +1,11 @@
 [package]
 name = "e2e"
+edition.workspace = true
 version = "0.1.0"
-edition = "2021"
+publish = false
 
 [dependencies]
-pubky-testnet = { path = "../pubky-testnet" }
-pubky-common = { path = "../pubky-common" }
+pubky-testnet = { workspace = true }
 tokio = { version = "1.43.0", features = ["full", "test-util"] }
 tracing-subscriber = "0.3.19"
 pkarr = {workspace = true}

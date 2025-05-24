@@ -1,12 +1,12 @@
 [package]
 name = "pkarr-republisher"
-version = "0.2.0-rc.0"
-edition = "2021"
-authors = ["Severin Alex Bühler <severin@synonym.to>"]
 description = "A pkarr packet republisher."
-license = "MIT"
-homepage = "https://github.com/pubky/pubky-core"
-repository = "https://github.com/pubky/pubky-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 keywords = ["pkarr", "mainline", "pubky"]
 categories = ["web-programming"]
 

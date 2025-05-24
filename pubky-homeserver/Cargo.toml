@@ -1,12 +1,12 @@
 [package]
 name = "pubky-homeserver"
-version = "0.2.0-rc.0"
-edition = "2021"
-authors = ["Nuh <nuh@nuh.dev>"]
 description = "Pubky core's homeserver."
-license = "MIT"
-homepage = "https://github.com/pubky/pubky-core"
-repository = "https://github.com/pubky/pubky-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 keywords = ["pkarr", "sovereign", "web", "pkarr", "datastore"]
 categories = [
     "network-programming",
@@ -32,7 +32,7 @@ hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
 pkarr = { workspace = true, features = ["dht", "lmdb-cache", "tls"] }
-pubky-common = { version = "0.4.0-rc.0", path = "../pubky-common" }
+pubky-common = { workspace = true }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"
@@ -45,7 +45,7 @@ url = { version = "2.5.4", features = ["serde"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tower = "0.5.2"
 page_size = "0.6.0"
-pkarr-republisher = { version = "0.2.0-rc.0", path = "../pkarr-republisher" }
+pkarr-republisher = { workspace = true }
 thiserror = "2.0.12"
 dirs = "6.0.0"
 hostname-validator = "1.1.1"
@@ -57,7 +57,7 @@ governor = "0.10.0"
 fast-glob = "0.4.5"
 tokio-util = "0.7.15"
 percent-encoding = "2.3.1"
-
+serde_valid = "1.0.5"
 
 
 [dev-dependencies]

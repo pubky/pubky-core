@@ -4,6 +4,9 @@
 	An open protocol for per-public-key backends for censorship resistant web applications.
 </h3>
 
+
+
+
 <div align="center">
   <h3>
     <a href="https://pubky.github.io/pubky-core/">
@@ -14,15 +17,17 @@
       Rust Client's Docs
     </a>
     <span> | </span>
-    <a href="https://github.com/pubky/pubky-core/releases">
-      Releases
-    </a>
     <span> | </span>
     <a href="https://www.npmjs.com/package/@synonymdev/pubky">
       JS bindings 
     </a>
   </h3>
 </div>
+
+[![GitHub Release](https://img.shields.io/github/v/release/pubky/pkdns)](https://github.com/pubky/pubky-core/releases/latest/)
+[![Crates.io Version](https://img.shields.io/crates/v/pubky)](https://crates.io/crates/pubky)
+[![Telegram Chat Group](https://img.shields.io/badge/Chat-Telegram-violet)](https://t.me/pubkycore)
+[![GitHub License](https://img.shields.io/github/license/pubky/pubky-core)](https://github.com/pubky/pubky-core/blob/main/LICENSE)
 
 > The Web, long centralized, must decentralize; Long decentralized, must centralize.
 
@@ -59,3 +64,24 @@ Then in a different terminal window:
 ```bash
 npm test
 ```
+
+### Docker
+
+An alternative way to start tinkering with Pubky is to build an isolated container and run it locally. Here is an 
+example command how to build an image:
+
+```bash
+docker build --build-arg TARGETARCH=x86_64 -t pubky:core .
+```
+
+A command for running it in an isolated environment with log output:
+
+```bash
+docker run -it pubky:core
+```
+
+Additional optional arguments can be used to run it in the background, but the most important is `--network=host`, which allows the container to access the network and provides an admin endpoint accessible from the host machine. Please refer to the Docker documentation for more detailed options.
+
+## Links
+
+- [Contributors Guide](./CONTRIBUTORS.md)
