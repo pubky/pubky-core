@@ -204,7 +204,7 @@ async fn test_concurrent_write_read() {
             GlobPattern::new("/pub/**"),
             Method::PUT,
             "1kb/s".parse().unwrap(),
-            LimitKey::User,
+            LimitKeyType::User,
             None,
         ),
         PathLimit::new(
@@ -212,7 +212,7 @@ async fn test_concurrent_write_read() {
             GlobPattern::new("/pub/**"),
             Method::GET,
             "1kb/s".parse().unwrap(),
-            LimitKey::User,
+            LimitKeyType::User,
             None,
         ),
     ];
