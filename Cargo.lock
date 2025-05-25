@@ -2468,6 +2468,7 @@ dependencies = [
  "hostname-validator",
  "httpdate",
  "page_size",
+ "percent-encoding",
  "pkarr",
  "pkarr-republisher",
  "postcard",
@@ -2479,6 +2480,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-util",
  "toml",
  "tower 0.5.2",
  "tower-cookies",
@@ -3557,9 +3559,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.13"
+version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7fcaa8d55a2bdd6b83ace262b016eca0d79ee02818c5c1bcdf0305114081078"
+checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
 dependencies = [
  "bytes",
  "futures-core",
