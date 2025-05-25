@@ -1,14 +1,13 @@
-pub mod blobs;
-pub mod entries;
 pub mod events;
+pub mod files;
 pub mod sessions;
 pub mod signup_tokens;
 pub mod users;
 
 use heed::{Env, RwTxn};
 
-use blobs::{BlobsTable, BLOBS_TABLE};
-use entries::{EntriesTable, ENTRIES_TABLE};
+use files::{BlobsTable, BLOBS_TABLE};
+use files::{EntriesTable, ENTRIES_TABLE};
 
 use self::{
     events::{EventsTable, EVENTS_TABLE},

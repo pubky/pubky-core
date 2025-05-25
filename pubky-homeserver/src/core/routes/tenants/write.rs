@@ -1,21 +1,23 @@
-use std::io::Write;
-
 use axum::{
     body::{Body, HttpBody},
-    extract::{OriginalUri, State},
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
 use futures_util::stream::StreamExt;
 
-use crate::core::{
-    err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Error, Result},
-    extractors::PubkyHost,
-    AppState,
+use crate::{
+    core::{
+        err_if_user_is_invalid::err_if_user_is_invalid,
+        error::{Error, Result},
+        extractors::PubkyHost,
+        AppState,
+    },
+    persistence::lmdb::tables::files::AsyncInDbTempFileWriter,
+    shared::webdav::{EntryPath, WebDavPathAxum},
 };
 
-/// Fail with 507 if `(current + incoming − existing) > quota`.
+/// Fail with 507 if `(current + incoming − existing) > quota`.
 fn enforce_user_disk_quota(
     existing_bytes: u64,
     incoming_bytes: u64,
@@ -31,7 +33,7 @@ fn enforce_user_disk_quota(
             return Err(Error::new(
                 StatusCode::INSUFFICIENT_STORAGE,
                 Some(format!(
-                    "Quota of {:.1} MB exceeded: you’ve used {:.1} MB, trying to add {:.1} MB",
+                    "Quota of {:.1} MB exceeded: you've used {:.1} MB, trying to add {:.1} MB",
                     max_mb, current_mb, adding_mb
                 )),
             ));
@@ -43,15 +45,15 @@ fn enforce_user_disk_quota(
 pub async fn delete(
     State(mut state): State<AppState>,
     pubky: PubkyHost,
-    path: OriginalUri,
+    Path(path): Path<WebDavPathAxum>,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let public_key = pubky.public_key();
-    let full_path = path.0.path();
-    let existing_bytes = state.db.get_entry_content_length(public_key, full_path)?;
+    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
+    let entry_path = EntryPath::new(public_key.clone(), path.0);
+    let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
 
     // Remove entry
-    if !state.db.delete_entry(public_key, full_path)? {
+    if !state.db.delete_entry(&entry_path).await? {
         return Err(Error::with_status(StatusCode::NOT_FOUND));
     }
 
@@ -66,36 +68,38 @@ pub async fn delete(
 pub async fn put(
     State(mut state): State<AppState>,
     pubky: PubkyHost,
-    path: OriginalUri,
+    Path(path): Path<WebDavPathAxum>,
     body: Body,
 ) -> Result<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, true)?;
     let public_key = pubky.public_key();
-    let full_path = path.0.path();
-    let existing_entry_bytes = state.db.get_entry_content_length(public_key, full_path)?;
+    err_if_user_is_invalid(public_key, &state.db, true)?;
+    let entry_path = EntryPath::new(public_key.clone(), path.0);
+
+    let existing_entry_bytes = state.db.get_entry_content_length(&entry_path)?;
     let quota_bytes = state.user_quota_bytes;
     let used_bytes = state.db.get_user_data_usage(public_key)?;
 
-    // Upfront check when we have an exact Content‑Length
+    // Upfront check when we have an exact Content-Length
     let hint = body.size_hint().exact();
     if let Some(exact_bytes) = hint {
         enforce_user_disk_quota(existing_entry_bytes, exact_bytes, used_bytes, quota_bytes)?;
     }
 
-    // Stream body
-    let mut writer = state.db.write_entry(public_key, full_path)?;
+    // Stream body to disk first.
     let mut seen_bytes: u64 = 0;
     let mut stream = body.into_data_stream();
+    let mut buffer_file_writer = AsyncInDbTempFileWriter::new().await?;
 
     while let Some(chunk) = stream.next().await.transpose()? {
         seen_bytes += chunk.len() as u64;
         enforce_user_disk_quota(existing_entry_bytes, seen_bytes, used_bytes, quota_bytes)?;
-        writer.write_all(&chunk)?;
+        buffer_file_writer.write_chunk(&chunk).await?;
     }
+    let buffer_file = buffer_file_writer.complete().await?;
 
-    // Commit & bump usage
-    let entry = writer.commit()?;
-    let delta = entry.content_length() as i64 - existing_entry_bytes as i64;
+    // Write file on disk to db
+    state.db.write_entry(&entry_path, &buffer_file).await?;
+    let delta = buffer_file.len() as i64 - existing_entry_bytes as i64;
     state.db.update_data_usage(public_key, delta)?;
 
     Ok((StatusCode::CREATED, ()))

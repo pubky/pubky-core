@@ -25,10 +25,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
             get(generate_signup_token::generate_signup_token),
         )
         .route("/info", get(info::info))
-        .route(
-            "/webdav/{pubkey}/{*path}",
-            delete(delete_entry::delete_entry),
-        )
+        .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
         .layer(AdminAuthLayer::new(password.to_string()))
