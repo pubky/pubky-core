@@ -157,6 +157,7 @@ impl LmDB {
     /// # Errors
     ///
     /// - `UserQueryError::DatabaseError` if the database operation fails.
+    #[cfg(test)]
     pub fn create_user(&self, pubkey: &PublicKey, wtxn: &mut RwTxn) -> anyhow::Result<()> {
         let user = User::default();
         self.tables.users.put(wtxn, pubkey, &user)?;

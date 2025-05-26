@@ -1,5 +1,5 @@
 use pkarr::Keypair;
-use pubky_common::capabilities::{Capabilities, Capability};
+use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,
@@ -80,7 +80,11 @@ async fn disabled_user() {
 
     // Make sure the user can read their own file
     let response = client.get(file_url.clone()).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "User should be able to read their own file"
+    );
 
     let admin_socket = server.admin().listen_socket();
     let admin_client = reqwest::Client::new();
