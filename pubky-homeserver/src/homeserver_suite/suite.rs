@@ -57,7 +57,7 @@ impl HomeserverSuite {
             Err(_) => {
                 // create from configuration
                 let mut filter = EnvFilter::new("");
-                filter = filter.add_directive(context.config_toml.logging.level.clone().into());
+                filter = filter.add_directive(context.config_toml.logging.level.to_owned().into());
                 // Add any specific filters
                 for filter_str in &context.config_toml.logging.filters {
                     filter = filter.add_directive(filter_str.to_owned().into());
