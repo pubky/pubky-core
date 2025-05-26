@@ -19,17 +19,18 @@ macro_rules! cross_debug {
 }
 
 pub mod native;
+mod shared;
 #[cfg(wasm_browser)]
 mod wasm;
 
 #[cfg(not(wasm_browser))]
 pub use crate::native::Client;
-pub use crate::native::{api::auth::AuthRequest, api::public::ListBuilder, ClientBuilder};
+pub use crate::native::{ClientBuilder, api::auth::AuthRequest, api::public::ListBuilder};
 
 #[cfg(wasm_browser)]
 pub use native::Client as NativeClient;
 #[cfg(wasm_browser)]
-pub use wasm::Client;
+pub use wasm::constructor::Client;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};

@@ -38,6 +38,7 @@ icann_listen_socket = "127.0.0.1:6286"
 #  - "user" limits based on the user pubkey. Requires the endpoint to have authentication.
 # `burst` is a temporary allowance of quota that is added to the limit. 
 #   By default, burst is equal the quota rate.
+# `whitelist` is a list of IP addresses or user pubkeys that are exempt from the rate limit.
 #
 # Limit login attempts to 20 requests per minute per IP. 
 [[drive.rate_limits]]
@@ -45,6 +46,9 @@ path = "/session"
 method = "POST"
 quota = "20r/m"
 key = "ip"
+whitelist = [
+    "127.0.0.1"
+]
 #
 # Limit file uploads to 1 megabyte per second per user with a temporary burst of 10 megabytes.
 [[drive.rate_limits]]
