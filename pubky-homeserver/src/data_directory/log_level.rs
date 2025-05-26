@@ -6,13 +6,9 @@ use tracing_subscriber::filter::{Directive, LevelFilter};
 
 /// Validated domain name according to RFC 1123.
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub struct LogLevel(pub Directive);
 
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self(Directive::default())
-    }
-}
 
 impl FromStr for LogLevel {
     type Err = anyhow::Error;
@@ -56,9 +52,9 @@ impl<'de> Deserialize<'de> for LogLevel {
     }
 }
 
-impl Into<Directive> for LogLevel {
-    fn into(self) -> Directive {
-        Directive::from(self.0)
+impl From<LogLevel> for Directive {
+    fn from(val: LogLevel) -> Self {
+        val.0
     }
 }
 
