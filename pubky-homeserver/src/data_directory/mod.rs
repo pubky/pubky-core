@@ -8,6 +8,8 @@ mod persistent_data_dir;
 pub mod quota_config;
 mod signup_mode;
 
+mod log_level;
+
 pub use config_toml::{ConfigReadError, ConfigToml};
 pub use data_dir::DataDir;
 pub use domain::Domain;

@@ -21,7 +21,7 @@ dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
 [logging]
 level = "info"
-filters = []
+filters = ["info"]
 
 # The following params exist, but the default value is None. 
 # See ./sample.config.toml for usage
