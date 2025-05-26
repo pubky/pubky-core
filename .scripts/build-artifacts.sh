@@ -33,6 +33,7 @@ echo "Preparing release executables for version $VERSION..."
 echo "Docker $(docker ps -a)"
 builds=(
 # target, nickname
+"x86_64-pc-windows-gnu,windows-amd64"
 "x86_64-unknown-linux-musl,linux-amd64"
 
 # Other targets can be setup too but require additional work
@@ -43,7 +44,7 @@ builds=(
 
 # We should support these in the future.
 "aarch64-unknown-linux-musl,linux-arm64"
-# "x86_64-pc-windows-gnu,windows-amd64"
+
 )
 
 # List of binaries to build.
