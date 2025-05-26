@@ -1,0 +1,5 @@
+[target.aarch64-apple-darwin]
+image = "ghcr.io/synonymdev/aarch64-apple-darwin-cross:local"
+
+[target.x86_64-apple-darwin]
+image = "ghcr.io/synonymdev/x86_64-apple-darwin-cross:local"
