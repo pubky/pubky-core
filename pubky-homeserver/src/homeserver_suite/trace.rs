@@ -56,7 +56,7 @@ where
                 let mut buf = String::new();
                 let mut writer = Writer::new(&mut buf);
 
-                if *meta.level() < self.min_level {
+                if *meta.level() > self.min_level {
                     return;
                 }
 

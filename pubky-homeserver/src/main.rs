@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use futures_util::SinkExt;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use pubky_homeserver::HomeserverSuite;
 
