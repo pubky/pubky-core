@@ -24,4 +24,4 @@ pub use admin::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};
 pub use core::{HomeserverBuildError, HomeserverCore};
 pub use data_directory::*;
-pub use homeserver_suite::{HomeserverSuite, HomeserverSuiteBuildError, trace::SuiteTraceLayer};
+pub use homeserver_suite::{trace::SuiteTraceLayer, HomeserverSuite, HomeserverSuiteBuildError};

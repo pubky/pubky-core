@@ -1,7 +1,7 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
-use crate::{MockDataDir, SuiteTraceLayer};
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
+use crate::{MockDataDir, SuiteTraceLayer};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
@@ -96,5 +96,7 @@ impl HomeserverSuite {
     }
 
     /// Suite's layer log filters
-    pub fn trace_layer(&self) -> SuiteTraceLayer { self.trace_layer.clone() }
+    pub fn trace_layer(&self) -> SuiteTraceLayer {
+        self.trace_layer.clone()
+    }
 }

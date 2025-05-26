@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use pubky_homeserver::HomeserverSuite;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 fn default_config_dir_path() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".pubky")

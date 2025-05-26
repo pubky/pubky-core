@@ -50,7 +50,9 @@ impl From<LogLevel> for Level {
 }
 
 impl Default for LogLevel {
-    fn default() -> Self { LogLevel(Level::INFO) }
+    fn default() -> Self {
+        LogLevel(Level::INFO)
+    }
 }
 
 #[cfg(test)]

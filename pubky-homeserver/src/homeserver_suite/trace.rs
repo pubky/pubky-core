@@ -1,11 +1,11 @@
+use crate::LoggingToml;
+use anyhow::Result;
 use tracing::Subscriber;
-use tracing_subscriber::layer::Context;
-use tracing_subscriber::{registry, Layer};
+use tracing_core::Level;
 use tracing_subscriber::fmt::format::DefaultFields;
 use tracing_subscriber::fmt::format::{FormatFields, Writer};
-use crate::LoggingToml;
-use anyhow::{Result};
-use tracing_core::Level;
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::{registry, Layer};
 
 /// Log layer for Homeserver
 #[derive(Clone)]
