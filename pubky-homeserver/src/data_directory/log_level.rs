@@ -4,11 +4,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::filter::{Directive, LevelFilter};
 
-/// Validated domain name according to RFC 1123.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct LogLevel(pub Directive);
-
 
 impl FromStr for LogLevel {
     type Err = anyhow::Error;
