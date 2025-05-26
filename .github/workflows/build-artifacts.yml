@@ -1,6 +1,12 @@
+# This workflow builds the artifacts for the release.
+# It creates the gzips and uploads them as artifacts.
+# The artifacts are then used to create a release on Github.
+
 name: Build Artifacts
 
 on:
+  # This workflow is triggered every time a push is made to the main branch.
+  # Aka when a PR is merged.
   pull_request:
   push:
     branches: [main]
@@ -13,10 +19,10 @@ jobs:
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
           toolchain: stable
+          targets: aarch64-unknown-linux-gnu,x86_64-unknown-linux-musl
       - name: Install cross # Tool to cross-compile the binaries
-        run: cargo install cross --locked
+        run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Build Artifacts
         run: .scripts/build-artifacts.sh
       - name: gzip all the artifacts

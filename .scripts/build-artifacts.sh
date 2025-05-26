@@ -30,7 +30,7 @@ fi
 # Read the version from the homeserver
 VERSION=$(cargo pkgid -p pubky-homeserver | awk -F# '{print $NF}')
 echo "Preparing release executables for version $VERSION..."
-
+echo "Docker $(docker ps -a)"
 builds=(
 # target, nickname
 "x86_64-unknown-linux-musl,linux-amd64"
@@ -42,7 +42,7 @@ builds=(
 # "x86_64-apple-darwin,osx-amd64"
 
 # We should support these in the future.
-# "aarch64-unknown-linux-musl,linux-arm64"
+"aarch64-unknown-linux-musl,linux-arm64"
 # "x86_64-pc-windows-gnu,windows-amd64"
 )
 
@@ -64,6 +64,7 @@ for BUILD in "${builds[@]}"; do
     DICT="target/github-release/$FOLDER"
     mkdir -p $DICT
     for ARTIFACT in "${artifcats[@]}"; do
+        echo "Build $ARTIFACT with $TARGET"
         cross build -p $ARTIFACT --release --target $TARGET
         if [[ $TARGET == *"windows"* ]]; then
             cp target/$TARGET/release/$ARTIFACT.exe $DICT/
