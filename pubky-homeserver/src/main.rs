@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
+use futures_util::SinkExt;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use pubky_homeserver::HomeserverSuite;
 
 fn default_config_dir_path() -> PathBuf {
@@ -29,7 +31,18 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
+    let app_layer = fmt::layer()
+        .with_ansi(true)
+        .with_filter(EnvFilter::from_default_env());
+
     let server = HomeserverSuite::start_with_persistent_data_dir_path(args.data_dir).await?;
+
+    let suite_layer = server.trace_layer();
+
+    tracing_subscriber::registry()
+        .with(app_layer)
+        .with(suite_layer)
+        .init();
 
     tracing::info!(
         "Homeserver HTTP listening on {}",

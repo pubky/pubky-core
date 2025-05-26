@@ -117,13 +117,3 @@ dht_request_timeout_ms = 2000
 # Options: "trace", "debug", "info", "warn", "error"
 # Default: "info" - shows informational messages and above
 level = "info"
-
-# Module-specific log level filters - override the global level for specific crates/modules
-# These filters allow fine-grained control over logging verbosity per component
-filters = [
-    "pubky_homeserver=info",
-    "tower_http=info",
-    "http_relay=info",
-    "pkarr_relay=info",
-    "pubky_testnet=info"
-]
