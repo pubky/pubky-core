@@ -33,18 +33,13 @@ echo "Preparing release executables for version $VERSION..."
 echo "Docker $(docker ps -a)"
 builds=(
 # target, nickname
-"x86_64-pc-windows-gnu,windows-amd64"
+"aarch64-unknown-linux-musl,linux-arm64"
 "x86_64-unknown-linux-musl,linux-amd64"
-
-# Other targets can be setup too but require additional work
+"x86_64-pc-windows-gnu,windows-amd64"
 
 # For Apple, see https://github.com/cross-rs/cross-toolchains?tab=readme-ov-file#apple-targets
 # "aarch64-apple-darwin,osx-arm64" 
 # "x86_64-apple-darwin,osx-amd64"
-
-# We should support these in the future.
-"aarch64-unknown-linux-musl,linux-arm64"
-
 )
 
 # List of binaries to build.
