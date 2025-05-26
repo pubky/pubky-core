@@ -67,6 +67,7 @@ for BUILD in "${builds[@]}"; do
         else
             cp target/$TARGET/release/$ARTIFACT $DICT/
         fi
+        echo "[Done] Artifact $ARTIFACT built for $TARGET"
     done;
     (cd target/github-release && tar -czf $FOLDER.tar.gz $FOLDER && rm -rf $FOLDER)
 done
