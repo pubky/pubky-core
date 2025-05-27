@@ -2,6 +2,7 @@ use super::super::super::LmDB;
 use super::{InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
 use heed::{types::Bytes, Database};
 use std::io::Read;
+use infer::Type;
 
 /// (entry timestamp | chunk_index BE) => bytes
 pub type BlobsTable = Database<Bytes, Bytes>;
@@ -65,12 +66,13 @@ impl LmDB {
         let n = file_handle.read(&mut buffer)?;
 
         // Run type inference on the buffer slice
-        let mime_type = if let Some(kind) = infer::get(&buffer[..n]) {
-            kind.mime_type().to_string()
-        } else {
-            // default MIME type as per
-            // https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types#application
-            "application/octet-stream".to_string()
+        let mime_type = match infer::get(&buffer[..n]) {
+            None => {
+                // default MIME type as per
+                // https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types#application
+                "application/octet-stream".to_string()
+            }
+            Some(k) => k.mime_type().to_string()
         };
 
         let mut blob_index: u32 = 0;
@@ -151,13 +153,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_write_read_delete_typed_file() {
+        let lmdb = LmDB::test();
+
+        // Write file to LMDB
+        let write_file = InDbTempFile::png_pixel().await.unwrap();
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        println!("{}", file_type);
+        assert_eq!(file_type, "image/png".to_string());
+        wtxn.commit().unwrap();
+
+        // Read file from LMDB
+        let read_file = lmdb.read_file(&id).await.unwrap();
+
+        assert_eq!(read_file.len(), write_file.len());
+        assert_eq!(read_file.hash(), write_file.hash());
+
+        let written_file_content = std::fs::read(write_file.path()).unwrap();
+        let read_file_content = std::fs::read(read_file.path()).unwrap();
+        assert_eq!(written_file_content, read_file_content);
+
+        // Delete file from LMDB
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let deleted = lmdb.delete_file(&id, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+        assert!(deleted);
+
+        // Try to read file from LMDB
+        let read_file = lmdb.read_file(&id).await.unwrap();
+        assert_eq!(read_file.len(), 0);
+    }
+
+    #[tokio::test]
     async fn test_write_empty_file() {
         let lmdb = LmDB::test();
 
         // Write file to LMDB
         let write_file = InDbTempFile::empty().unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
-        let ( id, file_type ) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
         assert_eq!(file_type, "application/octet-stream".to_string());
         wtxn.commit().unwrap();
 
@@ -179,7 +214,7 @@ mod tests {
         // Write file to LMDB
         let write_file = InDbTempFile::empty().unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
-        let ( id, file_type ) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
         assert_eq!(file_type, "application/octet-stream".to_string());
         wtxn.commit().unwrap();
 

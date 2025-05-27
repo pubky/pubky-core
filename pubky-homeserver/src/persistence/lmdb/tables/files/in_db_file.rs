@@ -99,6 +99,14 @@ impl AsyncInDbTempFileWriter {
         file.complete().await
     }
 
+    #[cfg(test)]
+    pub async fn png_pixel() -> Result<InDbTempFile, std::io::Error> {
+        let mut file = Self::new().await?;
+        let png_magic_bytes: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        file.write_chunk(&png_magic_bytes).await?;
+        file.complete().await
+    }
+
     /// Write a chunk to the file.
     /// Chunk writing is done by the axum body stream and by LMDB itself.
     pub async fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
@@ -197,6 +205,11 @@ impl InDbTempFile {
     #[cfg(test)]
     pub async fn zeros(size_bytes: usize) -> Result<Self, std::io::Error> {
         AsyncInDbTempFileWriter::zeros(size_bytes).await
+    }
+
+    #[cfg(test)]
+    pub async fn png_pixel() -> Result<Self, std::io::Error> {
+        AsyncInDbTempFileWriter::png_pixel().await
     }
 
     /// Create a new InDbTempFile with zero content.
