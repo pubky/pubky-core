@@ -182,10 +182,7 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
-        config.logging = Some(LoggingToml {
-            level: LogLevel::from_str("info").unwrap(),
-            filters: vec![TargetLevel::from_str("pubky_homeserver=debug").unwrap()],
-        });
+        config.logging = None;
         config
     }
 }
