@@ -10,7 +10,7 @@
 
 
 [target.aarch64-apple-darwin]
-image = "ghcr.io/synonymdev/aarch64-apple-darwin-cross:latest"
+image = "ghcr.io/pubky/aarch64-apple-darwin-cross:latest"
 
 [target.x86_64-apple-darwin]
-image = "ghcr.io/synonymdev/x86_64-apple-darwin-cross:latest"
+image = "ghcr.io/pubky/x86_64-apple-darwin-cross:latest"
