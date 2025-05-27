@@ -4,9 +4,7 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{
-    domain_port::DomainPort, log_level::LogLevel, quota_config::PathLimit, Domain, SignupMode,
-};
+use super::{domain_port::DomainPort, quota_config::PathLimit, Domain, SignupMode, log_level::LogLevel};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -72,11 +70,11 @@ pub struct GeneralToml {
     pub user_storage_quota_mb: u64,
 }
 
-/// A config for Homeserver tracing layer
+/// A config for Homeserver tracing subscriber configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct LoggingToml {
-    /// General level for the library
     pub level: LogLevel,
+    pub filters: Vec<LogLevel>,
 }
 
 /// The overall application configuration, composed of several subsections.
@@ -179,6 +177,7 @@ impl ConfigToml {
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
         config.logging.level = LogLevel::from_str("info").unwrap();
+        config.logging.filters = vec![ LogLevel::from_str("info").unwrap() ];
         config
     }
 }
@@ -230,6 +229,7 @@ mod tests {
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
         assert_eq!(c.logging.level, LogLevel::from_str("info").unwrap());
+        assert_eq!(c.logging.filters, vec![ LogLevel::from_str("info").unwrap() ]);
     }
 
     #[test]
