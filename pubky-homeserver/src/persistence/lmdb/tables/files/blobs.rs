@@ -160,7 +160,6 @@ mod tests {
         let write_file = InDbTempFile::png_pixel().await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        println!("{}", file_type);
         assert_eq!(file_type, "image/png".to_string());
         wtxn.commit().unwrap();
 
