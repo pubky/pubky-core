@@ -22,8 +22,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Pull Docker image
-        run: docker pull ghcr.io/pubky/aarch64-apple-darwin-cross:latest
       - uses: actions/checkout@v4
       - name: Set up Rust
         uses: actions-rs/toolchain@v1

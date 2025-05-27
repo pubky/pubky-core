@@ -30,36 +30,32 @@ fi
 # Read the version from the homeserver
 VERSION=$(cargo pkgid -p pubky-homeserver | awk -F# '{print $NF}')
 echo "Preparing release executables for version $VERSION..."
-builds=(
+TARGETS=(
 # target, nickname
-#"aarch64-unknown-linux-musl,linux-arm64"
-#"x86_64-unknown-linux-musl,linux-amd64"
-#"x86_64-pc-windows-gnu,windows-amd64"
-
-# Login to the synonymdev Github Registry first to pull the custom compile images for Apple. More info in Cross.toml
+"aarch64-unknown-linux-musl,linux-arm64"
+"x86_64-unknown-linux-musl,linux-amd64"
+"x86_64-pc-windows-gnu,windows-amd64"
 "aarch64-apple-darwin,osx-arm64" 
 "x86_64-apple-darwin,osx-amd64"
 )
 
 # List of binaries to build.
-artifcats=("pubky-homeserver")
+ARTIFACTS=("pubky-homeserver")
 
 echo "Create the github-release directory..."
 rm -rf target/github-release
 mkdir -p target/github-release
 
-# Build the binaries
-echo "Build all the binaries for version $VERSION..."
-for BUILD in "${builds[@]}"; do
-    # Split tuple by comma
-    IFS=',' read -r TARGET NICKNAME <<< "$BUILD"
-
+# Helper function to build an artifact for one specific target.
+build_target() {
+    local TARGET=$1
+    local NICKNAME=$2
     echo "Build $NICKNAME with $TARGET"
     FOLDER="pubky-core-v$VERSION-$NICKNAME"
     DICT="target/github-release/$FOLDER"
     mkdir -p $DICT
-    for ARTIFACT in "${artifcats[@]}"; do
-        echo "Build $ARTIFACT with $TARGET"
+    for ARTIFACT in "${ARTIFACTS[@]}"; do
+        echo "- Build $ARTIFACT with $TARGET"
         cross build -p $ARTIFACT --release --target $TARGET
         if [[ $TARGET == *"windows"* ]]; then
             cp target/$TARGET/release/$ARTIFACT.exe $DICT/
@@ -69,8 +65,16 @@ for BUILD in "${builds[@]}"; do
         echo "[Done] Artifact $ARTIFACT built for $TARGET"
     done;
     (cd target/github-release && tar -czf $FOLDER.tar.gz $FOLDER && rm -rf $FOLDER)
-done
+}
 
+# Build the binaries
+echo "Build all the binaries for version $VERSION..."
+for ELEMENT in "${TARGETS[@]}"; do
+    # Split tuple by comma
+    IFS=',' read -r TARGET NICKNAME <<< "$ELEMENT"
+
+    build_target $TARGET $NICKNAME
+done
 
 tree target/github-release
 (cd target/github-release && pwd)
