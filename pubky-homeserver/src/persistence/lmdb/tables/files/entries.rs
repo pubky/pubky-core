@@ -58,6 +58,7 @@ impl LmDB {
         entry.set_content_hash(*file.hash());
         entry.set_content_length(file.len());
         let file_id = self.write_file_sync(file, &mut wtxn)?;
+        entry.set_content_type("HERE".to_string());
         entry.set_timestamp(file_id.timestamp());
         let entry_key = path.to_string();
         self.tables
@@ -344,6 +345,11 @@ impl Entry {
 
     pub fn set_content_length(&mut self, content_length: usize) -> &mut Self {
         self.content_length = content_length;
+        self
+    }
+
+    pub fn set_content_type(&mut self, ct: String) -> &mut Self {
+        self.content_type = ct;
         self
     }
 
