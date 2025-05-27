@@ -57,8 +57,8 @@ impl LmDB {
         let mut entry = Entry::new();
         entry.set_content_hash(*file.hash());
         entry.set_content_length(file.len());
-        let file_id = self.write_file_sync(file, &mut wtxn)?;
-        entry.set_content_type("HERE".to_string());
+        let ( file_id, file_type) = self.write_file_sync(file, &mut wtxn)?;
+        entry.set_content_type(file_type);
         entry.set_timestamp(file_id.timestamp());
         let entry_key = path.to_string();
         self.tables
