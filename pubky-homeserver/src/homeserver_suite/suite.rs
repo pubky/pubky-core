@@ -1,10 +1,11 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
+use crate::{LoggingToml, MockDataDir};
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
-use crate::{MockDataDir, SuiteTraceLayer};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
+use tracing_subscriber::EnvFilter;
 
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]
@@ -27,8 +28,6 @@ pub struct HomeserverSuite {
     core: HomeserverCore,
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
     admin_server: AdminServer,
-    /// Suite's initialized tracing layer
-    trace_layer: SuiteTraceLayer,
 }
 
 impl HomeserverSuite {
@@ -53,9 +52,33 @@ impl HomeserverSuite {
 
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
-        let instance = &context.keypair.public_key().to_string().to_owned();
+        let env_filter = match EnvFilter::try_from_default_env() {
+            Ok(f) => f,
+            Err(_) => {
+                // create from configuration
+                let mut filter = EnvFilter::new("");
+                match context.config_toml.logging {
+                    LoggingToml { level, filters } => {
+                        filter = filter.add_directive(level.clone().into());
+                        // Add any specific filters
+                        for filter_str in filters {
+                            filter = filter.add_directive(filter_str.clone().into());
+                        }
+                    }
+                }
+                filter
+            }
+        };
 
-        let trace_layer = SuiteTraceLayer::from_config(&context.config_toml.logging, instance)?;
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .try_init()
+            .map_err(|_| {
+                tracing::debug!(
+                    "Instance {} trace config will be ignored",
+                    &context.keypair.public_key()
+                )
+            });
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
@@ -66,7 +89,6 @@ impl HomeserverSuite {
             context,
             core,
             admin_server,
-            trace_layer,
         })
     }
 
@@ -93,10 +115,5 @@ impl HomeserverSuite {
     /// Returns the `https://<server public key>` url
     pub fn icann_http_url(&self) -> url::Url {
         url::Url::parse(&self.core.icann_http_url()).expect("valid url")
-    }
-
-    /// Suite's layer log filters
-    pub fn trace_layer(&self) -> SuiteTraceLayer {
-        self.trace_layer.clone()
     }
 }
