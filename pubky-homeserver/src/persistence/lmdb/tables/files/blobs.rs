@@ -61,6 +61,17 @@ impl LmDB {
         let id = InDbFileId::new();
         let mut file_handle = file.open_file_handle()?;
 
+        let mut buffer = [0u8; 512];
+        let n = file_handle.read(&mut buffer)?;
+
+        // Run type inference on the buffer slice
+        if let Some(kind) = infer::get(&buffer[..n]) {
+            println!("Detected type: {}", kind.mime_type());
+            println!("Extension: {}", kind.extension());
+        } else {
+            println!("Could not determine file type.");
+        }
+
         let mut blob_index: u32 = 0;
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];
