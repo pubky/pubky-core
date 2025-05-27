@@ -7,6 +7,7 @@
 use super::{
     domain_port::DomainPort, log_level::LogLevel, quota_config::PathLimit, Domain, SignupMode,
 };
+use crate::data_directory::log_level::TargetLevel;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -78,7 +79,7 @@ pub struct LoggingToml {
     /// Main log level for global tracing_subscriber
     pub level: LogLevel,
     /// Per-module target log filters for global tracing_subscriber
-    pub filters: Vec<LogLevel>,
+    pub filters: Vec<TargetLevel>,
 }
 
 /// The overall application configuration, composed of several subsections.
@@ -182,7 +183,7 @@ impl ConfigToml {
         config.pkdns.dht_relay_nodes = None;
         config.logging = Some(LoggingToml {
             level: LogLevel::from_str("info").unwrap(),
-            filters: vec![LogLevel::from_str("pubky_homeserver=debug").unwrap()],
+            filters: vec![TargetLevel::from_str("pubky_homeserver=debug").unwrap()],
         });
         config
     }
@@ -238,7 +239,7 @@ mod tests {
             c.logging,
             Some(LoggingToml {
                 level: LogLevel::from_str("info").unwrap(),
-                filters: vec![LogLevel::from_str("pubky_homeserver=debug").unwrap()],
+                filters: vec![TargetLevel::from_str("pubky_homeserver=debug").unwrap()],
             })
         );
     }
