@@ -6,7 +6,6 @@ use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
-
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]
 pub enum HomeserverSuiteBuildError {
@@ -58,7 +57,7 @@ impl HomeserverSuite {
                 let mut filter = EnvFilter::new("");
                 filter = filter.add_directive(config.level.to_owned().into());
                 // Add any specific filters
-                for filter_str in &config.filters {
+                for filter_str in &config.module_levels {
                     filter = filter.add_directive(filter_str.to_owned().into());
                 }
                 filter

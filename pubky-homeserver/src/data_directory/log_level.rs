@@ -63,11 +63,11 @@ impl FromStr for TargetLevel {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if !s.contains("=") {
-            return Err(anyhow::anyhow!("invalid log level directive: {}", s));
+            return Err(anyhow::anyhow!("invalid target log level directive: {}", s));
         }
         let parsed = s
             .parse()
-            .map_err(|_| anyhow::anyhow!("invalid log level directive: {}", s))?;
+            .map_err(|_| anyhow::anyhow!("invalid target log level directive: {}", s))?;
         Ok(Self(parsed))
     }
 }

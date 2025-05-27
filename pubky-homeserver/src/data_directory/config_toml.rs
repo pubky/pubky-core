@@ -79,7 +79,7 @@ pub struct LoggingToml {
     /// Main log level for global tracing_subscriber
     pub level: LogLevel,
     /// Per-module target log filters for global tracing_subscriber
-    pub filters: Vec<TargetLevel>,
+    pub module_levels: Vec<TargetLevel>,
 }
 
 /// The overall application configuration, composed of several subsections.
@@ -141,10 +141,8 @@ impl ConfigToml {
         let default_val: toml::Value = DEFAULT_CONFIG
             .parse()
             .expect("embedded defaults invalid TOML");
-
         // 2. Parse the user's overrides
         let user_val: toml::Value = raw.parse()?;
-
         // 3. Deep‐merge
         let merged_val = serde_toml_merge::merge(default_val, user_val)
             .map_err(|e| ConfigReadError::ConfigMergeError(e.to_string()))?;
@@ -237,7 +235,7 @@ mod tests {
             c.logging,
             Some(LoggingToml {
                 level: LogLevel::from_str("info").unwrap(),
-                filters: vec![TargetLevel::from_str("pubky_homeserver=debug").unwrap()],
+                module_levels: vec![TargetLevel::from_str("pubky_homeserver=debug").unwrap()],
             })
         );
     }
