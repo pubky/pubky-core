@@ -7,7 +7,6 @@ use tracing_subscriber::filter::{Directive, LevelFilter};
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LogLevel(pub Directive);
 
-
 impl FromStr for LogLevel {
     type Err = anyhow::Error;
 
@@ -50,7 +49,7 @@ impl<'de> Deserialize<'de> for LogLevel {
     }
 }
 
-impl From<LogLevel> for Level {
+impl From<LogLevel> for Directive {
     fn from(val: LogLevel) -> Self {
         val.0
     }
