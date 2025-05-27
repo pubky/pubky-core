@@ -52,31 +52,27 @@ impl HomeserverSuite {
 
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
-        let env_filter = match EnvFilter::try_from_default_env() {
-            Ok(f) => f,
-            Err(_) => {
-                // create from configuration
+        // Tracing Subscriber initialization
+        if let Some(ref config) = context.config_toml.logging {
+            let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 let mut filter = EnvFilter::new("");
-                if let Some(ref config) = context.config_toml.logging {
-                    filter = filter.add_directive(config.level.to_owned().into());
-                    // Add any specific filters
-                    for filter_str in &config.filters {
-                        filter = filter.add_directive(filter_str.to_owned().into());
-                    }
+                filter = filter.add_directive(config.level.to_owned().into());
+                // Add any specific filters
+                for filter_str in &config.filters {
+                    filter = filter.add_directive(filter_str.to_owned().into());
                 }
                 filter
-            }
-        };
-
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .try_init()
-            .map_err(|_| {
-                tracing::debug!(
+            });
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .try_init()
+                .map_err(|_| {
+                    tracing::debug!(
                     "Instance {} trace config will be ignored",
                     &context.keypair.public_key()
                 )
-            });
+                });
+        }
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
