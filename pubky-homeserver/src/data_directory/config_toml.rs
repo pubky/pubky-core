@@ -93,7 +93,7 @@ pub struct ConfigToml {
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. Environment variables override config settings
-    pub logging: LoggingToml,
+    pub logging: Option<LoggingToml>,
 }
 
 impl Default for ConfigToml {
@@ -180,8 +180,10 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
-        config.logging.level = LogLevel::from_str("info").unwrap();
-        config.logging.filters = vec![LogLevel::from_str("info").unwrap()];
+        config.logging = Some(LoggingToml {
+            level: LogLevel::from_str("info").unwrap(),
+            filters: vec![LogLevel::from_str("pubky_homeserver=debug").unwrap()],
+        });
         config
     }
 }
@@ -232,8 +234,13 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
-        assert_eq!(c.logging.level, LogLevel::from_str("info").unwrap());
-        assert_eq!(c.logging.filters, vec![LogLevel::from_str("info").unwrap()]);
+        assert_eq!(
+            c.logging,
+            Some(LoggingToml {
+                level: LogLevel::from_str("info").unwrap(),
+                filters: vec![LogLevel::from_str("pubky_homeserver=debug").unwrap()],
+            })
+        );
     }
 
     #[test]
