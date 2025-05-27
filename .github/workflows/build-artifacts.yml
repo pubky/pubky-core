@@ -1,13 +1,12 @@
 # This workflow builds the artifacts for the release.
 # It creates the gzips and uploads them as artifacts.
-# The artifacts are then used to create a release on Github.
+# The artifacts can then be used to create a release on Github.
 
 name: Build Artifacts
 
 on:
   # This workflow is triggered every time a push is made to the main branch.
   # Aka when a PR is merged.
-  pull_request:
   push:
     branches: [main]
 
