@@ -119,4 +119,4 @@ dht_request_timeout_ms = 2000
 level = "info"
 # Per module log levels. Global log level allows to suppress modules which are external to homeserver. Per module spec
 # has a priority over global log levels
-module_levels = ["pubky_homeserver=debug"]
+module_levels = ["pubky_homeserver=debug", "tower_http=debug"]
