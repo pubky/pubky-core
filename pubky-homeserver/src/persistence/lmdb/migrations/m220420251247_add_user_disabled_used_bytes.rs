@@ -165,7 +165,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -193,7 +193,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -214,7 +214,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -249,7 +249,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -273,7 +273,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let user = table.get(&mut wtxn, &pubkey).unwrap().unwrap();
-        assert_eq!(user.disabled, false, "The user should not be disabled.");
+        assert!(!user.disabled, "The user should not be disabled.");
         assert_eq!(user.used_bytes, 0, "The user should have 0 used bytes.");
     }
 }

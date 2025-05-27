@@ -2,7 +2,6 @@ use super::super::super::LmDB;
 use super::{InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
 use heed::{types::Bytes, Database};
 use std::io::Read;
-use infer::Type;
 
 /// (entry timestamp | chunk_index BE) => bytes
 pub type BlobsTable = Database<Bytes, Bytes>;
@@ -72,7 +71,7 @@ impl LmDB {
                 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types#application
                 "application/octet-stream".to_string()
             }
-            Some(k) => k.mime_type().to_string()
+            Some(k) => k.mime_type().to_string(),
         };
 
         let mut blob_index: u32 = 0;

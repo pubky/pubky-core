@@ -330,9 +330,7 @@ mod tests {
     #[test]
     fn test_total_path_too_long() {
         let num_segments = MAX_WEBDAV_PATH_TOTAL_LENGTH; // This will create path like "/a/a/.../a"
-        let segments: Vec<String> = std::iter::repeat("a".to_string())
-            .take(num_segments)
-            .collect();
+        let segments: Vec<String> = std::iter::repeat_n("a".to_string(), num_segments).collect();
         let path = format!("/{}", segments.join("/"));
         assert_invalid_path(&path);
 
