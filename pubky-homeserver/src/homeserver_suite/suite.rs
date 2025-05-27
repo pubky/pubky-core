@@ -68,9 +68,9 @@ impl HomeserverSuite {
                 .try_init()
                 .map_err(|_| {
                     tracing::debug!(
-                    "Instance {} trace config will be ignored",
-                    &context.keypair.public_key()
-                )
+                        "Instance {} trace config will be ignored",
+                        &context.keypair.public_key()
+                    )
                 });
         }
 

@@ -93,7 +93,8 @@ pub struct ConfigToml {
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
-    /// Logging configuration. Environment variables override config settings
+    /// Logging configuration. If provided, the homeserver instance attempts to init
+    /// global tracing:Subscriber. If environment variables are set, they override config settings
     pub logging: Option<LoggingToml>,
 }
 
