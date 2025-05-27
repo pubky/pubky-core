@@ -22,12 +22,12 @@
 ## Versioning
 
 1. Merge all PRs in the main branch that you want to include in the next version.
-2. Update versions of all crates and npm package with `./.script/set-version.sh $NEW_SEMVER_VERSION`.
+2. Update versions of all crates and npm package with `./.scripts/set-version.sh $NEW_SEMVER_VERSION`.
 4. Create a PR with the title: `chore: vx.x.x`.
 5. Let the PR review and squash + merge.
 6. Publish crates and npm package.
   - Checkout the `main` branch with the new version merged.
-  - Run `./.script/publish-libs.sh`.
+  - Run `./.scripts/publish-libs.sh`.
 7. Create a [new Github release](https://github.com/pubky/pubky-core/releases/new).
     - Tag: `vx.x.x`
     - Title: `vx.x.x`

@@ -168,7 +168,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "authn"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -856,7 +856,7 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "e2e"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "bytes",
  "pkarr",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "http-relay"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2268,7 +2268,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-republisher"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2392,7 +2392,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2428,7 +2428,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "argon2",
  "base32",
@@ -2447,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.5.0-rc.1"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
