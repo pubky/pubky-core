@@ -23,7 +23,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull Docker image
-        run: ghcr.io/pubky/aarch64-apple-darwin-cross:latest
+        run: docker pull ghcr.io/pubky/aarch64-apple-darwin-cross:latest
       - uses: actions/checkout@v4
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
