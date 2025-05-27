@@ -20,7 +20,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: severinalexb
+          username: ${{ github.actor }}
           password: ${{ secrets.CONTAINER_REGISTRY_PERSONAL_ACCESS_TOKEN }}
       - uses: actions/checkout@v4
       - name: Set up Rust
