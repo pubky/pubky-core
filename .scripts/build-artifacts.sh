@@ -32,9 +32,9 @@ VERSION=$(cargo pkgid -p pubky-homeserver | awk -F# '{print $NF}')
 echo "Preparing release executables for version $VERSION..."
 builds=(
 # target, nickname
-"aarch64-unknown-linux-musl,linux-arm64"
-"x86_64-unknown-linux-musl,linux-amd64"
-"x86_64-pc-windows-gnu,windows-amd64"
+#"aarch64-unknown-linux-musl,linux-arm64"
+#"x86_64-unknown-linux-musl,linux-amd64"
+#"x86_64-pc-windows-gnu,windows-amd64"
 
 # Login to the synonymdev Github Registry first to pull the custom compile images for Apple. More info in Cross.toml
 "aarch64-apple-darwin,osx-arm64" 
