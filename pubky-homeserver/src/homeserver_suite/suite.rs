@@ -1,7 +1,7 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
-use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use crate::MockDataDir;
+use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
@@ -57,15 +57,12 @@ impl HomeserverSuite {
             Err(_) => {
                 // create from configuration
                 let mut filter = EnvFilter::new("");
-                match context.config_toml.logging {
-                    Some(ref config) => {
-                        filter = filter.add_directive(config.level.to_owned().into());
-                        // Add any specific filters
-                        for filter_str in &config.filters {
-                            filter = filter.add_directive(filter_str.to_owned().into());
-                        }
+                if let Some(ref config) = context.config_toml.logging {
+                    filter = filter.add_directive(config.level.to_owned().into());
+                    // Add any specific filters
+                    for filter_str in &config.filters {
+                        filter = filter.add_directive(filter_str.to_owned().into());
                     }
-                    _ => {}
                 }
                 filter
             }
