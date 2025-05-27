@@ -1,3 +1,14 @@
+# --------------------------------------------------------------------------------
+# Costum defined Apple cross compile images.
+# They should not be public because of apple licencing restrictions.
+# https://github.com/cross-rs/cross/
+# See https://github.com/cross-rs/cross-toolchains?tab=readme-ov-file#apple-targets
+# SDKs can be downloaded here https://github.com/joseluisq/macosx-sdks
+# Images are uploaded to the Github Registry. docker login required.
+# @Sev May 20245
+# --------------------------------------------------------------------------------
+
+
 [target.aarch64-apple-darwin]
 image = "ghcr.io/synonymdev/aarch64-apple-darwin-cross:latest"
 

@@ -37,8 +37,7 @@ builds=(
 #"x86_64-unknown-linux-musl,linux-amd64"
 #"x86_64-pc-windows-gnu,windows-amd64"
 
-# For Apple, see https://github.com/cross-rs/cross-toolchains?tab=readme-ov-file#apple-targets
-# https://github.com/joseluisq/macosx-sdks
+# Login to the synonymdev Github Registry first to pull the custom compile images for Apple. More info in Cross.toml
 "aarch64-apple-darwin,osx-arm64" 
 "x86_64-apple-darwin,osx-amd64"
 )
