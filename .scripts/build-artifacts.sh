@@ -6,12 +6,17 @@
 # The end result will be a target/github-release directory with the following structure:
 #
 # target/github-release/
-# ├── pubky-core-linux-amd64-v0.5.0-rc.0.tar.gz
-# ├── pubky-core-osx-arm64-v0.5.0-rc.0.tar.gz
-# ├── pubky-core-windows-amd64-v0.5.0-rc.0.tar.gz
+# ├── pubky-core-v0.5.0-rc.0-linux-arm64.tar.gz
+# ├── pubky-core-v0.5.0-rc.0-linux-amd64.tar.gz
+# ├── pubky-core-v0.5.0-rc.0-windows-amd64.tar.gz
+# ├── pubky-core-v0.5.0-rc.0-osx-arm64.tar.gz
+# ├── pubky-core-v0.5.0-rc.0-osx-amd64.tar.gz
 # └── ...
 #
 # Make sure you installed https://github.com/cross-rs/cross for cross-compilation.
+# To build macos, you need access to the [Pubky Github Packages](https://github.com/orgs/pubky/packages).
+# Use [docker login](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic)
+# to authenticate yourself.
 # -------------------------------------------------------------------------------------------------
 
 
@@ -23,7 +28,7 @@ set -o pipefail # fail the script if any pipe command fails
 # Check if cross is installed
 if ! command -v cross &> /dev/null
 then
-    echo "cross executable not be found. It is required to cross-compile the binaries. Please install it from https://github.com/cross-rs/cross"
+    echo "cross executable could not be found. It is required to cross-compile the binaries. Please install it from https://github.com/cross-rs/cross"
     exit 1
 fi
 
