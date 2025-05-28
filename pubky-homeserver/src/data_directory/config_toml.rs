@@ -234,8 +234,11 @@ mod tests {
         assert_eq!(
             c.logging,
             Some(LoggingToml {
-                level: LogLevel::from_str("debug").unwrap(),
-                module_levels: vec![],
+                level: LogLevel::from_str("info").unwrap(),
+                module_levels: vec![
+                    TargetLevel::from_str("pubky_homeserver=debug").unwrap(),
+                    TargetLevel::from_str("tower_http=debug").unwrap()
+                ],
             })
         );
     }
