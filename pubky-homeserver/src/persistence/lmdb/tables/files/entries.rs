@@ -58,7 +58,18 @@ impl LmDB {
         entry.set_content_hash(*file.hash());
         entry.set_content_length(file.len());
         let (file_id, file_type) = self.write_file_sync(file, &mut wtxn)?;
-        entry.set_content_type(file_type);
+
+        // fallback to extension guess or to default MIME type is application/octet-stream
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types#application
+        entry.set_content_type(
+            file_type.unwrap_or(
+                mime_guess::from_path(path.as_str())
+                    .first()
+                    .unwrap_or(mime::APPLICATION_OCTET_STREAM)
+                    .to_string(),
+            ),
+        );
+
         entry.set_timestamp(file_id.timestamp());
         let entry_key = path.to_string();
         self.tables

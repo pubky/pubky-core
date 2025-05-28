@@ -57,32 +57,27 @@ impl LmDB {
         &'txn self,
         file: &InDbTempFile,
         wtxn: &mut heed::RwTxn<'txn>,
-    ) -> anyhow::Result<(InDbFileId, String)> {
+    ) -> anyhow::Result<(InDbFileId, Option<String>)> {
         let id = InDbFileId::new();
         let mut file_handle = file.open_file_handle()?;
 
-        let mut buffer = [0u8; 512];
-        let n = file_handle.read(&mut buffer)?;
-
-        // Run type inference on the buffer slice
-        let mime_type = match infer::get(&buffer[..n]) {
-            None => {
-                // default MIME type as per
-                // https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types#application
-                "application/octet-stream".to_string()
-            }
-            Some(k) => k.mime_type().to_string(),
-        };
-
+        let mut mime_type = Some(mime::APPLICATION_OCTET_STREAM.to_string());
         let mut blob_index: u32 = 0;
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];
             let bytes_read = file_handle.read(&mut blob)?;
+            let is_start_of_file = blob_index == 0;
+            if is_start_of_file {
+                // Run type inference on the buffer slice
+                mime_type = match infer::get(&blob[..bytes_read]) {
+                    None => Some(mime::APPLICATION_OCTET_STREAM.to_string()),
+                    Some(k) => Some(k.mime_type().to_string()),
+                };
+            }
             let is_end_of_file = bytes_read == 0;
             if is_end_of_file {
                 break; // EOF reached
             }
-
             let blob_key = id.get_blob_key(blob_index);
             self.tables
                 .blobs
@@ -127,7 +122,7 @@ mod tests {
         let write_file = InDbTempFile::zeros(50).await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        assert_eq!(file_type, "application/octet-stream".to_string());
+        assert_eq!(file_type, Some("application/octet-stream".to_string()));
         wtxn.commit().unwrap();
 
         // Read file from LMDB
@@ -152,14 +147,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_write_read_delete_typed_file() {
+    async fn test_write_read_delete_magic_bytes_file() {
         let lmdb = LmDB::test();
 
         // Write file to LMDB
         let write_file = InDbTempFile::png_pixel().await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        assert_eq!(file_type, "image/png".to_string());
+        assert_eq!(file_type, Some("image/png".to_string()));
         wtxn.commit().unwrap();
 
         // Read file from LMDB
@@ -191,29 +186,7 @@ mod tests {
         let write_file = InDbTempFile::empty().unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        assert_eq!(file_type, "application/octet-stream".to_string());
-        wtxn.commit().unwrap();
-
-        // Read file from LMDB
-        let read_file = lmdb.read_file(&id).await.unwrap();
-
-        assert_eq!(read_file.len(), write_file.len());
-        assert_eq!(read_file.hash(), write_file.hash());
-
-        let written_file_content = std::fs::read(write_file.path()).unwrap();
-        let read_file_content = std::fs::read(read_file.path()).unwrap();
-        assert_eq!(written_file_content, read_file_content);
-    }
-
-    #[tokio::test]
-    async fn test_write_txt_file() {
-        let lmdb = LmDB::test();
-
-        // Write file to LMDB
-        let write_file = InDbTempFile::empty().unwrap();
-        let mut wtxn = lmdb.env.write_txn().unwrap();
-        let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        assert_eq!(file_type, "application/octet-stream".to_string());
+        assert_eq!(file_type, Some("application/octet-stream".to_string()));
         wtxn.commit().unwrap();
 
         // Read file from LMDB
