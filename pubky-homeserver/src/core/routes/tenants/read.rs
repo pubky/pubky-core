@@ -274,4 +274,45 @@ mod tests {
 
         response.assert_status(StatusCode::NOT_MODIFIED);
     }
+
+    #[tokio::test]
+    async fn test_content_with_magic_bytes() {
+        let context = AppContext::test();
+        let router = HomeserverCore::create_router(&context);
+        let server = axum_test::TestServer::new(router).unwrap();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let cookie = create_root_user(&server, &keypair)
+            .await
+            .unwrap()
+            .to_string();
+
+        let data = vec![0x89_u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+        server
+            .put("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(header::COOKIE, cookie)
+            .bytes(data.into())
+            .expect_success()
+            .await;
+
+        let response = server
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .expect_success()
+            .await;
+
+        let response = server
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(
+                header::IF_MODIFIED_SINCE,
+                response.headers().get(header::CONTENT_TYPE).unwrap(),
+            )
+            .await;
+
+        response.assert_header(header::CONTENT_TYPE, "image/png");
+    }
 }
