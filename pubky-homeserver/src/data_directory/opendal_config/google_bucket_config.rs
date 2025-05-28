@@ -1,0 +1,116 @@
+use std::{path::PathBuf, str::FromStr};
+use serde_valid::Validate;
+
+/// Google service account key config.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoogleServiceAccountKeyConfig {
+    /// The path to the credential file.
+    Path(PathBuf),
+    /// The inline service account key.
+    Inline(String),
+}
+
+impl GoogleServiceAccountKeyConfig {
+    /// Get the credentials. Read if necessary.
+    pub fn get_content(&self) -> Result<String, std::io::Error> {
+        match self {
+            GoogleServiceAccountKeyConfig::Path(path) => std::fs::read_to_string(path),
+            GoogleServiceAccountKeyConfig::Inline(inline) => Ok(inline.clone()),
+        }
+    }
+}
+
+impl FromStr for GoogleServiceAccountKeyConfig {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let is_p12 = s.contains("-----BEGIN CERTIFICATE-----");
+        let is_json = s.contains("\"service_account\"") && s.contains("\"auth_provider_x509_cert_url\"");
+        let is_path = !(is_p12 || is_json);
+        if is_path {
+            Ok(GoogleServiceAccountKeyConfig::Path(PathBuf::from(s)))
+        } else {
+            Ok(GoogleServiceAccountKeyConfig::Inline(s.to_string()))
+        }
+    }
+}
+
+impl std::fmt::Display for GoogleServiceAccountKeyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GoogleServiceAccountKeyConfig::Path(path) => write!(f, "{}", path.display()),
+            GoogleServiceAccountKeyConfig::Inline(inline) => write!(f, "{}", inline),
+        }
+    } 
+}
+
+impl serde::Serialize for GoogleServiceAccountKeyConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let s = self.to_string();
+        serializer.serialize_str(&s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for GoogleServiceAccountKeyConfig {
+
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let config = GoogleServiceAccountKeyConfig::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))?;
+        if let GoogleServiceAccountKeyConfig::Path(path) = &config {
+            if !path.exists() || !path.is_file() {
+                return Err(serde::de::Error::custom(format!("File does not exist or is not a file: {}", path.display())));
+            }
+        }
+        Ok(config)
+    }
+}
+
+/// Google Cloud Storage config.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Validate)]
+pub struct GoogleBucketConfig {
+    /// The name of the bucket to use.
+    #[validate(min_length = 1)]
+    pub bucket_name: String,
+    /// The credential to use. Inline service account key or path to the credential file.
+    pub credential: GoogleServiceAccountKeyConfig,
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_google_credentials_p12() {
+        let p12 = "-----BEGIN CERTIFICATE-----
+MIIDdjCCAl6gAwIBAgIU1234567890ABCDEF1234567890ABCDEFwDQYJKoZIhvcN
+AQELBQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAoTCkdvb2dsZSBJbmMxJjAkBgNV
+BAMTHUdvb2dsZSBDbG91ZCBTZXJ2aWNlIEFjY291bnQgQ0EwHhcNMjUwMTAxMDAw
+MDAwWhcNMjYwMTAxMDAwMDAwWjCBhTELMAkGA1UEBhMCVVMxEzARBgNVBAoTCkdv
+b2dsZSBJbmMxMTAvBgNVBAMTKHlvdXItc2VydmljZS1hY2NvdW50QHlvdXItcHJv
+amVjdC5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbTBZMBMGByqGSM49AgEGCCqGSM49
+AwEHA0IABN... (truncated) ...==
+-----END CERTIFICATE-----";
+        let config = GoogleServiceAccountKeyConfig::from_str(p12).unwrap();
+        assert_eq!(config, GoogleServiceAccountKeyConfig::Inline(p12.to_string()));
+    }
+
+    #[test]
+    fn test_validate_google_credentials_json() {
+        let json = "{\"type\": \"service_account\", \"project_id\": \"my-project\", \"auth_provider_x509_cert_url\": \"\" \"private_key_id\": \"1234567890\", \"private_key\": \"-----BEGIN PRIVATE KEY-----\\nMIIE... (truncated) ...\\n-----END PRIVATE KEY-----\\n\"}";
+        let config = GoogleServiceAccountKeyConfig::from_str(json).unwrap();
+        assert_eq!(config, GoogleServiceAccountKeyConfig::Inline(json.to_string()));
+    }
+
+    #[test]
+    fn test_validate_google_credentials_path() {
+        let path = "/folder/service_file_account.json";
+        let config = GoogleServiceAccountKeyConfig::from_str(path).unwrap();
+        assert_eq!(config, GoogleServiceAccountKeyConfig::Path(PathBuf::from(path)));
+    }
+}
