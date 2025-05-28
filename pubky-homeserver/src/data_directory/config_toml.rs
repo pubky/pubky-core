@@ -4,7 +4,7 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{domain_port::DomainPort, quota_config::PathLimit, Domain, SignupMode};
+use super::{domain_port::DomainPort, opendal_config::StorageConfigToml, quota_config::PathLimit, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -77,6 +77,8 @@ pub struct ConfigToml {
     pub general: GeneralToml,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
+    /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
+    pub storage: StorageConfigToml,
     /// Administrative API settings (listen socket and password).
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
@@ -167,6 +169,7 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
+        config.storage = StorageConfigToml::InMemory;
         config
     }
 }
@@ -181,6 +184,8 @@ impl FromStr for ConfigToml {
 
 #[cfg(test)]
 mod tests {
+    use crate::opendal_config::FileSystemConfig;
+
     use super::*;
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -217,6 +222,7 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
+        assert_eq!(c.storage, StorageConfigToml::FileSystem(FileSystemConfig::default()));
     }
 
     #[test]

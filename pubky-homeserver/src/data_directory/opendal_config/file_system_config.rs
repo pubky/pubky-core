@@ -2,7 +2,11 @@ use std::path::PathBuf;
 
 const DATA_DIRECTORY_PLACEHOLDER: &str = "{DATA_DIRECTORY}";
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// The file system config. Files are stored on the local file system.
+/// The root_directory is the path the files are stored in.
+/// `{DATA_DIRECTORY}` can be used as a variable in the root_directory. 
+/// It is replaced with the data directory path.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSystemConfig {
     /// The root directory to use.
     #[serde(default = "default_root_directory")]
@@ -36,10 +40,13 @@ impl FileSystemConfig {
         }
     }
 
+    /// Returns the path to the root directory.
+    /// Make sure to call `expand_with_data_directory` before using this method.
     pub fn path(&self) -> PathBuf {
         PathBuf::from(&self.root_directory)
     }
 }
+
 
 #[cfg(test)]
 mod tests {

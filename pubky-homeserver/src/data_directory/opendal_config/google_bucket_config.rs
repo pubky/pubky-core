@@ -71,7 +71,7 @@ impl<'de> serde::Deserialize<'de> for GoogleServiceAccountKeyConfig {
 }
 
 /// Google Cloud Storage config.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Validate)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Validate)]
 pub struct GoogleBucketConfig {
     /// The name of the bucket to use.
     #[validate(min_length = 1)]
