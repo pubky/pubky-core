@@ -3035,7 +3035,7 @@ dependencies = [
 [[package]]
 name = "serde-toml-merge"
 version = "0.3.9"
-source = "git+https://github.com/evd0kim/serde-toml-merge#4e4f1923b382c623e09c2efb6288c7835c6a9f4e"
+source = "git+https://github.com/evd0kim/serde-toml-merge?rev=374cb1b0b30ce954a586dfce1db6ed72c6841710#374cb1b0b30ce954a586dfce1db6ed72c6841710"
 dependencies = [
  "toml",
 ]
