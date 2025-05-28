@@ -100,14 +100,6 @@ impl AsyncInDbTempFileWriter {
     }
 
     #[cfg(test)]
-    pub async fn txt(content: &str) -> Result<InDbTempFile, std::io::Error> {
-        let mut file = Self::new().await?;
-        let buffer = content.as_bytes();
-        file.write_chunk(buffer).await?;
-        file.complete().await
-    }
-
-    #[cfg(test)]
     pub async fn png_pixel() -> Result<InDbTempFile, std::io::Error> {
         let mut file = Self::new().await?;
         let png_magic_bytes: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -213,11 +205,6 @@ impl InDbTempFile {
     #[cfg(test)]
     pub async fn zeros(size_bytes: usize) -> Result<Self, std::io::Error> {
         AsyncInDbTempFileWriter::zeros(size_bytes).await
-    }
-
-    #[cfg(test)]
-    pub async fn txt(content: &str) -> Result<Self, std::io::Error> {
-        AsyncInDbTempFileWriter::txt(content).await
     }
 
     #[cfg(test)]

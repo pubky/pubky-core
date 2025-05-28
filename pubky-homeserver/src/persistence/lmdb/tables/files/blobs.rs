@@ -69,10 +69,7 @@ impl LmDB {
             let is_start_of_file = blob_index == 0;
             if is_start_of_file {
                 // Run type inference on the buffer slice
-                mime_type = match infer::get(&blob[..bytes_read]) {
-                    None => Some(mime::APPLICATION_OCTET_STREAM.to_string()),
-                    Some(k) => Some(k.mime_type().to_string()),
-                };
+                mime_type = infer::get(&blob[..bytes_read]).map(|k| k.mime_type().to_string());
             }
             let is_end_of_file = bytes_read == 0;
             if is_end_of_file {
@@ -122,7 +119,7 @@ mod tests {
         let write_file = InDbTempFile::zeros(50).await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        assert_eq!(file_type, Some("application/octet-stream".to_string()));
+        assert_eq!(file_type, None);
         wtxn.commit().unwrap();
 
         // Read file from LMDB
@@ -186,7 +183,7 @@ mod tests {
         let write_file = InDbTempFile::empty().unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let (id, file_type) = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        assert_eq!(file_type, Some("application/octet-stream".to_string()));
+        assert_eq!(file_type, None);
         wtxn.commit().unwrap();
 
         // Read file from LMDB

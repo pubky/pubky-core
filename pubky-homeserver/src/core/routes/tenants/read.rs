@@ -164,7 +164,9 @@ impl From<&Entry> for HeaderMap {
 #[cfg(test)]
 mod tests {
     use axum::http::{header, StatusCode};
-    use pkarr::Keypair;
+    use axum::Router;
+    use axum_test::TestServer;
+    use pkarr::{Keypair, PublicKey};
     use pubky_common::{auth::AuthToken, capabilities::Capability};
 
     use crate::{app_context::AppContext, core::HomeserverCore};
@@ -192,11 +194,11 @@ mod tests {
         Ok(header_value)
     }
 
-    #[tokio::test]
-    async fn if_last_modified() {
+    pub async fn create_environment(
+    ) -> anyhow::Result<(AppContext, Router, TestServer, PublicKey, String)> {
         let context = AppContext::test();
         let router = HomeserverCore::create_router(&context);
-        let server = axum_test::TestServer::new(router).unwrap();
+        let server = axum_test::TestServer::new(router.clone()).unwrap();
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
@@ -204,6 +206,13 @@ mod tests {
             .await
             .unwrap()
             .to_string();
+
+        Ok((context, router, server, public_key, cookie))
+    }
+
+    #[tokio::test]
+    async fn if_last_modified() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -235,17 +244,7 @@ mod tests {
 
     #[tokio::test]
     async fn if_none_match() {
-        let context = AppContext::test();
-        let router = HomeserverCore::create_router(&context);
-        let server = axum_test::TestServer::new(router).unwrap();
-
-        let keypair = Keypair::random();
-        let public_key = keypair.public_key();
-
-        let cookie = create_root_user(&server, &keypair)
-            .await
-            .unwrap()
-            .to_string();
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -277,16 +276,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_content_with_magic_bytes() {
-        let context = AppContext::test();
-        let router = HomeserverCore::create_router(&context);
-        let server = axum_test::TestServer::new(router).unwrap();
-
-        let keypair = Keypair::random();
-        let public_key = keypair.public_key();
-        let cookie = create_root_user(&server, &keypair)
-            .await
-            .unwrap()
-            .to_string();
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
         let data = vec![0x89_u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -301,18 +291,30 @@ mod tests {
         let response = server
             .get("/pub/foo")
             .add_header("host", public_key.to_string())
+            .await;
+
+        response.assert_header(header::CONTENT_TYPE, "image/png");
+    }
+
+    #[tokio::test]
+    async fn test_content_by_extension() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        let data = vec![108, 111, 114, 101, 109, 32, 105, 112, 115, 117, 109];
+
+        server
+            .put("/pub/text.txt")
+            .add_header("host", public_key.to_string())
+            .add_header(header::COOKIE, cookie)
+            .bytes(data.into())
             .expect_success()
             .await;
 
         let response = server
-            .get("/pub/foo")
+            .get("/pub/text.txt")
             .add_header("host", public_key.to_string())
-            .add_header(
-                header::IF_MODIFIED_SINCE,
-                response.headers().get(header::CONTENT_TYPE).unwrap(),
-            )
             .await;
 
-        response.assert_header(header::CONTENT_TYPE, "image/png");
+        response.assert_header(header::CONTENT_TYPE, "text/plain");
     }
 }

@@ -64,8 +64,7 @@ impl LmDB {
         entry.set_content_type(
             file_type.unwrap_or(
                 mime_guess::from_path(path.as_str())
-                    .first()
-                    .unwrap_or(mime::APPLICATION_OCTET_STREAM)
+                    .first_or_octet_stream()
                     .to_string(),
             ),
         );
