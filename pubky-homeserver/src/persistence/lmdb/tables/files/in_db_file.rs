@@ -250,6 +250,7 @@ impl InDbTempFile {
     }
 
     /// Get the path of the file on disk.
+    #[cfg(test)]
     pub fn path(&self) -> &PathBuf {
         &self.file_path
     }
