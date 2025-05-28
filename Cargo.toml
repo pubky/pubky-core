@@ -33,3 +33,6 @@ pubky = { version = "0.5.0-rc.0", path = "pubky-client" }
 pubky-homeserver = { version = "0.5.0-rc.0", path = "pubky-homeserver" }
 pubky-testnet = { version = "0.5.0-rc.0", path = "pubky-testnet" }
 pkarr-republisher = { version = "0.5.0-rc.0", path = "pkarr-republisher" }
+
+[patch.crates-io]
+serde-toml-merge = { git = "https://github.com/evd0kim/serde-toml-merge", commit="4e4f1923b382c623e09c2efb6288c7835c6a9f4e" }

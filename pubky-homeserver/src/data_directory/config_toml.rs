@@ -144,7 +144,7 @@ impl ConfigToml {
         // 2. Parse the user's overrides
         let user_val: toml::Value = raw.parse()?;
         // 3. Deep‐merge
-        let merged_val = serde_toml_merge::merge(default_val, user_val)
+        let merged_val = serde_toml_merge::merge(default_val, user_val, true)
             .map_err(|e| ConfigReadError::ConfigMergeError(e.to_string()))?;
 
         // 4. Deserialize into our strongly typed struct (can fail with toml::de::Error)

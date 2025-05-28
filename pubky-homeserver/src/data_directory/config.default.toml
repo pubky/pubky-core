@@ -20,9 +20,8 @@ user_keys_republisher_interval = 14400 # 4 hours in seconds
 dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
 [logging]
-level = "debug"
-# Will overshadow application configuration, if changed
-module_levels = []
+level = "info"
+module_levels = ["pubky_homeserver=debug", "tower_http=debug"]
 
 # The following params exist, but the default value is None.
 # See ./sample.config.toml for usage
