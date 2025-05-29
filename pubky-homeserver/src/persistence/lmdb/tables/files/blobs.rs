@@ -1,5 +1,8 @@
+use crate::persistence::files::FileMetadata;
+
 use super::super::super::LmDB;
-use super::{InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
+use super::{InDbFileId, InDbTempFile, SyncInDbTempFileWriter, AsyncInDbTempFileWriter};
+use futures_util::{Stream, StreamExt};
 use heed::{types::Bytes, Database};
 use std::io::Read;
 
@@ -81,6 +84,32 @@ impl LmDB {
         Ok(id)
     }
 
+    /// Write the blobs from a stream to LMDB.
+    pub(crate) async fn write_file_from_stream<'txn>(
+        &'txn self,
+        mut stream: impl Stream<Item = Result<bytes::Bytes, anyhow::Error>> + Unpin,
+    ) -> anyhow::Result<FileMetadata> {
+        // First, write the stream to a temporary file using AsyncInDbTempFileWriter
+        let mut temp_file_writer = AsyncInDbTempFileWriter::new().await?;
+        
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            temp_file_writer.write_chunk(&chunk).await?;
+        }
+        
+        let temp_file = temp_file_writer.complete().await?;
+        let mut metadata = temp_file.metadata().clone();
+        
+        // Now write the temporary file to LMDB using the existing sync method
+        let mut wtxn = self.env.write_txn()?;
+        let file_id = self.write_file_sync(&temp_file, &mut wtxn)?;
+        wtxn.commit()?;
+        metadata.modified_at = file_id.timestamp().clone();
+        
+        Ok(metadata)
+    }
+
+
     /// Delete the blobs from LMDB.
     pub(crate) fn delete_file<'txn>(
         &'txn self,
@@ -119,8 +148,8 @@ mod tests {
         // Read file from LMDB
         let read_file = lmdb.read_file(&id).await.unwrap();
 
-        assert_eq!(read_file.len(), write_file.len());
-        assert_eq!(read_file.hash(), write_file.hash());
+        assert_eq!(read_file.metadata().length, write_file.metadata().length);
+        assert_eq!(read_file.metadata().hash, write_file.metadata().hash);
 
         let written_file_content = std::fs::read(write_file.path()).unwrap();
         let read_file_content = std::fs::read(read_file.path()).unwrap();
@@ -134,7 +163,7 @@ mod tests {
 
         // Try to read file from LMDB
         let read_file = lmdb.read_file(&id).await.unwrap();
-        assert_eq!(read_file.len(), 0);
+        assert_eq!(read_file.metadata().length, 0);
     }
 
     #[tokio::test]
@@ -150,8 +179,8 @@ mod tests {
         // Read file from LMDB
         let read_file = lmdb.read_file(&id).await.unwrap();
 
-        assert_eq!(read_file.len(), write_file.len());
-        assert_eq!(read_file.hash(), write_file.hash());
+        assert_eq!(read_file.metadata().length, write_file.metadata().length);
+        assert_eq!(read_file.metadata().hash, write_file.metadata().hash);
 
         let written_file_content = std::fs::read(write_file.path()).unwrap();
         let read_file_content = std::fs::read(read_file.path()).unwrap();

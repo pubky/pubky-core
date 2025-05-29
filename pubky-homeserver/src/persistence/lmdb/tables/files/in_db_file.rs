@@ -5,6 +5,7 @@
 //! - `InDbFileId` is the identifier of a file that consists of multiple blobs.
 //! - `InDbTempFile` is a helper to read/write a file to/from disk.
 //!
+use opendal::Metadata;
 use pubky_common::crypto::{Hash, Hasher};
 use pubky_common::timestamp::Timestamp;
 
@@ -54,6 +55,8 @@ use std::{fs::File, io::Write, path::PathBuf};
 use tokio::fs::File as AsyncFile;
 use tokio::io::AsyncWriteExt;
 use tokio::task;
+
+use crate::persistence::files::{FileMetadata, FileMetadataBuilder};
 
 /// Writes a temp file to disk asynchronously.
 #[derive(Debug)]
@@ -112,13 +115,11 @@ impl AsyncInDbTempFileWriter {
     /// Returns a BlobsTempFile that can be used to read the file.
     pub async fn complete(mut self) -> Result<InDbTempFile, std::io::Error> {
         self.writer_file.flush().await?;
-        let hash = self.hasher.finalize();
-        let file_size = self.writer_file.metadata().await?.len();
+        let metadata = FileMetadataBuilder::default().finalize();
         Ok(InDbTempFile {
             dir: Arc::new(self.dir),
             file_path: self.file_path,
-            file_size: file_size as usize,
-            file_hash: hash,
+            metadata,
         })
     }
 }
@@ -131,7 +132,7 @@ pub(crate) struct SyncInDbTempFileWriter {
     dir: tempfile::TempDir,
     writer_file: File,
     file_path: PathBuf,
-    hasher: Hasher,
+    metadata: FileMetadataBuilder,
 }
 
 impl SyncInDbTempFileWriter {
@@ -139,20 +140,19 @@ impl SyncInDbTempFileWriter {
         let dir = tempfile::tempdir()?;
         let file_path = dir.path().join("entry.bin");
         let writer_file = File::create(file_path.clone())?;
-        let hasher = Hasher::new();
 
         Ok(Self {
             dir,
             writer_file,
             file_path,
-            hasher,
+            metadata: FileMetadataBuilder::default(),
         })
     }
 
     /// Write a chunk to the file.
     pub fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
         self.writer_file.write_all(chunk)?;
-        self.hasher.update(chunk);
+        self.metadata.update(chunk);
         Ok(())
     }
 
@@ -161,13 +161,11 @@ impl SyncInDbTempFileWriter {
     /// Returns a BlobsTempFile that can be used to read the file.
     pub fn complete(mut self) -> Result<InDbTempFile, std::io::Error> {
         self.writer_file.flush()?;
-        let hash = self.hasher.finalize();
-        let file_size = self.writer_file.metadata()?.len();
+        let metadata = self.metadata.finalize();
         Ok(InDbTempFile {
             dir: Arc::new(self.dir),
             file_path: self.file_path,
-            file_size: file_size as usize,
-            file_hash: hash,
+            metadata,
         })
     }
 }
@@ -187,8 +185,7 @@ pub struct InDbTempFile {
     #[allow(dead_code)]
     dir: Arc<tempfile::TempDir>,
     file_path: PathBuf,
-    file_size: usize,
-    file_hash: Hash,
+    metadata: FileMetadata,
 }
 
 impl InDbTempFile {
@@ -204,23 +201,16 @@ impl InDbTempFile {
         let dir = tempfile::tempdir()?;
         let file_path = dir.path().join("entry.bin");
         std::fs::File::create(file_path.clone())?;
-        let file_size = 0;
-        let hasher = Hasher::new();
-        let file_hash = hasher.finalize();
+        let metadata = FileMetadataBuilder::default().finalize();
         Ok(Self {
             dir: Arc::new(dir),
             file_path,
-            file_size,
-            file_hash,
+            metadata,
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.file_size
-    }
-
-    pub fn hash(&self) -> &Hash {
-        &self.file_hash
+    pub fn metadata(&self) -> &FileMetadata {
+        &self.metadata
     }
 
     /// Get the path of the file on disk.

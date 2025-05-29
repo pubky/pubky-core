@@ -1,6 +1,7 @@
 use super::super::events::Event;
 use super::{super::super::LmDB, InDbFileId, InDbTempFile};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use crate::persistence::files::FileMetadata;
 use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
@@ -22,7 +23,7 @@ impl LmDB {
     /// The entry is written to the database and the file is written to the blob store.
     /// An event is written to the events table.
     /// The entry is returned.
-    pub async fn write_entry(
+    pub async fn write_entry_from_file(
         &mut self,
         path: &EntryPath,
         file: &InDbTempFile,
@@ -31,7 +32,7 @@ impl LmDB {
         let path = path.clone();
         let file = file.clone();
         let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<Entry> {
-            db.write_entry_sync(&path, &file)
+            db.write_entry_from_file_sync(&path, &file)
         })
         .await;
         match join_handle {
@@ -43,27 +44,20 @@ impl LmDB {
         }
     }
 
-    /// Writes an entry to the database.
-    ///
-    /// The entry is written to the database and the file is written to the blob store.
-    /// An event is written to the events table.
-    /// The entry is returned.
-    pub fn write_entry_sync(
-        &mut self,
-        path: &EntryPath,
-        file: &InDbTempFile,
-    ) -> anyhow::Result<Entry> {
+    /// Write an entry without writing the file to the blob store.
+    pub fn write_entry(&self, path: &EntryPath, metadata: &FileMetadata, file_location: FileLocation) -> anyhow::Result<Entry> {
         let mut wtxn = self.env.write_txn()?;
         let mut entry = Entry::new();
-        entry.set_content_hash(*file.hash());
-        entry.set_content_length(file.len());
-        let file_id = self.write_file_sync(file, &mut wtxn)?;
-        entry.set_timestamp(file_id.timestamp());
+        entry.set_content_hash(metadata.hash.clone());
+        entry.set_content_length(metadata.length);
+        entry.set_timestamp(&metadata.modified_at);
+        entry.file_location = file_location;
         let entry_key = path.to_string();
         self.tables
             .entries
             .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
 
+        // TODO: Extract this to a separate function.
         // Write a public [Event].
         let url = format!("pubky://{}", entry_key);
         let event = Event::put(&url);
@@ -71,9 +65,27 @@ impl LmDB {
 
         self.tables
             .events
-            .put(&mut wtxn, file_id.timestamp().to_string().as_str(), &value)?;
+            .put(&mut wtxn, metadata.modified_at.to_string().as_str(), &value)?;
         wtxn.commit()?;
 
+        Ok(entry)
+    }
+
+    /// Writes an entry to the database.
+    ///
+    /// The entry is written to the database and the file is written to the blob store.
+    /// An event is written to the events table.
+    /// The entry is returned.
+    pub fn write_entry_from_file_sync(
+        &mut self,
+        path: &EntryPath,
+        file: &InDbTempFile,
+    ) -> anyhow::Result<Entry> {
+        let mut wtxn = self.env.write_txn()?;
+        let mut metadata = file.metadata().clone();
+        let file_id = self.write_file_sync(file, &mut wtxn)?;
+        metadata.modified_at = file_id.timestamp().clone();
+        let entry = self.write_entry(path, &metadata, FileLocation::LMDB)?;
         Ok(entry)
     }
 
@@ -90,7 +102,7 @@ impl LmDB {
 
     /// Delete an entry including the associated file from the database.
     pub async fn delete_entry(&self, path: &EntryPath) -> anyhow::Result<bool> {
-        let mut db = self.clone();
+        let db = self.clone();
         let path = path.clone();
         let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
             db.delete_entry_sync(&path)
@@ -278,6 +290,21 @@ fn next_threshold(
     )
 }
 
+/// The location of the file.
+/// This is used to determine where the file is stored.
+/// Used during the transition process from LMDB to OpenDAL.
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+pub enum FileLocation {
+    LMDB,
+    OpenDal,
+}
+
+impl Default for FileLocation {
+    fn default() -> Self {
+        FileLocation::LMDB
+    }
+}
+
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Entry {
     /// Encoding version
@@ -287,6 +314,7 @@ pub struct Entry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
+    file_location: FileLocation, // TODO: Migrate LMDB to add this field.
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -365,6 +393,10 @@ impl Entry {
         &self.content_type
     }
 
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
+    }
+
     pub fn file_id(&self) -> InDbFileId {
         InDbFileId::from(self.timestamp)
     }
@@ -404,7 +436,7 @@ mod tests {
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
         let file = InDbTempFile::zeros(5).await.unwrap();
-        let entry = db.write_entry_sync(&path, &file).unwrap();
+        let entry = db.write_entry_from_file_sync(&path, &file).unwrap();
 
         let read_entry = db.get_entry(&path).unwrap().expect("Entry doesn't exist");
         assert_eq!(entry.content_hash(), read_entry.content_hash());
@@ -424,7 +456,7 @@ mod tests {
         let read_entry = db.get_entry(&path).unwrap();
         assert!(read_entry.is_none());
         let read_file = db.read_file(&entry.file_id()).await.unwrap();
-        assert_eq!(read_file.len(), 0);
+        assert_eq!(read_file.metadata().length, 0);
     }
 
     #[tokio::test]
@@ -441,7 +473,7 @@ mod tests {
         writer.write_chunk(&chunk)?;
         let file = writer.complete()?;
 
-        db.write_entry_sync(&entry_path, &file)?;
+        db.write_entry_from_file_sync(&entry_path, &file)?;
 
         let entry = db.get_entry(&entry_path).unwrap().unwrap();
 
@@ -476,7 +508,7 @@ mod tests {
         writer.write_chunk(&chunk)?;
         let file = writer.complete()?;
 
-        db.write_entry_sync(&entry_path, &file)?;
+        db.write_entry_from_file_sync(&entry_path, &file)?;
 
         let entry = db.get_entry(&entry_path).unwrap().unwrap();
 

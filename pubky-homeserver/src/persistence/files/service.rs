@@ -1,12 +1,14 @@
 use crate::{
     opendal_config::StorageConfigToml,
-    persistence::lmdb::{tables::files::Entry, LmDB},
+    persistence::lmdb::{tables::files::{Entry, FileLocation}, LmDB},
     shared::webdav::EntryPath,
 };
 use bytes::Bytes;
 use futures_util::{stream::StreamExt, Stream};
 use opendal::{Buffer, Operator};
 use std::path::Path;
+
+use super::{FileMetadata, FileMetadataBuilder};
 
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
@@ -41,7 +43,8 @@ pub fn build_storage_operator_from_config(
 /// The chunk size to use for reading and writing files.
 /// This is used to avoid reading and writing the entire file at once.
 /// Important: Not all opendal providers will respect this chunk size.
-/// For example, Google Cloud Buckets will deliver chunks anything from 200B to 16KB.
+/// For example, Google Cloud Buckets will deliver chunks anything from 
+/// 200B to 16KB but max CHUNK_SIZE.
 const CHUNK_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, Clone)]
@@ -66,12 +69,40 @@ impl FileService {
 
     /// Get the metadata of a file.
     /// Returns None if the file does not exist.
-    pub async fn get_metadata(&self, path: &EntryPath) -> anyhow::Result<Option<Entry>> {
+    pub async fn get_info(&self, path: &EntryPath) -> anyhow::Result<Option<Entry>> {
         self.db.get_entry(path)
+    }
+
+    /// Write a file to the database and storage depending on the selected target location.
+    pub async fn write(&self, path: &EntryPath, location: FileLocation, stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,) -> anyhow::Result<Entry> {
+        let entry = match location {
+            FileLocation::LMDB => {
+                let metadata = self.db.write_file_from_stream(stream).await?;
+                self.db.write_entry(path, &metadata, location)?
+            }
+            FileLocation::OpenDal => {
+                let metadata = self.write_content_stream(path, stream).await?;
+                self.db.write_entry(path, &metadata, location)?
+            }
+        };
+        Ok(entry)
     }
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> anyhow::Result<bool> {
+        let entry = match self.get_info(path).await? {
+            Some(entry) => entry,
+            None => return Ok(false),
+        };
+        match entry.file_location() {
+            FileLocation::LMDB => {
+                return self.db.delete_entry(path).await
+            }
+            FileLocation::OpenDal => {
+                self.db.delete_entry(path).await?;
+                self.operator.delete(path.as_str()).await?
+            }
+        }
         let deleted = self.db.delete_entry(path).await?;
         if !deleted {
             // File not found.
@@ -88,28 +119,35 @@ impl FileService {
         &self,
         path: &EntryPath,
         buffer: impl Into<Buffer>,
-    ) -> anyhow::Result<()> {
-        self.operator.write(path.as_str(), buffer).await?;
-        Ok(())
+    ) -> anyhow::Result<FileMetadata> {
+        let buffer: Buffer = buffer.into();
+        let bytes = Bytes::from(buffer.to_vec());
+        
+        // Create a single-item stream from the buffer
+        let stream = Box::pin(futures_util::stream::once(async move { Ok(bytes) }));
+        
+        // Use the existing streaming implementation
+        self.write_content_stream(path, stream).await
     }
 
     pub async fn write_content_stream(
         &self,
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<FileMetadata> {
         let mut writer = self.operator.writer(path.as_str()).await?;
-
+        let mut metadata_builder = FileMetadataBuilder::default();
         // Write each chunk from the stream to the writer
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
+            metadata_builder.update(&chunk);
             writer.write(chunk).await?;
         }
 
         // Close the writer to finalize the write operation
         writer.close().await?;
 
-        Ok(())
+        Ok(metadata_builder.finalize())
     }
 
     /// Get the content of a file as a stream of bytes.
@@ -308,7 +346,7 @@ mod tests {
             let temp_file = writer.complete().unwrap();
             
             // Write the entry to the database (this creates both metadata and file content)
-            let _entry = db.write_entry(&path, &temp_file).await.unwrap();
+            let _entry = db.write_entry_from_file(&path, &temp_file).await.unwrap();
 
             // Also write to the storage operator
             file_service
@@ -317,7 +355,7 @@ mod tests {
                 .unwrap();
 
             // Verify the file exists before deletion
-            let metadata = file_service.get_metadata(&path).await.unwrap();
+            let metadata = file_service.get_info(&path).await.unwrap();
             assert!(metadata.is_some(), "File should exist before deletion");
 
             // Delete the file
@@ -325,7 +363,7 @@ mod tests {
             assert!(deleted, "Should return true when deleting existing file");
 
             // Verify the file no longer exists in metadata
-            let metadata = file_service.get_metadata(&path).await.unwrap();
+            let metadata = file_service.get_info(&path).await.unwrap();
             assert!(metadata.is_none(), "File should not exist after deletion");
 
             // Verify the file content is also removed from storage

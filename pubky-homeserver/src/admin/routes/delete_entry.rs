@@ -33,7 +33,7 @@ mod tests {
 
     async fn write_test_file(db: &mut LmDB, entry_path: &EntryPath) {
         let file = InDbTempFile::zeros(10).await.unwrap();
-        let _entry = db.write_entry(&entry_path, &file).await.unwrap();
+        let _entry = db.write_entry_from_file(&entry_path, &file).await.unwrap();
     }
 
     #[tokio::test]

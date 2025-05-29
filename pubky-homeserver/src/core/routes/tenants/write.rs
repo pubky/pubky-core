@@ -98,8 +98,8 @@ pub async fn put(
     let buffer_file = buffer_file_writer.complete().await?;
 
     // Write file on disk to db
-    state.db.write_entry(&entry_path, &buffer_file).await?;
-    let delta = buffer_file.len() as i64 - existing_entry_bytes as i64;
+    state.db.write_entry_from_file(&entry_path, &buffer_file).await?;
+    let delta = buffer_file.metadata().length as i64 - existing_entry_bytes as i64;
     state.db.update_data_usage(public_key, delta)?;
 
     Ok((StatusCode::CREATED, ()))
