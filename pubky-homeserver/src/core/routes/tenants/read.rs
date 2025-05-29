@@ -53,14 +53,9 @@ pub async fn get(
     let entry = state.file_service.get_info(&entry_path).await?
         .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
 
-    // let stream = state.file_service.get_stream(&entry_path).await?;
+    let stream = state.file_service.get_stream(&entry_path).await?;
 
-    let buffer_file = state.db.read_file(&entry.file_id()).await?;
-
-    let file_handle = buffer_file.open_file_handle()?;
-    // Async stream the file
-    let tokio_file_handle = tokio::fs::File::from_std(file_handle);
-    let body_stream = Body::from_stream(ReaderStream::new(tokio_file_handle));
+    let body_stream = Body::from_stream(stream);
     get_entry(headers, entry, Some(body_stream))
 }
 

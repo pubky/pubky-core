@@ -50,17 +50,15 @@ pub async fn delete(
     let public_key = pubky.public_key();
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
-    let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
 
-    // Remove entry
-    if !state.db.delete_entry_and_file(&entry_path).await? {
-        return Err(Error::with_status(StatusCode::NOT_FOUND));
-    }
+    let entry = state.file_service.get_info(&entry_path).await?
+        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+    state.file_service.delete(&entry_path).await?;
 
     // Update usage counter
     state
         .db
-        .update_data_usage(public_key, -(existing_bytes as i64))?;
+        .update_data_usage(public_key, -(entry.content_length() as i64))?;
 
     Ok((StatusCode::NO_CONTENT, ()))
 }
