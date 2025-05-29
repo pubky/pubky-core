@@ -89,7 +89,7 @@ impl LmDB {
     }
 
     /// Delete an entry including the associated file from the database.
-    pub async fn delete_entry(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
+    pub async fn delete_entry(&self, path: &EntryPath) -> anyhow::Result<bool> {
         let mut db = self.clone();
         let path = path.clone();
         let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
@@ -106,7 +106,7 @@ impl LmDB {
     }
 
     /// Delete an entry including the associated file from the database.
-    pub fn delete_entry_sync(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
+    pub fn delete_entry_sync(&self, path: &EntryPath) -> anyhow::Result<bool> {
         let entry = match self.get_entry(path)? {
             Some(entry) => entry,
             None => return Ok(false),

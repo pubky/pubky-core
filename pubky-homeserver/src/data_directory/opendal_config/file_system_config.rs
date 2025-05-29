@@ -50,4 +50,18 @@ impl FileSystemConfig {
         .root(&self.root_directory);
         Ok(builder)
     }
+
+    /// Returns a filesystem config in a temporary directory
+    /// tempdir must be kept alive for the duration of the test.
+    /// As soon as tempdir is dropped, the directory is deleted.
+    /// This is useful for testing.
+    #[cfg(test)]
+    pub (crate) fn test() -> (Self, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = Self {
+            root_directory:temp_dir.path().as_os_str().to_string_lossy().to_string()
+        };
+
+        (config, temp_dir)
+    }
 }
