@@ -2762,6 +2762,7 @@ dependencies = [
  "axum-server",
  "axum-test",
  "base32",
+ "base64 0.22.1",
  "bytes",
  "clap",
  "dirs",

@@ -29,7 +29,6 @@ impl Default for FileSystemConfig {
 impl FileSystemConfig {
     /// Expands the `DATA_DIRECTORY_PLACEHOLDER` variable with the given data directory.
     pub fn expand_with_data_directory(&mut self, data_directory: &PathBuf) {
-
         if self.root_directory.starts_with(DATA_DIRECTORY_PLACEHOLDER) {
             let mut path = self.root_directory.replace(DATA_DIRECTORY_PLACEHOLDER, "");
             // Remove the first character if it exists (usually "/"). Otherwise the join will replace the directory instead of appending.
@@ -40,22 +39,15 @@ impl FileSystemConfig {
         }
     }
 
-    /// Returns the path to the root directory.
+    /// Returns the builder for the file system. This will create the directory if it doesn't exist.
     /// Make sure to call `expand_with_data_directory` before using this method.
-    pub fn path(&self) -> PathBuf {
-        PathBuf::from(&self.root_directory)
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_root_directory() {
-        let mut config = FileSystemConfig::default();
-        config.expand_with_data_directory(&PathBuf::from("/tmp"));
-        assert_eq!(config.path(), PathBuf::from("/tmp/data/files/"));
+    pub fn to_builder(&mut self) -> anyhow::Result<opendal::services::Fs> {
+        let path = PathBuf::from(&self.root_directory);
+        if !path.exists() {
+            std::fs::create_dir_all(&path)?;
+        }
+        let builder = opendal::services::Fs::default()
+        .root(&self.root_directory);
+        Ok(builder)
     }
 }

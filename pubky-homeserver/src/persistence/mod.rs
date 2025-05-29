@@ -1,2 +1,2 @@
-mod hs_opendal;
+pub mod hs_opendal;
 pub mod lmdb;
