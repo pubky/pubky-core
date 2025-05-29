@@ -16,21 +16,20 @@ fn is_migration_needed(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<bool> {
         .open_database(wtxn, Some(files::ENTRIES_TABLE))?
         .expect("Entries database is not available");
 
-    let (_, meta) = metadata
-        .first(wtxn)
-        .expect("Entry table is not empty")
-        .expect("Test entry has some data");
-    let (_, file) = blobs
-        .first(wtxn)
-        .expect("Blob table is not empty")
-        .expect("Test blob has some data");
+    let meta = metadata.first(wtxn);
+    let file = blobs.first(wtxn);
 
-    let entry = Entry::deserialize(meta).expect("Deserialization of entry failed");
-    let mime_matches = match infer::get(file) {
-        Some(kind) => kind.mime_type() == entry.content_type(),
-        None => false,
-    };
-    Ok(!mime_matches)
+    match (meta, file) {
+        (Ok(Some((_, meta))), Ok(Some((_, file)))) => {
+            let entry = Entry::deserialize(meta).expect("Deserialization of entry failed");
+            let mime_matches = match infer::get(file) {
+                Some(kind) => kind.mime_type() == entry.content_type(),
+                None => false,
+            };
+            Ok(!mime_matches)
+        }
+        (_, _) => Ok(false), // Second failed
+    }
 }
 
 pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
@@ -52,9 +51,9 @@ mod tests {
     use std::io::Read;
 
     use super::*;
-    
+
     use crate::persistence::lmdb::tables::files::{Entry, InDbFileId, InDbTempFile};
-    
+
     use crate::persistence::lmdb::{db::DEFAULT_MAP_SIZE, migrations::m0};
     use crate::shared::webdav::{EntryPath, WebDavPath};
 
