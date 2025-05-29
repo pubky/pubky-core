@@ -22,9 +22,6 @@ impl WebDavPath {
     /// The path will be normalized and validated.
     pub fn new(unnormalized_path: &str) -> anyhow::Result<Self> {
         let normalized_path = normalize_and_validate_webdav_path(unnormalized_path)?;
-        if !normalized_path.starts_with("/pub/") {
-            return Err(anyhow::anyhow!("Path must start with /pub/"));
-        }
         Ok(Self::new_unchecked(normalized_path))
     }
 
@@ -291,12 +288,6 @@ mod tests {
     #[test]
     fn test_valid_path_dav_uber() {
         assert_valid_path("/dav/über", "/dav/über");
-    }
-
-    #[test]
-    fn test_webdav_pub_required() {
-        WebDavPath::from_str("/pub/file.txt").expect("Should be valid");
-        WebDavPath::from_str("/file.txt").expect_err("Should not be valid. /pub/ required.");
     }
 
     #[test]

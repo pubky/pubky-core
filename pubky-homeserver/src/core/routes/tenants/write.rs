@@ -14,7 +14,7 @@ use crate::{
         AppState,
     },
     persistence::lmdb::tables::files::AsyncInDbTempFileWriter,
-    shared::webdav::{EntryPath, WebDavPathAxum},
+    shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
 
 /// Fail with 507 if `(current + incoming − existing) > quota`.
@@ -45,11 +45,11 @@ fn enforce_user_disk_quota(
 pub async fn delete(
     State(mut state): State<AppState>,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavPathPubAxum>,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key();
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
-    let entry_path = EntryPath::new(public_key.clone(), path.0);
+    let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
     let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
 
     // Remove entry
@@ -68,12 +68,12 @@ pub async fn delete(
 pub async fn put(
     State(mut state): State<AppState>,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavPathPubAxum>,
     body: Body,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key();
     err_if_user_is_invalid(public_key, &state.db, true)?;
-    let entry_path = EntryPath::new(public_key.clone(), path.0);
+    let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     let existing_entry_bytes = state.db.get_entry_content_length(&entry_path)?;
     let quota_bytes = state.user_quota_bytes;

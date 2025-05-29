@@ -1,5 +1,5 @@
 use super::super::app_state::AppState;
-use crate::shared::{webdav::EntryPath, HttpError, HttpResult};
+use crate::shared::{webdav::{EntryPathPub}, HttpError, HttpResult};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -9,9 +9,9 @@ use axum::{
 /// Delete a single entry from the database.
 pub async fn delete_entry(
     State(mut state): State<AppState>,
-    Path(entry_path): Path<EntryPath>,
+    Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-    let deleted = state.db.delete_entry(&entry_path).await?;
+    let deleted = state.db.delete_entry(entry_path.inner()).await?;
     if deleted {
         Ok((StatusCode::NO_CONTENT, ()))
     } else {

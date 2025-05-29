@@ -10,7 +10,7 @@ use std::{ sync::Arc, time::Duration};
 use opendal::Operator;
 use pkarr::Keypair;
 
-use crate::{ persistence::{hs_opendal::build_storage_operator_from_config, lmdb::LmDB}, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
+use crate::{ persistence::{files::{build_storage_operator_from_config, FileService}, lmdb::LmDB}, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -45,7 +45,7 @@ pub struct AppContext {
     /// A list of all shared resources.
     pub(crate) db: LmDB,
     /// The storage operator to store files.
-    pub(crate) storage: Operator,
+    pub(crate) file_service: FileService,
     pub(crate) config_toml: ConfigToml,
     /// Keep data_dir alive. The mock dir will cleanup on drop.
     pub(crate) data_dir: Arc<dyn DataDir>,
@@ -81,16 +81,16 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let db_path = dir.path().join("data/lmdb");
-        
-        let storage = build_storage_operator_from_config(&conf.storage, dir.path()).map_err(AppContextConversionError::Storage)?;
+        let db = unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? };
+        let file_service = FileService::new_from_config(&conf.storage, dir.path(), db.clone());
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {
-            db: unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? },
+            db,
             pkarr_client: pkarr_builder
                 .clone()
                 .build()
                 .map_err(AppContextConversionError::Pkarr)?,
-            storage,
+            file_service,
             pkarr_builder,
             config_toml: conf,
             keypair,
@@ -155,7 +155,7 @@ mod tests {
     use opendal::Buffer;
     use futures_util::TryStreamExt;
 
-    use crate::{opendal_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig, StorageConfigToml}, persistence::hs_opendal::build_storage_operator_from_config};
+    use crate::{opendal_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig, StorageConfigToml}, persistence::files::build_storage_operator_from_config};
     use super::*;
 
     #[tokio::test]

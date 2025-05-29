@@ -6,7 +6,7 @@ use crate::{
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
-    shared::webdav::{EntryPath, WebDavPathAxum},
+    shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
 use axum::{
     body::Body,
@@ -22,10 +22,10 @@ pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
     headers: HeaderMap,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavPathPubAxum>,
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
-    let entry_path = EntryPath::new(pubky.public_key().clone(), path.0);
+    let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
     let entry = state
         .db
         .get_entry(&entry_path)?
@@ -39,12 +39,12 @@ pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavPathPubAxum>,
     params: ListQueryParams,
 ) -> Result<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
     let dav_path = path.0;
-    let entry_path = EntryPath::new(public_key.clone(), dav_path);
+    let entry_path = EntryPath::new(public_key.clone(), dav_path.inner().clone());
     if entry_path.path().is_directory() {
         return list(state, &entry_path, params);
     }
