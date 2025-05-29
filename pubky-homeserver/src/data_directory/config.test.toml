@@ -1,5 +1,5 @@
 [general]
-signup_mode = "nothing_required"
+signup_mode = "token_required"
 lmdb_backup_interval_s = 666
 user_storage_quota_mb = 666
 
