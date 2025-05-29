@@ -1,7 +1,8 @@
 use super::{data_dir::DataDir, ConfigToml};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     io::Write,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -69,7 +70,10 @@ impl PersistentDataDir {
         let secret = keypair.secret_key();
         let hex_string = hex::encode(secret);
         std::fs::write(secret_file_path.clone(), hex_string)?;
-        std::fs::set_permissions(&secret_file_path, std::fs::Permissions::from_mode(0o600))?;
+        #[cfg(unix)]
+        {
+            std::fs::set_permissions(&secret_file_path, std::fs::Permissions::from_mode(0o600))?;
+        }
         tracing::info!("Secret file created at {}", secret_file_path.display());
         Ok(())
     }

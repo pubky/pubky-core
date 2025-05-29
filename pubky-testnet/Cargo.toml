@@ -1,7 +1,7 @@
 [package]
 name = "pubky-testnet"
 description = "A local test network for Pubky Core development."
-version.workspace = true
+version = "0.5.0-rc.2"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -19,10 +19,10 @@ tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"
 url = "2.5.4"
 
-pubky = { workspace = true }
-pubky-common = { workspace = true }
-pubky-homeserver = { workspace = true }
-http-relay = { workspace = true }
+pubky = { path = "../pubky-client", version = "0.5.0-rc.2" }
+pubky-common = { path = "../pubky-common", version = "0.5.0-rc.2" }
+pubky-homeserver = { path = "../pubky-homeserver", version = "0.5.0-rc.2" }
+http-relay = { path = "../http-relay", version = "0.5.0-rc.2" }
 tempfile = "3.19.1"
 tracing = "0.1.41"
 pkarr = { workspace = true }
