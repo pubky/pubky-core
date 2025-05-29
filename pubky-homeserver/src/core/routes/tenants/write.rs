@@ -53,7 +53,7 @@ pub async fn delete(
     let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
 
     // Remove entry
-    if !state.db.delete_entry(&entry_path).await? {
+    if !state.db.delete_entry_and_file(&entry_path).await? {
         return Err(Error::with_status(StatusCode::NOT_FOUND));
     }
 

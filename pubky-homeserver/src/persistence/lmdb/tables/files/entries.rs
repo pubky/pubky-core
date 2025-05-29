@@ -45,7 +45,12 @@ impl LmDB {
     }
 
     /// Write an entry without writing the file to the blob store.
-    pub fn write_entry(&self, path: &EntryPath, metadata: &FileMetadata, file_location: FileLocation) -> anyhow::Result<Entry> {
+    pub fn write_entry(
+        &self,
+        path: &EntryPath,
+        metadata: &FileMetadata,
+        file_location: FileLocation,
+    ) -> anyhow::Result<Entry> {
         let mut wtxn = self.env.write_txn()?;
         let mut entry = Entry::new();
         entry.set_content_hash(metadata.hash.clone());
@@ -101,11 +106,31 @@ impl LmDB {
     }
 
     /// Delete an entry including the associated file from the database.
-    pub async fn delete_entry(&self, path: &EntryPath) -> anyhow::Result<bool> {
+    pub async fn delete_entry(&self, path: &EntryPath) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
+
+        let deleted = self.tables.entries.delete(&mut wtxn, path.as_str())?;
+        if !deleted {
+            wtxn.abort();
+            anyhow::bail!("Entry not found");
+        }
+
+        // create DELETE event
+        let url = format!("pubky://{}", path.as_str());
+        let event = Event::delete(&url);
+        let value = event.serialize();
+        let key = Timestamp::now().to_string();
+        self.tables.events.put(&mut wtxn, &key, &value)?;
+        wtxn.commit()?;
+        Ok(())
+    }
+
+    /// Delete an entry including the associated file from the database.
+    pub async fn delete_entry_and_file(&self, path: &EntryPath) -> anyhow::Result<bool> {
         let db = self.clone();
         let path = path.clone();
         let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
-            db.delete_entry_sync(&path)
+            db.delete_entry_and_file_sync(&path)
         })
         .await;
         match join_handle {
@@ -118,7 +143,7 @@ impl LmDB {
     }
 
     /// Delete an entry including the associated file from the database.
-    pub fn delete_entry_sync(&self, path: &EntryPath) -> anyhow::Result<bool> {
+    pub fn delete_entry_and_file_sync(&self, path: &EntryPath) -> anyhow::Result<bool> {
         let entry = match self.get_entry(path)? {
             Some(entry) => entry,
             None => return Ok(false),
@@ -449,7 +474,7 @@ mod tests {
         file_handle.read_to_end(&mut content).unwrap();
         assert_eq!(content, vec![0, 0, 0, 0, 0]);
 
-        let deleted = db.delete_entry_sync(&path).unwrap();
+        let deleted = db.delete_entry_and_file_sync(&path).unwrap();
         assert!(deleted);
 
         // Verify the entry and file are deleted
@@ -527,5 +552,19 @@ mod tests {
         assert_eq!(content, vec![0; 1024 * 1024]);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_entry_not_found() {
+        let db = LmDB::test();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        let path = "/pub/nonexistent.txt";
+
+        let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
+
+        let result = db.get_entry(&entry_path).unwrap();
+        assert!(result.is_none(), "Expected None for non-existent entry");
     }
 }

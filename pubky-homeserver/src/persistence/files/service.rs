@@ -73,6 +73,23 @@ impl FileService {
         self.db.get_entry(path)
     }
 
+    pub async fn get(&self, path: &EntryPath) -> anyhow::Result<Option<Box<dyn Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send>>>  {
+        let entry = match self.get_info(path).await? {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+        let stream = match entry.file_location() {
+            FileLocation::LMDB => {
+                let temp_file = self.db.read_file(&entry.file_id()).await?;
+                Box::new(temp_file.as_stream()?) as Box<dyn Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send>
+            }
+            FileLocation::OpenDal => {
+                Box::new(self.get_content_stream(path).await?) as Box<dyn Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send>
+            }
+        };
+        Ok(Some(stream))
+    }
+
     /// Write a file to the database and storage depending on the selected target location.
     pub async fn write(&self, path: &EntryPath, location: FileLocation, stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,) -> anyhow::Result<Entry> {
         let entry = match location {
@@ -96,14 +113,14 @@ impl FileService {
         };
         match entry.file_location() {
             FileLocation::LMDB => {
-                return self.db.delete_entry(path).await
+                return self.db.delete_entry_and_file(path).await
             }
             FileLocation::OpenDal => {
                 self.db.delete_entry(path).await?;
                 self.operator.delete(path.as_str()).await?
             }
         }
-        let deleted = self.db.delete_entry(path).await?;
+        let deleted = self.db.delete_entry_and_file(path).await?;
         if !deleted {
             // File not found.
             return Ok(false);
@@ -379,6 +396,82 @@ mod tests {
                 !deleted_again,
                 "Should return false when deleting already deleted file"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_write_get_delete_lmdb_and_opendal() {
+        let (configs, _tmp_dir) = get_configs();
+        // let configs = vec![StorageConfigToml::InMemory];
+        for config in configs {
+            let db = LmDB::test();
+            let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db);
+
+            let pubkey = pkarr::Keypair::random().public_key();
+            let path = EntryPath::new(pubkey, WebDavPath::new("/test_get.txt").unwrap());
+
+            // Test getting a non-existent file
+            let result = file_service.get(&path).await.unwrap();
+            assert!(result.is_none(), "Should return None for non-existent file");
+
+            // Test data
+            let test_data = b"Hello, world! This is test data for the get method.";
+            let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
+            let stream = futures_util::stream::iter(chunks);
+
+            // Test LMDB location
+            let entry = file_service.write(&path, FileLocation::LMDB, stream).await.unwrap();
+            assert_eq!(*entry.file_location(), FileLocation::LMDB);
+
+            // Get the file content and verify
+            let result = file_service.get(&path).await.unwrap();
+            assert!(result.is_some(), "Should return Some for existing file");
+            
+            let mut stream = result.unwrap();
+            let mut collected_data = Vec::new();
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result.unwrap();
+                collected_data.extend_from_slice(&chunk);
+            }
+            
+            assert_eq!(
+                collected_data, 
+                test_data.to_vec(),
+                "Content should match original data for LMDB location"
+            );
+
+            file_service.delete(&path).await.unwrap();
+            let result = file_service.get(&path).await.unwrap();
+            assert!(result.is_none(), "Should return None for deleted file");
+
+
+            // Test OpenDal location
+            let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
+            let stream = futures_util::stream::iter(chunks);
+            let entry = file_service.write(&path, FileLocation::OpenDal, stream).await.unwrap();
+            assert_eq!(*entry.file_location(), FileLocation::OpenDal);
+
+            // Get the file content and verify
+            let result = file_service.get(&path).await.unwrap();
+            assert!(result.is_some(), "Should return Some for existing file");
+            
+            let mut stream = result.unwrap();
+            let mut collected_data = Vec::new();
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result.unwrap();
+                collected_data.extend_from_slice(&chunk);
+            }
+            
+            assert_eq!(
+                collected_data, 
+                test_data.to_vec(),
+                "Content should match original data for OpenDal location"
+            );
+
+            // Clean up
+            file_service.delete(&path).await.unwrap();
+            let result = file_service.get(&path).await.unwrap();
+            assert!(result.is_none(), "Should return None for deleted file");
         }
     }
 }

@@ -11,7 +11,7 @@ pub async fn delete_entry(
     State(mut state): State<AppState>,
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-    let deleted = state.db.delete_entry(entry_path.inner()).await?;
+    let deleted = state.db.delete_entry_and_file(entry_path.inner()).await?;
     if deleted {
         Ok((StatusCode::NO_CONTENT, ()))
     } else {
