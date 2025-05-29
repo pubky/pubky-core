@@ -1,4 +1,6 @@
-mod service;
+mod file_service;
 mod file_metadata;
-pub use service::{FileService, build_storage_operator_from_config};
+mod opendal_service;
+pub use file_service::FileService;
 pub (crate) use file_metadata::{FileMetadata, FileMetadataBuilder};
+pub use opendal_service::OpendalService;

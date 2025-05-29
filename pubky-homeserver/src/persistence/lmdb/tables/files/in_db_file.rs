@@ -228,10 +228,10 @@ impl InDbTempFile {
         File::open(self.file_path.as_path())
     }
 
-    pub fn as_stream(&self) -> anyhow::Result<impl Stream<Item = Result<Bytes, anyhow::Error>>> {
+    pub fn as_stream(&self) -> anyhow::Result<impl Stream<Item = Result<Bytes, std::io::Error>>> {
         let file = std::fs::File::open(&self.file_path)?;
         let async_file = tokio::fs::File::from_std(file);
         let stream = ReaderStream::new(async_file);
-        Ok(stream.map(|result| result.map_err(anyhow::Error::from)))
+        Ok(stream)
     }
 }

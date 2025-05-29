@@ -6,11 +6,8 @@
 //!
 
 use std::{ sync::Arc, time::Duration};
-
-use opendal::Operator;
 use pkarr::Keypair;
-
-use crate::{ persistence::{files::{build_storage_operator_from_config, FileService}, lmdb::LmDB}, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
+use crate::{ persistence::{files::FileService, lmdb::LmDB}, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -144,65 +141,5 @@ impl AppContext {
             builder.request_timeout(duration);
         }
         builder
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use opendal::Buffer;
-    use futures_util::TryStreamExt;
-
-    use crate::{opendal_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig, StorageConfigToml}, persistence::files::build_storage_operator_from_config};
-    use super::*;
-
-    #[tokio::test]
-    async fn test_build_storage_operator_from_config() {
-        let tmp_dir = tempfile::tempdir().unwrap();
-
-        
-        let fs_config = StorageConfigToml::FileSystem(FileSystemConfig::default());
-        let fs_operator = build_storage_operator_from_config(&fs_config, &tmp_dir.path()).unwrap();
-
-        let gcs_config = StorageConfigToml::GoogleBucket(GoogleBucketConfig{
-            bucket_name: "homeserver-test".to_string(),
-            credential: GoogleServiceAccountKeyConfig::Path(PathBuf::from("/Users/severinbuhler/git/pubky/pubky-core/pubky-stag-gcs-account.json")),
-        });
-        let gcs_operator = build_storage_operator_from_config(&gcs_config, &tmp_dir.path()).unwrap();
-        gcs_operator.write("test.txt", Buffer::from("12345")).await.unwrap();
-
-        let in_memory_config = StorageConfigToml::InMemory;
-        let in_memory_operator = build_storage_operator_from_config(&in_memory_config, &tmp_dir.path()).unwrap();
-
-        for operator in [fs_operator, gcs_operator, in_memory_operator] {
-            let info = operator.info();
-            println!("name: {:?}, scheme: {:?}", info.name(), info.scheme());
-            println!("full_capability: {:?}", info.full_capability());
-            println!("user metadata: {:?}", info.full_capability().list_has_etag);
-            
-            let mut writer =operator.writer("test.txt").await.unwrap();
-            writer.write("12345").await.unwrap();
-            writer.write("67890").await.unwrap();
-            writer.close().await.unwrap();
-
-            let reader = operator.reader("test.txt").await.unwrap();
-            
-            // Method 1: Using into_bytes_stream for streaming
-            let stream = reader.clone().into_bytes_stream(0..).await.unwrap();
-            let bytes_vec: Vec<bytes::Bytes> = stream.try_collect().await.unwrap();
-            let concatenated_bytes = bytes_vec.concat();    
-            println!("Streamed bytes: {:?}", concatenated_bytes);
-            
-        }
-
-        
-        
-        // println!("info: {:?}", info.full_capability().);
-        // let write_future = operator.write_with("test.txt", Buffer::from("Hello, world!"));
-        // write_future.content_type("text/plain").user_metadata(data);
-        // let mut metadata = write_future.await.unwrap();
-        // println!("{:?}", metadata);
     }
 }
