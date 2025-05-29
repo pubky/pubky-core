@@ -22,6 +22,9 @@ use url::Url;
 /// Embedded copy of the default configuration (single source of truth for defaults)
 pub const DEFAULT_CONFIG: &str = include_str!("config.default.toml");
 
+/// Test configuration file for validate merging
+#[cfg(test)]
+pub const TEST_CONFIG: &str = include_str!("config.test.toml");
 /// Example configuration file
 pub const SAMPLE_CONFIG: &str = include_str!("../../config.sample.toml");
 
@@ -269,5 +272,18 @@ mod tests {
         // Other fields that were not set (left empty) should still match the default.
         assert_eq!(parsed.admin, ConfigToml::default().admin);
         assert_eq!(parsed.logging, ConfigToml::default().logging);
+    }
+
+    #[test]
+    fn test_merged_config() {
+        let merged = ConfigToml::from_str(TEST_CONFIG).unwrap();
+        // Check that arrays were overwritten and they are empty
+        assert_eq!(merged.drive.rate_limits, vec![]);
+        assert_eq!(merged.pkdns.dht_relay_nodes, Some(vec![]));
+        let expected_logging = Some(LoggingToml {
+            level: LogLevel::from_str("trace").unwrap(),
+            module_levels: vec![],
+        });
+        assert_eq!(merged.logging, expected_logging);
     }
 }
