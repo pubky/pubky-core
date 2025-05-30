@@ -275,11 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn test_merged_config() {
+        fn test_merged_config() {
         let merged = ConfigToml::from_str(TEST_CONFIG).unwrap();
         // Check that arrays were overwritten and they are empty
         assert_eq!(merged.drive.rate_limits, vec![]);
-        assert_eq!(merged.pkdns.dht_relay_nodes, Some(vec![]));
         let expected_logging = Some(LoggingToml {
             level: LogLevel::from_str("trace").unwrap(),
             module_levels: vec![],

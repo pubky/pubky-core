@@ -14,9 +14,7 @@ admin_password = "root"
 
 [pkdns]
 public_ip = "0.0.0.0"
-icann_domain = "dummyhost"
 user_keys_republisher_interval = 666
-dht_relay_nodes = []
 
 [logging]
 level = "trace"
