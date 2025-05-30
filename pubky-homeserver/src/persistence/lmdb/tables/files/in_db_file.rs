@@ -75,14 +75,7 @@ pub(crate) struct AsyncInDbTempFileWriter {
 
 impl AsyncInDbTempFileWriter {
     pub async fn new() -> Result<Self, std::io::Error> {
-        let dir = task::spawn_blocking(tempfile::tempdir)
-            .await
-            .map_err(|join_error| {
-                std::io::Error::other(format!(
-                    "Task join error for tempdir creation: {}",
-                    join_error
-                ))
-            })??; // Handles the Result from tempfile::tempdir()
+        let dir = tempfile::tempdir()?;
 
         let file_path = dir.path().join("entry.bin");
         let writer_file = AsyncFile::create(file_path.clone()).await?;

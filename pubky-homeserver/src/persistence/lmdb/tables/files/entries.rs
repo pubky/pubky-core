@@ -89,6 +89,7 @@ impl LmDB {
         let mut wtxn = self.env.write_txn()?;
         let mut metadata = file.metadata().clone();
         let file_id = self.write_file_sync(file, &mut wtxn)?;
+        wtxn.commit()?;
         metadata.modified_at = file_id.timestamp().clone();
         let entry = self.write_entry(path, &metadata, FileLocation::LMDB)?;
         Ok(entry)

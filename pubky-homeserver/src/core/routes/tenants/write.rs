@@ -13,9 +13,13 @@ use crate::{
         extractors::PubkyHost,
         AppState,
     },
-    persistence::lmdb::tables::files::AsyncInDbTempFileWriter,
+    persistence::lmdb::tables::files::FileLocation,
     shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
+use bytes::Bytes;
+use futures_util::Stream;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Fail with 507 if `(current + incoming − existing) > quota`.
 fn enforce_user_disk_quota(
@@ -40,6 +44,59 @@ fn enforce_user_disk_quota(
         }
     }
     Ok(())
+}
+
+/// A stream wrapper that enforces quota checking for each chunk
+struct QuotaEnforcingStream<S> {
+    inner: S,
+    existing_bytes: u64,
+    seen_bytes: u64,
+    used_bytes: u64,
+    quota_bytes: Option<u64>,
+}
+
+impl<S> QuotaEnforcingStream<S> {
+    fn new(
+        inner: S,
+        existing_bytes: u64,
+        used_bytes: u64,
+        quota_bytes: Option<u64>,
+    ) -> Self {
+        Self {
+            inner,
+            existing_bytes,
+            seen_bytes: 0,
+            used_bytes,
+            quota_bytes,
+        }
+    }
+}
+
+impl<S> Stream for QuotaEnforcingStream<S>
+where
+    S: Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,
+{
+    type Item = Result<Bytes, anyhow::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.inner).poll_next(cx) {
+            Poll::Ready(Some(Ok(chunk))) => {
+                self.seen_bytes += chunk.len() as u64;
+                if let Err(e) = enforce_user_disk_quota(
+                    self.existing_bytes,
+                    self.seen_bytes,
+                    self.used_bytes,
+                    self.quota_bytes,
+                ) {
+                    return Poll::Ready(Some(Err(anyhow::anyhow!("Quota exceeded: {:?}", e))));
+                }
+                Poll::Ready(Some(Ok(chunk)))
+            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 pub async fn delete(
@@ -83,21 +140,29 @@ pub async fn put(
         enforce_user_disk_quota(existing_entry_bytes, exact_bytes, used_bytes, quota_bytes)?;
     }
 
-    // Stream body to disk first.
-    let mut seen_bytes: u64 = 0;
-    let mut stream = body.into_data_stream();
-    let mut buffer_file_writer = AsyncInDbTempFileWriter::new().await?;
+    // Convert body stream to the format expected by file_service
+    let body_stream = body.into_data_stream();
+    let converted_stream = body_stream.map(|chunk_result| {
+        chunk_result.map_err(|e| anyhow::anyhow!("Body stream error: {}", e))
+    });
 
-    while let Some(chunk) = stream.next().await.transpose()? {
-        seen_bytes += chunk.len() as u64;
-        enforce_user_disk_quota(existing_entry_bytes, seen_bytes, used_bytes, quota_bytes)?;
-        buffer_file_writer.write_chunk(&chunk).await?;
-    }
-    let buffer_file = buffer_file_writer.complete().await?;
+    // Wrap with quota enforcement
+    let quota_stream = QuotaEnforcingStream::new(
+        converted_stream,
+        existing_entry_bytes,
+        used_bytes,
+        quota_bytes,
+    );
 
-    // Write file on disk to db
-    state.db.write_entry_from_file(&entry_path, &buffer_file).await?;
-    let delta = buffer_file.metadata().length as i64 - existing_entry_bytes as i64;
+    // Write using file_service (defaulting to LMDB for backward compatibility)
+    let entry = state
+        .file_service
+        .write_stream(&entry_path, FileLocation::LMDB, quota_stream)
+        .await
+        .map_err(|e| Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(e.to_string())))?;
+
+    // Update usage counter based on the actual file size
+    let delta = entry.content_length() as i64 - existing_entry_bytes as i64;
     state.db.update_data_usage(public_key, delta)?;
 
     Ok((StatusCode::CREATED, ()))
