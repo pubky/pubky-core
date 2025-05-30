@@ -3,15 +3,24 @@ use crate::{
         tables::files::{Entry, FileLocation},
         LmDB,
     },
-    shared::webdav::EntryPath, ConfigToml,
+    shared::webdav::EntryPath,
+    ConfigToml,
 };
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use opendal::Buffer;
 use std::path::Path;
 
-use super::{write_disk_quota_enforcer::{WriteDiskQuotaEnforcer}, OpendalService};
+use super::{write_disk_quota_enforcer::{WriteDiskQuotaEnforcer, WriteDiskQuotaEnforcerError}, OpendalService, WriteStreamError};
 
+
+#[derive(Debug, thiserror::Error)]
+pub enum FileServiceWriteError {
+    #[error("Disk space quota exceeded")]
+    DiskSpaceQuotaExceeded,
+    #[error("Other error: {0}")]
+    Other(#[from] anyhow::Error),
+}
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
 /// This way, files can be managed in a unified way.
@@ -19,7 +28,7 @@ use super::{write_disk_quota_enforcer::{WriteDiskQuotaEnforcer}, OpendalService}
 pub struct FileService {
     opendal_service: OpendalService,
     db: LmDB,
-    user_quota_bytes: Option<u64>
+    user_quota_bytes: Option<u64>,
 }
 
 impl FileService {
@@ -53,12 +62,12 @@ impl FileService {
     pub async fn get(&self, path: &EntryPath) -> anyhow::Result<Bytes> {
         let mut stream = self.get_stream(path).await?;
         let mut collected_data = Vec::new();
-        
+
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.map_err(|e| anyhow::anyhow!("Error reading chunk: {}", e))?;
             collected_data.extend_from_slice(&chunk);
         }
-        
+
         Ok(Bytes::from(collected_data))
     }
 
@@ -86,7 +95,12 @@ impl FileService {
     }
 
     /// Write a file to the database and storage depending on the selected target location.
-    pub async fn write(&self, path: &EntryPath, data: Buffer, location: FileLocation) -> anyhow::Result<Entry> {
+    pub async fn write(
+        &self,
+        path: &EntryPath,
+        data: Buffer,
+        location: FileLocation,
+    ) -> anyhow::Result<Entry> {
         let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
         self.write_stream(path, location, stream).await
     }
@@ -96,14 +110,22 @@ impl FileService {
         &self,
         path: &EntryPath,
         location: FileLocation,
-        stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send,
+        stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> anyhow::Result<Entry> {
 
-        let mut stream: Box<dyn Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send> = Box::new(stream);
+        let mut stream: Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send> =
+            Box::new(stream);
         if let Some(user_quota_bytes) = self.user_quota_bytes {
             // Enforce disk size quota on the stream
-            stream = Box::new(WriteDiskQuotaEnforcer::new(stream, &self.db, path, user_quota_bytes)?);
+            stream = Box::new(WriteDiskQuotaEnforcer::new(
+                stream,
+                &self.db,
+                path,
+                user_quota_bytes,
+            )?);
         }
+
+        let existing_entry_bytes = self.db.get_entry_content_length(path)?;
 
         let entry = match location {
             FileLocation::LMDB => {
@@ -115,6 +137,9 @@ impl FileService {
                 self.db.write_entry(path, &metadata, location)?
             }
         };
+        // Update usage counter based on the actual file size
+        let delta = entry.content_length() as i64 - existing_entry_bytes as i64;
+        self.db.update_data_usage(path.pubkey(), delta)?;
         Ok(entry)
     }
 
@@ -139,9 +164,7 @@ impl FileService {
 mod tests {
     use futures_lite::StreamExt;
 
-    use crate::{
-        opendal_config::StorageConfigToml, shared::webdav::WebDavPath
-    };
+    use crate::{opendal_config::StorageConfigToml, shared::webdav::WebDavPath};
 
     use super::*;
 
@@ -172,7 +195,10 @@ mod tests {
         assert_eq!(*entry.file_location(), FileLocation::LMDB);
 
         // Get the file content and verify
-        let mut stream = file_service.get_stream(&path).await.expect("File should exist");
+        let mut stream = file_service
+            .get_stream(&path)
+            .await
+            .expect("File should exist");
         let mut collected_data = Vec::new();
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.unwrap();
@@ -200,7 +226,10 @@ mod tests {
         assert_eq!(*entry.file_location(), FileLocation::OpenDal);
 
         // Get the file content and verify
-        let mut stream = file_service.get_stream(&path).await.expect("File should exist");
+        let mut stream = file_service
+            .get_stream(&path)
+            .await
+            .expect("File should exist");
         let mut collected_data = Vec::new();
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.unwrap();
@@ -232,13 +261,19 @@ mod tests {
 
         // Test LMDB
         let lmdb_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
-        file_service.write(&lmdb_path, buffer.clone(), FileLocation::LMDB).await.unwrap();
+        file_service
+            .write(&lmdb_path, buffer.clone(), FileLocation::LMDB)
+            .await
+            .unwrap();
         let content = file_service.get(&lmdb_path).await.unwrap();
         assert_eq!(content.as_ref(), test_data);
 
         // Test OpenDal
         let opendal_path = EntryPath::new(pubkey, WebDavPath::new("/test_opendal.txt").unwrap());
-        file_service.write(&opendal_path, buffer, FileLocation::OpenDal).await.unwrap();
+        file_service
+            .write(&opendal_path, buffer, FileLocation::OpenDal)
+            .await
+            .unwrap();
         let content = file_service.get(&opendal_path).await.unwrap();
         assert_eq!(content.as_ref(), test_data);
     }

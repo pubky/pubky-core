@@ -83,7 +83,7 @@ impl LmDB {
     /// Updates a user's data usage by a signed `delta` (bytes).
     /// Increases or decreases the stored `used_bytes` count for `public_key`.
     /// Negative results are clamped to zero to prevent underflow.
-    pub fn update_data_usage(&mut self, public_key: &PublicKey, delta: i64) -> anyhow::Result<()> {
+    pub fn update_data_usage(&self, public_key: &PublicKey, delta: i64) -> anyhow::Result<()> {
         let mut wtxn = self.env.write_txn()?;
         let mut user = self
             .tables
