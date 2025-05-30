@@ -103,17 +103,16 @@ impl LmDB {
     }
 
     /// Retrieves the current data usage (in bytes) for a given user.
-    /// Returns the `used_bytes` value for the specified `public_key`, or zero if no record exists.
+    /// Returns the `used_bytes` value for the specified `public_key`, or Error if user does not exist.
     pub fn get_user_data_usage(&self, pk: &PublicKey) -> anyhow::Result<u64> {
         let rtxn = self.env.read_txn()?;
-        let usage = self
-            .tables
-            .users
-            .get(&rtxn, pk)?
-            .map(|u| u.used_bytes)
-            .unwrap_or(0);
+        let user = self
+        .tables
+        .users
+        .get(&rtxn, pk)?.ok_or(anyhow::anyhow!("no user found for public key {:?}", pk))?;
+
         rtxn.commit()?;
-        Ok(usage)
+        Ok(user.used_bytes)
     }
 
     /// Disable a user.

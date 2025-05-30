@@ -8,4 +8,4 @@ pub use file_service::FileService;
 pub (crate) use file_metadata::{FileMetadata, FileMetadataBuilder};
 pub use opendal_service::OpendalService;
 pub use write_disk_quota_enforcer::is_size_hint_exceeding_quota;
-pub use write_stream_error::WriteStreamError;
+pub use write_stream_error::{WriteStreamError, WriteFileFromStreamError};

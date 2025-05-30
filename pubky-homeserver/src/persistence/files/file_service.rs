@@ -11,7 +11,7 @@ use futures_util::{Stream, StreamExt};
 use opendal::Buffer;
 use std::path::Path;
 
-use super::{write_disk_quota_enforcer::{WriteDiskQuotaEnforcer, WriteDiskQuotaEnforcerError}, OpendalService, WriteStreamError};
+use super::{write_disk_quota_enforcer::WriteDiskQuotaEnforcer, OpendalService, WriteFileFromStreamError, WriteStreamError};
 
 
 #[derive(Debug, thiserror::Error)]
@@ -100,7 +100,7 @@ impl FileService {
         path: &EntryPath,
         data: Buffer,
         location: FileLocation,
-    ) -> anyhow::Result<Entry> {
+    ) -> Result<Entry, WriteFileFromStreamError> {
         let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
         self.write_stream(path, location, stream).await
     }
@@ -111,7 +111,7 @@ impl FileService {
         path: &EntryPath,
         location: FileLocation,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
-    ) -> anyhow::Result<Entry> {
+    ) -> Result<Entry, WriteFileFromStreamError> {
 
         let mut stream: Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send> =
             Box::new(stream);
@@ -150,12 +150,15 @@ impl FileService {
             None => return Ok(false),
         };
         match entry.file_location() {
-            FileLocation::LMDB => return self.db.delete_entry_and_file(path).await,
+            FileLocation::LMDB => {
+                self.db.delete_entry_and_file(path).await?;
+            },
             FileLocation::OpenDal => {
                 self.db.delete_entry(path).await?;
-                self.opendal_service.delete(path).await?
+                self.opendal_service.delete(path).await?;
             }
-        }
+        };
+        self.db.update_data_usage(path.pubkey(), -(entry.content_length() as i64))?;
         Ok(true)
     }
 }
@@ -173,9 +176,16 @@ mod tests {
         let mut config = ConfigToml::test();
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
-        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db);
+        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
 
         let pubkey = pkarr::Keypair::random().public_key();
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&pubkey, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        // User should not have any data usage yet
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), 0);
+
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
         // Test getting a non-existent file
@@ -193,6 +203,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(*entry.file_location(), FileLocation::LMDB);
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), test_data.len() as u64, "Data usage should be the size of the file");
 
         // Get the file content and verify
         let mut stream = file_service
@@ -214,9 +225,10 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), 0, "Data usage should be 0 after deleting file");
 
         // Test OpenDal location
-        let path = EntryPath::new(pubkey, WebDavPath::new("/test_opendal.txt").unwrap());
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_opendal.txt").unwrap());
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         let entry = file_service
@@ -224,6 +236,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(*entry.file_location(), FileLocation::OpenDal);
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), test_data.len() as u64, "Data usage should be the size of the file");
 
         // Get the file content and verify
         let mut stream = file_service
@@ -246,6 +259,7 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), 0, "Data usage should be 0 after deleting file");
     }
 
     #[tokio::test]
@@ -253,9 +267,13 @@ mod tests {
         let mut config = ConfigToml::test();
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
-        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db);
+        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
 
         let pubkey = pkarr::Keypair::random().public_key();
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&pubkey, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
         let test_data = b"Hello, world!";
         let buffer = Buffer::from(test_data.as_slice());
 

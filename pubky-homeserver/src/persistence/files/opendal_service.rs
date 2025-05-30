@@ -7,15 +7,8 @@ use futures_util::{stream::StreamExt, Stream};
 use opendal::{Buffer, Operator};
 use std::path::Path;
 
-use super::{FileMetadata, FileMetadataBuilder};
+use super::{FileMetadata, FileMetadataBuilder, WriteFileFromStreamError, WriteStreamError};
 
-#[derive(Debug, thiserror::Error)]
-pub enum OpendalWriteError {
-    #[error(transparent)]
-    OpendalError(opendal::Error),
-    #[error("Stream error: {0}")]
-    StreamError(anyhow::Error),
-}
 
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
@@ -85,7 +78,7 @@ impl OpendalService {
         &self,
         path: &EntryPath,
         buffer: impl Into<Buffer>,
-    ) -> Result<FileMetadata, OpendalWriteError> {
+    ) -> Result<FileMetadata, WriteFileFromStreamError> {
         let buffer: Buffer = buffer.into();
         let bytes = Bytes::from(buffer.to_vec());
         // Create a single-item stream from the buffer
@@ -97,19 +90,19 @@ impl OpendalService {
     pub async fn write_stream(
         &self,
         path: &EntryPath,
-        mut stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send,
-    ) -> Result<FileMetadata, OpendalWriteError> {
-        let mut writer = self.operator.writer(path.as_str()).await.map_err(OpendalWriteError::OpendalError)?;
+        mut stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
+    ) -> Result<FileMetadata, WriteFileFromStreamError> {
+        let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
         // Write each chunk from the stream to the writer
         while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(OpendalWriteError::StreamError)?;
+            let chunk = chunk_result?;
             metadata_builder.update(&chunk);
-            writer.write(chunk).await.map_err(OpendalWriteError::OpendalError)?;
+            writer.write(chunk).await?;
         }
 
         // Close the writer to finalize the write operation
-        writer.close().await.map_err(OpendalWriteError::OpendalError)?;
+        writer.close().await?;
         Ok(metadata_builder.finalize())
     }
 

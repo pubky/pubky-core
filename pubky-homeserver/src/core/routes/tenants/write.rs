@@ -13,12 +13,12 @@ use crate::{
         extractors::PubkyHost,
         AppState,
     },
-    persistence::{files::{is_size_hint_exceeding_quota, WriteStreamError}, lmdb::tables::files::FileLocation},
+    persistence::{files::{is_size_hint_exceeding_quota, WriteFileFromStreamError, WriteStreamError}, lmdb::tables::files::FileLocation},
     shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
 
 pub async fn delete(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> Result<impl IntoResponse> {
@@ -26,22 +26,16 @@ pub async fn delete(
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    let entry = state
+    if let None = state
         .file_service
         .get_info(&entry_path)
-        .await?
-        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+        .await?{
+            return Err(Error::with_status(StatusCode::NOT_FOUND));
+        };
     state.file_service.delete(&entry_path).await?;
-
-    // Update usage counter
-    state
-        .db
-        .update_data_usage(public_key, -(entry.content_length() as i64))?;
-
     Ok((StatusCode::NO_CONTENT, ()))
 }
 
-#[axum::debug_handler]
 pub async fn put(
     State(state): State<AppState>,
     pubky: PubkyHost,
@@ -70,11 +64,22 @@ pub async fn put(
 
 
     // Write using file_service (defaulting to LMDB for backward compatibility)
-    state
-        .file_service
+    if let Err(e) = state.file_service
         .write_stream(&entry_path, FileLocation::LMDB, converted_stream)
-        .await
-        .map_err(|e| Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(e.to_string())))?;
+        .await {
+            match e {
+                WriteFileFromStreamError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded) => {
+                    return Err(Error::new(StatusCode::INSUFFICIENT_STORAGE, Some("Disk space quota exceeded. Write operation failed.".to_string())));
+                }
+                WriteFileFromStreamError::StreamBroken(_) => {
+                    return Err(Error::new(StatusCode::BAD_REQUEST, Some("Stream broken. Write operation failed.".to_string())));
+                }
+                _ => {
+                    tracing::error!("Write operation failed: {:?}", e);
+                    return Err(Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some("Internal server error.".to_string())));
+                }
+            }
+        }
 
     Ok((StatusCode::CREATED, ()))
 }
