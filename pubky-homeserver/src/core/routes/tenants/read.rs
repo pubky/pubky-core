@@ -16,7 +16,6 @@ use axum::{
 };
 use httpdate::HttpDate;
 use std::str::FromStr;
-use tokio_util::io::ReaderStream;
 
 pub async fn head(
     State(state): State<AppState>,

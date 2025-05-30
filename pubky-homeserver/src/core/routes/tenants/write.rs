@@ -13,91 +13,9 @@ use crate::{
         extractors::PubkyHost,
         AppState,
     },
-    persistence::lmdb::tables::files::FileLocation,
+    persistence::{files::{is_size_hint_exceeding_quota}, lmdb::tables::files::FileLocation},
     shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
-use bytes::Bytes;
-use futures_util::Stream;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
-/// Fail with 507 if `(current + incoming − existing) > quota`.
-fn enforce_user_disk_quota(
-    existing_bytes: u64,
-    incoming_bytes: u64,
-    used_bytes: u64,
-    quota_bytes: Option<u64>,
-) -> Result<()> {
-    if let Some(max) = quota_bytes {
-        if used_bytes + incoming_bytes.saturating_sub(existing_bytes) > max {
-            let bytes_in_mb = 1024.0 * 1024.0;
-            let current_mb = used_bytes as f64 / bytes_in_mb;
-            let adding_mb = (incoming_bytes - existing_bytes) as f64 / bytes_in_mb;
-            let max_mb = max as f64 / bytes_in_mb;
-            return Err(Error::new(
-                StatusCode::INSUFFICIENT_STORAGE,
-                Some(format!(
-                    "Quota of {:.1} MB exceeded: you've used {:.1} MB, trying to add {:.1} MB",
-                    max_mb, current_mb, adding_mb
-                )),
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// A stream wrapper that enforces quota checking for each chunk
-struct QuotaEnforcingStream<S> {
-    inner: S,
-    existing_bytes: u64,
-    seen_bytes: u64,
-    used_bytes: u64,
-    quota_bytes: Option<u64>,
-}
-
-impl<S> QuotaEnforcingStream<S> {
-    fn new(
-        inner: S,
-        existing_bytes: u64,
-        used_bytes: u64,
-        quota_bytes: Option<u64>,
-    ) -> Self {
-        Self {
-            inner,
-            existing_bytes,
-            seen_bytes: 0,
-            used_bytes,
-            quota_bytes,
-        }
-    }
-}
-
-impl<S> Stream for QuotaEnforcingStream<S>
-where
-    S: Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,
-{
-    type Item = Result<Bytes, anyhow::Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.inner).poll_next(cx) {
-            Poll::Ready(Some(Ok(chunk))) => {
-                self.seen_bytes += chunk.len() as u64;
-                if let Err(e) = enforce_user_disk_quota(
-                    self.existing_bytes,
-                    self.seen_bytes,
-                    self.used_bytes,
-                    self.quota_bytes,
-                ) {
-                    return Poll::Ready(Some(Err(anyhow::anyhow!("Quota exceeded: {:?}", e))));
-                }
-                Poll::Ready(Some(Ok(chunk)))
-            }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
 
 pub async fn delete(
     State(mut state): State<AppState>,
@@ -108,7 +26,10 @@ pub async fn delete(
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    let entry = state.file_service.get_info(&entry_path).await?
+    let entry = state
+        .file_service
+        .get_info(&entry_path)
+        .await?
         .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
     state.file_service.delete(&entry_path).await?;
 
@@ -120,6 +41,7 @@ pub async fn delete(
     Ok((StatusCode::NO_CONTENT, ()))
 }
 
+#[axum::debug_handler]
 pub async fn put(
     State(mut state): State<AppState>,
     pubky: PubkyHost,
@@ -129,35 +51,30 @@ pub async fn put(
     let public_key = pubky.public_key();
     err_if_user_is_invalid(public_key, &state.db, true)?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
-
     let existing_entry_bytes = state.db.get_entry_content_length(&entry_path)?;
-    let quota_bytes = state.user_quota_bytes;
-    let used_bytes = state.db.get_user_data_usage(public_key)?;
 
-    // Upfront check when we have an exact Content-Length
-    let hint = body.size_hint().exact();
-    if let Some(exact_bytes) = hint {
-        enforce_user_disk_quota(existing_entry_bytes, exact_bytes, used_bytes, quota_bytes)?;
+    // Check if the size hint exceeds the quota so we can fail early
+    if let Some(size_hint) = body.size_hint().exact() {
+        if let Some(user_quota_bytes) = state.user_quota_bytes {
+            if is_size_hint_exceeding_quota(size_hint, &state.db, &entry_path, user_quota_bytes)? {
+                let max_allowed_mb = user_quota_bytes as f64 / 1024.0 / 1024.0;
+                return Err(Error::new(StatusCode::INSUFFICIENT_STORAGE, 
+                    Some(format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."))));
+            }
+        }
     }
+
 
     // Convert body stream to the format expected by file_service
     let body_stream = body.into_data_stream();
-    let converted_stream = body_stream.map(|chunk_result| {
-        chunk_result.map_err(|e| anyhow::anyhow!("Body stream error: {}", e))
-    });
+    let converted_stream = body_stream
+        .map(|chunk_result| chunk_result.map_err(|e| anyhow::anyhow!("Body stream error: {}", e)));
 
-    // Wrap with quota enforcement
-    let quota_stream = QuotaEnforcingStream::new(
-        converted_stream,
-        existing_entry_bytes,
-        used_bytes,
-        quota_bytes,
-    );
 
     // Write using file_service (defaulting to LMDB for backward compatibility)
     let entry = state
         .file_service
-        .write_stream(&entry_path, FileLocation::LMDB, quota_stream)
+        .write_stream(&entry_path, FileLocation::LMDB, converted_stream)
         .await
         .map_err(|e| Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(e.to_string())))?;
 

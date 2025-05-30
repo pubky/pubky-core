@@ -1,17 +1,16 @@
 use crate::{
-    opendal_config::StorageConfigToml,
     persistence::lmdb::{
         tables::files::{Entry, FileLocation},
         LmDB,
     },
-    shared::webdav::EntryPath,
+    shared::webdav::EntryPath, ConfigToml,
 };
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use opendal::Buffer;
 use std::path::Path;
 
-use super::OpendalService;
+use super::{write_disk_quota_enforcer::{WriteDiskQuotaEnforcer}, OpendalService};
 
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
@@ -20,19 +19,27 @@ use super::OpendalService;
 pub struct FileService {
     opendal_service: OpendalService,
     db: LmDB,
+    user_quota_bytes: Option<u64>
 }
 
 impl FileService {
-    pub fn new(opendal_service: OpendalService, db: LmDB) -> Self {
+    pub fn new(opendal_service: OpendalService, db: LmDB, user_quota_bytes: Option<u64>) -> Self {
         Self {
             opendal_service,
             db,
+            user_quota_bytes,
         }
     }
 
-    pub fn new_from_config(config: &StorageConfigToml, data_directory: &Path, db: LmDB) -> Self {
-        let opendal_service = OpendalService::new_from_config(config, data_directory);
-        Self::new(opendal_service, db)
+    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Self {
+        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory);
+        let quota_mb = config.general.user_storage_quota_mb;
+        let quota_bytes = if quota_mb == 0 {
+            None
+        } else {
+            Some(quota_mb * 1024 * 1024)
+        };
+        Self::new(opendal_service, db, quota_bytes)
     }
 
     /// Get the metadata of a file.
@@ -89,8 +96,15 @@ impl FileService {
         &self,
         path: &EntryPath,
         location: FileLocation,
-        stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,
+        stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send,
     ) -> anyhow::Result<Entry> {
+
+        let mut stream: Box<dyn Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send> = Box::new(stream);
+        if let Some(user_quota_bytes) = self.user_quota_bytes {
+            // Enforce disk size quota on the stream
+            stream = Box::new(WriteDiskQuotaEnforcer::new(stream, &self.db, path, user_quota_bytes)?);
+        }
+
         let entry = match location {
             FileLocation::LMDB => {
                 let metadata = self.db.write_file_from_stream(stream).await?;
@@ -126,14 +140,15 @@ mod tests {
     use futures_lite::StreamExt;
 
     use crate::{
-        shared::webdav::WebDavPath,
+        opendal_config::StorageConfigToml, shared::webdav::WebDavPath
     };
 
     use super::*;
 
     #[tokio::test]
     async fn test_write_get_delete_lmdb_and_opendal() {
-        let config = StorageConfigToml::InMemory;
+        let mut config = ConfigToml::test();
+        config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
         let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db);
 
@@ -206,7 +221,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_get_basic() {
-        let config = StorageConfigToml::InMemory;
+        let mut config = ConfigToml::test();
+        config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
         let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db);
 

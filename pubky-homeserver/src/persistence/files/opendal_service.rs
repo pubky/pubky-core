@@ -97,7 +97,7 @@ impl OpendalService {
     pub async fn write_stream(
         &self,
         path: &EntryPath,
-        mut stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin,
+        mut stream: impl Stream<Item = Result<Bytes, anyhow::Error>> + Unpin + Send,
     ) -> Result<FileMetadata, OpendalWriteError> {
         let mut writer = self.operator.writer(path.as_str()).await.map_err(OpendalWriteError::OpendalError)?;
         let mut metadata_builder = FileMetadataBuilder::default();

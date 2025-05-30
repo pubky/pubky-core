@@ -87,7 +87,7 @@ impl LmDB {
     /// Write the blobs from a stream to LMDB.
     pub(crate) async fn write_file_from_stream<'txn>(
         &'txn self,
-        mut stream: impl Stream<Item = Result<bytes::Bytes, anyhow::Error>> + Unpin,
+        mut stream: impl Stream<Item = Result<bytes::Bytes, anyhow::Error>> + Unpin + Send,
     ) -> anyhow::Result<FileMetadata> {
         // First, write the stream to a temporary file using AsyncInDbTempFileWriter
         let mut temp_file_writer = AsyncInDbTempFileWriter::new().await?;
