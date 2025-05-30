@@ -33,7 +33,7 @@ mod tests {
 
     async fn write_test_file(db: &mut LmDB, entry_path: &EntryPath) {
         let file = InDbTempFile::zeros(10).await.unwrap();
-        let _entry = db.write_entry(&entry_path, &file).await.unwrap();
+        let _entry = db.write_entry(entry_path, &file).await.unwrap();
     }
 
     #[tokio::test]
@@ -105,7 +105,7 @@ mod tests {
         // Delete with invalid pubkey
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/webdav/1234/pub/test.txt").as_str())
+            .delete("/webdav/1234/pub/test.txt".to_string().as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
     }

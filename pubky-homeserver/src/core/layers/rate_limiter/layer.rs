@@ -443,8 +443,8 @@ mod tests {
         let start = Instant::now();
         // Spawn in the background to test 2 uploads in parallel
         // Upload 3kb each
-        let handle1 = upload_data(socket, 3);
-        let handle2 = upload_data(socket, 3);
+        let handle1 = upload_data(socket, 4);
+        let handle2 = upload_data(socket, 4);
 
         // Wait for the uploads to finish
         let _ = tokio::try_join!(handle1, handle2);

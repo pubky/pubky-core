@@ -111,3 +111,12 @@ dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
 # Default UDP request timeout for the DHT
 dht_request_timeout_ms = 2000
+
+[logging]
+# Global runtime log level sets the default minimum logging level for all messages across the executable.
+# Available options: "trace", "debug", "info", "warn", "error"
+level = "info"
+
+# Per-module log levels overrides the global log level for specific modules.
+# Useful for suppressing logs from external dependencies or increasing verbosity for debugging.
+module_levels = ["pubky_homeserver=debug", "tower_http=debug"]

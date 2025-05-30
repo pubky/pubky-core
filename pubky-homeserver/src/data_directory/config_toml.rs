@@ -4,7 +4,10 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{domain_port::DomainPort, quota_config::PathLimit, Domain, SignupMode};
+use super::{
+    domain_port::DomainPort, log_level::LogLevel, quota_config::PathLimit, Domain, SignupMode,
+};
+use crate::data_directory::log_level::TargetLevel;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -19,6 +22,9 @@ use url::Url;
 /// Embedded copy of the default configuration (single source of truth for defaults)
 pub const DEFAULT_CONFIG: &str = include_str!("config.default.toml");
 
+/// Test configuration file for validate merging
+#[cfg(test)]
+pub const TEST_CONFIG: &str = include_str!("config.test.toml");
 /// Example configuration file
 pub const SAMPLE_CONFIG: &str = include_str!("../../config.sample.toml");
 
@@ -70,6 +76,15 @@ pub struct GeneralToml {
     pub user_storage_quota_mb: u64,
 }
 
+/// A config for Homeserver tracing subscriber configuration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+pub struct LoggingToml {
+    /// Main log level for global tracing_subscriber
+    pub level: LogLevel,
+    /// Per-module target log filters for global tracing_subscriber
+    pub module_levels: Vec<TargetLevel>,
+}
+
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
@@ -81,6 +96,9 @@ pub struct ConfigToml {
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
+    /// Logging configuration. If provided, the homeserver instance attempts to init
+    /// global tracing:Subscriber. If environment variables are set, they override config settings
+    pub logging: Option<LoggingToml>,
 }
 
 impl Default for ConfigToml {
@@ -126,12 +144,10 @@ impl ConfigToml {
         let default_val: toml::Value = DEFAULT_CONFIG
             .parse()
             .expect("embedded defaults invalid TOML");
-
         // 2. Parse the user's overrides
         let user_val: toml::Value = raw.parse()?;
-
         // 3. Deep‐merge
-        let merged_val = serde_toml_merge::merge(default_val, user_val)
+        let merged_val = serde_toml_merge::merge_with_options(default_val, user_val, true)
             .map_err(|e| ConfigReadError::ConfigMergeError(e.to_string()))?;
 
         // 4. Deserialize into our strongly typed struct (can fail with toml::de::Error)
@@ -167,6 +183,7 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
+        config.logging = None;
         config
     }
 }
@@ -217,6 +234,16 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
+        assert_eq!(
+            c.logging,
+            Some(LoggingToml {
+                level: LogLevel::from_str("info").unwrap(),
+                module_levels: vec![
+                    TargetLevel::from_str("pubky_homeserver=debug").unwrap(),
+                    TargetLevel::from_str("tower_http=debug").unwrap()
+                ],
+            })
+        );
     }
 
     #[test]
@@ -244,5 +271,18 @@ mod tests {
         assert_eq!(parsed.general.signup_mode, SignupMode::Open);
         // Other fields that were not set (left empty) should still match the default.
         assert_eq!(parsed.admin, ConfigToml::default().admin);
+        assert_eq!(parsed.logging, ConfigToml::default().logging);
+    }
+
+    #[test]
+    fn test_merged_config() {
+        let merged = ConfigToml::from_str(TEST_CONFIG).unwrap();
+        // Check that arrays were overwritten and they are empty
+        assert_eq!(merged.drive.rate_limits, vec![]);
+        let expected_logging = Some(LoggingToml {
+            level: LogLevel::from_str("trace").unwrap(),
+            module_levels: vec![],
+        });
+        assert_eq!(merged.logging, expected_logging);
     }
 }
