@@ -9,13 +9,6 @@ pub struct FileMetadata {
     pub modified_at: Timestamp,
 }
 
-impl FileMetadata {
-
-    pub fn builder() -> FileMetadataBuilder {
-        FileMetadataBuilder::default()
-    }
-}
-
 /// Builder for FileMetadata.
 /// This is used to build the FileMetadata from a stream of chunks.
 #[derive(Default, Debug, Clone)]

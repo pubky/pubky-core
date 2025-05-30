@@ -70,7 +70,7 @@ pub(crate) struct AsyncInDbTempFileWriter {
     dir: tempfile::TempDir,
     writer_file: AsyncFile,
     file_path: PathBuf,
-    hasher: Hasher,
+    metadata: FileMetadataBuilder,
 }
 
 impl AsyncInDbTempFileWriter {
@@ -79,13 +79,13 @@ impl AsyncInDbTempFileWriter {
 
         let file_path = dir.path().join("entry.bin");
         let writer_file = AsyncFile::create(file_path.clone()).await?;
-        let hasher = Hasher::new();
+        
 
         Ok(Self {
             dir,
             writer_file,
             file_path,
-            hasher,
+            metadata: FileMetadataBuilder::default(),
         })
     }
 
@@ -93,17 +93,17 @@ impl AsyncInDbTempFileWriter {
     /// Convenient method used for testing.
     #[cfg(test)]
     pub async fn zeros(size_bytes: usize) -> Result<InDbTempFile, std::io::Error> {
-        let mut file = Self::new().await?;
+        let mut writer = Self::new().await?;
         let buffer = vec![0u8; size_bytes];
-        file.write_chunk(&buffer).await?;
-        file.complete().await
+        writer.write_chunk(&buffer).await?;
+        writer.complete().await
     }
 
     /// Write a chunk to the file.
     /// Chunk writing is done by the axum body stream and by LMDB itself.
     pub async fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
         self.writer_file.write_all(chunk).await?;
-        self.hasher.update(chunk);
+        self.metadata.update(chunk);
         Ok(())
     }
 
@@ -112,7 +112,7 @@ impl AsyncInDbTempFileWriter {
     /// Returns a BlobsTempFile that can be used to read the file.
     pub async fn complete(mut self) -> Result<InDbTempFile, std::io::Error> {
         self.writer_file.flush().await?;
-        let metadata = FileMetadataBuilder::default().finalize();
+        let metadata = self.metadata.finalize();
         Ok(InDbTempFile {
             dir: Arc::new(self.dir),
             file_path: self.file_path,
