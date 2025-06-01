@@ -22,9 +22,6 @@ use url::Url;
 /// Embedded copy of the default configuration (single source of truth for defaults)
 pub const DEFAULT_CONFIG: &str = include_str!("config.default.toml");
 
-/// Test configuration file for validate merging
-#[cfg(test)]
-pub const TEST_CONFIG: &str = include_str!("config.test.toml");
 /// Example configuration file
 pub const SAMPLE_CONFIG: &str = include_str!("../../config.sample.toml");
 
@@ -276,8 +273,10 @@ mod tests {
 
     #[test]
     fn test_merged_config() {
-        let merged = ConfigToml::from_str(TEST_CONFIG).unwrap();
-        // Check that arrays were overwritten and they are empty
+        // Test that a minimal config with optional logging section with empty module_levels
+        let s =
+            "[general]\nsignup_mode = \"open\"\n[logging]\nlevel=\"trace\"\nmodule_levels = [ ]";
+        let merged: ConfigToml = ConfigToml::from_str_with_defaults(s).unwrap();
         assert_eq!(merged.drive.rate_limits, vec![]);
         let expected_logging = Some(LoggingToml {
             level: LogLevel::from_str("trace").unwrap(),
