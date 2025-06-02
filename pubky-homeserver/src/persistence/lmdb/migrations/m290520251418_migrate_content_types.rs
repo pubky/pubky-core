@@ -4,8 +4,8 @@ use heed::types::{Bytes, Str};
 use heed::{Database, Env, RwTxn};
 
 /// Checks if the migration is needed.
-/// Tries to read users with the new schema. If it succeeds, the migration is not needed.
-/// If it fails, the migration is needed.
+/// Tries to read first elements from entries and blobs table. If it succeeds, deserializes entry,
+/// and determines a MIME type from blob, checks if they are equal
 fn is_migration_needed(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<bool> {
     let blobs: Database<Bytes, Bytes> = env
         .open_database(wtxn, Some(files::BLOBS_TABLE))?
