@@ -275,7 +275,7 @@ mod tests {
     fn test_merged_config() {
         // Test that a minimal config with optional logging section with empty module_levels
         let s =
-            "[general]\nsignup_mode = \"open\"\n[logging]\nlevel=\"trace\"\nmodule_levels = [ ]";
+            "[logging]\nlevel=\"trace\"\nmodule_levels = [ ]";
         let merged: ConfigToml = ConfigToml::from_str_with_defaults(s).unwrap();
         assert_eq!(merged.drive.rate_limits, vec![]);
         let expected_logging = Some(LoggingToml {
