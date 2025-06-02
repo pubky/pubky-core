@@ -401,6 +401,11 @@ impl Entry {
         self
     }
 
+    pub fn set_file_location(&mut self, file_location: FileLocation) -> &mut Self {
+        self.file_location = file_location;
+        self
+    }
+
     // === Getters ===
 
     pub fn timestamp(&self) -> &Timestamp {

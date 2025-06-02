@@ -3,6 +3,7 @@ mod file_metadata;
 mod opendal_service;
 mod write_disk_quota_enforcer;
 mod write_stream_error;
+mod lmdb_to_opendal_migrator;
 
 pub use file_service::FileService;
 pub (crate) use file_metadata::{FileMetadata, FileMetadataBuilder};

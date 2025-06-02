@@ -18,8 +18,8 @@ use super::{write_disk_quota_enforcer::WriteDiskQuotaEnforcer, OpendalService, W
 /// This way, files can be managed in a unified way.
 #[derive(Debug, Clone)]
 pub struct FileService {
-    opendal_service: OpendalService,
-    db: LmDB,
+    pub(crate) opendal_service: OpendalService,
+    pub(crate)db: LmDB,
     user_quota_bytes: Option<u64>,
 }
 
