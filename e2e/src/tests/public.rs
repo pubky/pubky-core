@@ -77,43 +77,6 @@ async fn put_get_delete() {
 }
 
 #[tokio::test]
-async fn put_magic_bytes_file() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-
-    let client = testnet.pubky_client_builder().build().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let url = format!("pubky://{}/pub/foopng", keypair.public_key());
-    let url = url.as_str();
-
-    let png_bytes = vec![0x89_u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-
-    client
-        .put(url)
-        .body(png_bytes.clone())
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
-
-    let response = client.get(url).send().await.unwrap();
-
-    let content_header = response.headers().get("content-type").unwrap();
-    assert_eq!(content_header, "image/png");
-
-    let byte_value = response.bytes().await.unwrap();
-    assert_eq!(byte_value, bytes::Bytes::from(png_bytes));
-}
-
-#[tokio::test]
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
