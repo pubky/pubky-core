@@ -58,7 +58,9 @@ fast-glob = "0.4.5"
 tokio-util = "0.7.15"
 percent-encoding = "2.3.1"
 serde_valid = "1.0.5"
-
+#cassadilia = { git = "https://github.com/0xdeafbeef/cassadilia", version = "0.1.0" }
+focuson_cas = { git = "https://github.com/evd0kim/focuson-rust", rev="c55ec2a4fbe055e7bc331969beed37528ec8d80d"}
+#focuson_cas = { path = "/home/i/Code/Rust/Synonym/focuson-rust"}
 
 [dev-dependencies]
 futures-lite = "2.6.0"
