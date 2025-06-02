@@ -155,9 +155,12 @@ impl LmDbToOpendalMigrator {
             return Ok(());
         }
 
+        // Update entry to point to OpenDAL.
         locked_entry.set_file_location(FileLocation::OpenDal);
-
         self.db.tables.entries.put(&mut wtx, &path.to_string(), &locked_entry.serialize())?;
+
+        // Delete the file from LMDB.
+        self.db.delete_file(&locked_entry.file_id(), &mut wtx)?;
         wtx.commit()?;
         
         Ok(())
@@ -168,9 +171,159 @@ impl LmDbToOpendalMigrator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        storage_config::StorageConfigToml,
+        shared::webdav::{EntryPath, WebDavPath},
+        ConfigToml,
+    };
+    use bytes::Bytes;
+    use futures_util::StreamExt;
+    use std::path::Path;
 
     #[tokio::test]
     async fn test_lmdb_migrate_file() {
+        let config = ConfigToml::test();
+        let db = LmDB::test();
+        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
 
+        // Create a test user
+        let pubkey = pkarr::Keypair::random().public_key();
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&pubkey, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        // Create a test file path
+        let path = EntryPath::new(pubkey, WebDavPath::new("/pub/test_file.txt").unwrap());
+
+        // Test data to write
+        let test_data = b"Hello, LMDB to OpenDAL migration! This is a test file content.";
+        let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
+        let stream = futures_util::stream::iter(chunks);
+
+        // Write the file to LMDB initially
+        let entry = file_service
+            .write_stream(&path, FileLocation::LMDB, stream)
+            .await
+            .unwrap();
+
+        // Verify the file was written to LMDB
+        assert_eq!(*entry.file_location(), FileLocation::LMDB);
+        assert_eq!(entry.content_length(), test_data.len());
+
+        // Verify we can read the file from LMDB
+        let content_before = file_service.get(&path).await.unwrap();
+        assert_eq!(content_before.as_ref(), test_data);
+
+        // Create the migrator and run migration
+        let migrator = LmDbToOpendalMigrator::new(file_service.clone(), db.clone());
+        migrator.migrate().await.unwrap();
+
+        // Verify the entry was updated in the database
+        let migrated_entry = db.get_entry(&path).unwrap().expect("Entry should still exist");
+        assert_eq!(*migrated_entry.file_location(), FileLocation::OpenDal, "File location should be updated to OpenDAL");
+        assert_eq!(migrated_entry.content_length(), test_data.len(), "Content length should remain the same");
+        assert_eq!(migrated_entry.content_hash(), entry.content_hash(), "Content hash should remain the same");
+
+        // Verify we can still read the file (now from OpenDAL)
+        let content_after = file_service.get(&path).await.unwrap();
+        assert_eq!(content_after.as_ref(), test_data, "Content should be identical after migration");
+
+        // Verify the file exists in OpenDAL
+        assert!(file_service.opendal_service.exists(&path).await.unwrap(), "File should exist in OpenDAL after migration");
+
+        // Verify we can read the file stream after migration
+        let mut stream = file_service.get_stream(&path).await.unwrap();
+        let mut collected_data = Vec::new();
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.unwrap();
+            collected_data.extend_from_slice(&chunk);
+        }
+        assert_eq!(collected_data, test_data.to_vec(), "Streamed content should match original after migration");
+
+        // Verify that the blob was deleted from LMDB
+        let id = migrated_entry.file_id();
+        let file = db.read_file(&id).await.unwrap();
+        assert_eq!(file.metadata().length, 0, "File should be deleted from LMDB after migration");
+
+        // Verify that running migration again doesn't cause issues (idempotency test)
+        migrator.migrate().await.unwrap();
+        let final_entry = db.get_entry(&path).unwrap().expect("Entry should still exist");
+        assert_eq!(*final_entry.file_location(), FileLocation::OpenDal, "File should still be in OpenDAL after second migration");
+    }
+
+    #[tokio::test]
+    async fn test_lmdb_migrate_no_files() {
+        // Set up test environment with in-memory storage
+        let mut config = ConfigToml::test();
+        config.storage = StorageConfigToml::InMemory;
+        let db = LmDB::test();
+        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+
+        // Create the migrator and run migration on empty database
+        let migrator = LmDbToOpendalMigrator::new(file_service, db.clone());
+        
+        // This should complete without error even when there are no files to migrate
+        migrator.migrate().await.unwrap();
+        
+        // Verify the count method returns 0
+        assert_eq!(migrator.count_lmdb_entries().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_lmdb_migrate_mixed_files() {
+        // Set up test environment with in-memory storage
+        let mut config = ConfigToml::test();
+        config.storage = StorageConfigToml::InMemory;
+        let db = LmDB::test();
+        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+
+        // Create a test user
+        let pubkey = pkarr::Keypair::random().public_key();
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&pubkey, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        // Create test data
+        let test_data = b"Test data for mixed migration";
+
+        // Create a file in LMDB
+        let lmdb_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/lmdb_file.txt").unwrap());
+        let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
+        let stream = futures_util::stream::iter(chunks);
+        let lmdb_entry = file_service
+            .write_stream(&lmdb_path, FileLocation::LMDB, stream)
+            .await
+            .unwrap();
+
+        // Create a file already in OpenDAL
+        let opendal_path = EntryPath::new(pubkey, WebDavPath::new("/pub/opendal_file.txt").unwrap());
+        let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
+        let stream = futures_util::stream::iter(chunks);
+        let opendal_entry = file_service
+            .write_stream(&opendal_path, FileLocation::OpenDal, stream)
+            .await
+            .unwrap();
+
+        // Verify initial states
+        assert_eq!(*lmdb_entry.file_location(), FileLocation::LMDB);
+        assert_eq!(*opendal_entry.file_location(), FileLocation::OpenDal);
+
+        // Count LMDB entries before migration
+        let migrator = LmDbToOpendalMigrator::new(file_service.clone(), db.clone());
+        assert_eq!(migrator.count_lmdb_entries().unwrap(), 1, "Should count only the LMDB file");
+
+        // Run migration
+        migrator.migrate().await.unwrap();
+
+        // Verify the LMDB file was migrated
+        let migrated_lmdb_entry = db.get_entry(&lmdb_path).unwrap().expect("LMDB entry should still exist");
+        assert_eq!(*migrated_lmdb_entry.file_location(), FileLocation::OpenDal, "LMDB file should be migrated to OpenDAL");
+
+        // Verify the OpenDAL file was left unchanged
+        let unchanged_opendal_entry = db.get_entry(&opendal_path).unwrap().expect("OpenDAL entry should still exist");
+        assert_eq!(*unchanged_opendal_entry.file_location(), FileLocation::OpenDal, "OpenDAL file should remain in OpenDAL");
+
+        // Verify no more LMDB entries to migrate
+        assert_eq!(migrator.count_lmdb_entries().unwrap(), 0, "Should be no more LMDB files to migrate");
     }
 }

@@ -1,7 +1,7 @@
 use crate::persistence::files::{FileMetadata, WriteFileFromStreamError, WriteStreamError};
 
 use super::super::super::LmDB;
-use super::{InDbFileId, InDbTempFile, SyncInDbTempFileWriter, AsyncInDbTempFileWriter};
+use super::{AsyncInDbTempFileWriter, InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
 use futures_util::{Stream, StreamExt};
 use heed::{types::Bytes, Database};
 use std::io::Read;
@@ -91,24 +91,23 @@ impl LmDB {
     ) -> Result<FileMetadata, WriteFileFromStreamError> {
         // First, write the stream to a temporary file using AsyncInDbTempFileWriter
         let mut temp_file_writer = AsyncInDbTempFileWriter::new().await?;
-        
+
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
             temp_file_writer.write_chunk(&chunk).await?;
         }
-        
+
         let temp_file = temp_file_writer.complete().await?;
         let mut metadata = temp_file.metadata().clone();
-        
+
         // Now write the temporary file to LMDB using the existing sync method
         let mut wtxn = self.env.write_txn()?;
         let file_id = self.write_file_sync(&temp_file, &mut wtxn)?;
         wtxn.commit()?;
         metadata.modified_at = file_id.timestamp().clone();
-        
+
         Ok(metadata)
     }
-
 
     /// Delete the blobs from LMDB.
     pub(crate) fn delete_file<'txn>(
@@ -116,18 +115,20 @@ impl LmDB {
         file: &InDbFileId,
         wtxn: &mut heed::RwTxn<'txn>,
     ) -> anyhow::Result<bool> {
-        let mut deleted_chunks = false;
 
+        let mut keys = vec![];
         {
             let mut iter = self.tables.blobs.prefix_iter_mut(wtxn, &file.bytes())?;
-
-            while iter.next().is_some() {
-                unsafe {
-                    deleted_chunks = iter.del_current()?;
-                }
+            while let Some(result) = iter.next() {
+                let (key, _) = result?;
+                keys.push(key.to_vec());
             }
         }
-        Ok(deleted_chunks)
+        for key in keys.iter() {
+            self.tables.blobs.delete(wtxn, key)?;
+        }
+
+        Ok(!keys.is_empty())
     }
 }
 
