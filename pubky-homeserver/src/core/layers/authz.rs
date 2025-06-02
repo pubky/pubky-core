@@ -1,3 +1,8 @@
+use crate::core::{
+    error::{Error, Result},
+    extractors::PubkyHost,
+    AppState,
+};
 use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
@@ -9,12 +14,6 @@ use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
-
-use crate::core::{
-    error::{Error, Result},
-    extractors::PubkyHost,
-    AppState,
-};
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -75,7 +74,7 @@ where
                     return Ok(
                         Error::new(StatusCode::NOT_FOUND, "Pubky Host is missing".into())
                             .into_response(),
-                    )
+                    );
                 }
             };
 
@@ -132,7 +131,7 @@ fn authorize(
             })
         {
             return Ok(());
-        }
+        };
 
         return Err(Error::with_status(StatusCode::FORBIDDEN));
     }
