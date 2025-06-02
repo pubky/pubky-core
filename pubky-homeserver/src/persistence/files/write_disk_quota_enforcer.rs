@@ -3,9 +3,9 @@ use futures_util::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use super::WriteStreamError;
 use crate::persistence::lmdb::LmDB;
 use crate::shared::webdav::EntryPath;
-use super::WriteStreamError;
 
 /// Checks if the content-size hint already exceeds the quota.
 /// This is not reliable because the user might supply a fake size hint
@@ -40,7 +40,6 @@ pub struct WriteDiskQuotaEnforcer<S> {
 }
 
 impl<S> WriteDiskQuotaEnforcer<S> {
-
     pub fn new(
         inner: S,
         db: &LmDB,
@@ -102,12 +101,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::webdav::{EntryPath, WebDavPath};
     use bytes::Bytes;
     use futures_util::{stream, StreamExt};
-    use crate::shared::webdav::{EntryPath, WebDavPath};
 
     // Create a mock stream with specified chunks
-    fn create_test_stream(chunks: Vec<usize>) -> impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send {
+    fn create_test_stream(
+        chunks: Vec<usize>,
+    ) -> impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send {
         let byte_chunks: Vec<Result<Bytes, WriteStreamError>> = chunks
             .into_iter()
             .map(|size| Ok(Bytes::from(vec![0u8; size])))
@@ -121,12 +122,20 @@ mod tests {
         db: &LmDB,
         path: &EntryPath,
         max_allowed_bytes: u64,
-    ) -> anyhow::Result<WriteDiskQuotaEnforcer<Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>>> {
+    ) -> anyhow::Result<
+        WriteDiskQuotaEnforcer<
+            Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
+        >,
+    > {
         let test_stream = create_test_stream(chunks);
         WriteDiskQuotaEnforcer::new(Box::new(test_stream), db, path, max_allowed_bytes)
     }
 
-    async fn consume_enforcer(mut enforcer: WriteDiskQuotaEnforcer<Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>>) -> anyhow::Result<(bool, usize)> {
+    async fn consume_enforcer(
+        mut enforcer: WriteDiskQuotaEnforcer<
+            Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
+        >,
+    ) -> anyhow::Result<(bool, usize)> {
         let mut total_bytes = 0;
         let mut got_error = false;
         while let Some(result) = enforcer.next().await {
@@ -151,7 +160,11 @@ mod tests {
         let db = LmDB::test();
         let pubkey = pkarr::Keypair::random().public_key();
         let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt")?);
-        
+        // Create a user
+        let mut wtxn = db.env.write_txn()?;
+        db.create_user(&path.pubkey(), &mut wtxn)?;
+        wtxn.commit()?;
+
         let enforcer = create_test_enforcer_with_db(vec![1024], &db, &path, 1024)?;
         let (got_error, total_bytes) = consume_enforcer(enforcer).await?;
         assert!(!got_error, "Should not error when at exact quota");
@@ -166,7 +179,11 @@ mod tests {
         let db = LmDB::test();
         let pubkey = pkarr::Keypair::random().public_key();
         let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt")?);
-        
+        // Create a user
+        let mut wtxn = db.env.write_txn()?;
+        db.create_user(&path.pubkey(), &mut wtxn)?;
+        wtxn.commit()?;
+
         let enforcer = create_test_enforcer_with_db(vec![1025], &db, &path, 1024)?;
         let (got_error, _total_bytes) = consume_enforcer(enforcer).await?;
         assert!(got_error, "Should error when over quota");
@@ -180,19 +197,23 @@ mod tests {
         let mut db = LmDB::test();
         let pubkey = pkarr::Keypair::random().public_key();
         let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt")?);
-        
+
         // Create a user and set up existing entry by actually writing a file
         let mut wtxn = db.env.write_txn()?;
         db.create_user(&path.pubkey(), &mut wtxn)?;
         wtxn.commit()?;
-        
+
         // Write an existing file of 800 bytes
-        let existing_file = crate::persistence::lmdb::tables::files::InDbTempFile::zeros(800).await?;
+        let existing_file =
+            crate::persistence::lmdb::tables::files::InDbTempFile::zeros(800).await?;
         db.write_entry_from_file_sync(&path, &existing_file)?;
-        
+
         let enforcer = create_test_enforcer_with_db(vec![1000], &db, &path, 1000)?;
         let (got_error, total_bytes) = consume_enforcer(enforcer).await?;
-        assert!(!got_error, "Should not error when replacing bigger file below the quota");
+        assert!(
+            !got_error,
+            "Should not error when replacing bigger file below the quota"
+        );
         assert_eq!(total_bytes, 1000);
         Ok(())
     }
@@ -204,7 +225,7 @@ mod tests {
         let mut db = LmDB::test();
         let pubkey = pkarr::Keypair::random().public_key();
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test/file.txt")?);
-        
+
         // Create user and set up data
         let mut wtxn = db.env.write_txn()?;
         db.create_user(&path.pubkey(), &mut wtxn)?;
@@ -214,12 +235,13 @@ mod tests {
         db.update_data_usage(&path.pubkey(), 450)?;
 
         // Write an existing file of 500 bytes
-        let existing_file = crate::persistence::lmdb::tables::files::InDbTempFile::zeros(500).await?;
+        let existing_file =
+            crate::persistence::lmdb::tables::files::InDbTempFile::zeros(500).await?;
         db.write_entry_from_file_sync(&path, &existing_file)?;
-        
+
         // Set user usage to 100 bytes
         db.update_data_usage(&path.pubkey(), 500)?;
-        
+
         let enforcer = create_test_enforcer_with_db(vec![600], &db, &path, 1000)?;
         let (got_error, _total_bytes) = consume_enforcer(enforcer).await?;
         assert!(got_error, "Should error when over quota");
