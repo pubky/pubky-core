@@ -150,6 +150,62 @@ mod tests {
     }
 
     #[test]
+    fn test_is_migration_needed_for_magic_bytes_no() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .max_dbs(20)
+                .map_size(DEFAULT_MAP_SIZE)
+                .open(tmp_dir.path())
+        }
+        .unwrap();
+
+        m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
+        let mut wtxn = env.write_txn().unwrap();
+
+        let path = EntryPath::new(
+            Keypair::random().public_key(),
+            WebDavPath::new("/pub/foo.txt").unwrap(),
+        );
+
+        let file = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(InDbTempFile::png_pixel())
+            .unwrap();
+
+        let mut entry = Entry::new();
+        entry.set_content_hash(*file.hash());
+        entry.set_content_length(file.len());
+        entry.set_content_type("image/png".to_string());
+        entry.set_timestamp(&Default::default());
+        let entry_key = path.to_string();
+
+        // Write a user to the old table.
+        let metadata: files::EntriesTable = env
+            .create_database(&mut wtxn, Some(files::ENTRIES_TABLE))
+            .unwrap();
+        metadata
+            .put(&mut wtxn, entry_key.as_str(), &entry.serialize())
+            .unwrap();
+
+        let blobs: files::BlobsTable = env
+            .create_database(&mut wtxn, Some(files::BLOBS_TABLE))
+            .unwrap();
+
+        let blob_key = entry.file_id().get_blob_key(0);
+        let mut blob = vec![0_u8; 64];
+
+        let mut file_handle = file.open_file_handle().unwrap();
+
+        file_handle
+            .read(&mut blob)
+            .expect("read png file successfully");
+
+        blobs.put(&mut wtxn, &blob_key, &blob[..64]).unwrap();
+        assert!(!is_migration_needed(&env, &mut wtxn).unwrap());
+    }
+
+    #[test]
     fn test_is_migration_needed_for_extension_yes() {
         let tmp_dir = tempfile::tempdir().unwrap();
         let env = unsafe {
