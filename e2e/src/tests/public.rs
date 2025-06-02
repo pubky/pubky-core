@@ -102,7 +102,6 @@ async fn put_magic_bytes_file() {
         .error_for_status()
         .unwrap();
 
-    // Use Pubky native method to get data from homeserver
     let response = client.get(url).send().await.unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
