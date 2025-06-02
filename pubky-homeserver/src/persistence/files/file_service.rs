@@ -14,14 +14,6 @@ use std::path::Path;
 use super::{write_disk_quota_enforcer::WriteDiskQuotaEnforcer, OpendalService, WriteFileFromStreamError, WriteStreamError};
 
 
-#[derive(Debug, thiserror::Error)]
-pub enum FileServiceWriteError {
-    #[error("Disk space quota exceeded")]
-    DiskSpaceQuotaExceeded,
-    #[error("Other error: {0}")]
-    Other(#[from] anyhow::Error),
-}
-
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
 /// This way, files can be managed in a unified way.
 #[derive(Debug, Clone)]
@@ -167,7 +159,7 @@ impl FileService {
 mod tests {
     use futures_lite::StreamExt;
 
-    use crate::{opendal_config::StorageConfigToml, shared::webdav::WebDavPath};
+    use crate::{storage_config::StorageConfigToml, shared::webdav::WebDavPath};
 
     use super::*;
 

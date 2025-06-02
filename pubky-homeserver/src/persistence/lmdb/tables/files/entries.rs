@@ -344,7 +344,7 @@ pub struct Entry {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct EntryHash(Hash);
+pub struct EntryHash(Hash);
 
 impl Default for EntryHash {
     fn default() -> Self {

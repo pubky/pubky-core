@@ -4,7 +4,7 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{domain_port::DomainPort, opendal_config::StorageConfigToml, quota_config::PathLimit, Domain, SignupMode};
+use super::{domain_port::DomainPort, storage_config::StorageConfigToml, quota_config::PathLimit, Domain, SignupMode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -184,7 +184,7 @@ impl FromStr for ConfigToml {
 
 #[cfg(test)]
 mod tests {
-    use crate::opendal_config::FileSystemConfig;
+    use crate::storage_config::FileSystemConfig;
 
     use super::*;
     use std::{

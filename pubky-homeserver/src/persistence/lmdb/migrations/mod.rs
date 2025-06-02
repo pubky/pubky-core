@@ -2,6 +2,7 @@ use heed::Env;
 
 mod m0;
 mod m220420251247_add_user_disabled_used_bytes;
+mod m202506021102_entry_location;
 
 /// Run the migrations.
 pub fn run(env: &Env) -> anyhow::Result<()> {
@@ -9,6 +10,7 @@ pub fn run(env: &Env) -> anyhow::Result<()> {
 
     m0::run(env, &mut wtxn)?;
     m220420251247_add_user_disabled_used_bytes::run(env, &mut wtxn)?;
+    m202506021102_entry_location::run(env, &mut wtxn)?;
 
     wtxn.commit()?;
 

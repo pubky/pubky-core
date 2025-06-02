@@ -1,5 +1,5 @@
 use crate::{
-    opendal_config::StorageConfigToml,
+    storage_config::StorageConfigToml,
     shared::webdav::EntryPath,
 };
 use bytes::Bytes;
@@ -143,7 +143,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{
-        opendal_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
+        storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
         shared::webdav::WebDavPath,
     };
 
