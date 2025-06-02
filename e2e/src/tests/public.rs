@@ -33,6 +33,7 @@ async fn put_get_delete() {
     let response = client.get(url).send().await.unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
     assert_eq!(content_header, "text/plain");
 
     let byte_value = response.bytes().await.unwrap();
@@ -56,6 +57,7 @@ async fn put_get_delete() {
         .unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
     assert_eq!(content_header, "text/plain");
 
     let byte_value = response.bytes().await.unwrap();
