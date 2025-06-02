@@ -61,7 +61,7 @@ impl LmDB {
         let id = InDbFileId::new();
         let mut file_handle = file.open_file_handle()?;
 
-        let mut mime_type = Some(mime::APPLICATION_OCTET_STREAM.to_string());
+        let mut mime_type = Some(mime_guess::mime::APPLICATION_OCTET_STREAM.to_string());
         let mut blob_index: u32 = 0;
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];

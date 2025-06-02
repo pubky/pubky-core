@@ -2489,7 +2489,6 @@ dependencies = [
  "hostname-validator",
  "httpdate",
  "infer",
- "mime",
  "mime_guess",
  "page_size",
  "percent-encoding",
