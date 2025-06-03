@@ -77,6 +77,7 @@ pub async fn enable_user(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
+    use crate::persistence::files::FileService;
     use crate::persistence::lmdb::LmDB;
     use axum::routing::post;
     use axum::Router;
@@ -99,7 +100,7 @@ mod tests {
         assert!(!user.disabled);
 
         // Setup server
-        let app_state = AppState::new(db.clone());
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
         let router = Router::new()
             .route("/users/{pubkey}/disable", post(disable_user))
             .route("/users/{pubkey}/enable", post(enable_user))

@@ -83,13 +83,9 @@ impl LmDB {
     /// Updates a user's data usage by a signed `delta` (bytes).
     /// Increases or decreases the stored `used_bytes` count for `public_key`.
     /// Negative results are clamped to zero to prevent underflow.
-    pub fn update_data_usage(&self, public_key: &PublicKey, delta: i64) -> anyhow::Result<()> {
+    pub fn update_data_usage(&self, public_key: &PublicKey, delta: i64) -> Result<(), UserQueryError> {
         let mut wtxn = self.env.write_txn()?;
-        let mut user = self
-            .tables
-            .users
-            .get(&wtxn, public_key)?
-            .ok_or_else(|| anyhow::anyhow!("no user found for public key {:?}", public_key))?;
+        let mut user = self.get_user(public_key, &wtxn)?;
 
         if delta >= 0 {
             user.used_bytes = user.used_bytes.saturating_add(delta as u64);
@@ -104,14 +100,10 @@ impl LmDB {
 
     /// Retrieves the current data usage (in bytes) for a given user.
     /// Returns the `used_bytes` value for the specified `public_key`, or Error if user does not exist.
-    pub fn get_user_data_usage(&self, pk: &PublicKey) -> anyhow::Result<u64> {
+    pub fn get_user_data_usage(&self, pk: &PublicKey) -> Result<u64, UserQueryError> {
         let rtxn = self.env.read_txn()?;
-        let user = self
-        .tables
-        .users
-        .get(&rtxn, pk)?.ok_or(anyhow::anyhow!("no user found for public key {:?}", pk))?;
+        let user = self.get_user(pk, &rtxn)?;
 
-        rtxn.commit()?;
         Ok(user.used_bytes)
     }
 
@@ -169,7 +161,7 @@ impl LmDB {
     ///
     /// - `UserQueryError::UserNotFound` if the user does not exist.
     /// - `UserQueryError::DatabaseError` if the database operation fails.
-    pub fn get_user(&self, pubkey: &PublicKey, wtxn: &mut RoTxn) -> Result<User, UserQueryError> {
+    pub fn get_user(&self, pubkey: &PublicKey, wtxn: &RoTxn) -> Result<User, UserQueryError> {
         let user = match self.tables.users.get(wtxn, pubkey)? {
             Some(user) => user,
             None => return Err(UserQueryError::UserNotFound),

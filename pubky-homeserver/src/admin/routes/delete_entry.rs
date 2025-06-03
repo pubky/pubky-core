@@ -1,5 +1,5 @@
 use super::super::app_state::AppState;
-use crate::shared::{webdav::{EntryPathPub}, HttpError, HttpResult};
+use crate::{ persistence::files::FileIoError, shared::{webdav::EntryPathPub, HttpError, HttpResult}};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -8,17 +8,23 @@ use axum::{
 
 /// Delete a single entry from the database.
 pub async fn delete_entry(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-    let deleted = state.db.delete_entry_and_file(entry_path.inner()).await?;
-    if deleted {
-        Ok((StatusCode::NO_CONTENT, ()))
-    } else {
-        Err(HttpError::new(
-            StatusCode::NOT_FOUND,
-            Some("Entry not found"),
-        ))
+
+
+    match state.file_service.delete(&entry_path.inner()).await {
+        Ok(()) => {
+            return Ok((StatusCode::NO_CONTENT, ()));
+        }
+
+        Err(FileIoError::NotFound) => {
+            return Err(HttpError::new(StatusCode::NOT_FOUND, Some("Not Found")));
+        }
+        Err(e) => {
+            tracing::error!("Error deleting file: {}", e);
+            return Err(HttpError::new(StatusCode::INTERNAL_SERVER_ERROR, Some("Internal Server Error")));
+        }
     }
 }
 
@@ -26,6 +32,7 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
+    use crate::persistence::files::FileService;
     use crate::persistence::lmdb::{tables::files::InDbTempFile, LmDB};
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use axum::{routing::delete, Router};
@@ -43,7 +50,7 @@ mod tests {
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let mut db = LmDB::test();
-        let app_state = AppState::new(db.clone());
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -62,8 +69,17 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // Check that the file is deleted
-        let entry = db.get_entry(&entry_path).unwrap();
-        assert!(entry.is_none(), "Entry should be deleted");
+        match db.get_entry(&entry_path) {
+            Ok(entry) => {
+                panic!("Entry should be deleted: {:?}", entry);
+            }
+            Err(FileIoError::NotFound) => {
+                // Ok
+            }
+            Err(e) => {
+                panic!("Error getting entry: {}", e);
+            }
+        }
 
         let events = db.list_events(None, None).unwrap();
         assert_eq!(
@@ -81,7 +97,8 @@ mod tests {
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
-        let app_state = AppState::new(LmDB::test());
+        let db = LmDB::test();
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -97,7 +114,7 @@ mod tests {
     async fn test_invalid_pubkey() {
         // Set everything up
         let db = LmDB::test();
-        let app_state = AppState::new(db.clone());
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);

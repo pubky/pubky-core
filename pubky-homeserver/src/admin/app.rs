@@ -96,7 +96,7 @@ impl AdminServer {
     /// Run the admin server.
     pub async fn start(context: &AppContext) -> Result<Self, AdminServerBuildError> {
         let password = context.config_toml.admin.admin_password.clone();
-        let state = AppState::new(context.db.clone());
+        let state = AppState::new(context.db.clone(), context.file_service.clone());
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)
@@ -153,20 +153,22 @@ impl Drop for AdminServer {
 mod tests {
     use axum_test::TestServer;
 
-    use crate::persistence::lmdb::LmDB;
+    use crate::persistence::{files::FileService, lmdb::LmDB};
 
     use super::*;
 
     #[tokio::test]
     async fn test_root() {
-        let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
+        let db = LmDB::test();
+        let server = TestServer::new(create_app(AppState::new(db.clone(), FileService::test(db)), "test")).unwrap();
         let response = server.get("/").expect_success().await;
         response.assert_status_ok();
     }
 
     #[tokio::test]
     async fn test_generate_signup_token_fail() {
-        let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
+        let db = LmDB::test();
+        let server = TestServer::new(create_app(AppState::new(db.clone(), FileService::test(db)), "test")).unwrap();
         // No password
         let response = server.get("/generate_signup_token").expect_failure().await;
         response.assert_status_unauthorized();
@@ -182,7 +184,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_signup_token_success() {
-        let server = TestServer::new(create_app(AppState::new(LmDB::test()), "test")).unwrap();
+        let db = LmDB::test();
+        let server = TestServer::new(create_app(AppState::new(db.clone(), FileService::test(db)), "test")).unwrap();
         let response = server
             .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")

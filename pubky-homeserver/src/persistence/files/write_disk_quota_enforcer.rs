@@ -3,7 +3,8 @@ use futures_util::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::WriteStreamError;
+use super::{FileIoError, WriteStreamError};
+use crate::persistence::lmdb::tables::users::UserQueryError;
 use crate::persistence::lmdb::LmDB;
 use crate::shared::webdav::EntryPath;
 
@@ -45,9 +46,21 @@ impl<S> WriteDiskQuotaEnforcer<S> {
         db: &LmDB,
         path: &EntryPath,
         max_allowed_bytes: u64,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, FileIoError> {
         let existing_entry_bytes = db.get_entry_content_length(path)?;
-        let user_already_used_bytes = db.get_user_data_usage(path.pubkey())?;
+        let user_already_used_bytes = match db.get_user_data_usage(path.pubkey()) {
+            Ok(count) => count,
+            Err(UserQueryError::UserNotFound) => {
+                // If the user doesn't exist then the file is not there either.
+                // Data consistency error. Should not be able to write a file to a non-existing user.
+                tracing::error!("User not found for path: {}", path);
+                return Err(FileIoError::NotFound);
+            }
+            Err(UserQueryError::DatabaseError(e)) => {
+                return Err(FileIoError::Db(e));
+            }
+        };
+
         Ok(Self {
             inner,
             existing_entry_bytes,
@@ -105,16 +118,16 @@ mod tests {
     use bytes::Bytes;
     use futures_util::{stream, StreamExt};
 
-    // Create a mock stream with specified chunks
-    fn create_test_stream(
-        chunks: Vec<usize>,
-    ) -> impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send {
-        let byte_chunks: Vec<Result<Bytes, WriteStreamError>> = chunks
-            .into_iter()
-            .map(|size| Ok(Bytes::from(vec![0u8; size])))
-            .collect();
-        Box::pin(stream::iter(byte_chunks))
-    }
+    // // Create a mock stream with specified chunks
+    // fn create_test_stream(
+    //     chunks: Vec<usize>,
+    // ) -> FileStream {
+    //     let byte_chunks: Vec<Result<Bytes, std::io::Error>> = chunks
+    //         .into_iter()
+    //         .map(|size| Ok(Bytes::from(vec![0u8; size])))
+    //         .collect();
+    //     Box::new(stream::iter(byte_chunks))
+    // }
 
     // Helper function to create a test enforcer with real LmDB
     fn create_test_enforcer_with_db(
@@ -122,19 +135,18 @@ mod tests {
         db: &LmDB,
         path: &EntryPath,
         max_allowed_bytes: u64,
-    ) -> anyhow::Result<
-        WriteDiskQuotaEnforcer<
-            Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
-        >,
-    > {
-        let test_stream = create_test_stream(chunks);
-        WriteDiskQuotaEnforcer::new(Box::new(test_stream), db, path, max_allowed_bytes)
+    ) -> Result<WriteDiskQuotaEnforcer<impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>, FileIoError> {
+        let byte_chunks: Vec<Result<Bytes, WriteStreamError>> = chunks
+        .into_iter()
+        .map(|size| Ok(Bytes::from(vec![0u8; size])))
+        .collect();
+        let test_stream = stream::iter(byte_chunks);
+        let enforcer = WriteDiskQuotaEnforcer::new(test_stream, db, path, max_allowed_bytes)?;
+        Ok(enforcer)
     }
 
     async fn consume_enforcer(
-        mut enforcer: WriteDiskQuotaEnforcer<
-            Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
-        >,
+            mut enforcer: WriteDiskQuotaEnforcer<impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
     ) -> anyhow::Result<(bool, usize)> {
         let mut total_bytes = 0;
         let mut got_error = false;

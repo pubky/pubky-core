@@ -1,3 +1,4 @@
+use crate::persistence::files::FileIoError;
 use crate::persistence::lmdb::tables::files::Entry;
 use crate::{
     core::{
@@ -25,12 +26,19 @@ pub async fn head(
 ) -> Result<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
-    let entry = state
-        .db
-        .get_entry(&entry_path)?
-        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
 
-    get_entry(headers, entry, None)
+    match state.file_service.get_info(&entry_path).await {
+        Ok(entry) => {
+            return get_entry(headers, entry, None)
+        }
+        Err(FileIoError::NotFound) => {
+            return Err(Error::with_status(StatusCode::NOT_FOUND));
+        }
+        Err(e) => {
+            tracing::error!("Error getting file info and stream: {}", e);
+            return Err(Error::with_status(StatusCode::INTERNAL_SERVER_ERROR));
+        }
+    }
 }
 
 #[axum::debug_handler]
@@ -48,14 +56,19 @@ pub async fn get(
         return list(state, &entry_path, params);
     }
 
-    
-    let entry = state.file_service.get_info(&entry_path).await?
-        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
-
-    let stream = state.file_service.get_stream(&entry_path).await?;
-
-    let body_stream = Body::from_stream(stream);
-    get_entry(headers, entry, Some(body_stream))
+    match state.file_service.get_info_and_stream(&entry_path).await {
+        Ok((entry, stream)) => {
+            let body_stream = Body::from_stream(stream);
+            return get_entry(headers, entry, Some(body_stream))
+        }
+        Err(FileIoError::NotFound) => {
+            return Err(Error::with_status(StatusCode::NOT_FOUND));
+        }
+        Err(e) => {
+            tracing::error!("Error getting file info and stream: {}", e);
+            return Err(Error::with_status(StatusCode::INTERNAL_SERVER_ERROR));
+        }
+    }
 }
 
 pub fn list(

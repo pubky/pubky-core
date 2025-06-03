@@ -13,7 +13,7 @@ use crate::{
         extractors::PubkyHost,
         AppState,
     },
-    persistence::{files::{is_size_hint_exceeding_quota, WriteFileFromStreamError, WriteStreamError}, lmdb::tables::files::FileLocation},
+    persistence::{files::{is_size_hint_exceeding_quota, FileIoError, WriteStreamError}, lmdb::tables::files::FileLocation},
     shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
 
@@ -26,14 +26,19 @@ pub async fn delete(
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    if let None = state
-        .file_service
-        .get_info(&entry_path)
-        .await?{
+    match state.file_service.delete(&entry_path).await {
+        Ok(()) => {
+            return Ok((StatusCode::NO_CONTENT, ()));
+        }
+
+        Err(FileIoError::NotFound) => {
             return Err(Error::with_status(StatusCode::NOT_FOUND));
-        };
-    state.file_service.delete(&entry_path).await?;
-    Ok((StatusCode::NO_CONTENT, ()))
+        }
+        Err(e) => {
+            tracing::error!("Error deleting file: {}", e);
+            return Err(Error::with_status(StatusCode::INTERNAL_SERVER_ERROR));
+        }
+    }
 }
 
 pub async fn put(
@@ -63,23 +68,17 @@ pub async fn put(
         .map(|chunk_result| chunk_result.map_err(|e| WriteStreamError::Axum(e)));
 
 
-    // Write using file_service (defaulting to LMDB for backward compatibility)
-    if let Err(e) = state.file_service
-        .write_stream(&entry_path, FileLocation::LMDB, converted_stream)
-        .await {
-            match e {
-                WriteFileFromStreamError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded) => {
-                    return Err(Error::new(StatusCode::INSUFFICIENT_STORAGE, Some("Disk space quota exceeded. Write operation failed.".to_string())));
-                }
-                WriteFileFromStreamError::StreamBroken(_) => {
-                    return Err(Error::new(StatusCode::BAD_REQUEST, Some("Stream broken. Write operation failed.".to_string())));
-                }
-                _ => {
-                    tracing::error!("Write operation failed: {:?}", e);
-                    return Err(Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some("Internal server error.".to_string())));
-                }
+    match state.file_service.write_stream(&entry_path, FileLocation::LMDB, converted_stream).await {
+            Ok(_) => return Ok((StatusCode::CREATED, ())),
+            Err(FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded)) => {
+                return Err(Error::new(StatusCode::INSUFFICIENT_STORAGE, Some("Disk space quota exceeded. Write operation failed.".to_string())));
+            }
+            Err(FileIoError::StreamBroken(e)) => {
+                return Err(Error::new(StatusCode::BAD_REQUEST, Some("Stream broken. Write operation failed.".to_string())));
+            }
+            Err(e) => {
+                tracing::error!("Write operation failed: {:?}", e);
+                return Err(Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some("Internal server error.".to_string())));
             }
         }
-
-    Ok((StatusCode::CREATED, ()))
 }

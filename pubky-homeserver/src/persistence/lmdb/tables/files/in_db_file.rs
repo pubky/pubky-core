@@ -5,13 +5,15 @@
 //! - `InDbFileId` is the identifier of a file that consists of multiple blobs.
 //! - `InDbTempFile` is a helper to read/write a file to/from disk.
 //!
-use bytes::Bytes;
-use futures_util::Stream;
-use futures_util::StreamExt;
-use opendal::Metadata;
-use pubky_common::crypto::{Hash, Hasher};
 use pubky_common::timestamp::Timestamp;
 use tokio_util::io::ReaderStream;
+use std::sync::Arc;
+use std::{fs::File, io::Write, path::PathBuf};
+use tokio::fs::File as AsyncFile;
+use tokio::io::AsyncWriteExt;
+
+use crate::persistence::files::FileStream;
+use crate::persistence::files::{FileMetadata, FileMetadataBuilder};
 
 /// A file identifier for a file stored in LMDB.
 /// The identifier is basically the timestamp of the file.
@@ -54,13 +56,6 @@ impl Default for InDbFileId {
     }
 }
 
-use std::sync::Arc;
-use std::{fs::File, io::Write, path::PathBuf};
-use tokio::fs::File as AsyncFile;
-use tokio::io::AsyncWriteExt;
-use tokio::task;
-
-use crate::persistence::files::{FileMetadata, FileMetadataBuilder};
 
 /// Writes a temp file to disk asynchronously.
 #[derive(Debug)]
@@ -221,10 +216,10 @@ impl InDbTempFile {
         File::open(self.file_path.as_path())
     }
 
-    pub fn as_stream(&self) -> anyhow::Result<impl Stream<Item = Result<Bytes, std::io::Error>>> {
+    pub fn as_stream(&self) -> Result<FileStream, std::io::Error> {
         let file = std::fs::File::open(&self.file_path)?;
         let async_file = tokio::fs::File::from_std(file);
         let stream = ReaderStream::new(async_file);
-        Ok(stream)
+        Ok(Box::new(stream))
     }
 }

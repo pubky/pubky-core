@@ -1,4 +1,4 @@
-use crate::persistence::files::{FileMetadata, WriteFileFromStreamError, WriteStreamError};
+use crate::persistence::files::{FileIoError, FileMetadata, WriteStreamError};
 
 use super::super::super::LmDB;
 use super::{AsyncInDbTempFileWriter, InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
@@ -14,7 +14,7 @@ impl LmDB {
     /// Read the blobs into a temporary file.
     ///
     /// The file is written to disk to minimize the size/duration of the LMDB transaction.
-    pub(crate) fn read_file_sync(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
+    pub(crate) fn read_file_sync(&self, id: &InDbFileId) -> Result<InDbTempFile, FileIoError> {
         let mut file_writer = SyncInDbTempFileWriter::new()?;
         let rtxn = self.env.read_txn()?;
         let blobs_iter = self
@@ -30,7 +30,7 @@ impl LmDB {
         }
 
         if !file_exists {
-            return Ok(InDbTempFile::empty()?);
+            return Err(FileIoError::NotFound);
         }
 
         let file = file_writer.complete()?;
@@ -39,10 +39,10 @@ impl LmDB {
     }
 
     /// Read the blobs into a temporary file asynchronously.
-    pub(crate) async fn read_file(&self, id: &InDbFileId) -> anyhow::Result<InDbTempFile> {
+    pub(crate) async fn read_file(&self, id: &InDbFileId) -> Result<InDbTempFile, FileIoError> {
         let db = self.clone();
         let id = *id;
-        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<InDbTempFile> {
+        let join_handle = tokio::task::spawn_blocking(move || -> Result<InDbTempFile, FileIoError> {
             db.read_file_sync(&id)
         })
         .await;
@@ -50,7 +50,7 @@ impl LmDB {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Error reading file. JoinError: {:?}", e);
-                Err(e.into())
+                return Err(FileIoError::NotFound);
             }
         }
     }
@@ -60,7 +60,7 @@ impl LmDB {
         &'txn self,
         file: &InDbTempFile,
         wtxn: &mut heed::RwTxn<'txn>,
-    ) -> anyhow::Result<InDbFileId> {
+    ) -> Result<InDbFileId, FileIoError> {
         let id = InDbFileId::new();
         let mut file_handle = file.open_file_handle()?;
 
@@ -88,7 +88,7 @@ impl LmDB {
     pub(crate) async fn write_file_from_stream<'txn>(
         &'txn self,
         mut stream: impl Stream<Item = Result<bytes::Bytes, WriteStreamError>> + Unpin + Send,
-    ) -> Result<FileMetadata, WriteFileFromStreamError> {
+    ) -> Result<FileMetadata, FileIoError> {
         // First, write the stream to a temporary file using AsyncInDbTempFileWriter
         let mut temp_file_writer = AsyncInDbTempFileWriter::new().await?;
 
@@ -114,7 +114,7 @@ impl LmDB {
         &'txn self,
         file: &InDbFileId,
         wtxn: &mut heed::RwTxn<'txn>,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<(), FileIoError> {
 
         let mut keys = vec![];
         {
@@ -124,11 +124,14 @@ impl LmDB {
                 keys.push(key.to_vec());
             }
         }
+        if keys.is_empty() {
+            return Err(FileIoError::NotFound);
+        }
         for key in keys.iter() {
             self.tables.blobs.delete(wtxn, key)?;
         }
 
-        Ok(!keys.is_empty())
+        Ok(())
     }
 }
 
@@ -158,13 +161,19 @@ mod tests {
 
         // Delete file from LMDB
         let mut wtxn = lmdb.env.write_txn().unwrap();
-        let deleted = lmdb.delete_file(&id, &mut wtxn).unwrap();
+        lmdb.delete_file(&id, &mut wtxn).unwrap();
         wtxn.commit().unwrap();
-        assert!(deleted);
 
         // Try to read file from LMDB
-        let read_file = lmdb.read_file(&id).await.unwrap();
-        assert_eq!(read_file.metadata().length, 0);
+        match lmdb.read_file(&id).await {
+            Ok(_) => {
+                panic!("File should be deleted");
+            }
+            Err(e) => {
+                assert_eq!(e.to_string(), FileIoError::NotFound.to_string());
+            }
+        }
+        
     }
 
     #[tokio::test]

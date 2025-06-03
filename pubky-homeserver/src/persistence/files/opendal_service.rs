@@ -7,7 +7,7 @@ use futures_util::{stream::StreamExt, Stream};
 use opendal::{Buffer, Operator};
 use std::path::Path;
 
-use super::{FileMetadata, FileMetadataBuilder, WriteFileFromStreamError, WriteStreamError};
+use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
 
 
 /// Build the storage operator based on the config.
@@ -78,7 +78,7 @@ impl OpendalService {
         &self,
         path: &EntryPath,
         buffer: impl Into<Buffer>,
-    ) -> Result<FileMetadata, WriteFileFromStreamError> {
+    ) -> Result<FileMetadata, FileIoError> {
         let buffer: Buffer = buffer.into();
         let bytes = Bytes::from(buffer.to_vec());
         // Create a single-item stream from the buffer
@@ -91,7 +91,7 @@ impl OpendalService {
         &self,
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
-    ) -> Result<FileMetadata, WriteFileFromStreamError> {
+    ) -> Result<FileMetadata, FileIoError> {
         let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
         // Write each chunk from the stream to the writer
@@ -111,22 +111,33 @@ impl OpendalService {
     pub async fn get_stream(
         &self,
         path: &EntryPath,
-    ) -> Result<impl Stream<Item = Result<Bytes, std::io::Error>>, opendal::Error> {
-        let reader = self
-            .operator
-            .reader_with(path.as_str())
-            .chunk(CHUNK_SIZE)
-            .await?;
-        reader.into_bytes_stream(0..).await
+    ) -> Result<FileStream, FileIoError> {
+        match self
+        .operator
+        .reader_with(path.as_str())
+        .chunk(CHUNK_SIZE)
+        .await {
+            Ok(reader) => Ok(Box::new(reader.into_bytes_stream(0..).await?)),
+            Err(e) => {
+                match e.kind() {
+                    opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
+                    opendal::ErrorKind::PermissionDenied => {
+                        tracing::warn!("Permission denied for {}. Returning None.", path);
+                        Err(FileIoError::NotFound)
+                    },
+                    _ => Err(FileIoError::OpenDAL(e)),
+                }
+            }
+        }
     }
 
     /// Get the content of a file as a single Bytes object.
     /// This is useful for small files or when you want to avoid the overhead of streaming.
-    pub async fn get(&self, path: &EntryPath) -> Result<Bytes, opendal::Error> {
+    pub async fn get(&self, path: &EntryPath) -> Result<Bytes, FileIoError> {
         let mut stream = self.get_stream(path).await?;
         let mut content = Vec::new();
         while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.unwrap();
+            let chunk = chunk_result?;
             content.extend_from_slice(&chunk);
         }
         Ok(Bytes::from(content))
@@ -270,7 +281,7 @@ mod tests {
             let read_content = file_service.get(&path).await.unwrap();
 
             assert_eq!(
-                read_content.len(),
+                read_content.len(), 
                 test_data.len(),
                 "Content length should match"
             );
