@@ -1,14 +1,12 @@
-use crate::{
-    storage_config::StorageConfigToml,
-    shared::webdav::EntryPath,
-};
+use crate::{shared::webdav::EntryPath, storage_config::StorageConfigToml};
 use bytes::Bytes;
 use futures_util::{stream::StreamExt, Stream};
-use opendal::{Buffer, Operator};
+#[cfg(test)]
+use opendal::Buffer;
+use opendal::Operator;
 use std::path::Path;
 
 use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
-
 
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
@@ -43,7 +41,7 @@ pub fn build_storage_operator_from_config(
 /// The chunk size to use for reading and writing files.
 /// This is used to avoid reading and writing the entire file at once.
 /// Important: Not all opendal providers will respect this chunk size.
-/// For example, Google Cloud Buckets will deliver chunks anything from 
+/// For example, Google Cloud Buckets will deliver chunks anything from
 /// 200B to 16KB but max CHUNK_SIZE.
 const CHUNK_SIZE: usize = 64 * 1024;
 
@@ -53,14 +51,6 @@ pub struct OpendalService {
 }
 
 impl OpendalService {
-    pub fn new(operator: Operator) -> Self {
-        Self { operator }
-    }
-
-    pub fn operator(&self) -> &Operator {
-        &self.operator
-    }
-
     pub fn new_from_config(config: &StorageConfigToml, data_directory: &Path) -> Self {
         let operator = build_storage_operator_from_config(config, data_directory).unwrap();
         Self { operator }
@@ -74,6 +64,7 @@ impl OpendalService {
     /// Write the content of a file to the storage.
     /// This is useful for small files or when you want to avoid the overhead of streaming.
     /// Use streamed writes for large files.
+    #[cfg(test)]
     pub async fn write(
         &self,
         path: &EntryPath,
@@ -108,31 +99,28 @@ impl OpendalService {
 
     /// Get the content of a file as a stream of bytes.
     /// The stream is chunked by the CHUNK_SIZE.
-    pub async fn get_stream(
-        &self,
-        path: &EntryPath,
-    ) -> Result<FileStream, FileIoError> {
+    pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
         match self
-        .operator
-        .reader_with(path.as_str())
-        .chunk(CHUNK_SIZE)
-        .await {
+            .operator
+            .reader_with(path.as_str())
+            .chunk(CHUNK_SIZE)
+            .await
+        {
             Ok(reader) => Ok(Box::new(reader.into_bytes_stream(0..).await?)),
-            Err(e) => {
-                match e.kind() {
-                    opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
-                    opendal::ErrorKind::PermissionDenied => {
-                        tracing::warn!("Permission denied for {}. Returning None.", path);
-                        Err(FileIoError::NotFound)
-                    },
-                    _ => Err(FileIoError::OpenDAL(e)),
+            Err(e) => match e.kind() {
+                opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
+                opendal::ErrorKind::PermissionDenied => {
+                    tracing::warn!("Permission denied for {}. Returning None.", path);
+                    Err(FileIoError::NotFound)
                 }
-            }
+                _ => Err(FileIoError::OpenDAL(e)),
+            },
         }
     }
 
     /// Get the content of a file as a single Bytes object.
     /// This is useful for small files or when you want to avoid the overhead of streaming.
+    #[cfg(test)]
     pub async fn get(&self, path: &EntryPath) -> Result<Bytes, FileIoError> {
         let mut stream = self.get_stream(path).await?;
         let mut content = Vec::new();
@@ -144,7 +132,8 @@ impl OpendalService {
     }
 
     /// Check if a file exists.
-    pub async fn exists(&self, path: &EntryPath) -> Result<bool, opendal::Error> {  
+    #[cfg(test)]
+    pub async fn exists(&self, path: &EntryPath) -> Result<bool, opendal::Error> {
         self.operator.exists(path.as_str()).await
     }
 }
@@ -154,8 +143,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{
-        storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
         shared::webdav::WebDavPath,
+        storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
     };
 
     use super::*;
@@ -201,10 +190,7 @@ mod tests {
             // Write a 10KB file filled with test data
             let should_chunk_count = 5;
             let test_data = vec![42u8; should_chunk_count * CHUNK_SIZE];
-            file_service
-                .write(&path, test_data.clone())
-                .await
-                .unwrap();
+            file_service.write(&path, test_data.clone()).await.unwrap();
 
             // Read the content back using the chunked stream
             let mut stream = file_service.get_stream(&path).await.unwrap();
@@ -242,8 +228,14 @@ mod tests {
                 "Content should match original data"
             );
 
-            file_service.delete(&path).await.expect("Should delete file");
-            assert!(!file_service.exists(&path).await.unwrap(), "File should not exist after deletion");
+            file_service
+                .delete(&path)
+                .await
+                .expect("Should delete file");
+            assert!(
+                !file_service.exists(&path).await.unwrap(),
+                "File should not exist after deletion"
+            );
         }
     }
 
@@ -272,16 +264,13 @@ mod tests {
             let stream = futures_util::stream::iter(chunks);
 
             // Write the stream to storage
-            file_service
-                .write_stream(&path, stream)
-                .await
-                .unwrap();
+            file_service.write_stream(&path, stream).await.unwrap();
 
             // Read the content back and verify it matches
             let read_content = file_service.get(&path).await.unwrap();
 
             assert_eq!(
-                read_content.len(), 
+                read_content.len(),
                 test_data.len(),
                 "Content length should match"
             );
@@ -291,8 +280,14 @@ mod tests {
                 "Content should match original data"
             );
 
-            file_service.delete(&path).await.expect("Should delete file");
-            assert!(!file_service.exists(&path).await.unwrap(), "File should not exist after deletion");
+            file_service
+                .delete(&path)
+                .await
+                .expect("Should delete file");
+            assert!(
+                !file_service.exists(&path).await.unwrap(),
+                "File should not exist after deletion"
+            );
         }
     }
 }

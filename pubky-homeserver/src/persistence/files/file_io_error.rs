@@ -17,8 +17,7 @@ pub enum FileIoError {
 
 
 
-/// A unified error type for when files are written
-/// to the storage and database.
+/// A unified error type for writing streams.
 #[derive(Debug, thiserror::Error)]
 pub enum WriteStreamError {
     #[error("Axum error: {0}")]

@@ -188,19 +188,6 @@ impl InDbTempFile {
         AsyncInDbTempFileWriter::zeros(size_bytes).await
     }
 
-    /// Create a new InDbTempFile with zero content.
-    pub fn empty() -> Result<Self, std::io::Error> {
-        let dir = tempfile::tempdir()?;
-        let file_path = dir.path().join("entry.bin");
-        std::fs::File::create(file_path.clone())?;
-        let metadata = FileMetadataBuilder::default().finalize();
-        Ok(Self {
-            dir: Arc::new(dir),
-            file_path,
-            metadata,
-        })
-    }
-
     pub fn metadata(&self) -> &FileMetadata {
         &self.metadata
     }

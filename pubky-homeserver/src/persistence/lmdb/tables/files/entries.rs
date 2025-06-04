@@ -1,7 +1,9 @@
 use super::super::events::Event;
-use super::{super::super::LmDB, InDbFileId, InDbTempFile};
+use super::{super::super::LmDB, InDbFileId};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::files::{FileIoError, FileMetadata};
+#[cfg(test)]
+use crate::persistence::lmdb::tables::files::InDbTempFile;
 use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
@@ -10,17 +12,15 @@ use heed::{
 use postcard::{from_bytes, to_allocvec};
 use pubky_common::{crypto::Hash, timestamp::Timestamp};
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinError;
 use tracing::instrument;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Str, Bytes>;
 pub const ENTRIES_TABLE: &str = "entries";
 
-
 impl LmDB {
-
     /// Check if an entry exists.
+    #[cfg(test)]
     pub fn entry_exists(&self, path: &EntryPath) -> Result<bool, FileIoError> {
         match self.get_entry(path) {
             Ok(_) => Ok(true),
@@ -30,7 +30,7 @@ impl LmDB {
                 } else {
                     Err(e)
                 }
-            }   
+            }
         }
     }
 
@@ -39,6 +39,7 @@ impl LmDB {
     /// The entry is written to the database and the file is written to the blob store.
     /// An event is written to the events table.
     /// The entry is returned.
+    #[cfg(test)]
     pub async fn write_entry_from_file(
         &mut self,
         path: &EntryPath,
@@ -100,6 +101,7 @@ impl LmDB {
     /// The entry is written to the database and the file is written to the blob store.
     /// An event is written to the events table.
     /// The entry is returned.
+    #[cfg(test)]
     pub fn write_entry_from_file_sync(
         &mut self,
         path: &EntryPath,
@@ -192,15 +194,16 @@ impl LmDB {
     /// Bytes stored at `path`.
     /// Fails if the entry does not exist.
     pub fn get_entry_content_length(&self, path: &EntryPath) -> Result<u64, FileIoError> {
-        let content_length = self
-            .get_entry(path)?
-            .content_length() as u64;
+        let content_length = self.get_entry(path)?.content_length() as u64;
         Ok(content_length)
     }
 
     /// Bytes stored at `path`.
     /// Returns 0 if the entry does not exist.
-    pub fn get_entry_content_length_default_zero(&self, path: &EntryPath) -> Result<u64, FileIoError> {
+    pub fn get_entry_content_length_default_zero(
+        &self,
+        path: &EntryPath,
+    ) -> Result<u64, FileIoError> {
         match self.get_entry_content_length(path) {
             Ok(length) => Ok(length),
             Err(FileIoError::NotFound) => Ok(0),
@@ -473,7 +476,7 @@ impl Entry {
 mod tests {
     use super::LmDB;
     use crate::{
-        persistence::{files::FileIoError, lmdb::tables::files::{InDbTempFile, SyncInDbTempFileWriter}},
+        persistence::lmdb::tables::files::{InDbTempFile, SyncInDbTempFileWriter},
         shared::webdav::{EntryPath, WebDavPath},
     };
     use bytes::Bytes;
@@ -503,7 +506,6 @@ mod tests {
         assert_eq!(content, vec![0, 0, 0, 0, 0]);
 
         db.delete_entry_and_file_sync(&path).unwrap();
-
 
         // Verify the entry and file are deleted
         assert!(!db.entry_exists(&path).unwrap(), "File should be deleted");
@@ -589,6 +591,9 @@ mod tests {
 
         let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
 
-        assert!(!db.entry_exists(&entry_path).unwrap(), "File should be deleted");
+        assert!(
+            !db.entry_exists(&entry_path).unwrap(),
+            "File should be deleted"
+        );
     }
 }

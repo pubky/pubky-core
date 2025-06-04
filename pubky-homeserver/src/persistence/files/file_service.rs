@@ -10,12 +10,17 @@ use crate::{
     ConfigToml,
 };
 use bytes::Bytes;
-use futures_util::{Stream, StreamExt};
-use opendal::Buffer;
+use futures_util::Stream;
 use std::path::Path;
+#[cfg(test)]
+use opendal::Buffer;
+#[cfg(test)]
+use futures_util::StreamExt;
+
 
 use super::{
-    write_disk_quota_enforcer::WriteDiskQuotaEnforcer, FileIoError, FileStream, OpendalService, WriteStreamError,
+    write_disk_quota_enforcer::WriteDiskQuotaEnforcer, FileIoError, FileStream, OpendalService,
+    WriteStreamError,
 };
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
@@ -52,7 +57,8 @@ impl FileService {
         use crate::storage_config::StorageConfigToml;
 
         let storage_config = StorageConfigToml::InMemory;
-        let opendal_service = OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"));
+        let opendal_service =
+            OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"));
         Self::new(opendal_service, db, None)
     }
 
@@ -62,7 +68,10 @@ impl FileService {
     }
 
     /// Get the metadata and content of a file.
-    pub async fn get_info_and_stream(&self, path: &EntryPath) -> Result<(Entry, FileStream), FileIoError> {
+    pub async fn get_info_and_stream(
+        &self,
+        path: &EntryPath,
+    ) -> Result<(Entry, FileStream), FileIoError> {
         let entry = self.get_info(path).await?;
         let stream = self.get_stream(path).await?;
         Ok((entry, stream))
@@ -70,6 +79,7 @@ impl FileService {
 
     /// Get the content of a file as bytes.
     /// Errors if the file does not exist.
+    #[cfg(test)]
     pub async fn get(&self, path: &EntryPath) -> Result<Bytes, FileIoError> {
         let mut stream = self.get_stream(path).await?;
         let mut collected_data = Vec::new();
@@ -98,6 +108,7 @@ impl FileService {
     }
 
     /// Write a file to the database and storage depending on the selected target location.
+    #[cfg(test)]
     pub async fn write(
         &self,
         path: &EntryPath,

@@ -34,10 +34,10 @@ impl LmDbToOpendalMigrator {
 
         let todo_count = self.count_lmdb_entries()?;
         if todo_count == 0 {
-            tracing::info!("No entries to migrate");
+            tracing::debug!("[LMDB to OpenDAL] No entries to migrate");
             return Ok(());
         } else {
-            tracing::info!("Starting LMDB to OpenDAL migration. Found {} entries to migrate.", todo_count);
+            tracing::info!("[LMDB to OpenDAL] Starting migration. Found {} entries to migrate.", todo_count);
         }
 
         let mut count: usize = 0;
@@ -47,18 +47,18 @@ impl LmDbToOpendalMigrator {
             // while we are migrating.
             // So we just keep migrating until we have no more entries to migrate.
 
-            tracing::info!("Processing batch number {count} of {todo_count} entries", count = count, todo_count = todo_count);
+            tracing::info!("[LMDB to OpenDAL] Processing batch number {count} of {todo_count} entries", count = count, todo_count = todo_count);
             count += batch.len();
             for path in batch {
                 if let Err(e) = self.process_single_entry(&path).await {
-                    tracing::error!("Failed to migrate entry {}: {}. Continue with next entry.", path, e);
+                    tracing::warn!("[LMDB to OpenDAL] Failed to migrate entry {}: {}. Continue with next entry.", path, e);
                 }
             }
             // Sleep to give the db a chance to do other things.
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
-        tracing::info!("Migration completed successfully");
+        tracing::info!("[LMDB to OpenDAL] Migration completed successfully");
         Ok(())
     }
 
@@ -109,17 +109,17 @@ impl LmDbToOpendalMigrator {
         let entry = match self.db.get_entry(&path) {
             Ok(entry) => entry,
             Err(FileIoError::NotFound) => {
-                tracing::debug!("Skipping missing entry. File was deleted in the meantime: {}", path);
+                tracing::debug!("[LMDB to OpenDAL] Skipping missing entry. File was deleted in the meantime: {}", path);
                 return Ok(());
             }
             Err(e) => {
-                tracing::error!("Failed to get entry: {}: {}", path, e);
+                tracing::error!("[LMDB to OpenDAL] Failed to get entry: {}: {}", path, e);
                 return Err(e.into());
             }
         };
 
         if entry.file_location() != &FileLocation::LMDB {
-            tracing::debug!("Skipping already migrated entry: {}", path);
+            tracing::debug!("[LMDB to OpenDAL] Skipping already migrated entry: {}", path);
             return Ok(());
         }
 
@@ -127,7 +127,7 @@ impl LmDbToOpendalMigrator {
         let stream = match self.file_service.get_stream(&path).await {
             Ok(stream) => stream,
             Err(FileIoError::NotFound) => {
-                tracing::debug!("Skipping missing file. File was deleted in the meantime: {}", path);
+                tracing::debug!("[LMDB to OpenDAL] Skipping missing file. File was deleted in the meantime: {}", path);
                 return Ok(());
             }
             Err(e) => {
@@ -145,7 +145,7 @@ impl LmDbToOpendalMigrator {
                 Entry::deserialize(&entry)?
             },
             _ => {
-                tracing::warn!("Entry not found or failed to parse in database: {}. Reverting migration.", path);
+                tracing::warn!("[LMDB to OpenDAL] Entry not found or failed to parse in database: {}. Reverting migration.", path);
                 wtx.commit()?; // Close write tx as we are not going to use it.
                 self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
                 return Ok(());
@@ -153,14 +153,14 @@ impl LmDbToOpendalMigrator {
         };
 
         if locked_entry.file_location() != &FileLocation::LMDB {
-            tracing::warn!("File was not in LMDB after migration: {}. Reverting.", path);
+            tracing::warn!("[LMDB to OpenDAL] File was not in LMDB after migration: {}. Reverting.", path);
             wtx.commit()?; // Close write tx as we are not going to use it.
             self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
         }
 
         if locked_entry.content_hash() != &metadata.hash {
-            tracing::warn!("Content hash mismatch after migration: {}. File must has changed in the meantime. Reverting.", path);
+            tracing::warn!("[LMDB to OpenDAL] Content hash mismatch after migration: {}. File must has changed in the meantime. Reverting.", path);
             wtx.commit()?; // Close write tx as we are not going to use it.
             self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
