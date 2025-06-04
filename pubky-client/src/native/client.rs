@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::errors::{PkarrError};
+use crate::errors::PkarrError;
 
 #[cfg(not(wasm_browser))]
 use super::internal::cookies::CookieJar;

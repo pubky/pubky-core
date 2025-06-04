@@ -18,12 +18,12 @@ macro_rules! cross_debug {
     };
 }
 
+pub mod errors;
 pub mod native;
+pub mod types;
+mod utils;
 #[cfg(wasm_browser)]
 mod wasm;
-pub mod types;
-pub mod errors;
-mod utils;
 
 #[cfg(not(wasm_browser))]
 pub use crate::native::Client;
