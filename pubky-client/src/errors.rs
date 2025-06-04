@@ -14,9 +14,6 @@ pub enum PubkyError {
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    #[error("URL parsing error: {0}")]
-    Url(#[from] url::ParseError),
-
     #[error("Homeserver not found")]
     HomeserverNotFound,
 
@@ -31,6 +28,24 @@ pub enum PubkyError {
 
     #[error("Access denied")] // not specifying error for privacy and security reasons
     AccessDenied,
+
+    #[error("Pubky incompatible URL: {0}")]
+    InvalidUrl(String),
+
+    #[error("Invalid URL format: {0}")]
+    InvalidFormat(String),
+
+    #[error("Invalid Pkarr public key: {0}")]
+    InvalidPublicKey(String),
+
+    #[error("URL parsing failed: {0}")]
+    UrlParseError(#[from] url::ParseError),
+
+    #[error("Not a Pubky or Pkarr URL")]
+    NotPubkyUrl,
+
+    #[error("Missing host in URL")]
+    MissingHost,
 }
 
 #[derive(Debug, thiserror::Error)]

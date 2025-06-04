@@ -78,7 +78,7 @@ impl Client {
     /// if the response has any other `>=404` status code.
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         let response = self
-            .cross_request(Method::GET, format!("pubky://{}/session", pubky))
+            .cross_request(Method::GET, format!("pubky://{}/session", pubky).as_str())
             .await
             .send()
             .await?;
@@ -100,7 +100,7 @@ impl Client {
     /// Signout from a homeserver.
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
         let _ = self
-            .cross_request(Method::DELETE, format!("pubky://{}/session", pubky))
+            .cross_request(Method::DELETE, format!("pubky://{}/session", pubky).as_str())
             .await
             .send()
             .await?
@@ -225,7 +225,7 @@ impl Client {
 
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let response = self
-            .cross_request(Method::POST, format!("pubky://{}/session", token.pubky()))
+            .cross_request(Method::POST, format!("pubky://{}/session", token.pubky()).as_str())
             .await
             .body(token.serialize())
             .send()

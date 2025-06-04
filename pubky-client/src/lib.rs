@@ -9,6 +9,7 @@
 
 pub mod errors;
 pub mod native;
+mod types;
 mod utils;
 
 pub use crate::native::Client;
