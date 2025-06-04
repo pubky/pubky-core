@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 
 
 
-const BATCH_SIZE: usize = 20;
+const BATCH_SIZE: usize = 100;
 
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
@@ -31,14 +31,13 @@ impl LmDbToOpendalMigrator {
     /// It will also update the entry location to use the OpenDAL.
     /// It tries to avoid keeping a lmd write transaction open for too long.
     pub async fn migrate(&self) -> anyhow::Result<()> {
-        tracing::info!("Starting LMDB to OpenDAL migration");
+
         let todo_count = self.count_lmdb_entries()?;
         if todo_count == 0 {
             tracing::info!("No entries to migrate");
             return Ok(());
         } else {
-            let predicted_batch_count = (todo_count as f64 / BATCH_SIZE as f64).ceil() as usize;
-            tracing::info!("Found {} entries to migrate. Predicted batch count: {}", todo_count, predicted_batch_count);
+            tracing::info!("Starting LMDB to OpenDAL migration. Found {} entries to migrate.", todo_count);
         }
 
         let mut count: usize = 0;
@@ -146,7 +145,7 @@ impl LmDbToOpendalMigrator {
                 Entry::deserialize(&entry)?
             },
             _ => {
-                tracing::error!("Entry not found or failed to parse in database: {}. Reverting migration.", path);
+                tracing::warn!("Entry not found or failed to parse in database: {}. Reverting migration.", path);
                 wtx.commit()?; // Close write tx as we are not going to use it.
                 self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
                 return Ok(());
@@ -154,14 +153,14 @@ impl LmDbToOpendalMigrator {
         };
 
         if locked_entry.file_location() != &FileLocation::LMDB {
-            tracing::error!("File was not in LMDB after migration: {}. Reverting.", path);
+            tracing::warn!("File was not in LMDB after migration: {}. Reverting.", path);
             wtx.commit()?; // Close write tx as we are not going to use it.
             self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
         }
 
         if locked_entry.content_hash() != &metadata.hash {
-            tracing::error!("Content hash mismatch after migration: {}. File must has changed in the meantime. Reverting.", path);
+            tracing::warn!("Content hash mismatch after migration: {}. File must has changed in the meantime. Reverting.", path);
             wtx.commit()?; // Close write tx as we are not going to use it.
             self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
