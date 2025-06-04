@@ -1,29 +1,12 @@
+use super::super::Client;
+use crate::errors::PkarrError;
 use crate::utils::sleep;
-use anyhow::Result;
 use pkarr::{
     Keypair, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
-    errors::QueryError,
 };
 use std::convert::TryInto;
 use std::time::Duration;
-
-use super::super::Client;
-
-/// Helper returns true if this error (or any of its sources) is one of our
-/// three recoverable `QueryError`s with simple retrial.
-fn should_retry(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|cause| cause.downcast_ref::<QueryError>())
-        .any(|q| {
-            matches!(
-                q,
-                QueryError::Timeout
-                    | QueryError::NoClosestNodes
-                    | QueryError::DhtErrorResponse(_, _)
-            )
-        })
-}
 
 /// The strategy to decide whether to (re)publish a homeserver record.
 pub(crate) enum PublishStrategy {
@@ -46,7 +29,7 @@ impl Client {
         keypair: &Keypair,
         host: Option<&str>,
         strategy: PublishStrategy,
-    ) -> Result<()> {
+    ) -> Result<(), PkarrError> {
         // 1) Resolve the most recent record.
         let existing = self.pkarr.resolve_most_recent(&keypair.public_key()).await;
 
@@ -80,7 +63,7 @@ impl Client {
                 .await
             {
                 Ok(()) => break,
-                Err(e) if should_retry(&e) && attempt < 3 => {
+                Err(e) if e.is_retryable() && attempt < 3 => {
                     sleep(Duration::from_secs(1)).await;
                     continue;
                 }
@@ -98,7 +81,7 @@ impl Client {
         keypair: &Keypair,
         host: &str,
         existing: Option<SignedPacket>,
-    ) -> Result<()> {
+    ) -> Result<(), PkarrError> {
         let mut builder = SignedPacket::builder();
         if let Some(ref packet) = existing {
             // Append any records (except those already starting with "_pubky") to our builder.
@@ -153,7 +136,7 @@ mod tests {
     use pkarr::dns::rdata::SVCB;
 
     #[tokio::test]
-    async fn test_extract_host_from_packet() -> Result<()> {
+    async fn test_extract_host_from_packet() -> anyhow::Result<()> {
         let keypair = Keypair::random();
         // Define the host that we want to encode.
         let host = "host.example.com";
