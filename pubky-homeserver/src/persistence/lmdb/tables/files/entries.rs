@@ -189,12 +189,23 @@ impl LmDB {
         Ok(())
     }
 
-    /// Bytes stored at `path` for this user (0 if none).
+    /// Bytes stored at `path`.
+    /// Fails if the entry does not exist.
     pub fn get_entry_content_length(&self, path: &EntryPath) -> Result<u64, FileIoError> {
         let content_length = self
             .get_entry(path)?
             .content_length() as u64;
         Ok(content_length)
+    }
+
+    /// Bytes stored at `path`.
+    /// Returns 0 if the entry does not exist.
+    pub fn get_entry_content_length_default_zero(&self, path: &EntryPath) -> Result<u64, FileIoError> {
+        match self.get_entry_content_length(path) {
+            Ok(length) => Ok(length),
+            Err(FileIoError::NotFound) => Ok(0),
+            Err(e) => Err(e),
+        }
     }
 
     pub fn contains_directory(&self, txn: &RoTxn, entry_path: &EntryPath) -> anyhow::Result<bool> {

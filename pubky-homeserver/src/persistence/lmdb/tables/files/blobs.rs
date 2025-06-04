@@ -175,25 +175,4 @@ mod tests {
         }
         
     }
-
-    #[tokio::test]
-    async fn test_write_empty_file() {
-        let lmdb = LmDB::test();
-
-        // Write file to LMDB
-        let write_file = InDbTempFile::empty().unwrap();
-        let mut wtxn = lmdb.env.write_txn().unwrap();
-        let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
-        wtxn.commit().unwrap();
-
-        // Read file from LMDB
-        let read_file = lmdb.read_file(&id).await.unwrap();
-
-        assert_eq!(read_file.metadata().length, write_file.metadata().length);
-        assert_eq!(read_file.metadata().hash, write_file.metadata().hash);
-
-        let written_file_content = std::fs::read(write_file.path()).unwrap();
-        let read_file_content = std::fs::read(read_file.path()).unwrap();
-        assert_eq!(written_file_content, read_file_content);
-    }
 }

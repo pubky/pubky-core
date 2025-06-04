@@ -128,7 +128,7 @@ impl FileService {
             )?);
         }
 
-        let existing_entry_bytes = self.db.get_entry_content_length(path).unwrap_or(0);
+        let existing_entry_bytes = self.db.get_entry_content_length_default_zero(path)?;
 
         let entry = match location {
             FileLocation::LMDB => {

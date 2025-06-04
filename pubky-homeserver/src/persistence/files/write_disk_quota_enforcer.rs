@@ -17,7 +17,7 @@ pub fn is_size_hint_exceeding_quota(
     path: &EntryPath,
     max_allowed_bytes: u64,
 ) -> anyhow::Result<bool> {
-    let existing_entry_bytes = db.get_entry_content_length(path)?;
+    let existing_entry_bytes = db.get_entry_content_length_default_zero(path)?;
     let user_already_used_bytes = db.get_user_data_usage(path.pubkey())?;
     return Ok(
         user_already_used_bytes + content_size_hint.saturating_sub(existing_entry_bytes)
@@ -47,7 +47,7 @@ impl<S> WriteDiskQuotaEnforcer<S> {
         path: &EntryPath,
         max_allowed_bytes: u64,
     ) -> Result<Self, FileIoError> {
-        let existing_entry_bytes = db.get_entry_content_length(path)?;
+        let existing_entry_bytes = db.get_entry_content_length_default_zero(path)?;
         let user_already_used_bytes = match db.get_user_data_usage(path.pubkey()) {
             Ok(count) => count,
             Err(UserQueryError::UserNotFound) => {
@@ -118,17 +118,6 @@ mod tests {
     use bytes::Bytes;
     use futures_util::{stream, StreamExt};
 
-    // // Create a mock stream with specified chunks
-    // fn create_test_stream(
-    //     chunks: Vec<usize>,
-    // ) -> FileStream {
-    //     let byte_chunks: Vec<Result<Bytes, std::io::Error>> = chunks
-    //         .into_iter()
-    //         .map(|size| Ok(Bytes::from(vec![0u8; size])))
-    //         .collect();
-    //     Box::new(stream::iter(byte_chunks))
-    // }
-
     // Helper function to create a test enforcer with real LmDB
     fn create_test_enforcer_with_db(
         chunks: Vec<usize>,
@@ -166,22 +155,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn allows_exact_quota() -> anyhow::Result<()> {
+    async fn allows_exact_quota() {
         // existing=0, incoming=1024, used=0, quota=1024
         // This should succeed as we're exactly at the quota limit
         let db = LmDB::test();
         let pubkey = pkarr::Keypair::random().public_key();
-        let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt")?);
+        let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt").unwrap());
         // Create a user
-        let mut wtxn = db.env.write_txn()?;
-        db.create_user(&path.pubkey(), &mut wtxn)?;
-        wtxn.commit()?;
+        let mut wtxn = db.env.write_txn().unwrap();
+        db.create_user(&path.pubkey(), &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
 
-        let enforcer = create_test_enforcer_with_db(vec![1024], &db, &path, 1024)?;
-        let (got_error, total_bytes) = consume_enforcer(enforcer).await?;
+        let enforcer = create_test_enforcer_with_db(vec![1024], &db, &path, 1024).unwrap();
+        let (got_error, total_bytes) = consume_enforcer(enforcer).await.unwrap();
         assert!(!got_error, "Should not error when at exact quota");
         assert_eq!(total_bytes, 1024);
-        Ok(())
     }
 
     #[tokio::test]

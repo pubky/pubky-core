@@ -68,7 +68,7 @@ pub async fn put(
         .map(|chunk_result| chunk_result.map_err(|e| WriteStreamError::Axum(e)));
 
 
-    match state.file_service.write_stream(&entry_path, FileLocation::LMDB, converted_stream).await {
+    match state.file_service.write_stream(&entry_path, FileLocation::OpenDal, converted_stream).await {
             Ok(_) => return Ok((StatusCode::CREATED, ())),
             Err(FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded)) => {
                 return Err(Error::new(StatusCode::INSUFFICIENT_STORAGE, Some("Disk space quota exceeded. Write operation failed.".to_string())));
