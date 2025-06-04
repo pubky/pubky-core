@@ -73,7 +73,7 @@ pub async fn put(
             Err(FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded)) => {
                 return Err(Error::new(StatusCode::INSUFFICIENT_STORAGE, Some("Disk space quota exceeded. Write operation failed.".to_string())));
             }
-            Err(FileIoError::StreamBroken(e)) => {
+            Err(FileIoError::StreamBroken(_)) => {
                 return Err(Error::new(StatusCode::BAD_REQUEST, Some("Stream broken. Write operation failed.".to_string())));
             }
             Err(e) => {

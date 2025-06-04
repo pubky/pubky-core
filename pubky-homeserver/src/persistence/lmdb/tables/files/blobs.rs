@@ -68,10 +68,7 @@ impl LmDB {
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];
             let bytes_read = file_handle.read(&mut blob)?;
-            let is_end_of_file = bytes_read == 0;
-            if is_end_of_file {
-                break; // EOF reached
-            }
+
 
             let blob_key = id.get_blob_key(blob_index);
             self.tables
@@ -79,6 +76,10 @@ impl LmDB {
                 .put(wtxn, &blob_key, &blob[..bytes_read])?;
 
             blob_index += 1;
+            let is_end_of_file = bytes_read == 0;
+            if is_end_of_file {
+                break; // EOF reached
+            }
         }
 
         Ok(id)
@@ -173,6 +174,37 @@ mod tests {
                 assert_eq!(e.to_string(), FileIoError::NotFound.to_string());
             }
         }
-        
+    }
+
+    #[tokio::test]
+    async fn test_write_empty_file() {
+        let lmdb = LmDB::test();
+
+        let write_file = InDbTempFile::zeros(0).await.unwrap();
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        let read_file = lmdb.read_file(&id).await.unwrap();
+
+        assert_eq!(read_file.metadata().length, 0);
+
+        let written_file_content = std::fs::read(write_file.path()).unwrap();
+        let read_file_content = std::fs::read(read_file.path()).unwrap();
+        assert_eq!(written_file_content, read_file_content);
+
+        // Delete file again
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        lmdb.delete_file(&id, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        match lmdb.read_file(&id).await {
+            Ok(_) => {
+                panic!("File should be deleted");
+            }
+            Err(e) => {
+                assert_eq!(e.to_string(), FileIoError::NotFound.to_string());
+            }
+        }
     }
 }
