@@ -18,10 +18,10 @@ async fn put_get_delete() {
         .unwrap();
 
     let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url.as_str();
+    let url = url;
 
     client
-        .put(url)
+        .put(url.as_str())
         .body(vec![0, 1, 2, 3, 4])
         .send()
         .await
@@ -30,7 +30,14 @@ async fn put_get_delete() {
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
+    let response = client
+        .get(url.as_str())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
 
     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
@@ -45,7 +52,7 @@ async fn put_get_delete() {
     // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
     // the wrong tenant user
     let response = client
-        .get(regular_url)
+        .get(regular_url.as_str())
         .header("Host", "non.pubky.host")
         .send()
         .await
@@ -57,14 +64,14 @@ async fn put_get_delete() {
     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
     client
-        .delete(url)
+        .delete(url.as_str())
         .send()
         .await
         .unwrap()
         .error_for_status()
         .unwrap();
 
-    let response = client.get(url).send().await.unwrap();
+    let response = client.get(url.as_str()).send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -94,35 +101,45 @@ async fn put_quota_applied() {
 
     // First 600 KB → OK
     let data: Vec<u8> = vec![0; 600_000];
-    let resp = client.put(&url).body(data.clone()).send().await.unwrap();
+    let resp = client
+        .put(url.as_str())
+        .body(data.clone())
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Overwriting the data 600 KB → should 201
-    let resp = client.put(&url).body(data.clone()).send().await.unwrap();
+    let resp = client
+        .put(url.as_str())
+        .body(data.clone())
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Writing now 600 KB more on a different path (totals 1.2 MB) → should 507
     let url_2 = format!("pubky://{}/pub/data2", keypair.public_key());
-    let resp = client.put(&url_2).body(data).send().await.unwrap();
+    let resp = client.put(url_2.as_str()).body(data).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
 
     // Overwriting the data 600 KB with 1100KB → should 507
     let data_2: Vec<u8> = vec![0; 1_100_000];
-    let resp = client.put(&url).body(data_2).send().await.unwrap();
+    let resp = client.put(url.as_str()).body(data_2).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
 
     // Delete the original data of 600 KB → should 204 and user usage go down to 0 bytes
-    let resp = client.delete(&url).send().await.unwrap();
+    let resp = client.delete(url.as_str()).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     // Write exactly 1025 KB → should 507 because it exactly exceeds quota
     let data_3: Vec<u8> = vec![0; 1025 * 1024];
-    let resp = client.put(&url).body(data_3).send().await.unwrap();
+    let resp = client.put(url.as_str()).body(data_3).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
 
     // Write exactly 1 MB → should 201 because it exactly fits within quota
     let data_3: Vec<u8> = vec![0; 1024 * 1024];
-    let resp = client.put(&url).body(data_3).send().await.unwrap();
+    let resp = client.put(url.as_str()).body(data_3).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
@@ -143,7 +160,7 @@ async fn unauthorized_put_delete() {
     let public_key = keypair.public_key();
 
     let url = format!("pubky://{public_key}/pub/foo.txt");
-    let url = url.as_str();
+    let url = url;
 
     let other_client = testnet.pubky_client_builder().build().unwrap();
     {
@@ -157,7 +174,7 @@ async fn unauthorized_put_delete() {
 
         assert_eq!(
             other_client
-                .put(url)
+                .put(url.as_str())
                 .body(vec![0, 1, 2, 3, 4])
                 .send()
                 .await
@@ -168,7 +185,7 @@ async fn unauthorized_put_delete() {
     }
 
     client
-        .put(url)
+        .put(url.as_str())
         .body(vec![0, 1, 2, 3, 4])
         .send()
         .await
@@ -184,12 +201,24 @@ async fn unauthorized_put_delete() {
             .unwrap();
 
         assert_eq!(
-            other_client.delete(url).send().await.unwrap().status(),
+            other_client
+                .delete(url.as_str())
+                .send()
+                .await
+                .unwrap()
+                .status(),
             StatusCode::UNAUTHORIZED
         );
     }
 
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
+    let response = client
+        .get(url.as_str())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
 
     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 }
@@ -222,13 +251,13 @@ async fn list() {
     ];
 
     for url in urls {
-        client.put(url).body(vec![0]).send().await.unwrap();
+        client.put(url.as_str()).body(vec![0]).send().await.unwrap();
     }
 
     let url = format!("pubky://{pubky}/pub/example.com/extra");
 
     {
-        let list = client.list(&url).unwrap().send().await.unwrap();
+        let list = client.list(url.as_str()).unwrap().send().await.unwrap();
 
         assert_eq!(
             list,
@@ -244,7 +273,13 @@ async fn list() {
     }
 
     {
-        let list = client.list(&url).unwrap().limit(2).send().await.unwrap();
+        let list = client
+            .list(url.as_str())
+            .unwrap()
+            .limit(2)
+            .send()
+            .await
+            .unwrap();
 
         assert_eq!(
             list,
@@ -258,7 +293,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .limit(2)
             .cursor("a.txt")
@@ -278,7 +313,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .limit(2)
             .cursor("cc-nested/")
@@ -298,7 +333,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .limit(2)
             .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
@@ -318,7 +353,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .limit(2)
             .cursor("/a.txt")
@@ -338,7 +373,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .reverse(true)
             .send()
@@ -360,7 +395,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .reverse(true)
             .limit(2)
@@ -380,7 +415,7 @@ async fn list() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .reverse(true)
             .limit(2)
@@ -430,14 +465,14 @@ async fn list_shallow() {
     ];
 
     for url in urls {
-        client.put(url).body(vec![0]).send().await.unwrap();
+        client.put(url.as_str()).body(vec![0]).send().await.unwrap();
     }
 
     let url = format!("pubky://{pubky}/pub/");
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .shallow(true)
             .send()
@@ -461,7 +496,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .shallow(true)
             .limit(2)
@@ -481,7 +516,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .shallow(true)
             .limit(2)
@@ -502,7 +537,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .shallow(true)
             .limit(3)
@@ -524,7 +559,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .reverse(true)
             .shallow(true)
@@ -549,7 +584,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .reverse(true)
             .shallow(true)
@@ -570,7 +605,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .shallow(true)
             .reverse(true)
@@ -592,7 +627,7 @@ async fn list_shallow() {
 
     {
         let list = client
-            .list(&url)
+            .list(url.as_str())
             .unwrap()
             .shallow(true)
             .reverse(true)
@@ -643,8 +678,8 @@ async fn list_events() {
     ];
 
     for url in urls {
-        client.put(&url).body(vec![0]).send().await.unwrap();
-        client.delete(url).send().await.unwrap();
+        client.put(url.as_str()).body(vec![0]).send().await.unwrap();
+        client.delete(url.as_str()).send().await.unwrap();
     }
 
     let feed_url = format!("https://{}/events/", server.public_key());
@@ -655,7 +690,7 @@ async fn list_events() {
 
     {
         let response = client
-            .request(Method::GET, format!("{feed_url}?limit=10"))
+            .request(Method::GET, format!("{feed_url}?limit=10").as_str())
             .send()
             .await
             .unwrap();
@@ -685,7 +720,10 @@ async fn list_events() {
 
     {
         let response = client
-            .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
+            .request(
+                Method::GET,
+                format!("{feed_url}?limit=10&cursor={cursor}").as_str(),
+            )
             .send()
             .await
             .unwrap();
@@ -730,7 +768,7 @@ async fn read_after_event() {
 
     let url = format!("pubky://{pubky}/pub/a.com/a.txt");
 
-    client.put(&url).body(vec![0]).send().await.unwrap();
+    client.put(url.as_str()).body(vec![0]).send().await.unwrap();
 
     let feed_url = format!("https://{}/events/", server.public_key());
 
@@ -738,7 +776,7 @@ async fn read_after_event() {
 
     {
         let response = client
-            .request(Method::GET, format!("{feed_url}?limit=10"))
+            .request(Method::GET, format!("{feed_url}?limit=10").as_str())
             .send()
             .await
             .unwrap();
@@ -757,7 +795,7 @@ async fn read_after_event() {
         );
     }
 
-    let response = client.get(url).send().await.unwrap();
+    let response = client.get(url.as_str()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     let body = response.bytes().await.unwrap();
@@ -793,12 +831,22 @@ async fn dont_delete_shared_blobs() {
     let url_2 = format!("pubky://{user_2_id}/pub/pubky.app/file/file_1");
 
     let file = vec![1];
-    client.put(&url_1).body(file.clone()).send().await.unwrap();
-    client.put(&url_2).body(file.clone()).send().await.unwrap();
+    client
+        .put(url_1.as_str())
+        .body(file.clone())
+        .send()
+        .await
+        .unwrap();
+    client
+        .put(url_2.as_str())
+        .body(file.clone())
+        .send()
+        .await
+        .unwrap();
 
     // Delete file 1
     client
-        .delete(url_1)
+        .delete(url_1.as_str())
         .send()
         .await
         .unwrap()
@@ -806,7 +854,7 @@ async fn dont_delete_shared_blobs() {
         .unwrap();
 
     let blob = client
-        .get(url_2)
+        .get(url_2.as_str())
         .send()
         .await
         .unwrap()
@@ -819,7 +867,7 @@ async fn dont_delete_shared_blobs() {
     let feed_url = format!("https://{}/events/", homeserver.public_key());
 
     let response = client
-        .request(Method::GET, feed_url)
+        .request(Method::GET, feed_url.as_str())
         .send()
         .await
         .unwrap()
@@ -856,19 +904,31 @@ async fn stream() {
         .unwrap();
 
     let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url.as_str();
+    let url = url;
 
     let bytes = Bytes::from(vec![0; 1024 * 1024]);
 
-    client.put(url).body(bytes.clone()).send().await.unwrap();
+    client
+        .put(url.as_str())
+        .body(bytes.clone())
+        .send()
+        .await
+        .unwrap();
 
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
+    let response = client
+        .get(url.as_str())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
 
     assert_eq!(response, bytes);
 
-    client.delete(url).send().await.unwrap();
+    client.delete(url.as_str()).send().await.unwrap();
 
-    let response = client.get(url).send().await.unwrap();
+    let response = client.get(url.as_str()).send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

@@ -76,8 +76,8 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
     }
 }
 
-impl crate::NativeClient {
-    /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
+impl crate::Client {
+    /// A wrapper around [Client::request], with the same signature between native and wasm.
     pub(crate) async fn cross_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
