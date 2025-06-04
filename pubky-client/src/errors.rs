@@ -6,7 +6,6 @@ pub enum PubkyError {
     Error(String),
 }
 
-#[cfg(not(wasm_browser))]
 #[derive(Debug, thiserror::Error)]
 pub enum PkarrError {
     #[error("Publish operation failed: {0}")]
