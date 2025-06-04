@@ -2,12 +2,11 @@ use anyhow::Result;
 use pkarr::{
     Keypair, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
-    errors::QueryError,
+    errors::QueryError
 };
 use std::convert::TryInto;
 use std::time::Duration;
-
-use crate::shared::sleep;
+use crate::utils::sleep;
 
 use super::super::Client;
 
