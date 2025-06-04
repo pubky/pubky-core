@@ -365,6 +365,7 @@ impl Client {
             PublishStrategy::IfOlderThan,
         )
         .await
+        .map_err(|e| e.into())
     }
 
     /// Get the homeserver for a given Pubky public key.
