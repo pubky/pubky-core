@@ -385,7 +385,7 @@ mod tests {
         assert!(res.is_ok());
         let info = res.unwrap();
         assert_eq!(info.published_nodes_count, 0);
-        assert!(info.condition_failed);
+        assert_eq!(info.condition_failed, true);
     }
 
     #[tokio::test]
@@ -409,6 +409,6 @@ mod tests {
         assert!(res.is_ok());
         let info = res.unwrap();
         assert_eq!(info.published_nodes_count, 1);
-        assert!(!info.condition_failed);
+        assert_eq!(info.condition_failed, false);
     }
 }

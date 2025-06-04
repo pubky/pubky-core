@@ -25,9 +25,12 @@ mod utils;
 #[cfg(wasm_browser)]
 mod wasm;
 
+#[cfg(not(wasm_browser))]
 pub use crate::native::Client;
 pub use crate::native::{ClientBuilder, api::auth::AuthRequest, api::public::ListBuilder};
 
+#[cfg(wasm_browser)]
+pub use native::Client as NativeClient;
 #[cfg(wasm_browser)]
 pub use wasm::constructor::Client;
 
