@@ -1,12 +1,12 @@
 import test from 'tape'
 
-import { WasmClient, Keypair, PublicKey, setLogLevel } from '../index.cjs'
+import { PubkyClient, Keypair, PublicKey, setLogLevel } from '../index.cjs'
 import { createSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 
 test('public: put/get', async (t) => {
-  const client = WasmClient.testnet();
+  const client = PubkyClient.testnet();
 
   const keypair = Keypair.random();
 
@@ -28,7 +28,7 @@ test('public: put/get', async (t) => {
     credentials: "include"
   });
 
-  const otherClient = WasmClient.testnet();
+  const otherClient = PubkyClient.testnet();
 
   // GET public data without signup or signin
   {
@@ -55,7 +55,7 @@ test('public: put/get', async (t) => {
 })
 
 test("not found", async (t) => {
-  const client = WasmClient.testnet();
+  const client = PubkyClient.testnet();
 
 
   const keypair = Keypair.random();
@@ -74,7 +74,7 @@ test("not found", async (t) => {
 })
 
 test("unauthorized", async (t) => {
-  const client = WasmClient.testnet();
+  const client = PubkyClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -102,7 +102,7 @@ test("unauthorized", async (t) => {
 })
 
 test("forbidden", async (t) => {
-  const client = WasmClient.testnet();
+  const client = PubkyClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -130,7 +130,7 @@ test("forbidden", async (t) => {
 })
 
 test("list", async (t) => {
-  const client = WasmClient.testnet();
+  const client = PubkyClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -265,7 +265,7 @@ test("list", async (t) => {
 })
 
 test('list shallow', async (t) => {
-  const client = WasmClient.testnet();
+  const client = PubkyClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()

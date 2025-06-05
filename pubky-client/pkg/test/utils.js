@@ -2,7 +2,7 @@
 /**
  * Util to request a signup token from the given homeserver as admin.
  *
- * @param {Client} client - An instance of your client.
+ * @param {PubkyClient} client - An instance of your client.
  * @param {string} homeserver_address - The homeserver's public key (as a domain-like string).
  * @param {string} [adminPassword="admin"] - The admin password (defaults to "admin").
  * @returns {Promise<string>} - The signup token.

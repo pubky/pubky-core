@@ -13,10 +13,10 @@ use pkarr::extra::endpoints::Endpoint;
 
 use crate::{cross_debug, wasm::js_result::JsResult};
 
-use super::super::constructor::WasmClient;
+use super::super::constructor::PubkyClient;
 
 #[wasm_bindgen]
-impl WasmClient {
+impl PubkyClient {
     #[wasm_bindgen]
     pub async fn fetch(
         &self,
@@ -24,10 +24,7 @@ impl WasmClient {
         request_init: Option<RequestInit>,
     ) -> JsResult<js_sys::Promise> {
         let mut url: Url = url.try_into().map_err(|err| {
-            JsValue::from_str(&format!(
-                "pubky::WasmClient::fetch(): Invalid `url`; {:?}",
-                err
-            ))
+            JsValue::from_str(&format!("pubky::Client::fetch(): Invalid `url`; {:?}", err))
         })?;
 
         let request_init = request_init.unwrap_or_default();
@@ -49,7 +46,7 @@ impl WasmClient {
         let js_req = web_sys::Request::new_with_str_and_init(url.as_str(), &request_init).map_err(
             |err| {
                 JsValue::from_str(&format!(
-                    "pubky::WasmClient::fetch(): Invalid `init`; {:?}",
+                    "pubky::Client::fetch(): Invalid `init`; {:?}",
                     err
                 ))
             },

@@ -12,12 +12,12 @@ use crate::wasm::{
     },
 };
 
-use super::super::constructor::WasmClient;
+use super::super::constructor::PubkyClient;
 
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-impl WasmClient {
+impl PubkyClient {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key

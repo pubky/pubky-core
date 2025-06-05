@@ -1,11 +1,11 @@
 import test from 'tape'
 
-import { WasmClient, Keypair, PublicKey } from '../index.cjs'
+import { PubkyClient, Keypair, PublicKey } from '../index.cjs'
 
 const TLD = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
 
 test("basic fetch", async (t) => {
-  let client = WasmClient.testnet();
+  let client = PubkyClient.testnet();
 
   // Normal TLD
   {
@@ -23,7 +23,7 @@ test("basic fetch", async (t) => {
 
 test("fetch failed", async (t) => {
 
-  let client = WasmClient.testnet();
+  let client = PubkyClient.testnet();
 
   // Normal TLD
   {

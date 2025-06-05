@@ -24,7 +24,7 @@ pub struct PkarrConfig {
     pub(crate) request_timeout: Option<NonZeroU64>,
 }
 
-/// Pubky WasmClient Config
+/// Pubky PubkyClient Config
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
@@ -37,22 +37,22 @@ pub struct PubkyClientConfig {
 }
 
 // ------------------------------------------------------------------------------------------------
-// JS WasmClient constructor
+// JS PubkyClient constructor
 // ------------------------------------------------------------------------------------------------
 
 #[wasm_bindgen]
-pub struct WasmClient(pub(crate) crate::Client);
+pub struct PubkyClient(pub(crate) crate::Client);
 
-impl Default for WasmClient {
+impl Default for PubkyClient {
     fn default() -> Self {
         Self::new(None).expect("No config constructor should be infallible")
     }
 }
 
 #[wasm_bindgen]
-impl WasmClient {
+impl PubkyClient {
     #[wasm_bindgen(constructor)]
-    /// Create a new Pubky WasmClient with an optional configuration.
+    /// Create a new Pubky PubkyClient with an optional configuration.
     pub fn new(config_opt: Option<PubkyClientConfig>) -> JsResult<Self> {
         let mut builder = crate::Client::builder();
 

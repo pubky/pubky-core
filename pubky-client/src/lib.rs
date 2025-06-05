@@ -22,4 +22,4 @@ pub use pubky_common::recovery_file;
 #[cfg(wasm_browser)]
 mod wasm;
 #[cfg(wasm_browser)]
-pub use wasm::constructor::WasmClient;
+pub use wasm::constructor::PubkyClient;
