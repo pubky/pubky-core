@@ -1,6 +1,6 @@
 use reqwest::{IntoUrl, Method};
 
-use anyhow::Result;
+use crate::errors::Result;
 
 use super::super::Client;
 

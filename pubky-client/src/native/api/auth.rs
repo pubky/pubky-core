@@ -4,6 +4,11 @@ use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
 use url::Url;
 
+use super::super::{Client, internal::pkarr::PublishStrategy};
+use crate::{
+    cross_debug,
+    errors::{PubkyError, Result},
+};
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{
     auth::AuthToken,
@@ -11,9 +16,6 @@ use pubky_common::{
     crypto::{decrypt, encrypt, hash, random_bytes},
     session::Session,
 };
-
-use super::super::{Client, internal::pkarr::PublishStrategy};
-use crate::errors::{PubkyError, Result};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -299,7 +301,7 @@ impl Client {
         relay: Url,
         client_secret: &[u8; 32],
         tx: flume::Sender<Result<PublicKey>>,
-    ) -> anyhow::Result<PublicKey> {
+    ) -> Result<PublicKey> {
         let response = loop {
             match self
                 .cross_request(Method::GET, relay.clone())
@@ -329,7 +331,9 @@ impl Client {
         let token = AuthToken::verify(&token_bytes)?;
 
         if !token.capabilities().is_empty() {
-            self.signin_with_authtoken(&token).await?;
+            self.signin_with_authtoken(&token)
+                .await
+                .map_err(|_| PubkyError::AuthFailure)?;
         }
 
         Ok(token.pubky().clone())

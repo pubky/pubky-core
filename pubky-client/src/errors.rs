@@ -26,6 +26,9 @@ pub enum PubkyError {
     #[error("Authentication failure")]
     AuthFailure,
 
+    #[error("Invalid Pubky token: {0}")]
+    InvalidPubkyToken(#[from] pubky_common::auth::Error),
+
     #[error("Access denied")] // not specifying error for privacy and security reasons
     AccessDenied,
 }

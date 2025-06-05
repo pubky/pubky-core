@@ -11,12 +11,12 @@ use futures_lite::StreamExt;
 use pkarr::PublicKey;
 use pkarr::extra::endpoints::Endpoint;
 
-use crate::wasm::js_result::JsResult;
+use crate::{cross_debug, wasm::js_result::JsResult};
 
-use super::super::constructor::Client;
+use super::super::constructor::WasmClient;
 
 #[wasm_bindgen]
-impl Client {
+impl WasmClient {
     #[wasm_bindgen]
     pub async fn fetch(
         &self,
@@ -24,7 +24,10 @@ impl Client {
         request_init: Option<RequestInit>,
     ) -> JsResult<js_sys::Promise> {
         let mut url: Url = url.try_into().map_err(|err| {
-            JsValue::from_str(&format!("pubky::Client::fetch(): Invalid `url`; {:?}", err))
+            JsValue::from_str(&format!(
+                "pubky::WasmClient::fetch(): Invalid `url`; {:?}",
+                err
+            ))
         })?;
 
         let request_init = request_init.unwrap_or_default();
@@ -46,7 +49,7 @@ impl Client {
         let js_req = web_sys::Request::new_with_str_and_init(url.as_str(), &request_init).map_err(
             |err| {
                 JsValue::from_str(&format!(
-                    "pubky::Client::fetch(): Invalid `init`; {:?}",
+                    "pubky::WasmClient::fetch(): Invalid `init`; {:?}",
                     err
                 ))
             },
@@ -76,7 +79,7 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
     }
 }
 
-impl crate::NativeClient {
+impl crate::Client {
     /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
     pub(crate) async fn cross_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
         let original_url = url.as_str();

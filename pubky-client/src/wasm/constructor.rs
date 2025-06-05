@@ -24,7 +24,7 @@ pub struct PkarrConfig {
     pub(crate) request_timeout: Option<NonZeroU64>,
 }
 
-/// Pubky Client Config
+/// Pubky WasmClient Config
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
@@ -37,24 +37,24 @@ pub struct PubkyClientConfig {
 }
 
 // ------------------------------------------------------------------------------------------------
-// JS Client constructor
+// JS WasmClient constructor
 // ------------------------------------------------------------------------------------------------
 
 #[wasm_bindgen]
-pub struct Client(pub(crate) crate::NativeClient);
+pub struct WasmClient(pub(crate) crate::Client);
 
-impl Default for Client {
+impl Default for WasmClient {
     fn default() -> Self {
         Self::new(None).expect("No config constructor should be infallible")
     }
 }
 
 #[wasm_bindgen]
-impl Client {
+impl WasmClient {
     #[wasm_bindgen(constructor)]
-    /// Create a new Pubky Client with an optional configuration.
+    /// Create a new Pubky WasmClient with an optional configuration.
     pub fn new(config_opt: Option<PubkyClientConfig>) -> JsResult<Self> {
-        let mut builder = crate::NativeClient::builder();
+        let mut builder = crate::Client::builder();
 
         let config = match config_opt {
             Some(config) => config,
@@ -62,7 +62,7 @@ impl Client {
                 return Ok(Self(
                     builder
                         .build()
-                        .expect("building a default NativeClient should be infallible"),
+                        .expect("building a default native Client should be infallible"),
                 ));
             }
         };
@@ -109,7 +109,7 @@ impl Client {
     ///     and read the homeserver HTTP port from the [reserved service parameter key](pubky_common::constants::reserved_param_keys::HTTP_PORT)
     #[wasm_bindgen]
     pub fn testnet() -> Self {
-        let mut builder = crate::NativeClient::builder();
+        let mut builder = crate::Client::builder();
 
         builder.pkarr(|builder| {
             builder
