@@ -50,10 +50,7 @@ pub enum PkarrError {
 
 impl PkarrError {
     pub fn is_retryable(&self) -> bool {
-        match self {
-            PkarrError::Publish(_) | PkarrError::Query(_) => true,
-            _ => false,
-        }
+        matches!(self, PkarrError::Publish(_) | PkarrError::Query(_))
     }
 }
 
