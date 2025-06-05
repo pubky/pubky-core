@@ -49,6 +49,10 @@ impl HttpError {
     pub fn forbidden() -> HttpError {
         Self::new(StatusCode::FORBIDDEN, Some("Forbidden"))
     }
+
+    pub fn unauthorized() -> HttpError {
+        Self::new(StatusCode::UNAUTHORIZED, Some("Unauthorized"))
+    }
 }
 
 impl IntoResponse for HttpError {
@@ -70,6 +74,7 @@ impl From<std::io::Error> for HttpError {
         Self::internal_server()
     }
 }
+
 
 // LMDB errors
 impl From<heed::Error> for HttpError {
@@ -119,5 +124,11 @@ impl From<FileIoError> for HttpError {
                 Self::internal_server()
             },
         }
+    }
+}
+
+impl From<pubky_common::auth::Error> for HttpError {
+    fn from(error: pubky_common::auth::Error) -> Self {
+        Self::bad_request(error)
     }
 }

@@ -1,13 +1,7 @@
 use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::users::User;
 use crate::shared::{HttpError, HttpResult};
-use crate::{
-    core::{
-        error::{Error, Result},
-        AppState,
-    },
-    SignupMode,
-};
+use crate::{core::AppState, SignupMode};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -46,15 +40,18 @@ pub async fn signup(
     let txn = state.db.env.read_txn()?;
     let users = state.db.tables.users;
     if users.get(&txn, public_key)?.is_some() {
-        return Err(HttpError::new(StatusCode::CONFLICT, Some("User already exists")));
+        return Err(HttpError::new(
+            StatusCode::CONFLICT,
+            Some("User already exists"),
+        ));
     }
     txn.commit()?;
 
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.signup_mode == SignupMode::TokenRequired {
-        let signup_token_param = params
-            .get("signup_token")
-            .ok_or_else(|| HttpError::new(StatusCode::BAD_REQUEST, Some("signup_token required")))?;
+        let signup_token_param = params.get("signup_token").ok_or_else(|| {
+            HttpError::new(StatusCode::BAD_REQUEST, Some("signup_token required"))
+        })?;
         // Validate it in the DB (marks it used)
         state
             .db
@@ -95,7 +92,10 @@ pub async fn signin(
     let user_exists = users.get(&txn, public_key)?.is_some();
     txn.commit()?;
     if !user_exists {
-        return Err(HttpError::new(StatusCode::NOT_FOUND, Some("User does not exist")));
+        return Err(HttpError::new(
+            StatusCode::NOT_FOUND,
+            Some("User does not exist"),
+        ));
     }
 
     // 3) Create the session & set cookie

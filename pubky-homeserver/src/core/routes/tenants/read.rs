@@ -1,10 +1,9 @@
-use crate::persistence::files::FileIoError;
+
 use crate::persistence::lmdb::tables::files::Entry;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
         err_if_user_is_invalid::err_if_user_is_invalid,
-        error::{Error, Result},
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },

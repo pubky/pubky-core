@@ -11,10 +11,10 @@ use tower::{Layer, Service};
 use tower_cookies::Cookies;
 
 use crate::core::{
-    error::{Error, Result},
     extractors::PubkyHost,
     AppState,
 };
+use crate::shared::{HttpError, HttpResult};
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -73,7 +73,7 @@ where
                 Some(pk) => pk,
                 None => {
                     return Ok(
-                        Error::new(StatusCode::NOT_FOUND, "Pubky Host is missing".into())
+                        HttpError::new(StatusCode::NOT_FOUND, Some("Pubky Host is missing"))
                             .into_response(),
                     )
                 }
@@ -99,7 +99,7 @@ fn authorize(
     cookies: Option<&Cookies>,
     public_key: &PublicKey,
     path: &str,
-) -> Result<()> {
+) -> HttpResult<()> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
         return Ok(());
@@ -108,7 +108,7 @@ fn authorize(
             return Ok(());
         }
     } else {
-        return Err(Error::new(
+        return Err(HttpError::new(
             StatusCode::FORBIDDEN,
             "Writing to directories other than '/pub/' is forbidden".into(),
         ));
@@ -116,12 +116,12 @@ fn authorize(
 
     if let Some(cookies) = cookies {
         let session_secret = session_secret_from_cookies(cookies, public_key)
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+            .ok_or(HttpError::unauthorized())?;
 
         let session = state
             .db
             .get_session(&session_secret)?
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+            .ok_or(HttpError::unauthorized())?;
 
         if session.pubky() == public_key
             && session.capabilities().iter().any(|cap| {
@@ -134,10 +134,10 @@ fn authorize(
             return Ok(());
         }
 
-        return Err(Error::with_status(StatusCode::FORBIDDEN));
+        return Err(HttpError::forbidden());
     }
 
-    Err(Error::with_status(StatusCode::UNAUTHORIZED))
+    Err(HttpError::unauthorized())
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {

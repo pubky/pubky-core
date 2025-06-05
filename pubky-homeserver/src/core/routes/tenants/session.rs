@@ -3,7 +3,6 @@ use tower_cookies::Cookies;
 
 use crate::{core::{
     err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Result},
     extractors::PubkyHost,
     layers::authz::session_secret_from_cookies,
     AppState,
@@ -28,7 +27,7 @@ pub async fn signout(
     State(mut state): State<AppState>,
     cookies: Cookies,
     pubky: PubkyHost,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {

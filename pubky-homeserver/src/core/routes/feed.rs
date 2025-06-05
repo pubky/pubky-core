@@ -6,22 +6,20 @@ use axum::{
 };
 use pubky_common::timestamp::Timestamp;
 
-use crate::core::{
-    error::{Error, Result},
+use crate::{core::{
     extractors::ListQueryParams,
     AppState,
-};
+}, shared::{HttpError, HttpResult}};
 
 pub async fn feed(
     State(state): State<AppState>,
     params: ListQueryParams,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     if let Some(ref cursor) = params.cursor {
         if Timestamp::try_from(cursor.to_string()).is_err() {
-            Err(Error::new(
-                StatusCode::BAD_REQUEST,
-                "Cursor should be valid base32 Crockford encoding of a timestamp".into(),
-            ))?
+            return Err(HttpError::bad_request(
+                "Cursor should be valid base32 Crockford encoding of a timestamp",
+            ));
         }
     }
 
