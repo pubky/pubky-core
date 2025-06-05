@@ -1,4 +1,3 @@
-
 use crate::persistence::lmdb::tables::files::Entry;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
@@ -59,7 +58,10 @@ pub fn list(
     let txn = state.db.env.read_txn()?;
 
     if !state.db.contains_directory(&txn, entry_path)? {
-        return Err(HttpError::new(StatusCode::NOT_FOUND, Some("Directory Not Found")));
+        return Err(HttpError::new(
+            StatusCode::NOT_FOUND,
+            Some("Directory Not Found"),
+        ));
     }
 
     // Handle listing
@@ -78,7 +80,11 @@ pub fn list(
         .body(Body::from(vec.join("\n")))?)
 }
 
-pub fn get_entry(headers: HeaderMap, entry: Entry, body: Option<Body>) -> HttpResult<Response<Body>> {
+pub fn get_entry(
+    headers: HeaderMap,
+    entry: Entry,
+    body: Option<Body>,
+) -> HttpResult<Response<Body>> {
     // TODO: Enable seek API (range requests)
     // TODO: Gzip? or brotli?
 

@@ -15,13 +15,9 @@ pub async fn delete_entry(
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
     match state.file_service.delete(entry_path.inner()).await {
-        Ok(()) => {
-            Ok((StatusCode::NO_CONTENT, ()))
-        }
+        Ok(()) => Ok((StatusCode::NO_CONTENT, ())),
 
-        Err(FileIoError::NotFound) => {
-            Err(HttpError::new(StatusCode::NOT_FOUND, Some("Not Found")))
-        }
+        Err(FileIoError::NotFound) => Err(HttpError::new(StatusCode::NOT_FOUND, Some("Not Found"))),
         Err(e) => {
             tracing::error!("Error deleting file: {}", e);
             Err(HttpError::new(

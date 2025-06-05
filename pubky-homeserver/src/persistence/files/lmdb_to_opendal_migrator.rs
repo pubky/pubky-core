@@ -71,7 +71,7 @@ impl LmDbToOpendalMigrator {
         let mut counter: usize = 0;
         for key_value in self.db.tables.entries.iter(&rtxn)? {
             let (_, value) = key_value?;
-            let entry = Entry::deserialize(&value)?;
+            let entry = Entry::deserialize(value)?;
             if entry.file_location() == &FileLocation::LMDB {
                 counter += 1;
             }
@@ -86,7 +86,7 @@ impl LmDbToOpendalMigrator {
         for key_value in self.db.tables.entries.iter(&rtxn)? {
             let (key, value) = key_value?;
             let path = EntryPath::from_str(key)?;
-            let entry = Entry::deserialize(&value)?;
+            let entry = Entry::deserialize(value)?;
             if entry.file_location() != &FileLocation::LMDB {
                 // Ignore entries that are already migrated
                 continue;
@@ -109,7 +109,7 @@ impl LmDbToOpendalMigrator {
         // Check if the entry changed since we last checked.
         // We are trying to use as little write txs as possible to avoid blocking the db
         // but this also implies that some entries might change in the meantime.
-        let entry = match self.db.get_entry(&path) {
+        let entry = match self.db.get_entry(path) {
             Ok(entry) => entry,
             Err(FileIoError::NotFound) => {
                 tracing::debug!("[LMDB to OpenDAL] Skipping missing entry. File was deleted in the meantime: {}", path);
@@ -130,7 +130,7 @@ impl LmDbToOpendalMigrator {
         }
 
         // Step 1: Read file data from LMDB
-        let stream = match self.file_service.get_stream(&path).await {
+        let stream = match self.file_service.get_stream(path).await {
             Ok(stream) => stream,
             Err(FileIoError::NotFound) => {
                 tracing::debug!(
@@ -150,7 +150,7 @@ impl LmDbToOpendalMigrator {
         let metadata = self
             .file_service
             .opendal_service
-            .write_stream(&path, converted_stream)
+            .write_stream(path, converted_stream)
             .await?;
 
         // Change the actual database. This needs to be done in a write tx to guarantee consistency.

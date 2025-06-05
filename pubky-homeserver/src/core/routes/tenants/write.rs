@@ -7,16 +7,15 @@ use axum::{
 use futures_util::stream::StreamExt;
 
 use crate::{
-    core::{
-        err_if_user_is_invalid::err_if_user_is_invalid,
-        extractors::PubkyHost,
-        AppState,
-    },
+    core::{err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState},
     persistence::{
         files::{is_size_hint_exceeding_quota, WriteStreamError},
         lmdb::tables::files::FileLocation,
     },
-    shared::{webdav::{EntryPath, WebDavPathPubAxum}, HttpError, HttpResult},
+    shared::{
+        webdav::{EntryPath, WebDavPathPubAxum},
+        HttpError, HttpResult,
+    },
 };
 
 pub async fn delete(
@@ -56,11 +55,11 @@ pub async fn put(
     // Convert body stream to the format expected by file_service
     let body_stream = body.into_data_stream();
     let converted_stream =
-        body_stream.map(|chunk_result| chunk_result.map_err(|e| WriteStreamError::Axum(e)));
+        body_stream.map(|chunk_result| chunk_result.map_err(WriteStreamError::Axum));
 
     state
-    .file_service
-    .write_stream(&entry_path, FileLocation::OpenDal, converted_stream)
-    .await?;
+        .file_service
+        .write_stream(&entry_path, FileLocation::OpenDal, converted_stream)
+        .await?;
     Ok((StatusCode::CREATED, ()))
 }

@@ -35,7 +35,10 @@ impl HttpError {
     }
 
     pub fn internal_server() -> HttpError {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some("Internal server error"))
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Some("Internal server error"),
+        )
     }
 
     pub fn bad_request(message: impl ToString) -> HttpError {
@@ -43,7 +46,10 @@ impl HttpError {
     }
 
     pub fn insufficient_storage() -> HttpError {
-        Self::new(StatusCode::INSUFFICIENT_STORAGE, Some("Disk space quota exceeded"))
+        Self::new(
+            StatusCode::INSUFFICIENT_STORAGE,
+            Some("Disk space quota exceeded"),
+        )
     }
 
     pub fn forbidden() -> HttpError {
@@ -74,7 +80,6 @@ impl From<std::io::Error> for HttpError {
         Self::internal_server()
     }
 }
-
 
 // LMDB errors
 impl From<heed::Error> for HttpError {
@@ -117,12 +122,14 @@ impl From<FileIoError> for HttpError {
     fn from(error: FileIoError) -> Self {
         match error {
             FileIoError::NotFound => Self::not_found(),
-            FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded) => Self::insufficient_storage(),
+            FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded) => {
+                Self::insufficient_storage()
+            }
             FileIoError::StreamBroken(_) => Self::bad_request("Stream broken"),
             e => {
                 tracing::error!(?e);
                 Self::internal_server()
-            },
+            }
         }
     }
 }

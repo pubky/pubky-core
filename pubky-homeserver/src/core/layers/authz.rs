@@ -10,10 +10,7 @@ use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
 
-use crate::core::{
-    extractors::PubkyHost,
-    AppState,
-};
+use crate::core::{extractors::PubkyHost, AppState};
 use crate::shared::{HttpError, HttpResult};
 
 /// A Tower Layer to handle authorization for write operations.
@@ -115,8 +112,8 @@ fn authorize(
     }
 
     if let Some(cookies) = cookies {
-        let session_secret = session_secret_from_cookies(cookies, public_key)
-            .ok_or(HttpError::unauthorized())?;
+        let session_secret =
+            session_secret_from_cookies(cookies, public_key).ok_or(HttpError::unauthorized())?;
 
         let session = state
             .db

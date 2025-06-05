@@ -1,5 +1,8 @@
+use crate::{
+    persistence::lmdb::{tables::users::UserQueryError, LmDB},
+    shared::{HttpError, HttpResult},
+};
 use pkarr::PublicKey;
-use crate::{persistence::lmdb::{tables::users::UserQueryError, LmDB}, shared::{HttpError, HttpResult}};
 
 /// Returns an error if the user doesn't exist or is disabled.
 pub fn err_if_user_is_invalid(

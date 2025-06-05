@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const DATA_DIRECTORY_PLACEHOLDER: &str = "{DATA_DIRECTORY}";
 
@@ -27,7 +27,7 @@ impl Default for FileSystemConfig {
 
 impl FileSystemConfig {
     /// Expands the `DATA_DIRECTORY_PLACEHOLDER` variable with the given data directory.
-    pub fn expand_with_data_directory(&mut self, data_directory: &PathBuf) {
+    pub fn expand_with_data_directory(&mut self, data_directory: &Path) {
         if self.root_directory.starts_with(DATA_DIRECTORY_PLACEHOLDER) {
             let mut path = self.root_directory.replace(DATA_DIRECTORY_PLACEHOLDER, "");
             // Remove the first character if it exists (usually "/"). Otherwise the join will replace the directory instead of appending.
