@@ -1,13 +1,13 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
+import { WasmClient, Keypair, PublicKey, setLogLevel } from '../index.cjs'
 import { createSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
 test('Auth: basic', async (t) => {
-  const client = Client.testnet();
+  const client = WasmClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -36,7 +36,7 @@ test('Auth: basic', async (t) => {
 })
 
 test("Auth: multi-user (cookies)", async (t) => {
-  const client = Client.testnet();
+  const client = WasmClient.testnet();
 
   const alice = Keypair.random()
   const bob = Keypair.random()
@@ -71,7 +71,7 @@ test("Auth: 3rd party signin", async (t) => {
 
   // Third party app side
   let capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  let client = Client.testnet();
+  let client = WasmClient.testnet();
   let authRequest = client
     .authRequest(TESTNET_HTTP_RELAY, capabilities);
 
@@ -87,7 +87,7 @@ test("Auth: 3rd party signin", async (t) => {
 
   // Authenticator side
   {
-    let client = Client.testnet();
+    let client = WasmClient.testnet();
 
     const signupToken = await createSignupToken(client)
 
@@ -106,7 +106,7 @@ test("Auth: 3rd party signin", async (t) => {
 
 
 test('getHomeserver not found', async (t) => {
-  const client = Client.testnet();
+  const client = WasmClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
@@ -124,7 +124,7 @@ function sleep(ms) {
 }
 
 test('getHomeserver success', async (t) => {
-  const client = Client.testnet();
+  const client = WasmClient.testnet();
 
   const keypair = Keypair.random()
   const publicKey = keypair.publicKey()
