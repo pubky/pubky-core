@@ -19,10 +19,10 @@ pub fn is_size_hint_exceeding_quota(
 ) -> anyhow::Result<bool> {
     let existing_entry_bytes = db.get_entry_content_length_default_zero(path)?;
     let user_already_used_bytes = db.get_user_data_usage(path.pubkey())?;
-    return Ok(
+    Ok(
         user_already_used_bytes + content_size_hint.saturating_sub(existing_entry_bytes)
             > max_allowed_bytes,
-    );
+    )
 }
 
 /// A stream wrapper that enforces the user max disk space limit.
@@ -72,11 +72,11 @@ impl<S> WriteDiskQuotaEnforcer<S> {
 
     /// Returns true if the user exceeds the quota.
     fn has_exceeded_quota(&self) -> bool {
-        return self.user_already_used_bytes
+        self.user_already_used_bytes
             + self
                 .stream_byte_counter
                 .saturating_sub(self.existing_entry_bytes)
-            > self.max_allowed_bytes;
+            > self.max_allowed_bytes
     }
 
     /// Returns an error if the user exceeded the quota.
@@ -99,7 +99,7 @@ where
             Poll::Ready(Some(Ok(chunk))) => {
                 self.stream_byte_counter += chunk.len() as u64;
                 if let Err(e) = self.err_if_exceeded_quota() {
-                    Poll::Ready(Some(Err(e.into())))
+                    Poll::Ready(Some(Err(e)))
                 } else {
                     Poll::Ready(Some(Ok(chunk)))
                 }
@@ -168,7 +168,7 @@ mod tests {
         let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt").unwrap());
         // Create a user
         let mut wtxn = db.env.write_txn().unwrap();
-        db.create_user(&path.pubkey(), &mut wtxn).unwrap();
+        db.create_user(path.pubkey(), &mut wtxn).unwrap();
         wtxn.commit().unwrap();
 
         let enforcer = create_test_enforcer_with_db(vec![1024], &db, &path, 1024).unwrap();
@@ -186,7 +186,7 @@ mod tests {
         let path = EntryPath::new(pubkey, WebDavPath::new("/test/file.txt")?);
         // Create a user
         let mut wtxn = db.env.write_txn()?;
-        db.create_user(&path.pubkey(), &mut wtxn)?;
+        db.create_user(path.pubkey(), &mut wtxn)?;
         wtxn.commit()?;
 
         let enforcer = create_test_enforcer_with_db(vec![1025], &db, &path, 1024)?;
@@ -205,7 +205,7 @@ mod tests {
 
         // Create a user and set up existing entry by actually writing a file
         let mut wtxn = db.env.write_txn()?;
-        db.create_user(&path.pubkey(), &mut wtxn)?;
+        db.create_user(path.pubkey(), &mut wtxn)?;
         wtxn.commit()?;
 
         // Write an existing file of 800 bytes
@@ -233,11 +233,11 @@ mod tests {
 
         // Create user and set up data
         let mut wtxn = db.env.write_txn()?;
-        db.create_user(&path.pubkey(), &mut wtxn)?;
+        db.create_user(path.pubkey(), &mut wtxn)?;
         wtxn.commit()?;
 
         // Set user usage to 450 bytes
-        db.update_data_usage(&path.pubkey(), 450)?;
+        db.update_data_usage(path.pubkey(), 450)?;
 
         // Write an existing file of 500 bytes
         let existing_file =
@@ -245,7 +245,7 @@ mod tests {
         db.write_entry_from_file_sync(&path, &existing_file)?;
 
         // Set user usage to 100 bytes
-        db.update_data_usage(&path.pubkey(), 500)?;
+        db.update_data_usage(path.pubkey(), 500)?;
 
         let enforcer = create_test_enforcer_with_db(vec![600], &db, &path, 1000)?;
         let (got_error, _total_bytes) = consume_enforcer(enforcer).await?;

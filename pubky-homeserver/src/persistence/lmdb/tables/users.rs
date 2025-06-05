@@ -181,7 +181,7 @@ mod unit_tests {
 
     #[test]
     fn test_update_and_get_usage() {
-        let mut db = LmDB::test();
+        let db = LmDB::test();
         let key = Keypair::random().public_key();
 
         // create user

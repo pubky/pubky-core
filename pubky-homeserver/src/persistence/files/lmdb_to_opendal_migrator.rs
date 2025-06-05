@@ -156,11 +156,11 @@ impl LmDbToOpendalMigrator {
         // Change the actual database. This needs to be done in a write tx to guarantee consistency.
         let mut wtx = self.db.env.write_txn()?;
         let mut locked_entry = match self.db.tables.entries.get(&wtx, path.as_str()) {
-            Ok(Some(entry)) => Entry::deserialize(&entry)?,
+            Ok(Some(entry)) => Entry::deserialize(entry)?,
             _ => {
                 tracing::warn!("[LMDB to OpenDAL] Entry not found or failed to parse in database: {}. Reverting migration.", path);
                 wtx.commit()?; // Close write tx as we are not going to use it.
-                self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
+                self.file_service.opendal_service.delete(path).await?; // Delete the file from OpenDAL because migration failed.
                 return Ok(());
             }
         };
@@ -171,14 +171,14 @@ impl LmDbToOpendalMigrator {
                 path
             );
             wtx.commit()?; // Close write tx as we are not going to use it.
-            self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
+            self.file_service.opendal_service.delete(path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
         }
 
         if locked_entry.content_hash() != &metadata.hash {
             tracing::warn!("[LMDB to OpenDAL] Content hash mismatch after migration: {}. File must has changed in the meantime. Reverting.", path);
             wtx.commit()?; // Close write tx as we are not going to use it.
-            self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
+            self.file_service.opendal_service.delete(path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
         }
 
@@ -187,7 +187,7 @@ impl LmDbToOpendalMigrator {
         self.db
             .tables
             .entries
-            .put(&mut wtx, &path.to_string(), &locked_entry.serialize())?;
+            .put(&mut wtx, path.as_ref(), &locked_entry.serialize())?;
 
         // Delete the file from LMDB.
         self.db.delete_file(&locked_entry.file_id(), &mut wtx)?;

@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_limit_key_parse_error() {
         let string = "invalid";
-        let result = LimitKey::from_str(&string);
+        let result = LimitKey::from_str(string);
         assert!(result.is_err());
     }
 }

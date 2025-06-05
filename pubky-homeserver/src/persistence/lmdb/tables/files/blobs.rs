@@ -51,7 +51,7 @@ impl LmDB {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Error reading file. JoinError: {:?}", e);
-                return Err(FileIoError::NotFound);
+                Err(FileIoError::NotFound)
             }
         }
     }
@@ -105,7 +105,7 @@ impl LmDB {
         let mut wtxn = self.env.write_txn()?;
         let file_id = self.write_file_sync(&temp_file, &mut wtxn)?;
         wtxn.commit()?;
-        metadata.modified_at = file_id.timestamp().clone();
+        metadata.modified_at = *file_id.timestamp();
 
         Ok(metadata)
     }
@@ -118,8 +118,8 @@ impl LmDB {
     ) -> Result<(), FileIoError> {
         let mut keys = vec![];
         {
-            let mut iter = self.tables.blobs.prefix_iter_mut(wtxn, &file.bytes())?;
-            while let Some(result) = iter.next() {
+            let iter = self.tables.blobs.prefix_iter_mut(wtxn, &file.bytes())?;
+            for result in iter {
                 let (key, _) = result?;
                 keys.push(key.to_vec());
             }

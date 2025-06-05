@@ -73,7 +73,7 @@ impl LmDB {
     ) -> Result<Entry, FileIoError> {
         let mut wtxn = self.env.write_txn()?;
         let mut entry = Entry::new();
-        entry.set_content_hash(metadata.hash.clone());
+        entry.set_content_hash(metadata.hash);
         entry.set_content_length(metadata.length);
         entry.set_timestamp(&metadata.modified_at);
         entry.file_location = file_location;
@@ -111,7 +111,7 @@ impl LmDB {
         let mut metadata = file.metadata().clone();
         let file_id = self.write_file_sync(file, &mut wtxn)?;
         wtxn.commit()?;
-        metadata.modified_at = file_id.timestamp().clone();
+        metadata.modified_at = *file_id.timestamp();
         let entry = self.write_entry(path, &metadata, FileLocation::LMDB)?;
         Ok(entry)
     }
@@ -345,16 +345,13 @@ fn next_threshold(
 /// This is used to determine where the file is stored.
 /// Used during the transition process from LMDB to OpenDAL.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Default)]
 pub enum FileLocation {
+    #[default]
     LMDB,
     OpenDal,
 }
 
-impl Default for FileLocation {
-    fn default() -> Self {
-        FileLocation::LMDB
-    }
-}
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Entry {

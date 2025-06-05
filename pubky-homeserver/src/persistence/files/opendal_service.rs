@@ -16,7 +16,7 @@ pub fn build_storage_operator_from_config(
 ) -> anyhow::Result<Operator> {
     let builder = match config.clone() {
         StorageConfigToml::FileSystem(mut config) => {
-            config.expand_with_data_directory(&data_directory.to_path_buf());
+            config.expand_with_data_directory(data_directory);
             tracing::info!("Store files in file system: {}", config.root_directory);
             let builder = config.to_builder()?;
             opendal::Operator::new(builder)?.finish()

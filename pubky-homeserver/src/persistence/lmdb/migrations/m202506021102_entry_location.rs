@@ -181,7 +181,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -193,7 +193,7 @@ mod tests {
         table
             .put(
                 &mut wtxn,
-                &"pubky/test.txt",
+                "pubky/test.txt",
                 &OldEntry {
                     version: 1,
                     timestamp: Timestamp::now(),
@@ -214,7 +214,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -234,7 +234,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -246,7 +246,7 @@ mod tests {
         table
             .put(
                 &mut wtxn,
-                &"pubky/test.txt",
+                "pubky/test.txt",
                 &NewEntry {
                     version: 1,
                     timestamp: Timestamp::now(),
@@ -271,7 +271,7 @@ mod tests {
             EnvOpenOptions::new()
                 .max_dbs(20)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&tmp_dir.path())
+                .open(tmp_dir.path())
         }
         .unwrap();
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
@@ -287,7 +287,7 @@ mod tests {
             content_length: 0,
             content_type: "text/plain".to_string(),
         };
-        table.put(&mut wtxn, &"pubky/test.txt", &old_entry).unwrap();
+        table.put(&mut wtxn, "pubky/test.txt", &old_entry).unwrap();
 
         // Migrate the users to the new schema.
         run(&env, &mut wtxn).unwrap();
@@ -297,7 +297,7 @@ mod tests {
             .open_database(&mut wtxn, Some(ENTRIES_TABLE))
             .unwrap()
             .unwrap();
-        let entry = table.get(&mut wtxn, &"pubky/test.txt").unwrap().unwrap();
+        let entry = table.get(&mut wtxn, "pubky/test.txt").unwrap().unwrap();
         assert_eq!(
             entry.file_location,
             FileLocation::LMDB,
