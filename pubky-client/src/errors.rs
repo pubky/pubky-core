@@ -2,8 +2,32 @@ pub use super::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PubkyError {
-    #[error("Error: {0}")]
-    Error(String),
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
+
+    #[error("PKarr operation failed: {0}")]
+    Pkarr(#[from] PkarrError),
+
+    #[error("Configuration error: {0}")]
+    Config(String),
+
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("URL parsing error: {0}")]
+    Url(#[from] url::ParseError),
+
+    #[error("Homeserver not found")]
+    HomeserverNotFound,
+
+    #[error("Invalid relay")]
+    InvalidRelay,
+
+    #[error("Authentication failure")]
+    AuthFailure,
+
+    #[error("Access denied")] // not specifying error for privacy and security reasons
+    AccessDenied,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -22,23 +46,16 @@ pub enum PkarrError {
 
     #[error("Build failed: {0}")]
     Build(#[from] pkarr::errors::BuildError),
-
-    // Add more as needed
-    #[error("Other pkarr error: {0}")]
-    Other(String),
 }
 
 impl PkarrError {
     pub fn is_retryable(&self) -> bool {
         match self {
-            PkarrError::Publish(_) => true,
-            PkarrError::Query(_) => true,
-            PkarrError::Build(_) => false,
-            PkarrError::Other(_) => false,
+            PkarrError::Publish(_) | PkarrError::Query(_) => true,
             _ => false,
         }
     }
 }
 
 /// Convenience type alias
-pub type PubkyResult<T> = Result<T, PubkyError>;
+pub type Result<T> = std::result::Result<T, PubkyError>;

@@ -12,18 +12,6 @@ static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERS
 
 static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 
-#[macro_export]
-macro_rules! handle_http_error {
-    ($res:expr) => {
-        if let Err(status) = $res.error_for_status_ref() {
-            return match $res.text().await {
-                Ok(text) => Err(anyhow::anyhow!("{status}. Error message: {text}")),
-                _ => Err(anyhow::anyhow!("{status}")),
-            };
-        }
-    };
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
     pkarr: pkarr::ClientBuilder,

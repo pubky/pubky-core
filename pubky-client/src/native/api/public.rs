@@ -2,8 +2,6 @@ use reqwest::{IntoUrl, Method};
 
 use anyhow::Result;
 
-use crate::handle_http_error;
-
 use super::super::Client;
 
 impl Client {
@@ -108,9 +106,8 @@ impl<'a> ListBuilder<'a> {
             .cross_request(Method::GET, url)
             .await
             .send()
-            .await?;
-
-        handle_http_error!(response);
+            .await?
+            .error_for_status()?;
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;

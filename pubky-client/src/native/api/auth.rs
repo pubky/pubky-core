@@ -12,10 +12,8 @@ use pubky_common::{
     session::Session,
 };
 
-use anyhow::Result;
-
 use super::super::{Client, internal::pkarr::PublishStrategy};
-use crate::handle_http_error;
+use crate::errors::{PubkyError, Result};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -51,12 +49,10 @@ impl Client {
             .await
             .body(request_body)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
-        // 5) Check for non-2xx status codes
-        handle_http_error!(response);
-
-        // 6) Publish the homeserver record
+        // 5) Publish the homeserver record
         self.publish_homeserver(
             keypair,
             Some(&homeserver.to_string()),
@@ -64,14 +60,14 @@ impl Client {
         )
         .await?;
 
-        // 7) Store session cookie in local store
+        // 6) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
             .store_session_after_signup(&response, &keypair.public_key());
 
-        // 8) Parse the response body into a `Session`
+        // 7) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
-        Ok(Session::deserialize(&bytes)?)
+        Session::deserialize(&bytes).map_err(|_| PubkyError::AccessDenied)
     }
 
     /// Check the current session for a given Pubky in its homeserver.
@@ -85,26 +81,28 @@ impl Client {
             .send()
             .await?;
 
-        if response.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
+        match response.status() {
+            StatusCode::OK => {
+                let bytes = response.bytes().await?;
+                Ok(Some(
+                    Session::deserialize(&bytes).map_err(|_| PubkyError::AuthFailure)?,
+                ))
+            }
+            StatusCode::NOT_FOUND => {
+                Ok(None) // user signed out, no good solution unless API implements RPC
+            }
+            _ => Err(PubkyError::AccessDenied),
         }
-
-        handle_http_error!(response);
-
-        let bytes = response.bytes().await?;
-
-        Ok(Some(Session::deserialize(&bytes)?))
     }
 
     /// Signout from a homeserver.
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
-        let response = self
+        let _ = self
             .cross_request(Method::DELETE, format!("pubky://{}/session", pubky))
             .await
             .send()
-            .await?;
-
-        handle_http_error!(response);
+            .await?
+            .error_for_status()?;
 
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store.delete_session_after_signout(pubky);
@@ -212,14 +210,13 @@ impl Client {
         path_segments.push(&channel_id);
         drop(path_segments);
 
-        let response = self
+        let _ = self
             .cross_request(Method::POST, callback_url)
             .await
             .body(encrypted_token)
             .send()
-            .await?;
-
-        handle_http_error!(response);
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -230,13 +227,12 @@ impl Client {
             .await
             .body(token.serialize())
             .send()
-            .await?;
-
-        handle_http_error!(response);
+            .await?
+            .error_for_status()?;
 
         let bytes = response.bytes().await?;
 
-        Ok(Session::deserialize(&bytes)?)
+        Session::deserialize(&bytes).map_err(|_| PubkyError::AccessDenied)
     }
 
     pub(crate) fn create_auth_request(
@@ -255,7 +251,7 @@ impl Client {
 
         let mut segments = relay
             .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("Invalid relay"))?;
+            .map_err(|_| PubkyError::InvalidRelay)?;
 
         // remove trailing slash if any.
         segments.pop_if_empty();
@@ -286,7 +282,8 @@ impl Client {
         let future = async move {
             let result = this
                 .subscribe_to_auth_response(relay, &client_secret, tx.clone())
-                .await;
+                .await
+                .map_err(|_| PubkyError::AuthFailure);
             let _ = tx.send(result);
         };
 
@@ -327,8 +324,8 @@ impl Client {
         }?;
 
         let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, client_secret)
-            .map_err(|e| anyhow::anyhow!("Got invalid token: {e}"))?;
+        let token_bytes =
+            decrypt(&encrypted_token, client_secret).map_err(|_| PubkyError::AuthFailure)?;
         let token = AuthToken::verify(&token_bytes)?;
 
         if !token.capabilities().is_empty() {
