@@ -58,6 +58,8 @@ fast-glob = "0.4.5"
 tokio-util = "0.7.15"
 percent-encoding = "2.3.1"
 serde_valid = "1.0.5"
+infer = "0.19.0"
+mime_guess = "2.0.5"
 
 
 [dev-dependencies]
