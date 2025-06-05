@@ -4,11 +4,11 @@ mod domain;
 mod domain_port;
 mod mock_data_dir;
 mod persistent_data_dir;
-/// Opendal config for the TomlConfig.
-pub mod storage_config;
 /// Quota configuration for the TomlConfig.
 pub mod quota_config;
 mod signup_mode;
+/// Opendal config for the TomlConfig.
+pub mod storage_config;
 
 pub use config_toml::{ConfigReadError, ConfigToml};
 pub use data_dir::DataDir;

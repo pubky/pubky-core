@@ -124,18 +124,23 @@ mod tests {
         db: &LmDB,
         path: &EntryPath,
         max_allowed_bytes: u64,
-    ) -> Result<WriteDiskQuotaEnforcer<impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>, FileIoError> {
+    ) -> Result<
+        WriteDiskQuotaEnforcer<impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
+        FileIoError,
+    > {
         let byte_chunks: Vec<Result<Bytes, WriteStreamError>> = chunks
-        .into_iter()
-        .map(|size| Ok(Bytes::from(vec![0u8; size])))
-        .collect();
+            .into_iter()
+            .map(|size| Ok(Bytes::from(vec![0u8; size])))
+            .collect();
         let test_stream = stream::iter(byte_chunks);
         let enforcer = WriteDiskQuotaEnforcer::new(test_stream, db, path, max_allowed_bytes)?;
         Ok(enforcer)
     }
 
     async fn consume_enforcer(
-            mut enforcer: WriteDiskQuotaEnforcer<impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send>,
+        mut enforcer: WriteDiskQuotaEnforcer<
+            impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
+        >,
     ) -> anyhow::Result<(bool, usize)> {
         let mut total_bytes = 0;
         let mut got_error = false;

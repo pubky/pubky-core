@@ -1,8 +1,8 @@
 use heed::Env;
 
 mod m0;
-mod m220420251247_add_user_disabled_used_bytes;
 mod m202506021102_entry_location;
+mod m220420251247_add_user_disabled_used_bytes;
 
 /// Run the migrations.
 pub fn run(env: &Env) -> anyhow::Result<()> {

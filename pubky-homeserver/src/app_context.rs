@@ -5,9 +5,12 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
-use std::{ sync::Arc, time::Duration};
+use crate::{
+    persistence::{files::FileService, lmdb::LmDB},
+    ConfigToml, DataDir, MockDataDir, PersistentDataDir,
+};
 use pkarr::Keypair;
-use crate::{ persistence::{files::FileService, lmdb::LmDB}, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
+use std::{sync::Arc, time::Duration};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]

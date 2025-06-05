@@ -4,7 +4,10 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
-use super::{domain_port::DomainPort, storage_config::StorageConfigToml, quota_config::PathLimit, Domain, SignupMode};
+use super::{
+    domain_port::DomainPort, quota_config::PathLimit, storage_config::StorageConfigToml, Domain,
+    SignupMode,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -222,7 +225,10 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
-        assert_eq!(c.storage, StorageConfigToml::FileSystem(FileSystemConfig::default()));
+        assert_eq!(
+            c.storage,
+            StorageConfigToml::FileSystem(FileSystemConfig::default())
+        );
     }
 
     #[test]

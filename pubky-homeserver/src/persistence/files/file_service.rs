@@ -11,12 +11,11 @@ use crate::{
 };
 use bytes::Bytes;
 use futures_util::Stream;
-use std::path::Path;
-#[cfg(test)]
-use opendal::Buffer;
 #[cfg(test)]
 use futures_util::StreamExt;
-
+#[cfg(test)]
+use opendal::Buffer;
+use std::path::Path;
 
 use super::{
     write_disk_quota_enforcer::WriteDiskQuotaEnforcer, FileIoError, FileStream, OpendalService,

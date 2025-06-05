@@ -1,6 +1,5 @@
 use super::{file_system_config::FileSystemConfig, google_bucket_config::GoogleBucketConfig};
 
-
 /// The storage config. Files can be either stored in a file system, in memory, or in a Google bucket
 /// depending on the configuration.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -13,4 +12,3 @@ pub enum StorageConfigToml {
     /// Files are stored in memory.
     InMemory,
 }
-

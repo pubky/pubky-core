@@ -1,5 +1,6 @@
 use crate::persistence::files::FileIoError;
 use crate::persistence::lmdb::tables::files::Entry;
+use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
         err_if_user_is_invalid::err_if_user_is_invalid,
@@ -23,22 +24,12 @@ pub async fn head(
     pubky: PubkyHost,
     headers: HeaderMap,
     Path(path): Path<WebDavPathPubAxum>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
-    match state.file_service.get_info(&entry_path).await {
-        Ok(entry) => {
-            return get_entry(headers, entry, None)
-        }
-        Err(FileIoError::NotFound) => {
-            return Err(Error::with_status(StatusCode::NOT_FOUND));
-        }
-        Err(e) => {
-            tracing::error!("Error getting file info and stream: {}", e);
-            return Err(Error::with_status(StatusCode::INTERNAL_SERVER_ERROR));
-        }
-    }
+    let entry = state.file_service.get_info(&entry_path).await?;
+    get_entry(headers, entry, None)
 }
 
 #[axum::debug_handler]
@@ -48,7 +39,7 @@ pub async fn get(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
     params: ListQueryParams,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
     let dav_path = path.0;
     let entry_path = EntryPath::new(public_key.clone(), dav_path.inner().clone());
@@ -56,33 +47,20 @@ pub async fn get(
         return list(state, &entry_path, params);
     }
 
-    match state.file_service.get_info_and_stream(&entry_path).await {
-        Ok((entry, stream)) => {
-            let body_stream = Body::from_stream(stream);
-            return get_entry(headers, entry, Some(body_stream))
-        }
-        Err(FileIoError::NotFound) => {
-            return Err(Error::with_status(StatusCode::NOT_FOUND));
-        }
-        Err(e) => {
-            tracing::error!("Error getting file info and stream: {}", e);
-            return Err(Error::with_status(StatusCode::INTERNAL_SERVER_ERROR));
-        }
-    }
+    let (entry, stream) = state.file_service.get_info_and_stream(&entry_path).await?;
+    let body_stream = Body::from_stream(stream);
+    get_entry(headers, entry, Some(body_stream))
 }
 
 pub fn list(
     state: AppState,
     entry_path: &EntryPath,
     params: ListQueryParams,
-) -> Result<Response<Body>> {
+) -> HttpResult<Response<Body>> {
     let txn = state.db.env.read_txn()?;
 
     if !state.db.contains_directory(&txn, entry_path)? {
-        return Err(Error::new(
-            StatusCode::NOT_FOUND,
-            "Directory Not Found".into(),
-        ));
+        return Err(HttpError::new(StatusCode::NOT_FOUND, Some("Directory Not Found")));
     }
 
     // Handle listing
@@ -101,7 +79,7 @@ pub fn list(
         .body(Body::from(vec.join("\n")))?)
 }
 
-pub fn get_entry(headers: HeaderMap, entry: Entry, body: Option<Body>) -> Result<Response<Body>> {
+pub fn get_entry(headers: HeaderMap, entry: Entry, body: Option<Body>) -> HttpResult<Response<Body>> {
     // TODO: Enable seek API (range requests)
     // TODO: Gzip? or brotli?
 

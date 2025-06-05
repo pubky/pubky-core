@@ -15,8 +15,6 @@ pub enum FileIoError {
     StreamBroken(#[from] WriteStreamError),
 }
 
-
-
 /// A unified error type for writing streams.
 #[derive(Debug, thiserror::Error)]
 pub enum WriteStreamError {

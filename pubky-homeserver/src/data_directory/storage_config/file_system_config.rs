@@ -4,7 +4,7 @@ const DATA_DIRECTORY_PLACEHOLDER: &str = "{DATA_DIRECTORY}";
 
 /// The file system config. Files are stored on the local file system.
 /// The root_directory is the path the files are stored in.
-/// `{DATA_DIRECTORY}` can be used as a variable in the root_directory. 
+/// `{DATA_DIRECTORY}` can be used as a variable in the root_directory.
 /// It is replaced with the data directory path.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSystemConfig {
@@ -25,7 +25,6 @@ impl Default for FileSystemConfig {
     }
 }
 
-
 impl FileSystemConfig {
     /// Expands the `DATA_DIRECTORY_PLACEHOLDER` variable with the given data directory.
     pub fn expand_with_data_directory(&mut self, data_directory: &PathBuf) {
@@ -35,7 +34,11 @@ impl FileSystemConfig {
             if !path.is_empty() {
                 path = path.chars().skip(1).collect();
             }
-            self.root_directory =  data_directory.join(path).to_str().unwrap_or_default().to_string();
+            self.root_directory = data_directory
+                .join(path)
+                .to_str()
+                .unwrap_or_default()
+                .to_string();
         }
     }
 
@@ -46,8 +49,7 @@ impl FileSystemConfig {
         if !path.exists() {
             std::fs::create_dir_all(&path)?;
         }
-        let builder = opendal::services::Fs::default()
-        .root(&self.root_directory);
+        let builder = opendal::services::Fs::default().root(&self.root_directory);
         Ok(builder)
     }
 
@@ -56,10 +58,10 @@ impl FileSystemConfig {
     /// As soon as tempdir is dropped, the directory is deleted.
     /// This is useful for testing.
     #[cfg(test)]
-    pub (crate) fn test() -> (Self, tempfile::TempDir) {
+    pub(crate) fn test() -> (Self, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
         let config = Self {
-            root_directory:temp_dir.path().as_os_str().to_string_lossy().to_string()
+            root_directory: temp_dir.path().as_os_str().to_string_lossy().to_string(),
         };
 
         (config, temp_dir)

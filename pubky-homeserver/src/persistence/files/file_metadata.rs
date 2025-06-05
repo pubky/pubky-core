@@ -1,5 +1,7 @@
-use pubky_common::{crypto::{Hash, Hasher}, timestamp::Timestamp};
-
+use pubky_common::{
+    crypto::{Hash, Hasher},
+    timestamp::Timestamp,
+};
 
 /// Metadata of a file.
 #[derive(Debug, Clone)]
@@ -31,5 +33,3 @@ impl FileMetadataBuilder {
         }
     }
 }
-
-

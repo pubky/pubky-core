@@ -3,16 +3,13 @@
 /// The `file_location` field is used to store the location of the file in the file system.
 /// The `file_location` field is initially set to `FileLocation::LMDB`.
 /// This is used to help the migration of the files from the LMDB to opendal.
-/// 
-
-
-use crate::persistence::{lmdb::tables::{files::{EntryHash, FileLocation, ENTRIES_TABLE}}};
+///
+use crate::persistence::lmdb::tables::files::{EntryHash, FileLocation, ENTRIES_TABLE};
 use heed::{BoxedError, BytesDecode, BytesEncode, Database, Env, RwTxn};
 use postcard::{from_bytes, to_allocvec};
 use pubky_common::timestamp::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct OldEntry {
@@ -88,7 +85,6 @@ impl From<OldEntry> for NewEntry {
         }
     }
 }
-
 
 /// Checks if the migration is needed.
 /// Tries to read entries with the new schema. If it succeeds, the migration is not needed.
@@ -192,9 +188,8 @@ mod tests {
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the old table.
-        let table: Database<heed::types::Str, OldEntry> = env
-            .create_database(&mut wtxn, Some(ENTRIES_TABLE))
-            .unwrap();
+        let table: Database<heed::types::Str, OldEntry> =
+            env.create_database(&mut wtxn, Some(ENTRIES_TABLE)).unwrap();
         table
             .put(
                 &mut wtxn,
@@ -226,9 +221,8 @@ mod tests {
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the old table.
-        let _: Database<heed::types::Str, OldEntry> = env
-            .create_database(&mut wtxn, Some(ENTRIES_TABLE))
-            .unwrap();
+        let _: Database<heed::types::Str, OldEntry> =
+            env.create_database(&mut wtxn, Some(ENTRIES_TABLE)).unwrap();
 
         assert!(!is_migration_needed(&env, &mut wtxn).unwrap());
     }
@@ -247,9 +241,8 @@ mod tests {
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a user to the new table.
-        let table: Database<heed::types::Str, NewEntry> = env
-            .create_database(&mut wtxn, Some(ENTRIES_TABLE))
-            .unwrap();
+        let table: Database<heed::types::Str, NewEntry> =
+            env.create_database(&mut wtxn, Some(ENTRIES_TABLE)).unwrap();
         table
             .put(
                 &mut wtxn,
@@ -285,9 +278,8 @@ mod tests {
         let mut wtxn = env.write_txn().unwrap();
 
         // Write a entry to the old table.
-        let table: Database<heed::types::Str, OldEntry> = env
-            .create_database(&mut wtxn, Some(ENTRIES_TABLE))
-            .unwrap();
+        let table: Database<heed::types::Str, OldEntry> =
+            env.create_database(&mut wtxn, Some(ENTRIES_TABLE)).unwrap();
         let old_entry = OldEntry {
             version: 1,
             timestamp: Timestamp::now(),
@@ -295,9 +287,7 @@ mod tests {
             content_length: 0,
             content_type: "text/plain".to_string(),
         };
-        table
-            .put(&mut wtxn, &"pubky/test.txt", &old_entry)
-            .unwrap();
+        table.put(&mut wtxn, &"pubky/test.txt", &old_entry).unwrap();
 
         // Migrate the users to the new schema.
         run(&env, &mut wtxn).unwrap();
@@ -308,11 +298,30 @@ mod tests {
             .unwrap()
             .unwrap();
         let entry = table.get(&mut wtxn, &"pubky/test.txt").unwrap().unwrap();
-        assert_eq!(entry.file_location, FileLocation::LMDB, "The entry should be stored in LMDB.");
-        assert_eq!(entry.version, old_entry.version, "The version should be the same.");
-        assert_eq!(entry.timestamp, old_entry.timestamp, "The timestamp should be the same.");
-        assert_eq!(entry.content_hash, old_entry.content_hash, "The content hash should be the same.");
-        assert_eq!(entry.content_length, old_entry.content_length, "The content length should be the same.");
-        assert_eq!(entry.content_type, old_entry.content_type, "The content type should be the same.");
+        assert_eq!(
+            entry.file_location,
+            FileLocation::LMDB,
+            "The entry should be stored in LMDB."
+        );
+        assert_eq!(
+            entry.version, old_entry.version,
+            "The version should be the same."
+        );
+        assert_eq!(
+            entry.timestamp, old_entry.timestamp,
+            "The timestamp should be the same."
+        );
+        assert_eq!(
+            entry.content_hash, old_entry.content_hash,
+            "The content hash should be the same."
+        );
+        assert_eq!(
+            entry.content_length, old_entry.content_length,
+            "The content length should be the same."
+        );
+        assert_eq!(
+            entry.content_type, old_entry.content_type,
+            "The content type should be the same."
+        );
     }
 }

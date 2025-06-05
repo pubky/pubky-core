@@ -1,19 +1,19 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse};
+use axum::{extract::State, response::IntoResponse};
 use tower_cookies::Cookies;
 
-use crate::core::{
+use crate::{core::{
     err_if_user_is_invalid::err_if_user_is_invalid,
-    error::{Error, Result},
+    error::{Result},
     extractors::PubkyHost,
     layers::authz::session_secret_from_cookies,
     AppState,
-};
+}, shared::{HttpError, HttpResult}};
 
 pub async fn session(
     State(state): State<AppState>,
     cookies: Cookies,
     pubky: PubkyHost,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Some(session) = state.db.get_session(&secret)? {
@@ -22,7 +22,7 @@ pub async fn session(
         };
     }
 
-    Err(Error::with_status(StatusCode::NOT_FOUND))
+    Err(HttpError::not_found())
 }
 pub async fn signout(
     State(mut state): State<AppState>,

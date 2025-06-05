@@ -1,4 +1,4 @@
-use crate::{persistence::{files::FileService, lmdb::LmDB}};
+use crate::persistence::{files::FileService, lmdb::LmDB};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {

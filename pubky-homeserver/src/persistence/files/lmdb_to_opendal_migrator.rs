@@ -1,13 +1,13 @@
-use crate::persistence::lmdb::{LmDB, tables::files::{Entry, FileLocation}};
-use crate::shared::webdav::EntryPath;
 use super::{FileIoError, FileService};
-use std::{str::FromStr, time::Duration};
+use crate::persistence::lmdb::{
+    tables::files::{Entry, FileLocation},
+    LmDB,
+};
+use crate::shared::webdav::EntryPath;
 use futures_util::StreamExt;
-
-
+use std::{str::FromStr, time::Duration};
 
 const BATCH_SIZE: usize = 100;
-
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
 /// This way, files can be managed in a unified way.
@@ -19,10 +19,7 @@ pub struct LmDbToOpendalMigrator {
 
 impl LmDbToOpendalMigrator {
     pub fn new(file_service: FileService, db: LmDB) -> Self {
-        Self {
-            file_service,
-            db,
-        }
+        Self { file_service, db }
     }
 
     /// Migrate the files from the LMDB to the OpenDAL.
@@ -31,13 +28,15 @@ impl LmDbToOpendalMigrator {
     /// It will also update the entry location to use the OpenDAL.
     /// It tries to avoid keeping a lmd write transaction open for too long.
     pub async fn migrate(&self) -> anyhow::Result<()> {
-
         let todo_count = self.count_lmdb_entries()?;
         if todo_count == 0 {
             tracing::debug!("[LMDB to OpenDAL] No entries to migrate");
             return Ok(());
         } else {
-            tracing::info!("[LMDB to OpenDAL] Starting migration. Found {} entries to migrate.", todo_count);
+            tracing::info!(
+                "[LMDB to OpenDAL] Starting migration. Found {} entries to migrate.",
+                todo_count
+            );
         }
 
         let mut count: usize = 0;
@@ -47,7 +46,11 @@ impl LmDbToOpendalMigrator {
             // while we are migrating.
             // So we just keep migrating until we have no more entries to migrate.
 
-            tracing::info!("[LMDB to OpenDAL] Processing batch number {count} of {todo_count} entries", count = count, todo_count = todo_count);
+            tracing::info!(
+                "[LMDB to OpenDAL] Processing batch number {count} of {todo_count} entries",
+                count = count,
+                todo_count = todo_count
+            );
             count += batch.len();
             for path in batch {
                 if let Err(e) = self.process_single_entry(&path).await {
@@ -93,7 +96,7 @@ impl LmDbToOpendalMigrator {
                 break;
             }
         }
-        
+
         Ok(if entries.is_empty() {
             None
         } else {
@@ -105,7 +108,7 @@ impl LmDbToOpendalMigrator {
     async fn process_single_entry(&self, path: &EntryPath) -> anyhow::Result<()> {
         // Check if the entry changed since we last checked.
         // We are trying to use as little write txs as possible to avoid blocking the db
-        // but this also implies that some entries might change in the meantime.    
+        // but this also implies that some entries might change in the meantime.
         let entry = match self.db.get_entry(&path) {
             Ok(entry) => entry,
             Err(FileIoError::NotFound) => {
@@ -119,7 +122,10 @@ impl LmDbToOpendalMigrator {
         };
 
         if entry.file_location() != &FileLocation::LMDB {
-            tracing::debug!("[LMDB to OpenDAL] Skipping already migrated entry: {}", path);
+            tracing::debug!(
+                "[LMDB to OpenDAL] Skipping already migrated entry: {}",
+                path
+            );
             return Ok(());
         }
 
@@ -127,7 +133,10 @@ impl LmDbToOpendalMigrator {
         let stream = match self.file_service.get_stream(&path).await {
             Ok(stream) => stream,
             Err(FileIoError::NotFound) => {
-                tracing::debug!("[LMDB to OpenDAL] Skipping missing file. File was deleted in the meantime: {}", path);
+                tracing::debug!(
+                    "[LMDB to OpenDAL] Skipping missing file. File was deleted in the meantime: {}",
+                    path
+                );
                 return Ok(());
             }
             Err(e) => {
@@ -135,15 +144,19 @@ impl LmDbToOpendalMigrator {
             }
         };
         // Write file data to OpenDAL
-        let converted_stream = stream.map(|item| item.map_err(|e| crate::persistence::files::WriteStreamError::Other(e.into())));
-        let metadata = self.file_service.opendal_service.write_stream(&path, converted_stream).await?;
+        let converted_stream = stream.map(|item| {
+            item.map_err(|e| crate::persistence::files::WriteStreamError::Other(e.into()))
+        });
+        let metadata = self
+            .file_service
+            .opendal_service
+            .write_stream(&path, converted_stream)
+            .await?;
 
         // Change the actual database. This needs to be done in a write tx to guarantee consistency.
         let mut wtx = self.db.env.write_txn()?;
         let mut locked_entry = match self.db.tables.entries.get(&wtx, path.as_str()) {
-            Ok(Some(entry)) => {
-                Entry::deserialize(&entry)?
-            },
+            Ok(Some(entry)) => Entry::deserialize(&entry)?,
             _ => {
                 tracing::warn!("[LMDB to OpenDAL] Entry not found or failed to parse in database: {}. Reverting migration.", path);
                 wtx.commit()?; // Close write tx as we are not going to use it.
@@ -153,7 +166,10 @@ impl LmDbToOpendalMigrator {
         };
 
         if locked_entry.file_location() != &FileLocation::LMDB {
-            tracing::warn!("[LMDB to OpenDAL] File was not in LMDB after migration: {}. Reverting.", path);
+            tracing::warn!(
+                "[LMDB to OpenDAL] File was not in LMDB after migration: {}. Reverting.",
+                path
+            );
             wtx.commit()?; // Close write tx as we are not going to use it.
             self.file_service.opendal_service.delete(&path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
@@ -168,22 +184,27 @@ impl LmDbToOpendalMigrator {
 
         // Update entry to point to OpenDAL.
         locked_entry.set_file_location(FileLocation::OpenDal);
-        self.db.tables.entries.put(&mut wtx, &path.to_string(), &locked_entry.serialize())?;
+        self.db
+            .tables
+            .entries
+            .put(&mut wtx, &path.to_string(), &locked_entry.serialize())?;
 
         // Delete the file from LMDB.
         self.db.delete_file(&locked_entry.file_id(), &mut wtx)?;
         wtx.commit()?;
-        
+
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        persistence::files::FileIoError, shared::webdav::{EntryPath, WebDavPath}, storage_config::StorageConfigToml, ConfigToml
+        persistence::files::FileIoError,
+        shared::webdav::{EntryPath, WebDavPath},
+        storage_config::StorageConfigToml,
+        ConfigToml,
     };
     use bytes::Bytes;
     use futures_util::StreamExt;
@@ -193,7 +214,8 @@ mod tests {
     async fn test_lmdb_migrate_file() {
         let config = ConfigToml::test();
         let db = LmDB::test();
-        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
 
         // Create a test user
         let pubkey = pkarr::Keypair::random().public_key();
@@ -229,16 +251,35 @@ mod tests {
 
         // Verify the entry was updated in the database
         let migrated_entry = db.get_entry(&path).unwrap();
-        assert_eq!(*migrated_entry.file_location(), FileLocation::OpenDal, "File location should be updated to OpenDAL");
-        assert_eq!(migrated_entry.content_length(), test_data.len(), "Content length should remain the same");
-        assert_eq!(migrated_entry.content_hash(), entry.content_hash(), "Content hash should remain the same");
+        assert_eq!(
+            *migrated_entry.file_location(),
+            FileLocation::OpenDal,
+            "File location should be updated to OpenDAL"
+        );
+        assert_eq!(
+            migrated_entry.content_length(),
+            test_data.len(),
+            "Content length should remain the same"
+        );
+        assert_eq!(
+            migrated_entry.content_hash(),
+            entry.content_hash(),
+            "Content hash should remain the same"
+        );
 
         // Verify we can still read the file (now from OpenDAL)
         let content_after = file_service.get(&path).await.unwrap();
-        assert_eq!(content_after.as_ref(), test_data, "Content should be identical after migration");
+        assert_eq!(
+            content_after.as_ref(),
+            test_data,
+            "Content should be identical after migration"
+        );
 
         // Verify the file exists in OpenDAL
-        assert!(file_service.opendal_service.exists(&path).await.unwrap(), "File should exist in OpenDAL after migration");
+        assert!(
+            file_service.opendal_service.exists(&path).await.unwrap(),
+            "File should exist in OpenDAL after migration"
+        );
 
         // Verify we can read the file stream after migration
         let mut stream = file_service.get_stream(&path).await.unwrap();
@@ -247,7 +288,11 @@ mod tests {
             let chunk = chunk_result.unwrap();
             collected_data.extend_from_slice(&chunk);
         }
-        assert_eq!(collected_data, test_data.to_vec(), "Streamed content should match original after migration");
+        assert_eq!(
+            collected_data,
+            test_data.to_vec(),
+            "Streamed content should match original after migration"
+        );
 
         // Verify that the blob was deleted from LMDB
         let id = migrated_entry.file_id();
@@ -263,7 +308,11 @@ mod tests {
         // Verify that running migration again doesn't cause issues (idempotency test)
         migrator.migrate().await.unwrap();
         let final_entry = db.get_entry(&path).unwrap();
-        assert_eq!(*final_entry.file_location(), FileLocation::OpenDal, "File should still be in OpenDAL after second migration");
+        assert_eq!(
+            *final_entry.file_location(),
+            FileLocation::OpenDal,
+            "File should still be in OpenDAL after second migration"
+        );
     }
 
     #[tokio::test]
@@ -272,14 +321,15 @@ mod tests {
         let mut config = ConfigToml::test();
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
-        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
 
         // Create the migrator and run migration on empty database
         let migrator = LmDbToOpendalMigrator::new(file_service, db.clone());
-        
+
         // This should complete without error even when there are no files to migrate
         migrator.migrate().await.unwrap();
-        
+
         // Verify the count method returns 0
         assert_eq!(migrator.count_lmdb_entries().unwrap(), 0);
     }
@@ -290,7 +340,8 @@ mod tests {
         let mut config = ConfigToml::test();
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
-        let file_service = FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
 
         // Create a test user
         let pubkey = pkarr::Keypair::random().public_key();
@@ -302,7 +353,10 @@ mod tests {
         let test_data = b"Test data for mixed migration";
 
         // Create a file in LMDB
-        let lmdb_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/lmdb_file.txt").unwrap());
+        let lmdb_path = EntryPath::new(
+            pubkey.clone(),
+            WebDavPath::new("/pub/lmdb_file.txt").unwrap(),
+        );
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         let lmdb_entry = file_service
@@ -311,7 +365,8 @@ mod tests {
             .unwrap();
 
         // Create a file already in OpenDAL
-        let opendal_path = EntryPath::new(pubkey, WebDavPath::new("/pub/opendal_file.txt").unwrap());
+        let opendal_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/opendal_file.txt").unwrap());
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         let opendal_entry = file_service
@@ -325,20 +380,36 @@ mod tests {
 
         // Count LMDB entries before migration
         let migrator = LmDbToOpendalMigrator::new(file_service.clone(), db.clone());
-        assert_eq!(migrator.count_lmdb_entries().unwrap(), 1, "Should count only the LMDB file");
+        assert_eq!(
+            migrator.count_lmdb_entries().unwrap(),
+            1,
+            "Should count only the LMDB file"
+        );
 
         // Run migration
         migrator.migrate().await.unwrap();
 
         // Verify the LMDB file was migrated
         let migrated_lmdb_entry = db.get_entry(&lmdb_path).unwrap();
-        assert_eq!(*migrated_lmdb_entry.file_location(), FileLocation::OpenDal, "LMDB file should be migrated to OpenDAL");
+        assert_eq!(
+            *migrated_lmdb_entry.file_location(),
+            FileLocation::OpenDal,
+            "LMDB file should be migrated to OpenDAL"
+        );
 
         // Verify the OpenDAL file was left unchanged
         let unchanged_opendal_entry = db.get_entry(&opendal_path).unwrap();
-        assert_eq!(*unchanged_opendal_entry.file_location(), FileLocation::OpenDal, "OpenDAL file should remain in OpenDAL");
+        assert_eq!(
+            *unchanged_opendal_entry.file_location(),
+            FileLocation::OpenDal,
+            "OpenDAL file should remain in OpenDAL"
+        );
 
         // Verify no more LMDB entries to migrate
-        assert_eq!(migrator.count_lmdb_entries().unwrap(), 0, "Should be no more LMDB files to migrate");
+        assert_eq!(
+            migrator.count_lmdb_entries().unwrap(),
+            0,
+            "Should be no more LMDB files to migrate"
+        );
     }
 }

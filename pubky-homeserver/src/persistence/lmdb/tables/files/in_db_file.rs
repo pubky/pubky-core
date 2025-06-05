@@ -6,11 +6,11 @@
 //! - `InDbTempFile` is a helper to read/write a file to/from disk.
 //!
 use pubky_common::timestamp::Timestamp;
-use tokio_util::io::ReaderStream;
 use std::sync::Arc;
 use std::{fs::File, io::Write, path::PathBuf};
 use tokio::fs::File as AsyncFile;
 use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 
 use crate::persistence::files::FileStream;
 use crate::persistence::files::{FileMetadata, FileMetadataBuilder};
@@ -56,7 +56,6 @@ impl Default for InDbFileId {
     }
 }
 
-
 /// Writes a temp file to disk asynchronously.
 #[derive(Debug)]
 pub(crate) struct AsyncInDbTempFileWriter {
@@ -74,7 +73,6 @@ impl AsyncInDbTempFileWriter {
 
         let file_path = dir.path().join("entry.bin");
         let writer_file = AsyncFile::create(file_path.clone()).await?;
-        
 
         Ok(Self {
             dir,

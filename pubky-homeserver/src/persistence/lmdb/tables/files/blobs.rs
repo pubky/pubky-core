@@ -42,10 +42,11 @@ impl LmDB {
     pub(crate) async fn read_file(&self, id: &InDbFileId) -> Result<InDbTempFile, FileIoError> {
         let db = self.clone();
         let id = *id;
-        let join_handle = tokio::task::spawn_blocking(move || -> Result<InDbTempFile, FileIoError> {
-            db.read_file_sync(&id)
-        })
-        .await;
+        let join_handle =
+            tokio::task::spawn_blocking(move || -> Result<InDbTempFile, FileIoError> {
+                db.read_file_sync(&id)
+            })
+            .await;
         match join_handle {
             Ok(result) => result,
             Err(e) => {
@@ -68,7 +69,6 @@ impl LmDB {
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];
             let bytes_read = file_handle.read(&mut blob)?;
-
 
             let blob_key = id.get_blob_key(blob_index);
             self.tables
@@ -116,7 +116,6 @@ impl LmDB {
         file: &InDbFileId,
         wtxn: &mut heed::RwTxn<'txn>,
     ) -> Result<(), FileIoError> {
-
         let mut keys = vec![];
         {
             let mut iter = self.tables.blobs.prefix_iter_mut(wtxn, &file.bytes())?;

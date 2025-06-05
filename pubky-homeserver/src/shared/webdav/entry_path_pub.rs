@@ -4,9 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use super::EntryPath;
 
-
-
-
 /// A path to an entry that requires the leading `/pub/` segment.
 #[derive(Debug, Clone)]
 pub struct EntryPathPub(pub EntryPath);
@@ -60,8 +57,13 @@ mod tests {
 
     #[test]
     fn test_entry_path_from_str() {
-        EntryPathPub::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/pub/folder/file.txt").unwrap();
-        EntryPathPub::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/folder/file.txt").expect_err("Should not be valid. /pub/ required.");
+        EntryPathPub::from_str(
+            "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/pub/folder/file.txt",
+        )
+        .unwrap();
+        EntryPathPub::from_str(
+            "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/folder/file.txt",
+        )
+        .expect_err("Should not be valid. /pub/ required.");
     }
-
 }

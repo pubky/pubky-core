@@ -1,5 +1,8 @@
 use super::super::app_state::AppState;
-use crate::{ persistence::files::FileIoError, shared::{webdav::EntryPathPub, HttpError, HttpResult}};
+use crate::{
+    persistence::files::FileIoError,
+    shared::{webdav::EntryPathPub, HttpError, HttpResult},
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -11,19 +14,20 @@ pub async fn delete_entry(
     State(state): State<AppState>,
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-
-
-    match state.file_service.delete(&entry_path.inner()).await {
+    match state.file_service.delete(entry_path.inner()).await {
         Ok(()) => {
-            return Ok((StatusCode::NO_CONTENT, ()));
+            Ok((StatusCode::NO_CONTENT, ()))
         }
 
         Err(FileIoError::NotFound) => {
-            return Err(HttpError::new(StatusCode::NOT_FOUND, Some("Not Found")));
+            Err(HttpError::new(StatusCode::NOT_FOUND, Some("Not Found")))
         }
         Err(e) => {
             tracing::error!("Error deleting file: {}", e);
-            return Err(HttpError::new(StatusCode::INTERNAL_SERVER_ERROR, Some("Internal Server Error")));
+            Err(HttpError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some("Internal Server Error"),
+            ))
         }
     }
 }

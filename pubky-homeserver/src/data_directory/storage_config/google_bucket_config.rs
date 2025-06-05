@@ -18,7 +18,10 @@ impl GoogleServiceAccountKeyConfig {
             GoogleServiceAccountKeyConfig::Inline(inline) => inline.clone(),
         };
 
-        let base64_encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, plain_text.as_bytes());
+        let base64_encoded = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            plain_text.as_bytes(),
+        );
         Ok(base64_encoded)
     }
 }
@@ -89,13 +92,11 @@ pub struct GoogleBucketConfig {
 
 impl GoogleBucketConfig {
     /// Returns the builder.
-    pub fn to_builder(
-        &self
-    ) -> Result<opendal::services::Gcs, std::io::Error> {
+    pub fn to_builder(&self) -> Result<opendal::services::Gcs, std::io::Error> {
         let credential = self.credential.get_base64_content()?;
         let builder = opendal::services::Gcs::default()
-        .bucket(&self.bucket_name)
-        .credential(&credential);
+            .bucket(&self.bucket_name)
+            .credential(&credential);
         Ok(builder)
     }
 }

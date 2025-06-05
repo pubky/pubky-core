@@ -17,13 +17,13 @@ pub struct WebDavPathPubAxum(pub WebDavPathPub);
 
 impl WebDavPathPubAxum {
     pub fn inner(&self) -> &WebDavPath {
-        &self.0.inner()
+        self.0.inner()
     }
 }
 
 impl std::fmt::Display for WebDavPathPubAxum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.0.as_str())
+        write!(f, "{}", self.0 .0.as_str())
     }
 }
 
@@ -42,7 +42,7 @@ impl Serialize for WebDavPathPubAxum {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self.0.0.as_str())
+        serializer.serialize_str(self.0 .0.as_str())
     }
 }
 
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn test_webdav_path_axum() {
         let path = WebDavPathPubAxum::from_str("pub/foo/bar").unwrap();
-        assert_eq!(path.0.0.as_str(), "/pub/foo/bar");
+        assert_eq!(path.0 .0.as_str(), "/pub/foo/bar");
     }
 
     #[test]
