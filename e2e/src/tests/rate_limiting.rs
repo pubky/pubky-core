@@ -239,7 +239,7 @@ async fn test_concurrent_write_read() {
         }
         pub async fn signup(&self, hs_pubkey: &PublicKey) {
             self.client
-                .signup(&self.keypair, &hs_pubkey, None)
+                .signup(&self.keypair, hs_pubkey, None)
                 .await
                 .expect("Failed to signup");
         }

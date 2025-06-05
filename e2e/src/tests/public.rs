@@ -30,9 +30,14 @@ async fn put_get_delete() {
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
+    let response = client.get(url).send().await.unwrap();
 
-    assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
+    assert_eq!(content_header, "text/plain");
+
+    let byte_value = response.bytes().await.unwrap();
+    assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
     // Use regular web method to get data from homeserver (with query pubky-host)
     let regular_url = format!(
@@ -49,12 +54,14 @@ async fn put_get_delete() {
         .header("Host", "non.pubky.host")
         .send()
         .await
-        .unwrap()
-        .bytes()
-        .await
         .unwrap();
 
-    assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
+    assert_eq!(content_header, "text/plain");
+
+    let byte_value = response.bytes().await.unwrap();
+    assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
     client
         .delete(url)
