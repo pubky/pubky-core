@@ -113,6 +113,7 @@ pub fn list(
 }
 
 
+/// Creates the Not Modified response based on the entry data.
 fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::NOT_MODIFIED)

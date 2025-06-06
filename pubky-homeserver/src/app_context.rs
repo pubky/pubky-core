@@ -81,7 +81,7 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let db_path = dir.path().join("data/lmdb");
-        let db = unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? };
+        let db = unsafe { LmDB::open(&db_path).map_err(AppContextConversionError::LmDB)? };
         let file_service = FileService::new_from_config(&conf, dir.path(), db.clone());
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {
