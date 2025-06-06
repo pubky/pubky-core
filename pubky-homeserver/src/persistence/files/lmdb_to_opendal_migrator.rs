@@ -220,7 +220,7 @@ mod tests {
         let config = ConfigToml::test();
         let db = LmDB::test();
         let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone()).unwrap();
 
         // Create a test user
         let pubkey = pkarr::Keypair::random().public_key();
@@ -327,7 +327,7 @@ mod tests {
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
         let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone()).unwrap();
 
         // Create the migrator and run migration on empty database
         let migrator = LmDbToOpendalMigrator::new(file_service, db.clone());
@@ -346,7 +346,7 @@ mod tests {
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
         let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone()).unwrap();
 
         // Create a test user
         let pubkey = pkarr::Keypair::random().public_key();

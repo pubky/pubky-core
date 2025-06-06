@@ -43,17 +43,34 @@ pub fn build_storage_operator_from_config(
 /// Important: Not all opendal providers will respect this chunk size.
 /// For example, Google Cloud Buckets will deliver chunks anything from
 /// 200B to 16KB but max CHUNK_SIZE.
-const CHUNK_SIZE: usize = 64 * 1024;
+const CHUNK_SIZE: usize = 16 * 1024;
 
+
+/// The service to write and read files to and from the configured opendal storage.
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// let service = OpendalService::new_from_config(&config, &data_dir)?;
+/// 
+/// // Write a file
+/// let metadata = service.write_stream(&path, stream).await?;
+/// 
+/// // Read a file
+/// let content_stream = service.get_stream(&path).await?;
+/// ```
 #[derive(Debug, Clone)]
 pub struct OpendalService {
     operator: Operator,
 }
 
 impl OpendalService {
-    pub fn new_from_config(config: &StorageConfigToml, data_directory: &Path) -> Self {
-        let operator = build_storage_operator_from_config(config, data_directory).unwrap();
-        Self { operator }
+    pub fn new_from_config(
+        config: &StorageConfigToml,
+        data_directory: &Path,
+    ) -> Result<Self, anyhow::Error> {
+        let operator = build_storage_operator_from_config(config, data_directory)?;
+        Ok(Self { operator })
     }
 
     /// Delete a file.
@@ -85,16 +102,31 @@ impl OpendalService {
     ) -> Result<FileMetadata, FileIoError> {
         let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
-        // Write each chunk from the stream to the writer
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result?;
-            metadata_builder.update(&chunk);
-            writer.write(chunk).await?;
-        }
 
-        // Close the writer to finalize the write operation
-        writer.close().await?;
-        Ok(metadata_builder.finalize())
+        // Write each chunk from the stream to the writer
+        let write_result: Result<(), FileIoError> = async {
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result?;
+                metadata_builder.update(&chunk);
+                writer.write(chunk).await?;
+            }
+            Ok(())
+        }
+        .await;
+
+        // Let's close the writer properly depending on if the stream write was successful.
+        match write_result {
+            Ok(()) => {
+                // Close the writer to finalize the write operation
+                writer.close().await?;
+                Ok(metadata_builder.finalize())
+            },
+            Err(e) => {
+                // Abort the writer properly to avoid leaking resources.
+                writer.abort().await?;
+                Err(e)
+            }
+        }
     }
 
     /// Get the content of a file as a stream of bytes.
@@ -110,10 +142,16 @@ impl OpendalService {
             Err(e) => match e.kind() {
                 opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
                 opendal::ErrorKind::PermissionDenied => {
-                    tracing::warn!("Permission denied for {}. Returning None.", path);
+                    tracing::warn!(
+                        "Permission denied for path: {}. Treating as not found.",
+                        path
+                    );
                     Err(FileIoError::NotFound)
                 }
-                _ => Err(FileIoError::OpenDAL(e)),
+                _ => {
+                    tracing::error!("OpenDAL error for path {}: {}", path, e);
+                    Err(FileIoError::OpenDAL(e))
+                }
             },
         }
     }
@@ -182,7 +220,8 @@ mod tests {
     async fn test_get_content_chunked() {
         let (configs, _tmp_dir) = get_configs();
         for config in configs {
-            let file_service = OpendalService::new_from_config(&config, Path::new("/tmp/test"));
+            let file_service = OpendalService::new_from_config(&config, Path::new("/tmp/test"))
+                .expect("Failed to create OpenDAL service for testing");
 
             let pubkey = pkarr::Keypair::random().public_key();
             let path = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
@@ -243,7 +282,8 @@ mod tests {
     async fn test_write_content_stream() {
         let (configs, _tmp_dir) = get_configs();
         for config in configs {
-            let file_service = OpendalService::new_from_config(&config, Path::new("/tmp/test"));
+            let file_service = OpendalService::new_from_config(&config, Path::new("/tmp/test"))
+                .expect("Failed to create OpenDAL service for testing");
 
             let pubkey = pkarr::Keypair::random().public_key();
             let path = EntryPath::new(pubkey, WebDavPath::new("/test_stream.txt").unwrap());

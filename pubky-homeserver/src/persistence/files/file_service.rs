@@ -40,15 +40,15 @@ impl FileService {
         }
     }
 
-    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Self {
-        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory);
+    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Result<Self, anyhow::Error> {
+        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory)?;
         let quota_mb = config.general.user_storage_quota_mb;
         let quota_bytes = if quota_mb == 0 {
             None
         } else {
             Some(quota_mb * 1024 * 1024)
         };
-        Self::new(opendal_service, db, quota_bytes)
+        Ok(Self::new(opendal_service, db, quota_bytes))
     }
 
     #[cfg(test)]
@@ -57,7 +57,8 @@ impl FileService {
 
         let storage_config = StorageConfigToml::InMemory;
         let opendal_service =
-            OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"));
+            OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"))
+                .expect("Failed to create OpenDAL service for testing");
         Self::new(opendal_service, db, None)
     }
 
@@ -212,7 +213,8 @@ mod tests {
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
         let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
 
         let pubkey = pkarr::Keypair::random().public_key();
         let mut wtxn = db.env.write_txn().unwrap();
@@ -323,7 +325,8 @@ mod tests {
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
         let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone());
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
 
         let pubkey = pkarr::Keypair::random().public_key();
         let mut wtxn = db.env.write_txn().unwrap();
