@@ -61,6 +61,11 @@ impl LmDbToOpendalMigrator {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
+        // Clear the blobs table fully in case we have some left over.
+        let mut wtxn = self.db.env.write_txn()?;
+        self.db.tables.blobs.clear(&mut wtxn)?;
+        wtxn.commit()?;
+    
         tracing::info!("[LMDB to OpenDAL] Migration completed successfully");
         Ok(())
     }

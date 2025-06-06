@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+
 const DATA_DIRECTORY_PLACEHOLDER: &str = "{DATA_DIRECTORY}";
 
 /// The file system config. Files are stored on the local file system.
@@ -44,11 +45,12 @@ impl FileSystemConfig {
 
     /// Returns the builder for the file system. This will create the directory if it doesn't exist.
     /// Make sure to call `expand_with_data_directory` before using this method.
-    pub fn to_builder(&mut self) -> anyhow::Result<opendal::services::Fs> {
+    pub fn to_builder(&self) -> anyhow::Result<opendal::services::Fs> {
         let path = PathBuf::from(&self.root_directory);
         if !path.exists() {
             std::fs::create_dir_all(&path)?;
         }
+
         let builder = opendal::services::Fs::default().root(&self.root_directory);
         Ok(builder)
     }

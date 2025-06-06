@@ -137,6 +137,8 @@ impl LmDB {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[tokio::test]
@@ -206,4 +208,39 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_write_json_file() {
+        let lmdb = LmDB::test();
+
+        let content = r#"{"hello": "world"}"#;
+        let mut writer = SyncInDbTempFileWriter::new().unwrap();
+        writer.write_chunk(content.as_bytes()).unwrap();
+        let write_file = writer.complete().unwrap();
+
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        let read_file = lmdb.read_file(&id).await.unwrap();
+
+        let written_file_content = std::fs::read(write_file.path()).unwrap();
+        let read_file_content = std::fs::read(read_file.path()).unwrap();
+        assert_eq!(written_file_content, read_file_content);
+
+        // Delete file again
+        let mut wtxn = lmdb.env.write_txn().unwrap();
+        lmdb.delete_file(&id, &mut wtxn).unwrap();
+        wtxn.commit().unwrap();
+
+        match lmdb.read_file(&id).await {
+            Ok(_) => {
+                panic!("File should be deleted");
+            }
+            Err(e) => {
+                assert_eq!(e.to_string(), FileIoError::NotFound.to_string());
+            }
+        }
+    }
+
 }
