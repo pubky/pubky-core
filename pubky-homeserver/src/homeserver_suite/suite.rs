@@ -1,11 +1,12 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
+use crate::tracing::init_tracing_logs_with_config_if_set;
 use crate::MockDataDir;
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
-use tracing_subscriber::EnvFilter;
+
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]
 pub enum HomeserverSuiteBuildError {
@@ -51,27 +52,8 @@ impl HomeserverSuite {
 
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
-        // Tracing Subscriber initialization
-        if let Some(ref config) = context.config_toml.logging {
-            let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                let mut filter = EnvFilter::new("");
-                filter = filter.add_directive(config.level.to_owned().into());
-                // Add any specific filters
-                for filter_str in &config.module_levels {
-                    filter = filter.add_directive(filter_str.to_owned().into());
-                }
-                filter
-            });
-            let _ = tracing_subscriber::fmt()
-                .with_env_filter(env_filter)
-                .try_init()
-                .map_err(|_| {
-                    tracing::debug!(
-                        "Instance {} trace config will be ignored",
-                        &context.keypair.public_key()
-                    )
-                });
-        }
+        // Tracing Subscriber initialization based on the config file.
+        init_tracing_logs_with_config_if_set(&context.config_toml)?;
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
