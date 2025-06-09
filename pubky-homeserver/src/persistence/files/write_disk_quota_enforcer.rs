@@ -11,6 +11,8 @@ use crate::shared::webdav::EntryPath;
 /// Checks if the content-size hint already exceeds the quota.
 /// This is not reliable because the user might supply a fake size hint
 /// but it can be used for error messages and to fail the upload early.
+/// 
+/// Used in the webdav server to fail the upload early.
 pub fn is_size_hint_exceeding_quota(
     content_size_hint: u64,
     db: &LmDB,
@@ -26,7 +28,9 @@ pub fn is_size_hint_exceeding_quota(
 }
 
 /// A stream wrapper that enforces the user max disk space limit.
-/// For example, the user has only 1GB of disk space allowance but uploads a 2GB file..
+/// For example, the user has only 1GB of disk space allowance but uploads a 2GB file.
+/// 
+/// Important: There is potential for race conditions here when multiple files are uploaded at the same time.
 pub struct WriteDiskQuotaEnforcer<S> {
     /// The stream to wrap
     inner: S,
@@ -36,7 +40,7 @@ pub struct WriteDiskQuotaEnforcer<S> {
     stream_byte_counter: u64,
     /// The number of bytes already used by the user.
     user_already_used_bytes: u64,
-    /// The maximum number of bytes a user is allowed to write. None means no limit.
+    /// The maximum number of bytes a user is allowed to write.
     max_allowed_bytes: u64,
 }
 
@@ -61,6 +65,11 @@ impl<S> WriteDiskQuotaEnforcer<S> {
             }
         };
 
+        // Check if the user already exceeds the quota.
+        if max_allowed_bytes <= user_already_used_bytes {
+            return Err(FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded));
+        }
+
         Ok(Self {
             inner,
             existing_entry_bytes,
@@ -73,10 +82,10 @@ impl<S> WriteDiskQuotaEnforcer<S> {
     /// Returns true if the user exceeds the quota.
     fn has_exceeded_quota(&self) -> bool {
         self.user_already_used_bytes
-            + self
-                .stream_byte_counter
-                .saturating_sub(self.existing_entry_bytes)
-            > self.max_allowed_bytes
+            .saturating_add(
+                self.stream_byte_counter
+                    .saturating_sub(self.existing_entry_bytes)
+            ) > self.max_allowed_bytes
     }
 
     /// Returns an error if the user exceeded the quota.

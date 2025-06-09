@@ -72,6 +72,14 @@ impl LmDB {
         file_location: FileLocation,
     ) -> Result<Entry, FileIoError> {
         let mut wtxn = self.env.write_txn()?;
+
+        // Get old entry size. If it doesn't exist, use 0.
+        let old_entry_size = self.tables.entries.get(&wtxn, path.as_str())?
+        .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
+        .transpose()?
+        .unwrap_or(0);
+
+        // Write entry
         let mut entry = Entry::new();
         entry.set_content_hash(metadata.hash);
         entry.set_content_length(metadata.length);
@@ -82,6 +90,11 @@ impl LmDB {
             .entries
             .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
 
+        // Update user data usage
+        let mut user = self.tables.users.get(&wtxn, path.pubkey())?.ok_or(FileIoError::NotFound)?;
+        user.used_bytes = user.used_bytes.saturating_add(metadata.length as u64).saturating_sub(old_entry_size as u64);
+        self.tables.users.put(&mut wtxn, path.pubkey(), &user)?;
+
         // TODO: Extract this to a separate function.
         // Write a public [Event].
         let url = format!("pubky://{}", entry_key);
@@ -91,6 +104,7 @@ impl LmDB {
         self.tables
             .events
             .put(&mut wtxn, metadata.modified_at.to_string().as_str(), &value)?;
+
         wtxn.commit()?;
 
         Ok(entry)

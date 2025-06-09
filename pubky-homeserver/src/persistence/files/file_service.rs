@@ -1,11 +1,11 @@
 use crate::{
-    persistence::lmdb::{
+    persistence::{files::entry_service::EntryService, lmdb::{
         tables::{
             files::{Entry, FileLocation},
             users::UserQueryError,
         },
         LmDB,
-    },
+    }},
     shared::webdav::EntryPath,
     ConfigToml,
 };
@@ -26,6 +26,7 @@ use super::{
 /// This way, files can be managed in a unified way.
 #[derive(Debug, Clone)]
 pub struct FileService {
+    pub(crate) entry_service: EntryService,
     pub(crate) opendal_service: OpendalService,
     pub(crate) db: LmDB,
     user_quota_bytes: Option<u64>,
@@ -34,13 +35,14 @@ pub struct FileService {
 impl FileService {
     pub fn new(opendal_service: OpendalService, db: LmDB, user_quota_bytes: Option<u64>) -> Self {
         Self {
+            entry_service: EntryService::new(context),
             opendal_service,
             db,
             user_quota_bytes,
         }
     }
 
-    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Result<Self, anyhow::Error> {
+    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Result<Self, FileIoError> {
         let opendal_service = OpendalService::new_from_config(&config.storage, data_directory)?;
         let quota_mb = config.general.user_storage_quota_mb;
         let quota_bytes = if quota_mb == 0 {
@@ -154,6 +156,8 @@ impl FileService {
         // Update usage counter based on the actual file size
         let delta = entry.content_length() as i64 - existing_entry_bytes as i64;
         if let Err(e) = self.db.update_data_usage(path.pubkey(), delta) {
+            tracing::error!("Failed to update data usage for path: {}: {}", path, e);
+
             match e {
                 UserQueryError::UserNotFound => {
                     // Should not happen, data inconsistency error.

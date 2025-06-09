@@ -8,6 +8,7 @@ use futures_util::StreamExt;
 use std::{str::FromStr, time::Duration};
 
 const BATCH_SIZE: usize = 100;
+const BATCH_SLEEP_DURATION: Duration = Duration::from_secs(1);
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
 /// This way, files can be managed in a unified way.
@@ -58,7 +59,7 @@ impl LmDbToOpendalMigrator {
                 }
             }
             // Sleep to give the db a chance to do other things.
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(BATCH_SLEEP_DURATION).await;
         }
 
         // Clear the blobs table fully in case we have some left over.
@@ -164,7 +165,7 @@ impl LmDbToOpendalMigrator {
             Ok(Some(entry)) => Entry::deserialize(entry)?,
             _ => {
                 tracing::warn!("[LMDB to OpenDAL] Entry not found or failed to parse in database: {}. Reverting migration.", path);
-                wtx.commit()?; // Close write tx as we are not going to use it.
+                wtx.abort(); // Abort transaction without committing
                 self.file_service.opendal_service.delete(path).await?; // Delete the file from OpenDAL because migration failed.
                 return Ok(());
             }
@@ -175,14 +176,14 @@ impl LmDbToOpendalMigrator {
                 "[LMDB to OpenDAL] File was not in LMDB after migration: {}. Reverting.",
                 path
             );
-            wtx.commit()?; // Close write tx as we are not going to use it.
+            wtx.abort(); // Abort transaction without committing
             self.file_service.opendal_service.delete(path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
         }
 
         if locked_entry.content_hash() != &metadata.hash {
             tracing::warn!("[LMDB to OpenDAL] Content hash mismatch after migration: {}. File must has changed in the meantime. Reverting.", path);
-            wtx.commit()?; // Close write tx as we are not going to use it.
+            wtx.abort(); // Abort transaction without committing
             self.file_service.opendal_service.delete(path).await?; // Delete the file from OpenDAL because migration failed.
             return Ok(());
         }

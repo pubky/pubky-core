@@ -13,7 +13,7 @@ use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStr
 pub fn build_storage_operator_from_config(
     config: &StorageConfigToml,
     data_directory: &Path,
-) -> anyhow::Result<Operator> {
+) -> Result<Operator, FileIoError> {
     let builder = match config.clone() {
         StorageConfigToml::FileSystem(mut config) => {
             config.expand_with_data_directory(data_directory);
@@ -68,14 +68,14 @@ impl OpendalService {
     pub fn new_from_config(
         config: &StorageConfigToml,
         data_directory: &Path,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Self, FileIoError> {
         let operator = build_storage_operator_from_config(config, data_directory)?;
         Ok(Self { operator })
     }
 
     /// Delete a file.
-    pub async fn delete(&self, path: &EntryPath) -> Result<(), opendal::Error> {
-        self.operator.delete(path.as_str()).await
+    pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
+        self.operator.delete(path.as_str()).await.map_err(FileIoError::OpenDAL)
     }
 
     /// Write the content of a file to the storage.

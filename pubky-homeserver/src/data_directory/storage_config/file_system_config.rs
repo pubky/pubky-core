@@ -45,7 +45,7 @@ impl FileSystemConfig {
 
     /// Returns the builder for the file system. This will create the directory if it doesn't exist.
     /// Make sure to call `expand_with_data_directory` before using this method.
-    pub fn to_builder(&self) -> anyhow::Result<opendal::services::Fs> {
+    pub fn to_builder(&self) -> Result<opendal::services::Fs, std::io::Error> {
         let path = PathBuf::from(&self.root_directory);
         if !path.exists() {
             std::fs::create_dir_all(&path)?;

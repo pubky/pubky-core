@@ -6,7 +6,7 @@
 //!
 
 use crate::{
-    persistence::{files::FileService, lmdb::LmDB},
+    persistence::{files::{FileIoError, FileService}, lmdb::LmDB},
     ConfigToml, DataDir, MockDataDir, PersistentDataDir,
 };
 use pkarr::Keypair;
@@ -29,7 +29,7 @@ pub enum AppContextConversionError {
     LmDB(anyhow::Error),
     /// Failed to build storage operator.
     #[error("Failed to build storage operator: {0}")]
-    Storage(anyhow::Error),
+    Storage(FileIoError),
     /// Failed to build pkarr client.
     #[error("Failed to build pkarr client: {0}")]
     Pkarr(pkarr::errors::BuildError),
@@ -83,7 +83,7 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
         let db_path = dir.path().join("data/lmdb");
         let db = unsafe { LmDB::open(&db_path).map_err(AppContextConversionError::LmDB)? };
         let file_service = FileService::new_from_config(&conf, dir.path(), db.clone())
-            .map_err(AppContextConversionError::Storage)?;
+        .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {
             db,
