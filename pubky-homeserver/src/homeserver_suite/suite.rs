@@ -53,7 +53,7 @@ impl HomeserverSuite {
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
         // Tracing Subscriber initialization based on the config file.
-        init_tracing_logs_with_config_if_set(&context.config_toml)?;
+        let _ = init_tracing_logs_with_config_if_set(&context.config_toml);
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
