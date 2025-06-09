@@ -20,6 +20,7 @@ fn validate_config_dir_path(path: &str) -> Result<PathBuf, String> {
 }
 
 #[derive(Parser, Debug)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     /// Path to config file. Defaults to ~/.pubky/config.toml
     #[clap(short, long, default_value_os_t = default_config_dir_path(), value_parser = validate_config_dir_path)]
