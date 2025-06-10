@@ -18,7 +18,6 @@ async fn put_get_delete() {
         .unwrap();
 
     let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url;
 
     client
         .put(url.as_str())
@@ -160,7 +159,6 @@ async fn unauthorized_put_delete() {
     let public_key = keypair.public_key();
 
     let url = format!("pubky://{public_key}/pub/foo.txt");
-    let url = url;
 
     let other_client = testnet.pubky_client_builder().build().unwrap();
     {
@@ -904,7 +902,6 @@ async fn stream() {
         .unwrap();
 
     let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url;
 
     let bytes = Bytes::from(vec![0; 1024 * 1024]);
 

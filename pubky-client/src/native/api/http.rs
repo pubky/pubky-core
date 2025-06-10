@@ -22,7 +22,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn request<U: IntoUrl + PubkyUrl >(&self, method: Method, url: U) -> RequestBuilder {
+    pub fn request<U: IntoUrl + PubkyUrl>(&self, method: Method, url: U) -> RequestBuilder {
         if url.is_pubky_url() {
             let url = url.to_homeserver_url().ok().expect("URL should be valid");
             return self.http.request(method, url);
