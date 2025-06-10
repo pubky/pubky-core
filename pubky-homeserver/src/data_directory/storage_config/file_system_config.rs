@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-
 const DATA_DIRECTORY_PLACEHOLDER: &str = "{DATA_DIRECTORY}";
 
 /// The file system config. Files are stored on the local file system.

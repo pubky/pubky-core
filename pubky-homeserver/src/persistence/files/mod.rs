@@ -1,3 +1,4 @@
+mod entry_service;
 mod file_io_error;
 mod file_metadata;
 mod file_service;
@@ -5,7 +6,6 @@ mod file_stream_type;
 mod lmdb_to_opendal_migrator;
 mod opendal_service;
 mod write_disk_quota_enforcer;
-mod entry_service;
 
 pub use file_io_error::{FileIoError, WriteStreamError};
 pub(crate) use file_metadata::{FileMetadata, FileMetadataBuilder};

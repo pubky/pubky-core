@@ -45,17 +45,16 @@ pub fn build_storage_operator_from_config(
 /// 200B to 16KB but max CHUNK_SIZE.
 const CHUNK_SIZE: usize = 16 * 1024;
 
-
 /// The service to write and read files to and from the configured opendal storage.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```rust
 /// let service = OpendalService::new_from_config(&config, &data_dir)?;
-/// 
+///
 /// // Write a file
 /// let metadata = service.write_stream(&path, stream).await?;
-/// 
+///
 /// // Read a file
 /// let content_stream = service.get_stream(&path).await?;
 /// ```
@@ -75,7 +74,10 @@ impl OpendalService {
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        self.operator.delete(path.as_str()).await.map_err(FileIoError::OpenDAL)
+        self.operator
+            .delete(path.as_str())
+            .await
+            .map_err(FileIoError::OpenDAL)
     }
 
     /// Write the content of a file to the storage.
@@ -96,9 +98,9 @@ impl OpendalService {
     }
 
     /// Write a stream to the storage.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `path` - The path to the file.
     /// * `stream` - The stream to write.
     /// * `max_bytes` - The maximum number of bytes to write. Will throw an error if the stream exceeds this limit.
@@ -135,7 +137,7 @@ impl OpendalService {
                 // Close the writer to finalize the write operation
                 writer.close().await?;
                 Ok(metadata_builder.finalize())
-            },
+            }
             Err(e) => {
                 // Abort the writer properly to avoid leaking resources.
                 writer.abort().await?;
@@ -196,7 +198,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{
-        shared::webdav::WebDavPath, storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig}
+        shared::webdav::WebDavPath,
+        storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
     };
 
     use super::*;
@@ -318,7 +321,10 @@ mod tests {
             let stream = futures_util::stream::iter(chunks);
 
             // Write the stream to storage
-            file_service.write_stream(&path, stream, None).await.unwrap();
+            file_service
+                .write_stream(&path, stream, None)
+                .await
+                .unwrap();
 
             // Read the content back and verify it matches
             let read_content = file_service.get(&path).await.unwrap();

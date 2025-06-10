@@ -66,7 +66,7 @@ impl LmDbToOpendalMigrator {
         let mut wtxn = self.db.env.write_txn()?;
         self.db.tables.blobs.clear(&mut wtxn)?;
         wtxn.commit()?;
-    
+
         tracing::info!("[LMDB to OpenDAL] Migration completed successfully");
         Ok(())
     }

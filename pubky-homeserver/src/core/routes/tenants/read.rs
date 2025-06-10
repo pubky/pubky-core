@@ -112,7 +112,6 @@ pub fn list(
         .body(Body::from(vec.join("\n")))?)
 }
 
-
 /// Creates the Not Modified response based on the entry data.
 fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
     Ok(Response::builder()

@@ -89,7 +89,7 @@ impl LmDB {
         delta: i64,
     ) -> Result<(), UserQueryError> {
         let mut wtxn = self.env.write_txn()?;
-        let mut user = match self.get_user(public_key, &wtxn){
+        let mut user = match self.get_user(public_key, &wtxn) {
             Ok(Some(user)) => user,
             Ok(None) => return Err(UserQueryError::UserNotFound),
             Err(e) => return Err(e.into()),

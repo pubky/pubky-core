@@ -74,10 +74,13 @@ impl LmDB {
         let mut wtxn = self.env.write_txn()?;
 
         // Get old entry size. If it doesn't exist, use 0.
-        let old_entry_size = self.tables.entries.get(&wtxn, path.as_str())?
-        .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
-        .transpose()?
-        .unwrap_or(0);
+        let old_entry_size = self
+            .tables
+            .entries
+            .get(&wtxn, path.as_str())?
+            .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
+            .transpose()?
+            .unwrap_or(0);
 
         // Write entry
         let mut entry = Entry::new();
@@ -91,8 +94,15 @@ impl LmDB {
             .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
 
         // Update user data usage
-        let mut user = self.tables.users.get(&wtxn, path.pubkey())?.ok_or(FileIoError::NotFound)?;
-        user.used_bytes = user.used_bytes.saturating_add(metadata.length as u64).saturating_sub(old_entry_size as u64);
+        let mut user = self
+            .tables
+            .users
+            .get(&wtxn, path.pubkey())?
+            .ok_or(FileIoError::NotFound)?;
+        user.used_bytes = user
+            .used_bytes
+            .saturating_add(metadata.length as u64)
+            .saturating_sub(old_entry_size as u64);
         self.tables.users.put(&mut wtxn, path.pubkey(), &user)?;
 
         // TODO: Extract this to a separate function.
@@ -358,14 +368,12 @@ fn next_threshold(
 /// The location of the file.
 /// This is used to determine where the file is stored.
 /// Used during the transition process from LMDB to OpenDAL.
-#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
 pub enum FileLocation {
     #[default]
     LMDB,
     OpenDal,
 }
-
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Entry {

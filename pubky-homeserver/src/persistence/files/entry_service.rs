@@ -102,12 +102,12 @@ impl EntryService {
     }
 
     /// Delete an entry from the database.
-    /// 
+    ///
     /// This includes all associated operations:
     /// - Update user data usage
     /// - Write a public [Event]
     /// - Delete the entry from the database
-    /// 
+    ///
     pub fn delete_entry(&self, path: &EntryPath) -> Result<(), FileIoError> {
         let mut wtxn = self.db.env.write_txn()?;
 

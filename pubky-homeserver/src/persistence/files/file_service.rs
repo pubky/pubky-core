@@ -74,16 +74,6 @@ impl FileService {
         self.db.get_entry(path)
     }
 
-    /// Get the metadata and content of a file.
-    pub async fn get_info_and_stream(
-        &self,
-        path: &EntryPath,
-    ) -> Result<(Entry, FileStream), FileIoError> {
-        let entry = self.get_info(path).await?;
-        let stream = self.get_stream(path).await?;
-        Ok((entry, stream))
-    }
-
     /// Get the content of a file as bytes.
     /// Errors if the file does not exist.
     #[cfg(test)]
@@ -127,7 +117,9 @@ impl FileService {
         };
         let existing_entry_content_length = self.db.get_entry_content_length_default_zero(path)?;
 
-        let remaining_quota_bytes = max_limit.saturating_add(existing_entry_content_length).saturating_sub(current_usage_bytes);
+        let remaining_quota_bytes = max_limit
+            .saturating_add(existing_entry_content_length)
+            .saturating_sub(current_usage_bytes);
         Ok(Some(remaining_quota_bytes))
     }
 
@@ -166,7 +158,9 @@ impl FileService {
             }
         };
 
-        let write_result = self.entry_service.write_entry(path, &metadata, location.clone());
+        let write_result = self
+            .entry_service
+            .write_entry(path, &metadata, location.clone());
         if write_result.is_err() {
             // Writing the entry failed. Delete the file in storage and return the error.
             match location {
