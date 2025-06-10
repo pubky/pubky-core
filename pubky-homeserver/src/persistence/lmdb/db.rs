@@ -1,8 +1,8 @@
 use super::tables::{Tables, TABLES_COUNT};
 use heed::{Env, EnvOpenOptions};
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::fs;
 
 use super::migrations;
 

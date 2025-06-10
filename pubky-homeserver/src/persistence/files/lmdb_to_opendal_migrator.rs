@@ -78,7 +78,7 @@ impl LmDbToOpendalMigrator {
         for key_value in self.db.tables.entries.iter(&rtxn)? {
             let (_, value) = key_value?;
             let entry = Entry::deserialize(value)?;
-            if entry.file_location() == &FileLocation::LMDB {
+            if entry.file_location() == &FileLocation::LmDB {
                 counter += 1;
             }
         }
@@ -93,7 +93,7 @@ impl LmDbToOpendalMigrator {
             let (key, value) = key_value?;
             let path = EntryPath::from_str(key)?;
             let entry = Entry::deserialize(value)?;
-            if entry.file_location() != &FileLocation::LMDB {
+            if entry.file_location() != &FileLocation::LmDB {
                 // Ignore entries that are already migrated
                 continue;
             }
@@ -127,7 +127,7 @@ impl LmDbToOpendalMigrator {
             }
         };
 
-        if entry.file_location() != &FileLocation::LMDB {
+        if entry.file_location() != &FileLocation::LmDB {
             tracing::debug!(
                 "[LMDB to OpenDAL] Skipping already migrated entry: {}",
                 path
@@ -171,7 +171,7 @@ impl LmDbToOpendalMigrator {
             }
         };
 
-        if locked_entry.file_location() != &FileLocation::LMDB {
+        if locked_entry.file_location() != &FileLocation::LmDB {
             tracing::warn!(
                 "[LMDB to OpenDAL] File was not in LMDB after migration: {}. Reverting.",
                 path
@@ -237,12 +237,12 @@ mod tests {
 
         // Write the file to LMDB initially
         let entry = file_service
-            .write_stream(&path, FileLocation::LMDB, stream)
+            .write_stream(&path, FileLocation::LmDB, stream)
             .await
             .unwrap();
 
         // Verify the file was written to LMDB
-        assert_eq!(*entry.file_location(), FileLocation::LMDB);
+        assert_eq!(*entry.file_location(), FileLocation::LmDB);
         assert_eq!(entry.content_length(), test_data.len());
 
         // Verify we can read the file from LMDB
@@ -362,7 +362,7 @@ mod tests {
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         let lmdb_entry = file_service
-            .write_stream(&lmdb_path, FileLocation::LMDB, stream)
+            .write_stream(&lmdb_path, FileLocation::LmDB, stream)
             .await
             .unwrap();
 
@@ -377,7 +377,7 @@ mod tests {
             .unwrap();
 
         // Verify initial states
-        assert_eq!(*lmdb_entry.file_location(), FileLocation::LMDB);
+        assert_eq!(*lmdb_entry.file_location(), FileLocation::LmDB);
         assert_eq!(*opendal_entry.file_location(), FileLocation::OpenDal);
 
         // Count LMDB entries before migration

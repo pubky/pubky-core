@@ -93,7 +93,7 @@ mod tests {
 
         // Check that the tenant is enabled
         let user = db
-            .get_user(&pubkey, &mut db.env.read_txn().unwrap())
+            .get_user(&pubkey, &db.env.read_txn().unwrap())
             .unwrap()
             .unwrap();
         assert!(!user.disabled);
@@ -114,7 +114,7 @@ mod tests {
 
         // Check that the tenant is disabled
         let user = db
-            .get_user(&pubkey, &mut db.env.read_txn().unwrap())
+            .get_user(&pubkey, &db.env.read_txn().unwrap())
             .unwrap()
             .unwrap();
         assert!(user.disabled);
@@ -127,7 +127,7 @@ mod tests {
 
         // Check that the tenant is enabled
         let user = db
-            .get_user(&pubkey, &mut db.env.read_txn().unwrap())
+            .get_user(&pubkey, &db.env.read_txn().unwrap())
             .unwrap()
             .unwrap();
         assert!(!user.disabled);

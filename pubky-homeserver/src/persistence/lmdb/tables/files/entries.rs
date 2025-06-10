@@ -1,7 +1,8 @@
-use super::super::events::Event;
 use super::{super::super::LmDB, InDbFileId};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
-use crate::persistence::files::{FileIoError, FileMetadata};
+use crate::persistence::files::FileIoError;
+#[cfg(test)]
+use crate::persistence::files::FileMetadata;
 #[cfg(test)]
 use crate::persistence::lmdb::tables::files::InDbTempFile;
 use crate::shared::webdav::EntryPath;
@@ -64,6 +65,7 @@ impl LmDB {
         }
     }
 
+    #[cfg(test)]
     /// Write an entry without writing the file to the blob store.
     pub fn write_entry(
         &self,
@@ -71,6 +73,8 @@ impl LmDB {
         metadata: &FileMetadata,
         file_location: FileLocation,
     ) -> Result<Entry, FileIoError> {
+        use crate::persistence::lmdb::tables::events::Event;
+
         let mut wtxn = self.env.write_txn()?;
 
         // Get old entry size. If it doesn't exist, use 0.
@@ -136,7 +140,7 @@ impl LmDB {
         let file_id = self.write_file_sync(file, &mut wtxn)?;
         wtxn.commit()?;
         metadata.modified_at = *file_id.timestamp();
-        let entry = self.write_entry(path, &metadata, FileLocation::LMDB)?;
+        let entry = self.write_entry(path, &metadata, FileLocation::LmDB)?;
         Ok(entry)
     }
 
@@ -149,70 +153,6 @@ impl LmDB {
             None => return Err(FileIoError::NotFound),
         };
         Ok(entry)
-    }
-
-    /// Delete an entry including the associated file from the database.
-    pub async fn delete_entry(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        let mut wtxn = self.env.write_txn()?;
-
-        let deleted = self.tables.entries.delete(&mut wtxn, path.as_str())?;
-        if !deleted {
-            wtxn.abort();
-            return Err(FileIoError::NotFound);
-        }
-
-        // create DELETE event
-        let url = format!("pubky://{}", path.as_str());
-        let event = Event::delete(&url);
-        let value = event.serialize();
-        let key = Timestamp::now().to_string();
-        self.tables.events.put(&mut wtxn, &key, &value)?;
-        wtxn.commit()?;
-        Ok(())
-    }
-
-    /// Delete an entry including the associated file from the database.
-    pub async fn delete_entry_and_file(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        let db = self.clone();
-        let path = path.clone();
-        let join_handle = tokio::task::spawn_blocking(move || -> Result<(), FileIoError> {
-            db.delete_entry_and_file_sync(&path)
-        })
-        .await;
-        match join_handle {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::error!("Error deleting entry. JoinError: {:?}", e);
-                Err(FileIoError::NotFound)
-            }
-        }
-    }
-
-    /// Delete an entry including the associated file from the database.
-    pub fn delete_entry_and_file_sync(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        let entry = self.get_entry(path)?;
-
-        let mut wtxn = self.env.write_txn()?;
-        self.delete_file(&entry.file_id(), &mut wtxn)?;
-
-        let deleted = self.tables.entries.delete(&mut wtxn, path.as_str())?;
-        if !deleted {
-            wtxn.abort();
-            return Err(FileIoError::NotFound);
-        }
-
-        // create DELETE event
-        let url = format!("pubky://{}", path.as_str());
-
-        let event = Event::delete(&url);
-        let value = event.serialize();
-
-        let key = Timestamp::now().to_string();
-
-        self.tables.events.put(&mut wtxn, &key, &value)?;
-
-        wtxn.commit()?;
-        Ok(())
     }
 
     /// Bytes stored at `path`.
@@ -371,7 +311,7 @@ fn next_threshold(
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
 pub enum FileLocation {
     #[default]
-    LMDB,
+    LmDB,
     OpenDal,
 }
 
@@ -384,7 +324,7 @@ pub struct Entry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
-    file_location: FileLocation, // TODO: Migrate LMDB to add this field.
+    file_location: FileLocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -419,13 +359,6 @@ impl<'de> Deserialize<'de> for EntryHash {
 impl Entry {
     pub fn new() -> Self {
         Default::default()
-    }
-
-    pub fn chunk_key(&self, chunk_index: u32) -> [u8; 12] {
-        let mut chunk_key = [0; 12];
-        chunk_key[0..8].copy_from_slice(&self.timestamp.to_bytes());
-        chunk_key[8..].copy_from_slice(&chunk_index.to_be_bytes());
-        chunk_key
     }
 
     // === Setters ===
@@ -524,11 +457,6 @@ mod tests {
         let mut content = vec![];
         file_handle.read_to_end(&mut content).unwrap();
         assert_eq!(content, vec![0, 0, 0, 0, 0]);
-
-        db.delete_entry_and_file_sync(&path).unwrap();
-
-        // Verify the entry and file are deleted
-        assert!(!db.entry_exists(&path).unwrap(), "File should be deleted");
     }
 
     #[tokio::test]

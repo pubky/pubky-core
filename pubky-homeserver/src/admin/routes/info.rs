@@ -83,7 +83,7 @@ mod tests {
             let mut wtxn = db.env.write_txn().unwrap();
             // User1: enabled, 1 MB
             let mut user1 = db
-                .get_user(&key1, &mut db.env.read_txn().unwrap())
+                .get_user(&key1, &db.env.read_txn().unwrap())
                 .unwrap()
                 .unwrap();
             user1.used_bytes = 1024 * 1024;
@@ -91,7 +91,7 @@ mod tests {
 
             // User2: disabled, 0.5 MB
             let mut user2 = db
-                .get_user(&key2, &mut db.env.read_txn().unwrap())
+                .get_user(&key2, &db.env.read_txn().unwrap())
                 .unwrap()
                 .unwrap();
             user2.disabled = true;

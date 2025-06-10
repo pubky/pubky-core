@@ -86,8 +86,8 @@ impl LmDB {
     }
 
     /// Write the blobs from a stream to LMDB.
-    pub(crate) async fn write_file_from_stream<'txn>(
-        &'txn self,
+    pub(crate) async fn write_file_from_stream(
+        &self,
         mut stream: impl Stream<Item = Result<bytes::Bytes, WriteStreamError>> + Unpin + Send,
         max_bytes: Option<u64>,
     ) -> Result<FileMetadata, FileIoError> {
@@ -145,7 +145,6 @@ impl LmDB {
 
 #[cfg(test)]
 mod tests {
-    
 
     use super::*;
 

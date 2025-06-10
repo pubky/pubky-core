@@ -91,7 +91,7 @@ impl FileService {
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
         let entry = self.get_info(path).await?;
         let stream: FileStream = match entry.file_location() {
-            FileLocation::LMDB => {
+            FileLocation::LmDB => {
                 let temp_file = self.db.read_file(&entry.file_id()).await?;
                 temp_file.as_stream()?
             }
@@ -142,7 +142,7 @@ impl FileService {
         let remaining_bytes_usage = self.get_user_quota_bytes_allowance(path)?;
 
         let metadata = match location {
-            FileLocation::LMDB => {
+            FileLocation::LmDB => {
                 self.db
                     .write_file_from_stream(stream, remaining_bytes_usage)
                     .await?
@@ -160,7 +160,7 @@ impl FileService {
         if write_result.is_err() {
             // Writing the entry failed. Delete the file in storage and return the error.
             match location {
-                FileLocation::LMDB => {
+                FileLocation::LmDB => {
                     let mut wtxn = self.db.env.write_txn()?;
                     let fileid = InDbFileId(metadata.modified_at);
                     self.db.delete_file(&fileid, &mut wtxn)?;
@@ -180,7 +180,7 @@ impl FileService {
         let entry = self.get_info(path).await?;
         self.entry_service.delete_entry(path)?;
         match entry.file_location() {
-            FileLocation::LMDB => {
+            FileLocation::LmDB => {
                 let mut wtxn = self.db.env.write_txn()?;
                 self.db.delete_file(&entry.file_id(), &mut wtxn)?;
                 wtxn.commit()?;
@@ -232,10 +232,10 @@ mod tests {
 
         // Test LMDB
         let entry = file_service
-            .write_stream(&path, FileLocation::LMDB, stream)
+            .write_stream(&path, FileLocation::LmDB, stream)
             .await
             .unwrap();
-        assert_eq!(*entry.file_location(), FileLocation::LMDB);
+        assert_eq!(*entry.file_location(), FileLocation::LmDB);
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
@@ -332,7 +332,7 @@ mod tests {
         // Test LMDB
         let lmdb_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         file_service
-            .write(&lmdb_path, buffer.clone(), FileLocation::LMDB)
+            .write(&lmdb_path, buffer.clone(), FileLocation::LmDB)
             .await
             .unwrap();
         let content = file_service.get(&lmdb_path).await.unwrap();
@@ -375,10 +375,7 @@ mod tests {
 
         // Delete the file and check if the data usage is updated correctly.
         file_service.delete(&path).await.unwrap();
-        assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(0)
-        );
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(0));
     }
 
     /// Override and existing entry and check if the data usage is updated correctly.
@@ -498,7 +495,7 @@ mod tests {
             .await
             .unwrap();
 
-        let test_data2 = vec![2u8; 1024*1024+1];
+        let test_data2 = vec![2u8; 1024 * 1024 + 1];
         let buffer2 = Buffer::from(test_data2.clone());
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
@@ -513,6 +510,9 @@ mod tests {
             }
         }
 
-        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(test_data.len() as u64));
+        assert_eq!(
+            db.get_user_data_usage(&pubkey).unwrap(),
+            Some(test_data.len() as u64)
+        );
     }
 }

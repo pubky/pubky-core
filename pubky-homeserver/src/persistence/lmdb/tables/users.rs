@@ -80,7 +80,6 @@ pub enum UserQueryError {
 }
 
 impl LmDB {
-
     /// Retrieves the current data usage (in bytes) for a given user.
     /// Returns the `used_bytes` value for the specified `public_key`, or Error if user does not exist.
     pub fn get_user_data_usage(&self, pk: &PublicKey) -> Result<Option<u64>, heed::Error> {
@@ -150,4 +149,3 @@ impl LmDB {
         Ok(user)
     }
 }
-

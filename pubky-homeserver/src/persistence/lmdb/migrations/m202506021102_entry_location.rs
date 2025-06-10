@@ -81,7 +81,7 @@ impl From<OldEntry> for NewEntry {
             content_length: old_entry.content_length,
             content_type: old_entry.content_type,
             // Initially, all entries are stored in LMDB.
-            file_location: FileLocation::LMDB,
+            file_location: FileLocation::LmDB,
         }
     }
 }
@@ -253,7 +253,7 @@ mod tests {
                     content_hash: EntryHash::default(),
                     content_length: 0,
                     content_type: "text/plain".to_string(),
-                    file_location: FileLocation::LMDB,
+                    file_location: FileLocation::LmDB,
                 },
             )
             .unwrap();
@@ -294,13 +294,13 @@ mod tests {
 
         // Check that the user has been migrated to the new schema.
         let table: Database<heed::types::Str, NewEntry> = env
-            .open_database(&mut wtxn, Some(ENTRIES_TABLE))
+            .open_database(&wtxn, Some(ENTRIES_TABLE))
             .unwrap()
             .unwrap();
-        let entry = table.get(&mut wtxn, "pubky/test.txt").unwrap().unwrap();
+        let entry = table.get(&wtxn, "pubky/test.txt").unwrap().unwrap();
         assert_eq!(
             entry.file_location,
-            FileLocation::LMDB,
+            FileLocation::LmDB,
             "The entry should be stored in LMDB."
         );
         assert_eq!(

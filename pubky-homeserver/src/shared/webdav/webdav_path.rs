@@ -148,20 +148,14 @@ mod tests {
                 assert_eq!(path, expected);
             }
             Err(e) => {
-                assert!(
-                    false,
-                    "Path '{path}' is invalid. Should be '{expected}'. Error: {e}"
-                );
+                panic!("Path '{path}' is invalid. Should be '{expected}'. Error: {e}");
             }
         };
     }
 
     fn assert_invalid_path(path: &str) {
         if let Ok(normalized_path) = normalize_and_validate_webdav_path(path) {
-            assert!(
-                false,
-                "Invalid path '{path}' is valid. Normalized result: '{normalized_path}'"
-            );
+            panic!("Invalid path '{path}' is valid. Normalized result: '{normalized_path}'");
         }
     }
 
