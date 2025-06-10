@@ -18,7 +18,7 @@ use crate::persistence::files::{FileMetadata, FileMetadataBuilder};
 /// A file identifier for a file stored in LMDB.
 /// The identifier is basically the timestamp of the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct InDbFileId(Timestamp);
+pub struct InDbFileId(pub Timestamp);
 
 impl InDbFileId {
     pub fn new() -> Self {

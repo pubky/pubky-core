@@ -89,7 +89,11 @@ impl LmDB {
         delta: i64,
     ) -> Result<(), UserQueryError> {
         let mut wtxn = self.env.write_txn()?;
-        let mut user = self.get_user(public_key, &wtxn)?;
+        let mut user = match self.get_user(public_key, &wtxn){
+            Ok(Some(user)) => user,
+            Ok(None) => return Err(UserQueryError::UserNotFound),
+            Err(e) => return Err(e.into()),
+        };
 
         if delta >= 0 {
             user.used_bytes = user.used_bytes.saturating_add(delta as u64);
@@ -104,11 +108,14 @@ impl LmDB {
 
     /// Retrieves the current data usage (in bytes) for a given user.
     /// Returns the `used_bytes` value for the specified `public_key`, or Error if user does not exist.
-    pub fn get_user_data_usage(&self, pk: &PublicKey) -> Result<u64, UserQueryError> {
+    pub fn get_user_data_usage(&self, pk: &PublicKey) -> Result<Option<u64>, heed::Error> {
         let rtxn = self.env.read_txn()?;
-        let user = self.get_user(pk, &rtxn)?;
+        let user = match self.get_user(pk, &rtxn)? {
+            Some(user) => user,
+            None => return Ok(None),
+        };
 
-        Ok(user.used_bytes)
+        Ok(Some(user.used_bytes))
     }
 
     /// Disable a user.
@@ -153,23 +160,18 @@ impl LmDB {
     ///
     /// - `UserQueryError::DatabaseError` if the database operation fails.
     #[cfg(test)]
-    pub fn create_user(&self, pubkey: &PublicKey, wtxn: &mut RwTxn) -> anyhow::Result<()> {
+    pub fn create_user(&self, pubkey: &PublicKey) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
         let user = User::default();
-        self.tables.users.put(wtxn, pubkey, &user)?;
+        self.tables.users.put(&mut wtxn, pubkey, &user)?;
+        wtxn.commit()?;
         Ok(())
     }
 
     /// Get a user.
-    ///
-    /// # Errors
-    ///
-    /// - `UserQueryError::UserNotFound` if the user does not exist.
-    /// - `UserQueryError::DatabaseError` if the database operation fails.
-    pub fn get_user(&self, pubkey: &PublicKey, wtxn: &RoTxn) -> Result<User, UserQueryError> {
-        let user = match self.tables.users.get(wtxn, pubkey)? {
-            Some(user) => user,
-            None => return Err(UserQueryError::UserNotFound),
-        };
+    /// Returns `None` if the user does not exist.
+    pub fn get_user(&self, pubkey: &PublicKey, wtxn: &RoTxn) -> Result<Option<User>, heed::Error> {
+        let user = self.tables.users.get(wtxn, pubkey)?;
         Ok(user)
     }
 }
@@ -185,16 +187,14 @@ mod unit_tests {
         let key = Keypair::random().public_key();
 
         // create user
-        let mut wtxn = db.env.write_txn().unwrap();
-        db.create_user(&key, &mut wtxn).unwrap();
-        wtxn.commit().unwrap();
+        db.create_user(&key).unwrap();
 
         // initially zero
-        assert_eq!(db.get_user_data_usage(&key).unwrap(), 0);
+        assert_eq!(db.get_user_data_usage(&key).unwrap(), Some(0));
         db.update_data_usage(&key, 500).unwrap();
-        assert_eq!(db.get_user_data_usage(&key).unwrap(), 500);
+        assert_eq!(db.get_user_data_usage(&key).unwrap(), Some(500));
         // clamp at zero
         db.update_data_usage(&key, -600).unwrap();
-        assert_eq!(db.get_user_data_usage(&key).unwrap(), 0);
+        assert_eq!(db.get_user_data_usage(&key).unwrap(), Some(0));
     }
 }

@@ -74,22 +74,20 @@ mod tests {
 
         // 1) Create both users
         {
-            let mut wtxn = db.env.write_txn().unwrap();
-            db.create_user(&key1, &mut wtxn).unwrap();
-            db.create_user(&key2, &mut wtxn).unwrap();
-            wtxn.commit().unwrap();
+            db.create_user(&key1).unwrap();
+            db.create_user(&key2).unwrap();
         }
 
         // 2) Modify usage and disabled flags
         {
             let mut wtxn = db.env.write_txn().unwrap();
             // User1: enabled, 1 MB
-            let mut user1 = db.get_user(&key1, &mut db.env.read_txn().unwrap()).unwrap();
+            let mut user1 = db.get_user(&key1, &mut db.env.read_txn().unwrap()).unwrap().unwrap();
             user1.used_bytes = 1024 * 1024;
             db.tables.users.put(&mut wtxn, &key1, &user1).unwrap();
 
             // User2: disabled, 0.5 MB
-            let mut user2 = db.get_user(&key2, &mut db.env.read_txn().unwrap()).unwrap();
+            let mut user2 = db.get_user(&key2, &mut db.env.read_txn().unwrap()).unwrap().unwrap();
             user2.disabled = true;
             user2.used_bytes = 512 * 1024;
             db.tables.users.put(&mut wtxn, &key2, &user2).unwrap();

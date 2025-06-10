@@ -1,11 +1,14 @@
 use crate::{
-    persistence::{files::entry_service::EntryService, lmdb::{
-        tables::{
-            files::{Entry, FileLocation},
-            users::UserQueryError,
+    persistence::{
+        files::entry_service::EntryService,
+        lmdb::{
+            tables::{
+                files::{Entry, FileLocation, InDbFileId},
+                users::UserQueryError,
+            },
+            LmDB,
         },
-        LmDB,
-    }},
+    },
     shared::webdav::EntryPath,
     ConfigToml,
 };
@@ -15,12 +18,10 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 #[cfg(test)]
 use opendal::Buffer;
+use pkarr::PublicKey;
 use std::path::Path;
 
-use super::{
-    write_disk_quota_enforcer::WriteDiskQuotaEnforcer, FileIoError, FileStream, OpendalService,
-    WriteStreamError,
-};
+use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
 /// This way, files can be managed in a unified way.
@@ -35,14 +36,18 @@ pub struct FileService {
 impl FileService {
     pub fn new(opendal_service: OpendalService, db: LmDB, user_quota_bytes: Option<u64>) -> Self {
         Self {
-            entry_service: EntryService::new(context),
+            entry_service: EntryService::new(db.clone(), user_quota_bytes),
             opendal_service,
             db,
             user_quota_bytes,
         }
     }
 
-    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Result<Self, FileIoError> {
+    pub fn new_from_config(
+        config: &ConfigToml,
+        data_directory: &Path,
+        db: LmDB,
+    ) -> Result<Self, FileIoError> {
         let opendal_service = OpendalService::new_from_config(&config.storage, data_directory)?;
         let quota_mb = config.general.user_storage_quota_mb;
         let quota_bytes = if quota_mb == 0 {
@@ -109,6 +114,23 @@ impl FileService {
         Ok(stream)
     }
 
+    /// Get the remaining quota bytes for a user.
+    /// Returns `u64::MAX` if the user has an unlimited quota.
+    fn get_user_quota_bytes_allowance(&self, path: &EntryPath) -> Result<Option<u64>, FileIoError> {
+        let max_limit = match self.user_quota_bytes {
+            Some(limit) => limit,
+            None => return Ok(None),
+        };
+        let current_usage_bytes = match self.db.get_user_data_usage(path.pubkey())? {
+            Some(usage) => usage,
+            None => return Err(FileIoError::NotFound),
+        };
+        let existing_entry_content_length = self.db.get_entry_content_length_default_zero(path)?;
+
+        let remaining_quota_bytes = max_limit.saturating_add(existing_entry_content_length).saturating_sub(current_usage_bytes);
+        Ok(Some(remaining_quota_bytes))
+    }
+
     /// Write a file to the database and storage depending on the selected target location.
     #[cfg(test)]
     pub async fn write(
@@ -129,74 +151,52 @@ impl FileService {
         location: FileLocation,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
-        let mut stream: Box<dyn Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send> =
-            Box::new(stream);
-        if let Some(user_quota_bytes) = self.user_quota_bytes {
-            // Enforce disk size quota on the stream
-            stream = Box::new(WriteDiskQuotaEnforcer::new(
-                stream,
-                &self.db,
-                path,
-                user_quota_bytes,
-            )?);
-        }
+        let remaining_bytes_usage = self.get_user_quota_bytes_allowance(path)?;
 
-        let existing_entry_bytes = self.db.get_entry_content_length_default_zero(path)?;
-
-        let entry = match location {
+        let metadata = match location {
             FileLocation::LMDB => {
-                let metadata = self.db.write_file_from_stream(stream).await?;
-                self.db.write_entry(path, &metadata, location)?
+                self.db
+                    .write_file_from_stream(stream, remaining_bytes_usage)
+                    .await?
             }
             FileLocation::OpenDal => {
-                let metadata = self.opendal_service.write_stream(path, stream).await?;
-                self.db.write_entry(path, &metadata, location)?
+                self.opendal_service
+                    .write_stream(path, stream, remaining_bytes_usage)
+                    .await?
             }
         };
-        // Update usage counter based on the actual file size
-        let delta = entry.content_length() as i64 - existing_entry_bytes as i64;
-        if let Err(e) = self.db.update_data_usage(path.pubkey(), delta) {
-            tracing::error!("Failed to update data usage for path: {}: {}", path, e);
 
-            match e {
-                UserQueryError::UserNotFound => {
-                    // Should not happen, data inconsistency error.
-                    // aka the user was deleted but the files are still there.
-                    tracing::error!("User not found for path: {}", path);
+        let write_result = self.entry_service.write_entry(path, &metadata, location.clone());
+        if write_result.is_err() {
+            // Writing the entry failed. Delete the file in storage and return the error.
+            match location {
+                FileLocation::LMDB => {
+                    let mut wtxn = self.db.env.write_txn()?;
+                    let fileid = InDbFileId(metadata.modified_at);
+                    self.db.delete_file(&fileid, &mut wtxn)?;
+                    wtxn.commit()?;
                 }
-                UserQueryError::DatabaseError(e) => {
-                    return Err(FileIoError::Db(e));
+                FileLocation::OpenDal => {
+                    self.opendal_service.delete(path).await?;
                 }
-            }
+            };
         };
-        Ok(entry)
+
+        write_result
     }
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
         let entry = self.get_info(path).await?;
+        self.entry_service.delete_entry(path)?;
         match entry.file_location() {
             FileLocation::LMDB => {
-                self.db.delete_entry_and_file(path).await?;
+                let mut wtxn = self.db.env.write_txn()?;
+                self.db.delete_file(&entry.file_id(), &mut wtxn)?;
+                wtxn.commit()?;
             }
             FileLocation::OpenDal => {
-                self.db.delete_entry(path).await?;
                 self.opendal_service.delete(path).await?;
-            }
-        };
-        if let Err(e) = self
-            .db
-            .update_data_usage(path.pubkey(), -(entry.content_length() as i64))
-        {
-            match e {
-                UserQueryError::UserNotFound => {
-                    // Should not happen, data inconsistency error.
-                    // aka the user was deleted but the files are still there.
-                    tracing::error!("User not found for path: {}", path);
-                }
-                UserQueryError::DatabaseError(e) => {
-                    return Err(FileIoError::Db(e));
-                }
             }
         };
         Ok(())
@@ -221,18 +221,19 @@ mod tests {
                 .expect("Failed to create file service for testing");
 
         let pubkey = pkarr::Keypair::random().public_key();
-        let mut wtxn = db.env.write_txn().unwrap();
-        db.create_user(&pubkey, &mut wtxn).unwrap();
-        wtxn.commit().unwrap();
+        db.create_user(&pubkey).unwrap();
 
         // User should not have any data usage yet
-        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), 0);
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(0));
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
         // Test getting a non-existent file
-        let result = file_service.get_stream(&path).await;
-        assert!(result.is_err(), "Should error for non-existent file");
+        match file_service.get_stream(&path).await {
+            Ok(_) => panic!("Should error for non-existent file"),
+            Err(FileIoError::NotFound) => {}
+            Err(e) => panic!("Should error for non-existent file: {}", e),
+        };
 
         // Test data
         let test_data = b"Hello, world! This is test data for the get method.";
@@ -247,7 +248,7 @@ mod tests {
         assert_eq!(*entry.file_location(), FileLocation::LMDB);
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            test_data.len() as u64,
+            Some(test_data.len() as u64),
             "Data usage should be the size of the file"
         );
 
@@ -273,7 +274,7 @@ mod tests {
         assert!(result.is_err(), "Should error for deleted file");
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            0,
+            Some(0),
             "Data usage should be 0 after deleting file"
         );
 
@@ -291,7 +292,7 @@ mod tests {
         assert_eq!(*entry.file_location(), FileLocation::OpenDal);
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            test_data.len() as u64,
+            Some(test_data.len() as u64),
             "Data usage should be the size of the file"
         );
 
@@ -318,7 +319,7 @@ mod tests {
         assert!(result.is_err(), "Should error for deleted file");
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            0,
+            Some(0),
             "Data usage should be 0 after deleting file"
         );
     }
@@ -333,9 +334,7 @@ mod tests {
                 .expect("Failed to create file service for testing");
 
         let pubkey = pkarr::Keypair::random().public_key();
-        let mut wtxn = db.env.write_txn().unwrap();
-        db.create_user(&pubkey, &mut wtxn).unwrap();
-        wtxn.commit().unwrap();
+        db.create_user(&pubkey).unwrap();
 
         let test_data = b"Hello, world!";
         let buffer = Buffer::from(test_data.as_slice());

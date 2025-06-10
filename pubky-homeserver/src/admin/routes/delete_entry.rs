@@ -57,6 +57,7 @@ mod tests {
 
         // Write a test file
         let webdav_path = WebDavPath::new(format!("/pub/{}", file_path).as_str()).unwrap();
+        db.create_user(&pubkey).unwrap();
         let entry_path = EntryPath::new(pubkey.clone(), webdav_path);
 
         write_test_file(&mut db, &entry_path).await;

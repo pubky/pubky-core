@@ -502,6 +502,7 @@ mod tests {
             Keypair::random().public_key(),
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
+        db.create_user(&path.pubkey()).unwrap();
         let file = InDbTempFile::zeros(5).await.unwrap();
         let entry = db.write_entry_from_file_sync(&path, &file).unwrap();
 
@@ -528,6 +529,7 @@ mod tests {
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
+        db.create_user(&public_key).unwrap();
         let path = "/pub/foo.txt";
 
         let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
@@ -562,6 +564,7 @@ mod tests {
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
+        db.create_user(&public_key).unwrap();
         let path = "/pub/foo.txt";
         let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
 
@@ -598,6 +601,7 @@ mod tests {
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
+        db.create_user(&public_key).unwrap();
         let path = "/pub/nonexistent.txt";
 
         let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());

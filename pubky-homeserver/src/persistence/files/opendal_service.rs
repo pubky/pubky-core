@@ -92,21 +92,36 @@ impl OpendalService {
         // Create a single-item stream from the buffer
         let stream = Box::pin(futures_util::stream::once(async move { Ok(bytes) }));
         // Use the existing streaming implementation
-        self.write_stream(path, stream).await
+        self.write_stream(path, stream, None).await
     }
 
+    /// Write a stream to the storage.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `path` - The path to the file.
+    /// * `stream` - The stream to write.
+    /// * `max_bytes` - The maximum number of bytes to write. Will throw an error if the stream exceeds this limit.
     pub async fn write_stream(
         &self,
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
+        max_bytes: Option<u64>,
     ) -> Result<FileMetadata, FileIoError> {
         let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
 
         // Write each chunk from the stream to the writer
         let write_result: Result<(), FileIoError> = async {
+            let mut bytes_counter = 0;
             while let Some(chunk_result) = stream.next().await {
                 let chunk = chunk_result?;
+                bytes_counter += chunk.len() as u64;
+                if let Some(max_bytes) = max_bytes {
+                    if bytes_counter > max_bytes {
+                        return Err(FileIoError::DiskSpaceQuotaExceeded);
+                    }
+                }
                 metadata_builder.update(&chunk);
                 writer.write(chunk).await?;
             }
@@ -181,8 +196,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{
-        shared::webdav::WebDavPath,
-        storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
+        shared::webdav::WebDavPath, storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig}
     };
 
     use super::*;
@@ -304,7 +318,7 @@ mod tests {
             let stream = futures_util::stream::iter(chunks);
 
             // Write the stream to storage
-            file_service.write_stream(&path, stream).await.unwrap();
+            file_service.write_stream(&path, stream, None).await.unwrap();
 
             // Read the content back and verify it matches
             let read_content = file_service.get(&path).await.unwrap();

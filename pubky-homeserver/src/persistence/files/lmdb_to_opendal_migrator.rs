@@ -156,7 +156,7 @@ impl LmDbToOpendalMigrator {
         let metadata = self
             .file_service
             .opendal_service
-            .write_stream(path, converted_stream)
+            .write_stream(path, converted_stream, None)
             .await?;
 
         // Change the actual database. This needs to be done in a write tx to guarantee consistency.
@@ -225,9 +225,7 @@ mod tests {
 
         // Create a test user
         let pubkey = pkarr::Keypair::random().public_key();
-        let mut wtxn = db.env.write_txn().unwrap();
-        db.create_user(&pubkey, &mut wtxn).unwrap();
-        wtxn.commit().unwrap();
+        db.create_user(&pubkey).unwrap();
 
         // Create a test file path
         let path = EntryPath::new(pubkey, WebDavPath::new("/pub/test_file.txt").unwrap());
@@ -351,9 +349,7 @@ mod tests {
 
         // Create a test user
         let pubkey = pkarr::Keypair::random().public_key();
-        let mut wtxn = db.env.write_txn().unwrap();
-        db.create_user(&pubkey, &mut wtxn).unwrap();
-        wtxn.commit().unwrap();
+        db.create_user(&pubkey).unwrap();
 
         // Create test data
         let test_data = b"Test data for mixed migration";

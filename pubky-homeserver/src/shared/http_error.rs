@@ -122,9 +122,7 @@ impl From<FileIoError> for HttpError {
     fn from(error: FileIoError) -> Self {
         match error {
             FileIoError::NotFound => Self::not_found(),
-            FileIoError::StreamBroken(WriteStreamError::DiskSpaceQuotaExceeded) => {
-                Self::insufficient_storage()
-            }
+            FileIoError::DiskSpaceQuotaExceeded => Self::insufficient_storage(),
             FileIoError::StreamBroken(_) => Self::bad_request("Stream broken"),
             e => {
                 tracing::error!(?e);

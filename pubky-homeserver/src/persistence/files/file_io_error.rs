@@ -13,6 +13,8 @@ pub enum FileIoError {
     TempFile(#[from] std::io::Error),
     #[error(transparent)]
     StreamBroken(#[from] WriteStreamError),
+    #[error("Disk space quota exceeded")]
+    DiskSpaceQuotaExceeded,
 }
 
 /// A unified error type for writing streams.
@@ -20,8 +22,6 @@ pub enum FileIoError {
 pub enum WriteStreamError {
     #[error("Axum error: {0}")]
     Axum(#[from] axum::Error),
-    #[error("Disk space quota exceeded")]
-    DiskSpaceQuotaExceeded,
     #[error("Other error: {0}")]
     Other(#[from] anyhow::Error),
 }

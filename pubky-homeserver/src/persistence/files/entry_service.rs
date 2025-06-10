@@ -13,25 +13,19 @@ use crate::{
         },
     },
     shared::webdav::EntryPath,
-    AppContext,
 };
 
+#[derive(Debug, Clone)]
 pub struct EntryService {
     db: LmDB,
     user_disk_space_quota_bytes: Option<u64>,
 }
 
 impl EntryService {
-    pub fn new(context: &AppContext) -> Self {
-        let bytes_quota = context.config_toml.general.user_storage_quota_mb * 1024 * 1024;
-        let bytes_quota = if bytes_quota == 0 {
-            None
-        } else {
-            Some(bytes_quota)
-        };
+    pub fn new(db: LmDB, user_disk_space_quota_bytes: Option<u64>) -> Self {
         Self {
-            db: context.db.clone(),
-            user_disk_space_quota_bytes: bytes_quota,
+            db,
+            user_disk_space_quota_bytes,
         }
     }
 
@@ -47,6 +41,7 @@ impl EntryService {
         &self,
         path: &EntryPath,
         metadata: &FileMetadata,
+        location: FileLocation,
     ) -> Result<Entry, FileIoError> {
         let mut wtxn = self.db.env.write_txn()?;
 
@@ -65,7 +60,7 @@ impl EntryService {
         entry.set_content_hash(metadata.hash);
         entry.set_content_length(metadata.length);
         entry.set_timestamp(&metadata.modified_at);
-        entry.set_file_location(FileLocation::OpenDal);
+        entry.set_file_location(location);
         let entry_key = path.to_string();
         self.db
             .tables
@@ -86,9 +81,7 @@ impl EntryService {
 
         if let Some(quota) = self.user_disk_space_quota_bytes {
             if user.used_bytes > quota {
-                return Err(FileIoError::StreamBroken(
-                    WriteStreamError::DiskSpaceQuotaExceeded,
-                ));
+                return Err(FileIoError::DiskSpaceQuotaExceeded);
             }
         }
 

@@ -1,5 +1,5 @@
 use crate::{
-    persistence::lmdb::{tables::users::UserQueryError, LmDB},
+    persistence::lmdb::LmDB,
     shared::{HttpError, HttpResult},
 };
 use pkarr::PublicKey;
@@ -11,15 +11,15 @@ pub fn err_if_user_is_invalid(
     err_if_disabled: bool,
 ) -> HttpResult<()> {
     match db.get_user(pubkey, &db.env.read_txn()?) {
-        Ok(user) => {
+        Ok(Some(user)) => {
             if err_if_disabled && user.disabled {
                 return Err(HttpError::forbidden());
             }
         }
-        Err(UserQueryError::UserNotFound) => {
+        Ok(None) => {
             return Err(HttpError::not_found());
         }
-        Err(UserQueryError::DatabaseError(e)) => {
+        Err(e) => {
             return Err(e.into());
         }
     };
