@@ -1,7 +1,7 @@
 //! Server error
 use axum::{http::StatusCode, response::IntoResponse};
 
-use crate::persistence::files::{FileIoError, WriteStreamError};
+use crate::persistence::files::FileIoError;
 
 pub(crate) type HttpResult<T, E = HttpError> = core::result::Result<T, E>;
 

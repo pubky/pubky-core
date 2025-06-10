@@ -145,7 +145,7 @@ impl LmDB {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    
 
     use super::*;
 

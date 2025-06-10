@@ -2,7 +2,7 @@ use super::tables::{Tables, TABLES_COUNT};
 use heed::{Env, EnvOpenOptions};
 use std::path::Path;
 use std::sync::Arc;
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use super::migrations;
 
@@ -29,7 +29,7 @@ impl LmDB {
             EnvOpenOptions::new()
                 .max_dbs(TABLES_COUNT)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&main_dir)
+                .open(main_dir)
         }?;
 
         migrations::run(&env)?;
@@ -52,7 +52,7 @@ impl LmDB {
     pub fn test() -> LmDB {
         // Create a temporary directory for the test.
         let temp_dir = tempfile::tempdir().unwrap();
-        let mut lmdb = unsafe { LmDB::open(&temp_dir.path()).unwrap() };
+        let mut lmdb = unsafe { LmDB::open(temp_dir.path()).unwrap() };
         lmdb.test_dir = Some(Arc::new(temp_dir)); // Keep the directory alive for the duration of the test. As soon as all LmDB instances are dropped, the directory will be deleted automatically.
 
         lmdb

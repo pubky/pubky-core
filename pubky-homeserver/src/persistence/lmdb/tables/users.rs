@@ -80,31 +80,6 @@ pub enum UserQueryError {
 }
 
 impl LmDB {
-    /// Updates a user's data usage by a signed `delta` (bytes).
-    /// Increases or decreases the stored `used_bytes` count for `public_key`.
-    /// Negative results are clamped to zero to prevent underflow.
-    pub fn update_data_usage(
-        &self,
-        public_key: &PublicKey,
-        delta: i64,
-    ) -> Result<(), UserQueryError> {
-        let mut wtxn = self.env.write_txn()?;
-        let mut user = match self.get_user(public_key, &wtxn) {
-            Ok(Some(user)) => user,
-            Ok(None) => return Err(UserQueryError::UserNotFound),
-            Err(e) => return Err(e.into()),
-        };
-
-        if delta >= 0 {
-            user.used_bytes = user.used_bytes.saturating_add(delta as u64);
-        } else {
-            user.used_bytes = user.used_bytes.saturating_sub((-delta) as u64);
-        }
-
-        self.tables.users.put(&mut wtxn, public_key, &user)?;
-        wtxn.commit()?;
-        Ok(())
-    }
 
     /// Retrieves the current data usage (in bytes) for a given user.
     /// Returns the `used_bytes` value for the specified `public_key`, or Error if user does not exist.
@@ -176,25 +151,3 @@ impl LmDB {
     }
 }
 
-#[cfg(test)]
-mod unit_tests {
-    use crate::persistence::lmdb::LmDB;
-    use pkarr::Keypair;
-
-    #[test]
-    fn test_update_and_get_usage() {
-        let db = LmDB::test();
-        let key = Keypair::random().public_key();
-
-        // create user
-        db.create_user(&key).unwrap();
-
-        // initially zero
-        assert_eq!(db.get_user_data_usage(&key).unwrap(), Some(0));
-        db.update_data_usage(&key, 500).unwrap();
-        assert_eq!(db.get_user_data_usage(&key).unwrap(), Some(500));
-        // clamp at zero
-        db.update_data_usage(&key, -600).unwrap();
-        assert_eq!(db.get_user_data_usage(&key).unwrap(), Some(0));
-    }
-}

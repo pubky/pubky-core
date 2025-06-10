@@ -1,9 +1,8 @@
-use pkarr::PublicKey;
 use pubky_common::timestamp::Timestamp;
 
 use crate::{
     persistence::{
-        files::{FileIoError, FileMetadata, WriteStreamError},
+        files::{FileIoError, FileMetadata},
         lmdb::{
             tables::{
                 events::Event,

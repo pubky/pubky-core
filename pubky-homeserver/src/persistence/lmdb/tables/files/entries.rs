@@ -510,7 +510,7 @@ mod tests {
             Keypair::random().public_key(),
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
-        db.create_user(&path.pubkey()).unwrap();
+        db.create_user(path.pubkey()).unwrap();
         let file = InDbTempFile::zeros(5).await.unwrap();
         let entry = db.write_entry_from_file_sync(&path, &file).unwrap();
 

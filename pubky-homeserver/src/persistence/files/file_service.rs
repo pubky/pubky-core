@@ -2,10 +2,7 @@ use crate::{
     persistence::{
         files::entry_service::EntryService,
         lmdb::{
-            tables::{
-                files::{Entry, FileLocation, InDbFileId},
-                users::UserQueryError,
-            },
+            tables::files::{Entry, FileLocation, InDbFileId},
             LmDB,
         },
     },
@@ -18,7 +15,6 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 #[cfg(test)]
 use opendal::Buffer;
-use pkarr::PublicKey;
 use std::path::Path;
 
 use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
@@ -350,5 +346,173 @@ mod tests {
             .unwrap();
         let content = file_service.get(&opendal_path).await.unwrap();
         assert_eq!(content.as_ref(), test_data);
+    }
+
+    #[tokio::test]
+    async fn test_data_usage_update_basic() {
+        let mut config = ConfigToml::test();
+        config.general.user_storage_quota_mb = 1;
+        let db = LmDB::test();
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
+
+        let pubkey = pkarr::Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+        let test_data = vec![1u8; 1024];
+        let buffer = Buffer::from(test_data.clone());
+
+        file_service
+            .write(&path, buffer, FileLocation::OpenDal)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.get_user_data_usage(&pubkey).unwrap(),
+            Some(test_data.len() as u64)
+        );
+
+        // Delete the file and check if the data usage is updated correctly.
+        file_service.delete(&path).await.unwrap();
+        assert_eq!(
+            db.get_user_data_usage(&pubkey).unwrap(),
+            Some(0)
+        );
+    }
+
+    /// Override and existing entry and check if the data usage is updated correctly.
+    #[tokio::test]
+    async fn test_data_usage_override_existing_entry() {
+        let mut config = ConfigToml::test();
+        config.general.user_storage_quota_mb = 1;
+        let db = LmDB::test();
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
+
+        let pubkey = pkarr::Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+        let test_data = vec![1u8; 1024];
+        let buffer = Buffer::from(test_data.clone());
+
+        file_service
+            .write(&path, buffer, FileLocation::OpenDal)
+            .await
+            .unwrap();
+
+        let test_data2 = vec![2u8; 1024];
+        let buffer2 = Buffer::from(test_data2.clone());
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+
+        file_service
+            .write(&path, buffer2, FileLocation::OpenDal)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            db.get_user_data_usage(&pubkey).unwrap(),
+            Some(test_data2.len() as u64)
+        );
+    }
+
+    /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
+    #[tokio::test]
+    async fn test_data_usage_exactly_to_quota() {
+        let mut config = ConfigToml::test();
+        config.general.user_storage_quota_mb = 1;
+        let db = LmDB::test();
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
+
+        let pubkey = pkarr::Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+        let test_data = vec![1u8; 1024 * 1024];
+        let buffer = Buffer::from(test_data.clone());
+
+        file_service
+            .write(&path, buffer, FileLocation::OpenDal)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            db.get_user_data_usage(&pubkey).unwrap(),
+            Some(test_data.len() as u64)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_data_usage_above_quota() {
+        let mut config = ConfigToml::test();
+        config.general.user_storage_quota_mb = 1;
+        let db = LmDB::test();
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
+
+        let pubkey = pkarr::Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+        let test_data = vec![1u8; 1024 * 1024 + 1];
+        let buffer = Buffer::from(test_data.clone());
+
+        match file_service
+            .write(&path, buffer, FileLocation::OpenDal)
+            .await
+        {
+            Ok(_) => panic!("Should error for file above quota"),
+            Err(FileIoError::DiskSpaceQuotaExceeded) => {} // All good
+            Err(e) => {
+                panic!("Should error for file above quota: {:?}", e);
+            }
+        }
+
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(0));
+    }
+
+    /// Override and existing entry and check if the data usage is updated correctly.
+    #[tokio::test]
+    async fn test_data_usage_override_existing_above_quota() {
+        let mut config = ConfigToml::test();
+        config.general.user_storage_quota_mb = 1;
+        let db = LmDB::test();
+        let file_service =
+            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
+                .expect("Failed to create file service for testing");
+
+        let pubkey = pkarr::Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+        let test_data = vec![1u8; 1024];
+        let buffer = Buffer::from(test_data.clone());
+
+        file_service
+            .write(&path, buffer, FileLocation::OpenDal)
+            .await
+            .unwrap();
+
+        let test_data2 = vec![2u8; 1024*1024+1];
+        let buffer2 = Buffer::from(test_data2.clone());
+        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
+
+        match file_service
+            .write(&path, buffer2, FileLocation::OpenDal)
+            .await
+        {
+            Ok(_) => panic!("Should error for file above quota"),
+            Err(FileIoError::DiskSpaceQuotaExceeded) => {} // All good
+            Err(e) => {
+                panic!("Should error for file above quota: {:?}", e);
+            }
+        }
+
+        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(test_data.len() as u64));
     }
 }
