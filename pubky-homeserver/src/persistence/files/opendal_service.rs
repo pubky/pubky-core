@@ -46,18 +46,6 @@ pub fn build_storage_operator_from_config(
 const CHUNK_SIZE: usize = 16 * 1024;
 
 /// The service to write and read files to and from the configured opendal storage.
-///
-/// # Examples
-///
-/// ```rust
-/// let service = OpendalService::new_from_config(&config, &data_dir)?;
-///
-/// // Write a file
-/// let metadata = service.write_stream(&path, stream).await?;
-///
-/// // Read a file
-/// let content_stream = service.get_stream(&path).await?;
-/// ```
 #[derive(Debug, Clone)]
 pub struct OpendalService {
     operator: Operator,
