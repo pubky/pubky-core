@@ -22,8 +22,11 @@ icann_domain = "localhost"
 user_keys_republisher_interval = 14400 # 4 hours in seconds
 dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
+[logging]
+level = "info"
+module_levels = ["pubky_homeserver=debug", "tower_http=debug"]
 
-# The following params exist, but the default value is None. 
+# The following params exist, but the default value is None.
 # See ./sample.config.toml for usage
 # public_icann_http_port =
 # dht_bootstrap_nodes =

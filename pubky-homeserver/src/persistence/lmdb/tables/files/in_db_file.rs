@@ -92,12 +92,27 @@ impl AsyncInDbTempFileWriter {
         writer.complete().await
     }
 
+    #[cfg(test)]
+    pub async fn png_pixel() -> Result<InDbTempFile, std::io::Error> {
+        let mut file = Self::new().await?;
+        let png_magic_bytes: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        file.write_chunk(&png_magic_bytes).await?;
+        file.guess_mime_type_from_path("test.png");
+        file.complete().await
+    }
+
     /// Write a chunk to the file.
     /// Chunk writing is done by the axum body stream and by LMDB itself.
     pub async fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
         self.writer_file.write_all(chunk).await?;
         self.metadata.update(chunk);
         Ok(())
+    }
+
+    /// If a path is provided it can be used to guess the content type.
+    /// This is useful in case the magic bytes are not enough to determine the content type.
+    pub fn guess_mime_type_from_path(&mut self, path: &str) {
+        self.metadata.guess_mime_type_from_path(path);
     }
 
     /// Flush the file to disk.
@@ -188,6 +203,11 @@ impl InDbTempFile {
 
     pub fn metadata(&self) -> &FileMetadata {
         &self.metadata
+    }
+
+    #[cfg(test)]
+    pub async fn png_pixel() -> Result<Self, std::io::Error> {
+        AsyncInDbTempFileWriter::png_pixel().await
     }
 
     /// Get the path of the file on disk.

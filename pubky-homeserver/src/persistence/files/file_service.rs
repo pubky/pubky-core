@@ -144,7 +144,7 @@ impl FileService {
         let metadata = match location {
             FileLocation::LmDB => {
                 self.db
-                    .write_file_from_stream(stream, remaining_bytes_usage)
+                    .write_file_from_stream(path, stream, remaining_bytes_usage)
                     .await?
             }
             FileLocation::OpenDal => {

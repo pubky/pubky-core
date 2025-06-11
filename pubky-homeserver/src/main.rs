@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use pubky_homeserver::HomeserverSuite;
-use tracing_subscriber::EnvFilter;
+use pubky_homeserver::{tracing::init_tracing_logs_if_set, HomeserverSuite};
 
 fn default_config_dir_path() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".pubky")
@@ -20,6 +19,7 @@ fn validate_config_dir_path(path: &str) -> Result<PathBuf, String> {
 }
 
 #[derive(Parser, Debug)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     /// Path to config file. Defaults to ~/.pubky/config.toml
     #[clap(short, long, default_value_os_t = default_config_dir_path(), value_parser = validate_config_dir_path)]
@@ -29,15 +29,9 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
+    init_tracing_logs_if_set(&args.data_dir)?;
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("pubky_homeserver=debug,tower_http=debug")),
-        )
-        .init();
-
-    tracing::debug!("Using data dir: {}", args.data_dir.display());
+    tracing::info!("Use data directory: {}", args.data_dir.display());
     let server = HomeserverSuite::start_with_persistent_data_dir_path(args.data_dir).await?;
 
     tracing::info!(

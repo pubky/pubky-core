@@ -1,4 +1,5 @@
 use crate::persistence::files::{FileIoError, FileMetadata, WriteStreamError};
+use crate::shared::webdav::EntryPath;
 
 use super::super::super::LmDB;
 use super::{AsyncInDbTempFileWriter, InDbFileId, InDbTempFile, SyncInDbTempFileWriter};
@@ -69,7 +70,6 @@ impl LmDB {
         loop {
             let mut blob = vec![0_u8; self.max_chunk_size];
             let bytes_read = file_handle.read(&mut blob)?;
-
             let blob_key = id.get_blob_key(blob_index);
             self.tables
                 .blobs
@@ -88,11 +88,13 @@ impl LmDB {
     /// Write the blobs from a stream to LMDB.
     pub(crate) async fn write_file_from_stream(
         &self,
+        path: &EntryPath,
         mut stream: impl Stream<Item = Result<bytes::Bytes, WriteStreamError>> + Unpin + Send,
         max_bytes: Option<u64>,
     ) -> Result<FileMetadata, FileIoError> {
         // First, write the stream to a temporary file using AsyncInDbTempFileWriter
         let mut temp_file_writer = AsyncInDbTempFileWriter::new().await?;
+        temp_file_writer.guess_mime_type_from_path(path.path().as_str());
 
         let mut counter = 0;
         while let Some(chunk_result) = stream.next().await {
@@ -145,17 +147,17 @@ impl LmDB {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[tokio::test]
-    async fn test_write_read_delete_file() {
+    async fn test_write_read_delete_magic_bytes_file() {
         let lmdb = LmDB::test();
 
         // Write file to LMDB
-        let write_file = InDbTempFile::zeros(50).await.unwrap();
+        let write_file = InDbTempFile::png_pixel().await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        assert_eq!(write_file.metadata().content_type, "image/png");
         wtxn.commit().unwrap();
 
         // Read file from LMDB
@@ -191,6 +193,10 @@ mod tests {
         let write_file = InDbTempFile::zeros(0).await.unwrap();
         let mut wtxn = lmdb.env.write_txn().unwrap();
         let id = lmdb.write_file_sync(&write_file, &mut wtxn).unwrap();
+        assert_eq!(
+            write_file.metadata().content_type,
+            "application/octet-stream"
+        );
         wtxn.commit().unwrap();
 
         let read_file = lmdb.read_file(&id).await.unwrap();

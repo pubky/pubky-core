@@ -10,7 +10,9 @@ mod signup_mode;
 /// Opendal config for the TomlConfig.
 pub mod storage_config;
 
-pub use config_toml::{ConfigReadError, ConfigToml};
+mod log_level;
+
+pub use config_toml::{ConfigReadError, ConfigToml, LoggingToml};
 pub use data_dir::DataDir;
 pub use domain::Domain;
 pub use domain_port::DomainPort;

@@ -1,3 +1,5 @@
+use crate::core::{extractors::PubkyHost, AppState};
+use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
@@ -9,9 +11,6 @@ use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
-
-use crate::core::{extractors::PubkyHost, AppState};
-use crate::shared::{HttpError, HttpResult};
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -69,10 +68,11 @@ where
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
-                    return Ok(
-                        HttpError::new(StatusCode::NOT_FOUND, Some("Pubky Host is missing"))
-                            .into_response(),
+                    return Ok(HttpError::new(
+                        StatusCode::NOT_FOUND,
+                        Some("Pubky Host is missing"),
                     )
+                    .into_response());
                 }
             };
 
@@ -129,7 +129,7 @@ fn authorize(
             })
         {
             return Ok(());
-        }
+        };
 
         return Err(HttpError::forbidden());
     }

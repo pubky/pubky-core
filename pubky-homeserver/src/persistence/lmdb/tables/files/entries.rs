@@ -91,6 +91,7 @@ impl LmDB {
         entry.set_content_hash(metadata.hash);
         entry.set_content_length(metadata.length);
         entry.set_timestamp(&metadata.modified_at);
+        entry.set_content_type(metadata.content_type.clone());
         entry.file_location = file_location;
         let entry_key = path.to_string();
         self.tables
@@ -380,6 +381,11 @@ impl Entry {
 
     pub fn set_file_location(&mut self, file_location: FileLocation) -> &mut Self {
         self.file_location = file_location;
+        self
+    }
+
+    pub fn set_content_type(&mut self, content_type: String) -> &mut Self {
+        self.content_type = content_type;
         self
     }
 

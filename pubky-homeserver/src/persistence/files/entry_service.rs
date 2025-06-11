@@ -60,6 +60,7 @@ impl EntryService {
         entry.set_content_length(metadata.length);
         entry.set_timestamp(&metadata.modified_at);
         entry.set_file_location(location);
+        entry.set_content_type(metadata.content_type.clone());
         let entry_key = path.to_string();
         self.db
             .tables

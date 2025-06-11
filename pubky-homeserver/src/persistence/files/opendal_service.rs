@@ -112,6 +112,7 @@ impl OpendalService {
     ) -> Result<FileMetadata, FileIoError> {
         let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
+        metadata_builder.guess_mime_type_from_path(path.path().as_str());
 
         // Write each chunk from the stream to the writer
         let write_result: Result<(), FileIoError> = async {

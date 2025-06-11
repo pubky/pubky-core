@@ -1,5 +1,6 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
+use crate::tracing::init_tracing_logs_with_config_if_set;
 use crate::MockDataDir;
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
@@ -51,6 +52,11 @@ impl HomeserverSuite {
 
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
+        // Tracing Subscriber initialization based on the config file.
+        let _ = init_tracing_logs_with_config_if_set(&context.config_toml);
+
+        tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
+
         let core = HomeserverCore::new(context.clone()).await?;
         let admin_server = AdminServer::start(&context).await?;
 

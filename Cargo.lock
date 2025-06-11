@@ -205,7 +205,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "authn"
-version = "0.1.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -524,6 +524,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c3d1b2e905a3a7b00a6141adb0e4c0bb941d11caf55349d863942a1cc44e3c9"
 dependencies = [
  "shlex",
+]
+
+[[package]]
+name = "cfb"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
+dependencies = [
+ "byteorder",
+ "fnv",
+ "uuid",
 ]
 
 [[package]]
@@ -938,10 +949,11 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "e2e"
-version = "0.1.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "bytes",
  "pkarr",
+ "pubky-common",
  "pubky-testnet",
  "reqwest",
  "tokio",
@@ -1538,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "http-relay"
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -1808,6 +1820,15 @@ dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
  "serde",
+]
+
+[[package]]
+name = "infer"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
+dependencies = [
+ "cfb",
 ]
 
 [[package]]
@@ -2547,7 +2568,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-republisher"
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2699,7 +2720,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2735,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "argon2",
  "base32",
@@ -2754,7 +2775,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2776,6 +2797,8 @@ dependencies = [
  "hex",
  "hostname-validator",
  "httpdate",
+ "infer",
+ "mime_guess",
  "opendal",
  "page_size",
  "percent-encoding",
@@ -2802,7 +2825,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.5.0-rc.0"
+version = "0.5.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -3417,8 +3440,7 @@ dependencies = [
 [[package]]
 name = "serde-toml-merge"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5817202d670278fb4dded71a70bae5181e00112543b1313463b02d43fc2d9243"
+source = "git+https://github.com/evd0kim/serde-toml-merge?rev=69112dc00439f2a9736fa52d98731585c31fa346#69112dc00439f2a9736fa52d98731585c31fa346"
 dependencies = [
  "toml",
 ]

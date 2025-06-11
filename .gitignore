@@ -5,3 +5,4 @@ storage/
 .cursor/*
 .vscode/*
 pubky-stag-gcs-account.json
+.DS_Store
