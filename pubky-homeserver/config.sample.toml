@@ -68,8 +68,8 @@ burst = 10
 # Files are saved on your local disk.
 type = "file_system"
 # Location where the paths are stored on your disk.
-# During runtime, the variable `{DATA_DIRECTORY}` is replaced with the homeserver data directory path.
-root_directory = "{DATA_DIRECTORY}/data/files"
+# Relative paths are 
+root_directory = "./data/files"
 
 # Google Cloud Bucket
 # Files are saved in a Google Cloud Bucket.
