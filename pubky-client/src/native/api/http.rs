@@ -3,7 +3,7 @@
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
 use super::super::Client;
-use crate::types::PubkyUrl;
+use crate::types::IntoPubkyUrl;
 
 impl Client {
     #[cfg(not(wasm_browser))]
@@ -22,7 +22,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn request<U: IntoUrl + PubkyUrl>(&self, method: Method, url: U) -> RequestBuilder {
+    pub fn request<U: IntoUrl + IntoPubkyUrl>(&self, method: Method, url: U) -> RequestBuilder {
         if url.is_pubky_url() {
             let url = url.to_homeserver_url().expect("URL should be valid");
             return self.http.request(method, url);
@@ -46,7 +46,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn get<U: IntoUrl + PubkyUrl>(&self, url: U) -> RequestBuilder {
+    pub fn get<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::GET, url)
     }
 
@@ -55,7 +55,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn post<U: IntoUrl + PubkyUrl>(&self, url: U) -> RequestBuilder {
+    pub fn post<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::POST, url)
     }
 
@@ -71,7 +71,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn put<U: IntoUrl + PubkyUrl>(&self, url: U) -> RequestBuilder {
+    pub fn put<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::PUT, url)
     }
 
@@ -87,7 +87,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn patch<U: IntoUrl + PubkyUrl>(&self, url: U) -> RequestBuilder {
+    pub fn patch<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::PATCH, url)
     }
 
@@ -103,7 +103,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn delete<U: IntoUrl + PubkyUrl>(&self, url: U) -> RequestBuilder {
+    pub fn delete<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::DELETE, url)
     }
 
@@ -119,13 +119,13 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn head<U: IntoUrl + PubkyUrl>(&self, url: U) -> RequestBuilder {
+    pub fn head<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::HEAD, url)
     }
 
     // === Private Methods ===
 
-    pub(crate) async fn cross_request<U: IntoUrl + PubkyUrl>(
+    pub(crate) async fn cross_request<U: IntoUrl + IntoPubkyUrl>(
         &self,
         method: Method,
         url: U,

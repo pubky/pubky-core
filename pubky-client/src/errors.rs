@@ -42,7 +42,7 @@ pub enum PubkyError {
     UrlParseError(#[from] url::ParseError),
 
     #[error("Not a Pubky or Pkarr URL")]
-    NotPubkyUrl,
+    NotIntoPubkyUrl,
 
     #[error("Missing host in URL")]
     MissingHost,
