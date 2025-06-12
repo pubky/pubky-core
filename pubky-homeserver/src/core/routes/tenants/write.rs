@@ -42,17 +42,12 @@ pub async fn put(
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     // Check if the size hint exceeds the quota so we can fail early
-    if let Some(size_hint) = body.size_hint().exact() {
-        if let Some(user_quota_bytes) = state.user_quota_bytes {
-            if is_size_hint_exceeding_quota(size_hint, &state.db, &entry_path, user_quota_bytes)? {
-                let max_allowed_mb = user_quota_bytes as f64 / 1024.0 / 1024.0;
-                return Err(HttpError::new_with_message(
-                    StatusCode::INSUFFICIENT_STORAGE,
-                    format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."),
-                ));
-            }
-        }
-    }
+    fail_if_size_hint_bigger_than_user_quota(
+        &body,
+        &state.db,
+        state.user_quota_bytes,
+        &entry_path,
+    )?;
 
     // Convert body stream to the format expected by file_service
     let body_stream = body.into_data_stream();
@@ -66,23 +61,76 @@ pub async fn put(
     Ok((StatusCode::CREATED, ()))
 }
 
-/// Checks if the content-size hint already exceeds the quota.
-/// This is not reliable because the user might supply a fake size hint
-/// but it can be used for error messages and to fail the upload early.
-pub fn is_size_hint_exceeding_quota(
-    content_size_hint: u64,
+/// Checks if the size hint exceeds the quota so we can fail early.
+/// Will return an error if the size hint exceeds the quota.
+/// Will return Ok if the size hint is smaller than the quota.
+/// Will return Ok if there is no quota.
+/// Will return Ok if there is no size hint.
+pub fn fail_if_size_hint_bigger_than_user_quota(
+    body: &Body,
     db: &LmDB,
-    path: &EntryPath,
-    max_allowed_bytes: u64,
-) -> Result<bool, FileIoError> {
-    let existing_entry_bytes = db.get_entry_content_length_default_zero(path)?;
-    let user_already_used_bytes = match db.get_user_data_usage(path.pubkey())? {
-        Some(bytes) => bytes,
-        None => return Err(FileIoError::NotFound),
+    user_quota_bytes: Option<u64>,
+    entry_path: &EntryPath,
+) -> HttpResult<()> {
+    let content_size_hint = match body.size_hint().exact() {
+        Some(size_hint) => size_hint,
+        None => return Ok(()), // No size hint, so we can't check
+    };
+    let max_allowed_bytes = match user_quota_bytes {
+        Some(user_quota_bytes) => user_quota_bytes,
+        None => return Ok(()), // No quota, so all good
     };
 
-    Ok(
-        user_already_used_bytes + content_size_hint.saturating_sub(existing_entry_bytes)
-            > max_allowed_bytes,
-    )
+    let existing_entry_bytes = db.get_entry_content_length_default_zero(entry_path)?;
+    let user_already_used_bytes = match db.get_user_data_usage(entry_path.pubkey())? {
+        Some(bytes) => bytes,
+        None => return Err(FileIoError::NotFound.into()),
+    };
+
+    let is_quota_exceeded = user_already_used_bytes
+        + content_size_hint.saturating_sub(existing_entry_bytes)
+        > max_allowed_bytes;
+
+    if is_quota_exceeded {
+        let max_allowed_mb = max_allowed_bytes as f64 / 1024.0 / 1024.0;
+        return Err(HttpError::new_with_message(
+            StatusCode::INSUFFICIENT_STORAGE,
+            format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use pkarr::Keypair;
+
+    use crate::shared::webdav::WebDavPath;
+
+    use super::*;
+
+    #[test]
+    fn test_if_size_hint_all_good() {
+        let db = LmDB::test();
+        let pubkey = Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
+        let body = Body::from("test");
+
+        fail_if_size_hint_bigger_than_user_quota(&body, &db, Some(1024), &entry)
+            .expect("should not fail");
+    }
+
+    #[test]
+    fn test_if_size_hint_bigger_than_quota() {
+        let db = LmDB::test();
+        let pubkey = Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
+        let body = Body::from("test");
+
+        fail_if_size_hint_bigger_than_user_quota(&body, &db, Some(1), &entry)
+            .expect_err("should fail");
+    }
 }
