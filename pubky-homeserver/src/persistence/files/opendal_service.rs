@@ -194,9 +194,7 @@ mod tests {
     use super::*;
 
     fn google_bucket_config() -> Option<StorageConfigToml> {
-        let service_account_path =
-            Path::new("/Users/severinbuhler/git/pubky/pubky-core/pubky-stag-gcs-account.json")
-                .to_path_buf();
+        let service_account_path = Path::new("../gcs-service-account.json").to_path_buf();
         // Only test this if the service account path exists
         if !service_account_path.exists() {
             println!("Google Bucket config not tested because no service account file is set.");
