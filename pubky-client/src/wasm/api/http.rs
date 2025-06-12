@@ -11,12 +11,12 @@ use futures_lite::StreamExt;
 use pkarr::PublicKey;
 use pkarr::extra::endpoints::Endpoint;
 
-use crate::wasm::js_result::JsResult;
+use crate::{cross_debug, wasm::js_result::JsResult};
 
-use super::super::constructor::Client;
+use super::super::constructor::PubkyClient;
 
 #[wasm_bindgen]
-impl Client {
+impl PubkyClient {
     #[wasm_bindgen]
     pub async fn fetch(
         &self,
@@ -76,7 +76,7 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
     }
 }
 
-impl crate::NativeClient {
+impl crate::Client {
     /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
     pub(crate) async fn cross_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
         let original_url = url.as_str();

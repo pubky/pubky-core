@@ -9,7 +9,7 @@ async fn http_get_pubky() {
     let client = testnet.pubky_client_builder().build().unwrap();
 
     let response = client
-        .get(format!("https://{}/", server.public_key()))
+        .get(format!("https://{}/", server.public_key()).as_str())
         .send()
         .await
         .unwrap();

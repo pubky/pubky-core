@@ -70,7 +70,7 @@ async fn disabled_user() {
     // Create a test file to make sure the user can write to their account
     let file_url = format!("pubky://{pubky}/pub/pubky.app/foo");
     client
-        .put(file_url.clone())
+        .put(file_url.as_str())
         .body(vec![])
         .send()
         .await
@@ -79,7 +79,7 @@ async fn disabled_user() {
         .unwrap();
 
     // Make sure the user can read their own file
-    let response = client.get(file_url.clone()).send().await.unwrap();
+    let response = client.get(file_url.as_str()).send().await.unwrap();
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -99,12 +99,12 @@ async fn disabled_user() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Make sure the user can still read their own file
-    let response = client.get(file_url.clone()).send().await.unwrap();
+    let response = client.get(file_url.as_str()).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Make sure the user cannot write a new file
     let response = client
-        .put(file_url.clone())
+        .put(file_url.as_str())
         .body(vec![])
         .send()
         .await
@@ -161,7 +161,7 @@ async fn authz() {
     // Test access control enforcement
 
     client
-        .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
+        .put(format!("pubky://{pubky}/pub/pubky.app/foo").as_str())
         .body(vec![])
         .send()
         .await
@@ -171,7 +171,7 @@ async fn authz() {
 
     assert_eq!(
         client
-            .put(format!("pubky://{pubky}/pub/pubky.app"))
+            .put(format!("pubky://{pubky}/pub/pubky.app").as_str())
             .body(vec![])
             .send()
             .await
@@ -182,7 +182,7 @@ async fn authz() {
 
     assert_eq!(
         client
-            .put(format!("pubky://{pubky}/pub/foo.bar/file"))
+            .put(format!("pubky://{pubky}/pub/foo.bar/file").as_str())
             .body(vec![])
             .send()
             .await
@@ -281,7 +281,7 @@ async fn authz_timeout_reconnect() {
     // Test access control enforcement
 
     client
-        .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
+        .put(format!("pubky://{pubky}/pub/pubky.app/foo").as_str())
         .body(vec![])
         .send()
         .await
@@ -291,7 +291,7 @@ async fn authz_timeout_reconnect() {
 
     assert_eq!(
         client
-            .put(format!("pubky://{pubky}/pub/pubky.app"))
+            .put(format!("pubky://{pubky}/pub/pubky.app").as_str())
             .body(vec![])
             .send()
             .await
@@ -302,7 +302,7 @@ async fn authz_timeout_reconnect() {
 
     assert_eq!(
         client
-            .put(format!("pubky://{pubky}/pub/foo.bar/file"))
+            .put(format!("pubky://{pubky}/pub/foo.bar/file").as_str())
             .body(vec![])
             .send()
             .await
