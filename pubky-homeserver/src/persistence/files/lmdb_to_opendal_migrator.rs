@@ -9,13 +9,17 @@ use crate::persistence::lmdb::{
 };
 use crate::shared::webdav::EntryPath;
 use futures_util::StreamExt;
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
 
 const BATCH_SIZE: usize = 100;
-const BATCH_SLEEP_DURATION: Duration = Duration::from_secs(1);
 
-/// The file service creates an abstraction layer over the LMDB and OpenDAL services.
-/// This way, files can be managed in a unified way.
+/// Migrate the files from the LMDB to the OpenDAL.
+///
+/// This is a temporary solution to migrate the files from the LMDB to the OpenDAL.
+/// It will be removed after the migration is complete.
+///
+/// The migration is done in batches to avoid keeping a LMDB write transaction open for too long.
+/// It will also update the entry location to use the OpenDAL.
 #[derive(Debug, Clone)]
 pub struct LmDbToOpendalMigrator {
     file_service: FileService,
@@ -62,14 +66,7 @@ impl LmDbToOpendalMigrator {
                     tracing::warn!("[LMDB to OpenDAL] Failed to migrate entry {}: {}. Continue with next entry.", path, e);
                 }
             }
-            // Sleep to give the db a chance to do other things.
-            tokio::time::sleep(BATCH_SLEEP_DURATION).await;
         }
-
-        // Clear the blobs table fully in case we have some left over.
-        let mut wtxn = self.db.env.write_txn()?;
-        self.db.tables.blobs.clear(&mut wtxn)?;
-        wtxn.commit()?;
 
         tracing::info!("[LMDB to OpenDAL] Migration completed successfully");
         Ok(())
