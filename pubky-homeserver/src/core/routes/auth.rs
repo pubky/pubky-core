@@ -40,9 +40,9 @@ pub async fn signup(
     let txn = state.db.env.read_txn()?;
     let users = state.db.tables.users;
     if users.get(&txn, public_key)?.is_some() {
-        return Err(HttpError::new(
+        return Err(HttpError::new_with_message(
             StatusCode::CONFLICT,
-            Some("User already exists"),
+            "User already exists",
         ));
     }
     txn.commit()?;
@@ -50,7 +50,7 @@ pub async fn signup(
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.signup_mode == SignupMode::TokenRequired {
         let signup_token_param = params.get("signup_token").ok_or_else(|| {
-            HttpError::new(StatusCode::BAD_REQUEST, Some("signup_token required"))
+            HttpError::new_with_message(StatusCode::BAD_REQUEST, "signup_token required")
         })?;
         // Validate it in the DB (marks it used)
         state
@@ -92,9 +92,9 @@ pub async fn signin(
     let user_exists = users.get(&txn, public_key)?.is_some();
     txn.commit()?;
     if !user_exists {
-        return Err(HttpError::new(
+        return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
-            Some("User does not exist"),
+            "User does not exist",
         ));
     }
 

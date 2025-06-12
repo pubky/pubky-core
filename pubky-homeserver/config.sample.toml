@@ -68,7 +68,7 @@ burst = 10
 # Files are saved on your local disk.
 type = "file_system"
 # Location where the paths are stored on your disk.
-# Relative paths are 
+# Relative paths can be used and will always use the data directory as a root.
 root_directory = "./data/files"
 
 # Google Cloud Bucket

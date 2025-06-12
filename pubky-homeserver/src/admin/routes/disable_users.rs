@@ -24,15 +24,15 @@ pub async fn disable_user(
     if let Err(e) = state.db.disable_user(&pubkey.0, &mut tx) {
         match e {
             UserQueryError::UserNotFound => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::NOT_FOUND,
-                    Some("User not found"),
+                    "User not found",
                 ))
             }
             UserQueryError::DatabaseError(_) => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Database error"),
+                    "Database error",
                 ))
             }
         };
@@ -56,15 +56,15 @@ pub async fn enable_user(
     if let Err(e) = state.db.enable_user(&pubkey.0, &mut tx) {
         match e {
             UserQueryError::UserNotFound => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::NOT_FOUND,
-                    Some("User not found"),
+                    "User not found",
                 ))
             }
             UserQueryError::DatabaseError(_) => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Database error"),
+                    "Database error",
                 ))
             }
         };

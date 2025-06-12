@@ -90,9 +90,9 @@ pub fn list(
     let txn = state.db.env.read_txn()?;
 
     if !state.db.contains_directory(&txn, entry_path)? {
-        return Err(HttpError::new(
+        return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
-            Some("Directory Not Found"),
+            "Directory Not Found",
         ));
     }
 

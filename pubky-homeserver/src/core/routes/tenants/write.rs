@@ -46,8 +46,10 @@ pub async fn put(
         if let Some(user_quota_bytes) = state.user_quota_bytes {
             if is_size_hint_exceeding_quota(size_hint, &state.db, &entry_path, user_quota_bytes)? {
                 let max_allowed_mb = user_quota_bytes as f64 / 1024.0 / 1024.0;
-                return Err(HttpError::new(StatusCode::INSUFFICIENT_STORAGE,
-                    Some(format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."))));
+                return Err(HttpError::new_with_message(
+                    StatusCode::INSUFFICIENT_STORAGE,
+                    format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."),
+                ));
             }
         }
     }

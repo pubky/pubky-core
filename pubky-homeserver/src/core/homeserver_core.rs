@@ -128,6 +128,7 @@ impl HomeserverCore {
         let periodic_backup = PeriodicBackup::start(&context);
 
         // Migrate the LMDB to OpenDAL in the background.
+        // TODO: Remove this after the migration is complete.
         let db_clone = context.db.clone();
         let file_service_clone = context.file_service.clone();
         tokio::task::spawn_blocking(move || {

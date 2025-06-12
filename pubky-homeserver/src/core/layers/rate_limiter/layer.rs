@@ -282,9 +282,9 @@ where
                         e
                     );
                     return Box::pin(async move {
-                        Ok(HttpError::new(
+                        Ok(HttpError::new_with_message(
                             StatusCode::INTERNAL_SERVER_ERROR,
-                            Some("Failed to extract key for rate limiting".to_string()),
+                            "Failed to extract key for rate limiting",
                         )
                         .into_response())
                     });
@@ -309,9 +309,9 @@ where
                             e
                         );
                         return Box::pin(async move {
-                            Ok(HttpError::new(
+                            Ok(HttpError::new_with_message(
                                 StatusCode::TOO_MANY_REQUESTS,
-                                Some("Rate limit exceeded".to_string()),
+                                "Rate limit exceeded",
                             )
                             .into_response())
                         });

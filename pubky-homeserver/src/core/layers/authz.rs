@@ -68,9 +68,9 @@ where
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
-                    return Ok(HttpError::new(
+                    return Ok(HttpError::new_with_message(
                         StatusCode::NOT_FOUND,
-                        Some("Pubky Host is missing"),
+                        "Pubky Host is missing",
                     )
                     .into_response());
                 }
@@ -105,9 +105,9 @@ fn authorize(
             return Ok(());
         }
     } else {
-        return Err(HttpError::new(
+        return Err(HttpError::new_with_message(
             StatusCode::FORBIDDEN,
-            "Writing to directories other than '/pub/' is forbidden".into(),
+            "Writing to directories other than '/pub/' is forbidden",
         ));
     }
 

@@ -13,16 +13,12 @@ pub fn err_if_user_is_invalid(
     match db.get_user(pubkey, &db.env.read_txn()?) {
         Ok(Some(user)) => {
             if err_if_disabled && user.disabled {
-                return Err(HttpError::forbidden());
+                Err(HttpError::forbidden())
+            } else {
+                Ok(())
             }
         }
-        Ok(None) => {
-            return Err(HttpError::not_found());
-        }
-        Err(e) => {
-            return Err(e.into());
-        }
-    };
-
-    Ok(())
+        Ok(None) => Err(HttpError::not_found()),
+        Err(e) => Err(e.into()),
+    }
 }

@@ -1,8 +1,5 @@
 use super::super::app_state::AppState;
-use crate::{
-    persistence::files::FileIoError,
-    shared::{webdav::EntryPathPub, HttpError, HttpResult},
-};
+use crate::shared::{webdav::EntryPathPub, HttpResult};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -14,25 +11,15 @@ pub async fn delete_entry(
     State(state): State<AppState>,
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-    match state.file_service.delete(entry_path.inner()).await {
-        Ok(()) => Ok((StatusCode::NO_CONTENT, ())),
-
-        Err(FileIoError::NotFound) => Err(HttpError::new(StatusCode::NOT_FOUND, Some("Not Found"))),
-        Err(e) => {
-            tracing::error!("Error deleting file: {}", e);
-            Err(HttpError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Some("Internal Server Error"),
-            ))
-        }
-    }
+    state.file_service.delete(entry_path.inner()).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::files::FileService;
+    use crate::persistence::files::{FileIoError, FileService};
     use crate::persistence::lmdb::{tables::files::InDbTempFile, LmDB};
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use axum::{routing::delete, Router};

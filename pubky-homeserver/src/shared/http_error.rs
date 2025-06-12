@@ -23,41 +23,38 @@ impl Default for HttpError {
 
 impl HttpError {
     /// Create a new [`Error`].
-    pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> HttpError {
+    pub fn new_with_message(status_code: StatusCode, message: impl ToString) -> HttpError {
         Self {
             status: status_code,
-            detail: message.map(|m| m.to_string()),
+            detail: Some(message.to_string()),
         }
     }
 
     pub fn not_found() -> HttpError {
-        Self::new(StatusCode::NOT_FOUND, Some("Not Found"))
+        Self::new_with_message(StatusCode::NOT_FOUND, "Not Found")
     }
 
     pub fn internal_server() -> HttpError {
-        Self::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Some("Internal server error"),
-        )
+        Self::new_with_message(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
     }
 
     pub fn bad_request(message: impl ToString) -> HttpError {
-        Self::new(StatusCode::BAD_REQUEST, Some(message))
+        Self::new_with_message(StatusCode::BAD_REQUEST, message)
     }
 
     pub fn insufficient_storage() -> HttpError {
-        Self::new(
+        Self::new_with_message(
             StatusCode::INSUFFICIENT_STORAGE,
-            Some("Disk space quota exceeded"),
+            "Disk space quota exceeded",
         )
     }
 
     pub fn forbidden() -> HttpError {
-        Self::new(StatusCode::FORBIDDEN, Some("Forbidden"))
+        Self::new_with_message(StatusCode::FORBIDDEN, "Forbidden")
     }
 
     pub fn unauthorized() -> HttpError {
-        Self::new(StatusCode::UNAUTHORIZED, Some("Unauthorized"))
+        Self::new_with_message(StatusCode::UNAUTHORIZED, "Unauthorized")
     }
 }
 
