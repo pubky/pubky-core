@@ -8,10 +8,7 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     core::{err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState},
-    persistence::{
-        files::{WriteStreamError},
-        lmdb::tables::files::FileLocation,
-    },
+    persistence::{files::WriteStreamError, lmdb::tables::files::FileLocation},
     shared::{
         webdav::{EntryPath, WebDavPathPubAxum},
         HttpError, HttpResult,
@@ -20,7 +17,6 @@ use crate::{
 
 use crate::persistence::files::FileIoError;
 use crate::persistence::lmdb::LmDB;
-
 
 pub async fn delete(
     State(state): State<AppState>,
@@ -67,9 +63,6 @@ pub async fn put(
         .await?;
     Ok((StatusCode::CREATED, ()))
 }
-
-
-
 
 /// Checks if the content-size hint already exceeds the quota.
 /// This is not reliable because the user might supply a fake size hint

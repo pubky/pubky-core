@@ -1,6 +1,6 @@
 //!
 //! TODO: Remove this whole module after the file migration is complete.
-//! 
+//!
 
 use super::{FileIoError, FileService};
 use crate::persistence::lmdb::{

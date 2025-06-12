@@ -6,7 +6,6 @@ mod file_stream_type;
 mod lmdb_to_opendal_migrator;
 mod opendal_service;
 
-
 pub use file_io_error::{FileIoError, WriteStreamError};
 pub(crate) use file_metadata::{FileMetadata, FileMetadataBuilder};
 pub use file_service::FileService;
