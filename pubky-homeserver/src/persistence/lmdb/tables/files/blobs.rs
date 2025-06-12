@@ -1,3 +1,7 @@
+//!
+//! TODO: Remove this full module after the file migration is complete.
+//!
+
 use crate::persistence::files::{FileIoError, FileMetadata, WriteStreamError};
 use crate::shared::webdav::EntryPath;
 

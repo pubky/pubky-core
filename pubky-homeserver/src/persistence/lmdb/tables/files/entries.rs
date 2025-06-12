@@ -309,6 +309,7 @@ fn next_threshold(
 /// The location of the file.
 /// This is used to determine where the file is stored.
 /// Used during the transition process from LMDB to OpenDAL.
+/// TODO: Remove after the file migration is complete.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
 pub enum FileLocation {
     #[default]
