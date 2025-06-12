@@ -1,6 +1,10 @@
-use super::super::events::Event;
-use super::{super::super::LmDB, InDbFileId, InDbTempFile};
+use super::{super::super::LmDB, InDbFileId};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use crate::persistence::files::FileIoError;
+#[cfg(test)]
+use crate::persistence::files::FileMetadata;
+#[cfg(test)]
+use crate::persistence::lmdb::tables::files::InDbTempFile;
 use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
@@ -13,32 +17,20 @@ use tracing::instrument;
 
 /// full_path(pubky/*path) => Entry.
 pub type EntriesTable = Database<Str, Bytes>;
-
 pub const ENTRIES_TABLE: &str = "entries";
 
 impl LmDB {
-    /// Writes an entry to the database.
-    ///
-    /// The entry is written to the database and the file is written to the blob store.
-    /// An event is written to the events table.
-    /// The entry is returned.
-    pub async fn write_entry(
-        &mut self,
-        path: &EntryPath,
-        file: &InDbTempFile,
-    ) -> anyhow::Result<Entry> {
-        let mut db = self.clone();
-        let path = path.clone();
-        let file = file.clone();
-        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<Entry> {
-            db.write_entry_sync(&path, &file)
-        })
-        .await;
-        match join_handle {
-            Ok(result) => result,
+    /// Check if an entry exists.
+    #[cfg(test)]
+    pub fn entry_exists(&self, path: &EntryPath) -> Result<bool, FileIoError> {
+        match self.get_entry(path) {
+            Ok(_) => Ok(true),
             Err(e) => {
-                tracing::error!("Error writing entry. JoinError: {:?}", e);
-                Err(e.into())
+                if e.to_string() == FileIoError::NotFound.to_string() {
+                    Ok(false)
+                } else {
+                    Err(e)
+                }
             }
         }
     }
@@ -48,33 +40,77 @@ impl LmDB {
     /// The entry is written to the database and the file is written to the blob store.
     /// An event is written to the events table.
     /// The entry is returned.
-    pub fn write_entry_sync(
+    #[cfg(test)]
+    pub async fn write_entry_from_file(
         &mut self,
         path: &EntryPath,
         file: &InDbTempFile,
-    ) -> anyhow::Result<Entry> {
+    ) -> Result<Entry, FileIoError> {
+        let mut db = self.clone();
+        let path = path.clone();
+        let file = file.clone();
+        let join_handle = tokio::task::spawn_blocking(move || -> Result<Entry, FileIoError> {
+            db.write_entry_from_file_sync(&path, &file)
+        })
+        .await;
+        match join_handle {
+            Ok(result) => result,
+            Err(e) => {
+                // Happens when the task panics or gets cancelled.
+                // Should only happen if the homeserver is shutdown.
+                // Returning not found is a safe fallback.
+                tracing::error!("Error writing entry. JoinError: {:?}", e);
+                Err(FileIoError::NotFound)
+            }
+        }
+    }
+
+    #[cfg(test)]
+    /// Write an entry without writing the file to the blob store.
+    pub fn write_entry(
+        &self,
+        path: &EntryPath,
+        metadata: &FileMetadata,
+        file_location: FileLocation,
+    ) -> Result<Entry, FileIoError> {
+        use crate::persistence::lmdb::tables::events::Event;
+
         let mut wtxn = self.env.write_txn()?;
+
+        // Get old entry size. If it doesn't exist, use 0.
+        let old_entry_size = self
+            .tables
+            .entries
+            .get(&wtxn, path.as_str())?
+            .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
+            .transpose()?
+            .unwrap_or(0);
+
+        // Write entry
         let mut entry = Entry::new();
-        entry.set_content_hash(*file.hash());
-        entry.set_content_length(file.len());
-        let (file_id, file_type) = self.write_file_sync(file, &mut wtxn)?;
-
-        // fallback to extension guess or to default MIME type is application/octet-stream
-        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types#application
-        entry.set_content_type(
-            file_type.unwrap_or(
-                mime_guess::from_path(path.as_str())
-                    .first_or_octet_stream()
-                    .to_string(),
-            ),
-        );
-
-        entry.set_timestamp(file_id.timestamp());
+        entry.set_content_hash(metadata.hash);
+        entry.set_content_length(metadata.length);
+        entry.set_timestamp(&metadata.modified_at);
+        entry.set_content_type(metadata.content_type.clone());
+        entry.file_location = file_location;
         let entry_key = path.to_string();
         self.tables
             .entries
             .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
 
+        // Update user data usage
+        let mut user = self
+            .tables
+            .users
+            .get(&wtxn, path.pubkey())?
+            .ok_or(FileIoError::NotFound)?;
+        user.used_bytes = user
+            .used_bytes
+            .saturating_add(metadata.length as u64)
+            .saturating_sub(old_entry_size as u64);
+        self.tables.users.put(&mut wtxn, path.pubkey(), &user)?;
+
+        // TODO: Extract this to a separate function.
         // Write a public [Event].
         let url = format!("pubky://{}", entry_key);
         let event = Event::put(&url);
@@ -82,81 +118,62 @@ impl LmDB {
 
         self.tables
             .events
-            .put(&mut wtxn, file_id.timestamp().to_string().as_str(), &value)?;
+            .put(&mut wtxn, metadata.modified_at.to_string().as_str(), &value)?;
+
         wtxn.commit()?;
 
         Ok(entry)
     }
 
+    /// Writes an entry to the database.
+    ///
+    /// The entry is written to the database and the file is written to the blob store.
+    /// An event is written to the events table.
+    /// The entry is returned.
+    #[cfg(test)]
+    pub fn write_entry_from_file_sync(
+        &mut self,
+        path: &EntryPath,
+        file: &InDbTempFile,
+    ) -> Result<Entry, FileIoError> {
+        let mut wtxn = self.env.write_txn()?;
+        let mut metadata = file.metadata().clone();
+        let file_id = self.write_file_sync(file, &mut wtxn)?;
+        wtxn.commit()?;
+        metadata.modified_at = *file_id.timestamp();
+        let entry = self.write_entry(path, &metadata, FileLocation::LmDB)?;
+        Ok(entry)
+    }
+
     /// Get an entry from the database.
     /// This doesn't include the file but only metadata.
-    pub fn get_entry(&self, path: &EntryPath) -> anyhow::Result<Option<Entry>> {
+    pub fn get_entry(&self, path: &EntryPath) -> Result<Entry, FileIoError> {
         let txn = self.env.read_txn()?;
         let entry = match self.tables.entries.get(&txn, path.as_str())? {
             Some(bytes) => Entry::deserialize(bytes)?,
-            None => return Ok(None),
+            None => return Err(FileIoError::NotFound),
         };
-        Ok(Some(entry))
+        Ok(entry)
     }
 
-    /// Delete an entry including the associated file from the database.
-    pub async fn delete_entry(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
-        let mut db = self.clone();
-        let path = path.clone();
-        let join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
-            db.delete_entry_sync(&path)
-        })
-        .await;
-        match join_handle {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::error!("Error deleting entry. JoinError: {:?}", e);
-                Err(e.into())
-            }
-        }
-    }
-
-    /// Delete an entry including the associated file from the database.
-    pub fn delete_entry_sync(&mut self, path: &EntryPath) -> anyhow::Result<bool> {
-        let entry = match self.get_entry(path)? {
-            Some(entry) => entry,
-            None => return Ok(false),
-        };
-
-        let mut wtxn = self.env.write_txn()?;
-        let deleted = self.delete_file(&entry.file_id(), &mut wtxn)?;
-        if !deleted {
-            wtxn.abort();
-            return Ok(false);
-        }
-
-        let deleted = self.tables.entries.delete(&mut wtxn, path.as_str())?;
-        if !deleted {
-            wtxn.abort();
-            return Ok(false);
-        }
-
-        // create DELETE event
-        let url = format!("pubky://{}", path.as_str());
-
-        let event = Event::delete(&url);
-        let value = event.serialize();
-
-        let key = Timestamp::now().to_string();
-
-        self.tables.events.put(&mut wtxn, &key, &value)?;
-
-        wtxn.commit()?;
-        Ok(true)
-    }
-
-    /// Bytes stored at `path` for this user (0 if none).
-    pub fn get_entry_content_length(&self, path: &EntryPath) -> anyhow::Result<u64> {
-        let content_length = self
-            .get_entry(path)?
-            .map(|e| e.content_length() as u64)
-            .unwrap_or(0);
+    /// Bytes stored at `path`.
+    /// Fails if the entry does not exist.
+    pub fn get_entry_content_length(&self, path: &EntryPath) -> Result<u64, FileIoError> {
+        let content_length = self.get_entry(path)?.content_length() as u64;
         Ok(content_length)
+    }
+
+    /// Bytes stored at `path`.
+    /// Returns 0 if the entry does not exist.
+    pub fn get_entry_content_length_default_zero(
+        &self,
+        path: &EntryPath,
+    ) -> Result<u64, FileIoError> {
+        match self.get_entry_content_length(path) {
+            Ok(length) => Ok(length),
+            Err(FileIoError::NotFound) => Ok(0),
+            Err(e) => Err(e),
+        }
     }
 
     pub fn contains_directory(&self, txn: &RoTxn, entry_path: &EntryPath) -> anyhow::Result<bool> {
@@ -289,6 +306,17 @@ fn next_threshold(
     )
 }
 
+/// The location of the file.
+/// This is used to determine where the file is stored.
+/// Used during the transition process from LMDB to OpenDAL.
+/// TODO: Remove after the file migration is complete.
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
+pub enum FileLocation {
+    #[default]
+    LmDB,
+    OpenDal,
+}
+
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Entry {
     /// Encoding version
@@ -298,10 +326,11 @@ pub struct Entry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
+    file_location: FileLocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct EntryHash(Hash);
+pub struct EntryHash(Hash);
 
 impl Default for EntryHash {
     fn default() -> Self {
@@ -334,13 +363,6 @@ impl Entry {
         Default::default()
     }
 
-    pub fn chunk_key(&self, chunk_index: u32) -> [u8; 12] {
-        let mut chunk_key = [0; 12];
-        chunk_key[0..8].copy_from_slice(&self.timestamp.to_bytes());
-        chunk_key[8..].copy_from_slice(&chunk_index.to_be_bytes());
-        chunk_key
-    }
-
     // === Setters ===
 
     pub fn set_timestamp(&mut self, timestamp: &Timestamp) -> &mut Self {
@@ -358,8 +380,13 @@ impl Entry {
         self
     }
 
-    pub fn set_content_type(&mut self, ct: String) -> &mut Self {
-        self.content_type = ct;
+    pub fn set_file_location(&mut self, file_location: FileLocation) -> &mut Self {
+        self.file_location = file_location;
+        self
+    }
+
+    pub fn set_content_type(&mut self, content_type: String) -> &mut Self {
+        self.content_type = content_type;
         self
     }
 
@@ -379,6 +406,10 @@ impl Entry {
 
     pub fn content_type(&self) -> &str {
         &self.content_type
+    }
+
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
     }
 
     pub fn file_id(&self) -> InDbFileId {
@@ -419,10 +450,11 @@ mod tests {
             Keypair::random().public_key(),
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
+        db.create_user(path.pubkey()).unwrap();
         let file = InDbTempFile::zeros(5).await.unwrap();
-        let entry = db.write_entry_sync(&path, &file).unwrap();
+        let entry = db.write_entry_from_file_sync(&path, &file).unwrap();
 
-        let read_entry = db.get_entry(&path).unwrap().expect("Entry doesn't exist");
+        let read_entry = db.get_entry(&path).unwrap();
         assert_eq!(entry.content_hash(), read_entry.content_hash());
         assert_eq!(entry.content_length(), read_entry.content_length());
         assert_eq!(entry.timestamp(), read_entry.timestamp());
@@ -432,15 +464,6 @@ mod tests {
         let mut content = vec![];
         file_handle.read_to_end(&mut content).unwrap();
         assert_eq!(content, vec![0, 0, 0, 0, 0]);
-
-        let deleted = db.delete_entry_sync(&path).unwrap();
-        assert!(deleted);
-
-        // Verify the entry and file are deleted
-        let read_entry = db.get_entry(&path).unwrap();
-        assert!(read_entry.is_none());
-        let read_file = db.read_file(&entry.file_id()).await.unwrap();
-        assert_eq!(read_file.len(), 0);
     }
 
     #[tokio::test]
@@ -449,6 +472,7 @@ mod tests {
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
+        db.create_user(&public_key).unwrap();
         let path = "/pub/foo.txt";
 
         let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
@@ -457,9 +481,9 @@ mod tests {
         writer.write_chunk(&chunk)?;
         let file = writer.complete()?;
 
-        db.write_entry_sync(&entry_path, &file)?;
+        db.write_entry_from_file_sync(&entry_path, &file)?;
 
-        let entry = db.get_entry(&entry_path).unwrap().unwrap();
+        let entry = db.get_entry(&entry_path).unwrap();
 
         assert_eq!(
             entry.content_hash(),
@@ -483,6 +507,7 @@ mod tests {
 
         let keypair = Keypair::random();
         let public_key = keypair.public_key();
+        db.create_user(&public_key).unwrap();
         let path = "/pub/foo.txt";
         let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
 
@@ -492,9 +517,9 @@ mod tests {
         writer.write_chunk(&chunk)?;
         let file = writer.complete()?;
 
-        db.write_entry_sync(&entry_path, &file)?;
+        db.write_entry_from_file_sync(&entry_path, &file)?;
 
-        let entry = db.get_entry(&entry_path).unwrap().unwrap();
+        let entry = db.get_entry(&entry_path).unwrap();
 
         assert_eq!(
             entry.content_hash(),
@@ -511,5 +536,22 @@ mod tests {
         assert_eq!(content, vec![0; 1024 * 1024]);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_entry_not_found() {
+        let db = LmDB::test();
+
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+        db.create_user(&public_key).unwrap();
+        let path = "/pub/nonexistent.txt";
+
+        let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
+
+        assert!(
+            !db.entry_exists(&entry_path).unwrap(),
+            "File should be deleted"
+        );
     }
 }

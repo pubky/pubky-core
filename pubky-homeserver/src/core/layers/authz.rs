@@ -1,8 +1,5 @@
-use crate::core::{
-    error::{Error, Result},
-    extractors::PubkyHost,
-    AppState,
-};
+use crate::core::{extractors::PubkyHost, AppState};
+use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
@@ -71,10 +68,11 @@ where
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
-                    return Ok(
-                        Error::new(StatusCode::NOT_FOUND, "Pubky Host is missing".into())
-                            .into_response(),
-                    );
+                    return Ok(HttpError::new_with_message(
+                        StatusCode::NOT_FOUND,
+                        "Pubky Host is missing",
+                    )
+                    .into_response());
                 }
             };
 
@@ -98,7 +96,7 @@ fn authorize(
     cookies: Option<&Cookies>,
     public_key: &PublicKey,
     path: &str,
-) -> Result<()> {
+) -> HttpResult<()> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
         return Ok(());
@@ -107,20 +105,20 @@ fn authorize(
             return Ok(());
         }
     } else {
-        return Err(Error::new(
+        return Err(HttpError::new_with_message(
             StatusCode::FORBIDDEN,
-            "Writing to directories other than '/pub/' is forbidden".into(),
+            "Writing to directories other than '/pub/' is forbidden",
         ));
     }
 
     if let Some(cookies) = cookies {
-        let session_secret = session_secret_from_cookies(cookies, public_key)
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+        let session_secret =
+            session_secret_from_cookies(cookies, public_key).ok_or(HttpError::unauthorized())?;
 
         let session = state
             .db
             .get_session(&session_secret)?
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+            .ok_or(HttpError::unauthorized())?;
 
         if session.pubky() == public_key
             && session.capabilities().iter().any(|cap| {
@@ -133,10 +131,10 @@ fn authorize(
             return Ok(());
         };
 
-        return Err(Error::with_status(StatusCode::FORBIDDEN));
+        return Err(HttpError::forbidden());
     }
 
-    Err(Error::with_status(StatusCode::UNAUTHORIZED))
+    Err(HttpError::unauthorized())
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {

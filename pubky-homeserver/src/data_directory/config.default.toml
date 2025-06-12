@@ -9,6 +9,9 @@ pubky_listen_socket = "127.0.0.1:6287"
 icann_listen_socket = "127.0.0.1:6286"
 rate_limits = []
 
+[storage]
+type = "file_system"
+
 [admin]
 listen_socket = "127.0.0.1:6288"
 admin_password = "admin"

@@ -269,10 +269,10 @@ mod tests {
 
         // Check that the user has been migrated to the new schema.
         let table: Database<PublicKeyCodec, NewUser> = env
-            .open_database(&mut wtxn, Some(users::USERS_TABLE))
+            .open_database(&wtxn, Some(users::USERS_TABLE))
             .unwrap()
             .unwrap();
-        let user = table.get(&mut wtxn, &pubkey).unwrap().unwrap();
+        let user = table.get(&wtxn, &pubkey).unwrap().unwrap();
         assert!(!user.disabled, "The user should not be disabled.");
         assert_eq!(user.used_bytes, 0, "The user should have 0 used bytes.");
     }
