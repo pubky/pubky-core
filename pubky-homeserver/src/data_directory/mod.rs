@@ -7,6 +7,8 @@ mod persistent_data_dir;
 /// Quota configuration for the TomlConfig.
 pub mod quota_config;
 mod signup_mode;
+/// Opendal config for the TomlConfig.
+pub mod storage_config;
 
 mod log_level;
 

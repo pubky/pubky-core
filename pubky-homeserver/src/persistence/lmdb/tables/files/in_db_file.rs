@@ -5,13 +5,20 @@
 //! - `InDbFileId` is the identifier of a file that consists of multiple blobs.
 //! - `InDbTempFile` is a helper to read/write a file to/from disk.
 //!
-use pubky_common::crypto::{Hash, Hasher};
 use pubky_common::timestamp::Timestamp;
+use std::sync::Arc;
+use std::{fs::File, io::Write, path::PathBuf};
+use tokio::fs::File as AsyncFile;
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
+
+use crate::persistence::files::FileStream;
+use crate::persistence::files::{FileMetadata, FileMetadataBuilder};
 
 /// A file identifier for a file stored in LMDB.
 /// The identifier is basically the timestamp of the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct InDbFileId(Timestamp);
+pub struct InDbFileId(pub Timestamp);
 
 impl InDbFileId {
     pub fn new() -> Self {
@@ -49,12 +56,6 @@ impl Default for InDbFileId {
     }
 }
 
-use std::sync::Arc;
-use std::{fs::File, io::Write, path::PathBuf};
-use tokio::fs::File as AsyncFile;
-use tokio::io::AsyncWriteExt;
-use tokio::task;
-
 /// Writes a temp file to disk asynchronously.
 #[derive(Debug)]
 pub(crate) struct AsyncInDbTempFileWriter {
@@ -63,29 +64,21 @@ pub(crate) struct AsyncInDbTempFileWriter {
     dir: tempfile::TempDir,
     writer_file: AsyncFile,
     file_path: PathBuf,
-    hasher: Hasher,
+    metadata: FileMetadataBuilder,
 }
 
 impl AsyncInDbTempFileWriter {
     pub async fn new() -> Result<Self, std::io::Error> {
-        let dir = task::spawn_blocking(tempfile::tempdir)
-            .await
-            .map_err(|join_error| {
-                std::io::Error::other(format!(
-                    "Task join error for tempdir creation: {}",
-                    join_error
-                ))
-            })??; // Handles the Result from tempfile::tempdir()
+        let dir = tempfile::tempdir()?;
 
         let file_path = dir.path().join("entry.bin");
         let writer_file = AsyncFile::create(file_path.clone()).await?;
-        let hasher = Hasher::new();
 
         Ok(Self {
             dir,
             writer_file,
             file_path,
-            hasher,
+            metadata: FileMetadataBuilder::default(),
         })
     }
 
@@ -93,10 +86,10 @@ impl AsyncInDbTempFileWriter {
     /// Convenient method used for testing.
     #[cfg(test)]
     pub async fn zeros(size_bytes: usize) -> Result<InDbTempFile, std::io::Error> {
-        let mut file = Self::new().await?;
+        let mut writer = Self::new().await?;
         let buffer = vec![0u8; size_bytes];
-        file.write_chunk(&buffer).await?;
-        file.complete().await
+        writer.write_chunk(&buffer).await?;
+        writer.complete().await
     }
 
     #[cfg(test)]
@@ -104,6 +97,7 @@ impl AsyncInDbTempFileWriter {
         let mut file = Self::new().await?;
         let png_magic_bytes: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         file.write_chunk(&png_magic_bytes).await?;
+        file.guess_mime_type_from_path("test.png");
         file.complete().await
     }
 
@@ -111,8 +105,14 @@ impl AsyncInDbTempFileWriter {
     /// Chunk writing is done by the axum body stream and by LMDB itself.
     pub async fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
         self.writer_file.write_all(chunk).await?;
-        self.hasher.update(chunk);
+        self.metadata.update(chunk);
         Ok(())
+    }
+
+    /// If a path is provided it can be used to guess the content type.
+    /// This is useful in case the magic bytes are not enough to determine the content type.
+    pub fn guess_mime_type_from_path(&mut self, path: &str) {
+        self.metadata.guess_mime_type_from_path(path);
     }
 
     /// Flush the file to disk.
@@ -120,13 +120,11 @@ impl AsyncInDbTempFileWriter {
     /// Returns a BlobsTempFile that can be used to read the file.
     pub async fn complete(mut self) -> Result<InDbTempFile, std::io::Error> {
         self.writer_file.flush().await?;
-        let hash = self.hasher.finalize();
-        let file_size = self.writer_file.metadata().await?.len();
+        let metadata = self.metadata.finalize();
         Ok(InDbTempFile {
             dir: Arc::new(self.dir),
             file_path: self.file_path,
-            file_size: file_size as usize,
-            file_hash: hash,
+            metadata,
         })
     }
 }
@@ -139,7 +137,7 @@ pub(crate) struct SyncInDbTempFileWriter {
     dir: tempfile::TempDir,
     writer_file: File,
     file_path: PathBuf,
-    hasher: Hasher,
+    metadata: FileMetadataBuilder,
 }
 
 impl SyncInDbTempFileWriter {
@@ -147,20 +145,19 @@ impl SyncInDbTempFileWriter {
         let dir = tempfile::tempdir()?;
         let file_path = dir.path().join("entry.bin");
         let writer_file = File::create(file_path.clone())?;
-        let hasher = Hasher::new();
 
         Ok(Self {
             dir,
             writer_file,
             file_path,
-            hasher,
+            metadata: FileMetadataBuilder::default(),
         })
     }
 
     /// Write a chunk to the file.
     pub fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), std::io::Error> {
         self.writer_file.write_all(chunk)?;
-        self.hasher.update(chunk);
+        self.metadata.update(chunk);
         Ok(())
     }
 
@@ -169,13 +166,11 @@ impl SyncInDbTempFileWriter {
     /// Returns a BlobsTempFile that can be used to read the file.
     pub fn complete(mut self) -> Result<InDbTempFile, std::io::Error> {
         self.writer_file.flush()?;
-        let hash = self.hasher.finalize();
-        let file_size = self.writer_file.metadata()?.len();
+        let metadata = self.metadata.finalize();
         Ok(InDbTempFile {
             dir: Arc::new(self.dir),
             file_path: self.file_path,
-            file_size: file_size as usize,
-            file_hash: hash,
+            metadata,
         })
     }
 }
@@ -195,8 +190,7 @@ pub struct InDbTempFile {
     #[allow(dead_code)]
     dir: Arc<tempfile::TempDir>,
     file_path: PathBuf,
-    file_size: usize,
-    file_hash: Hash,
+    metadata: FileMetadata,
 }
 
 impl InDbTempFile {
@@ -207,33 +201,13 @@ impl InDbTempFile {
         AsyncInDbTempFileWriter::zeros(size_bytes).await
     }
 
+    pub fn metadata(&self) -> &FileMetadata {
+        &self.metadata
+    }
+
     #[cfg(test)]
     pub async fn png_pixel() -> Result<Self, std::io::Error> {
         AsyncInDbTempFileWriter::png_pixel().await
-    }
-
-    /// Create a new InDbTempFile with zero content.
-    pub fn empty() -> Result<Self, std::io::Error> {
-        let dir = tempfile::tempdir()?;
-        let file_path = dir.path().join("entry.bin");
-        std::fs::File::create(file_path.clone())?;
-        let file_size = 0;
-        let hasher = Hasher::new();
-        let file_hash = hasher.finalize();
-        Ok(Self {
-            dir: Arc::new(dir),
-            file_path,
-            file_size,
-            file_hash,
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.file_size
-    }
-
-    pub fn hash(&self) -> &Hash {
-        &self.file_hash
     }
 
     /// Get the path of the file on disk.
@@ -245,5 +219,12 @@ impl InDbTempFile {
     /// Open the file on disk.
     pub fn open_file_handle(&self) -> Result<File, std::io::Error> {
         File::open(self.file_path.as_path())
+    }
+
+    pub fn as_stream(&self) -> Result<FileStream, std::io::Error> {
+        let file = std::fs::File::open(&self.file_path)?;
+        let async_file = tokio::fs::File::from_std(file);
+        let stream = ReaderStream::new(async_file);
+        Ok(Box::new(stream))
     }
 }

@@ -1,4 +1,3 @@
-use crate::core::error::Result;
 use crate::core::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;

@@ -1,6 +1,8 @@
 //! Server error
 use axum::{http::StatusCode, response::IntoResponse};
 
+use crate::persistence::files::FileIoError;
+
 pub(crate) type HttpResult<T, E = HttpError> = core::result::Result<T, E>;
 
 #[derive(Debug, Clone)]
@@ -21,11 +23,38 @@ impl Default for HttpError {
 
 impl HttpError {
     /// Create a new [`Error`].
-    pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> HttpError {
+    pub fn new_with_message(status_code: StatusCode, message: impl ToString) -> HttpError {
         Self {
             status: status_code,
-            detail: message.map(|m| m.to_string()),
+            detail: Some(message.to_string()),
         }
+    }
+
+    pub fn not_found() -> HttpError {
+        Self::new_with_message(StatusCode::NOT_FOUND, "Not Found")
+    }
+
+    pub fn internal_server() -> HttpError {
+        Self::new_with_message(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+    }
+
+    pub fn bad_request(message: impl ToString) -> HttpError {
+        Self::new_with_message(StatusCode::BAD_REQUEST, message)
+    }
+
+    pub fn insufficient_storage() -> HttpError {
+        Self::new_with_message(
+            StatusCode::INSUFFICIENT_STORAGE,
+            "Disk space quota exceeded",
+        )
+    }
+
+    pub fn forbidden() -> HttpError {
+        Self::new_with_message(StatusCode::FORBIDDEN, "Forbidden")
+    }
+
+    pub fn unauthorized() -> HttpError {
+        Self::new_with_message(StatusCode::UNAUTHORIZED, "Unauthorized")
     }
 }
 
@@ -44,44 +73,64 @@ impl IntoResponse for HttpError {
 
 impl From<std::io::Error> for HttpError {
     fn from(error: std::io::Error) -> Self {
-        tracing::debug!(?error);
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+        tracing::error!(?error);
+        Self::internal_server()
     }
 }
 
 // LMDB errors
 impl From<heed::Error> for HttpError {
     fn from(error: heed::Error) -> Self {
-        tracing::debug!(?error);
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+        tracing::error!(?error);
+        Self::internal_server()
     }
 }
 
 // Anyhow errors
 impl From<anyhow::Error> for HttpError {
     fn from(error: anyhow::Error) -> Self {
-        tracing::debug!(?error);
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+        tracing::error!(?error);
+        Self::internal_server()
     }
 }
 
 impl From<postcard::Error> for HttpError {
     fn from(error: postcard::Error) -> Self {
-        tracing::debug!(?error);
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+        tracing::error!(?error);
+        Self::internal_server()
     }
 }
 
 impl From<axum::Error> for HttpError {
     fn from(error: axum::Error) -> Self {
-        tracing::debug!(?error);
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+        tracing::error!(?error);
+        Self::internal_server()
     }
 }
 
 impl From<axum::http::Error> for HttpError {
     fn from(error: axum::http::Error) -> Self {
-        tracing::debug!(?error);
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.into())
+        tracing::error!(?error);
+        Self::internal_server()
+    }
+}
+
+impl From<FileIoError> for HttpError {
+    fn from(error: FileIoError) -> Self {
+        match error {
+            FileIoError::NotFound => Self::not_found(),
+            FileIoError::DiskSpaceQuotaExceeded => Self::insufficient_storage(),
+            FileIoError::StreamBroken(_) => Self::bad_request("Stream broken"),
+            e => {
+                tracing::error!(?e);
+                Self::internal_server()
+            }
+        }
+    }
+}
+
+impl From<pubky_common::auth::Error> for HttpError {
+    fn from(error: pubky_common::auth::Error) -> Self {
+        Self::bad_request(error)
     }
 }
