@@ -37,7 +37,7 @@ mod tests {
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let mut db = LmDB::test();
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()), "");
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -86,7 +86,7 @@ mod tests {
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let db = LmDB::test();
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()), "");
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -102,7 +102,7 @@ mod tests {
     async fn test_invalid_pubkey() {
         // Set everything up
         let db = LmDB::test();
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()), "");
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
