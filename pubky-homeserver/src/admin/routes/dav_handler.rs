@@ -10,6 +10,7 @@ use axum::{
     response::IntoResponse,
 };
 use base64::Engine;
+use reqwest::Method;
 
 pub async fn dav_handler(
     State(state): State<AppState>,
@@ -20,6 +21,14 @@ pub async fn dav_handler(
             .status(401)
             .header("WWW-Authenticate", "Basic") // This header will trigger the browser to show the login dialog
             .body(Body::from("Unauthorized"))
+            .expect("This response should always be valid"));
+    }
+
+    if req.method() == Method::PUT || req.method() == Method::DELETE {
+        // Disable file changes because we don't update LMDB in this endpoint.
+        return Ok(Response::builder()
+            .status(405)
+            .body(Body::from("Method not allowed"))
             .expect("This response should always be valid"));
     }
 
