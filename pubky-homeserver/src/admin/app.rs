@@ -34,8 +34,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
 /// Public router without any authentication.
 /// NO PASSWORD PROTECTION!
 fn create_public_router() -> Router<AppState> {
-    Router::new()
-    .route("/", get(root::root))
+    Router::new().route("/", get(root::root))
 }
 
 /// Create the app
@@ -98,7 +97,11 @@ impl AdminServer {
     /// Run the admin server.
     pub async fn start(context: &AppContext) -> Result<Self, AdminServerBuildError> {
         let password = context.config_toml.admin.admin_password.clone();
-        let state = AppState::new(context.db.clone(), context.file_service.clone(), password.as_str());
+        let state = AppState::new(
+            context.db.clone(),
+            context.file_service.clone(),
+            password.as_str(),
+        );
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)

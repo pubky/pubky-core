@@ -2,10 +2,7 @@
 //! It is protected by a basic auth header with the username "admin" and the password set in the config.toml file.
 //! The password is set in the config.toml file.
 
-use crate::{
-    admin::app_state::AppState,
-    shared::{HttpResult},
-};
+use crate::{admin::app_state::AppState, shared::HttpResult};
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -18,11 +15,10 @@ pub async fn dav_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> HttpResult<impl IntoResponse> {
-
     if !is_valid_authorization_header(req.headers(), &state.admin_password) {
         return Ok(Response::builder()
             .status(401)
-            .header("WWW-Authenticate", "Basic")// This header will trigger the browser to show the login dialog
+            .header("WWW-Authenticate", "Basic") // This header will trigger the browser to show the login dialog
             .body(Body::from("Unauthorized"))
             .expect("This response should always be valid"));
     }
@@ -83,7 +79,6 @@ fn is_valid_authorization_header_str(auth_header: &str, should_password: &str) -
     // Check if username is "admin" and password matches
     parts[0] == "admin" && parts[1] == should_password
 }
-
 
 #[cfg(test)]
 mod tests {

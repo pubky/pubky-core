@@ -1,4 +1,4 @@
-use dav_server::{DavHandler};
+use dav_server::DavHandler;
 use dav_server_opendalfs::OpendalFs;
 
 use crate::persistence::{files::FileService, lmdb::LmDB};
@@ -14,7 +14,16 @@ pub(crate) struct AppState {
 impl AppState {
     pub fn new(db: LmDB, file_service: FileService, admin_password: &str) -> Self {
         let webdavfs = OpendalFs::new(file_service.opendal_service.operator.clone());
-        let inner_dav_handler = DavHandler::builder().filesystem(webdavfs).strip_prefix("/dav").autoindex(true).build_handler();
-        Self { db, file_service, inner_dav_handler, admin_password: admin_password.to_string() }
+        let inner_dav_handler = DavHandler::builder()
+            .filesystem(webdavfs)
+            .strip_prefix("/dav")
+            .autoindex(true)
+            .build_handler();
+        Self {
+            db,
+            file_service,
+            inner_dav_handler,
+            admin_password: admin_password.to_string(),
+        }
     }
 }
