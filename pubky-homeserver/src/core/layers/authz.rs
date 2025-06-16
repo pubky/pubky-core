@@ -139,11 +139,13 @@ fn authorize(
     {
         Ok(())
     } else {
-        tracing::warn!("Session {} does not have write access to {}. Access forbidden", session_secret, path);
+        tracing::warn!(
+            "Session {} does not have write access to {}. Access forbidden",
+            session_secret,
+            path
+        );
         Err(HttpError::forbidden())
     }
-
-
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {

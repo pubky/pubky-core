@@ -14,9 +14,7 @@ pub fn err_if_user_is_invalid(
         Ok(Some(user)) => {
             if err_if_disabled && user.disabled {
                 tracing::warn!("User {} is disabled. Forbid access.", pubkey);
-                Err(HttpError::forbidden_with_message(
-                    "User is disabled",
-                ))
+                Err(HttpError::forbidden_with_message("User is disabled"))
             } else {
                 Ok(())
             }
