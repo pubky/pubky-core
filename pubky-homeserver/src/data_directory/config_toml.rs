@@ -200,7 +200,7 @@ impl FromStr for ConfigToml {
 
 #[cfg(test)]
 mod tests {
-    use crate::{data_directory::log_level::LogLevel, storage_config::FileSystemConfig};
+    use crate::data_directory::log_level::LogLevel;
 
     use super::*;
     use std::{
@@ -238,10 +238,7 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
-        assert_eq!(
-            c.storage,
-            StorageConfigToml::FileSystem(FileSystemConfig::default())
-        );
+        assert_eq!(c.storage, StorageConfigToml::FileSystem);
         assert_eq!(
             c.logging,
             Some(LoggingToml {

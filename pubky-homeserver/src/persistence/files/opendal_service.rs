@@ -15,10 +15,18 @@ pub fn build_storage_operator_from_config(
     data_directory: &Path,
 ) -> Result<Operator, FileIoError> {
     let builder = match config.clone() {
-        StorageConfigToml::FileSystem(mut config) => {
-            config.expand_with_data_directory(data_directory);
-            tracing::info!("Store files in file system: {}", config.root_directory);
-            let builder = config.to_builder()?;
+        StorageConfigToml::FileSystem => {
+            let files_dir = match data_directory.join("data/files").to_str() {
+                Some(path) => path.to_string(),
+                None => {
+                    return Err(FileIoError::OpenDAL(opendal::Error::new(
+                        opendal::ErrorKind::Unexpected,
+                        "Invalid path",
+                    )))
+                }
+            };
+
+            let builder = opendal::services::Fs::default().root(files_dir.as_str());
             opendal::Operator::new(builder)?.finish()
         }
         StorageConfigToml::GoogleBucket(config) => {
@@ -184,11 +192,9 @@ impl OpendalService {
 
 #[cfg(test)]
 mod tests {
-    use tempfile::TempDir;
-
     use crate::{
         shared::webdav::WebDavPath,
-        storage_config::{FileSystemConfig, GoogleBucketConfig, GoogleServiceAccountKeyConfig},
+        storage_config::{GoogleBucketConfig, GoogleServiceAccountKeyConfig},
     };
 
     use super::*;
@@ -207,22 +213,18 @@ mod tests {
     }
 
     // Get all possible storage configs to test.
-    fn get_configs() -> (Vec<StorageConfigToml>, TempDir) {
-        let (fs_config, tmp_dir) = FileSystemConfig::test();
-        let mut configs = vec![
-            StorageConfigToml::FileSystem(fs_config),
-            StorageConfigToml::InMemory,
-        ];
+    fn get_configs() -> Vec<StorageConfigToml> {
+        let mut configs = vec![StorageConfigToml::FileSystem, StorageConfigToml::InMemory];
         if let Some(google_config) = google_bucket_config() {
             configs.push(google_config);
         }
-        (configs, tmp_dir)
+        configs
     }
 
     /// Test the chunked reading of a file.
     #[tokio::test]
     async fn test_get_content_chunked() {
-        let (configs, _tmp_dir) = get_configs();
+        let configs = get_configs();
         for config in configs {
             let file_service = OpendalService::new_from_config(&config, Path::new("/tmp/test"))
                 .expect("Failed to create OpenDAL service for testing");
@@ -284,7 +286,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_content_stream() {
-        let (configs, _tmp_dir) = get_configs();
+        let configs = get_configs();
         for config in configs {
             let file_service = OpendalService::new_from_config(&config, Path::new("/tmp/test"))
                 .expect("Failed to create OpenDAL service for testing");

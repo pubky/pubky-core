@@ -38,6 +38,12 @@ impl HttpError {
         Self::new_with_message(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
     }
 
+    /// Logs the message as a tracing::error! and returns an internal server error.
+    pub fn internal_server_and_log(message: impl std::fmt::Display) -> HttpError {
+        tracing::error!("Internal Server Error: {}", message);
+        Self::internal_server()
+    }
+
     pub fn bad_request(message: impl ToString) -> HttpError {
         Self::new_with_message(StatusCode::BAD_REQUEST, message)
     }
@@ -73,45 +79,39 @@ impl IntoResponse for HttpError {
 
 impl From<std::io::Error> for HttpError {
     fn from(error: std::io::Error) -> Self {
-        tracing::error!(?error);
-        Self::internal_server()
+        Self::internal_server_and_log(format!("IO error: {}", error))
     }
 }
 
 // LMDB errors
 impl From<heed::Error> for HttpError {
     fn from(error: heed::Error) -> Self {
-        tracing::error!(?error);
-        Self::internal_server()
+        Self::internal_server_and_log(format!("LMDB error: {}", error))
     }
 }
 
 // Anyhow errors
 impl From<anyhow::Error> for HttpError {
     fn from(error: anyhow::Error) -> Self {
-        tracing::error!(?error);
-        Self::internal_server()
+        Self::internal_server_and_log(format!("Anyhow error: {}", error))
     }
 }
 
 impl From<postcard::Error> for HttpError {
     fn from(error: postcard::Error) -> Self {
-        tracing::error!(?error);
-        Self::internal_server()
+        Self::internal_server_and_log(format!("Postcard error: {}", error))
     }
 }
 
 impl From<axum::Error> for HttpError {
     fn from(error: axum::Error) -> Self {
-        tracing::error!(?error);
-        Self::internal_server()
+        Self::internal_server_and_log(format!("Axum error: {}", error))
     }
 }
 
 impl From<axum::http::Error> for HttpError {
     fn from(error: axum::http::Error) -> Self {
-        tracing::error!(?error);
-        Self::internal_server()
+        Self::internal_server_and_log(format!("Axum HTTP error: {}", error))
     }
 }
 
@@ -121,10 +121,7 @@ impl From<FileIoError> for HttpError {
             FileIoError::NotFound => Self::not_found(),
             FileIoError::DiskSpaceQuotaExceeded => Self::insufficient_storage(),
             FileIoError::StreamBroken(_) => Self::bad_request("Stream broken"),
-            e => {
-                tracing::error!(?e);
-                Self::internal_server()
-            }
+            e => Self::internal_server_and_log(format!("FileIoError: {}", e)),
         }
     }
 }

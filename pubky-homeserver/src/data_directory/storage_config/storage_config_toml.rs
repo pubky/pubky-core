@@ -1,4 +1,4 @@
-use super::{file_system_config::FileSystemConfig, google_bucket_config::GoogleBucketConfig};
+use super::google_bucket_config::GoogleBucketConfig;
 
 /// The storage config. Files can be either stored in a file system, in memory, or in a Google bucket
 /// depending on the configuration.
@@ -7,8 +7,8 @@ use super::{file_system_config::FileSystemConfig, google_bucket_config::GoogleBu
 pub enum StorageConfigToml {
     /// Files are stored in a Google bucket.
     GoogleBucket(GoogleBucketConfig),
-    /// Files are stored on the local file system.
-    FileSystem(FileSystemConfig),
     /// Files are stored in memory.
     InMemory,
+    /// Files are stored on the local file system.
+    FileSystem,
 }
