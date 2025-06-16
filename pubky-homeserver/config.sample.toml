@@ -61,8 +61,9 @@ burst = 10
 [storage]
 # Defines where the files are stored.
 # You have multiple options defined by the type.
+# Supported types: "file_system", "google_bucket", "in_memory"
 # Depending on the option, different settings need to be provided.
-# Only one storage type can be provided.
+# Only one storage type can be activated at one time.
 
 # Local File System
 # Files are saved on your local disk.
@@ -74,6 +75,7 @@ type = "file_system"
 # Name of the Google Cloud Bucket. The bucket must exist already.
 # bucket_name = "my_bucket"
 # Path to the service account file. The content of the service account file can also be added directly in here.
+# This must be absolute/full path.
 # credential = "/path/to/my_service_account.json"
 
 # In Memory storage

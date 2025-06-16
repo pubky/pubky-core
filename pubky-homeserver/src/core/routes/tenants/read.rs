@@ -26,7 +26,7 @@ pub async fn head(
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
     let entry = state.file_service.get_info(&entry_path).await?;
-    let response = get_response_headers(&entry).into_response();
+    let response = entry.to_response_headers().into_response();
     Ok(response)
 }
 
@@ -77,7 +77,7 @@ pub async fn get(
 
     let stream = state.file_service.get_stream(&entry_path).await?;
     let body_stream = Body::from_stream(stream);
-    let mut response = get_response_headers(&entry).into_response();
+    let mut response = entry.to_response_headers().into_response();
     *response.body_mut() = body_stream;
     Ok(response)
 }
@@ -121,31 +121,31 @@ fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
         .body(Body::empty())?)
 }
 
-fn get_response_headers(entry: &Entry) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_LENGTH, entry.content_length().into());
-    headers.insert(
-        header::LAST_MODIFIED,
-        HeaderValue::from_str(&entry.timestamp().format_http_date())
-            .expect("http date is valid header value"),
-    );
-    headers.insert(
-        header::CONTENT_TYPE,
-        // TODO: when setting content type from user input, we should validate it as a HeaderValue
-        entry
-            .content_type()
-            .try_into()
-            .or(HeaderValue::from_str(""))
-            .expect("valid header value"),
-    );
-    headers.insert(
-        header::ETAG,
-        format!("\"{}\"", entry.content_hash())
-            .try_into()
-            .expect("hex string is valid"),
-    );
+impl Entry {
+    pub fn to_response_headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_LENGTH, self.content_length().into());
+        headers.insert(
+            header::LAST_MODIFIED,
+            HeaderValue::from_str(&self.timestamp().format_http_date())
+                .expect("http date is valid header value"),
+        );
+        headers.insert(
+            header::CONTENT_TYPE,
+            self.content_type()
+                .try_into()
+                .or(HeaderValue::from_str(""))
+                .expect("valid header value"),
+        );
+        headers.insert(
+            header::ETAG,
+            format!("\"{}\"", self.content_hash())
+                .try_into()
+                .expect("hex string is valid"),
+        );
 
-    headers
+        headers
+    }
 }
 
 #[cfg(test)]
