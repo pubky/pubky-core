@@ -76,7 +76,13 @@ where
                 }
             };
 
-            let cookies = req.extensions().get::<Cookies>();
+            let cookies = match req.extensions().get::<Cookies>() {
+                Some(cookies) => cookies,
+                None => {
+                    tracing::warn!("No cookies found in request. Unauthorized.");
+                    return Ok(HttpError::unauthorized().into_response());
+                }
+            };
 
             // Authorize the request
             if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
@@ -93,7 +99,7 @@ where
 fn authorize(
     state: &AppState,
     method: &Method,
-    cookies: Option<&Cookies>,
+    cookies: &Cookies,
     public_key: &PublicKey,
     path: &str,
 ) -> HttpResult<()> {
@@ -105,36 +111,39 @@ fn authorize(
             return Ok(());
         }
     } else {
-        return Err(HttpError::new_with_message(
-            StatusCode::FORBIDDEN,
+        tracing::warn!(
+            "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",
+            public_key,
+            path
+        );
+        return Err(HttpError::forbidden_with_message(
             "Writing to directories other than '/pub/' is forbidden",
         ));
     }
 
-    if let Some(cookies) = cookies {
-        let session_secret =
-            session_secret_from_cookies(cookies, public_key).ok_or(HttpError::unauthorized())?;
+    let session_secret =
+        session_secret_from_cookies(cookies, public_key).ok_or(HttpError::unauthorized())?;
 
-        let session = state
-            .db
-            .get_session(&session_secret)?
-            .ok_or(HttpError::unauthorized())?;
+    let session = state
+        .db
+        .get_session(&session_secret)?
+        .ok_or(HttpError::unauthorized())?;
 
-        if session.pubky() == public_key
-            && session.capabilities().iter().any(|cap| {
-                path.starts_with(&cap.scope)
-                    && cap
-                        .actions
-                        .contains(&pubky_common::capabilities::Action::Write)
-            })
-        {
-            return Ok(());
-        };
-
-        return Err(HttpError::forbidden());
+    if session.pubky() == public_key
+        && session.capabilities().iter().any(|cap| {
+            path.starts_with(&cap.scope)
+                && cap
+                    .actions
+                    .contains(&pubky_common::capabilities::Action::Write)
+        })
+    {
+        Ok(())
+    } else {
+        tracing::warn!("Session {} does not have write access to {}. Access forbidden", session_secret, path);
+        Err(HttpError::forbidden())
     }
 
-    Err(HttpError::unauthorized())
+
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {

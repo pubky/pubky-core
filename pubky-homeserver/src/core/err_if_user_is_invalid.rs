@@ -13,12 +13,18 @@ pub fn err_if_user_is_invalid(
     match db.get_user(pubkey, &db.env.read_txn()?) {
         Ok(Some(user)) => {
             if err_if_disabled && user.disabled {
-                Err(HttpError::forbidden())
+                tracing::warn!("User {} is disabled. Forbid access.", pubkey);
+                Err(HttpError::forbidden_with_message(
+                    "User is disabled",
+                ))
             } else {
                 Ok(())
             }
         }
-        Ok(None) => Err(HttpError::not_found()),
+        Ok(None) => {
+            tracing::warn!("User {} not found. Forbid access.", pubkey);
+            Err(HttpError::not_found())
+        }
         Err(e) => Err(e.into()),
     }
 }

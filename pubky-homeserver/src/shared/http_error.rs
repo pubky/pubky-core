@@ -59,6 +59,10 @@ impl HttpError {
         Self::new_with_message(StatusCode::FORBIDDEN, "Forbidden")
     }
 
+    pub fn forbidden_with_message(message: impl ToString) -> HttpError {
+        Self::new_with_message(StatusCode::FORBIDDEN, message)
+    }
+
     pub fn unauthorized() -> HttpError {
         Self::new_with_message(StatusCode::UNAUTHORIZED, "Unauthorized")
     }
