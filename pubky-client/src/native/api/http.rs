@@ -23,14 +23,12 @@ impl Client {
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
     pub fn request<U: IntoUrl + IntoPubkyUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        if url.is_pubky_url() {
-            let url = url.to_homeserver_url().expect("URL should be valid");
-            return self.http.request(method, url);
-        } else if url.is_icann_url() {
+        if url.is_icann_url() {
             // TODO: remove icann_http when we can control reqwest connection
             // and or create a tls config per connection.
             return self.icann_http.request(method, url);
         }
+        let url = url.to_url().unwrap();
         self.http.request(method, url)
     }
 

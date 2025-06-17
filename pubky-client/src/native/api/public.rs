@@ -1,14 +1,14 @@
 use reqwest::{IntoUrl, Method};
 
-use crate::errors::Result;
-
 use super::super::Client;
+use crate::errors::Result;
+use crate::types::IntoPubkyUrl;
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
     ///
     /// `url` sets the path you want to lest within.
-    pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
+    pub fn list<T: IntoUrl + IntoPubkyUrl>(&self, url: T) -> Result<ListBuilder> {
         Ok(ListBuilder::new(self, url))
     }
 }
@@ -26,7 +26,7 @@ pub struct ListBuilder<'a> {
 
 impl<'a> ListBuilder<'a> {
     /// Create a new List request builder
-    pub(crate) fn new<T: IntoUrl>(client: &'a Client, url: T) -> Self {
+    pub(crate) fn new<T: IntoUrl + IntoPubkyUrl>(client: &'a Client, url: T) -> Self {
         Self {
             client,
             url: url.as_str().to_string(),

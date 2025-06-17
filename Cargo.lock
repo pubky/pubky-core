@@ -2431,6 +2431,7 @@ dependencies = [
  "mainline",
  "pkarr",
  "pubky-common",
+ "pubky-testnet",
  "reqwest",
  "serde",
  "serde-wasm-bindgen",

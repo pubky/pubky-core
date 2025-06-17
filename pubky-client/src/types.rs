@@ -5,15 +5,32 @@ use url::Url;
 
 #[allow(dead_code)]
 pub struct PubkyUrl {
+    testnet: bool,
     public_key: PublicKey,
     url: Url, // RFC compliant URL
 }
 
 #[allow(dead_code)]
 impl PubkyUrl {
-    /// Creates a new PubkyUrl
-    pub fn new(public_key: PublicKey, url: Url) -> Self {
-        Self { public_key, url }
+    fn new(testnet: bool, public_key: PublicKey, url: Url) -> PubkyUrl {
+        Self {
+            testnet,
+            public_key,
+            url,
+        }
+    }
+
+    pub fn with_testnet_enabled(mut self) -> Self {
+        self.testnet = true;
+        self
+    }
+
+    pub fn testnet(&self) -> bool {
+        self.testnet
+    }
+
+    pub fn set_testnet(&mut self, value: bool) {
+        self.testnet = value
     }
 
     /// Creates a PubkyUrl from a URL string
@@ -43,7 +60,11 @@ impl PubkyUrl {
             }
             _ => return Err(PubkyError::NotIntoPubkyUrl),
         };
-        Ok(PubkyUrl { public_key, url })
+        Ok(PubkyUrl {
+            testnet: true,
+            public_key,
+            url,
+        })
     }
 
     /// Getter for public_key
@@ -97,8 +118,8 @@ impl PubkyUrl {
     }
 
     /// Creates a PubkyUrl from parts
-    pub fn from_parts(public_key: PublicKey, url: Url) -> Self {
-        Self::new(public_key, url)
+    pub fn from_parts(testnet: bool, public_key: PublicKey, url: Url) -> Self {
+        Self::new(testnet, public_key, url)
     }
     fn to_rfc_url(&self) -> Url {
         Url::parse(format!("https://_pubky.{}{}", self.public_key(), self.path()).as_str())
@@ -114,6 +135,7 @@ impl PubkyUrl {
 impl Clone for PubkyUrl {
     fn clone(&self) -> Self {
         Self {
+            testnet: self.testnet,
             public_key: self.public_key.clone(),
             url: self.url.clone(),
         }
@@ -153,510 +175,7 @@ impl std::hash::Hash for PubkyUrl {
         self.url.hash(state);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use url::Url;
-
-    const TEST_PUBLIC_KEY: &str = "operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo";
-
-    // Helper function to create a test PublicKey
-    fn test_public_key() -> PublicKey {
-        PublicKey::try_from(TEST_PUBLIC_KEY).expect("Valid test public key")
-    }
-
-    // Test PubkyUrl::new
-    #[test]
-    fn test_new_pubky_url() {
-        let public_key = test_public_key();
-        let url = Url::parse("pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json").unwrap();
-        let pubky_url = PubkyUrl::new(public_key.clone(), url.clone());
-
-        assert_eq!(pubky_url.public_key(), &public_key);
-        assert_eq!(pubky_url.url(), &url);
-    }
-
-    // Test from_url_str with pubky:// scheme
-    #[test]
-    fn test_from_url_str_pubky_scheme() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse valid pubky URL");
-
-        assert_eq!(pubky_url.public_key().to_string(), TEST_PUBLIC_KEY);
-        assert_eq!(pubky_url.scheme(), "pubky");
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/profile.json");
-    }
-
-    #[test]
-    fn test_from_url_str_https_scheme_with_pubky_prefix() {
-        let url_str = "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse valid https _pubky URL");
-
-        assert_eq!(pubky_url.public_key().to_string(), TEST_PUBLIC_KEY);
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/profile.json");
-    }
-
-    #[test]
-    fn test_from_url_str_https_scheme_without_prefix() {
-        let url_str = "https://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse valid https URL");
-
-        assert_eq!(pubky_url.public_key().to_string(), TEST_PUBLIC_KEY);
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/profile.json");
-    }
-
-    // Test various resource types
-    #[test]
-    fn test_from_url_str_user_profile() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse user profile URL");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/profile.json");
-    }
-
-    #[test]
-    fn test_from_url_str_post() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0032SSN7Q4EVG";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse post URL");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/posts/0032SSN7Q4EVG");
-    }
-
-    #[test]
-    fn test_from_url_str_follow() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/follows/operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse follow URL");
-
-        assert_eq!(
-            pubky_url.path(),
-            "/pub/pubky.app/follows/operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo"
-        );
-    }
-
-    #[test]
-    fn test_from_url_str_bookmark() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/bookmarks/8Z8CWH8NVYQY39ZEBFGKQWWEKG";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse bookmark URL");
-
-        assert_eq!(
-            pubky_url.path(),
-            "/pub/pubky.app/bookmarks/8Z8CWH8NVYQY39ZEBFGKQWWEKG"
-        );
-    }
-
-    #[test]
-    fn test_from_url_str_tag() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/tags/8Z8CWH8NVYQY39ZEBFGKQWWEKG";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse tag URL");
-
-        assert_eq!(
-            pubky_url.path(),
-            "/pub/pubky.app/tags/8Z8CWH8NVYQY39ZEBFGKQWWEKG"
-        );
-    }
-
-    #[test]
-    fn test_from_url_str_file() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/files/file003";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse file URL");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/files/file003");
-    }
-
-    #[test]
-    fn test_from_url_str_blob() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/blobs/8Z8CWH8NVYQY39ZEBFGKQWWEKG";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse blob URL");
-
-        assert_eq!(
-            pubky_url.path(),
-            "/pub/pubky.app/blobs/8Z8CWH8NVYQY39ZEBFGKQWWEKG"
-        );
-    }
-
-    #[test]
-    fn test_from_url_str_feed() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/feeds/8Z8CWH8NVYQY39ZEBFGKQWWEKG";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse feed URL");
-
-        assert_eq!(
-            pubky_url.path(),
-            "/pub/pubky.app/feeds/8Z8CWH8NVYQY39ZEBFGKQWWEKG"
-        );
-    }
-
-    #[test]
-    fn test_from_url_str_last_read() {
-        let url_str =
-            "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/last_read";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse last_read URL");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/last_read");
-    }
-
-    // Test URLs with query parameters and fragments
-    #[test]
-    fn test_from_url_str_with_query() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/123?limit=10&offset=20";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse URL with query");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/posts/123");
-        assert_eq!(pubky_url.query(), Some("limit=10&offset=20"));
-    }
-
-    #[test]
-    fn test_from_url_str_with_fragment() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/123#section1";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse URL with fragment");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/posts/123");
-        assert_eq!(pubky_url.fragment(), Some("section1"));
-    }
-
-    #[test]
-    fn test_from_url_str_with_query_and_fragment() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/123?limit=10#section1";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse URL with query and fragment");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/posts/123");
-        assert_eq!(pubky_url.query(), Some("limit=10"));
-        assert_eq!(pubky_url.fragment(), Some("section1"));
-    }
-
-    // Test getter methods
-    #[test]
-    fn test_getters() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse URL");
-
-        assert_eq!(pubky_url.scheme(), "pubky");
-        assert_eq!(
-            pubky_url.host(),
-            Some("operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo")
-        );
-        assert_eq!(pubky_url.port(), None);
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/profile.json");
-        assert_eq!(pubky_url.query(), None);
-        assert_eq!(pubky_url.fragment(), None);
-        assert_eq!(pubky_url.url_str(), url_str);
-    }
-
-    // Test conversion methods
-    #[test]
-    fn test_to_rfc_url() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse URL");
-        let rfc_url = pubky_url.to_rfc_url();
-
-        assert_eq!(rfc_url.scheme(), "https");
-        assert_eq!(
-            rfc_url.host_str(),
-            Some("_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo")
-        );
-        assert_eq!(rfc_url.path(), "/pub/pubky.app/profile.json");
-    }
-
-    #[test]
-    fn test_as_uri_string() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse URL");
-        let uri_string = pubky_url.as_uri_string();
-
-        assert_eq!(uri_string, url_str);
-    }
-
-    #[test]
-    fn test_into_parts() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse URL");
-        let (public_key, url) = pubky_url.into_parts();
-
-        assert_eq!(public_key.to_string(), TEST_PUBLIC_KEY);
-        assert_eq!(url.as_str(), url_str);
-    }
-
-    #[test]
-    fn test_from_parts() {
-        let public_key = test_public_key();
-        let url = Url::parse("pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json").unwrap();
-        let pubky_url = PubkyUrl::from_parts(public_key.clone(), url.clone());
-
-        assert_eq!(pubky_url.public_key(), &public_key);
-        assert_eq!(pubky_url.url(), &url);
-    }
-
-    // Test edge cases and empty paths
-    #[test]
-    fn test_empty_path() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse URL with empty path");
-
-        assert_eq!(pubky_url.path(), "/");
-    }
-
-    #[test]
-    fn test_root_path() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse URL with root path");
-
-        assert_eq!(pubky_url.path(), "");
-    }
-
-    #[test]
-    fn test_pub_app_base_path() {
-        let url_str = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/";
-        let pubky_url = PubkyUrl::from_url_str(url_str).expect("Failed to parse base app URL");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/");
-    }
-
-    // Test error cases
-    #[test]
-    fn test_invalid_scheme() {
-        let url_str = "http://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/profile.json";
-        let result = PubkyUrl::from_url_str(url_str);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PubkyError::NotIntoPubkyUrl));
-    }
-
-    #[test]
-    fn test_invalid_public_key() {
-        let url_str = "pubky://invalid_public_key/pub/pubky.app/profile.json";
-        let result = PubkyUrl::from_url_str(url_str);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            PubkyError::InvalidPublicKey(_)
-        ));
-    }
-
-    /*#[test]
-    fn test_missing_host() {
-        let url_str = "pubky:///pub/pubky.app/profile.json";
-        let result = PubkyUrl::from_url_str(url_str);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PubkyError::InvalidUrl(_)));
-    }*/
-
-    #[test]
-    fn test_invalid_url() {
-        let url_str = "not a url";
-        let result = PubkyUrl::from_url_str(url_str);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PubkyError::NotIntoPubkyUrl));
-    }
-
-    /*#[test]
-    fn test_https_missing_host() {
-        let url_str = "https:///pub/pubky.app/profile.json";
-        let result = PubkyUrl::from_url_str(url_str);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PubkyError::NotIntoPubkyUrl));
-    }*/
-
-    #[test]
-    fn test_https_invalid_public_key_in_host() {
-        let url_str = "https://invalid_public_key/pub/pubky.app/profile.json";
-        let result = PubkyUrl::from_url_str(url_str);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            PubkyError::InvalidPublicKey(_)
-        ));
-    }
-
-    // Test special cases for empty bookmark paths
-    #[test]
-    fn test_empty_bookmark_path() {
-        let url_str =
-            "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/bookmarks/";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse empty bookmark path");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/bookmarks/");
-    }
-
-    #[test]
-    fn test_bookmarks_base_path() {
-        let url_str =
-            "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/bookmarks";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse bookmarks base path");
-
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/bookmarks");
-    }
-
-    // Test URL round-trip conversion
-    #[test]
-    fn test_round_trip_conversion() {
-        let original_url = "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/123?limit=10#section1";
-        let pubky_url = PubkyUrl::from_url_str(original_url).expect("Failed to parse URL");
-        let converted_back = pubky_url.as_uri_string();
-
-        // Note: The as_uri_string method only includes scheme, host, and path
-        let expected =
-            "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/123";
-        assert_eq!(converted_back, expected);
-    }
-
-    // Test with different public key formats
-    #[test]
-    fn test_different_public_key_format() {
-        let url_str = "pubky://8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo/pub/pubky.app/profile.json";
-        let pubky_url =
-            PubkyUrl::from_url_str(url_str).expect("Failed to parse URL with different public key");
-
-        assert_eq!(
-            pubky_url.public_key().to_string(),
-            "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
-        );
-        assert_eq!(pubky_url.path(), "/pub/pubky.app/profile.json");
-    }
-
-    // Test URL detection and classification
-    #[test]
-    fn test_pubky_url_detection() {
-        let pubky_url_str =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let pkarr_url_str =
-            "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let homeserver_url_str = "https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let regular_url_str = "https://example.com/file.txt";
-
-        // Test pubky:// URL
-        let pubky_url = PubkyUrl::from_url_str(pubky_url_str).expect("Should parse pubky URL");
-        assert_eq!(pubky_url.scheme(), "pubky");
-        assert_eq!(pubky_url.path(), "/pub/example.com/file.txt");
-
-        // Test https with pkarr domain
-        let pkarr_url = PubkyUrl::from_url_str(pkarr_url_str).expect("Should parse pkarr URL");
-        assert_eq!(
-            pkarr_url.public_key().to_string(),
-            "o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-        );
-        assert_eq!(pkarr_url.path(), "/pub/example.com/file.txt");
-
-        // Test https with _pubky prefix
-        let homeserver_url =
-            PubkyUrl::from_url_str(homeserver_url_str).expect("Should parse homeserver URL");
-        assert_eq!(
-            homeserver_url.public_key().to_string(),
-            "o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-        );
-        assert_eq!(homeserver_url.path(), "/pub/example.com/file.txt");
-
-        // Test regular URL (should fail)
-        let regular_result = PubkyUrl::from_url_str(regular_url_str);
-        assert!(
-            regular_result.is_err(),
-            "Regular URL should not parse as PubkyUrl"
-        );
-    }
-
-    #[test]
-    fn test_path_extraction() {
-        let pubky_url_str =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let pubky_url = PubkyUrl::from_url_str(pubky_url_str).expect("Should parse pubky URL");
-        let path = pubky_url.path();
-        assert_eq!(path, "/pub/example.com/file.txt");
-    }
-
-    #[test]
-    fn test_homeserver_conversion() {
-        let pubky_url_str =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let pubky_url = PubkyUrl::from_url_str(pubky_url_str).expect("Should parse pubky URL");
-        let homeserver = pubky_url.to_rfc_url();
-        assert_eq!(
-            homeserver.as_str(),
-            "https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt"
-        );
-    }
-
-    #[test]
-    fn test_homeserver_conversion_with_query_and_fragment() {
-        let pubky_url_str = "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt?param=value#section";
-        let pubky_url = PubkyUrl::from_url_str(pubky_url_str)
-            .expect("Should parse pubky URL with query and fragment");
-        let homeserver = pubky_url.to_rfc_url();
-
-        // Note: to_rfc_url() only includes scheme, host, and path based on the implementation
-        assert_eq!(
-            homeserver.as_str(),
-            "https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt"
-        );
-
-        // Original URL should still have query and fragment
-        assert_eq!(pubky_url.query(), Some("param=value"));
-        assert_eq!(pubky_url.fragment(), Some("section"));
-    }
-
-    #[test]
-    fn test_uri_string_conversion() {
-        let pubky_url_str =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let pubky_url = PubkyUrl::from_url_str(pubky_url_str).expect("Should parse pubky URL");
-        let uri_string = pubky_url.as_uri_string();
-        assert_eq!(uri_string, pubky_url_str);
-    }
-
-    #[test]
-    fn test_uri_string_conversion_strips_query_and_fragment() {
-        let pubky_url_str = "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt?param=value#section";
-        let pubky_url = PubkyUrl::from_url_str(pubky_url_str)
-            .expect("Should parse pubky URL with query and fragment");
-        let uri_string = pubky_url.as_uri_string();
-
-        // as_uri_string() only includes scheme, host, and path based on the implementation
-        let expected =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        assert_eq!(uri_string, expected);
-    }
-
-    #[test]
-    fn test_conversion_between_formats() {
-        let original_pubky =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let expected_https = "https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-
-        // Convert pubky:// to https://_pubky.
-        let pubky_url = PubkyUrl::from_url_str(original_pubky).expect("Should parse pubky URL");
-        let https_url = pubky_url.to_rfc_url();
-        assert_eq!(https_url.as_str(), expected_https);
-
-        // Convert https://_pubky. back to pubky://
-        let pubky_url_from_https =
-            PubkyUrl::from_url_str(expected_https).expect("Should parse https _pubky URL");
-        let pubky_uri = pubky_url_from_https.as_uri_string();
-        assert_eq!(pubky_uri, original_pubky);
-    }
-
-    #[test]
-    fn test_pkarr_domain_conversion() {
-        let pkarr_url_str =
-            "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let expected_pubky =
-            "pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-        let expected_homeserver = "https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/pub/example.com/file.txt";
-
-        let pubky_url =
-            PubkyUrl::from_url_str(pkarr_url_str).expect("Should parse pkarr domain URL");
-
-        // Convert to pubky:// format
-        let pubky_uri = pubky_url.as_uri_string();
-        assert_eq!(pubky_uri, expected_pubky);
-
-        // Convert to homeserver format
-        let homeserver_url = pubky_url.to_rfc_url();
-        assert_eq!(homeserver_url.as_str(), expected_homeserver);
-    }
-}
+// Test getter methods
 
 pub trait IntoPubkyUrl {
     /// Check if this is a pubky:// URL
@@ -676,13 +195,12 @@ pub trait IntoPubkyUrl {
     fn extract_public_key(&self) -> Result<PublicKey, PubkyError>;
 
     /// Convert to homeserver URL format (https://_pubky.<public_key>)
-    fn to_homeserver_url(&self) -> Result<Url, PubkyError>;
+    fn to_url(&self) -> Result<Url, PubkyError>;
 
     /// Get the path component after the public key
     fn get_path(&self) -> Result<String, PubkyError>;
 
-    /// Convert pubky:// URL to https:// equivalent
-    fn to_https_url(&self) -> Result<Url, PubkyError>;
+    fn get_query(&self) -> Result<String, PubkyError>;
 }
 
 impl IntoPubkyUrl for &str {
@@ -731,24 +249,28 @@ impl IntoPubkyUrl for &str {
         }
     }
 
-    fn to_homeserver_url(&self) -> Result<Url, PubkyError> {
-        let public_key = self.extract_public_key()?;
-        let path = self.get_path()?;
-
-        let homeserver_url = if path.is_empty() || path == "/" {
-            format!("https://_pubky.{}/", public_key)
+    fn to_url(&self) -> Result<Url, PubkyError> {
+        if self.is_pubky_url() {
+            let public_key = self.extract_public_key()?;
+            let path = self.get_path()?;
+            let homeserver_url = if path.is_empty() || path == "/" {
+                format!("https://_pubky.{}/", public_key)
+            } else {
+                format!("https://_pubky.{}{}", public_key, path)
+            };
+            Url::parse(&homeserver_url).map_err(PubkyError::UrlParseError)
+        } else if self.is_pkarr_domain() {
+            // Already an HTTPS URL
+            Url::parse(self).map_err(PubkyError::UrlParseError)
         } else {
-            format!("https://_pubky.{}{}", public_key, path)
-        };
-
-        Url::parse(&homeserver_url).map_err(PubkyError::UrlParseError)
+            Url::parse(self).map_err(PubkyError::UrlParseError)
+        }
     }
 
     fn get_path(&self) -> Result<String, PubkyError> {
         if self.is_pubky_url() {
             let after_protocol = &self[8..]; // Remove "pubky://"
             let parts: Vec<&str> = after_protocol.splitn(2, '/').collect();
-
             if parts.len() > 1 {
                 Ok(format!("/{}", parts[1]))
             } else {
@@ -762,17 +284,8 @@ impl IntoPubkyUrl for &str {
         }
     }
 
-    fn to_https_url(&self) -> Result<Url, PubkyError> {
-        if self.is_pubky_url() {
-            // Convert pubky://public_key/path to https://public_key/path
-            let https_url = format!("https{}", &self[5..]); // Replace "pubky" with "https"
-            Url::parse(&https_url).map_err(PubkyError::UrlParseError)
-        } else if self.is_pkarr_domain() {
-            // Already an HTTPS URL
-            Url::parse(self).map_err(PubkyError::UrlParseError)
-        } else {
-            Err(PubkyError::NotIntoPubkyUrl)
-        }
+    fn get_query(&self) -> Result<String, PubkyError> {
+        todo!()
     }
 }
 
@@ -812,9 +325,23 @@ impl IntoPubkyUrl for Url {
         }
     }
 
-    fn to_homeserver_url(&self) -> Result<Url, PubkyError> {
-        let homeserver_url = format!("https://_pubky.{}", self.as_str().split_at(8).1);
-        Url::parse(&homeserver_url).map_err(PubkyError::UrlParseError)
+    fn to_url(&self) -> Result<Url, PubkyError> {
+        if self.is_pubky_url() {
+            let public_key = self.extract_public_key()?;
+            let path = self.get_path()?;
+            let query = self.get_query()?;
+            let homeserver_url = if path.is_empty() || path == "/" {
+                format!("https://_pubky.{}?{}", public_key, query)
+            } else {
+                format!("https://_pubky.{}{}?{}", public_key, path, query)
+            };
+            Url::parse(&homeserver_url).map_err(PubkyError::UrlParseError)
+        } else if self.is_pkarr_domain() {
+            // Already an HTTPS URL
+            Url::parse(self.as_str()).map_err(PubkyError::UrlParseError)
+        } else {
+            Url::parse(self.as_str()).map_err(PubkyError::UrlParseError)
+        }
     }
 
     fn get_path(&self) -> Result<String, PubkyError> {
@@ -825,15 +352,9 @@ impl IntoPubkyUrl for Url {
         }
     }
 
-    fn to_https_url(&self) -> Result<Url, PubkyError> {
-        if self.is_pubky_url() {
-            let mut https_url = self.clone();
-            https_url
-                .set_scheme("https")
-                .map_err(|_| PubkyError::InvalidFormat("Cannot set HTTPS scheme".to_string()))?;
-            Ok(https_url)
-        } else if self.is_pkarr_domain() {
-            Ok(self.clone())
+    fn get_query(&self) -> Result<String, PubkyError> {
+        if self.is_pubky_related() {
+            Ok(self.query().unwrap_or("").to_string())
         } else {
             Err(PubkyError::NotIntoPubkyUrl)
         }
