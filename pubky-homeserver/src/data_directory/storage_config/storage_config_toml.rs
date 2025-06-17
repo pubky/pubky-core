@@ -1,3 +1,4 @@
+#[cfg(feature = "storage-gcs")]
 use super::google_bucket_config::GoogleBucketConfig;
 
 /// The storage config. Files can be either stored in a file system, in memory, or in a Google bucket
@@ -6,8 +7,10 @@ use super::google_bucket_config::GoogleBucketConfig;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StorageConfigToml {
     /// Files are stored in a Google bucket.
+    #[cfg(feature = "storage-gcs")]
     GoogleBucket(GoogleBucketConfig),
     /// Files are stored in memory.
+    #[cfg(feature = "storage-memory")]
     InMemory,
     /// Files are stored on the local file system.
     FileSystem,

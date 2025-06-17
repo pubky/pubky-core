@@ -25,10 +25,10 @@ pub fn build_storage_operator_from_config(
                     )))
                 }
             };
-
             let builder = opendal::services::Fs::default().root(files_dir.as_str());
             opendal::Operator::new(builder)?.finish()
         }
+        #[cfg(feature = "storage-gcs")]
         StorageConfigToml::GoogleBucket(config) => {
             tracing::info!(
                 "Store files in a Google Cloud Storage bucket: {}",
@@ -37,6 +37,7 @@ pub fn build_storage_operator_from_config(
             let builder = config.to_builder()?;
             opendal::Operator::new(builder)?.finish()
         }
+        #[cfg(feature = "storage-memory")]
         StorageConfigToml::InMemory => {
             tracing::info!("Store files in memory");
             let builder = opendal::services::Memory::default();

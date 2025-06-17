@@ -59,11 +59,29 @@ fast-glob = "0.4.5"
 tokio-util = "0.7.15"
 percent-encoding = "2.3.1"
 serde_valid = "1.0.5"
-opendal = { version = "0.53.3", features = ["services-fs", "services-gcs", "services-memory"] }
+opendal = { version = "0.53.3", features =["services-fs"]}
 infer = "0.19.0"
 mime_guess = "2.0.5"
 
 
 [dev-dependencies]
 futures-lite = "2.6.0"
+
+
+[features]
+default = [
+   "storage-gcs",
+]
+# Test-specific features
+test-default = [
+    "storage-gcs",
+    "storage-memory",
+    "testing"
+]
+# Optional storage types
+storage-gcs = ["opendal/services-gcs"]
+storage-memory = ["opendal/services-memory"]
+testing = []
+
+
 

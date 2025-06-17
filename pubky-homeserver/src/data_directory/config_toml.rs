@@ -174,10 +174,11 @@ impl ConfigToml {
     }
 
     /// Returns a default config tuned for unit tests.
+    // #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let mut config = Self::default();
         config.general.signup_mode = SignupMode::Open;
-        // Use ephemeral ports (0) so parallel tests don’t collide.
+        // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));

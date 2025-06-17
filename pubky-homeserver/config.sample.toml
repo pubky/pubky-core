@@ -61,7 +61,7 @@ burst = 10
 [storage]
 # Defines where the files are stored.
 # You have multiple options defined by the type.
-# Supported types: "file_system", "google_bucket", "in_memory"
+# Supported types: "file_system", "google_bucket".
 # Depending on the option, different settings need to be provided.
 # Only one storage type can be activated at one time.
 
