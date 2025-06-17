@@ -37,7 +37,7 @@ pub fn build_storage_operator_from_config(
             let builder = config.to_builder()?;
             opendal::Operator::new(builder)?.finish()
         }
-        #[cfg(feature = "storage-memory")]
+        #[cfg(any(feature = "storage-memory", test))]
         StorageConfigToml::InMemory => {
             tracing::info!("Store files in memory");
             let builder = opendal::services::Memory::default();

@@ -10,7 +10,7 @@ pub enum StorageConfigToml {
     #[cfg(feature = "storage-gcs")]
     GoogleBucket(GoogleBucketConfig),
     /// Files are stored in memory.
-    #[cfg(feature = "storage-memory")]
+    #[cfg(any(feature = "storage-memory", test))]
     InMemory,
     /// Files are stored on the local file system.
     FileSystem,

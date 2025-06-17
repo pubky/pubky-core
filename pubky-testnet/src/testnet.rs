@@ -9,7 +9,9 @@ use std::{str::FromStr, time::Duration};
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::Keypair;
-use pubky_homeserver::{storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
+use pubky_homeserver::{
+    storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
+};
 use url::Url;
 
 /// A local test network for Pubky Core development.

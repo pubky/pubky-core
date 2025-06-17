@@ -7,8 +7,10 @@ use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::{FileService, LmDbToOpendalMigrator};
 use crate::persistence::lmdb::LmDB;
+#[cfg(any(test, feature = "testing"))]
+use crate::MockDataDir;
 use crate::{app_context::AppContext, PersistentDataDir};
-use crate::{DataDir, MockDataDir, SignupMode};
+use crate::{DataDir, SignupMode};
 use anyhow::Result;
 use axum::Router;
 use axum_server::{
@@ -86,6 +88,7 @@ impl HomeserverCore {
     }
 
     /// Create a Homeserver from a mock data directory.
+    #[cfg(any(test, feature = "testing"))]
     pub async fn from_mock_data_dir(
         mock_dir: MockDataDir,
     ) -> std::result::Result<Self, HomeserverBuildError> {

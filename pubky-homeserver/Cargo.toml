@@ -70,18 +70,13 @@ futures-lite = "2.6.0"
 
 [features]
 default = [
-   "storage-gcs",
-]
-# Test-specific features
-test-default = [
     "storage-gcs",
-    "storage-memory",
-    "testing"
 ]
 # Optional storage types
 storage-gcs = ["opendal/services-gcs"]
 storage-memory = ["opendal/services-memory"]
-testing = []
 
-
-
+# Optional testing methods
+testing = [
+    "storage-memory"
+]

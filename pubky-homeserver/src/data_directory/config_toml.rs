@@ -174,7 +174,7 @@ impl ConfigToml {
     }
 
     /// Returns a default config tuned for unit tests.
-    // #[cfg(any(test, feature = "testing"))]
+    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let mut config = Self::default();
         config.general.signup_mode = SignupMode::Open;

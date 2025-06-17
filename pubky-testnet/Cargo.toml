@@ -21,7 +21,7 @@ url = "2.5.4"
 
 pubky = { path = "../pubky-client", version = "0.5.0-rc.2" }
 pubky-common = { path = "../pubky-common", version = "0.5.0-rc.2" }
-pubky-homeserver = { path = "../pubky-homeserver", version = "0.5.0-rc.2", default-features = false, features = ["storage-memory"] }
+pubky-homeserver = { path = "../pubky-homeserver", version = "0.5.0-rc.2", default-features = false, features = ["testing"] }
 http-relay = { path = "../http-relay", version = "0.5.0-rc.2" }
 tempfile = "3.19.1"
 tracing = "0.1.41"

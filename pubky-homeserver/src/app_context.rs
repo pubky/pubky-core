@@ -5,12 +5,14 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
+#[cfg(any(test, feature = "testing"))]
+use crate::MockDataDir;
 use crate::{
     persistence::{
         files::{FileIoError, FileService},
         lmdb::LmDB,
     },
-    ConfigToml, DataDir, MockDataDir, PersistentDataDir,
+    ConfigToml, DataDir, PersistentDataDir,
 };
 use pkarr::Keypair;
 use std::{sync::Arc, time::Duration};
@@ -63,8 +65,8 @@ pub struct AppContext {
 
 impl AppContext {
     /// Create a new AppContext for testing.
+    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
-        use crate::MockDataDir;
         let data_dir = MockDataDir::test();
         Self::try_from(data_dir).expect("failed to build AppContext from DataDirMock")
     }
@@ -112,6 +114,7 @@ impl TryFrom<PersistentDataDir> for AppContext {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
 impl TryFrom<MockDataDir> for AppContext {
     type Error = AppContextConversionError;
 

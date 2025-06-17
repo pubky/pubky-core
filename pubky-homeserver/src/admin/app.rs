@@ -10,7 +10,9 @@ use super::routes::{
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::app_context::AppContext;
-use crate::{AppContextConversionError, MockDataDir, PersistentDataDir};
+#[cfg(any(test, feature = "testing"))]
+use crate::MockDataDir;
+use crate::{AppContextConversionError, PersistentDataDir};
 use axum::routing::{delete, post};
 use axum::{routing::get, Router};
 use axum_server::Handle;
@@ -88,6 +90,7 @@ impl AdminServer {
     }
 
     /// Create a new admin server from a mock data directory.
+    #[cfg(any(test, feature = "testing"))]
     pub async fn from_mock_dir(mock_dir: MockDataDir) -> Result<Self, AdminServerBuildError> {
         let context = AppContext::try_from(mock_dir).map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
