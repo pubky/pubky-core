@@ -28,7 +28,7 @@ impl Client {
             // and or create a tls config per connection.
             return self.icann_http.request(method, url);
         }
-        let url = url.to_url().unwrap();
+        let url = url.to_pkarr_url().expect("Https Pkarr URL");
         self.http.request(method, url)
     }
 
