@@ -54,35 +54,9 @@ impl FileService {
         Ok(Self::new(opendal_service, db, quota_bytes))
     }
 
-    #[cfg(test)]
-    pub fn test(db: LmDB) -> Self {
-        use crate::storage_config::StorageConfigToml;
-
-        let storage_config = StorageConfigToml::InMemory;
-        let opendal_service =
-            OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"))
-                .expect("Failed to create OpenDAL service for testing");
-        Self::new(opendal_service, db, None)
-    }
-
     /// Get the metadata of a file.
     pub async fn get_info(&self, path: &EntryPath) -> Result<Entry, FileIoError> {
         self.db.get_entry(path)
-    }
-
-    /// Get the content of a file as bytes.
-    /// Errors if the file does not exist.
-    #[cfg(test)]
-    pub async fn get(&self, path: &EntryPath) -> Result<Bytes, FileIoError> {
-        let mut stream = self.get_stream(path).await?;
-        let mut collected_data = Vec::new();
-
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result?;
-            collected_data.extend_from_slice(&chunk);
-        }
-
-        Ok(Bytes::from(collected_data))
     }
 
     /// Get the content of a file as a stream of bytes.
@@ -120,19 +94,6 @@ impl FileService {
     }
 
     /// Write a file to the database and storage depending on the selected target location.
-    #[cfg(test)]
-    pub async fn write(
-        &self,
-        path: &EntryPath,
-        data: Buffer,
-        location: FileLocation,
-    ) -> Result<Entry, FileIoError> {
-        let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
-        let entry = self.write_stream(path, location, stream).await?;
-        Ok(entry)
-    }
-
-    /// Write a file to the database and storage depending on the selected target location.
     pub async fn write_stream(
         &self,
         path: &EntryPath,
@@ -158,7 +119,10 @@ impl FileService {
             .entry_service
             .write_entry(path, &metadata, location.clone());
         if let Err(e) = &write_result {
-            tracing::warn!("Writing entry {path} failed. Undoing the write. Error: {:?}", e);
+            tracing::warn!(
+                "Writing entry {path} failed. Undoing the write. Error: {:?}",
+                e
+            );
             // Writing the entry failed. Delete the file in storage and return the error.
             match location {
                 FileLocation::LmDB => {
@@ -194,6 +158,45 @@ impl FileService {
             }
         };
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl FileService {
+    /// Get the content of a file as bytes.
+    /// Errors if the file does not exist.
+    pub async fn get(&self, path: &EntryPath) -> Result<Bytes, FileIoError> {
+        let mut stream = self.get_stream(path).await?;
+        let mut collected_data = Vec::new();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            collected_data.extend_from_slice(&chunk);
+        }
+
+        Ok(Bytes::from(collected_data))
+    }
+
+    /// Write a file to the database and storage depending on the selected target location.
+    pub async fn write(
+        &self,
+        path: &EntryPath,
+        data: Buffer,
+        location: FileLocation,
+    ) -> Result<Entry, FileIoError> {
+        let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
+        let entry = self.write_stream(path, location, stream).await?;
+        Ok(entry)
+    }
+
+    pub fn test(db: LmDB) -> Self {
+        use crate::storage_config::StorageConfigToml;
+
+        let storage_config = StorageConfigToml::InMemory;
+        let opendal_service =
+            OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"))
+                .expect("Failed to create OpenDAL service for testing");
+        Self::new(opendal_service, db, None)
     }
 }
 
