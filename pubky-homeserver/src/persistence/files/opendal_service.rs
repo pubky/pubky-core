@@ -91,7 +91,7 @@ impl OpendalService {
         // Create a single-item stream from the buffer
         let stream = Box::pin(futures_util::stream::once(async move { Ok(bytes) }));
         // Use the existing streaming implementation
-        self.write_stream(path, stream, None).await
+        self.write_stream(path, stream, u64::MAX).await
     }
 
     /// Write a stream to the storage.
@@ -105,7 +105,7 @@ impl OpendalService {
         &self,
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
-        max_bytes: Option<u64>,
+        max_bytes: u64,
     ) -> Result<FileMetadata, FileIoError> {
         let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
@@ -117,10 +117,8 @@ impl OpendalService {
             while let Some(chunk_result) = stream.next().await {
                 let chunk = chunk_result?;
                 bytes_counter += chunk.len() as u64;
-                if let Some(max_bytes) = max_bytes {
-                    if bytes_counter > max_bytes {
-                        return Err(FileIoError::DiskSpaceQuotaExceeded);
-                    }
+                if bytes_counter > max_bytes {
+                    return Err(FileIoError::DiskSpaceQuotaExceeded);
                 }
                 metadata_builder.update(&chunk);
                 writer.write(chunk).await?;
@@ -312,7 +310,7 @@ mod tests {
 
             // Write the stream to storage
             file_service
-                .write_stream(&path, stream, None)
+                .write_stream(&path, stream, u64::MAX)
                 .await
                 .unwrap();
 

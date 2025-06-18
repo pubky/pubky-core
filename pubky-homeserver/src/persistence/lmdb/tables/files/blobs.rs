@@ -94,7 +94,7 @@ impl LmDB {
         &self,
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<bytes::Bytes, WriteStreamError>> + Unpin + Send,
-        max_bytes: Option<u64>,
+        max_bytes: u64,
     ) -> Result<FileMetadata, FileIoError> {
         // First, write the stream to a temporary file using AsyncInDbTempFileWriter
         let mut temp_file_writer = AsyncInDbTempFileWriter::new().await?;
@@ -104,10 +104,8 @@ impl LmDB {
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
             counter += chunk.len() as u64;
-            if let Some(max_bytes) = max_bytes {
-                if counter > max_bytes {
-                    return Err(FileIoError::DiskSpaceQuotaExceeded);
-                }
+            if counter > max_bytes {
+                return Err(FileIoError::DiskSpaceQuotaExceeded);
             }
             temp_file_writer.write_chunk(&chunk).await?;
         }

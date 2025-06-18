@@ -102,10 +102,10 @@ impl FileService {
 
     /// Get the remaining quota bytes for a user.
     /// Returns `u64::MAX` if the user has an unlimited quota.
-    fn get_user_quota_bytes_allowance(&self, path: &EntryPath) -> Result<Option<u64>, FileIoError> {
+    fn get_remaining_user_quota(&self, path: &EntryPath) -> Result<u64, FileIoError> {
         let max_limit = match self.user_quota_bytes {
             Some(limit) => limit,
-            None => return Ok(None),
+            None => return Ok(u64::MAX),
         };
         let current_usage_bytes = match self.db.get_user_data_usage(path.pubkey())? {
             Some(usage) => usage,
@@ -116,7 +116,7 @@ impl FileService {
         let remaining_quota_bytes = max_limit
             .saturating_add(existing_entry_content_length)
             .saturating_sub(current_usage_bytes);
-        Ok(Some(remaining_quota_bytes))
+        Ok(remaining_quota_bytes)
     }
 
     /// Write a file to the database and storage depending on the selected target location.
@@ -139,7 +139,7 @@ impl FileService {
         location: FileLocation,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
-        let remaining_bytes_usage = self.get_user_quota_bytes_allowance(path)?;
+        let remaining_bytes_usage = self.get_remaining_user_quota(path)?;
 
         let metadata = match location {
             FileLocation::LmDB => {

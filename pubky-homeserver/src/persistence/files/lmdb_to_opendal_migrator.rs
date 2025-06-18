@@ -157,7 +157,7 @@ impl LmDbToOpendalMigrator {
         let metadata = self
             .file_service
             .opendal_service
-            .write_stream(path, converted_stream, None)
+            .write_stream(path, converted_stream, u64::MAX)
             .await?;
 
         // Change the actual database. This needs to be done in a write tx to guarantee consistency.
