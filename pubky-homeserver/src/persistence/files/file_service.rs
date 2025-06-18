@@ -187,7 +187,10 @@ impl FileService {
                 wtxn.commit()?;
             }
             FileLocation::OpenDal => {
-                self.opendal_service.delete(path).await?;
+                if let Err(e) = self.opendal_service.delete(path).await {
+                    tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
+                    return Err(e);
+                }
             }
         };
         Ok(())
