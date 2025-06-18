@@ -1,12 +1,7 @@
 use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::users::User;
-use crate::{
-    core::{
-        error::{Error, Result},
-        AppState,
-    },
-    SignupMode,
-};
+use crate::shared::{HttpError, HttpResult};
+use crate::{core::AppState, SignupMode};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -36,7 +31,7 @@ pub async fn signup(
     Host(host): Host,
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
     body: Bytes,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     // 1) Verify AuthToken from request body
     let token = state.verifier.verify(&body)?;
     let public_key = token.pubky();
@@ -45,18 +40,18 @@ pub async fn signup(
     let txn = state.db.env.read_txn()?;
     let users = state.db.tables.users;
     if users.get(&txn, public_key)?.is_some() {
-        return Err(Error::new(
+        return Err(HttpError::new_with_message(
             StatusCode::CONFLICT,
-            Some("User already exists"),
+            "User already exists",
         ));
     }
     txn.commit()?;
 
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.signup_mode == SignupMode::TokenRequired {
-        let signup_token_param = params
-            .get("signup_token")
-            .ok_or_else(|| Error::new(StatusCode::BAD_REQUEST, Some("signup_token required")))?;
+        let signup_token_param = params.get("signup_token").ok_or_else(|| {
+            HttpError::new_with_message(StatusCode::BAD_REQUEST, "signup_token required")
+        })?;
         // Validate it in the DB (marks it used)
         state
             .db
@@ -86,7 +81,7 @@ pub async fn signin(
     cookies: Cookies,
     Host(host): Host,
     body: Bytes,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     // 1) Verify the AuthToken in the request body
     let token = state.verifier.verify(&body)?;
     let public_key = token.pubky();
@@ -97,9 +92,9 @@ pub async fn signin(
     let user_exists = users.get(&txn, public_key)?.is_some();
     txn.commit()?;
     if !user_exists {
-        return Err(Error::new(
+        return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
-            Some("User does not exist"),
+            "User does not exist",
         ));
     }
 
@@ -122,7 +117,7 @@ fn create_session_and_cookie(
     public_key: &PublicKey,
     capabilities: &[Capability],
     user_agent: Option<TypedHeader<UserAgent>>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(public_key, &state.db, false)?;
 
     // 1) Create session

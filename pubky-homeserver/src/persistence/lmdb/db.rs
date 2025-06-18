@@ -1,7 +1,8 @@
 use super::tables::{Tables, TABLES_COUNT};
 use heed::{Env, EnvOpenOptions};
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
-use std::{fs, path::PathBuf};
 
 use super::migrations;
 
@@ -21,18 +22,14 @@ impl LmDB {
     /// # Safety
     /// DB uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn open(main_dir: PathBuf) -> anyhow::Result<Self> {
-        let buffers_dir = main_dir.join("buffers");
-
-        // Cleanup buffers.
-        let _ = fs::remove_dir(&buffers_dir);
-        fs::create_dir_all(&buffers_dir)?;
+    pub unsafe fn open(main_dir: &Path) -> anyhow::Result<Self> {
+        fs::create_dir_all(main_dir)?;
 
         let env = unsafe {
             EnvOpenOptions::new()
                 .max_dbs(TABLES_COUNT)
                 .map_size(DEFAULT_MAP_SIZE)
-                .open(&main_dir)
+                .open(main_dir)
         }?;
 
         migrations::run(&env)?;
@@ -55,7 +52,7 @@ impl LmDB {
     pub fn test() -> LmDB {
         // Create a temporary directory for the test.
         let temp_dir = tempfile::tempdir().unwrap();
-        let mut lmdb = unsafe { LmDB::open(PathBuf::from(temp_dir.path())).unwrap() };
+        let mut lmdb = unsafe { LmDB::open(temp_dir.path()).unwrap() };
         lmdb.test_dir = Some(Arc::new(temp_dir)); // Keep the directory alive for the duration of the test. As soon as all LmDB instances are dropped, the directory will be deleted automatically.
 
         lmdb

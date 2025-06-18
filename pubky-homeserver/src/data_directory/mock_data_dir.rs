@@ -33,6 +33,7 @@ impl MockDataDir {
     }
 
     /// Creates a mock data directory with a config and keypair appropriate for testing.
+    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let config = super::ConfigToml::test();
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);

@@ -5,9 +5,11 @@
 //! and lets callers optionally layer their own TOML on top.
 
 use super::{
-    domain_port::DomainPort, log_level::LogLevel, quota_config::PathLimit, Domain, SignupMode,
+    domain_port::DomainPort, quota_config::PathLimit, storage_config::StorageConfigToml, Domain,
+    SignupMode,
 };
-use crate::data_directory::log_level::TargetLevel;
+
+use crate::data_directory::log_level::{LogLevel, TargetLevel};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -89,6 +91,8 @@ pub struct ConfigToml {
     pub general: GeneralToml,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
+    /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
+    pub storage: StorageConfigToml,
     /// Administrative API settings (listen socket and password).
     pub admin: AdminToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
@@ -170,16 +174,18 @@ impl ConfigToml {
     }
 
     /// Returns a default config tuned for unit tests.
+    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let mut config = Self::default();
         config.general.signup_mode = SignupMode::Open;
-        // Use ephemeral ports (0) so parallel tests don’t collide.
+        // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
+        config.storage = StorageConfigToml::InMemory;
         config.logging = None;
         config
     }
@@ -195,6 +201,8 @@ impl FromStr for ConfigToml {
 
 #[cfg(test)]
 mod tests {
+    use crate::data_directory::log_level::LogLevel;
+
     use super::*;
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -231,6 +239,7 @@ mod tests {
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits, vec![]);
+        assert_eq!(c.storage, StorageConfigToml::FileSystem);
         assert_eq!(
             c.logging,
             Some(LoggingToml {
