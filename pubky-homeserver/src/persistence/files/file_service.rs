@@ -157,7 +157,8 @@ impl FileService {
         let write_result = self
             .entry_service
             .write_entry(path, &metadata, location.clone());
-        if write_result.is_err() {
+        if let Err(e) = &write_result {
+            tracing::warn!("Writing entry {path} failed. Undoing the write. Error: {:?}", e);
             // Writing the entry failed. Delete the file in storage and return the error.
             match location {
                 FileLocation::LmDB => {
