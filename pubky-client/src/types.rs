@@ -51,8 +51,6 @@ impl IntoPubkyUrl for Url {
             let s = self.as_str();
             let normal = format!("https://_pubky.{}", s.split_at(8).1);
             Url::parse(normal.as_str()).map_err(PubkyError::UrlParseError)
-        } else if self.is_pkarr_domain() {
-            Ok(self.to_owned())
         } else {
             Ok(self.to_owned())
         }
