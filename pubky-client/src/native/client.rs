@@ -162,9 +162,21 @@ mod test {
     use super::*;
 
     #[tokio::test]
-    async fn test_fetch() {
+    async fn test_icann_host() {
         let client = Client::builder().build().unwrap();
         let response = client.get("https://google.com/").send().await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_homeserver_host() {
+        let client = Client::builder().build().unwrap();
+        // making request to staging host to be sure if client works properly
+        let response = client
+            .get("https://ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy/?limit=1")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 200);
     }
 }
