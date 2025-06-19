@@ -202,7 +202,11 @@ mod test {
 
     #[test]
     fn test_key_top_level() {
-        let original = "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo.example.com";
-        assert!(matches!(original.to_pkarr_url(), Err(PubkyError::NotIntoPubkyUrl)));
+        let original =
+            "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo.example.com";
+        assert!(matches!(
+            original.to_pkarr_url(),
+            Err(PubkyError::NotIntoPubkyUrl)
+        ));
     }
 }
