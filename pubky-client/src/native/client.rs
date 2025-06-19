@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::errors::PkarrError;
+
 #[cfg(not(wasm_browser))]
 use super::internal::cookies::CookieJar;
 #[cfg(not(wasm_browser))]
@@ -9,18 +11,6 @@ use std::time::Duration;
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
 static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
-
-#[macro_export]
-macro_rules! handle_http_error {
-    ($res:expr) => {
-        if let Err(status) = $res.error_for_status_ref() {
-            return match $res.text().await {
-                Ok(text) => Err(anyhow::anyhow!("{status}. Error message: {text}")),
-                _ => Err(anyhow::anyhow!("{status}")),
-            };
-        }
-    };
-}
 
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
@@ -76,7 +66,7 @@ impl ClientBuilder {
     }
 
     /// Build [Client]
-    pub fn build(&self) -> Result<Client, BuildError> {
+    pub fn build(&self) -> Result<Client, PkarrError> {
         let pkarr = self.pkarr.build()?;
 
         #[cfg(not(wasm_browser))]
@@ -132,13 +122,6 @@ impl ClientBuilder {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum BuildError {
-    #[error(transparent)]
-    /// Error building Pkarr client.
-    PkarrBuildError(#[from] pkarr::errors::BuildError),
-}
-
 /// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -146,7 +129,7 @@ pub struct Client {
     pub(crate) pkarr: pkarr::Client,
 
     #[cfg(not(wasm_browser))]
-    pub(crate) cookie_store: std::sync::Arc<CookieJar>,
+    pub(crate) cookie_store: Arc<CookieJar>,
     #[cfg(not(wasm_browser))]
     pub(crate) icann_http: reqwest::Client,
 
@@ -179,9 +162,21 @@ mod test {
     use super::*;
 
     #[tokio::test]
-    async fn test_fetch() {
+    async fn test_icann_host() {
         let client = Client::builder().build().unwrap();
         let response = client.get("https://google.com/").send().await.unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_homeserver_host() {
+        let client = Client::builder().build().unwrap();
+        // making request to staging host to be sure if client works properly
+        let response = client
+            .get("https://ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy/?limit=1")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 200);
     }
 }

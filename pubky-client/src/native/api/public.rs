@@ -1,16 +1,14 @@
 use reqwest::{IntoUrl, Method};
 
-use anyhow::Result;
-
-use crate::handle_http_error;
-
 use super::super::Client;
+use crate::errors::Result;
+use crate::types::IntoPubkyUrl;
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
     ///
     /// `url` sets the path you want to lest within.
-    pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
+    pub fn list<T: IntoUrl + IntoPubkyUrl>(&self, url: T) -> Result<ListBuilder> {
         Ok(ListBuilder::new(self, url))
     }
 }
@@ -28,7 +26,7 @@ pub struct ListBuilder<'a> {
 
 impl<'a> ListBuilder<'a> {
     /// Create a new List request builder
-    pub(crate) fn new<T: IntoUrl>(client: &'a Client, url: T) -> Self {
+    pub(crate) fn new<T: IntoUrl + IntoPubkyUrl>(client: &'a Client, url: T) -> Self {
         Self {
             client,
             url: url.as_str().to_string(),
@@ -108,9 +106,8 @@ impl<'a> ListBuilder<'a> {
             .cross_request(Method::GET, url)
             .await
             .send()
-            .await?;
-
-        handle_http_error!(response);
+            .await?
+            .error_for_status()?;
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;

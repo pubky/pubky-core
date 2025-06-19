@@ -1,9 +1,9 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
-use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
 use super::super::Client;
+use crate::types::IntoPubkyUrl;
 
 impl Client {
     #[cfg(not(wasm_browser))]
@@ -22,20 +22,13 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        let url = url.as_str();
-
-        if url.starts_with("pubky://") {
-            // Rewrite pubky:// urls to https://_pubky.
-            let url = format!("https://_pubky.{}", url.split_at(8).1);
-
-            return self.http.request(method, url);
-        } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
+    pub fn request<U: IntoUrl + IntoPubkyUrl>(&self, method: Method, url: U) -> RequestBuilder {
+        if url.is_icann_url() {
             // TODO: remove icann_http when we can control reqwest connection
             // and or create a tls config per connection.
             return self.icann_http.request(method, url);
         }
-
+        let url = url.to_pkarr_url().expect("Https Pkarr URL");
         self.http.request(method, url)
     }
 
@@ -51,7 +44,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn get<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::GET, url)
     }
 
@@ -60,7 +53,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn post<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn post<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::POST, url)
     }
 
@@ -76,7 +69,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn put<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::PUT, url)
     }
 
@@ -92,7 +85,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn patch<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn patch<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::PATCH, url)
     }
 
@@ -108,7 +101,7 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn delete<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::DELETE, url)
     }
 
@@ -124,13 +117,17 @@ impl Client {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn head<U: IntoUrl + IntoPubkyUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::HEAD, url)
     }
 
     // === Private Methods ===
 
-    pub(crate) async fn cross_request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
+    pub(crate) async fn cross_request<U: IntoUrl + IntoPubkyUrl>(
+        &self,
+        method: Method,
+        url: U,
+    ) -> RequestBuilder {
         self.request(method, url)
     }
 }

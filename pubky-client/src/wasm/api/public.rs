@@ -5,10 +5,10 @@ use wasm_bindgen::prelude::*;
 
 use crate::wasm::js_result::JsResult;
 
-use super::super::constructor::Client;
+use super::super::constructor::PubkyClient;
 
 #[wasm_bindgen]
-impl Client {
+impl PubkyClient {
     /// Returns a list of Pubky urls (as strings).
     ///
     /// - `url`:     The Pubky url (string) to the directory you want to list its content.
