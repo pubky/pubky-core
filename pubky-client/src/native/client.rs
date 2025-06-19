@@ -129,7 +129,7 @@ pub struct Client {
     pub(crate) pkarr: pkarr::Client,
 
     #[cfg(not(wasm_browser))]
-    pub(crate) cookie_store: std::sync::Arc<CookieJar>,
+    pub(crate) cookie_store: Arc<CookieJar>,
     #[cfg(not(wasm_browser))]
     pub(crate) icann_http: reqwest::Client,
 

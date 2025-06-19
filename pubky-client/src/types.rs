@@ -20,8 +20,13 @@ pub trait IntoPubkyUrl {
 
 impl IntoPubkyUrl for Url {
     fn is_pubky_uri(&self) -> bool {
-        let s = self.domain().unwrap_or("").to_string();
-        self.scheme() == "pubky" && PublicKey::try_from(s).is_ok()
+        let domain = self.domain().unwrap_or("").to_string();
+        if let Ok(pk) = PublicKey::try_from(domain.clone()) {
+            // strict pkarr rule added on top
+            self.scheme() == "pubky" && domain.ends_with(pk.to_string().as_str())
+        } else {
+            false
+        }
     }
 
     fn is_icann_url(&self) -> bool {
@@ -30,7 +35,12 @@ impl IntoPubkyUrl for Url {
 
     fn is_pkarr_domain(&self) -> bool {
         let domain = self.domain().unwrap_or("");
-        PublicKey::try_from(domain).is_ok()
+        if let Ok(pk) = PublicKey::try_from(domain) {
+            // strict pkarr rule
+            domain.ends_with(pk.to_string().as_str())
+        } else {
+            false
+        }
     }
 
     fn extract_public_key(&self) -> Result<PublicKey, PubkyError> {
@@ -51,8 +61,10 @@ impl IntoPubkyUrl for Url {
             let s = self.as_str();
             let normal = format!("https://_pubky.{}", s.split_at(8).1);
             Url::parse(normal.as_str()).map_err(PubkyError::UrlParseError)
-        } else {
+        } else if self.is_pkarr_domain() {
             Ok(self.to_owned())
+        } else {
+            Err(PubkyError::NotIntoPubkyUrl)
         }
     }
 }
@@ -98,7 +110,7 @@ impl IntoPubkyUrl for &str {
                 PublicKey::try_from(clean_host)
                     .map_err(|_| PubkyError::InvalidPublicKey(clean_host.to_string()))
             } else {
-                Err(PubkyError::NotIntoPubkyUrl)
+                Err(PubkyError::InvalidPublicKey(self.to_string()))
             }
         } else {
             Err(PubkyError::InvalidPublicKey(self.to_string()))
@@ -152,7 +164,7 @@ mod test {
 
         let url = "https://example.com";
         let key = url.extract_public_key();
-        assert!(matches!(key, Err(PubkyError::NotIntoPubkyUrl)));
+        assert!(matches!(key, Err(PubkyError::InvalidPublicKey(_))));
     }
 
     #[test]
@@ -186,5 +198,11 @@ mod test {
         let pkarr_url = "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/";
         let result = pkarr_url.to_pkarr_url();
         assert_eq!(pkarr_url, result.unwrap().as_str());
+    }
+
+    #[test]
+    fn test_key_top_level() {
+        let original = "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo.example.com";
+        assert!(matches!(original.to_pkarr_url(), Err(PubkyError::NotIntoPubkyUrl)));
     }
 }
