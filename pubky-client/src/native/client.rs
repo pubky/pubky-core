@@ -171,7 +171,7 @@ mod test {
     #[tokio::test]
     async fn test_homeserver_host() {
         let client = Client::builder().build().unwrap();
-        // making request to staging host to be sure if client works properly
+        // making request to staging host to be sure if client works properly for pkarr links
         let response = client
             .get("https://ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy/?limit=1")
             .send()
