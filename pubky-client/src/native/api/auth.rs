@@ -4,10 +4,11 @@ use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
 use url::Url;
 
-use super::super::{Client, internal::pkarr::PublishStrategy};
+use super::super::Client;
 use crate::{
     cross_debug,
     errors::{PubkyError, Result},
+    native::pkarr::PublishStrategy,
 };
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{
@@ -411,7 +412,8 @@ impl AuthRequest {
 mod tests {
     use pkarr::Keypair;
 
-    use crate::{Client, native::internal::pkarr::PublishStrategy};
+    use crate::Client;
+    use crate::native::pkarr::PublishStrategy;
 
     #[tokio::test]
     async fn test_get_homeserver() {
