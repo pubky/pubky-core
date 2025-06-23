@@ -1,4 +1,4 @@
-use super::super::Client;
+use crate::Client;
 use crate::errors::PkarrError;
 use crate::utils::sleep;
 use pkarr::{

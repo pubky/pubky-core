@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::errors::PkarrError;
 
 #[cfg(not(wasm_browser))]
-use super::internal::cookies::CookieJar;
+use crate::native::cookies::CookieJar;
 #[cfg(not(wasm_browser))]
 use std::sync::Arc;
 use std::time::Duration;
