@@ -11,7 +11,7 @@ keywords = ["httprelay", "http", "relay"]
 categories = ["web-programming"]
 
 [dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.98"
 axum = "0.8.1"
 axum-server = "0.7.1"
 futures-util = "0.3.31"
