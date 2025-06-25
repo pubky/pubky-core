@@ -1,5 +1,6 @@
 mod http_error;
 mod pubkey_path_validator;
+pub(crate) mod toml_merge;
 pub(crate) mod webdav;
 
 pub(crate) use http_error::{HttpError, HttpResult};
