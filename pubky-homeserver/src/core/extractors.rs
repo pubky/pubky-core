@@ -9,8 +9,6 @@ use axum::{
 
 use pkarr::PublicKey;
 
-use crate::core::error::Result;
-
 #[derive(Debug, Clone)]
 pub struct PubkyHost(pub(crate) PublicKey);
 

@@ -24,15 +24,15 @@ pub async fn disable_user(
     if let Err(e) = state.db.disable_user(&pubkey.0, &mut tx) {
         match e {
             UserQueryError::UserNotFound => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::NOT_FOUND,
-                    Some("User not found"),
+                    "User not found",
                 ))
             }
             UserQueryError::DatabaseError(_) => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Database error"),
+                    "Database error",
                 ))
             }
         };
@@ -56,15 +56,15 @@ pub async fn enable_user(
     if let Err(e) = state.db.enable_user(&pubkey.0, &mut tx) {
         match e {
             UserQueryError::UserNotFound => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::NOT_FOUND,
-                    Some("User not found"),
+                    "User not found",
                 ))
             }
             UserQueryError::DatabaseError(_) => {
-                return Err(HttpError::new(
+                return Err(HttpError::new_with_message(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Database error"),
+                    "Database error",
                 ))
             }
         };
@@ -77,6 +77,7 @@ pub async fn enable_user(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
+    use crate::persistence::files::FileService;
     use crate::persistence::lmdb::LmDB;
     use axum::routing::post;
     use axum::Router;
@@ -88,18 +89,17 @@ mod tests {
 
         // Create new user
         let db = LmDB::test();
-        let mut tx = db.env.write_txn().unwrap();
-        db.create_user(&pubkey, &mut tx).unwrap();
-        tx.commit().unwrap();
+        db.create_user(&pubkey).unwrap();
 
         // Check that the tenant is enabled
         let user = db
-            .get_user(&pubkey, &mut db.env.read_txn().unwrap())
+            .get_user(&pubkey, &db.env.read_txn().unwrap())
+            .unwrap()
             .unwrap();
         assert!(!user.disabled);
 
         // Setup server
-        let app_state = AppState::new(db.clone());
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
         let router = Router::new()
             .route("/users/{pubkey}/disable", post(disable_user))
             .route("/users/{pubkey}/enable", post(enable_user))
@@ -114,7 +114,8 @@ mod tests {
 
         // Check that the tenant is disabled
         let user = db
-            .get_user(&pubkey, &mut db.env.read_txn().unwrap())
+            .get_user(&pubkey, &db.env.read_txn().unwrap())
+            .unwrap()
             .unwrap();
         assert!(user.disabled);
 
@@ -126,7 +127,8 @@ mod tests {
 
         // Check that the tenant is enabled
         let user = db
-            .get_user(&pubkey, &mut db.env.read_txn().unwrap())
+            .get_user(&pubkey, &db.env.read_txn().unwrap())
+            .unwrap()
             .unwrap();
         assert!(!user.disabled);
     }

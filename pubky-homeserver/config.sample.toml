@@ -58,6 +58,30 @@ quota = "1mb/s"
 key = "user"
 burst = 10
 
+[storage]
+# Defines where the files are stored.
+# You have multiple options defined by the type.
+# Supported types: "file_system", "google_bucket".
+# Depending on the option, different settings need to be provided.
+# Only one storage type can be activated at one time.
+
+# Local File System
+# Files are saved on your local disk.
+type = "file_system"
+
+# Google Cloud Bucket
+# Files are saved in a Google Cloud Bucket.
+# type = "google_bucket"
+# Name of the Google Cloud Bucket. The bucket must exist already.
+# bucket_name = "my_bucket"
+# Path to the service account file. The content of the service account file can also be added directly in here.
+# This must be absolute/full path.
+# credential = "/path/to/my_service_account.json"
+
+# In Memory storage
+# Files are saved in memory. Only use when you know what you are doing!
+# type = "in_memory"
+
 [admin]
 # The port number to run the admin HTTP (clear text) server on.
 # Used for admin requests from the admin UI.

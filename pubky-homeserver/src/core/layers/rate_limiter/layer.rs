@@ -20,10 +20,9 @@ use std::time::Duration;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 
-use crate::core::error::Result;
 use crate::core::extractors::PubkyHost;
-use crate::core::Error;
 use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
+use crate::shared::HttpError;
 use futures_util::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 
@@ -283,9 +282,9 @@ where
                         e
                     );
                     return Box::pin(async move {
-                        Ok(Error::new(
+                        Ok(HttpError::new_with_message(
                             StatusCode::INTERNAL_SERVER_ERROR,
-                            Some("Failed to extract key for rate limiting".to_string()),
+                            "Failed to extract key for rate limiting",
                         )
                         .into_response())
                     });
@@ -310,9 +309,9 @@ where
                             e
                         );
                         return Box::pin(async move {
-                            Ok(Error::new(
+                            Ok(HttpError::new_with_message(
                                 StatusCode::TOO_MANY_REQUESTS,
-                                Some("Rate limit exceeded".to_string()),
+                                "Rate limit exceeded",
                             )
                             .into_response())
                         });
@@ -363,12 +362,13 @@ mod tests {
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
 
+    use crate::shared::HttpResult;
     use crate::{core::layers::pubky_host::PubkyHostLayer, quota_config::GlobPattern};
 
     use super::*;
 
     // Fake upload handler that just consumes the body.
-    pub async fn upload_handler(body: Body) -> Result<impl IntoResponse> {
+    pub async fn upload_handler(body: Body) -> HttpResult<impl IntoResponse> {
         let mut stream = body.into_data_stream();
         while let Some(chunk) = stream.next().await.transpose()? {
             // Consume body
@@ -378,7 +378,7 @@ mod tests {
     }
 
     // Fake upload handler that just consumes the body.
-    pub async fn download_handler() -> Result<impl IntoResponse> {
+    pub async fn download_handler() -> HttpResult<impl IntoResponse> {
         let response_body = vec![0u8; 3 * 1024]; // 3kb
         Ok((StatusCode::OK, response_body))
     }
@@ -487,7 +487,9 @@ mod tests {
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
-        assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because downloads are limited to 1kb/s and the sum of the downloads is 6kb");
+        if time_taken < Duration::from_secs(6) {
+            panic!("Should at least take 6s because downloads are limited to 1kb/s and the sum of the downloads is 6kb. Time taken: {:?}", time_taken);
+        }
     }
 
     #[tokio::test]

@@ -7,132 +7,130 @@ use axum::{
 use futures_util::stream::StreamExt;
 
 use crate::{
-    core::{
-        err_if_user_is_invalid::err_if_user_is_invalid,
-        error::{Error, Result},
-        extractors::PubkyHost,
-        AppState,
+    core::{err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState},
+    persistence::{files::WriteStreamError, lmdb::tables::files::FileLocation},
+    shared::{
+        webdav::{EntryPath, WebDavPathPubAxum},
+        HttpError, HttpResult,
     },
-    persistence::lmdb::tables::files::AsyncInDbTempFileWriter,
-    shared::webdav::{EntryPath, WebDavPathAxum},
 };
 
-/// Fail with 507 if `(current + incoming − existing) > quota`.
-fn enforce_user_disk_quota(
-    existing_bytes: u64,
-    incoming_bytes: u64,
-    used_bytes: u64,
-    quota_bytes: Option<u64>,
-) -> Result<()> {
-    if let Some(max) = quota_bytes {
-        if used_bytes + incoming_bytes.saturating_sub(existing_bytes) > max {
-            let bytes_in_mb = 1024.0 * 1024.0;
-            let current_mb = used_bytes as f64 / bytes_in_mb;
-            let adding_mb = (incoming_bytes - existing_bytes) as f64 / bytes_in_mb;
-            let max_mb = max as f64 / bytes_in_mb;
-            return Err(Error::new(
-                StatusCode::INSUFFICIENT_STORAGE,
-                Some(format!(
-                    "Quota of {:.1} MB exceeded: you've used {:.1} MB, trying to add {:.1} MB",
-                    max_mb, current_mb, adding_mb
-                )),
-            ));
-        }
-    }
-    Ok(())
-}
+use crate::persistence::files::FileIoError;
+use crate::persistence::lmdb::LmDB;
 
 pub async fn delete(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
-) -> Result<impl IntoResponse> {
+    Path(path): Path<WebDavPathPubAxum>,
+) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
-    let entry_path = EntryPath::new(public_key.clone(), path.0);
-    let existing_bytes = state.db.get_entry_content_length(&entry_path)?;
+    let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    // Remove entry
-    if !state.db.delete_entry(&entry_path).await? {
-        return Err(Error::with_status(StatusCode::NOT_FOUND));
-    }
-
-    // Update usage counter
-    state
-        .db
-        .update_data_usage(public_key, -(existing_bytes as i64))?;
-
+    state.file_service.delete(&entry_path).await?;
     Ok((StatusCode::NO_CONTENT, ()))
 }
 
 pub async fn put(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavPathPubAxum>,
     body: Body,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
     err_if_user_is_invalid(public_key, &state.db, true)?;
-    let entry_path = EntryPath::new(public_key.clone(), path.0);
+    let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    let existing_entry_bytes = state.db.get_entry_content_length(&entry_path)?;
-    let quota_bytes = state.user_quota_bytes;
-    let used_bytes = state.db.get_user_data_usage(public_key)?;
+    // Check if the size hint exceeds the quota so we can fail early
+    fail_if_size_hint_bigger_than_user_quota(
+        &body,
+        &state.db,
+        state.user_quota_bytes,
+        &entry_path,
+    )?;
 
-    // Upfront check when we have an exact Content-Length
-    let hint = body.size_hint().exact();
-    if let Some(exact_bytes) = hint {
-        enforce_user_disk_quota(existing_entry_bytes, exact_bytes, used_bytes, quota_bytes)?;
-    }
+    // Convert body stream to the format expected by file_service
+    let body_stream = body.into_data_stream();
+    let converted_stream =
+        body_stream.map(|chunk_result| chunk_result.map_err(WriteStreamError::Axum));
 
-    // Stream body to disk first.
-    let mut seen_bytes: u64 = 0;
-    let mut stream = body.into_data_stream();
-    let mut buffer_file_writer = AsyncInDbTempFileWriter::new().await?;
-
-    while let Some(chunk) = stream.next().await.transpose()? {
-        seen_bytes += chunk.len() as u64;
-        enforce_user_disk_quota(existing_entry_bytes, seen_bytes, used_bytes, quota_bytes)?;
-        buffer_file_writer.write_chunk(&chunk).await?;
-    }
-    let buffer_file = buffer_file_writer.complete().await?;
-
-    // Write file on disk to db
-    state.db.write_entry(&entry_path, &buffer_file).await?;
-    let delta = buffer_file.len() as i64 - existing_entry_bytes as i64;
-    state.db.update_data_usage(public_key, delta)?;
-
+    state
+        .file_service
+        .write_stream(&entry_path, FileLocation::OpenDal, converted_stream)
+        .await?;
     Ok((StatusCode::CREATED, ()))
 }
 
+/// Checks if the size hint exceeds the quota so we can fail early.
+/// Will return an error if the size hint exceeds the quota.
+/// Will return Ok if the size hint is smaller than the quota.
+/// Will return Ok if there is no quota.
+/// Will return Ok if there is no size hint.
+pub fn fail_if_size_hint_bigger_than_user_quota(
+    body: &Body,
+    db: &LmDB,
+    user_quota_bytes: Option<u64>,
+    entry_path: &EntryPath,
+) -> HttpResult<()> {
+    let content_size_hint = match body.size_hint().exact() {
+        Some(size_hint) => size_hint,
+        None => return Ok(()), // No size hint, so we can't check
+    };
+    let max_allowed_bytes = match user_quota_bytes {
+        Some(user_quota_bytes) => user_quota_bytes,
+        None => return Ok(()), // No quota, so all good
+    };
+
+    let existing_entry_bytes = db.get_entry_content_length_default_zero(entry_path)?;
+    let user_already_used_bytes = match db.get_user_data_usage(entry_path.pubkey())? {
+        Some(bytes) => bytes,
+        None => return Err(FileIoError::NotFound.into()),
+    };
+
+    let is_quota_exceeded = user_already_used_bytes
+        + content_size_hint.saturating_sub(existing_entry_bytes)
+        > max_allowed_bytes;
+
+    if is_quota_exceeded {
+        let max_allowed_mb = max_allowed_bytes as f64 / 1024.0 / 1024.0;
+        return Err(HttpError::new_with_message(
+            StatusCode::INSUFFICIENT_STORAGE,
+            format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
-mod quota_unit_tests {
-    use super::enforce_user_disk_quota;
-    use axum::http::StatusCode;
-    use axum::response::IntoResponse;
+mod tests {
+    use pkarr::Keypair;
 
-    #[tokio::test]
-    async fn allows_exact_quota() {
-        // existing=0, incoming=1024, used=0, quota=Some(1024)
-        assert!(enforce_user_disk_quota(0, 1024, 0, Some(1024)).is_ok());
+    use crate::shared::webdav::WebDavPath;
+
+    use super::*;
+
+    #[test]
+    fn test_if_size_hint_all_good() {
+        let db = LmDB::test();
+        let pubkey = Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
+        let body = Body::from("test");
+
+        fail_if_size_hint_bigger_than_user_quota(&body, &db, Some(1024), &entry)
+            .expect("should not fail");
     }
 
-    #[tokio::test]
-    async fn blocks_when_over_quota() {
-        let err = enforce_user_disk_quota(0, 1025, 0, Some(1024)).unwrap_err();
-        // convert to a real HTTP Response
-        let resp = err.into_response();
-        assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
-    }
+    #[test]
+    fn test_if_size_hint_bigger_than_quota() {
+        let db = LmDB::test();
+        let pubkey = Keypair::random().public_key();
+        db.create_user(&pubkey).unwrap();
+        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
+        let body = Body::from("test");
 
-    #[tokio::test]
-    async fn considers_existing_size() {
-        // existing=800, incoming=600, used=0, quota=1000 => delta = max(0,600-800)=0
-        assert!(enforce_user_disk_quota(800, 600, 0, Some(1000)).is_ok());
-    }
-
-    #[tokio::test]
-    async fn unlimited_when_quota_none() {
-        assert!(enforce_user_disk_quota(0, 10_000_000, 0, None).is_ok());
+        fail_if_size_hint_bigger_than_user_quota(&body, &db, Some(1), &entry)
+            .expect_err("should fail");
     }
 }

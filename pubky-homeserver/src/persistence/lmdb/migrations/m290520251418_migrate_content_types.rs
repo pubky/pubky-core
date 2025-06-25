@@ -93,8 +93,8 @@ mod tests {
 
     use crate::shared::webdav::{EntryPath, WebDavPath};
 
-    #[test]
-    fn test_is_migration_needed_for_magic_bytes_yes() {
+    #[tokio::test]
+    async fn test_is_migration_needed_for_magic_bytes_yes() {
         let tmp_dir = tempfile::tempdir().unwrap();
         let env = unsafe {
             EnvOpenOptions::new()
@@ -112,14 +112,11 @@ mod tests {
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
 
-        let file = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(InDbTempFile::png_pixel())
-            .unwrap();
+        let file = InDbTempFile::png_pixel().await.unwrap();
 
         let mut entry = Entry::new();
-        entry.set_content_hash(*file.hash());
-        entry.set_content_length(file.len());
+        entry.set_content_hash(file.metadata().hash);
+        entry.set_content_length(file.metadata().length);
         entry.set_content_type("dummy".to_string());
         entry.set_timestamp(&Default::default());
         let entry_key = path.to_string();
@@ -149,8 +146,8 @@ mod tests {
         assert!(is_migration_needed(&env, &mut wtxn).unwrap());
     }
 
-    #[test]
-    fn test_is_migration_needed_for_magic_bytes_no() {
+    #[tokio::test]
+    async fn test_is_migration_needed_for_magic_bytes_no() {
         let tmp_dir = tempfile::tempdir().unwrap();
         let env = unsafe {
             EnvOpenOptions::new()
@@ -168,14 +165,11 @@ mod tests {
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
 
-        let file = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(InDbTempFile::png_pixel())
-            .unwrap();
+        let file = InDbTempFile::png_pixel().await.unwrap();
 
         let mut entry = Entry::new();
-        entry.set_content_hash(*file.hash());
-        entry.set_content_length(file.len());
+        entry.set_content_hash(file.metadata().hash);
+        entry.set_content_length(file.metadata().length);
         entry.set_content_type("image/png".to_string());
         entry.set_timestamp(&Default::default());
         let entry_key = path.to_string();
@@ -205,8 +199,8 @@ mod tests {
         assert!(!is_migration_needed(&env, &mut wtxn).unwrap());
     }
 
-    #[test]
-    fn test_is_migration_needed_for_extension_yes() {
+    #[tokio::test]
+    async fn test_is_migration_needed_for_extension_yes() {
         let tmp_dir = tempfile::tempdir().unwrap();
         let env = unsafe {
             EnvOpenOptions::new()
@@ -224,14 +218,11 @@ mod tests {
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
 
-        let file = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(InDbTempFile::zeros(2))
-            .unwrap();
+        let file = InDbTempFile::zeros(2).await.unwrap();
 
         let mut entry = Entry::new();
-        entry.set_content_hash(*file.hash());
-        entry.set_content_length(file.len());
+        entry.set_content_hash(file.metadata().hash);
+        entry.set_content_length(file.metadata().length);
         entry.set_content_type("dummy".to_string());
         entry.set_timestamp(&Default::default());
         let entry_key = path.to_string();
@@ -261,8 +252,8 @@ mod tests {
         assert!(is_migration_needed(&env, &mut wtxn).unwrap());
     }
 
-    #[test]
-    fn test_migrate() {
+    #[tokio::test]
+    async fn test_migrate() {
         let tmp_dir = tempfile::tempdir().unwrap();
         let env = unsafe {
             EnvOpenOptions::new()
@@ -280,14 +271,11 @@ mod tests {
             WebDavPath::new("/pub/foo.txt").unwrap(),
         );
 
-        let file = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(InDbTempFile::png_pixel())
-            .unwrap();
+        let file = InDbTempFile::png_pixel().await.unwrap();
 
         let mut entry = Entry::new();
-        entry.set_content_hash(*file.hash());
-        entry.set_content_length(file.len());
+        entry.set_content_hash(file.metadata().hash);
+        entry.set_content_length(file.metadata().length);
         entry.set_content_type("dummy".to_string());
         entry.set_timestamp(&Default::default());
         let entry_key = path.to_string();

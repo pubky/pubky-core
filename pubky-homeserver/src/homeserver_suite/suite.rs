@@ -1,6 +1,7 @@
 use crate::admin::{AdminServer, AdminServerBuildError};
 use crate::core::{HomeserverBuildError, HomeserverCore};
 use crate::tracing::init_tracing_logs_with_config_if_set;
+#[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
@@ -45,6 +46,7 @@ impl HomeserverSuite {
     }
 
     /// Run the homeserver with configurations from a data directory mock.
+    #[cfg(any(test, feature = "testing"))]
     pub async fn start_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
         let context = AppContext::try_from(dir)?;
         Self::start(context).await

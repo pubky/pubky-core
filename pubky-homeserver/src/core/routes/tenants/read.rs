@@ -1,12 +1,12 @@
 use crate::persistence::lmdb::tables::files::Entry;
+use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
         err_if_user_is_invalid::err_if_user_is_invalid,
-        error::{Error, Result},
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
-    shared::webdav::{EntryPath, WebDavPathAxum},
+    shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
 use axum::{
     body::Body,
@@ -16,22 +16,18 @@ use axum::{
 };
 use httpdate::HttpDate;
 use std::str::FromStr;
-use tokio_util::io::ReaderStream;
 
 pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
-    headers: HeaderMap,
-    Path(path): Path<WebDavPathAxum>,
-) -> Result<impl IntoResponse> {
+    Path(path): Path<WebDavPathPubAxum>,
+) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
-    let entry_path = EntryPath::new(pubky.public_key().clone(), path.0);
-    let entry = state
-        .db
-        .get_entry(&entry_path)?
-        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
+    let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
-    get_entry(headers, entry, None)
+    let entry = state.file_service.get_info(&entry_path).await?;
+    let response = entry.to_response_headers().into_response();
+    Ok(response)
 }
 
 #[axum::debug_handler]
@@ -39,40 +35,64 @@ pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavPathPubAxum>,
     params: ListQueryParams,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key().clone();
     let dav_path = path.0;
-    let entry_path = EntryPath::new(public_key.clone(), dav_path);
+    let entry_path = EntryPath::new(public_key.clone(), dav_path.inner().clone());
     if entry_path.path().is_directory() {
         return list(state, &entry_path, params);
     }
 
-    let entry = state
-        .db
-        .get_entry(&entry_path)?
-        .ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))?;
-    let buffer_file = state.db.read_file(&entry.file_id()).await?;
+    let entry = state.file_service.get_info(&entry_path).await?;
 
-    let file_handle = buffer_file.open_file_handle()?;
-    // Async stream the file
-    let tokio_file_handle = tokio::fs::File::from_std(file_handle);
-    let body_stream = Body::from_stream(ReaderStream::new(tokio_file_handle));
-    get_entry(headers, entry, Some(body_stream))
+    // Handle IF_MODIFIED_SINCE
+    if let Some(condition_http_date) = headers
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| HttpDate::from_str(s).ok())
+    {
+        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+        if condition_http_date >= entry_http_date {
+            return not_modified_response(&entry);
+        }
+    };
+
+    // Handle IF_NONE_MATCH
+    if let Some(request_etag) = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|h| h.to_str().ok())
+    {
+        let current_etag = format!("\"{}\"", entry.content_hash());
+        if request_etag
+            .trim()
+            .split(',')
+            .collect::<Vec<_>>()
+            .contains(&current_etag.as_str())
+        {
+            return not_modified_response(&entry);
+        };
+    }
+
+    let stream = state.file_service.get_stream(&entry_path).await?;
+    let body_stream = Body::from_stream(stream);
+    let mut response = entry.to_response_headers().into_response();
+    *response.body_mut() = body_stream;
+    Ok(response)
 }
 
 pub fn list(
     state: AppState,
     entry_path: &EntryPath,
     params: ListQueryParams,
-) -> Result<Response<Body>> {
+) -> HttpResult<Response<Body>> {
     let txn = state.db.env.read_txn()?;
 
     if !state.db.contains_directory(&txn, entry_path)? {
-        return Err(Error::new(
+        return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
-            "Directory Not Found".into(),
+            "Directory Not Found",
         ));
     }
 
@@ -92,67 +112,34 @@ pub fn list(
         .body(Body::from(vec.join("\n")))?)
 }
 
-pub fn get_entry(headers: HeaderMap, entry: Entry, body: Option<Body>) -> Result<Response<Body>> {
-    // TODO: Enable seek API (range requests)
-    // TODO: Gzip? or brotli?
-
-    let mut response = HeaderMap::from(&entry).into_response();
-
-    // Handle IF_MODIFIED_SINCE
-    if let Some(condition_http_date) = headers
-        .get(header::IF_MODIFIED_SINCE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| HttpDate::from_str(s).ok())
-    {
-        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
-
-        if condition_http_date >= entry_http_date {
-            *response.status_mut() = StatusCode::NOT_MODIFIED;
-        }
-    };
-
-    // Handle IF_NONE_MATCH
-    if let Some(str) = headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|h| h.to_str().ok())
-    {
-        let etag = format!("\"{}\"", entry.content_hash());
-        if str
-            .trim()
-            .split(',')
-            .collect::<Vec<_>>()
-            .contains(&etag.as_str())
-        {
-            *response.status_mut() = StatusCode::NOT_MODIFIED;
-        };
-    }
-    if let Some(body) = body {
-        *response.body_mut() = body;
-    }
-    Ok(response)
+/// Creates the Not Modified response based on the entry data.
+fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
+    Ok(Response::builder()
+        .status(StatusCode::NOT_MODIFIED)
+        .header(header::ETAG, format!("\"{}\"", entry.content_hash()))
+        .header(header::LAST_MODIFIED, entry.timestamp().format_http_date())
+        .body(Body::empty())?)
 }
 
-impl From<&Entry> for HeaderMap {
-    fn from(entry: &Entry) -> Self {
+impl Entry {
+    pub fn to_response_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_LENGTH, entry.content_length().into());
+        headers.insert(header::CONTENT_LENGTH, self.content_length().into());
         headers.insert(
             header::LAST_MODIFIED,
-            HeaderValue::from_str(&entry.timestamp().format_http_date())
+            HeaderValue::from_str(&self.timestamp().format_http_date())
                 .expect("http date is valid header value"),
         );
         headers.insert(
             header::CONTENT_TYPE,
-            // TODO: when setting content type from user input, we should validate it as a HeaderValue
-            entry
-                .content_type()
+            self.content_type()
                 .try_into()
                 .or(HeaderValue::from_str(""))
                 .expect("valid header value"),
         );
         headers.insert(
             header::ETAG,
-            format!("\"{}\"", entry.content_hash())
+            format!("\"{}\"", self.content_hash())
                 .try_into()
                 .expect("hex string is valid"),
         );

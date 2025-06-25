@@ -5,11 +5,17 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
-use std::{sync::Arc, time::Duration};
-
+#[cfg(any(test, feature = "testing"))]
+use crate::MockDataDir;
+use crate::{
+    persistence::{
+        files::{FileIoError, FileService},
+        lmdb::LmDB,
+    },
+    ConfigToml, DataDir, PersistentDataDir,
+};
 use pkarr::Keypair;
-
-use crate::{persistence::lmdb::LmDB, ConfigToml, DataDir, MockDataDir, PersistentDataDir};
+use std::{sync::Arc, time::Duration};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -26,6 +32,9 @@ pub enum AppContextConversionError {
     /// Failed to open LMDB.
     #[error("Failed to open LMDB: {0}")]
     LmDB(anyhow::Error),
+    /// Failed to build storage operator.
+    #[error("Failed to build storage operator: {0}")]
+    Storage(FileIoError),
     /// Failed to build pkarr client.
     #[error("Failed to build pkarr client: {0}")]
     Pkarr(pkarr::errors::BuildError),
@@ -40,6 +49,8 @@ pub enum AppContextConversionError {
 pub struct AppContext {
     /// A list of all shared resources.
     pub(crate) db: LmDB,
+    /// The storage operator to store files.
+    pub(crate) file_service: FileService,
     pub(crate) config_toml: ConfigToml,
     /// Keep data_dir alive. The mock dir will cleanup on drop.
     pub(crate) data_dir: Arc<dyn DataDir>,
@@ -54,8 +65,8 @@ pub struct AppContext {
 
 impl AppContext {
     /// Create a new AppContext for testing.
+    #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
-        use crate::MockDataDir;
         let data_dir = MockDataDir::test();
         Self::try_from(data_dir).expect("failed to build AppContext from DataDirMock")
     }
@@ -75,13 +86,17 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let db_path = dir.path().join("data/lmdb");
+        let db = unsafe { LmDB::open(&db_path).map_err(AppContextConversionError::LmDB)? };
+        let file_service = FileService::new_from_config(&conf, dir.path(), db.clone())
+            .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
         Ok(Self {
-            db: unsafe { LmDB::open(db_path).map_err(AppContextConversionError::LmDB)? },
+            db,
             pkarr_client: pkarr_builder
                 .clone()
                 .build()
                 .map_err(AppContextConversionError::Pkarr)?,
+            file_service,
             pkarr_builder,
             config_toml: conf,
             keypair,
@@ -99,6 +114,7 @@ impl TryFrom<PersistentDataDir> for AppContext {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
 impl TryFrom<MockDataDir> for AppContext {
     type Error = AppContextConversionError;
 
