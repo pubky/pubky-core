@@ -19,7 +19,7 @@ futures-lite = { version = "2.6.0" }
 thiserror = "2.0.12"
 
 # bin dependencies
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 ctrlc = "3.4.7"
 hex = "0.4.3"
