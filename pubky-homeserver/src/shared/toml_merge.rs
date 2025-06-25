@@ -1,8 +1,8 @@
-//! 
+//!
 //! Code from unmerge PR https://github.com/jdrouet/serde-toml-merge/pull/39
 //! We can't publish crates with a git dependency, so we copy the code here.
 //! If the PR is merged, we can remove this code again.
-//! 
+//!
 
 use std::fmt;
 use toml::map::Map;
@@ -16,6 +16,7 @@ pub struct Error {
 }
 
 impl Error {
+    #[allow(dead_code)]
     pub fn new(path: String, expected: &'static str, existing: &'static str) -> Self {
         Self {
             path,
@@ -44,16 +45,19 @@ pub struct Merger {
 
 impl Merger {
     /// Create a new Merger with default settings
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set whether arrays should be replaced or extended
+    #[allow(dead_code)]
     pub fn with_replace_arrays(mut self, replace_arrays: bool) -> Self {
         self.replace_arrays = replace_arrays;
         self
     }
 
+    #[allow(dead_code)]
     pub fn merge(&self, value: Value, other: Value) -> Result<Value, Error> {
         self.merge_inner(value, other, "$")
     }
@@ -80,6 +84,7 @@ impl Merger {
         }
     }
 
+    #[allow(dead_code)]
     pub fn merge_tables(
         &self,
         value: &mut Map<String, Value>,
@@ -109,6 +114,7 @@ impl Merger {
 
 /// Merges two toml tables into a single one.
 ///
+#[allow(dead_code)]
 pub fn merge_tables(
     mut value: Map<String, Value>,
     other: Map<String, Value>,
@@ -119,6 +125,7 @@ pub fn merge_tables(
 }
 
 /// Merges two toml values into a single one.
+#[allow(dead_code)]
 pub fn merge(value: Value, other: Value) -> Result<Value, Error> {
     let merger = Merger::new();
     merger.merge(value, other)
@@ -210,12 +217,7 @@ mod tests {
             r#"foo = ["c", "d"]"#,
             true
         );
-        should_match!(
-            r#"foo = ["a", "b"]"#,
-            r#"foo = []"#,
-            r#"foo = []"#,
-            true
-        );
+        should_match!(r#"foo = ["a", "b"]"#, r#"foo = []"#, r#"foo = []"#, true);
     }
 
     #[test]

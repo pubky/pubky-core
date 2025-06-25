@@ -9,7 +9,10 @@ use super::{
     SignupMode,
 };
 
-use crate::{data_directory::log_level::{LogLevel, TargetLevel}, shared::toml_merge};
+use crate::{
+    data_directory::log_level::{LogLevel, TargetLevel},
+    shared::toml_merge,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
