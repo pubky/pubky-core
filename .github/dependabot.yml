@@ -8,5 +8,5 @@ updates:
       day: "tuesday"
     commit-message:
       prefix: "deps"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 30
     rebase-strategy: "auto"
