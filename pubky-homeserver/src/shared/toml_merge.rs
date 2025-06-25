@@ -84,16 +84,6 @@ impl Merger {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn merge_tables(
-        &self,
-        value: &mut Map<String, Value>,
-        other: Map<String, Value>,
-    ) -> Result<Map<String, Value>, Error> {
-        self.merge_into_table_inner(value, other, "$")?;
-        Ok(value.to_owned())
-    }
-
     fn merge_into_table_inner(
         &self,
         value: &mut Map<String, Value>,
@@ -112,25 +102,6 @@ impl Merger {
     }
 }
 
-/// Merges two toml tables into a single one.
-///
-#[allow(dead_code)]
-pub fn merge_tables(
-    mut value: Map<String, Value>,
-    other: Map<String, Value>,
-) -> Result<Map<String, Value>, Error> {
-    let merger = Merger::new();
-    merger.merge_tables(&mut value, other)?;
-    Ok(value)
-}
-
-/// Merges two toml values into a single one.
-#[allow(dead_code)]
-pub fn merge(value: Value, other: Value) -> Result<Value, Error> {
-    let merger = Merger::new();
-    merger.merge(value, other)
-}
-
 pub fn merge_with_options(
     value: Value,
     other: Value,
@@ -144,17 +115,6 @@ pub fn merge_with_options(
 mod tests {
     use super::*;
     use toml::Value;
-
-    macro_rules! should_fail {
-        ($first: expr, $second: expr) => {
-            should_fail!($first, $second,)
-        };
-        ($first: expr, $second: expr,) => {{
-            let first = $first.parse::<Value>().unwrap();
-            let second = $second.parse::<Value>().unwrap();
-            merge(first, second).unwrap_err()
-        }};
-    }
 
     macro_rules! should_match {
         // 4-argument form with replace_arrays flag
@@ -236,18 +196,6 @@ mod tests {
             bar = "baz"
             hello = "world"
         "#
-        );
-    }
-
-    #[test]
-    fn invalid_kinds() {
-        assert_eq!(
-            should_fail!("foo = true", "foo = 42"),
-            Error::new("$.foo".to_owned(), "boolean", "integer")
-        );
-        assert_eq!(
-            should_fail!("foo = \"true\"", "foo = 42.5"),
-            Error::new("$.foo".to_owned(), "string", "float")
         );
     }
 }
