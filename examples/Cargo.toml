@@ -23,7 +23,7 @@ clap = { version = "4.5.29", features = ["derive"] }
 pubky = { path = "../pubky-client", version = "0.5.0-rc.2" }
 pubky-common = { path = "../pubky-common", version = "0.5.0-rc.2" }
 reqwest = "0.12.12"
-rpassword = "7.3.1"
+rpassword = "7.4.0"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 url = "2.5.4"
