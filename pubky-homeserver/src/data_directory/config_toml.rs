@@ -9,7 +9,10 @@ use super::{
     SignupMode,
 };
 
-use crate::data_directory::log_level::{LogLevel, TargetLevel};
+use crate::{
+    data_directory::log_level::{LogLevel, TargetLevel},
+    shared::toml_merge,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -148,7 +151,7 @@ impl ConfigToml {
         // 2. Parse the user's overrides
         let user_val: toml::Value = raw.parse()?;
         // 3. Deep‐merge
-        let merged_val = serde_toml_merge::merge_with_options(default_val, user_val, true)
+        let merged_val = toml_merge::merge_with_options(default_val, user_val, true)
             .map_err(|e| ConfigReadError::ConfigMergeError(e.to_string()))?;
 
         // 4. Deserialize into our strongly typed struct (can fail with toml::de::Error)
