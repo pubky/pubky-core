@@ -15,7 +15,6 @@ pub struct Error {
 }
 
 impl Error {
-    #[allow(dead_code)]
     pub fn new(path: String, expected: &'static str, existing: &'static str) -> Self {
         Self {
             path,
@@ -44,19 +43,16 @@ pub struct Merger {
 
 impl Merger {
     /// Create a new Merger with default settings
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set whether arrays should be replaced or extended
-    #[allow(dead_code)]
     pub fn with_replace_arrays(mut self, replace_arrays: bool) -> Self {
         self.replace_arrays = replace_arrays;
         self
     }
 
-    #[allow(dead_code)]
     pub fn merge(&self, value: Value, other: Value) -> Result<Value, Error> {
         self.merge_inner(value, other, "$")
     }
