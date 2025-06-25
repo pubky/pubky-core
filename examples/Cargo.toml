@@ -1,6 +1,6 @@
 [package]
 name = "authn"
-version = "0.5.0-rc.2"
+version = "0.5.0"
 edition.workspace = true
 publish = false
 
@@ -20,8 +20,8 @@ path = "./request/main.rs"
 anyhow = "1.0.98"
 base64 = "0.22.1"
 clap = { version = "4.5.40", features = ["derive"] }
-pubky = { path = "../pubky-client", version = "0.5.0-rc.2" }
-pubky-common = { path = "../pubky-common", version = "0.5.0-rc.2" }
+pubky = { path = "../pubky-client", version = "0.5.0" }
+pubky-common = { path = "../pubky-common", version = "0.5.0" }
 reqwest = "0.12.12"
 rpassword = "7.4.0"
 tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
