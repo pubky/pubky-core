@@ -4,4 +4,5 @@ storage/
 .cursorrules
 .cursor/*
 .vscode/*
+gcs-service-account.json
 .DS_Store

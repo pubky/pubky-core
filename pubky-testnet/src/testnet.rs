@@ -9,7 +9,9 @@ use std::{str::FromStr, time::Duration};
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::Keypair;
-use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
+use pubky_homeserver::{
+    storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
+};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -61,6 +63,7 @@ impl Testnet {
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
+        mock_dir.config_toml.storage = StorageConfigToml::InMemory;
         let homeserver = HomeserverSuite::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self

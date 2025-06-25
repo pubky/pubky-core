@@ -1,8 +1,5 @@
-use crate::core::{
-    error::{Error, Result},
-    extractors::PubkyHost,
-    AppState,
-};
+use crate::core::{extractors::PubkyHost, AppState};
+use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;
 use axum::{
@@ -71,14 +68,21 @@ where
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
-                    return Ok(
-                        Error::new(StatusCode::NOT_FOUND, "Pubky Host is missing".into())
-                            .into_response(),
-                    );
+                    return Ok(HttpError::new_with_message(
+                        StatusCode::NOT_FOUND,
+                        "Pubky Host is missing",
+                    )
+                    .into_response());
                 }
             };
 
-            let cookies = req.extensions().get::<Cookies>();
+            let cookies = match req.extensions().get::<Cookies>() {
+                Some(cookies) => cookies,
+                None => {
+                    tracing::warn!("No cookies found in request. Unauthorized.");
+                    return Ok(HttpError::unauthorized().into_response());
+                }
+            };
 
             // Authorize the request
             if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
@@ -95,10 +99,10 @@ where
 fn authorize(
     state: &AppState,
     method: &Method,
-    cookies: Option<&Cookies>,
+    cookies: &Cookies,
     public_key: &PublicKey,
     path: &str,
-) -> Result<()> {
+) -> HttpResult<()> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
         return Ok(());
@@ -107,36 +111,41 @@ fn authorize(
             return Ok(());
         }
     } else {
-        return Err(Error::new(
-            StatusCode::FORBIDDEN,
-            "Writing to directories other than '/pub/' is forbidden".into(),
+        tracing::warn!(
+            "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",
+            public_key,
+            path
+        );
+        return Err(HttpError::forbidden_with_message(
+            "Writing to directories other than '/pub/' is forbidden",
         ));
     }
 
-    if let Some(cookies) = cookies {
-        let session_secret = session_secret_from_cookies(cookies, public_key)
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+    let session_secret =
+        session_secret_from_cookies(cookies, public_key).ok_or(HttpError::unauthorized())?;
 
-        let session = state
-            .db
-            .get_session(&session_secret)?
-            .ok_or(Error::with_status(StatusCode::UNAUTHORIZED))?;
+    let session = state
+        .db
+        .get_session(&session_secret)?
+        .ok_or(HttpError::unauthorized())?;
 
-        if session.pubky() == public_key
-            && session.capabilities().iter().any(|cap| {
-                path.starts_with(&cap.scope)
-                    && cap
-                        .actions
-                        .contains(&pubky_common::capabilities::Action::Write)
-            })
-        {
-            return Ok(());
-        };
-
-        return Err(Error::with_status(StatusCode::FORBIDDEN));
+    if session.pubky() == public_key
+        && session.capabilities().iter().any(|cap| {
+            path.starts_with(&cap.scope)
+                && cap
+                    .actions
+                    .contains(&pubky_common::capabilities::Action::Write)
+        })
+    {
+        Ok(())
+    } else {
+        tracing::warn!(
+            "Session {} does not have write access to {}. Access forbidden",
+            session_secret,
+            path
+        );
+        Err(HttpError::forbidden())
     }
-
-    Err(Error::with_status(StatusCode::UNAUTHORIZED))
 }
 
 pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {
