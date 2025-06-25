@@ -13,7 +13,7 @@ categories = ["web-programming"]
 [dependencies]
 anyhow = "1.0.98"
 pkarr = { workspace = true }
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.45.1", features = ["full"] }
 tracing = "0.1.41"
 futures-lite = { version = "2.6.0" }
 thiserror = "2.0.12"
