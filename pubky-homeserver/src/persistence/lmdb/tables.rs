@@ -6,7 +6,6 @@ pub mod users;
 
 use heed::{Env, RwTxn};
 
-use files::{BlobsTable, BLOBS_TABLE};
 use files::{EntriesTable, ENTRIES_TABLE};
 
 use self::{
@@ -22,7 +21,6 @@ pub const TABLES_COUNT: u32 = 6;
 pub struct Tables {
     pub users: UsersTable,
     pub sessions: SessionsTable,
-    pub blobs: BlobsTable,
     pub entries: EntriesTable,
     pub events: EventsTable,
     pub signup_tokens: SignupTokensTable,
@@ -37,9 +35,6 @@ impl Tables {
             sessions: env
                 .open_database(wtxn, Some(SESSIONS_TABLE))?
                 .expect("Sessions table already created"),
-            blobs: env
-                .open_database(wtxn, Some(BLOBS_TABLE))?
-                .expect("Blobs table already created"),
             entries: env
                 .open_database(wtxn, Some(ENTRIES_TABLE))?
                 .expect("Entries table already created"),

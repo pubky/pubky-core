@@ -3,8 +3,6 @@ use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::files::FileIoError;
 #[cfg(test)]
 use crate::persistence::files::FileMetadata;
-#[cfg(test)]
-use crate::persistence::lmdb::tables::files::InDbTempFile;
 use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
@@ -31,36 +29,6 @@ impl LmDB {
                 } else {
                     Err(e)
                 }
-            }
-        }
-    }
-
-    /// Writes an entry to the database.
-    ///
-    /// The entry is written to the database and the file is written to the blob store.
-    /// An event is written to the events table.
-    /// The entry is returned.
-    #[cfg(test)]
-    pub async fn write_entry_from_file(
-        &mut self,
-        path: &EntryPath,
-        file: &InDbTempFile,
-    ) -> Result<Entry, FileIoError> {
-        let mut db = self.clone();
-        let path = path.clone();
-        let file = file.clone();
-        let join_handle = tokio::task::spawn_blocking(move || -> Result<Entry, FileIoError> {
-            db.write_entry_from_file_sync(&path, &file)
-        })
-        .await;
-        match join_handle {
-            Ok(result) => result,
-            Err(e) => {
-                // Happens when the task panics or gets cancelled.
-                // Should only happen if the homeserver is shutdown.
-                // Returning not found is a safe fallback.
-                tracing::error!("Error writing entry. JoinError: {:?}", e);
-                Err(FileIoError::NotFound)
             }
         }
     }
@@ -122,26 +90,6 @@ impl LmDB {
 
         wtxn.commit()?;
 
-        Ok(entry)
-    }
-
-    /// Writes an entry to the database.
-    ///
-    /// The entry is written to the database and the file is written to the blob store.
-    /// An event is written to the events table.
-    /// The entry is returned.
-    #[cfg(test)]
-    pub fn write_entry_from_file_sync(
-        &mut self,
-        path: &EntryPath,
-        file: &InDbTempFile,
-    ) -> Result<Entry, FileIoError> {
-        let mut wtxn = self.env.write_txn()?;
-        let mut metadata = file.metadata().clone();
-        let file_id = self.write_file_sync(file, &mut wtxn)?;
-        wtxn.commit()?;
-        metadata.modified_at = *file_id.timestamp();
-        let entry = self.write_entry(path, &metadata, FileLocation::LmDB)?;
         Ok(entry)
     }
 
@@ -408,14 +356,6 @@ impl Entry {
         &self.content_type
     }
 
-    pub fn file_location(&self) -> &FileLocation {
-        &self.file_location
-    }
-
-    pub fn file_id(&self) -> InDbFileId {
-        InDbFileId::from(self.timestamp)
-    }
-
     // === Public Method ===
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -431,127 +371,3 @@ impl Entry {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::LmDB;
-    use crate::{
-        persistence::lmdb::tables::files::{InDbTempFile, SyncInDbTempFileWriter},
-        shared::webdav::{EntryPath, WebDavPath},
-    };
-    use bytes::Bytes;
-    use pkarr::Keypair;
-    use std::io::Read;
-
-    #[tokio::test]
-    async fn test_write_read_delete_method() {
-        let mut db = LmDB::test();
-
-        let path = EntryPath::new(
-            Keypair::random().public_key(),
-            WebDavPath::new("/pub/foo.txt").unwrap(),
-        );
-        db.create_user(path.pubkey()).unwrap();
-        let file = InDbTempFile::zeros(5).await.unwrap();
-        let entry = db.write_entry_from_file_sync(&path, &file).unwrap();
-
-        let read_entry = db.get_entry(&path).unwrap();
-        assert_eq!(entry.content_hash(), read_entry.content_hash());
-        assert_eq!(entry.content_length(), read_entry.content_length());
-        assert_eq!(entry.timestamp(), read_entry.timestamp());
-
-        let read_file = db.read_file(&entry.file_id()).await.unwrap();
-        let mut file_handle = read_file.open_file_handle().unwrap();
-        let mut content = vec![];
-        file_handle.read_to_end(&mut content).unwrap();
-        assert_eq!(content, vec![0, 0, 0, 0, 0]);
-    }
-
-    #[tokio::test]
-    async fn entries() -> anyhow::Result<()> {
-        let mut db = LmDB::test();
-
-        let keypair = Keypair::random();
-        let public_key = keypair.public_key();
-        db.create_user(&public_key).unwrap();
-        let path = "/pub/foo.txt";
-
-        let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
-        let chunk = Bytes::from(vec![1, 2, 3, 4, 5]);
-        let mut writer = SyncInDbTempFileWriter::new()?;
-        writer.write_chunk(&chunk)?;
-        let file = writer.complete()?;
-
-        db.write_entry_from_file_sync(&entry_path, &file)?;
-
-        let entry = db.get_entry(&entry_path).unwrap();
-
-        assert_eq!(
-            entry.content_hash(),
-            &[
-                2, 79, 103, 192, 66, 90, 61, 192, 47, 186, 245, 140, 185, 61, 229, 19, 46, 61, 117,
-                197, 25, 250, 160, 186, 218, 33, 73, 29, 136, 201, 112, 87
-            ]
-        );
-
-        let read_file = db.read_file(&entry.file_id()).await.unwrap();
-        let mut file_handle = read_file.open_file_handle().unwrap();
-        let mut content = vec![];
-        file_handle.read_to_end(&mut content).unwrap();
-        assert_eq!(content, vec![1, 2, 3, 4, 5]);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn chunked_entry() -> anyhow::Result<()> {
-        let mut db = LmDB::test();
-
-        let keypair = Keypair::random();
-        let public_key = keypair.public_key();
-        db.create_user(&public_key).unwrap();
-        let path = "/pub/foo.txt";
-        let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
-
-        let chunk = Bytes::from(vec![0; 1024 * 1024]);
-
-        let mut writer = SyncInDbTempFileWriter::new()?;
-        writer.write_chunk(&chunk)?;
-        let file = writer.complete()?;
-
-        db.write_entry_from_file_sync(&entry_path, &file)?;
-
-        let entry = db.get_entry(&entry_path).unwrap();
-
-        assert_eq!(
-            entry.content_hash(),
-            &[
-                72, 141, 226, 2, 247, 59, 217, 118, 222, 78, 112, 72, 244, 225, 243, 154, 119, 109,
-                134, 213, 130, 183, 52, 143, 245, 59, 244, 50, 185, 135, 252, 168
-            ]
-        );
-
-        let read_file = db.read_file(&entry.file_id()).await.unwrap();
-        let mut file_handle = read_file.open_file_handle().unwrap();
-        let mut content = vec![];
-        file_handle.read_to_end(&mut content).unwrap();
-        assert_eq!(content, vec![0; 1024 * 1024]);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_entry_not_found() {
-        let db = LmDB::test();
-
-        let keypair = Keypair::random();
-        let public_key = keypair.public_key();
-        db.create_user(&public_key).unwrap();
-        let path = "/pub/nonexistent.txt";
-
-        let entry_path = EntryPath::new(public_key, WebDavPath::new(path).unwrap());
-
-        assert!(
-            !db.entry_exists(&entry_path).unwrap(),
-            "File should be deleted"
-        );
-    }
-}

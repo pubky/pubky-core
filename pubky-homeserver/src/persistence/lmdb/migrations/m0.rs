@@ -7,8 +7,6 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
 
     let _: sessions::SessionsTable = env.create_database(wtxn, Some(sessions::SESSIONS_TABLE))?;
 
-    let _: files::BlobsTable = env.create_database(wtxn, Some(files::BLOBS_TABLE))?;
-
     let _: files::EntriesTable = env.create_database(wtxn, Some(files::ENTRIES_TABLE))?;
 
     let _: events::EventsTable = env.create_database(wtxn, Some(events::EVENTS_TABLE))?;

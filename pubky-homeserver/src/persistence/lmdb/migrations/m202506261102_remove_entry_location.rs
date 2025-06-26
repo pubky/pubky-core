@@ -1,15 +1,26 @@
 ///
-/// This migration adds the `file_location` field to the `entries` table.
-/// The `file_location` field is used to store the location of the file in the file system.
-/// The `file_location` field is initially set to `FileLocation::LMDB`.
-/// This is used to help the migration of the files from the LMDB to opendal.
+/// This migration removes the `file_location` field from the `entries` table.
+/// The `file_location` field was used to store the location of the file in the file system.
+/// This was used to help the migration of the files from the LMDB to opendal.
+/// It's not needed
 ///
-use crate::persistence::lmdb::tables::files::{EntryHash, FileLocation, ENTRIES_TABLE};
+use crate::persistence::lmdb::tables::files::{EntryHash, ENTRIES_TABLE};
 use heed::{BoxedError, BytesDecode, BytesEncode, Database, Env, RwTxn};
 use postcard::{from_bytes, to_allocvec};
 use pubky_common::timestamp::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+
+/// The location of the file.
+/// This is used to determine where the file is stored.
+/// Used during the transition process from LMDB to OpenDAL.
+/// TODO: Remove after the file migration is complete.
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
+pub enum FileLocation {
+    #[default]
+    LmDB,
+    OpenDal,
+}
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct OldEntry {
@@ -18,6 +29,7 @@ pub struct OldEntry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
+    file_location: FileLocation,
 }
 
 impl BytesEncode<'_> for OldEntry {
@@ -25,7 +37,6 @@ impl BytesEncode<'_> for OldEntry {
 
     fn bytes_encode(user: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
         let vec = to_allocvec(user).unwrap();
-
         Ok(Cow::Owned(vec))
     }
 }
@@ -35,7 +46,6 @@ impl<'a> BytesDecode<'a> for OldEntry {
 
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
         let user: OldEntry = from_bytes(bytes).unwrap();
-
         Ok(user)
     }
 }
@@ -49,7 +59,6 @@ pub struct NewEntry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
-    file_location: FileLocation,
 }
 
 impl BytesEncode<'_> for NewEntry {
@@ -80,8 +89,6 @@ impl From<OldEntry> for NewEntry {
             content_hash: old_entry.content_hash,
             content_length: old_entry.content_length,
             content_type: old_entry.content_type,
-            // Initially, all entries are stored in LMDB.
-            file_location: FileLocation::LmDB,
         }
     }
 }
@@ -147,7 +154,7 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    tracing::info!("Running migration m202506021102_entry_location");
+    tracing::info!("Running migration m202506261102_remove_entry_location");
     let old_entries = read_old_entries_table(env, wtxn)
         .map_err(|e| anyhow::anyhow!("Failed to read old users table: {}", e))?;
 
@@ -169,9 +176,7 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use heed::EnvOpenOptions;
-
     use crate::persistence::lmdb::{db::DEFAULT_MAP_SIZE, migrations::m0};
-
     use super::*;
 
     #[test]
@@ -200,6 +205,7 @@ mod tests {
                     content_hash: EntryHash::default(),
                     content_length: 0,
                     content_type: "text/plain".to_string(),
+                    file_location: FileLocation::LmDB,
                 },
             )
             .unwrap();
@@ -253,7 +259,6 @@ mod tests {
                     content_hash: EntryHash::default(),
                     content_length: 0,
                     content_type: "text/plain".to_string(),
-                    file_location: FileLocation::LmDB,
                 },
             )
             .unwrap();
@@ -286,6 +291,7 @@ mod tests {
             content_hash: EntryHash::default(),
             content_length: 0,
             content_type: "text/plain".to_string(),
+            file_location: FileLocation::LmDB,
         };
         table.put(&mut wtxn, "pubky/test.txt", &old_entry).unwrap();
 
@@ -298,11 +304,6 @@ mod tests {
             .unwrap()
             .unwrap();
         let entry = table.get(&wtxn, "pubky/test.txt").unwrap().unwrap();
-        assert_eq!(
-            entry.file_location,
-            FileLocation::LmDB,
-            "The entry should be stored in LMDB."
-        );
         assert_eq!(
             entry.version, old_entry.version,
             "The version should be the same."

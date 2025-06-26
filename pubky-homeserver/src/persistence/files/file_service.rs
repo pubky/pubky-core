@@ -2,7 +2,7 @@ use crate::{
     persistence::{
         files::entry_service::EntryService,
         lmdb::{
-            tables::files::{Entry, FileLocation, InDbFileId},
+            tables::files::{Entry, FileLocation},
             LmDB,
         },
     },
@@ -63,14 +63,7 @@ impl FileService {
     /// The stream is chunked.
     /// Errors if the file does not exist.
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        let entry = self.get_info(path).await?;
-        let stream: FileStream = match entry.file_location() {
-            FileLocation::LmDB => {
-                let temp_file = self.db.read_file(&entry.file_id()).await?;
-                temp_file.as_stream()?
-            }
-            FileLocation::OpenDal => self.opendal_service.get_stream(path).await?,
-        };
+        let stream: FileStream = self.opendal_service.get_stream(path).await?;
         Ok(stream)
     }
 
@@ -102,18 +95,9 @@ impl FileService {
     ) -> Result<Entry, FileIoError> {
         let remaining_bytes_usage = self.get_remaining_user_quota(path)?;
 
-        let metadata = match location {
-            FileLocation::LmDB => {
-                self.db
-                    .write_file_from_stream(path, stream, remaining_bytes_usage)
-                    .await?
-            }
-            FileLocation::OpenDal => {
-                self.opendal_service
-                    .write_stream(path, stream, remaining_bytes_usage)
-                    .await?
-            }
-        };
+        let metadata =                 self.opendal_service
+        .write_stream(path, stream, remaining_bytes_usage)
+        .await?;
 
         let write_result = self
             .entry_service
@@ -124,17 +108,7 @@ impl FileService {
                 e
             );
             // Writing the entry failed. Delete the file in storage and return the error.
-            match location {
-                FileLocation::LmDB => {
-                    let mut wtxn = self.db.env.write_txn()?;
-                    let fileid = InDbFileId(metadata.modified_at);
-                    self.db.delete_file(&fileid, &mut wtxn)?;
-                    wtxn.commit()?;
-                }
-                FileLocation::OpenDal => {
-                    self.opendal_service.delete(path).await?;
-                }
-            };
+            self.opendal_service.delete(path).await?;
         };
 
         write_result
@@ -142,21 +116,11 @@ impl FileService {
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        let entry = self.get_info(path).await?;
         self.entry_service.delete_entry(path)?;
-        match entry.file_location() {
-            FileLocation::LmDB => {
-                let mut wtxn = self.db.env.write_txn()?;
-                self.db.delete_file(&entry.file_id(), &mut wtxn)?;
-                wtxn.commit()?;
-            }
-            FileLocation::OpenDal => {
-                if let Err(e) = self.opendal_service.delete(path).await {
-                    tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
-                    return Err(e);
-                }
-            }
-        };
+        if let Err(e) = self.opendal_service.delete(path).await {
+            tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
+            return Err(e);
+        }
         Ok(())
     }
 }
@@ -242,7 +206,6 @@ mod tests {
             .write_stream(&path, FileLocation::LmDB, stream)
             .await
             .unwrap();
-        assert_eq!(*entry.file_location(), FileLocation::LmDB);
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
@@ -286,7 +249,6 @@ mod tests {
             .write_stream(&path, FileLocation::OpenDal, stream)
             .await
             .unwrap();
-        assert_eq!(*entry.file_location(), FileLocation::OpenDal);
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
