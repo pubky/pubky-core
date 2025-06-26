@@ -334,6 +334,11 @@ async fn test_signup_with_token() {
         invalid_signup.is_err(),
         "Signup should fail with an invalid signup token"
     );
+    let err = invalid_signup.unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("401"),
+        "Signup should fail with a 401 status code"
+    );
 
     // 3. Call the admin endpoint to generate a valid signup token.
     let valid_token = server.admin().create_signup_token().await.unwrap();
