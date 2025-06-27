@@ -1,4 +1,5 @@
 use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
+use crate::persistence::lmdb::tables::signup_tokens::SignupTokenError;
 use crate::persistence::lmdb::tables::users::User;
 use crate::shared::{HttpError, HttpResult};
 use crate::{core::AppState, SignupMode};
@@ -53,7 +54,7 @@ pub async fn signup(
             .get("signup_token")
             .ok_or(HttpError::new_with_message(
                 StatusCode::BAD_REQUEST,
-                "signup token required",
+                "Token required",
             ))?;
         // Validate it in the DB (marks it used)
         if let Err(e) = state
@@ -61,10 +62,23 @@ pub async fn signup(
             .validate_and_consume_signup_token(signup_token_param, public_key)
         {
             tracing::warn!("Failed to signup. Invalid signup token: {:?}", e);
-            return Err(HttpError::new_with_message(
-                StatusCode::UNAUTHORIZED,
-                "invalid signup token",
-            ));
+            match e {
+                SignupTokenError::AlreadyUsed => {
+                    return Err(HttpError::new_with_message(
+                        StatusCode::UNAUTHORIZED,
+                        "Token already used",
+                    ));
+                }
+                SignupTokenError::InvalidToken => {
+                    return Err(HttpError::new_with_message(
+                        StatusCode::UNAUTHORIZED,
+                        "Invalid token",
+                    ));
+                }
+                SignupTokenError::DatabaseError(e) => {
+                    return Err(e.into());
+                }
+            }
         }
     }
 
