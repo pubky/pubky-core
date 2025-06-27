@@ -15,14 +15,31 @@ pub async fn session(
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
-        if let Some(session) = state.db.get_session(&secret)? {
-            // TODO: add content-type
-            return Ok(session.serialize());
-        };
-    }
+    let secret = match session_secret_from_cookies(&cookies, pubky.public_key()) {
+        Some(secret) => secret,
+        None => {
+            tracing::warn!(
+                "No session secret found in cookies for pubky {}",
+                pubky.public_key()
+            );
+            return Err(HttpError::unauthorized_with_message(
+                "No session secret found in cookies",
+            ));
+        }
+    };
 
-    Err(HttpError::not_found())
+    if let Some(session) = state.db.get_session(&secret)? {
+        // TODO: add content-type
+        return Ok(session.serialize());
+    }
+    tracing::warn!(
+        "Session not found for provided secret {} for pubky {}",
+        secret,
+        pubky.public_key()
+    );
+    Err(HttpError::not_found_with_message(
+        "Session not found for provided secret",
+    ))
 }
 pub async fn signout(
     State(mut state): State<AppState>,

@@ -34,6 +34,10 @@ impl HttpError {
         Self::new_with_message(StatusCode::NOT_FOUND, "Not Found")
     }
 
+    pub fn not_found_with_message(message: impl ToString) -> HttpError {
+        Self::new_with_message(StatusCode::NOT_FOUND, message)
+    }
+
     pub fn internal_server() -> HttpError {
         Self::new_with_message(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
     }
