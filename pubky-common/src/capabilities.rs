@@ -197,7 +197,7 @@ impl Display for Capabilities {
             .collect::<Vec<_>>()
             .join(",");
 
-        write!(f, "{}", string)
+        write!(f, "{string}")
     }
 }
 
