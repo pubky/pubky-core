@@ -125,34 +125,47 @@ fn authorize(
     let session_secret = match session_secret_from_cookies(cookies, public_key) {
         Some(session_secret) => session_secret,
         None => {
-            tracing::warn!("No session secret found in cookies for pubky-host: {}", public_key);
-            return Err(HttpError::unauthorized_with_message("No session secret found in cookies"));
+            tracing::warn!(
+                "No session secret found in cookies for pubky-host: {}",
+                public_key
+            );
+            return Err(HttpError::unauthorized_with_message(
+                "No session secret found in cookies",
+            ));
         }
     };
 
-    let session = match state
-        .db
-        .get_session(&session_secret)? {
-            Some(session) => session,
-            None => {
-                tracing::warn!("No session found in the database for session secret: {}, pubky: {}", session_secret, public_key);
-                return Err(HttpError::unauthorized_with_message("No session found for session secret"));
-            }
-        };
-
+    let session = match state.db.get_session(&session_secret)? {
+        Some(session) => session,
+        None => {
+            tracing::warn!(
+                "No session found in the database for session secret: {}, pubky: {}",
+                session_secret,
+                public_key
+            );
+            return Err(HttpError::unauthorized_with_message(
+                "No session found for session secret",
+            ));
+        }
+    };
 
     if session.pubky() != public_key {
-        tracing::warn!("Session public key does not match pubky-host: {} != {}", session.pubky(), public_key);
-        return Err(HttpError::unauthorized_with_message("Session public key does not match pubky-host"));
+        tracing::warn!(
+            "Session public key does not match pubky-host: {} != {}",
+            session.pubky(),
+            public_key
+        );
+        return Err(HttpError::unauthorized_with_message(
+            "Session public key does not match pubky-host",
+        ));
     }
 
     if session.capabilities().iter().any(|cap| {
-            path.starts_with(&cap.scope)
-                && cap
-                    .actions
-                    .contains(&pubky_common::capabilities::Action::Write)
-        })
-    {
+        path.starts_with(&cap.scope)
+            && cap
+                .actions
+                .contains(&pubky_common::capabilities::Action::Write)
+    }) {
         Ok(())
     } else {
         tracing::warn!(
@@ -161,7 +174,9 @@ fn authorize(
             public_key,
             path
         );
-        Err(HttpError::forbidden_with_message("Session does not have write access to path"))
+        Err(HttpError::forbidden_with_message(
+            "Session does not have write access to path",
+        ))
     }
 }
 
