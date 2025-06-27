@@ -11,6 +11,22 @@ use serde::{Deserialize, Serialize};
 
 pub const SIGNUP_TOKENS_TABLE: &str = "signup_tokens";
 
+#[derive(Debug, thiserror::Error)]
+pub enum SignupTokenError {
+    #[error("Token already used")]
+    AlreadyUsed,
+    #[error("Invalid token")]
+    InvalidToken,
+    #[error("Database error: {0}")]
+    DatabaseError(heed::Error),
+}
+
+impl From<heed::Error> for SignupTokenError {
+    fn from(err: heed::Error) -> Self {
+        SignupTokenError::DatabaseError(err)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SignupToken {
     pub token: String,
@@ -68,23 +84,23 @@ impl LmDB {
         &self,
         token: &str,
         user_pubkey: &PublicKey,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), SignupTokenError> {
         let mut wtxn = self.env.write_txn()?;
-        if let Some(token_bytes) = self.tables.signup_tokens.get(&wtxn, token)? {
-            let mut signup_token = SignupToken::deserialize(token_bytes);
-            if signup_token.is_used() {
-                anyhow::bail!("Token already used");
-            }
-            // Mark token as used.
-            signup_token.used = Some(user_pubkey.clone());
-            self.tables
-                .signup_tokens
-                .put(&mut wtxn, token, &signup_token.serialize())?;
-            wtxn.commit()?;
-            Ok(())
-        } else {
-            anyhow::bail!("Invalid token");
+        let token_bytes = match self.tables.signup_tokens.get(&wtxn, token)? {
+            Some(token_bytes) => token_bytes,
+            None => return Err(SignupTokenError::InvalidToken),
+        };
+        let mut signup_token = SignupToken::deserialize(token_bytes);
+        if signup_token.is_used() {
+            return Err(SignupTokenError::AlreadyUsed);
         }
+        // Mark token as used.
+        signup_token.used = Some(user_pubkey.clone());
+        self.tables
+            .signup_tokens
+            .put(&mut wtxn, token, &signup_token.serialize())?;
+        wtxn.commit()?;
+        Ok(())
     }
 }
 
