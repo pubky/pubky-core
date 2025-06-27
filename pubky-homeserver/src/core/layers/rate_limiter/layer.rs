@@ -283,7 +283,7 @@ where
                     );
                     return Box::pin(async move {
                         Ok(HttpError::new_with_message(
-                            StatusCode::INTERNAL_SERVER_ERROR,
+                            StatusCode::BAD_REQUEST,
                             "Failed to extract key for rate limiting",
                         )
                         .into_response())
