@@ -360,6 +360,15 @@ async fn test_signup_with_token() {
         &keypair.public_key(),
         "Signed-in session should correspond to the same public key"
     );
+
+    // 6. Signup with the same token again and expect failure.
+    let new_keypair = Keypair::random();
+    let signup_again = client
+        .signup(&new_keypair, &server.public_key(), Some(&valid_token))
+        .await;
+    let err = signup_again.expect_err("Signup with an already used token should fail");
+    assert!(err.to_string().contains("401"));
+    assert!(err.to_string().contains("Token already used"));
 }
 
 // This test verifies that when a signin happens immediately after signup,
