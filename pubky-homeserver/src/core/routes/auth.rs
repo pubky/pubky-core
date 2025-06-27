@@ -49,13 +49,23 @@ pub async fn signup(
 
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.signup_mode == SignupMode::TokenRequired {
-        let signup_token_param = params.get("signup_token").ok_or_else(|| {
-            HttpError::new_with_message(StatusCode::BAD_REQUEST, "signup_token required")
-        })?;
+        let signup_token_param = params
+            .get("signup_token")
+            .ok_or(HttpError::new_with_message(
+                StatusCode::BAD_REQUEST,
+                "signup token required",
+            ))?;
         // Validate it in the DB (marks it used)
-        state
+        if let Err(e) = state
             .db
-            .validate_and_consume_signup_token(signup_token_param, public_key)?;
+            .validate_and_consume_signup_token(signup_token_param, public_key)
+        {
+            tracing::warn!("Failed to signup. Invalid signup token: {:?}", e);
+            return Err(HttpError::new_with_message(
+                StatusCode::UNAUTHORIZED,
+                "invalid signup token",
+            ));
+        }
     }
 
     // 4) Create the new user record
