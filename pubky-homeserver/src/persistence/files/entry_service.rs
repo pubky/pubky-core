@@ -4,10 +4,7 @@ use crate::{
     persistence::{
         files::{FileIoError, FileMetadata},
         lmdb::{
-            tables::{
-                events::Event,
-                entries::{Entry},
-            },
+            tables::{entries::Entry, events::Event},
             LmDB,
         },
     },

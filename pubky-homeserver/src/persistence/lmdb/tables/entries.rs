@@ -1,8 +1,6 @@
-use super::{super::LmDB};
+use super::super::LmDB;
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::files::FileIoError;
-#[cfg(test)]
-use crate::persistence::files::FileMetadata;
 use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
@@ -18,79 +16,6 @@ pub type EntriesTable = Database<Str, Bytes>;
 pub const ENTRIES_TABLE: &str = "entries";
 
 impl LmDB {
-    /// Check if an entry exists.
-    #[cfg(test)]
-    pub fn entry_exists(&self, path: &EntryPath) -> Result<bool, FileIoError> {
-        match self.get_entry(path) {
-            Ok(_) => Ok(true),
-            Err(e) => {
-                if e.to_string() == FileIoError::NotFound.to_string() {
-                    Ok(false)
-                } else {
-                    Err(e)
-                }
-            }
-        }
-    }
-
-    #[cfg(test)]
-    /// Write an entry without writing the file to the blob store.
-    pub fn write_entry(
-        &self,
-        path: &EntryPath,
-        metadata: &FileMetadata,
-    ) -> Result<Entry, FileIoError> {
-        use crate::persistence::lmdb::tables::events::Event;
-
-        let mut wtxn = self.env.write_txn()?;
-
-        // Get old entry size. If it doesn't exist, use 0.
-        let old_entry_size = self
-            .tables
-            .entries
-            .get(&wtxn, path.as_str())?
-            .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
-            .transpose()?
-            .unwrap_or(0);
-
-        // Write entry
-        let mut entry = Entry::new();
-        entry.set_content_hash(metadata.hash);
-        entry.set_content_length(metadata.length);
-        entry.set_timestamp(&metadata.modified_at);
-        entry.set_content_type(metadata.content_type.clone());
-        let entry_key = path.to_string();
-        self.tables
-            .entries
-            .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
-
-        // Update user data usage
-        let mut user = self
-            .tables
-            .users
-            .get(&wtxn, path.pubkey())?
-            .ok_or(FileIoError::NotFound)?;
-        user.used_bytes = user
-            .used_bytes
-            .saturating_add(metadata.length as u64)
-            .saturating_sub(old_entry_size as u64);
-        self.tables.users.put(&mut wtxn, path.pubkey(), &user)?;
-
-        // TODO: Extract this to a separate function.
-        // Write a public [Event].
-        let url = format!("pubky://{}", entry_key);
-        let event = Event::put(&url);
-        let value = event.serialize();
-
-        self.tables
-            .events
-            .put(&mut wtxn, metadata.modified_at.to_string().as_str(), &value)?;
-
-        wtxn.commit()?;
-
-        Ok(entry)
-    }
-
     /// Get an entry from the database.
     /// This doesn't include the file but only metadata.
     pub fn get_entry(&self, path: &EntryPath) -> Result<Entry, FileIoError> {
@@ -314,7 +239,6 @@ impl Entry {
         self
     }
 
-
     pub fn set_content_type(&mut self, content_type: String) -> &mut Self {
         self.content_type = content_type;
         self
@@ -352,4 +276,3 @@ impl Entry {
         from_bytes(bytes)
     }
 }
-

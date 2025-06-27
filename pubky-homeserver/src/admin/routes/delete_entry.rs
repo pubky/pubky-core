@@ -20,7 +20,7 @@ mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
     use crate::persistence::files::{FileIoError, FileService};
-    use crate::persistence::lmdb::{ LmDB};
+    use crate::persistence::lmdb::LmDB;
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use axum::{routing::delete, Router};
     use opendal::Buffer;

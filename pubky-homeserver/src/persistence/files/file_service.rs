@@ -1,10 +1,7 @@
 use crate::{
     persistence::{
         files::entry_service::EntryService,
-        lmdb::{
-            tables::entries::{Entry},
-            LmDB,
-        },
+        lmdb::{tables::entries::Entry, LmDB},
     },
     shared::webdav::EntryPath,
     ConfigToml,
@@ -94,13 +91,12 @@ impl FileService {
     ) -> Result<Entry, FileIoError> {
         let remaining_bytes_usage = self.get_remaining_user_quota(path)?;
 
-        let metadata =                 self.opendal_service
-        .write_stream(path, stream, remaining_bytes_usage)
-        .await?;
+        let metadata = self
+            .opendal_service
+            .write_stream(path, stream, remaining_bytes_usage)
+            .await?;
 
-        let write_result = self
-            .entry_service
-            .write_entry(path, &metadata);
+        let write_result = self.entry_service.write_entry(path, &metadata);
         if let Err(e) = &write_result {
             tracing::warn!(
                 "Writing entry {path} failed. Undoing the write. Error: {:?}",
@@ -141,11 +137,7 @@ impl FileService {
     }
 
     /// Write a file to the database and storage depending on the selected target location.
-    pub async fn write(
-        &self,
-        path: &EntryPath,
-        data: Buffer,
-    ) -> Result<Entry, FileIoError> {
+    pub async fn write(&self, path: &EntryPath, data: Buffer) -> Result<Entry, FileIoError> {
         let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
         let entry = self.write_stream(path, stream).await?;
         Ok(entry)
@@ -198,10 +190,7 @@ mod tests {
         let stream = futures_util::stream::iter(chunks);
 
         // Test LMDB
-        let entry = file_service
-            .write_stream(&path, stream)
-            .await
-            .unwrap();
+        let entry = file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
@@ -241,10 +230,7 @@ mod tests {
         );
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
-        let entry = file_service
-            .write_stream(&path, stream)
-            .await
-            .unwrap();
+        let entry = file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
@@ -305,10 +291,7 @@ mod tests {
 
         // Test OpenDal
         let opendal_path = EntryPath::new(pubkey, WebDavPath::new("/test_opendal.txt").unwrap());
-        file_service
-            .write(&opendal_path, buffer)
-            .await
-            .unwrap();
+        file_service.write(&opendal_path, buffer).await.unwrap();
         let content = file_service.get(&opendal_path).await.unwrap();
         assert_eq!(content.as_ref(), test_data);
     }
@@ -329,10 +312,7 @@ mod tests {
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64)
@@ -360,19 +340,13 @@ mod tests {
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
 
         let test_data2 = vec![2u8; 1024];
         let buffer2 = Buffer::from(test_data2.clone());
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
-        file_service
-            .write(&path, buffer2)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer2).await.unwrap();
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
@@ -397,10 +371,7 @@ mod tests {
         let test_data = vec![1u8; 1024 * 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
@@ -424,10 +395,7 @@ mod tests {
         let test_data = vec![1u8; 1024 * 1024 + 1];
         let buffer = Buffer::from(test_data.clone());
 
-        match file_service
-            .write(&path, buffer)
-            .await
-        {
+        match file_service.write(&path, buffer).await {
             Ok(_) => panic!("Should error for file above quota"),
             Err(FileIoError::DiskSpaceQuotaExceeded) => {} // All good
             Err(e) => {
@@ -455,19 +423,13 @@ mod tests {
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
 
         let test_data2 = vec![2u8; 1024 * 1024 + 1];
         let buffer2 = Buffer::from(test_data2.clone());
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
-        match file_service
-            .write(&path, buffer2)
-            .await
-        {
+        match file_service.write(&path, buffer2).await {
             Ok(_) => panic!("Should error for file above quota"),
             Err(FileIoError::DiskSpaceQuotaExceeded) => {} // All good
             Err(e) => {

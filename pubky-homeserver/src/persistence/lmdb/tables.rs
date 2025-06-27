@@ -1,16 +1,16 @@
+pub mod entries;
 pub mod events;
 pub mod sessions;
 pub mod signup_tokens;
 pub mod users;
-pub mod entries;
 use heed::{Env, RwTxn};
 
 use self::{
+    entries::{EntriesTable, ENTRIES_TABLE},
     events::{EventsTable, EVENTS_TABLE},
     sessions::{SessionsTable, SESSIONS_TABLE},
     signup_tokens::{SignupTokensTable, SIGNUP_TOKENS_TABLE},
     users::{UsersTable, USERS_TABLE},
-    entries::{EntriesTable, ENTRIES_TABLE},
 };
 
 pub const TABLES_COUNT: u32 = 6;
