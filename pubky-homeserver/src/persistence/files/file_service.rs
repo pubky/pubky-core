@@ -2,7 +2,7 @@ use crate::{
     persistence::{
         files::entry_service::EntryService,
         lmdb::{
-            tables::files::{Entry, FileLocation},
+            tables::entries::{Entry},
             LmDB,
         },
     },
@@ -90,7 +90,6 @@ impl FileService {
     pub async fn write_stream(
         &self,
         path: &EntryPath,
-        location: FileLocation,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
         let remaining_bytes_usage = self.get_remaining_user_quota(path)?;
@@ -101,7 +100,7 @@ impl FileService {
 
         let write_result = self
             .entry_service
-            .write_entry(path, &metadata, location.clone());
+            .write_entry(path, &metadata);
         if let Err(e) = &write_result {
             tracing::warn!(
                 "Writing entry {path} failed. Undoing the write. Error: {:?}",
@@ -146,10 +145,9 @@ impl FileService {
         &self,
         path: &EntryPath,
         data: Buffer,
-        location: FileLocation,
     ) -> Result<Entry, FileIoError> {
         let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
-        let entry = self.write_stream(path, location, stream).await?;
+        let entry = self.write_stream(path, stream).await?;
         Ok(entry)
     }
 
@@ -177,9 +175,7 @@ mod tests {
         let mut config = ConfigToml::test();
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let file_service = FileService::test(db.clone());
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -203,7 +199,7 @@ mod tests {
 
         // Test LMDB
         let entry = file_service
-            .write_stream(&path, FileLocation::LmDB, stream)
+            .write_stream(&path, stream)
             .await
             .unwrap();
         assert_eq!(
@@ -246,7 +242,7 @@ mod tests {
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         let entry = file_service
-            .write_stream(&path, FileLocation::OpenDal, stream)
+            .write_stream(&path, stream)
             .await
             .unwrap();
         assert_eq!(
@@ -301,7 +297,7 @@ mod tests {
         // Test LMDB
         let lmdb_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         file_service
-            .write(&lmdb_path, buffer.clone(), FileLocation::LmDB)
+            .write(&lmdb_path, buffer.clone())
             .await
             .unwrap();
         let content = file_service.get(&lmdb_path).await.unwrap();
@@ -310,7 +306,7 @@ mod tests {
         // Test OpenDal
         let opendal_path = EntryPath::new(pubkey, WebDavPath::new("/test_opendal.txt").unwrap());
         file_service
-            .write(&opendal_path, buffer, FileLocation::OpenDal)
+            .write(&opendal_path, buffer)
             .await
             .unwrap();
         let content = file_service.get(&opendal_path).await.unwrap();
@@ -334,7 +330,7 @@ mod tests {
         let buffer = Buffer::from(test_data.clone());
 
         file_service
-            .write(&path, buffer, FileLocation::OpenDal)
+            .write(&path, buffer)
             .await
             .unwrap();
         assert_eq!(
@@ -365,7 +361,7 @@ mod tests {
         let buffer = Buffer::from(test_data.clone());
 
         file_service
-            .write(&path, buffer, FileLocation::OpenDal)
+            .write(&path, buffer)
             .await
             .unwrap();
 
@@ -374,7 +370,7 @@ mod tests {
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
         file_service
-            .write(&path, buffer2, FileLocation::OpenDal)
+            .write(&path, buffer2)
             .await
             .unwrap();
 
@@ -402,7 +398,7 @@ mod tests {
         let buffer = Buffer::from(test_data.clone());
 
         file_service
-            .write(&path, buffer, FileLocation::OpenDal)
+            .write(&path, buffer)
             .await
             .unwrap();
 
@@ -429,7 +425,7 @@ mod tests {
         let buffer = Buffer::from(test_data.clone());
 
         match file_service
-            .write(&path, buffer, FileLocation::OpenDal)
+            .write(&path, buffer)
             .await
         {
             Ok(_) => panic!("Should error for file above quota"),
@@ -460,7 +456,7 @@ mod tests {
         let buffer = Buffer::from(test_data.clone());
 
         file_service
-            .write(&path, buffer, FileLocation::OpenDal)
+            .write(&path, buffer)
             .await
             .unwrap();
 
@@ -469,7 +465,7 @@ mod tests {
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
         match file_service
-            .write(&path, buffer2, FileLocation::OpenDal)
+            .write(&path, buffer2)
             .await
         {
             Ok(_) => panic!("Should error for file above quota"),

@@ -1,4 +1,4 @@
-use super::{super::super::LmDB, InDbFileId};
+use super::{super::LmDB};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::files::FileIoError;
 #[cfg(test)]
@@ -39,7 +39,6 @@ impl LmDB {
         &self,
         path: &EntryPath,
         metadata: &FileMetadata,
-        file_location: FileLocation,
     ) -> Result<Entry, FileIoError> {
         use crate::persistence::lmdb::tables::events::Event;
 
@@ -60,7 +59,6 @@ impl LmDB {
         entry.set_content_length(metadata.length);
         entry.set_timestamp(&metadata.modified_at);
         entry.set_content_type(metadata.content_type.clone());
-        entry.file_location = file_location;
         let entry_key = path.to_string();
         self.tables
             .entries
@@ -254,17 +252,6 @@ fn next_threshold(
     )
 }
 
-/// The location of the file.
-/// This is used to determine where the file is stored.
-/// Used during the transition process from LMDB to OpenDAL.
-/// TODO: Remove after the file migration is complete.
-#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
-pub enum FileLocation {
-    #[default]
-    LmDB,
-    OpenDal,
-}
-
 #[derive(Clone, Default, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct Entry {
     /// Encoding version
@@ -274,7 +261,6 @@ pub struct Entry {
     content_hash: EntryHash,
     content_length: usize,
     content_type: String,
-    file_location: FileLocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -328,10 +314,6 @@ impl Entry {
         self
     }
 
-    pub fn set_file_location(&mut self, file_location: FileLocation) -> &mut Self {
-        self.file_location = file_location;
-        self
-    }
 
     pub fn set_content_type(&mut self, content_type: String) -> &mut Self {
         self.content_type = content_type;

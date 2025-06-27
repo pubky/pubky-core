@@ -8,7 +8,7 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     core::{err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState},
-    persistence::{files::WriteStreamError, lmdb::tables::files::FileLocation},
+    persistence::{files::WriteStreamError},
     shared::{
         webdav::{EntryPath, WebDavPathPubAxum},
         HttpError, HttpResult,
@@ -56,7 +56,7 @@ pub async fn put(
 
     state
         .file_service
-        .write_stream(&entry_path, FileLocation::OpenDal, converted_stream)
+        .write_stream(&entry_path, converted_stream)
         .await?;
     Ok((StatusCode::CREATED, ()))
 }

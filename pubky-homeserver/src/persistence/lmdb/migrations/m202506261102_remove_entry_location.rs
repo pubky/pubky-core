@@ -4,7 +4,7 @@
 /// This was used to help the migration of the files from the LMDB to opendal.
 /// It's not needed
 ///
-use crate::persistence::lmdb::tables::files::{EntryHash, ENTRIES_TABLE};
+use crate::persistence::lmdb::tables::entries::{EntryHash, ENTRIES_TABLE};
 use heed::{BoxedError, BytesDecode, BytesEncode, Database, Env, RwTxn};
 use postcard::{from_bytes, to_allocvec};
 use pubky_common::timestamp::Timestamp;
@@ -179,6 +179,20 @@ mod tests {
     use crate::persistence::lmdb::{db::DEFAULT_MAP_SIZE, migrations::m0};
     use super::*;
 
+
+    #[test]
+    fn test_is_migration_needed_no() {
+        let old = OldEntry {
+            version: 1,
+            timestamp: Timestamp::now(),
+            content_hash: EntryHash::default(),
+            content_length: 0,
+            content_type: "text/plain".to_string(),
+            file_location: FileLocation::LmDB,
+        };
+        old.
+    }
+
     #[test]
     fn test_is_migration_needed_yes() {
         let tmp_dir = tempfile::tempdir().unwrap();
@@ -192,7 +206,7 @@ mod tests {
         m0::run(&env, &mut env.write_txn().unwrap()).unwrap();
         let mut wtxn = env.write_txn().unwrap();
 
-        // Write a user to the old table.
+        // Write an entry to the old table.
         let table: Database<heed::types::Str, OldEntry> =
             env.create_database(&mut wtxn, Some(ENTRIES_TABLE)).unwrap();
         table
@@ -209,7 +223,8 @@ mod tests {
                 },
             )
             .unwrap();
-
+        wtxn.commit().unwrap();
+        let mut wtxn = env.write_txn().unwrap();
         assert!(is_migration_needed(&env, &mut wtxn).unwrap());
     }
 
