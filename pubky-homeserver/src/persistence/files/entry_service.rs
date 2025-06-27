@@ -4,10 +4,7 @@ use crate::{
     persistence::{
         files::{FileIoError, FileMetadata},
         lmdb::{
-            tables::{
-                events::Event,
-                files::{Entry, FileLocation},
-            },
+            tables::{entries::Entry, events::Event},
             LmDB,
         },
     },
@@ -40,7 +37,6 @@ impl EntryService {
         &self,
         path: &EntryPath,
         metadata: &FileMetadata,
-        location: FileLocation,
     ) -> Result<Entry, FileIoError> {
         let mut wtxn = self.db.env.write_txn()?;
 
@@ -59,7 +55,6 @@ impl EntryService {
         entry.set_content_hash(metadata.hash);
         entry.set_content_length(metadata.length);
         entry.set_timestamp(&metadata.modified_at);
-        entry.set_file_location(location);
         entry.set_content_type(metadata.content_type.clone());
         let entry_key = path.to_string();
         self.db

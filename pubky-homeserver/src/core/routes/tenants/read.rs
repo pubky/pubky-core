@@ -1,4 +1,4 @@
-use crate::persistence::lmdb::tables::files::Entry;
+use crate::persistence::lmdb::tables::entries::Entry;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
