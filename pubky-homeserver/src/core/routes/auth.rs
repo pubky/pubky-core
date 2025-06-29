@@ -182,6 +182,7 @@ mod tests {
     fn test_is_secure() {
         assert!(!is_secure(""));
         assert!(!is_secure("127.0.0.1"));
+        assert!(!is_secure("homeserver"));
         assert!(!is_secure("167.86.102.121"));
         assert!(!is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"));
         assert!(!is_secure("localhost"));

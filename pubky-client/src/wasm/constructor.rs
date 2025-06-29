@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 
 use super::js_result::JsResult;
 
-static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/"];
+static TESTNET_RELAYS: [&str; 1] = ["http://homeserver:15411/"];
 
 // ------------------------------------------------------------------------------------------------
 // JS style config objects for the client.

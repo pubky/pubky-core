@@ -43,7 +43,7 @@ impl ClientBuilder {
                 pubky_common::constants::testnet_ports::BOOTSTRAP
             )])
             .relays(&[format!(
-                "http://localhost:{}",
+                "http://homeserver:{}",
                 pubky_common::constants::testnet_ports::PKARR_RELAY
             )])
             .expect("relays urls infallible");
