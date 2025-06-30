@@ -3,3 +3,4 @@ pub(crate) mod disable_users;
 pub(crate) mod generate_signup_token;
 pub(crate) mod info;
 pub(crate) mod root;
+pub(crate) mod dav_handler;

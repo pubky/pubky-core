@@ -99,7 +99,7 @@ mod tests {
         assert!(!user.disabled);
 
         // Setup server
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let app_state = AppState::new(db.clone(), FileService::test(db.clone()), "");
         let router = Router::new()
             .route("/users/{pubkey}/disable", post(disable_user))
             .route("/users/{pubkey}/enable", post(enable_user))

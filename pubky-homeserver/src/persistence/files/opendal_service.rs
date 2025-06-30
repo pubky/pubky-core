@@ -57,7 +57,7 @@ const CHUNK_SIZE: usize = 16 * 1024;
 /// The service to write and read files to and from the configured opendal storage.
 #[derive(Debug, Clone)]
 pub struct OpendalService {
-    operator: Operator,
+    pub(crate) operator: Operator,
 }
 
 impl OpendalService {
