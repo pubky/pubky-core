@@ -6,6 +6,7 @@ use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
 
+#[derive(Clone)]
 pub struct UserQuotaLayer {
     pub(crate) db: LmDB,
     pub(crate) max_user_bytes: u64,
