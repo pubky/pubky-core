@@ -30,6 +30,7 @@ pub async fn session(
 
     if let Some(session) = state.db.get_session(&secret)? {
         // TODO: add content-type
+        tracing::info!("Session found for provided secret {secret} for pubky {}. Session pubky: {}, created_at: {}", pubky.public_key(), session.pubky(), session.created_at());
         return Ok(session.serialize());
     }
     tracing::warn!(
@@ -49,7 +50,13 @@ pub async fn signout(
     // TODO: Set expired cookie to delete the cookie on client side.
 
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
-        state.db.delete_session(&secret)?;
+        tracing::info!("Deleting session for pubky {}. Secret: {secret}", pubky.public_key());
+        let deleted= state.db.delete_session(&secret)?;
+        if !deleted {
+            tracing::warn!("Can't delete session. Session not found for pubky {}. Secret: {secret}", pubky.public_key());
+        }
+    } else {
+        tracing::warn!("Can't delete session. No session secret found in cookies for pubky {}", pubky.public_key());
     }
 
     // Idempotent Success Response (200 OK)

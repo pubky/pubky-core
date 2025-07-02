@@ -21,12 +21,11 @@ impl LmDB {
             .get(&rtxn, session_secret)?
             .map(|s| s.to_vec());
 
-        rtxn.commit()?;
+        rtxn.commit()?; 
 
         if let Some(bytes) = session {
             return Ok(Some(Session::deserialize(&bytes)?));
         };
-
         Ok(None)
     }
 

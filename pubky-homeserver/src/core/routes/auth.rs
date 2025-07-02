@@ -162,6 +162,8 @@ fn create_session_and_cookie(
         .put(&mut wtxn, &session_secret, &session)?;
     wtxn.commit()?;
 
+    tracing::info!("Created session for pubky {}. Secret: {session_secret}", public_key);
+
     // 3) Build and set cookie
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
     cookie.set_path("/");

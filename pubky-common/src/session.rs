@@ -49,6 +49,11 @@ impl Session {
         &self.capabilities
     }
 
+    /// Returns the timestamp when this session was created.
+    pub fn created_at(&self) -> u64 {
+        self.created_at
+    }
+
     // === Setters ===
 
     /// Set this session user agent.
