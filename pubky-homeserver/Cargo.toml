@@ -65,8 +65,10 @@ dav-server-opendalfs = "0.6.1"
 dav-server = "0.8.0"
 
 
+
 [dev-dependencies]
 futures-lite = "2.6.0"
+uuid = { version = "1.7.0", features = ["v4"] }
 
 
 [features]

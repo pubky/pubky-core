@@ -409,6 +409,8 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
+    use crate::shared::opendal_test_operators::OpendalTestOperators;
+
     use super::*;
 
     fn get_user_data_usage(db: &LmDB, user_pubkey: &pkarr::PublicKey) -> anyhow::Result<u64> {
@@ -422,33 +424,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_ensure_valid_path() {
-        let db = LmDB::test();
-        let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
-        // let builder = opendal::services::Fs::default().root("/tmp/test");
-        // let builder = opendal::services::Memory::default();
-        let builder = opendal::services::Gcs::default()
-            .bucket("sev-homeserver-dev")
-            .credential_path("/Users/severinbuhler/Downloads/pubky-stag-50c56dc37ed4.json");
-        let operator = opendal::Operator::new(builder)
-            .unwrap()
-            .layer(layer)
-            .finish();
-
-        operator.write("1234567890/test.txt", vec![0; 10]).await.expect_err("Should fail because the path doesn't start with a pubkey");
-        let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
-        operator.write(format!("{}/test.txt", pubkey).as_str(), vec![0; 10]).await.expect("Should succeed because the path starts with a pubkey");
+        for (_scheme, operator) in OpendalTestOperators::new().operators() {
+            let db = LmDB::test();
+            let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
+            let operator = operator.layer(layer);
+    
+            operator.write("1234567890/test.txt", vec![0; 10]).await.expect_err("Should fail because the path doesn't start with a pubkey");
+            let pubkey = pkarr::Keypair::random().public_key();
+            db.create_user(&pubkey).unwrap();
+            operator.write(format!("{}/test.txt", pubkey).as_str(), vec![0; 10]).await.expect("Should succeed because the path starts with a pubkey");
+            operator.write("test.txt", vec![0; 10]).await.expect_err("Should fail because the path doesn't start with a pubkey");
+        };
     }
 
     #[tokio::test]
     async fn test_deleter_wrapper() {
         let db = LmDB::test();
         let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
-        // let builder = opendal::services::Fs::default().root("/tmp/test");
-        // let builder = opendal::services::Memory::default();
-        let builder = opendal::services::Gcs::default()
-            .bucket("sev-homeserver-dev")
-            .credential_path("/Users/severinbuhler/Downloads/pubky-stag-50c56dc37ed4.json");
+        let builder = opendal::services::Memory::default();
         let operator = opendal::Operator::new(builder)
             .unwrap()
             .layer(layer)
