@@ -1,3 +1,8 @@
+//! Module for testing the opendal operators.
+//! Allows to easily test all our storage options.
+//! This is normally not necessary but helps to find subtle differences
+//! in the opendal operators.
+
 use std::sync::Arc;
 
 use opendal::Operator;
@@ -15,6 +20,21 @@ use uuid::Uuid;
 /// GCS environment variables:
 /// - TEST_GOOGLE_APPLICATION_CREDENTIALS: The path to the GCS credentials file.
 /// - TEST_GCS_BUCKET: The name of the GCS bucket.
+///
+/// Example:
+/// ```ignore
+/// #[tokio::test]
+/// async fn test_ensure_valid_path() {
+///     // Iterate over all operators.
+///     for (_scheme, operator) in OpendalTestOperators::new().operators() {
+///         // Add a layer to the operator if needed.
+///         let operator = operator.layer(UserQuotaLayer::new());
+///         // Perform tests
+///         operator.write("1234567890/test.txt", vec![0; 10]).await.expect_err("Should fail because the path doesn't start with a pubkey");
+///         // No need to clean up the operator as it is automatically cleaned up when OpendalTestOperators is dropped.
+///     };
+/// }
+/// ```
 pub struct OpendalTestOperators {
     pub fs_operator: Operator,
     /// The temporary directory for the fs operator.
@@ -83,7 +103,10 @@ impl Drop for OpendalTestOperators {
     }
 }
 
-fn get_fs_operator() -> (Operator, TempDir) {
+/// Creates a filesystem operator.
+/// The operator will be created in a temporary directory.
+/// The directory is returned and will be deleted when TempDir is dropped.
+pub(crate) fn get_fs_operator() -> (Operator, TempDir) {
     let tmp_dir = tempfile::tempdir().unwrap();
     let s = tmp_dir.path().to_str().unwrap();
     let builder = opendal::services::Fs::default().root(s);
@@ -98,7 +121,7 @@ fn get_fs_operator() -> (Operator, TempDir) {
 ///
 /// Set `test_root_dir` to true to create a random directory that the operator
 /// lives in. This is useful to avoid conflicts with other tests.
-fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
+pub(crate) fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
     let credential_path = match std::env::var("TEST_GOOGLE_APPLICATION_CREDENTIALS") {
         Ok(path) => path,
         Err(_) => return None,
@@ -117,7 +140,7 @@ fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
     Some(operator)
 }
 
-fn get_memory_operator() -> Operator {
+pub(crate) fn get_memory_operator() -> Operator {
     let builder = opendal::services::Memory::default();
     let operator = opendal::Operator::new(builder).unwrap().finish();
     operator
