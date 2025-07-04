@@ -168,8 +168,7 @@ fn create_session_and_cookie(
     if is_secure(host) {
         // Allow this cookie only to be sent over HTTPS.
         cookie.set_secure(true);
-        // Allow this cookie to be sent to only the same domain it originated from.
-        cookie.set_same_site(SameSite::Strict);
+        cookie.set_same_site(SameSite::None);
     }
     // Prevent javascript from accessing the cookie.
     cookie.set_http_only(true);
@@ -178,7 +177,6 @@ fn create_session_and_cookie(
     let expiry = OffsetDateTime::now_utc() + one_year;
     cookie.set_max_age(one_year);
     cookie.set_expires(expiry);
-
     cookies.add(cookie);
 
     Ok(session)
