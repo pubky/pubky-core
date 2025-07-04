@@ -166,10 +166,13 @@ fn create_session_and_cookie(
     let mut cookie = Cookie::new(public_key.to_string(), session_secret);
     cookie.set_path("/");
     if is_secure(host) {
+        // Allow this cookie only to be sent over HTTPS.
         cookie.set_secure(true);
         cookie.set_same_site(SameSite::None);
     }
+    // Prevent javascript from accessing the cookie.
     cookie.set_http_only(true);
+    // Set the cookie to expire in one year.
     let one_year = Duration::days(365);
     let expiry = OffsetDateTime::now_utc() + one_year;
     cookie.set_max_age(one_year);
