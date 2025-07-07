@@ -206,7 +206,7 @@ impl<R, A: Access> WriterWrapper<R, A> {
     async fn get_current_file_size(&self) -> Result<(u64, bool), opendal::Error> {
         let stats = match self
             .inner_accessor
-            .stat(&self.entry_path.to_string().as_str(), OpStat::default())
+            .stat(self.entry_path.to_string().as_str(), OpStat::default())
             .await
         {
             Ok(stats) => stats,
@@ -239,7 +239,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         // Update the user quota.
         let current_user_bytes = self
             .db
-            .get_user_data_usage(&self.entry_path.pubkey())
+            .get_user_data_usage(self.entry_path.pubkey())
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         let current_user_bytes = current_user_bytes.ok_or(opendal::Error::new(
             opendal::ErrorKind::Unexpected,
@@ -262,7 +262,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             ));
         }
         let metadata = self.inner.close().await?;
-        update_user_quota(&self.db, &self.entry_path.pubkey(), bytes_delta)
+        update_user_quota(&self.db, self.entry_path.pubkey(), bytes_delta)
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         Ok(metadata)
     }
@@ -295,7 +295,7 @@ impl DeletePath {
             return Ok(());
         }
         let size = match operator
-            .stat(&self.entry_path.as_str(), OpStat::default())
+            .stat(self.entry_path.as_str(), OpStat::default())
             .await
         {
             Ok(stats) => stats.into_metadata().content_length(),
@@ -333,7 +333,7 @@ impl<R, A: Access> DeleterWrapper<R, A> {
         for path in deleted_paths {
             user_paths
                 .entry(path.entry_path.pubkey().clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(path);
         }
 

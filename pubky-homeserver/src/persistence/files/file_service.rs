@@ -102,7 +102,7 @@ impl FileService {
 #[cfg(test)]
 impl FileService {
     pub fn new_from_context(context: &AppContext) -> Result<Self, FileIoError> {
-        let opendal_service = OpendalService::new(&context)?;
+        let opendal_service = OpendalService::new(context)?;
         Ok(Self::new(opendal_service, context.db.clone()))
     }
 

@@ -49,7 +49,7 @@ impl OpendalTestOperators {
     pub fn new() -> Self {
         let (fs_operator, fs_tmp_dir) = get_fs_operator();
         Self {
-            fs_operator: fs_operator,
+            fs_operator,
             fs_tmp_dir: Arc::new(fs_tmp_dir),
             gcs_operator: get_gcs_operator(true),
             memory_operator: get_memory_operator(),
@@ -142,8 +142,8 @@ pub(crate) fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
 
 pub(crate) fn get_memory_operator() -> Operator {
     let builder = opendal::services::Memory::default();
-    let operator = opendal::Operator::new(builder).unwrap().finish();
-    operator
+    
+    opendal::Operator::new(builder).unwrap().finish()
 }
 
 #[cfg(test)]
