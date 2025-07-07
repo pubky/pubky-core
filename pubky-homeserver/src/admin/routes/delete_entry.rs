@@ -90,7 +90,11 @@ mod tests {
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let db = context.db.clone();
-        let app_state = AppState::new(db.clone(), FileService::new_from_context(&context).unwrap(), "");
+        let app_state = AppState::new(
+            db.clone(),
+            FileService::new_from_context(&context).unwrap(),
+            "",
+        );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -107,7 +111,11 @@ mod tests {
         // Set everything up
         let context = AppContext::test();
         let db = context.db.clone();
-        let app_state = AppState::new(db.clone(), FileService::new_from_context(&context).unwrap(), "");
+        let app_state = AppState::new(
+            db.clone(),
+            FileService::new_from_context(&context).unwrap(),
+            "",
+        );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);

@@ -1,10 +1,11 @@
 use std::path::Path;
 
+#[cfg(test)]
+use crate::AppContext;
 use crate::{
     persistence::{files::user_quota_layer::UserQuotaLayer, lmdb::LmDB},
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
-    AppContext,
 };
 use bytes::Bytes;
 use futures_util::{stream::StreamExt, Stream};
@@ -64,6 +65,7 @@ pub fn build_storage_operator(
 
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
+#[cfg(test)]
 pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Operator, FileIoError> {
     let quota_bytes = match context.config_toml.general.user_storage_quota_mb {
         0 => u64::MAX,
@@ -91,11 +93,6 @@ pub struct OpendalService {
 }
 
 impl OpendalService {
-    pub fn new(context: &AppContext) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator_from_context(context)?;
-        Ok(Self { operator })
-    }
-
     pub fn new_from_config(
         config: &StorageConfigToml,
         data_directory: &Path,
@@ -112,23 +109,6 @@ impl OpendalService {
             .delete(path.as_str())
             .await
             .map_err(FileIoError::OpenDAL)
-    }
-
-    /// Write the content of a file to the storage.
-    /// This is useful for small files or when you want to avoid the overhead of streaming.
-    /// Use streamed writes for large files.
-    #[cfg(test)]
-    pub async fn write(
-        &self,
-        path: &EntryPath,
-        buffer: impl Into<Buffer>,
-    ) -> Result<FileMetadata, FileIoError> {
-        let buffer: Buffer = buffer.into();
-        let bytes = Bytes::from(buffer.to_vec());
-        // Create a single-item stream from the buffer
-        let stream = Box::pin(futures_util::stream::once(async move { Ok(bytes) }));
-        // Use the existing streaming implementation
-        self.write_stream(path, stream).await
     }
 
     /// Write a stream to the storage.
@@ -159,7 +139,7 @@ impl OpendalService {
         .await;
 
         // Let's close the writer properly depending on if the stream write was successful.
-         match write_result {
+        match write_result {
             Ok(()) => {
                 // Close the writer to finalize the write operation
                 writer.close().await.map_err(|e| {
@@ -221,6 +201,11 @@ impl OpendalService {
 
 #[cfg(test)]
 impl OpendalService {
+    pub fn new(context: &AppContext) -> Result<Self, FileIoError> {
+        let operator = build_storage_operator_from_context(context)?;
+        Ok(Self { operator })
+    }
+
     /// Create a new opendal service from an existing operator.
     /// This is useful for testing.
     pub fn new_from_operator(operator: Operator) -> Self {
@@ -238,6 +223,23 @@ impl OpendalService {
             content.extend_from_slice(&chunk);
         }
         Ok(Bytes::from(content))
+    }
+
+    /// Write the content of a file to the storage.
+    /// This is useful for small files or when you want to avoid the overhead of streaming.
+    /// Use streamed writes for large files.
+    #[cfg(test)]
+    pub async fn write(
+        &self,
+        path: &EntryPath,
+        buffer: impl Into<Buffer>,
+    ) -> Result<FileMetadata, FileIoError> {
+        let buffer: Buffer = buffer.into();
+        let bytes = Bytes::from(buffer.to_vec());
+        // Create a single-item stream from the buffer
+        let stream = Box::pin(futures_util::stream::once(async move { Ok(bytes) }));
+        // Use the existing streaming implementation
+        self.write_stream(path, stream).await
     }
 
     /// Check if a file exists.

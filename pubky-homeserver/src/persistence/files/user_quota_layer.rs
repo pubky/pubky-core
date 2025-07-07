@@ -11,7 +11,6 @@ use opendal::Result;
 /// This prevents the user from writing zero byte files that don't count against the quota.
 pub(crate) const FILE_METADATA_SIZE: u64 = 256;
 
-
 /// The user quota layer is a layer that wraps the operator and updates the user quota when a file is written or deleted.
 /// It is used to limit the amount of data that a user can store in the homeserver.
 /// It will also enforce that only paths in the form of {pubkey}/{path} are allowed.
@@ -24,7 +23,10 @@ pub struct UserQuotaLayer {
 
 impl UserQuotaLayer {
     pub fn new(db: LmDB, user_quota_bytes: u64) -> Self {
-        Self { db, user_quota_bytes }
+        Self {
+            db,
+            user_quota_bytes,
+        }
     }
 }
 
@@ -40,7 +42,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
     }
 }
 
-/// Helper function to ensure that the path is a valid entry path aka 
+/// Helper function to ensure that the path is a valid entry path aka
 /// starts with a pubkey.
 /// Returns the entry path if it is valid, otherwise returns an error.
 fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
@@ -173,7 +175,11 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
 /// This is used to update the user quota when a file is written or deleted.
 /// The bytes delta is the number of bytes that were added or removed from the user quota.
 /// It can be positive or negative.
-fn update_user_quota(db: &LmDB, user_pubkey: &pkarr::PublicKey, bytes_delta: i64) -> anyhow::Result<()> {
+fn update_user_quota(
+    db: &LmDB,
+    user_pubkey: &pkarr::PublicKey,
+    bytes_delta: i64,
+) -> anyhow::Result<()> {
     let mut wtxn = db.env.write_txn()?;
     let mut user = db
         .tables
@@ -257,9 +263,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         }
         let metadata = self.inner.close().await?;
         update_user_quota(&self.db, &self.entry_path.pubkey(), bytes_delta)
-            .map_err(|e| {
-                opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
-            })?;
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         Ok(metadata)
     }
 }
@@ -290,7 +294,10 @@ impl DeletePath {
             // Already got the bytes count
             return Ok(());
         }
-        let size = match operator.stat(&self.entry_path.as_str(), OpStat::default()).await {
+        let size = match operator
+            .stat(&self.entry_path.as_str(), OpStat::default())
+            .await
+        {
             Ok(stats) => stats.into_metadata().content_length(),
             Err(e) if e.kind() == opendal::ErrorKind::NotFound => {
                 // If the file does not exist, we assume it was deleted
@@ -333,7 +340,8 @@ impl<R, A: Access> DeleterWrapper<R, A> {
         // TODO: Update user quota for each user
         for (user_pubkey, paths) in user_paths {
             let total_bytes: u64 = paths.iter().filter_map(|p| p.bytes_count).sum();
-            let files_deleted_count = paths.iter().filter(|p| p.exists.unwrap_or(false)).count() as u64;
+            let files_deleted_count =
+                paths.iter().filter(|p| p.exists.unwrap_or(false)).count() as u64;
             let bytes_delta = (total_bytes + files_deleted_count * FILE_METADATA_SIZE) as i64;
             update_user_quota(&self.db, &user_pubkey, -bytes_delta)
                 .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
@@ -382,7 +390,9 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::files::opendal_test_operators::{get_memory_operator, OpendalTestOperators};
+    use crate::persistence::files::opendal_test_operators::{
+        get_memory_operator, OpendalTestOperators,
+    };
 
     use super::*;
 
@@ -401,13 +411,22 @@ mod tests {
             let db = LmDB::test();
             let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
             let operator = operator.layer(layer);
-    
-            operator.write("1234567890/test.txt", vec![0; 10]).await.expect_err("Should fail because the path doesn't start with a pubkey");
+
+            operator
+                .write("1234567890/test.txt", vec![0; 10])
+                .await
+                .expect_err("Should fail because the path doesn't start with a pubkey");
             let pubkey = pkarr::Keypair::random().public_key();
             db.create_user(&pubkey).unwrap();
-            operator.write(format!("{}/test.txt", pubkey).as_str(), vec![0; 10]).await.expect("Should succeed because the path starts with a pubkey");
-            operator.write("test.txt", vec![0; 10]).await.expect_err("Should fail because the path doesn't start with a pubkey");
-        };
+            operator
+                .write(format!("{}/test.txt", pubkey).as_str(), vec![0; 10])
+                .await
+                .expect("Should succeed because the path starts with a pubkey");
+            operator
+                .write("test.txt", vec![0; 10])
+                .await
+                .expect_err("Should fail because the path doesn't start with a pubkey");
+        }
     }
 
     #[tokio::test]
@@ -437,22 +456,25 @@ mod tests {
 
         // Write a second file and see if the user usage is updated
         operator
-            .write(
-                format!("{}/test.txt2", user_pubkey1).as_str(),
-                vec![0; 5],
-            )
+            .write(format!("{}/test.txt2", user_pubkey1).as_str(), vec![0; 5])
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
-        assert_eq!(user_usage, 17 + 2* FILE_METADATA_SIZE);
+        assert_eq!(user_usage, 17 + 2 * FILE_METADATA_SIZE);
 
         // Delete the first file and see if the user usage is updated
-        operator.delete(format!("{}/test.txt1", user_pubkey1).as_str()).await.unwrap();
+        operator
+            .delete(format!("{}/test.txt1", user_pubkey1).as_str())
+            .await
+            .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
         assert_eq!(user_usage, 5 + FILE_METADATA_SIZE);
 
         // Delete the second file and see if the user usage is updated
-        operator.delete(format!("{}/test.txt2", user_pubkey1).as_str()).await.unwrap();
+        operator
+            .delete(format!("{}/test.txt2", user_pubkey1).as_str())
+            .await
+            .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
         assert_eq!(user_usage, 0);
     }
@@ -472,19 +494,24 @@ mod tests {
             .write(file_name1.as_str(), vec![0; 21])
             .await
             .expect_err("Should fail because the user quota is exceeded");
-        operator.read(file_name1.as_str()).await.expect_err("Should fail because the file doesn't exist");
+        operator
+            .read(file_name1.as_str())
+            .await
+            .expect_err("Should fail because the file doesn't exist");
         let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
         assert_eq!(user_usage, 0);
 
         // Write file at exactly the quota limit
         operator
-        .write(file_name1.as_str(), vec![0; 20])
-        .await
-        .expect("Should succeed because the user quota is exactly the limit");
-        operator.read(file_name1.as_str()).await.expect("Should succeed because the file exists");
+            .write(file_name1.as_str(), vec![0; 20])
+            .await
+            .expect("Should succeed because the user quota is exactly the limit");
+        operator
+            .read(file_name1.as_str())
+            .await
+            .expect("Should succeed because the file exists");
         let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
         assert_eq!(user_usage, 20 + FILE_METADATA_SIZE);
-
 
         let file_name2 = format!("{}/test2.txt", user_pubkey1);
         // Write a second file and see if the user usage is updated

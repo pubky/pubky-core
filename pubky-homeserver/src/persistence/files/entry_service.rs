@@ -19,9 +19,7 @@ pub struct EntryService {
 
 impl EntryService {
     pub fn new(db: LmDB) -> Self {
-        Self {
-            db,
-        }
+        Self { db }
     }
 
     /// Write an entry to the database.

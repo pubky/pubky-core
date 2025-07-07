@@ -5,7 +5,8 @@ use crate::{
         files::entry_service::EntryService,
         lmdb::{tables::entries::Entry, LmDB},
     },
-    shared::webdav::EntryPath, ConfigToml,
+    shared::webdav::EntryPath,
+    ConfigToml,
 };
 use bytes::Bytes;
 use futures_util::Stream;
@@ -35,12 +36,21 @@ impl FileService {
         }
     }
 
-    pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Result<Self, FileIoError> {
+    pub fn new_from_config(
+        config: &ConfigToml,
+        data_directory: &Path,
+        db: LmDB,
+    ) -> Result<Self, FileIoError> {
         let user_quota_bytes = match config.general.user_storage_quota_mb {
             0 => u64::MAX,
             other => other * 1024 * 1024,
         };
-        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory, &db, user_quota_bytes)?;
+        let opendal_service = OpendalService::new_from_config(
+            &config.storage,
+            data_directory,
+            &db,
+            user_quota_bytes,
+        )?;
         Ok(Self::new(opendal_service, db))
     }
 
@@ -63,11 +73,7 @@ impl FileService {
         path: &EntryPath,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
-
-        let metadata = self
-            .opendal_service
-            .write_stream(path, stream)
-            .await?;
+        let metadata = self.opendal_service.write_stream(path, stream).await?;
 
         let write_result = self.entry_service.write_entry(path, &metadata);
         if let Err(e) = &write_result {
@@ -124,8 +130,10 @@ impl FileService {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        persistence::files::user_quota_layer::FILE_METADATA_SIZE, shared::webdav::WebDavPath,
+    };
     use futures_lite::StreamExt;
-    use crate::{persistence::files::user_quota_layer::FILE_METADATA_SIZE, shared::webdav::WebDavPath};
 
     use super::*;
 

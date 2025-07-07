@@ -19,6 +19,11 @@ impl AppState {
             .strip_prefix("/dav")
             .autoindex(true)
             .build_handler();
-        Self { db, file_service, admin_password: admin_password.to_string(), inner_dav_handler }
+        Self {
+            db,
+            file_service,
+            admin_password: admin_password.to_string(),
+            inner_dav_handler,
+        }
     }
 }

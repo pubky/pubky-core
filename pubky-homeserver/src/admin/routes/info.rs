@@ -108,7 +108,11 @@ mod tests {
         db.validate_and_consume_signup_token(&code1, &key1).unwrap();
 
         // 4) Invoke handler
-        let state = AppState::new(db.clone(), FileService::new_from_context(&context).unwrap(), "");
+        let state = AppState::new(
+            db.clone(),
+            FileService::new_from_context(&context).unwrap(),
+            "",
+        );
         let (status, Json(info)) = info(State(state)).await.unwrap();
         assert_eq!(status, StatusCode::OK);
         assert_eq!(info.num_users, 2);

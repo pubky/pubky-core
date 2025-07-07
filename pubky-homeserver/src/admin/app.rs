@@ -9,9 +9,9 @@ use super::routes::{
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
-use crate::{admin::routes::dav_handler, app_context::AppContext};
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
+use crate::{admin::routes::dav_handler, app_context::AppContext};
 use crate::{AppContextConversionError, PersistentDataDir};
 use axum::routing::{any, delete, post};
 use axum::{routing::get, Router};
@@ -163,7 +163,11 @@ mod tests {
 
     fn create_test_server(context: &AppContext) -> TestServer {
         TestServer::new(create_app(
-            AppState::new(context.db.clone(), FileService::new_from_context(context).unwrap(), ""),
+            AppState::new(
+                context.db.clone(),
+                FileService::new_from_context(context).unwrap(),
+                "",
+            ),
             "test",
         ))
         .unwrap()
