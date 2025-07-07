@@ -151,22 +151,22 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
 
     fn blocking_write(
         &self,
-        path: &str,
-        args: opendal::raw::OpWrite,
+        _path: &str,
+        _args: opendal::raw::OpWrite,
     ) -> opendal::Result<(opendal::raw::RpWrite, Self::BlockingWriter)> {
         // Not supported because we user quota not implemented in blocking mode.
-        return Err(opendal::Error::new(
+        Err(opendal::Error::new(
             opendal::ErrorKind::Unsupported,
             "Writing is not supported in blocking mode",
-        ));
+        ))
     }
 
     fn blocking_delete(&self) -> opendal::Result<(opendal::raw::RpDelete, Self::BlockingDeleter)> {
         // Not supported because we user quota not implemented in blocking mode.
-        return Err(opendal::Error::new(
+        Err(opendal::Error::new(
             opendal::ErrorKind::Unsupported,
             "Deleting is not supported in blocking mode",
-        ));
+        ))
     }
 
     fn blocking_list(
