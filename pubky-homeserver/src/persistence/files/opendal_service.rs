@@ -250,7 +250,8 @@ impl OpendalService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::{opendal_test_operators::OpendalTestOperators, webdav::WebDavPath};
+    use crate::persistence::files::opendal_test_operators::OpendalTestOperators;
+    use crate::shared::webdav::WebDavPath;
 
     #[tokio::test]
     async fn test_build_storage_operator_from_config_file_system() {

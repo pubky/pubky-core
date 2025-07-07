@@ -157,7 +157,7 @@ impl Drop for AdminServer {
 mod tests {
     use axum_test::TestServer;
 
-    use crate::persistence::{files::FileService, lmdb::LmDB};
+    use crate::persistence::files::FileService;
 
     use super::*;
 

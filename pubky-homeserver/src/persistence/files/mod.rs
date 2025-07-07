@@ -5,6 +5,8 @@ mod file_service;
 mod file_stream_type;
 mod opendal_service;
 mod user_quota_layer;
+#[cfg(test)]
+pub(crate) mod opendal_test_operators;
 
 pub use file_io_error::{FileIoError, WriteStreamError};
 pub(crate) use file_metadata::{FileMetadata, FileMetadataBuilder};

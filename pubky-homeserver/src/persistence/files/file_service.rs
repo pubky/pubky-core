@@ -36,7 +36,11 @@ impl FileService {
     }
 
     pub fn new_from_config(config: &ConfigToml, data_directory: &Path, db: LmDB) -> Result<Self, FileIoError> {
-        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory, &db, config.general.user_storage_quota_mb)?;
+        let user_quota_bytes = match config.general.user_storage_quota_mb {
+            0 => u64::MAX,
+            other => other * 1024 * 1024,
+        };
+        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory, &db, user_quota_bytes)?;
         Ok(Self::new(opendal_service, db))
     }
 
@@ -155,7 +159,7 @@ mod tests {
         let _ = file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64),
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE),
             "Data usage should be the size of the file"
         );
 
@@ -195,7 +199,7 @@ mod tests {
         let _ = file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64),
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE),
             "Data usage should be the size of the file"
         );
 
@@ -272,7 +276,7 @@ mod tests {
         file_service.write(&path, buffer).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64)
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
         );
 
         // Delete the file and check if the data usage is updated correctly.
@@ -305,7 +309,7 @@ mod tests {
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data2.len() as u64)
+            Some(test_data2.len() as u64 + FILE_METADATA_SIZE)
         );
     }
 

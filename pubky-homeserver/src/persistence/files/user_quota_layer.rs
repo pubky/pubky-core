@@ -249,7 +249,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         };
 
         // Check if the user quota is exceeded before we commit/close the file.
-        if current_user_bytes as i64 + bytes_delta > self.user_quota_bytes as i64 {
+        if (current_user_bytes as i128 + bytes_delta as i128) as u64 > self.user_quota_bytes {
             return Err(opendal::Error::new(
                 opendal::ErrorKind::RateLimited,
                 "User quota exceeded",
@@ -382,7 +382,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::shared::opendal_test_operators::{get_memory_operator, OpendalTestOperators};
+    use crate::persistence::files::opendal_test_operators::{get_memory_operator, OpendalTestOperators};
 
     use super::*;
 
