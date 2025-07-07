@@ -142,7 +142,7 @@ pub(crate) fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
 
 pub(crate) fn get_memory_operator() -> Operator {
     let builder = opendal::services::Memory::default();
-    
+
     opendal::Operator::new(builder).unwrap().finish()
 }
 

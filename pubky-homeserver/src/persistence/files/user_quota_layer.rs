@@ -154,12 +154,19 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
         path: &str,
         args: opendal::raw::OpWrite,
     ) -> opendal::Result<(opendal::raw::RpWrite, Self::BlockingWriter)> {
-        let _ = ensure_valid_path(path)?;
-        self.inner.blocking_write(path, args)
+        // Not supported because we user quota not implemented in blocking mode.
+        return Err(opendal::Error::new(
+            opendal::ErrorKind::Unsupported,
+            "Writing is not supported in blocking mode",
+        ));
     }
 
     fn blocking_delete(&self) -> opendal::Result<(opendal::raw::RpDelete, Self::BlockingDeleter)> {
-        self.inner.blocking_delete()
+        // Not supported because we user quota not implemented in blocking mode.
+        return Err(opendal::Error::new(
+            opendal::ErrorKind::Unsupported,
+            "Deleting is not supported in blocking mode",
+        ));
     }
 
     fn blocking_list(
@@ -190,6 +197,12 @@ fn update_user_quota(
     db.tables.users.put(&mut wtxn, user_pubkey, &user)?;
     wtxn.commit()?;
     Ok(())
+}
+
+fn does_user_exist(db: &LmDB, user_pubkey: &pkarr::PublicKey) -> anyhow::Result<bool> {
+    let wtxn = db.env.read_txn()?;
+    let user = db.tables.users.get(&wtxn, user_pubkey)?;
+    Ok(user.is_some())
 }
 
 /// Wrapper around the writer that updates the user quota when the file is closed.
@@ -241,6 +254,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             .db
             .get_user_data_usage(self.entry_path.pubkey())
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+        // If the user does not exist, we don't update the quota.
         let current_user_bytes = current_user_bytes.ok_or(opendal::Error::new(
             opendal::ErrorKind::Unexpected,
             "User not found",
@@ -339,6 +353,13 @@ impl<R, A: Access> DeleterWrapper<R, A> {
 
         // TODO: Update user quota for each user
         for (user_pubkey, paths) in user_paths {
+            if !does_user_exist(&self.db, &user_pubkey)
+                .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?
+            {
+                // User does not exist in the database, so we don't update the quota.
+                // This can happen if the user was deleted before the file was deleted.
+                continue;
+            }
             let total_bytes: u64 = paths.iter().filter_map(|p| p.bytes_count).sum();
             let files_deleted_count =
                 paths.iter().filter(|p| p.exists.unwrap_or(false)).count() as u64;
