@@ -60,7 +60,7 @@ mod tests {
     use super::*;
     use crate::admin::app_state::AppState;
     use crate::persistence::files::FileService;
-    use crate::persistence::lmdb::LmDB;
+    use crate::AppContext;
     use axum::extract::State;
     use axum::http::StatusCode;
     use pkarr::Keypair;
@@ -68,7 +68,8 @@ mod tests {
     #[tokio::test]
     async fn test_info_counts() {
         // Setup test DB
-        let mut db = LmDB::test();
+        let context = AppContext::test();
+        let mut db = context.db.clone();
         let key1 = Keypair::random().public_key();
         let key2 = Keypair::random().public_key();
 
@@ -107,7 +108,7 @@ mod tests {
         db.validate_and_consume_signup_token(&code1, &key1).unwrap();
 
         // 4) Invoke handler
-        let state = AppState::new(db.clone(), FileService::test(db), "");
+        let state = AppState::new(db.clone(), FileService::new_from_context(&context).unwrap(), "");
         let (status, Json(info)) = info(State(state)).await.unwrap();
         assert_eq!(status, StatusCode::OK);
         assert_eq!(info.num_users, 2);

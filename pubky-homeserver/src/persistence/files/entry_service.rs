@@ -14,14 +14,13 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct EntryService {
     db: LmDB,
-    user_disk_space_quota_bytes: Option<u64>,
+    // user_disk_space_quota_bytes: u64,
 }
 
 impl EntryService {
-    pub fn new(db: LmDB, user_disk_space_quota_bytes: Option<u64>) -> Self {
+    pub fn new(db: LmDB) -> Self {
         Self {
             db,
-            user_disk_space_quota_bytes,
         }
     }
 
@@ -41,14 +40,14 @@ impl EntryService {
         let mut wtxn = self.db.env.write_txn()?;
 
         // Get old entry size. If it doesn't exist, use 0.
-        let old_entry_size = self
-            .db
-            .tables
-            .entries
-            .get(&wtxn, path.as_str())?
-            .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
-            .transpose()?
-            .unwrap_or(0);
+        // let old_entry_size = self
+        //     .db
+        //     .tables
+        //     .entries
+        //     .get(&wtxn, path.as_str())?
+        //     .map(|bytes| Entry::deserialize(bytes).map(|entry| entry.content_length()))
+        //     .transpose()?
+        //     .unwrap_or(0);
 
         // Write entry
         let mut entry = Entry::new();
@@ -63,22 +62,20 @@ impl EntryService {
             .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
 
         // Update user data usage
-        let mut user = self
+        let user = self
             .db
             .tables
             .users
             .get(&wtxn, path.pubkey())?
             .ok_or(FileIoError::NotFound)?;
-        user.used_bytes = user
-            .used_bytes
-            .saturating_add(metadata.length as u64)
-            .saturating_sub(old_entry_size as u64);
+        // user.used_bytes = user
+        //     .used_bytes
+        //     .saturating_add(metadata.length as u64)
+        //     .saturating_sub(old_entry_size as u64);
 
-        if let Some(quota) = self.user_disk_space_quota_bytes {
-            if user.used_bytes > quota {
-                return Err(FileIoError::DiskSpaceQuotaExceeded);
-            }
-        }
+        // if user.used_bytes > self.user_disk_space_quota_bytes {
+        //     return Err(FileIoError::DiskSpaceQuotaExceeded);
+        // }
 
         self.db.tables.users.put(&mut wtxn, path.pubkey(), &user)?;
 
@@ -107,22 +104,22 @@ impl EntryService {
         let mut wtxn = self.db.env.write_txn()?;
 
         // Update the data usage counter of the user
-        let entry_bytes = self
-            .db
-            .tables
-            .entries
-            .get(&wtxn, path.as_str())?
-            .ok_or(FileIoError::NotFound)?;
-        let entry = Entry::deserialize(entry_bytes)?;
-        let mut user = self
+        // let entry_bytes = self
+        //     .db
+        //     .tables
+        //     .entries
+        //     .get(&wtxn, path.as_str())?
+        //     .ok_or(FileIoError::NotFound)?;
+        // let entry = Entry::deserialize(entry_bytes)?;
+        let user = self
             .db
             .tables
             .users
             .get(&wtxn, path.pubkey())?
             .ok_or(FileIoError::NotFound)?;
-        user.used_bytes = user
-            .used_bytes
-            .saturating_sub(entry.content_length() as u64);
+        // user.used_bytes = user
+        //     .used_bytes
+        //     .saturating_sub(entry.content_length() as u64);
         self.db.tables.users.put(&mut wtxn, path.pubkey(), &user)?;
 
         // Delete entry

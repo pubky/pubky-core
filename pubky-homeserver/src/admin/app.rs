@@ -161,26 +161,26 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_root() {
-        let db = LmDB::test();
-        let server = TestServer::new(create_app(
-            AppState::new(db.clone(), FileService::test(db), ""),
+    fn create_test_server(context: &AppContext) -> TestServer {
+        TestServer::new(create_app(
+            AppState::new(context.db.clone(), FileService::new_from_context(context).unwrap(), ""),
             "test",
         ))
-        .unwrap();
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_root() {
+        let context = AppContext::test();
+        let server = create_test_server(&context);
         let response = server.get("/").expect_success().await;
         response.assert_status_ok();
     }
 
     #[tokio::test]
     async fn test_generate_signup_token_fail() {
-        let db = LmDB::test();
-        let server = TestServer::new(create_app(
-            AppState::new(db.clone(), FileService::test(db), ""),
-            "test",
-        ))
-        .unwrap();
+        let context = AppContext::test();
+        let server = create_test_server(&context);
         // No password
         let response = server.get("/generate_signup_token").expect_failure().await;
         response.assert_status_unauthorized();
@@ -196,12 +196,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_signup_token_success() {
-        let db = LmDB::test();
-        let server = TestServer::new(create_app(
-            AppState::new(db.clone(), FileService::test(db), ""),
-            "test",
-        ))
-        .unwrap();
+        let context = AppContext::test();
+        let server = create_test_server(&context);
         let response = server
             .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")

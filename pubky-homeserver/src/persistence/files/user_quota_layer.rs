@@ -9,7 +9,7 @@ use opendal::Result;
 /// A rough estimate of the size of the file metadata.
 /// This is added to every file.
 /// This prevents the user from writing zero byte files that don't count against the quota.
-const FILE_METADATA_SIZE: u64 = 256;
+pub(crate) const FILE_METADATA_SIZE: u64 = 256;
 
 
 /// The user quota layer is a layer that wraps the operator and updates the user quota when a file is written or deleted.

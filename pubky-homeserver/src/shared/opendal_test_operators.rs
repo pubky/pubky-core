@@ -18,8 +18,8 @@ use uuid::Uuid;
 ///
 /// The GCS operator is only available if the required environment variables are set.
 /// GCS environment variables:
-/// - TEST_GOOGLE_APPLICATION_CREDENTIALS: The path to the GCS credentials file.
-/// - TEST_GCS_BUCKET: The name of the GCS bucket.
+/// - GOOGLE_APPLICATION_CREDENTIALS: The path to the GCS credentials file.
+/// - GCS_BUCKET: The name of the GCS bucket.
 ///
 /// Example:
 /// ```ignore
@@ -116,17 +116,17 @@ pub(crate) fn get_fs_operator() -> (Operator, TempDir) {
 
 /// Creates a GCS operator if the required environment variables are set.
 /// GCS environment variables:
-/// - TEST_GOOGLE_APPLICATION_CREDENTIALS: The path to the GCS credentials file.
-/// - TEST_GCS_BUCKET: The name of the GCS bucket.
+/// - GOOGLE_APPLICATION_CREDENTIALS: The path to the GCS credentials file.
+/// - GCS_BUCKET: The name of the GCS bucket.
 ///
 /// Set `test_root_dir` to true to create a random directory that the operator
 /// lives in. This is useful to avoid conflicts with other tests.
 pub(crate) fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
-    let credential_path = match std::env::var("TEST_GOOGLE_APPLICATION_CREDENTIALS") {
+    let credential_path = match std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
         Ok(path) => path,
         Err(_) => return None,
     };
-    let bucket_name = match std::env::var("TEST_GCS_BUCKET") {
+    let bucket_name = match std::env::var("GCS_BUCKET") {
         Ok(path) => path,
         Err(_) => return None,
     };
