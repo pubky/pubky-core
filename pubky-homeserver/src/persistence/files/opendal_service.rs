@@ -104,6 +104,7 @@ impl OpendalService {
     }
 
     /// Delete a file.
+    /// Deleting a non-existing file will NOT return an error.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
         self.operator
             .delete(path.as_str())

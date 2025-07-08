@@ -70,7 +70,10 @@ impl EntryService {
         let mut wtxn = self.db.env.write_txn()?;
 
         // Delete entry
-        self.db.tables.entries.delete(&mut wtxn, path.as_str())?;
+        let deleted = self.db.tables.entries.delete(&mut wtxn, path.as_str())?;
+        if !deleted {
+            return Err(FileIoError::NotFound);
+        }
 
         // create DELETE event
         let url = format!("pubky://{}", path.as_str());
