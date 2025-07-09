@@ -5,7 +5,6 @@ use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
 
-
 /// Helper function to ensure that the path is a valid entry path aka
 /// starts with a pubkey.
 /// Returns the entry path if it is valid, otherwise returns an error.
@@ -22,7 +21,6 @@ fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
     Ok(path)
 }
 
-
 /// Layer that wraps the access layer and updates the entry in the database when the file is written or deleted.
 #[derive(Clone)]
 pub struct EntryLayer {
@@ -31,9 +29,7 @@ pub struct EntryLayer {
 
 impl EntryLayer {
     pub fn new(db: LmDB) -> Self {
-        Self {
-            db,
-        }
+        Self { db }
     }
 }
 
@@ -167,7 +163,6 @@ pub struct WriterWrapper<R> {
     metadata_builder: FileMetadataBuilder,
 }
 
-
 impl<R: oio::Write> oio::Write for WriterWrapper<R> {
     async fn write(&mut self, bs: opendal::Buffer) -> Result<()> {
         let slice = bs.to_vec();
@@ -180,12 +175,20 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
     }
 
     async fn close(&mut self) -> Result<opendal::Metadata> {
-        self.metadata_builder.guess_mime_type_from_path(self.entry_path.path().as_str());
+        self.metadata_builder
+            .guess_mime_type_from_path(self.entry_path.path().as_str());
         let metadata = self.inner.close().await?;
         // Write successful, update the entry in the database.
         let file_metadata = self.metadata_builder.clone().finalize();
-        if let Err(e) = self.entry_service.write_entry(&self.entry_path, &file_metadata) {
-            tracing::error!("Failed to write entry {} to database: {:?}. Potential orphaned file.", self.entry_path, e);
+        if let Err(e) = self
+            .entry_service
+            .write_entry(&self.entry_path, &file_metadata)
+        {
+            tracing::error!(
+                "Failed to write entry {} to database: {:?}. Potential orphaned file.",
+                self.entry_path,
+                e
+            );
         };
         Ok(metadata)
     }
@@ -228,10 +231,12 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{persistence::files::opendal_test_operators::{OpendalTestOperators}, shared::webdav::WebDavPath};
+    use crate::{
+        persistence::files::opendal_test_operators::OpendalTestOperators,
+        shared::webdav::WebDavPath,
+    };
 
     use super::*;
-
 
     #[tokio::test]
     async fn test_entry_layer() {
@@ -257,9 +262,9 @@ mod tests {
 
             // Overwrite the file
             operator
-            .write(entry_path.as_str(), vec![0; 20])
-            .await
-            .expect("Should succeed because the path starts with a pubkey");
+                .write(entry_path.as_str(), vec![0; 20])
+                .await
+                .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the entry is written to the database correctly
             let entry = db.get_entry(&entry_path).expect("Entry should exist");
@@ -269,10 +274,14 @@ mod tests {
             assert_eq!(events[1], format!("PUT pubky://{}", entry_path.as_str()));
 
             // Delete the file
-            operator.delete(entry_path.as_str()).await.expect("Should succeed");
+            operator
+                .delete(entry_path.as_str())
+                .await
+                .expect("Should succeed");
 
             // Make sure the entry is deleted from the database correctly
-            db.get_entry(&entry_path).expect_err("Entry should not exist");
+            db.get_entry(&entry_path)
+                .expect_err("Entry should not exist");
             let events = db.list_events(None, None).expect("Should succeed");
             assert_eq!(events.len(), 4);
             assert_eq!(events[2], format!("DEL pubky://{}", entry_path.as_str()));

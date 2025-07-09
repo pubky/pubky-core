@@ -3,7 +3,10 @@ use std::path::Path;
 #[cfg(test)]
 use crate::AppContext;
 use crate::{
-    persistence::{files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer}, lmdb::LmDB},
+    persistence::{
+        files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
+        lmdb::LmDB,
+    },
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
 };

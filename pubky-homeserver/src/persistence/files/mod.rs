@@ -1,10 +1,10 @@
+mod entry_layer;
 mod entry_service;
 mod file_io_error;
 mod file_metadata;
 mod file_service;
 mod file_stream_type;
 mod opendal_service;
-mod entry_layer;
 #[cfg(test)]
 pub(crate) mod opendal_test_operators;
 mod user_quota_layer;
