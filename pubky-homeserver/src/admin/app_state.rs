@@ -13,7 +13,7 @@ pub(crate) struct AppState {
 
 impl AppState {
     pub fn new(db: LmDB, file_service: FileService, admin_password: &str) -> Self {
-        let webdavfs = OpendalFs::new(file_service.opendal_service.operator.clone());
+        let webdavfs = OpendalFs::new(file_service.opendal.operator.clone());
         let inner_dav_handler = DavHandler::builder()
             .filesystem(webdavfs)
             .strip_prefix("/dav")

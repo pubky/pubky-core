@@ -1,10 +1,7 @@
 #[cfg(test)]
 use crate::AppContext;
 use crate::{
-    persistence::{
-        files::entry_service::EntryService,
-        lmdb::{tables::entries::Entry, LmDB},
-    },
+    persistence::lmdb::{tables::entries::Entry, LmDB},
     shared::webdav::EntryPath,
     ConfigToml,
 };
@@ -22,16 +19,14 @@ use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
 /// This way, files can be managed in a unified way.
 #[derive(Debug, Clone)]
 pub struct FileService {
-    pub(crate) entry_service: EntryService,
-    pub(crate) opendal_service: OpendalService,
+    pub(crate) opendal: OpendalService,
     pub(crate) db: LmDB,
 }
 
 impl FileService {
     pub fn new(opendal_service: OpendalService, db: LmDB) -> Self {
         Self {
-            entry_service: EntryService::new(db.clone()),
-            opendal_service,
+            opendal: opendal_service,
             db,
         }
     }
@@ -63,7 +58,7 @@ impl FileService {
     /// The stream is chunked.
     /// Errors if the file does not exist.
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        let stream: FileStream = self.opendal_service.get_stream(path).await?;
+        let stream: FileStream = self.opendal.get_stream(path).await?;
         Ok(stream)
     }
 
@@ -73,28 +68,16 @@ impl FileService {
         path: &EntryPath,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
-        let metadata = self.opendal_service.write_stream(path, stream).await?;
-
-        let write_result = self.entry_service.write_entry(path, &metadata);
-        if let Err(e) = &write_result {
-            tracing::warn!(
-                "Writing entry {path} failed. Undoing the write. Error: {:?}",
-                e
-            );
-            // Writing the entry failed. Delete the file in storage and return the error.
-            self.opendal_service.delete(path).await?;
-        };
-
-        write_result
+        self.opendal.write_stream(path, stream).await?;
+        self.db.get_entry(path)
     }
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        self.entry_service.delete_entry(path)?;
-        if let Err(e) = self.opendal_service.delete(path).await {
-            tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
-            return Err(e);
+        if !self.opendal.exists(path).await? {
+            return Err(FileIoError::NotFound);
         }
+        self.opendal.delete(path).await?;
         Ok(())
     }
 }

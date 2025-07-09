@@ -3,7 +3,7 @@ use std::path::Path;
 #[cfg(test)]
 use crate::AppContext;
 use crate::{
-    persistence::{files::user_quota_layer::UserQuotaLayer, lmdb::LmDB},
+    persistence::{files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer}, lmdb::LmDB},
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
 };
@@ -24,6 +24,7 @@ pub fn build_storage_operator(
     user_quota_bytes: u64,
 ) -> Result<Operator, FileIoError> {
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
+    let entry_layer = EntryLayer::new(db.clone());
     let builder = match storage_config {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -38,6 +39,7 @@ pub fn build_storage_operator(
             let builder = opendal::services::Fs::default().root(files_dir.as_str());
             opendal::Operator::new(builder)?
                 .layer(user_quota_layer)
+                .layer(entry_layer)
                 .finish()
         }
         #[cfg(feature = "storage-gcs")]
@@ -49,6 +51,7 @@ pub fn build_storage_operator(
             let builder = config.to_builder()?;
             opendal::Operator::new(builder)?
                 .layer(user_quota_layer)
+                .layer(entry_layer)
                 .finish()
         }
         #[cfg(any(feature = "storage-memory", test))]
@@ -57,6 +60,7 @@ pub fn build_storage_operator(
             let builder = opendal::services::Memory::default();
             opendal::Operator::new(builder)?
                 .layer(user_quota_layer)
+                .layer(entry_layer)
                 .finish()
         }
     };
@@ -198,6 +202,11 @@ impl OpendalService {
             },
         }
     }
+
+    /// Check if a file exists.
+    pub async fn exists(&self, path: &EntryPath) -> Result<bool, opendal::Error> {
+        self.operator.exists(path.as_str()).await
+    }
 }
 
 #[cfg(test)]
@@ -241,12 +250,6 @@ impl OpendalService {
         let stream = Box::pin(futures_util::stream::once(async move { Ok(bytes) }));
         // Use the existing streaming implementation
         self.write_stream(path, stream).await
-    }
-
-    /// Check if a file exists.
-    #[cfg(test)]
-    pub async fn exists(&self, path: &EntryPath) -> Result<bool, opendal::Error> {
-        self.operator.exists(path.as_str()).await
     }
 }
 
