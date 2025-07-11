@@ -2867,6 +2867,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pubky-wasm"
+version = "0.5.1"
+dependencies = [
+ "console_log",
+ "js-sys",
+ "log",
+ "pkarr",
+ "pubky",
+ "pubky-common",
+ "serde",
+ "serde-wasm-bindgen",
+ "tsify",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "publicsuffix"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

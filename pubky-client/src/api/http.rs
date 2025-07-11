@@ -6,7 +6,6 @@ use reqwest::{IntoUrl, Method, RequestBuilder};
 use super::super::Client;
 
 impl Client {
-    #[cfg(not(wasm_browser))]
     /// Start building a `Request` with the `Method` and `Url`.
     ///
     /// Returns a `RequestBuilder`, which will allow setting headers and

@@ -18,19 +18,14 @@ macro_rules! cross_debug {
     };
 }
 
-pub mod native;
-mod shared;
-#[cfg(wasm_browser)]
-mod wasm;
+pub mod api;
+mod client;
+pub mod internal;
+pub use client::*;
 
-#[cfg(not(wasm_browser))]
-pub use crate::native::Client;
-pub use crate::native::{ClientBuilder, api::auth::AuthRequest, api::public::ListBuilder};
-
-#[cfg(wasm_browser)]
-pub use native::Client as NativeClient;
-#[cfg(wasm_browser)]
-pub use wasm::constructor::Client;
+pub use api::{auth::AuthRequest, public::ListBuilder};
+pub use client::Client;
+pub use client::ClientBuilder;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
@@ -38,7 +33,5 @@ pub use pubky_common::recovery_file;
 
 pub mod errors {
     pub use super::*;
-
-    #[cfg(not(wasm_browser))]
-    pub use native::BuildError;
+    pub use BuildError;
 }
