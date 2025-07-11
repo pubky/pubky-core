@@ -115,7 +115,7 @@ pub fn create_signed_packet(
 
     // `SVCB(HTTPS)` record pointing to the pubky tls port and the public ip address
     // This is what is used in all applications expect for browsers.
-    let mut svcb = SVCB::new(0, root_name.clone());
+    let mut svcb = SVCB::new(1, root_name.clone());
     svcb.set_port(public_pubky_tls_port);
     match &public_ip {
         IpAddr::V4(ip) => {
