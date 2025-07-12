@@ -1,5 +1,12 @@
 [workspace]
-members = ["pubky-*", "http-relay", "pkarr-republisher", "examples", "e2e"]
+members = [
+  "pubky-*",
+  "pubky-client/bindings/js",
+  "http-relay",
+  "pkarr-republisher",
+  "examples",
+  "e2e",
+]
 
 resolver = "2"
 
@@ -24,4 +31,3 @@ opt-level = 'z'
 pkarr = { version = "3.8.0" }
 mainline = { version = "5.4.0" }
 pkarr-relay = { version = "0.9.2" }
-

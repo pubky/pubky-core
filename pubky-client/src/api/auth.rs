@@ -149,9 +149,9 @@ impl Client {
                     .await;
             };
             // Spawn a background task to republish the record.
-            #[cfg(not(wasm_browser))]
+            #[cfg(not(target_arch = "wasm32"))]
             tokio::spawn(future);
-            #[cfg(wasm_browser)]
+            #[cfg(target_arch = "wasm32")]
             wasm_bindgen_futures::spawn_local(future);
         }
 
@@ -290,9 +290,9 @@ impl Client {
             let _ = tx.send(result);
         };
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(not(target_arch = "wasm32"))]
         tokio::spawn(future);
-        #[cfg(wasm_browser)]
+        #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(future);
 
         Ok(AuthRequest { url, rx })
@@ -398,12 +398,11 @@ impl AuthRequest {
     }
 }
 
-#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
 
-    use crate::{Client, native::internal::pkarr::PublishStrategy};
+    use crate::{Client, internal::pkarr::PublishStrategy};
 
     #[tokio::test]
     async fn test_get_homeserver() {

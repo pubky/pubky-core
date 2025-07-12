@@ -1,7 +1,7 @@
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
-use crate::wasm::{js_result::JsResult, wrappers::keys::Keypair};
+use crate::{js_result::JsResult, wrappers::keys::Keypair};
 
 /// Create a recovery file of the `keypair`, containing the secret key encrypted
 /// using the `passphrase`.

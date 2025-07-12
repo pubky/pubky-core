@@ -7,8 +7,6 @@ use pkarr::{
 use std::convert::TryInto;
 use std::time::Duration;
 
-use crate::shared::sleep;
-
 use super::super::Client;
 
 /// Helper returns true if this error (or any of its sources) is one of our
@@ -82,7 +80,6 @@ impl Client {
             {
                 Ok(()) => break,
                 Err(e) if should_retry(&e) && attempt < 3 => {
-                    sleep(Duration::from_secs(1)).await;
                     continue;
                 }
                 Err(e) => return Err(e),
@@ -145,7 +142,6 @@ impl Client {
     }
 }
 
-#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod tests {
     use super::*;

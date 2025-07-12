@@ -6,7 +6,7 @@ edition = "2024"
 authors = [
     "SeverinAlexB <severin@synonym.to>",
     "SHAcollision <shacollision@synonym.to>",
-    "Nuh <nuh@nuh.dev>"
+    "Nuh <nuh@nuh.dev>",
 ]
 license = "MIT"
 homepage = "https://github.com/pubky/pubky-core"
@@ -21,60 +21,40 @@ categories = [
 ]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 pubky-common = { path = "../pubky-common", version = "0.5.1" }
 thiserror = "2.0.11"
-wasm-bindgen = "0.2.100"
 url = "2.5.4"
 bytes = "^1.10.0"
 base64 = "0.22.1"
-pkarr = {version = "3.7.1", features = ["full"] }
+pkarr = { version = "3.7.1", features = ["full"] }
 cookie = "0.18.1"
-tracing = "0.1.41"
 cookie_store = { version = "0.21.1", default-features = false }
 anyhow = "1.0.95"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
+reqwest = { version = "0.12.12", default-features = false }
 
-# Native dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 reqwest = { version = "0.12.12", features = [
     "cookies",
     "rustls-tls",
 ], default-features = false }
 tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
 
-# Wasm dependencies
-[target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3.1", features = ["wasm_js"] }
-getrandom2 = { version = "0.2.15", package = "getrandom", features = ["js"] }
-reqwest = { version = "0.12.12", default-features = false }
-futures-lite = { version = "2.6.0", default-features = false }
-wasm-bindgen = "0.2.100"
-wasm-bindgen-futures = "0.4.50"
-console_log = { version = "1.0.0", features = ["color"] }
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 log = "0.4.25"
-gloo-timers = { version = "0.3", features = ["futures"] }
-serde = { version = "1.0", features = ["derive"] }
-serde-wasm-bindgen = "0.4"
-tsify = "0.5.5"
-js-sys = "0.3.77"
-web-sys = "0.3.77"
+wasm-bindgen-futures = "0.4.50"
+futures-lite = { version = "2.6.0", default-features = false }
 
 [dev-dependencies]
 anyhow = "1.0.95"
 futures-lite = "2.6.0"
-tokio = "1.43.0"
 tracing-subscriber = "0.3.19"
 mainline = { version = "5.4.0" }
 
-[build-dependencies]
-cfg_aliases = "0.2.1"
-
 [package.metadata.docs.rs]
 all-features = true
-
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = ['-g', '-O']
