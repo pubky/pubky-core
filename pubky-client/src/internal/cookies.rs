@@ -22,7 +22,7 @@ impl CookieJar {
                 {
                     if cookie.name() == cookie_name {
                         let domain = format!("_pubky.{pubky}");
-                        tracing::debug!(?cookie, "Storing coookie after signup");
+                        cross_debug!("Storing cookie after signup. Cookie: {}", cookie);
 
                         self.pubky_sessions
                             .write()

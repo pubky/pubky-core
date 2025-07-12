@@ -149,7 +149,10 @@ impl Client {
                     .await;
             };
             // Spawn a background task to republish the record.
+            #[cfg(not(target_arch = "wasm32"))]
             tokio::spawn(future);
+            #[cfg(target_arch = "wasm32")]
+            wasm_bindgen_futures::spawn_local(future);
         }
 
         Ok(session)
@@ -287,7 +290,10 @@ impl Client {
             let _ = tx.send(result);
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
         tokio::spawn(future);
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(future);
 
         Ok(AuthRequest { url, rx })
     }
