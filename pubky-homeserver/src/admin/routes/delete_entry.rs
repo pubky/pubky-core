@@ -20,14 +20,15 @@ mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
     use crate::persistence::files::{FileIoError, FileService};
-    use crate::persistence::lmdb::{tables::files::InDbTempFile, LmDB};
+    use crate::persistence::lmdb::LmDB;
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use axum::{routing::delete, Router};
+    use opendal::Buffer;
     use pkarr::Keypair;
 
-    async fn write_test_file(db: &mut LmDB, entry_path: &EntryPath) {
-        let file = InDbTempFile::zeros(10).await.unwrap();
-        let _entry = db.write_entry_from_file(entry_path, &file).await.unwrap();
+    async fn write_test_file(file_service: &FileService, entry_path: &EntryPath) {
+        let buffer = Buffer::from(vec![0; 10]);
+        let _entry = file_service.write(entry_path, buffer).await.unwrap();
     }
 
     #[tokio::test]
@@ -37,7 +38,8 @@ mod tests {
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let mut db = LmDB::test();
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let file_service = FileService::test(db.clone());
+        let app_state = AppState::new(db.clone(), file_service.clone());
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -47,7 +49,7 @@ mod tests {
         db.create_user(&pubkey).unwrap();
         let entry_path = EntryPath::new(pubkey.clone(), webdav_path);
 
-        write_test_file(&mut db, &entry_path).await;
+        write_test_file(&file_service, &entry_path).await;
 
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();

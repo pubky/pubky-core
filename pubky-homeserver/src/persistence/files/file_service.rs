@@ -1,10 +1,7 @@
 use crate::{
     persistence::{
         files::entry_service::EntryService,
-        lmdb::{
-            tables::files::{Entry, FileLocation, InDbFileId},
-            LmDB,
-        },
+        lmdb::{tables::entries::Entry, LmDB},
     },
     shared::webdav::EntryPath,
     ConfigToml,
@@ -63,14 +60,7 @@ impl FileService {
     /// The stream is chunked.
     /// Errors if the file does not exist.
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        let entry = self.get_info(path).await?;
-        let stream: FileStream = match entry.file_location() {
-            FileLocation::LmDB => {
-                let temp_file = self.db.read_file(&entry.file_id()).await?;
-                temp_file.as_stream()?
-            }
-            FileLocation::OpenDal => self.opendal_service.get_stream(path).await?,
-        };
+        let stream: FileStream = self.opendal_service.get_stream(path).await?;
         Ok(stream)
     }
 
@@ -97,44 +87,23 @@ impl FileService {
     pub async fn write_stream(
         &self,
         path: &EntryPath,
-        location: FileLocation,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
         let remaining_bytes_usage = self.get_remaining_user_quota(path)?;
 
-        let metadata = match location {
-            FileLocation::LmDB => {
-                self.db
-                    .write_file_from_stream(path, stream, remaining_bytes_usage)
-                    .await?
-            }
-            FileLocation::OpenDal => {
-                self.opendal_service
-                    .write_stream(path, stream, remaining_bytes_usage)
-                    .await?
-            }
-        };
+        let metadata = self
+            .opendal_service
+            .write_stream(path, stream, remaining_bytes_usage)
+            .await?;
 
-        let write_result = self
-            .entry_service
-            .write_entry(path, &metadata, location.clone());
+        let write_result = self.entry_service.write_entry(path, &metadata);
         if let Err(e) = &write_result {
             tracing::warn!(
                 "Writing entry {path} failed. Undoing the write. Error: {:?}",
                 e
             );
             // Writing the entry failed. Delete the file in storage and return the error.
-            match location {
-                FileLocation::LmDB => {
-                    let mut wtxn = self.db.env.write_txn()?;
-                    let fileid = InDbFileId(metadata.modified_at);
-                    self.db.delete_file(&fileid, &mut wtxn)?;
-                    wtxn.commit()?;
-                }
-                FileLocation::OpenDal => {
-                    self.opendal_service.delete(path).await?;
-                }
-            };
+            self.opendal_service.delete(path).await?;
         };
 
         write_result
@@ -142,21 +111,11 @@ impl FileService {
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        let entry = self.get_info(path).await?;
         self.entry_service.delete_entry(path)?;
-        match entry.file_location() {
-            FileLocation::LmDB => {
-                let mut wtxn = self.db.env.write_txn()?;
-                self.db.delete_file(&entry.file_id(), &mut wtxn)?;
-                wtxn.commit()?;
-            }
-            FileLocation::OpenDal => {
-                if let Err(e) = self.opendal_service.delete(path).await {
-                    tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
-                    return Err(e);
-                }
-            }
-        };
+        if let Err(e) = self.opendal_service.delete(path).await {
+            tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
+            return Err(e);
+        }
         Ok(())
     }
 }
@@ -178,14 +137,9 @@ impl FileService {
     }
 
     /// Write a file to the database and storage depending on the selected target location.
-    pub async fn write(
-        &self,
-        path: &EntryPath,
-        data: Buffer,
-        location: FileLocation,
-    ) -> Result<Entry, FileIoError> {
+    pub async fn write(&self, path: &EntryPath, data: Buffer) -> Result<Entry, FileIoError> {
         let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
-        let entry = self.write_stream(path, location, stream).await?;
+        let entry = self.write_stream(path, stream).await?;
         Ok(entry)
     }
 
@@ -213,9 +167,7 @@ mod tests {
         let mut config = ConfigToml::test();
         config.storage = StorageConfigToml::InMemory;
         let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let file_service = FileService::test(db.clone());
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -238,11 +190,7 @@ mod tests {
         let stream = futures_util::stream::iter(chunks);
 
         // Test LMDB
-        let entry = file_service
-            .write_stream(&path, FileLocation::LmDB, stream)
-            .await
-            .unwrap();
-        assert_eq!(*entry.file_location(), FileLocation::LmDB);
+        let entry = file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
@@ -282,11 +230,7 @@ mod tests {
         );
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
-        let entry = file_service
-            .write_stream(&path, FileLocation::OpenDal, stream)
-            .await
-            .unwrap();
-        assert_eq!(*entry.file_location(), FileLocation::OpenDal);
+        let entry = file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64),
@@ -339,7 +283,7 @@ mod tests {
         // Test LMDB
         let lmdb_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         file_service
-            .write(&lmdb_path, buffer.clone(), FileLocation::LmDB)
+            .write(&lmdb_path, buffer.clone())
             .await
             .unwrap();
         let content = file_service.get(&lmdb_path).await.unwrap();
@@ -347,10 +291,7 @@ mod tests {
 
         // Test OpenDal
         let opendal_path = EntryPath::new(pubkey, WebDavPath::new("/test_opendal.txt").unwrap());
-        file_service
-            .write(&opendal_path, buffer, FileLocation::OpenDal)
-            .await
-            .unwrap();
+        file_service.write(&opendal_path, buffer).await.unwrap();
         let content = file_service.get(&opendal_path).await.unwrap();
         assert_eq!(content.as_ref(), test_data);
     }
@@ -371,10 +312,7 @@ mod tests {
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer, FileLocation::OpenDal)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64)
@@ -402,19 +340,13 @@ mod tests {
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer, FileLocation::OpenDal)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
 
         let test_data2 = vec![2u8; 1024];
         let buffer2 = Buffer::from(test_data2.clone());
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
-        file_service
-            .write(&path, buffer2, FileLocation::OpenDal)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer2).await.unwrap();
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
@@ -439,10 +371,7 @@ mod tests {
         let test_data = vec![1u8; 1024 * 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer, FileLocation::OpenDal)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
@@ -466,10 +395,7 @@ mod tests {
         let test_data = vec![1u8; 1024 * 1024 + 1];
         let buffer = Buffer::from(test_data.clone());
 
-        match file_service
-            .write(&path, buffer, FileLocation::OpenDal)
-            .await
-        {
+        match file_service.write(&path, buffer).await {
             Ok(_) => panic!("Should error for file above quota"),
             Err(FileIoError::DiskSpaceQuotaExceeded) => {} // All good
             Err(e) => {
@@ -497,19 +423,13 @@ mod tests {
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
-        file_service
-            .write(&path, buffer, FileLocation::OpenDal)
-            .await
-            .unwrap();
+        file_service.write(&path, buffer).await.unwrap();
 
         let test_data2 = vec![2u8; 1024 * 1024 + 1];
         let buffer2 = Buffer::from(test_data2.clone());
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
-        match file_service
-            .write(&path, buffer2, FileLocation::OpenDal)
-            .await
-        {
+        match file_service.write(&path, buffer2).await {
             Ok(_) => panic!("Should error for file above quota"),
             Err(FileIoError::DiskSpaceQuotaExceeded) => {} // All good
             Err(e) => {
