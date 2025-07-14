@@ -7,20 +7,10 @@
 // TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-macro_rules! cross_debug {
-    ($($arg:tt)*) => {
-        #[cfg(all(not(test), target_arch = "wasm32"))]
-        log::debug!($($arg)*);
-        #[cfg(all(not(test), not(target_arch = "wasm32")))]
-        tracing::debug!($($arg)*);
-        #[cfg(test)]
-        println!($($arg)*);
-    };
-}
-
 pub mod api;
 mod client;
 pub mod internal;
+mod macros;
 pub use client::*;
 
 pub use api::{auth::AuthRequest, public::ListBuilder};

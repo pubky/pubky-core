@@ -1,7 +1,9 @@
+use reqwest::{Response, cookie::CookieStore, header::HeaderValue};
 use std::{collections::HashMap, sync::RwLock};
 
 use pkarr::PublicKey;
-use reqwest::{Response, cookie::CookieStore, header::HeaderValue};
+
+use crate::cross_debug;
 
 #[derive(Default, Debug)]
 pub struct CookieJar {

@@ -1,13 +1,14 @@
 use anyhow::Result;
+use std::convert::TryInto;
+use std::time::Duration;
+
 use pkarr::{
     Keypair, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
     errors::QueryError,
 };
-use std::convert::TryInto;
-use std::time::Duration;
 
-use super::super::Client;
+use crate::Client;
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.

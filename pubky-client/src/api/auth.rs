@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-
+use anyhow::Result;
 use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
+use std::collections::HashMap;
 use url::Url;
 
 use pkarr::{Keypair, PublicKey};
@@ -12,10 +12,7 @@ use pubky_common::{
     session::Session,
 };
 
-use anyhow::Result;
-
-use super::super::{Client, internal::pkarr::PublishStrategy};
-use crate::handle_http_error;
+use crate::{Client, cross_debug, handle_http_error, internal::pkarr::PublishStrategy};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.

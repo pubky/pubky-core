@@ -3,7 +3,7 @@
 use js_sys::Promise;
 use url::Url;
 use wasm_bindgen::prelude::*;
-use web_sys::{Headers, Request, RequestInit};
+use web_sys::{Headers, Request, RequestInit, ServiceWorkerGlobalScope};
 
 use crate::constructor::Client;
 use crate::js_result::JsResult;
@@ -41,7 +41,7 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
     if let Ok(true) = js_sys::Reflect::has(&global, &JsValue::from_str("ServiceWorkerGlobalScope"))
     {
         global
-            .unchecked_into::<web_sys::ServiceWorkerGlobalScope>()
+            .unchecked_into::<ServiceWorkerGlobalScope>()
             .fetch_with_request(req)
     } else {
         // browser

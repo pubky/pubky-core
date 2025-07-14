@@ -50,3 +50,7 @@ async fn main () {
 ## Example code
 
 Check more [examples](https://github.com/pubky/pubky-core/tree/main/examples) for using the Pubky client.
+
+## JS bindings
+
+Find a wrapper of this crate using `wasm_bindgen` in `pubky-client/bindings/js`

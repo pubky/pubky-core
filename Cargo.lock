@@ -2860,16 +2860,12 @@ name = "pubky-wasm"
 version = "0.5.1"
 dependencies = [
  "console_log",
- "futures-lite",
- "getrandom 0.2.15",
  "getrandom 0.3.1",
- "gloo-timers",
  "js-sys",
  "log",
  "pkarr",
  "pubky",
  "pubky-common",
- "reqwest",
  "serde",
  "serde-wasm-bindgen",
  "tsify",

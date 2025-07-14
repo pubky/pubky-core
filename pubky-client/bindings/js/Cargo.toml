@@ -2,6 +2,23 @@
 name = "pubky-wasm"
 version = "0.5.1"
 edition = "2024"
+description = "Pubky-Core Client WASM bindings"
+authors = [
+    "SeverinAlexB <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+    "Nuh <nuh@nuh.dev>",
+]
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
+categories = [
+    "network-programming",
+    "cryptography",
+    "web-programming",
+    "authentication",
+]
 
 [lib]
 crate-type = ["cdylib"]
@@ -18,15 +35,11 @@ tsify = "0.5.5"
 pubky = { path = "../../../pubky-client", default-features = false }
 pkarr = { version = "3.7.1", default-features = false, features = ["relays"] }
 pubky-common = { path = "../../../pubky-common" }
-url = "2.5.4"
-getrandom = { version = "0.3.1", features = ["wasm_js"] }
-getrandom2 = { version = "0.2.15", package = "getrandom", features = ["js"] }
-reqwest = { version = "0.12.12", default-features = false }
-futures-lite = { version = "2.6.0", default-features = false }
-gloo-timers = { version = "0.3", features = ["futures"] }
-web-sys = { version = "0.3.77", features = [
+web-sys = { version = "0.3.77", default-features = false, features = [
     "Request",
     "RequestInit",
     "Headers",
     "ServiceWorkerGlobalScope",
 ] }
+url = "2.5.4"
+getrandom = { version = "0.3.1", features = ["wasm_js"] }

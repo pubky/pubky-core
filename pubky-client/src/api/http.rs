@@ -1,13 +1,9 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
+use crate::Client;
 use pkarr::PublicKey;
-
-#[cfg(target_arch = "wasm32")]
-use futures_lite::StreamExt;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
-
-use super::super::Client;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Client {
@@ -144,6 +140,8 @@ impl Client {
 }
 
 #[cfg(target_arch = "wasm32")]
+use futures_lite::StreamExt;
+#[cfg(target_arch = "wasm32")]
 use pkarr::extra::endpoints::Endpoint;
 
 #[cfg(target_arch = "wasm32")]
@@ -192,7 +190,7 @@ impl Client {
     pub(crate) async fn transform_url(&self, url: &mut Url) {
         let clone = url.clone();
         let qname = clone.host_str().unwrap_or("");
-        cross_debug!("Prepare request {}", url.as_str());
+        log::debug!("Prepare request {}", url.as_str());
 
         let mut stream = self.pkarr.resolve_https_endpoints(qname);
 
@@ -236,7 +234,7 @@ impl Client {
         } else {
             // TODO: didn't find any domain, what to do?
             //  return an error.
-            cross_debug!("Could not resolve host: {}", qname);
+            log::debug!("Could not resolve host: {}", qname);
         }
     }
 }
