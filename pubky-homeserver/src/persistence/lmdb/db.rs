@@ -12,7 +12,6 @@ pub const DEFAULT_MAP_SIZE: usize = 10995116277760; // 10TB (not = disk-space us
 pub struct LmDB {
     pub(crate) env: Env,
     pub(crate) tables: Tables,
-    pub(crate) max_chunk_size: usize,
     // Only used for testing purposes to keep the testdir alive.
     #[allow(dead_code)]
     test_dir: Option<Arc<tempfile::TempDir>>,
@@ -40,7 +39,6 @@ impl LmDB {
         let db = LmDB {
             env,
             tables,
-            max_chunk_size: Self::max_chunk_size(),
             test_dir: None,
         };
 
@@ -56,20 +54,5 @@ impl LmDB {
         lmdb.test_dir = Some(Arc::new(temp_dir)); // Keep the directory alive for the duration of the test. As soon as all LmDB instances are dropped, the directory will be deleted automatically.
 
         lmdb
-    }
-
-    /// calculate optimal chunk size:
-    /// - <https://lmdb.readthedocs.io/en/release/#storage-efficiency-limits>
-    /// - <https://github.com/lmdbjava/benchmarks/blob/master/results/20160710/README.md#test-2-determine-24816-kb-byte-values>
-    fn max_chunk_size() -> usize {
-        let page_size = page_size::get();
-
-        // - 16 bytes Header  per page (LMDB)
-        // - Each page has to contain 2 records
-        // - 8 bytes per record (LMDB) (empirically, it seems to be 10 not 8)
-        // - 12 bytes key:
-        //      - timestamp : 8 bytes
-        //      - chunk index: 4 bytes
-        ((page_size - 16) / 2) - (8 + 2) - 12
     }
 }
