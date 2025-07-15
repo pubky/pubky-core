@@ -36,7 +36,7 @@ impl Client {
                     keypair.as_inner(),
                     homeserver.as_inner(),
                     signup_token.as_deref(),
-                    accept_tos.as_deref(),
+                    accept_tos,
                 )
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?,
