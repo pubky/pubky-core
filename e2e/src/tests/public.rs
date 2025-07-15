@@ -13,7 +13,7 @@ async fn put_get_delete() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -93,7 +93,7 @@ async fn put_quota_applied() {
 
     // Signup
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -143,7 +143,7 @@ async fn unauthorized_put_delete() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -158,7 +158,7 @@ async fn unauthorized_put_delete() {
 
         // TODO: remove extra client after switching to subdomains.
         other_client
-            .signup(&other, &server.public_key(), None)
+            .signup(&other, &server.public_key(), None, None)
             .await
             .unwrap();
 
@@ -186,7 +186,7 @@ async fn unauthorized_put_delete() {
 
         // TODO: remove extra client after switching to subdomains.
         other_client
-            .signup(&other, &server.public_key(), None)
+            .signup(&other, &server.public_key(), None, None)
             .await
             .unwrap();
 
@@ -211,7 +211,7 @@ async fn list() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -417,7 +417,7 @@ async fn list_shallow() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -630,7 +630,7 @@ async fn list_events() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -729,7 +729,7 @@ async fn read_after_event() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 
@@ -785,11 +785,11 @@ async fn dont_delete_shared_blobs() {
     let user_2 = Keypair::random();
 
     client
-        .signup(&user_1, &homeserver_pubky, None)
+        .signup(&user_1, &homeserver_pubky, None, None)
         .await
         .unwrap();
     client
-        .signup(&user_2, &homeserver_pubky, None)
+        .signup(&user_2, &homeserver_pubky, None, None)
         .await
         .unwrap();
 
@@ -858,7 +858,7 @@ async fn stream() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key(), None, None)
         .await
         .unwrap();
 

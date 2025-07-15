@@ -39,6 +39,7 @@ async fn main() -> Result<()> {
             &keypair,
             &PublicKey::try_from(homeserver).unwrap(),
             cli.signup_code.as_deref(),
+            None,
         )
         .await?;
 

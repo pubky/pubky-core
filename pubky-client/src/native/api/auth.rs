@@ -26,11 +26,13 @@ impl Client {
     /// - `keypair`: The user's keypair (used to sign the AuthToken).
     /// - `homeserver`: The server's public key (as a domain-like string).
     /// - `signup_token`: Optional invite code or token required by the server for new users.
+    /// - `accept_tos`: Optional accept the Terms of Service of a homeserver that requires ToS acceptance.
     pub async fn signup(
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
         signup_token: Option<&str>,
+        accept_tos: Option<bool>,
     ) -> Result<Session> {
         // 1) Construct the base URL: "https://<homeserver>/signup"
         let mut url = Url::parse(&format!("https://{}", homeserver))?;
@@ -41,11 +43,16 @@ impl Client {
             url.query_pairs_mut().append_pair("signup_token", token);
         }
 
-        // 3) Create an AuthToken (e.g. with root capability).
+        // 3) If we have a ToS confirmation, append it to the query string.
+        if let Some(true) = accept_tos {
+            url.query_pairs_mut().append_pair("accept_tos", "true");
+        }
+
+        // 4) Create an AuthToken (e.g. with root capability).
         let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
         let request_body = auth_token.serialize();
 
-        // 4) Send POST request with the AuthToken in the body
+        // 5) Send POST request with the AuthToken in the body
         let response = self
             .cross_request(Method::POST, url)
             .await
@@ -53,10 +60,10 @@ impl Client {
             .send()
             .await?;
 
-        // 5) Check for non-2xx status codes
+        // 6) Check for non-2xx status codes
         handle_http_error!(response);
 
-        // 6) Publish the homeserver record
+        // 7) Publish the homeserver record
         self.publish_homeserver(
             keypair,
             Some(&homeserver.to_string()),
@@ -64,12 +71,12 @@ impl Client {
         )
         .await?;
 
-        // 7) Store session cookie in local store
+        // 8) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store
             .store_session_after_signup(&response, &keypair.public_key());
 
-        // 8) Parse the response body into a `Session`
+        // 9) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
         Ok(Session::deserialize(&bytes)?)
     }

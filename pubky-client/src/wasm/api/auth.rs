@@ -28,6 +28,7 @@ impl Client {
         keypair: &Keypair,
         homeserver: &PublicKey,
         signup_token: Option<String>,
+        accept_tos: Option<bool>,
     ) -> JsResult<Session> {
         Ok(Session(
             self.0
@@ -35,6 +36,7 @@ impl Client {
                     keypair.as_inner(),
                     homeserver.as_inner(),
                     signup_token.as_deref(),
+                    accept_tos.as_deref(),
                 )
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?,

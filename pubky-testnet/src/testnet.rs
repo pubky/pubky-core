@@ -204,7 +204,7 @@ mod test {
         let pubky = keypair.public_key();
 
         let session = client
-            .signup(&keypair, &hs.public_key(), None)
+            .signup(&keypair, &hs.public_key(), None, None)
             .await
             .unwrap();
         assert_eq!(session.pubky(), &pubky);
@@ -265,7 +265,7 @@ mod test {
                 let pubky = keypair.public_key();
 
                 let session = client
-                    .signup(&keypair, &hs.public_key(), None)
+                    .signup(&keypair, &hs.public_key(), None, None)
                     .await
                     .unwrap();
                 assert_eq!(session.pubky(), &pubky);
