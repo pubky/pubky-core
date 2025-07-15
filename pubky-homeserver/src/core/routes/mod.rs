@@ -23,6 +23,10 @@ mod auth;
 mod feed;
 mod root;
 mod tenants;
+mod tos;
+
+#[cfg(test)]
+mod test_helpers;
 
 static HOMESERVER_VERSION: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
@@ -30,6 +34,7 @@ const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 fn base() -> Router<AppState> {
     Router::new()
         .route("/", get(root::handler))
+        .route("/tos", get(tos::handler))
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
         // Events

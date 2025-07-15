@@ -32,6 +32,8 @@ pub(crate) struct AppState {
     pub(crate) signup_mode: SignupMode,
     /// If `Some(bytes)` the quota is enforced, else unlimited.
     pub(crate) user_quota_bytes: Option<u64>,
+    pub(crate) enforce_tos: bool,
+    pub(crate) data_dir: Arc<dyn crate::data_directory::DataDir>,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -168,6 +170,8 @@ impl HomeserverCore {
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
+            enforce_tos: context.config_toml.general.enforce_tos,
+            data_dir: context.data_dir.clone(),
         };
         super::routes::create_app(state.clone(), context)
     }

@@ -21,10 +21,11 @@ use tower_cookies::{
 };
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
-/// 1) Check if signup tokens are required (signup mode is token_required).
-/// 2) Ensure the user *does not* already exist.
-/// 3) Create new user if needed.
-/// 4) Create a session and set the cookie (using the shared helper).
+/// 1) Check if user has accepted ToS (if required)
+/// 2) Check if signup tokens are required (signup mode is token_required).
+/// 3) Ensure the user *does not* already exist.
+/// 4) Create new user if needed.
+/// 5) Create a session and set the cookie (using the shared helper).
 pub async fn signup(
     State(state): State<AppState>,
     user_agent: Option<TypedHeader<UserAgent>>,
@@ -33,11 +34,22 @@ pub async fn signup(
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
-    // 1) Verify AuthToken from request body
+    // 1) Check for ToS acceptance if enforced
+    if state.enforce_tos {
+        let accepted = params.get("accept_tos").is_some_and(|val| val == "true");
+        if !accepted {
+            return Err(HttpError::new_with_message(
+                StatusCode::BAD_REQUEST,
+                "You must accept the Terms of Service to sign up.",
+            ));
+        }
+    }
+
+    // 2) Verify AuthToken from request body
     let token = state.verifier.verify(&body)?;
     let public_key = token.pubky();
 
-    // 2) Ensure the user does *not* already exist
+    // 3) Ensure the user does *not* already exist
     let txn = state.db.env.read_txn()?;
     let users = state.db.tables.users;
     if users.get(&txn, public_key)?.is_some() {
@@ -48,7 +60,7 @@ pub async fn signup(
     }
     txn.commit()?;
 
-    // 3) If signup_mode == token_required, require & validate a `signup_token` param.
+    // 4) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.signup_mode == SignupMode::TokenRequired {
         let signup_token_param = params
             .get("signup_token")
@@ -82,12 +94,12 @@ pub async fn signup(
         }
     }
 
-    // 4) Create the new user record
+    // 5) Create the new user record
     let mut wtxn = state.db.env.write_txn()?;
     users.put(&mut wtxn, public_key, &User::default())?;
     wtxn.commit()?;
 
-    // 5) Create session & set cookie
+    // 6) Create session & set cookie
     create_session_and_cookie(
         &state,
         cookies,
@@ -196,7 +208,15 @@ fn is_secure(host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        app_context::AppContext,
+        core::{routes::test_helpers::create_test_signup, HomeserverCore},
+        data_directory::MockDataDir,
+        ConfigToml,
+    };
+    use axum::http::StatusCode;
     use pkarr::Keypair;
+    use pubky_common::{auth::AuthToken, capabilities::Capability};
 
     use super::*;
 
@@ -210,5 +230,68 @@ mod tests {
         assert!(!is_secure("localhost:23423"));
         assert!(is_secure(&Keypair::random().public_key().to_string()));
         assert!(is_secure("example.com"));
+    }
+
+    #[tokio::test]
+    async fn signup_with_tos_enforced_fails_without_acceptance() {
+        let mut config = ConfigToml::test();
+        config.general.enforce_tos = true;
+        let data_dir = MockDataDir::new(config, None).unwrap();
+
+        let context = AppContext::try_from(data_dir).unwrap();
+        let router = HomeserverCore::create_router(&context);
+        let server = axum_test::TestServer::new(router.clone()).unwrap();
+
+        let keypair = Keypair::random();
+        let auth_token = AuthToken::sign(&keypair, vec![Capability::root()]);
+        let body_bytes: axum::body::Bytes = auth_token.serialize().into();
+
+        // Attempt signup without `accept_tos`
+        let response = server
+            .post("/signup")
+            .add_header("host", keypair.public_key().to_string())
+            .bytes(body_bytes)
+            .await;
+
+        response.assert_status(StatusCode::BAD_REQUEST);
+        let body_text = response.text();
+        assert_eq!(
+            body_text,
+            "You must accept the Terms of Service to sign up."
+        );
+    }
+
+    #[tokio::test]
+    async fn signup_with_tos_enforced_succeeds_with_acceptance() {
+        let mut config = ConfigToml::test();
+        config.general.enforce_tos = true;
+        let data_dir = MockDataDir::new(config, None).unwrap();
+        let context = AppContext::try_from(data_dir).unwrap();
+        let router = HomeserverCore::create_router(&context);
+        let server = axum_test::TestServer::new(router.clone()).unwrap();
+
+        let keypair = Keypair::random();
+        let auth_token = AuthToken::sign(&keypair, vec![Capability::root()]);
+        let body_bytes: axum::body::Bytes = auth_token.serialize().into();
+
+        // Attempt signup with `accept_tos=true`
+        server
+            .post("/signup?accept_tos=true")
+            .add_header("host", keypair.public_key().to_string())
+            .bytes(body_bytes)
+            .expect_success()
+            .await;
+    }
+
+    #[tokio::test]
+    async fn signup_with_tos_disabled_succeeds_without_acceptance() {
+        let data_dir = MockDataDir::test(); // enforce_tos is false by default
+        let context = AppContext::try_from(data_dir).unwrap();
+        let router = HomeserverCore::create_router(&context);
+        let server = axum_test::TestServer::new(router.clone()).unwrap();
+
+        let keypair = Keypair::random();
+
+        create_test_signup(&server, &keypair).await.unwrap();
     }
 }

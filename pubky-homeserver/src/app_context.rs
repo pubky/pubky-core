@@ -81,6 +81,8 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
         let conf = dir
             .read_or_create_config_file()
             .map_err(AppContextConversionError::Config)?;
+        dir.ensure_tos_file_exists_if_enforced(&conf)
+            .map_err(AppContextConversionError::DataDir)?;
         let keypair = dir
             .read_or_create_keypair()
             .map_err(AppContextConversionError::Keypair)?;

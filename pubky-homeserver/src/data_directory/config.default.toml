@@ -2,7 +2,7 @@
 signup_mode = "token_required"
 lmdb_backup_interval_s = 0
 user_storage_quota_mb = 0
-
+enforce_tos = false
 
 [drive]
 pubky_listen_socket = "127.0.0.1:6287"
@@ -19,7 +19,7 @@ admin_password = "admin"
 [pkdns]
 public_ip = "127.0.0.1"
 icann_domain = "localhost"
-user_keys_republisher_interval = 14400 # 4 hours in seconds
+user_keys_republisher_interval = 14400                                   # 4 hours in seconds
 dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
 [logging]

@@ -150,56 +150,12 @@ impl Entry {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::routes::test_helpers::create_test_env;
     use axum::http::{header, StatusCode};
-    use axum::Router;
-    use axum_test::TestServer;
-    use pkarr::{Keypair, PublicKey};
-    use pubky_common::{auth::AuthToken, capabilities::Capability};
-
-    use crate::{app_context::AppContext, core::HomeserverCore};
-
-    pub async fn create_root_user(
-        server: &axum_test::TestServer,
-        keypair: &Keypair,
-    ) -> anyhow::Result<String> {
-        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
-        let body_bytes: axum::body::Bytes = auth_token.serialize().into();
-        let response = server
-            .post("/signup")
-            .add_header("host", keypair.public_key().to_string())
-            .bytes(body_bytes)
-            .expect_success()
-            .await;
-
-        let header_value = response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|h| h.to_str().ok())
-            .expect("should return a set-cookie header")
-            .to_string();
-
-        Ok(header_value)
-    }
-
-    pub async fn create_environment(
-    ) -> anyhow::Result<(AppContext, Router, TestServer, PublicKey, String)> {
-        let context = AppContext::test();
-        let router = HomeserverCore::create_router(&context);
-        let server = axum_test::TestServer::new(router.clone()).unwrap();
-
-        let keypair = Keypair::random();
-        let public_key = keypair.public_key();
-        let cookie = create_root_user(&server, &keypair)
-            .await
-            .unwrap()
-            .to_string();
-
-        Ok((context, router, server, public_key, cookie))
-    }
 
     #[tokio::test]
     async fn if_last_modified() {
-        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+        let (_, _, server, public_key, cookie) = create_test_env().await.unwrap();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -231,7 +187,7 @@ mod tests {
 
     #[tokio::test]
     async fn if_none_match() {
-        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+        let (_, _, server, public_key, cookie) = create_test_env().await.unwrap();
 
         let data = vec![1_u8, 2, 3, 4, 5];
 
@@ -263,7 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_content_with_magic_bytes() {
-        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+        let (_, _, server, public_key, cookie) = create_test_env().await.unwrap();
 
         let data = vec![0x89_u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -285,7 +241,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_content_by_extension() {
-        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+        let (_, _, server, public_key, cookie) = create_test_env().await.unwrap();
 
         let data = vec![108, 111, 114, 101, 109, 32, 105, 112, 115, 117, 109];
 

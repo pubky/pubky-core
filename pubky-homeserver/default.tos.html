@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 2em; max-width: 800px; margin: auto; color: #333; }
+        h1 { color: #333; }
+        p { color: #555; }
+        .container { background-color: #f9f9f9; border: 1px solid #ddd; padding: 2em; border-radius: 5px; }
+        .admin-note { margin-top: 2em; padding: 1em; background-color: #fffbe6; border: 1px solid #ffe58f; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Terms of Service Not Yet Defined</h1>
+        <p>This homeserver is configured to enforce acceptance of its Terms of Service (ToS).</p>
+        <p>However, the administrator of this server has not yet provided the specific terms.</p>
+        <p>By proceeding, you are acknowledging this fact. Please contact the homeserver administrator for more information.</p>
+        
+        <div class="admin-note">
+            <p><strong>Note to the Administrator:</strong></p>
+            <p>You are seeing this default page because <code>enforce_tos</code> is set to <code>true</code> in your <code>config.toml</code>, but a custom <code>tos.html</code> was not found.</p>
+            <p>To set your own Terms of Service, please create or edit the <code>tos.html</code> file located in your homeserver's data directory (e.g., <code>~/.pubky/tos.html</code>).</p>
+        </div>
+    </div>
+</body>
+</html>

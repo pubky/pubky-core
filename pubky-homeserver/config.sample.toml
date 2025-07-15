@@ -4,6 +4,11 @@
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
+# If set to true, users must accept the Terms of Service upon signup.
+# The ToS content is read from `tos.html` in your data directory.
+# And users can check it out at the `/tos` endpoint.
+enforce_tos = false
+
 # LMDB backup interval in seconds. 0 means disabled.
 # Periodically creates a "safe to copy" compacted backup on single
 # file under `{data_dir}/data/lmdb/backup.mdb`
@@ -46,13 +51,11 @@ path = "/session"
 method = "POST"
 quota = "20r/m"
 key = "ip"
-whitelist = [
-    "127.0.0.1"
-]
+whitelist = ["127.0.0.1"]
 #
 # Limit file uploads to 1 megabyte per second per user with a temporary burst of 10 megabytes.
 [[drive.rate_limits]]
-path = "/pub/**" 
+path = "/pub/**"
 method = "PUT"
 quota = "1mb/s"
 key = "user"
