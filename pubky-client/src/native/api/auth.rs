@@ -17,68 +17,110 @@ use anyhow::Result;
 use super::super::{Client, internal::pkarr::PublishStrategy};
 use crate::handle_http_error;
 
-impl Client {
-    /// Signup to a homeserver and update Pkarr accordingly.
-    ///
-    /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
-    /// for example "pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy"
-    ///
-    /// - `keypair`: The user's keypair (used to sign the AuthToken).
-    /// - `homeserver`: The server's public key (as a domain-like string).
-    /// - `signup_token`: Optional invite code or token required by the server for new users.
-    /// - `accept_tos`: Optional accept the Terms of Service of a homeserver that requires ToS acceptance.
-    pub async fn signup(
-        &self,
-        keypair: &Keypair,
-        homeserver: &PublicKey,
-        signup_token: Option<&str>,
-        accept_tos: Option<bool>,
-    ) -> Result<Session> {
+/// A builder for constructing and sending a signup request.
+pub struct SignupRequestBuilder<'a> {
+    client: &'a Client,
+    keypair: &'a Keypair,
+    homeserver: &'a PublicKey,
+    signup_token: Option<&'a str>,
+    accept_tos: bool,
+}
+
+impl<'a> SignupRequestBuilder<'a> {
+    /// Attaches a signup token to the request.
+    pub fn with_signup_token(mut self, token: &'a str) -> Self {
+        self.signup_token = Some(token);
+        self
+    }
+
+    /// Marks that the user accepts the homeserver's Terms of Service.
+    pub fn accept_tos(mut self) -> Self {
+        self.accept_tos = true;
+        self
+    }
+
+    /// Consumes the builder and sends the configured signup request.
+    pub async fn send(self) -> Result<Session> {
         // 1) Construct the base URL: "https://<homeserver>/signup"
-        let mut url = Url::parse(&format!("https://{}", homeserver))?;
+        let mut url = Url::parse(&format!("https://{}", self.homeserver))?;
         url.set_path("/signup");
 
-        // 2) If we have a signup_token, append it to the query string.
-        if let Some(token) = signup_token {
+        // 2) Append optional query parameters from the builder's state.
+        if let Some(token) = self.signup_token {
             url.query_pairs_mut().append_pair("signup_token", token);
         }
-
-        // 3) If we have a ToS confirmation, append it to the query string.
-        if let Some(true) = accept_tos {
+        if self.accept_tos {
             url.query_pairs_mut().append_pair("accept_tos", "true");
         }
 
-        // 4) Create an AuthToken (e.g. with root capability).
-        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        // 3) Create an AuthToken (e.g. with root capability).
+        let auth_token = AuthToken::sign(self.keypair, vec![Capability::root()]);
         let request_body = auth_token.serialize();
 
-        // 5) Send POST request with the AuthToken in the body
+        // 4) Send POST request with the AuthToken in the body
         let response = self
+            .client
             .cross_request(Method::POST, url)
             .await
             .body(request_body)
             .send()
             .await?;
 
-        // 6) Check for non-2xx status codes
+        // 5) Check for non-2xx status codes
         handle_http_error!(response);
 
-        // 7) Publish the homeserver record
-        self.publish_homeserver(
-            keypair,
-            Some(&homeserver.to_string()),
-            PublishStrategy::Force,
-        )
-        .await?;
+        // 6) Publish the homeserver record
+        self.client
+            .publish_homeserver(
+                self.keypair,
+                Some(&self.homeserver.to_string()),
+                PublishStrategy::Force,
+            )
+            .await?;
 
-        // 8) Store session cookie in local store
+        // 7) Store session cookie in local store
         #[cfg(not(target_arch = "wasm32"))]
-        self.cookie_store
-            .store_session_after_signup(&response, &keypair.public_key());
+        self.client
+            .cookie_store
+            .store_session_after_signup(&response, &self.keypair.public_key());
 
-        // 9) Parse the response body into a `Session`
+        // 8) Parse the response body into a `Session`
         let bytes = response.bytes().await?;
         Ok(Session::deserialize(&bytes)?)
+    }
+}
+
+impl Client {
+    /// Initiates a signup request to a homeserver.
+    ///
+    /// This returns a `SignupRequestBuilder` that allows for chaining optional
+    /// parameters before sending the signup request.
+    ///
+    /// # Arguments
+    ///
+    /// * `keypair`: The user's keypair (used to sign the `AuthToken`).
+    /// * `homeserver`: The public key of the target homeserver.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// client.signup(&keypair, &homeserver_pubkey)
+    ///     .with_signup_token("AAAA-BBBB-CCCC")
+    ///     .accept_tos()
+    ///     .send()
+    ///     .await?;
+    /// ```
+    pub fn signup<'a>(
+        &'a self,
+        keypair: &'a Keypair,
+        homeserver: &'a PublicKey,
+    ) -> SignupRequestBuilder<'a> {
+        SignupRequestBuilder {
+            client: self,
+            keypair,
+            homeserver,
+            signup_token: None,
+            accept_tos: false,
+        }
     }
 
     /// Check the current session for a given Pubky in its homeserver.

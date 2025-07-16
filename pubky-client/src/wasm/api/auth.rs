@@ -30,17 +30,26 @@ impl Client {
         signup_token: Option<String>,
         accept_tos: Option<bool>,
     ) -> JsResult<Session> {
-        Ok(Session(
-            self.0
-                .signup(
-                    keypair.as_inner(),
-                    homeserver.as_inner(),
-                    signup_token.as_deref(),
-                    accept_tos,
-                )
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?,
-        ))
+        // Start the native signup request builder.
+        let mut signup_request = self.0.signup(keypair.as_inner(), homeserver.as_inner());
+
+        // Conditionally add the signup token if it was provided.
+        if let Some(token) = signup_token.as_deref() {
+            signup_request = signup_request.with_signup_token(token);
+        }
+
+        // Conditionally accept ToS if the flag is true.
+        if let Some(true) = accept_tos {
+            signup_request = signup_request.accept_tos();
+        }
+
+        // Execute the configured request and map the result for the Wasm boundary.
+        let session = signup_request
+            .send()
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        Ok(Session(session))
     }
 
     /// Check the current session for a given Pubky in its homeserver.

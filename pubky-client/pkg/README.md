@@ -35,6 +35,7 @@ let homeserver = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
 
+// Some homeservers might require a `signup_token` or to `accept_tos: bool`
 await client.signup(keypair, homeserver, signup_token);
 
 const publicKey = keypair.publicKey();

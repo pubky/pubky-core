@@ -27,6 +27,8 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    let homeserver = PublicKey::try_from(HOMESERVER).unwrap();
+
     let recovery_file = std::fs::read(&cli.recovery_file)?;
     println!("\nSuccessfully opened recovery file");
 
@@ -67,20 +69,13 @@ async fn main() -> Result<()> {
     println!("PublicKey: {}", keypair.public_key());
 
     let client = if cli.testnet {
-        dbg!("HERE");
         let client = Client::builder().testnet().build()?;
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
+
         if client.signin(&keypair).await.is_err() {
-            client
-                .signup(
-                    &keypair,
-                    &PublicKey::try_from(HOMESERVER).unwrap(),
-                    None,
-                    None,
-                )
-                .await?;
+            client.signup(&keypair, &homeserver).send().await?;
         };
 
         client

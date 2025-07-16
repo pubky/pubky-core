@@ -43,7 +43,8 @@ async fn test_limit_signin_get_session() {
     // Create a new user
     let keypair = Keypair::random();
     client
-        .signup(&keypair, &server.public_key(), None, None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -87,7 +88,8 @@ async fn test_limit_signin_get_session_whitelist() {
 
     // Create a new user
     client
-        .signup(&keypair, &server.public_key(), None, None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -103,7 +105,8 @@ async fn test_limit_signin_get_session_whitelist() {
     // Create another new user, not on the whitelist
     let keypair = Keypair::random();
     client
-        .signup(&keypair, &server.public_key(), None, None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -170,7 +173,8 @@ async fn test_limit_upload() {
     // Create a new user
     let keypair = Keypair::random();
     client
-        .signup(&keypair, &server.public_key(), None, None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -239,7 +243,8 @@ async fn test_concurrent_write_read() {
         }
         pub async fn signup(&self, hs_pubkey: &PublicKey) {
             self.client
-                .signup(&self.keypair, hs_pubkey, None, None)
+                .signup(&self.keypair, hs_pubkey)
+                .send()
                 .await
                 .expect("Failed to signup");
         }

@@ -21,7 +21,8 @@ async fn main () {
 
   // Signup to a Homeserver
   let keypair = Keypair::random();
-  client.signup(&keypair, &homeserver.public_key(), None).await.unwrap();
+  // Add `.with_signup_token("...")` or `.accept_tos()` if the homeserver requires it.
+  client.signup(&keypair, &homeserver.public_key()).send().await.unwrap();
 
   // Write data.
   let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
@@ -53,12 +54,12 @@ Check more [examples](https://github.com/pubky/pubky-core/tree/main/examples) fo
 
 ## Wasm Rust Analyzer
 
-In vscode with the rust-analyzer, wasm behind the `#[cfg(wasm_browser)]` guard is not type checked. To fix this, add 
+In vscode with the rust-analyzer, wasm behind the `#[cfg(wasm_browser)]` guard is not type checked. To fix this, add
 a `.vscode/settings.json` file in the root of this project with the following content:
 
 ```json
 {
-    "rust-analyzer.cargo.target": "wasm32-unknown-unknown"
+  "rust-analyzer.cargo.target": "wasm32-unknown-unknown"
 }
 ```
 

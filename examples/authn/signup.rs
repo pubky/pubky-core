@@ -34,14 +34,14 @@ async fn main() -> Result<()> {
 
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
-    client
-        .signup(
-            &keypair,
-            &PublicKey::try_from(homeserver).unwrap(),
-            cli.signup_code.as_deref(),
-            None,
-        )
-        .await?;
+    let homeserver = PublicKey::try_from(homeserver).unwrap();
+    let mut signup_request = client.signup(&keypair, &homeserver);
+
+    if let Some(token) = cli.signup_code.as_deref() {
+        signup_request = signup_request.with_signup_token(token);
+    }
+
+    signup_request.send().await?;
 
     println!("Successfully signed up. Checking session:");
 
