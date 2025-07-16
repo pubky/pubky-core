@@ -37,7 +37,7 @@ mod tests {
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
-        let mut db = LmDB::test();
+        let db = LmDB::test();
         let file_service = FileService::test(db.clone());
         let app_state = AppState::new(db.clone(), file_service.clone());
         let router = Router::new()
