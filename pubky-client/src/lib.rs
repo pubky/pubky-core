@@ -7,30 +7,15 @@
 // TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-macro_rules! cross_debug {
-    ($($arg:tt)*) => {
-        #[cfg(all(not(test), target_arch = "wasm32"))]
-        log::debug!($($arg)*);
-        #[cfg(all(not(test), not(target_arch = "wasm32")))]
-        tracing::debug!($($arg)*);
-        #[cfg(test)]
-        println!($($arg)*);
-    };
-}
+pub mod api;
+mod client;
+pub mod internal;
+mod macros;
+pub use client::*;
 
-pub mod native;
-mod shared;
-#[cfg(wasm_browser)]
-mod wasm;
-
-#[cfg(not(wasm_browser))]
-pub use crate::native::Client;
-pub use crate::native::{ClientBuilder, api::auth::AuthRequest, api::public::ListBuilder};
-
-#[cfg(wasm_browser)]
-pub use native::Client as NativeClient;
-#[cfg(wasm_browser)]
-pub use wasm::constructor::Client;
+pub use api::{auth::AuthRequest, public::ListBuilder};
+pub use client::Client;
+pub use client::ClientBuilder;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
@@ -38,7 +23,5 @@ pub use pubky_common::recovery_file;
 
 pub mod errors {
     pub use super::*;
-
-    #[cfg(not(wasm_browser))]
-    pub use native::BuildError;
+    pub use BuildError;
 }

@@ -142,16 +142,24 @@ impl OpendalService {
         }
     }
 
-    /// Get the content of a file as a stream of bytes.
-    /// The stream is chunked by the CHUNK_SIZE.
-    pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        match self
+    /// Get the stream of a file.
+    /// Helper method because the NOT_FOUND error can happen in two different places.
+    async fn get_stream_inner(&self, path: &EntryPath) -> Result<FileStream, opendal::Error> {
+        let reader = self
             .operator
             .reader_with(path.as_str())
             .chunk(CHUNK_SIZE)
-            .await
-        {
-            Ok(reader) => Ok(Box::new(reader.into_bytes_stream(0..).await?)),
+            .await?;
+
+        let stream = reader.into_bytes_stream(0..).await?;
+        Ok(Box::new(stream))
+    }
+
+    /// Get the content of a file as a stream of bytes.
+    /// The stream is chunked by the CHUNK_SIZE.
+    pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
+        match self.get_stream_inner(path).await {
+            Ok(stream) => Ok(stream),
             Err(e) => match e.kind() {
                 opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
                 opendal::ErrorKind::PermissionDenied => {

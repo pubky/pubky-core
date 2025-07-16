@@ -5,7 +5,7 @@ use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
-use crate::persistence::files::{FileService, LmDbToOpendalMigrator};
+use crate::persistence::files::FileService;
 use crate::persistence::lmdb::LmDB;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
@@ -131,18 +131,6 @@ impl HomeserverCore {
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::start(&context);
-
-        // Migrate the LMDB to OpenDAL in the background.
-        // TODO: Remove this after the migration is complete.
-        let db_clone = context.db.clone();
-        let file_service_clone = context.file_service.clone();
-        tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async move {
-                let migrator = LmDbToOpendalMigrator::new(file_service_clone, db_clone);
-                migrator.migrate().await.unwrap();
-            })
-        });
 
         Ok(Self {
             user_keys_republisher,

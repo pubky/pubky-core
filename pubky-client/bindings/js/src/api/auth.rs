@@ -4,7 +4,7 @@ use url::Url;
 
 use pubky_common::capabilities::Capabilities;
 
-use crate::wasm::{
+use crate::{
     js_result::JsResult,
     wrappers::{
         keys::{Keypair, PublicKey},
@@ -152,7 +152,7 @@ impl Client {
 }
 
 #[wasm_bindgen]
-pub struct AuthRequest(crate::AuthRequest);
+pub struct AuthRequest(pubky::AuthRequest);
 
 #[wasm_bindgen]
 impl AuthRequest {

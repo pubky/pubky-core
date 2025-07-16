@@ -1,7 +1,9 @@
+use reqwest::{Response, cookie::CookieStore, header::HeaderValue};
 use std::{collections::HashMap, sync::RwLock};
 
 use pkarr::PublicKey;
-use reqwest::{Response, cookie::CookieStore, header::HeaderValue};
+
+use crate::cross_debug;
 
 #[derive(Default, Debug)]
 pub struct CookieJar {
@@ -22,7 +24,7 @@ impl CookieJar {
                 {
                     if cookie.name() == cookie_name {
                         let domain = format!("_pubky.{pubky}");
-                        tracing::debug!(?cookie, "Storing coookie after signup");
+                        cross_debug!("Storing cookie after signup. Cookie: {}", cookie);
 
                         self.pubky_sessions
                             .write()
