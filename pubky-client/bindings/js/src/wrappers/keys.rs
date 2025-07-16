@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use crate::wasm::js_result::JsResult;
+use crate::js_result::JsResult;
 
 #[wasm_bindgen]
 pub struct Keypair(pkarr::Keypair);

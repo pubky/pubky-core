@@ -3,6 +3,7 @@ node_modules
 package-lock.json
 pubky.d.ts
 pubky_bg.wasm
+pubky_wasm*
 nodejs/
 index.js
 index.cjs

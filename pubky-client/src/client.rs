@@ -1,26 +1,13 @@
 use std::fmt::Debug;
 
-#[cfg(not(wasm_browser))]
+#[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
-#[cfg(not(wasm_browser))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 use std::time::Duration;
 
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-
 static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
-
-#[macro_export]
-macro_rules! handle_http_error {
-    ($res:expr) => {
-        if let Err(status) = $res.error_for_status_ref() {
-            return match $res.text().await {
-                Ok(text) => Err(anyhow::anyhow!("{status}. Error message: {text}")),
-                _ => Err(anyhow::anyhow!("{status}")),
-            };
-        }
-    };
-}
 
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
@@ -32,7 +19,7 @@ pub struct ClientBuilder {
 }
 
 impl ClientBuilder {
-    #[cfg(not(wasm_browser))]
+    #[cfg(not(target_arch = "wasm32"))]
     /// Creates a client connected to a local test network with hardcoded configurations:
     /// 1. local DHT with bootstrapping nodes: `&["localhost:6881"]`
     /// 2. Pkarr Relay running on port [15411][pubky_common::constants::testnet_ports::PKARR_RELAY]
@@ -79,29 +66,29 @@ impl ClientBuilder {
     pub fn build(&self) -> Result<Client, BuildError> {
         let pkarr = self.pkarr.build()?;
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(not(target_arch = "wasm32"))]
         let cookie_store = Arc::new(CookieJar::default());
 
         // TODO: allow custom user agent, but force a Pubky user agent information
         let user_agent = DEFAULT_USER_AGENT;
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(not(target_arch = "wasm32"))]
         let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone())
             // TODO: use persistent cookie jar
             .cookie_provider(cookie_store.clone())
             .user_agent(user_agent);
 
-        #[cfg(wasm_browser)]
+        #[cfg(target_arch = "wasm32")]
         let http_builder = reqwest::Client::builder().user_agent(user_agent);
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(not(target_arch = "wasm32"))]
         let mut icann_http_builder = reqwest::Client::builder()
             // TODO: use persistent cookie jar
             .cookie_provider(cookie_store.clone())
             .user_agent(user_agent);
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
-        #[cfg(not(wasm_browser))]
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(timeout) = self.http_request_timeout {
             http_builder = http_builder.timeout(timeout);
 
@@ -117,15 +104,12 @@ impl ClientBuilder {
             pkarr,
             http: http_builder.build().expect("config expected to not error"),
 
-            #[cfg(not(wasm_browser))]
+            #[cfg(not(target_arch = "wasm32"))]
             icann_http: icann_http_builder
                 .build()
                 .expect("config expected to not error"),
-            #[cfg(not(wasm_browser))]
+            #[cfg(not(target_arch = "wasm32"))]
             cookie_store,
-
-            #[cfg(wasm_browser)]
-            testnet: false,
 
             max_record_age,
         })
@@ -145,13 +129,11 @@ pub struct Client {
     pub(crate) http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) cookie_store: std::sync::Arc<CookieJar>,
-    #[cfg(not(wasm_browser))]
-    pub(crate) icann_http: reqwest::Client,
 
-    #[cfg(wasm_browser)]
-    pub(crate) testnet: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) icann_http: reqwest::Client,
 
     /// The record age threshold before republishing.
     pub(crate) max_record_age: Duration,
@@ -173,7 +155,6 @@ impl Client {
     }
 }
 
-#[cfg(not(wasm_browser))]
 #[cfg(test)]
 mod test {
     use super::*;
