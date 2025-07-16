@@ -147,11 +147,7 @@ mod tests {
         let stream = futures_util::stream::iter(chunks);
 
         // Test LMDB
-<<<<<<< HEAD
-        let _ = file_service.write_stream(&path, stream).await.unwrap();
-=======
         file_service.write_stream(&path, stream).await.unwrap();
->>>>>>> main
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
             Some(test_data.len() as u64 + FILE_METADATA_SIZE),
