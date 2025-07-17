@@ -385,12 +385,16 @@ async fn test_signup_with_token() {
 
 #[tokio::test]
 async fn test_signup_with_tos_enforcement() {
-    // 1. Start a test homeserver that requires ToS acceptance.
+    // 1. Create a temporary ToS file and start a test homeserver that requires ToS acceptance.
+    let tos_file = tempfile::Builder::new().suffix(".md").tempfile().unwrap();
+    let tos_content = "# Test Terms of Service";
+    std::fs::write(tos_file.path(), tos_content).unwrap();
+
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client_builder().build().unwrap();
 
     let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.enforce_tos = true;
+    mock_dir.config_toml.general.enforce_tos_with = tos_file.path().to_string_lossy().to_string();
     let server = testnet
         .create_homeserver_suite_with_mock(mock_dir)
         .await
@@ -433,21 +437,18 @@ async fn test_signup_with_tos_enforcement() {
         "Session should contain the correct public key"
     );
 
-    // 4. Verify that the /tos endpoint serves the default content correctly.
+    // 4. Verify that the /tos endpoint serves the correct content.
     let tos_url = format!("{}/tos", server.core().icann_http_url());
     let response = reqwest::get(&tos_url).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers().get("content-type").unwrap(),
-        "text/html; charset=utf-8"
+        "text/markdown; charset=utf-8"
     );
 
     let body = response.text().await.unwrap();
-    assert!(
-        body.contains("Terms of Service Not Yet Defined"),
-        "Default ToS page title is missing"
-    );
+    assert_eq!(body, tos_content);
 }
 
 // This test verifies that when a signin happens immediately after signup,

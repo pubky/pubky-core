@@ -52,13 +52,15 @@ hostname-validator = "1.1.1"
 axum-test = "17.2.0"
 tempfile = { version = "3.10.1" }
 dyn-clone = "1.0.19"
-reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12.15", default-features = false, features = [
+    "rustls-tls",
+] }
 governor = "0.10.0"
 fast-glob = "0.4.5"
 tokio-util = "0.7.15"
 percent-encoding = "2.3.1"
 serde_valid = "1.0.5"
-opendal = { version = "0.53.3", features =["services-fs"]}
+opendal = { version = "0.53.3", features = ["services-fs"] }
 infer = "0.19.0"
 mime_guess = "2.0.5"
 
@@ -68,14 +70,10 @@ futures-lite = "2.6.0"
 
 
 [features]
-default = [
-    "storage-gcs",
-]
+default = ["storage-gcs"]
 # Optional storage types
 storage-gcs = ["opendal/services-gcs"]
 storage-memory = ["opendal/services-memory"]
 
 # Optional testing methods
-testing = [
-    "storage-memory"
-]
+testing = ["storage-memory"]

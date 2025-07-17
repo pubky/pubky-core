@@ -30,9 +30,6 @@ pub const DEFAULT_CONFIG: &str = include_str!("config.default.toml");
 /// Example configuration file
 pub const SAMPLE_CONFIG: &str = include_str!("../../config.sample.toml");
 
-/// Default content for the `tos.html` file.
-pub const DEFAULT_TOS: &str = include_str!("../../default.tos.html");
-
 /// Error that can occur when reading a configuration file.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigReadError {
@@ -77,7 +74,7 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
-    pub enforce_tos: bool,
+    pub enforce_tos_with: String,
     pub lmdb_backup_interval_s: u64,
     pub user_storage_quota_mb: u64,
 }
@@ -185,7 +182,7 @@ impl ConfigToml {
     pub fn test() -> Self {
         let mut config = Self::default();
         config.general.signup_mode = SignupMode::Open;
-        config.general.enforce_tos = false;
+        config.general.enforce_tos_with = "".to_string();
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -221,7 +218,7 @@ mod tests {
     fn test_default_config() {
         let c = ConfigToml::default();
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
-        assert!(!c.general.enforce_tos);
+        assert!(c.general.enforce_tos_with.is_empty());
         assert_eq!(c.general.user_storage_quota_mb, 0);
         assert_eq!(c.general.lmdb_backup_interval_s, 0);
         assert_eq!(

@@ -1,8 +1,8 @@
 [general]
 signup_mode = "token_required"
+enforce_tos_with = ""
 lmdb_backup_interval_s = 0
 user_storage_quota_mb = 0
-enforce_tos = false
 
 [drive]
 pubky_listen_socket = "127.0.0.1:6287"

@@ -4,10 +4,12 @@
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
-# If set to true, users must accept the Terms of Service upon signup.
-# The ToS content is read from `tos.html` in your data directory.
-# And users can check it out at the `/tos` endpoint.
-enforce_tos = false
+# If a path to a file is provided, users must accept the Terms of Service upon signup.
+# The content of the file will be served at the `/tos` endpoint.
+# Enter a an absolute/path/to/tos.md
+# If empty `""` the tos enforcement is disabled, and users will be able to signup without
+# explicitly submitting `accept_tos=true` .
+enforce_tos_with = ""
 
 # LMDB backup interval in seconds. 0 means disabled.
 # Periodically creates a "safe to copy" compacted backup on single

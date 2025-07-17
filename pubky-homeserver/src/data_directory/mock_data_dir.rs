@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use crate::data_directory::config_toml::DEFAULT_TOS;
-
 use super::DataDir;
 
 /// Mock data directory for testing.
@@ -56,16 +54,6 @@ impl DataDir for MockDataDir {
 
     fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
         Ok(()) // Always ok because this is validated by the tempfile crate.
-    }
-
-    fn ensure_tos_file_exists_if_enforced(&self, config: &super::ConfigToml) -> anyhow::Result<()> {
-        if config.general.enforce_tos {
-            let tos_path = self.path().join("tos.html");
-            if !tos_path.exists() {
-                std::fs::write(tos_path, DEFAULT_TOS)?;
-            }
-        }
-        Ok(())
     }
 
     fn read_or_create_config_file(&self) -> anyhow::Result<super::ConfigToml> {

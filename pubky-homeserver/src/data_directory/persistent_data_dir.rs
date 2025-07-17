@@ -1,5 +1,3 @@
-use crate::data_directory::config_toml::DEFAULT_TOS;
-
 use super::{data_dir::DataDir, ConfigToml};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -50,17 +48,6 @@ impl PersistentDataDir {
     /// Returns the config file path in this directory.
     pub fn get_config_file_path(&self) -> PathBuf {
         self.expanded_path.join("config.toml")
-    }
-
-    /// Returns the path to the ToS file.
-    pub fn get_tos_file_path(&self) -> PathBuf {
-        self.expanded_path.join("tos.html")
-    }
-
-    fn write_default_tos_file(&self) -> anyhow::Result<()> {
-        let tos_file_path = self.get_tos_file_path();
-        std::fs::write(tos_file_path, DEFAULT_TOS)?;
-        Ok(())
     }
 
     fn write_sample_config_file(&self) -> anyhow::Result<()> {
@@ -117,22 +104,6 @@ impl DataDir for PersistentDataDir {
             .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
         std::fs::remove_file(test_file_path)
             .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
-        Ok(())
-    }
-
-    /// Ensures the ToS file exists if `enforce_tos` is true.
-    /// Creates a default one if it doesn't.
-    fn ensure_tos_file_exists_if_enforced(&self, config: &ConfigToml) -> anyhow::Result<()> {
-        if config.general.enforce_tos {
-            let tos_path = self.get_tos_file_path();
-            if !tos_path.exists() {
-                tracing::warn!(
-                    "`enforce_tos` is true but `tos.html` not found. Creating a default one at {}",
-                    tos_path.display()
-                );
-                self.write_default_tos_file()?;
-            }
-        }
         Ok(())
     }
 

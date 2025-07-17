@@ -34,8 +34,8 @@ pub async fn signup(
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
-    // 1) Check for ToS acceptance if enforced
-    if state.enforce_tos {
+    // 1) If ToS is enforced, check for acceptance.
+    if state.enforce_tos_with.is_some() {
         let accepted = params.get("accept_tos").is_some_and(|val| val == "true");
         if !accepted {
             return Err(HttpError::new_with_message(
@@ -234,8 +234,14 @@ mod tests {
 
     #[tokio::test]
     async fn signup_with_tos_enforced_fails_without_acceptance() {
+        // Create a dummy ToS file
+        let tos_file = tempfile::Builder::new().suffix(".md").tempfile().unwrap();
+        let tos_content = "# My Custom ToS";
+        std::fs::write(tos_file.path(), tos_content).unwrap();
+
         let mut config = ConfigToml::test();
-        config.general.enforce_tos = true;
+        config.general.enforce_tos_with = tos_file.path().to_str().unwrap().to_string();
+
         let data_dir = MockDataDir::new(config, None).unwrap();
 
         let context = AppContext::try_from(data_dir).unwrap();
@@ -263,8 +269,14 @@ mod tests {
 
     #[tokio::test]
     async fn signup_with_tos_enforced_succeeds_with_acceptance() {
+        // Create a dummy ToS file
+        let tos_file = tempfile::Builder::new().suffix(".md").tempfile().unwrap();
+        let tos_content = "# My Custom ToS";
+        std::fs::write(tos_file.path(), tos_content).unwrap();
+
         let mut config = ConfigToml::test();
-        config.general.enforce_tos = true;
+        config.general.enforce_tos_with = tos_file.path().to_str().unwrap().to_string();
+
         let data_dir = MockDataDir::new(config, None).unwrap();
         let context = AppContext::try_from(data_dir).unwrap();
         let router = HomeserverCore::create_router(&context);

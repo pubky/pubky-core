@@ -20,10 +20,6 @@ pub trait DataDir: std::fmt::Debug + DynClone + Send + Sync {
     /// Reads the secret file from the data directory.
     /// Creates a new secret file if it doesn't exist.
     fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair>;
-
-    /// Ensures the ToS file exists if `enforce_tos` is true.
-    /// Creates a default one if it doesn't.
-    fn ensure_tos_file_exists_if_enforced(&self, config: &ConfigToml) -> anyhow::Result<()>;
 }
 
 dyn_clone::clone_trait_object!(DataDir);

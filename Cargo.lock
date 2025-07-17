@@ -954,6 +954,7 @@ dependencies = [
  "pubky-common",
  "pubky-testnet",
  "reqwest",
+ "tempfile",
  "tokio",
  "tracing-subscriber",
 ]
