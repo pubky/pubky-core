@@ -85,6 +85,7 @@ type = "file_system"
 [admin]
 # The port number to run the admin HTTP (clear text) server on.
 # Used for admin requests from the admin UI.
+# If this API is every exposed to the public internet, make sure to add a HTTPS cert.
 listen_socket = "127.0.0.1:6288"
 
 # The password for the admin user to access the admin UI.

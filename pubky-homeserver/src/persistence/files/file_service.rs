@@ -1,8 +1,7 @@
+#[cfg(test)]
+use crate::AppContext;
 use crate::{
-    persistence::{
-        files::entry_service::EntryService,
-        lmdb::{tables::entries::Entry, LmDB},
-    },
+    persistence::lmdb::{tables::entries::Entry, LmDB},
     shared::webdav::EntryPath,
     ConfigToml,
 };
@@ -20,19 +19,15 @@ use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
 /// This way, files can be managed in a unified way.
 #[derive(Debug, Clone)]
 pub struct FileService {
-    pub(crate) entry_service: EntryService,
-    pub(crate) opendal_service: OpendalService,
+    pub(crate) opendal: OpendalService,
     pub(crate) db: LmDB,
-    user_quota_bytes: Option<u64>,
 }
 
 impl FileService {
-    pub fn new(opendal_service: OpendalService, db: LmDB, user_quota_bytes: Option<u64>) -> Self {
+    pub fn new(opendal_service: OpendalService, db: LmDB) -> Self {
         Self {
-            entry_service: EntryService::new(db.clone(), user_quota_bytes),
-            opendal_service,
+            opendal: opendal_service,
             db,
-            user_quota_bytes,
         }
     }
 
@@ -41,14 +36,17 @@ impl FileService {
         data_directory: &Path,
         db: LmDB,
     ) -> Result<Self, FileIoError> {
-        let opendal_service = OpendalService::new_from_config(&config.storage, data_directory)?;
-        let quota_mb = config.general.user_storage_quota_mb;
-        let quota_bytes = if quota_mb == 0 {
-            None
-        } else {
-            Some(quota_mb * 1024 * 1024)
+        let user_quota_bytes = match config.general.user_storage_quota_mb {
+            0 => u64::MAX,
+            other => other * 1024 * 1024,
         };
-        Ok(Self::new(opendal_service, db, quota_bytes))
+        let opendal_service = OpendalService::new_from_config(
+            &config.storage,
+            data_directory,
+            &db,
+            user_quota_bytes,
+        )?;
+        Ok(Self::new(opendal_service, db))
     }
 
     /// Get the metadata of a file.
@@ -60,27 +58,8 @@ impl FileService {
     /// The stream is chunked.
     /// Errors if the file does not exist.
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        let stream: FileStream = self.opendal_service.get_stream(path).await?;
+        let stream: FileStream = self.opendal.get_stream(path).await?;
         Ok(stream)
-    }
-
-    /// Get the remaining quota bytes for a user.
-    /// Returns `u64::MAX` if the user has an unlimited quota.
-    fn get_remaining_user_quota(&self, path: &EntryPath) -> Result<u64, FileIoError> {
-        let max_limit = match self.user_quota_bytes {
-            Some(limit) => limit,
-            None => return Ok(u64::MAX),
-        };
-        let current_usage_bytes = match self.db.get_user_data_usage(path.pubkey())? {
-            Some(usage) => usage,
-            None => return Err(FileIoError::NotFound),
-        };
-        let existing_entry_content_length = self.db.get_entry_content_length_default_zero(path)?;
-
-        let remaining_quota_bytes = max_limit
-            .saturating_add(existing_entry_content_length)
-            .saturating_sub(current_usage_bytes);
-        Ok(remaining_quota_bytes)
     }
 
     /// Write a file to the database and storage depending on the selected target location.
@@ -89,39 +68,27 @@ impl FileService {
         path: &EntryPath,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<Entry, FileIoError> {
-        let remaining_bytes_usage = self.get_remaining_user_quota(path)?;
-
-        let metadata = self
-            .opendal_service
-            .write_stream(path, stream, remaining_bytes_usage)
-            .await?;
-
-        let write_result = self.entry_service.write_entry(path, &metadata);
-        if let Err(e) = &write_result {
-            tracing::warn!(
-                "Writing entry {path} failed. Undoing the write. Error: {:?}",
-                e
-            );
-            // Writing the entry failed. Delete the file in storage and return the error.
-            self.opendal_service.delete(path).await?;
-        };
-
-        write_result
+        self.opendal.write_stream(path, stream).await?;
+        self.db.get_entry(path)
     }
 
     /// Delete a file.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        self.entry_service.delete_entry(path)?;
-        if let Err(e) = self.opendal_service.delete(path).await {
-            tracing::warn!("Deleted entry but deleting opendal file {path} failed. Potential orphaned file. Error: {:?}", e);
-            return Err(e);
+        if !self.opendal.exists(path).await? {
+            return Err(FileIoError::NotFound);
         }
+        self.opendal.delete(path).await?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 impl FileService {
+    pub fn new_from_context(context: &AppContext) -> Result<Self, FileIoError> {
+        let opendal_service = OpendalService::new(context)?;
+        Ok(Self::new(opendal_service, context.db.clone()))
+    }
+
     /// Get the content of a file as bytes.
     /// Errors if the file does not exist.
     pub async fn get(&self, path: &EntryPath) -> Result<Bytes, FileIoError> {
@@ -142,34 +109,24 @@ impl FileService {
         let entry = self.write_stream(path, stream).await?;
         Ok(entry)
     }
-
-    pub fn test(db: LmDB) -> Self {
-        use crate::storage_config::StorageConfigToml;
-
-        let storage_config = StorageConfigToml::InMemory;
-        let opendal_service =
-            OpendalService::new_from_config(&storage_config, Path::new("/tmp/test"))
-                .expect("Failed to create OpenDAL service for testing");
-        Self::new(opendal_service, db, None)
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        persistence::files::user_quota_layer::FILE_METADATA_SIZE, shared::webdav::WebDavPath,
+    };
     use futures_lite::StreamExt;
-
-    use crate::{shared::webdav::WebDavPath, storage_config::StorageConfigToml};
 
     use super::*;
 
     #[tokio::test]
     async fn test_write_get_delete_lmdb_and_opendal() {
-        let mut config = ConfigToml::test();
-        config.storage = StorageConfigToml::InMemory;
-        let db = LmDB::test();
-        let file_service = FileService::test(db.clone());
-
+        let context = AppContext::test();
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
         let pubkey = pkarr::Keypair::random().public_key();
+
         db.create_user(&pubkey).unwrap();
 
         // User should not have any data usage yet
@@ -193,7 +150,7 @@ mod tests {
         file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64),
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE),
             "Data usage should be the size of the file"
         );
 
@@ -233,7 +190,7 @@ mod tests {
         file_service.write_stream(&path, stream).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64),
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE),
             "Data usage should be the size of the file"
         );
 
@@ -267,12 +224,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_get_basic() {
-        let mut config = ConfigToml::test();
-        config.storage = StorageConfigToml::InMemory;
-        let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let context = AppContext::test();
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -298,12 +252,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_data_usage_update_basic() {
-        let mut config = ConfigToml::test();
-        config.general.user_storage_quota_mb = 1;
-        let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let mut context = AppContext::test();
+        context.config_toml.general.user_storage_quota_mb = 1;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -315,7 +267,7 @@ mod tests {
         file_service.write(&path, buffer).await.unwrap();
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64)
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
         );
 
         // Delete the file and check if the data usage is updated correctly.
@@ -326,12 +278,10 @@ mod tests {
     /// Override and existing entry and check if the data usage is updated correctly.
     #[tokio::test]
     async fn test_data_usage_override_existing_entry() {
-        let mut config = ConfigToml::test();
-        config.general.user_storage_quota_mb = 1;
-        let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let mut context = AppContext::test();
+        context.config_toml.general.user_storage_quota_mb = 1;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -350,43 +300,39 @@ mod tests {
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data2.len() as u64)
+            Some(test_data2.len() as u64 + FILE_METADATA_SIZE)
         );
     }
 
     /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
     #[tokio::test]
     async fn test_data_usage_exactly_to_quota() {
-        let mut config = ConfigToml::test();
-        config.general.user_storage_quota_mb = 1;
-        let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let mut context = AppContext::test();
+        context.config_toml.general.user_storage_quota_mb = 1;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
-        let test_data = vec![1u8; 1024 * 1024];
+        let test_data = vec![1u8; 1024 * 1024 - FILE_METADATA_SIZE as usize];
         let buffer = Buffer::from(test_data.clone());
 
         file_service.write(&path, buffer).await.unwrap();
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64)
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
         );
     }
 
     #[tokio::test]
     async fn test_data_usage_above_quota() {
-        let mut config = ConfigToml::test();
-        config.general.user_storage_quota_mb = 1;
-        let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let mut context = AppContext::test();
+        context.config_toml.general.user_storage_quota_mb = 1;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -409,12 +355,10 @@ mod tests {
     /// Override and existing entry and check if the data usage is updated correctly.
     #[tokio::test]
     async fn test_data_usage_override_existing_above_quota() {
-        let mut config = ConfigToml::test();
-        config.general.user_storage_quota_mb = 1;
-        let db = LmDB::test();
-        let file_service =
-            FileService::new_from_config(&config, Path::new("/tmp/test"), db.clone())
-                .expect("Failed to create file service for testing");
+        let mut context = AppContext::test();
+        context.config_toml.general.user_storage_quota_mb = 1;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
         db.create_user(&pubkey).unwrap();
@@ -439,7 +383,7 @@ mod tests {
 
         assert_eq!(
             db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64)
+            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
         );
     }
 }
