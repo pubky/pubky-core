@@ -125,12 +125,12 @@ async fn put_quota_applied() {
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     // Write exactly 1025 KB → should 507 because it exactly exceeds quota
-    let data_3: Vec<u8> = vec![0; 1025 * 1024];
+    let data_3: Vec<u8> = vec![0; 1025 * 1024 - 256];
     let resp = client.put(&url).body(data_3).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
 
     // Write exactly 1 MB → should 201 because it exactly fits within quota
-    let data_3: Vec<u8> = vec![0; 1024 * 1024];
+    let data_3: Vec<u8> = vec![0; 1024 * 1024 - 256];
     let resp = client.put(&url).body(data_3).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 }

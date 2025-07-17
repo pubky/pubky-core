@@ -20,8 +20,8 @@ mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
     use crate::persistence::files::{FileIoError, FileService};
-    use crate::persistence::lmdb::LmDB;
     use crate::shared::webdav::{EntryPath, WebDavPath};
+    use crate::AppContext;
     use axum::{routing::delete, Router};
     use opendal::Buffer;
     use pkarr::Keypair;
@@ -34,12 +34,13 @@ mod tests {
     #[tokio::test]
     async fn test_delete_entry() {
         // Set everything up
+        let context = AppContext::test();
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
-        let mut db = LmDB::test();
-        let file_service = FileService::test(db.clone());
-        let app_state = AppState::new(db.clone(), file_service.clone());
+        let db = context.db.clone();
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let app_state = AppState::new(db.clone(), file_service.clone(), "");
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -84,11 +85,16 @@ mod tests {
     #[tokio::test]
     async fn test_file_not_found() {
         // Set everything up
+        let context = AppContext::test();
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
-        let db = LmDB::test();
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let db = context.db.clone();
+        let app_state = AppState::new(
+            db.clone(),
+            FileService::new_from_context(&context).unwrap(),
+            "",
+        );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -103,8 +109,13 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_pubkey() {
         // Set everything up
-        let db = LmDB::test();
-        let app_state = AppState::new(db.clone(), FileService::test(db.clone()));
+        let context = AppContext::test();
+        let db = context.db.clone();
+        let app_state = AppState::new(
+            db.clone(),
+            FileService::new_from_context(&context).unwrap(),
+            "",
+        );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
