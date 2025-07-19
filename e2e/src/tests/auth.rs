@@ -17,7 +17,8 @@ async fn basic_authn() {
     let keypair = Keypair::random();
 
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -63,7 +64,8 @@ async fn disabled_user() {
 
     // Create a new user
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -141,7 +143,8 @@ async fn authz() {
         let client = testnet.pubky_client_builder().build().unwrap();
 
         client
-            .signup(&keypair, &server.public_key(), None)
+            .signup(&keypair, &server.public_key())
+            .send()
             .await
             .unwrap();
 
@@ -203,12 +206,14 @@ async fn multiple_users() {
     let second_keypair = Keypair::random();
 
     client
-        .signup(&first_keypair, &server.public_key(), None)
+        .signup(&first_keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
     client
-        .signup(&second_keypair, &server.public_key(), None)
+        .signup(&second_keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
 
@@ -259,7 +264,8 @@ async fn authz_timeout_reconnect() {
 
         let client = testnet.pubky_client_builder().build().unwrap();
         client
-            .signup(&keypair, &server.public_key(), None)
+            .signup(&keypair, &server.public_key())
+            .send()
             .await
             .unwrap();
 
@@ -328,7 +334,9 @@ async fn test_signup_with_token() {
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
     let invalid_signup = client
-        .signup(&keypair, &server.public_key(), Some("AAAA-BBBB-CCCC"))
+        .signup(&keypair, &server.public_key())
+        .with_signup_token("AAAA-BBBB-CCCC")
+        .send()
         .await;
     assert!(
         invalid_signup.is_err(),
@@ -345,7 +353,9 @@ async fn test_signup_with_token() {
 
     // 4. Now signup with the valid token. Expect success and a session back.
     let session = client
-        .signup(&keypair, &server.public_key(), Some(&valid_token))
+        .signup(&keypair, &server.public_key())
+        .with_signup_token(&valid_token)
+        .send()
         .await
         .unwrap();
     assert!(
@@ -364,11 +374,81 @@ async fn test_signup_with_token() {
     // 6. Signup with the same token again and expect failure.
     let new_keypair = Keypair::random();
     let signup_again = client
-        .signup(&new_keypair, &server.public_key(), Some(&valid_token))
+        .signup(&new_keypair, &server.public_key())
+        .with_signup_token(&valid_token)
+        .send()
         .await;
     let err = signup_again.expect_err("Signup with an already used token should fail");
     assert!(err.to_string().contains("401"));
     assert!(err.to_string().contains("Token already used"));
+}
+
+#[tokio::test]
+async fn test_signup_with_tos_enforcement() {
+    // 1. Create a temporary ToS file and start a test homeserver that requires ToS acceptance.
+    let tos_file = tempfile::Builder::new().suffix(".md").tempfile().unwrap();
+    let tos_content = "# Test Terms of Service";
+    std::fs::write(tos_file.path(), tos_content).unwrap();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let client = testnet.pubky_client_builder().build().unwrap();
+
+    let mut mock_dir = MockDataDir::test();
+    mock_dir.config_toml.general.enforce_tos_with = tos_file.path().to_string_lossy().to_string();
+    let server = testnet
+        .create_homeserver_suite_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    // 2. Try to signup without accepting ToS and expect failure.
+    let keypair_fail = Keypair::random();
+    let signup_fail_result = client
+        .signup(&keypair_fail, &server.public_key())
+        .send() // No `.accept_tos()` in the chain
+        .await;
+
+    assert!(
+        signup_fail_result.is_err(),
+        "Signup should fail without ToS acceptance"
+    );
+    let err_msg = signup_fail_result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("400"),
+        "Signup should fail with a 400 Bad Request status code, but got: {}",
+        err_msg
+    );
+    assert!(
+        err_msg.contains("You must accept the Terms of Service"),
+        "Error message should indicate ToS must be accepted, but got: {}",
+        err_msg
+    );
+
+    // 3. Now signup with ToS acceptance. Expect success and a session back.
+    let keypair_success = Keypair::random();
+    let session = client
+        .signup(&keypair_success, &server.public_key())
+        .accept_tos()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        session.pubky(),
+        &keypair_success.public_key(),
+        "Session should contain the correct public key"
+    );
+
+    // 4. Verify that the /tos endpoint serves the correct content.
+    let tos_url = format!("{}/tos", server.core().icann_http_url());
+    let response = reqwest::get(&tos_url).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "text/markdown; charset=utf-8"
+    );
+
+    let body = response.text().await.unwrap();
+    assert_eq!(body, tos_content);
 }
 
 // This test verifies that when a signin happens immediately after signup,
@@ -391,7 +471,8 @@ async fn test_republish_on_signin_old_enough() {
 
     // Signup publishes a new record.
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
     // Resolve the record and get its timestamp.
@@ -440,7 +521,8 @@ async fn test_republish_on_signin_not_old_enough() {
 
     // Signup publishes a new record.
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
     // Resolve the record and get its timestamp.
@@ -490,7 +572,8 @@ async fn test_republish_homeserver() {
 
     // Signup publishes a new record.
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair, &server.public_key())
+        .send()
         .await
         .unwrap();
     // Resolve the record and get its timestamp.
