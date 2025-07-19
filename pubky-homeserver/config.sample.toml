@@ -7,7 +7,7 @@ signup_mode = "token_required"
 # If a path to a markdown file (`.md`) is provided, users must accept the Terms of Service upon signup.
 # The content of the file will be served at the `/tos` endpoint.
 # Enter an "absolute/path/to/tos.md". If empty "" the tos enforcement is disabled. Users will be able 
-# to signup without explicitly submitting `accept_tos=true` .
+# to signup without explicitly accepting the TOS.
 enforce_tos_with = ""
 
 # LMDB backup interval in seconds. 0 means disabled.
