@@ -10,6 +10,7 @@ pub mod quota_config;
 mod signup_mode;
 /// Opendal config for the TomlConfig.
 pub mod storage_config;
+mod tos_markdown;
 
 mod log_level;
 
@@ -21,3 +22,4 @@ pub use domain_port::DomainPort;
 pub use mock_data_dir::MockDataDir;
 pub use persistent_data_dir::PersistentDataDir;
 pub use signup_mode::SignupMode;
+pub use tos_markdown::TosMarkdown;

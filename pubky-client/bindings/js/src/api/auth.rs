@@ -16,6 +16,22 @@ use super::super::constructor::Client;
 
 use wasm_bindgen::prelude::*;
 
+/// Optional parameters for the `signup` method.
+#[wasm_bindgen]
+#[derive(Default, serde::Deserialize)]
+#[serde(default)]
+pub struct SignupOptions {
+    /// The signup token or invite code.
+    #[wasm_bindgen(getter_with_clone, js_name = signupToken)]
+    #[serde(rename = "signupToken")]
+    pub signup_token: Option<String>,
+
+    /// A boolean indicating acceptance of the Terms of Service.
+    #[wasm_bindgen(js_name = acceptTos)]
+    #[serde(rename = "acceptTos")]
+    pub accept_tos: Option<bool>,
+}
+
 #[wasm_bindgen]
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -27,19 +43,21 @@ impl Client {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
-        signup_token: Option<String>,
-        accept_tos: Option<bool>,
+        options: Option<SignupOptions>,
     ) -> JsResult<Session> {
+        // Use unwrap_or_default to handle the case where no options are passed from JS.
+        let options = options.unwrap_or_default();
+
         // Start the native signup request builder.
         let mut signup_request = self.0.signup(keypair.as_inner(), homeserver.as_inner());
 
         // Conditionally add the signup token if it was provided.
-        if let Some(token) = signup_token.as_deref() {
+        if let Some(token) = options.signup_token.as_deref() {
             signup_request = signup_request.with_signup_token(token);
         }
 
         // Conditionally accept ToS if the flag is true.
-        if let Some(true) = accept_tos {
+        if let Some(true) = options.accept_tos {
             signup_request = signup_request.accept_tos();
         }
 

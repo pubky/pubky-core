@@ -11,13 +11,11 @@ use crate::{
 };
 
 pub async fn handler(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
-    if let Some(tos_path) = &state.enforce_tos_with {
-        let tos_content = tokio::fs::read_to_string(tos_path).await?;
-
+    if let Some(tos) = &state.enforce_tos_with {
         Ok(Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/markdown; charset=utf-8")
-            .body(Body::from(tos_content))?)
+            .body(Body::from(tos.content().to_owned()))?)
     } else {
         Err(HttpError::not_found())
     }
@@ -48,8 +46,14 @@ mod tests {
         let tos_content = "# My Custom ToS";
         std::fs::write(tos_file.path(), tos_content).unwrap();
 
-        let mut config = ConfigToml::test();
-        config.general.enforce_tos_with = tos_file.path().to_string_lossy().to_string();
+        let config_str = format!(
+            r#"[general]
+                enforce_tos_with = "{}"
+            "#,
+            tos_file.path().display()
+        );
+        let config = ConfigToml::from_str_with_defaults(&config_str).unwrap();
+
         let data_dir = MockDataDir::new(config, None).unwrap();
         let context = AppContext::try_from(data_dir).unwrap();
         let router = HomeserverCore::create_router(&context);

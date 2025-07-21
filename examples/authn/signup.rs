@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
     let homeserver = PublicKey::try_from(homeserver).unwrap();
-    let mut signup_request = client.signup(&keypair, &homeserver);
+    let mut signup_request = client.signup(&keypair, &homeserver).accept_tos();
 
     if let Some(token) = cli.signup_code.as_deref() {
         signup_request = signup_request.with_signup_token(token);

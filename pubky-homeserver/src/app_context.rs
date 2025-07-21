@@ -35,9 +35,6 @@ pub enum AppContextConversionError {
     /// Failed to build storage operator.
     #[error("Failed to build storage operator: {0}")]
     Storage(FileIoError),
-    /// The configured ToS file path is invalid.
-    #[error("Invalid Terms of Service file path: {0}")]
-    InvalidTosPath(String),
     /// Failed to build pkarr client.
     #[error("Failed to build pkarr client: {0}")]
     Pkarr(pkarr::errors::BuildError),
@@ -84,29 +81,6 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
         let conf = dir
             .read_or_create_config_file()
             .map_err(AppContextConversionError::Config)?;
-
-        // Validate the ToS file path if it's set
-        let tos_path_str = &conf.general.enforce_tos_with;
-        if !tos_path_str.is_empty() {
-            let tos_path = std::path::Path::new(tos_path_str);
-            if !tos_path.exists() {
-                return Err(AppContextConversionError::InvalidTosPath(format!(
-                    "File not found at '{}'",
-                    tos_path.display()
-                )));
-            }
-            if !tos_path.is_file() {
-                return Err(AppContextConversionError::InvalidTosPath(format!(
-                    "'{}' is not a file",
-                    tos_path.display()
-                )));
-            }
-            if tos_path.extension().and_then(|s| s.to_str()) != Some("md") {
-                return Err(AppContextConversionError::InvalidTosPath(
-                    "Terms of Service file must have a .md extension".to_string(),
-                ));
-            }
-        }
 
         let keypair = dir
             .read_or_create_keypair()

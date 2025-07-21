@@ -1,5 +1,6 @@
 use pkarr::Keypair;
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
+use pubky_testnet::pubky_homeserver::ConfigToml;
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,
@@ -390,17 +391,29 @@ async fn test_signup_with_tos_enforcement() {
     let tos_content = "# Test Terms of Service";
     std::fs::write(tos_file.path(), tos_content).unwrap();
 
+    // 2. Start a test homeserver that requires ToS acceptance.
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client_builder().build().unwrap();
 
     let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.enforce_tos_with = tos_file.path().to_string_lossy().to_string();
+
+    // Create a TOML string and parse it to trigger validation
+    let config_str = format!(
+        r#"[general]
+            signup_mode = "open" 
+            enforce_tos_with = "{}"
+        "#,
+        tos_file.path().display()
+    );
+    let config = ConfigToml::from_str_with_defaults(&config_str).unwrap();
+    mock_dir.config_toml = config; // Overwrite the default config in the mock dir
+
     let server = testnet
         .create_homeserver_suite_with_mock(mock_dir)
         .await
         .unwrap();
 
-    // 2. Try to signup without accepting ToS and expect failure.
+    // 3. Try to signup without accepting ToS and expect failure.
     let keypair_fail = Keypair::random();
     let signup_fail_result = client
         .signup(&keypair_fail, &server.public_key())
@@ -423,7 +436,7 @@ async fn test_signup_with_tos_enforcement() {
         err_msg
     );
 
-    // 3. Now signup with ToS acceptance. Expect success and a session back.
+    // 4. Now signup with ToS acceptance. Expect success and a session back.
     let keypair_success = Keypair::random();
     let session = client
         .signup(&keypair_success, &server.public_key())
@@ -437,7 +450,7 @@ async fn test_signup_with_tos_enforcement() {
         "Session should contain the correct public key"
     );
 
-    // 4. Verify that the /tos endpoint serves the correct content.
+    // 5. Verify that the /tos endpoint serves the correct content.
     let tos_url = format!("{}/tos", server.core().icann_http_url());
     let response = reqwest::get(&tos_url).await.unwrap();
 

@@ -239,8 +239,14 @@ mod tests {
         let tos_content = "# My Custom ToS";
         std::fs::write(tos_file.path(), tos_content).unwrap();
 
-        let mut config = ConfigToml::test();
-        config.general.enforce_tos_with = tos_file.path().to_str().unwrap().to_string();
+        let config_str = format!(
+            r#"[general]
+                signup_mode = "open" 
+                enforce_tos_with = "{}"
+            "#,
+            tos_file.path().display()
+        );
+        let config = ConfigToml::from_str_with_defaults(&config_str).unwrap();
 
         let data_dir = MockDataDir::new(config, None).unwrap();
 
@@ -274,8 +280,14 @@ mod tests {
         let tos_content = "# My Custom ToS";
         std::fs::write(tos_file.path(), tos_content).unwrap();
 
-        let mut config = ConfigToml::test();
-        config.general.enforce_tos_with = tos_file.path().to_str().unwrap().to_string();
+        let config_str = format!(
+            r#"[general]
+                signup_mode = "open" 
+                enforce_tos_with = "{}"
+            "#,
+            tos_file.path().display()
+        );
+        let config = ConfigToml::from_str_with_defaults(&config_str).unwrap();
 
         let data_dir = MockDataDir::new(config, None).unwrap();
         let context = AppContext::try_from(data_dir).unwrap();

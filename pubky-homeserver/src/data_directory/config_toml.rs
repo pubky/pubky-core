@@ -5,8 +5,11 @@
 //! and lets callers optionally layer their own TOML on top.
 
 use super::{
-    domain_port::DomainPort, quota_config::PathLimit, storage_config::StorageConfigToml, Domain,
-    SignupMode,
+    domain_port::DomainPort,
+    quota_config::PathLimit,
+    storage_config::StorageConfigToml,
+    tos_markdown::{deserialize_optional_tos, TosMarkdown},
+    Domain, SignupMode,
 };
 
 use crate::{
@@ -71,10 +74,11 @@ pub struct AdminToml {
     pub admin_password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
-    pub enforce_tos_with: String,
+    #[serde(default, deserialize_with = "deserialize_optional_tos")]
+    pub enforce_tos_with: Option<TosMarkdown>,
     pub lmdb_backup_interval_s: u64,
     pub user_storage_quota_mb: u64,
 }
@@ -89,7 +93,7 @@ pub struct LoggingToml {
 }
 
 /// The overall application configuration, composed of several subsections.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
     /// General application settings (signup mode, quotas, backups).
     pub general: GeneralToml,
@@ -182,7 +186,7 @@ impl ConfigToml {
     pub fn test() -> Self {
         let mut config = Self::default();
         config.general.signup_mode = SignupMode::Open;
-        config.general.enforce_tos_with = "".to_string();
+        config.general.enforce_tos_with = None;
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -218,7 +222,7 @@ mod tests {
     fn test_default_config() {
         let c = ConfigToml::default();
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
-        assert!(c.general.enforce_tos_with.is_empty());
+        assert!(c.general.enforce_tos_with.is_none());
         assert_eq!(c.general.user_storage_quota_mb, 0);
         assert_eq!(c.general.lmdb_backup_interval_s, 0);
         assert_eq!(
