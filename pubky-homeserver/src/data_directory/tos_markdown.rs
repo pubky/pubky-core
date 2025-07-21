@@ -1,18 +1,14 @@
 use serde::{Deserialize, Deserializer};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// A validated and loaded Terms of Service markdown file.
+/// A validated and loaded Terms of Service markdown file, held in memory.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TosMarkdown {
-    #[allow(dead_code)]
-    path: PathBuf,
-    cached_content: String,
-}
+pub struct TosMarkdown(String);
 
 impl TosMarkdown {
     /// Gets the cached content of the ToS file.
     pub fn content(&self) -> &str {
-        &self.cached_content
+        &self.0
     }
 }
 
@@ -51,8 +47,5 @@ where
     // Read and cache the content
     let content = std::fs::read_to_string(path).map_err(serde::de::Error::custom)?;
 
-    Ok(Some(TosMarkdown {
-        path: path.to_path_buf(),
-        cached_content: content,
-    }))
+    Ok(Some(TosMarkdown(content)))
 }
