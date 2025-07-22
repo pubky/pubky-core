@@ -42,7 +42,6 @@ impl AppState {
     }
 }
 
-
 #[derive(Debug, Clone)]
 struct Config {
     pub http_port: u16,
@@ -89,7 +88,10 @@ impl HttpRelay {
         let app_state = AppState::new(config);
 
         let app = Router::new()
-            .route("/link/{id}", get(link::get_handler).post(link::post_handler))
+            .route(
+                "/link/{id}",
+                get(link::get_handler).post(link::post_handler),
+            )
             .layer(CorsLayer::very_permissive())
             .layer(TraceLayer::new_for_http())
             .with_state(app_state.clone());
@@ -170,7 +172,10 @@ mod link {
     use axum::http::StatusCode;
 
     /// A consumer requests data using GET method.
-    pub async fn get_handler(Path(id): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
+    pub async fn get_handler(
+        Path(id): Path<String>,
+        State(state): State<AppState>,
+    ) -> impl IntoResponse {
         let mut pending_list = state.pending_list.lock().await;
 
         if let Some(producer) = pending_list.remove_producer(&id) {
@@ -188,7 +193,7 @@ mod link {
             Ok(Ok(message)) => (StatusCode::OK, message),
             Ok(Err(_)) => (StatusCode::NOT_FOUND, "Not Found".into()),
             Err(_) => {
-                // Remove the consumer from the pending list again
+                // Timeout. Remove the consumer from the pending list again
                 let mut pending_list = state.pending_list.lock().await;
                 pending_list.remove_consumer(&id);
                 (StatusCode::REQUEST_TIMEOUT, "Request timed out".into())
@@ -216,7 +221,7 @@ mod link {
         match tokio::time::timeout(state.config.request_timeout, receiver).await {
             Ok(_) => (StatusCode::OK, Bytes::new()),
             Err(_) => {
-                // Remove the producer from the pending list again
+                // Timeout. Remove the producer from the pending list again
                 let mut pending_list = state.pending_list.lock().await;
                 pending_list.remove_producer(&channel);
                 (
@@ -298,7 +303,6 @@ mod tests {
         assert!(state.pending_list.lock().await.is_empty());
 
         // Producer request timed out
-        // Use the same ID as the consumer request so we are sure the consumer cleaned up.
         let body = axum::body::Bytes::from_static(b"Hello, world!");
         let response = server.post("/link/123").bytes(body).await;
         assert_eq!(response.status_code(), 408);
