@@ -32,6 +32,13 @@ impl WaitingList {
     }
 }
 
+#[cfg(test)]
+impl WaitingList {
+    pub fn is_empty(&self) -> bool {
+        self.pending_producers.is_empty() && self.pending_consumers.is_empty()
+    }
+}
+
 /// A producer that is waiting for a consumer to request data.
 pub struct WaitingProducer {
     /// The payload of the producer

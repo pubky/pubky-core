@@ -206,7 +206,7 @@ mod link {
         Path(channel): Path<String>,
         State(state): State<AppState>,
         body: Bytes,
-    ) -> (StatusCode, Bytes) {
+    ) -> impl IntoResponse {
         let mut pending_list = state.pending_list.lock().await;
 
         if let Some(consumer) = pending_list.remove_consumer(&channel) {
@@ -224,10 +224,7 @@ mod link {
                 // Timeout. Remove the producer from the pending list again
                 let mut pending_list = state.pending_list.lock().await;
                 pending_list.remove_producer(&channel);
-                (
-                    StatusCode::REQUEST_TIMEOUT,
-                    Bytes::from_static(b"Request timed out"),
-                )
+                (StatusCode::REQUEST_TIMEOUT, "Request timed out".into())
             }
         }
     }
@@ -237,11 +234,7 @@ mod link {
 mod tests {
     use super::*;
 
-    impl WaitingList {
-        pub fn is_empty(&self) -> bool {
-            self.pending_producers.is_empty() && self.pending_consumers.is_empty()
-        }
-    }
+
 
     #[tokio::test]
     async fn test_delayed_producer() {
