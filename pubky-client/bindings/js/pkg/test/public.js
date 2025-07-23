@@ -1,6 +1,6 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey, setLogLevel } from '../index.cjs'
+import { Client, Keypair, PublicKey, setLogLevel} from '../index.cjs'
 import { createSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')
@@ -12,7 +12,7 @@ test('public: put/get', async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
   const publicKey = keypair.publicKey();
 
@@ -62,7 +62,7 @@ test("not found", async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
   const publicKey = keypair.publicKey();
 
@@ -81,7 +81,7 @@ test("unauthorized", async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -109,7 +109,7 @@ test("forbidden", async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -138,7 +138,7 @@ test("list", async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
   let urls = [
     `pubky://${pubky}/pub/a.wrong/a.txt`,
@@ -273,7 +273,7 @@ test('list shallow', async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken})
 
   let urls = [
     `pubky://${pubky}/pub/a.com/a.txt`,
