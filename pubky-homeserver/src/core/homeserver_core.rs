@@ -19,6 +19,7 @@ use axum_server::{
 };
 
 use futures_util::TryFutureExt;
+use pkarr::PublicKey;
 use pubky_common::auth::AuthVerifier;
 use std::{
     net::{SocketAddr, TcpListener},
@@ -34,6 +35,8 @@ pub(crate) struct AppState {
     /// If `Some(bytes)` the quota is enforced, else unlimited.
     pub(crate) user_quota_bytes: Option<u64>,
     pub(crate) enforce_tos_with: Option<TosMarkdown>,
+    pub(crate) server_public_key: PublicKey,
+    pub(crate) icann_domain: Option<String>,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -152,6 +155,13 @@ impl HomeserverCore {
             Some(quota_mb * 1024 * 1024)
         };
 
+        let icann_domain = context
+            .config_toml
+            .pkdns
+            .icann_domain
+            .as_ref()
+            .map(|d| d.0.clone());
+
         let state = AppState {
             verifier: AuthVerifier::default(),
             db: context.db.clone(),
@@ -159,6 +169,8 @@ impl HomeserverCore {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
             enforce_tos_with: context.config_toml.general.enforce_tos_with.clone(),
+            server_public_key: context.keypair.public_key(),
+            icann_domain,
         };
         super::routes::create_app(state.clone(), context)
     }
