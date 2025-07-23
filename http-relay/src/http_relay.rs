@@ -234,8 +234,6 @@ mod link {
 mod tests {
     use super::*;
 
-
-
     #[tokio::test]
     async fn test_delayed_producer() {
         let (app, state) = HttpRelay::create_app(Config::default()).unwrap();
