@@ -17,7 +17,7 @@ struct RootResponse {
 
 pub async fn handler(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
     let (tos_pubky_url, tos_icann_url) = if state.enforce_tos_with.is_some() {
-        let pubky_url = format!("pubky://{}/tos", state.server_public_key);
+        let pubky_url = format!("https://{}/tos", state.server_public_key);
         let icann_url = state
             .icann_domain
             .as_ref()
@@ -92,7 +92,7 @@ mod tests {
 
         assert_eq!(
             json["tosPubkyUrl"],
-            format!("pubky://{}/tos", server_pubkey)
+            format!("https://{}/tos", server_pubkey)
         );
         assert_eq!(json["tosIcannUrl"], "https://example.com/tos");
     }
