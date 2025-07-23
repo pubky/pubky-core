@@ -18,9 +18,11 @@ static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/"];
 #[serde(rename_all = "camelCase")]
 pub struct PkarrConfig {
     /// The list of relays to access the DHT with.
+    #[tsify(optional)]
     pub(crate) relays: Option<Vec<String>>,
     /// The timeout for DHT requests in milliseconds.
     /// Default is 2000ms.
+    #[tsify(optional)]
     pub(crate) request_timeout: Option<NonZeroU64>,
 }
 
@@ -30,9 +32,11 @@ pub struct PkarrConfig {
 #[serde(rename_all = "camelCase")]
 pub struct PubkyClientConfig {
     /// Configuration on how to access pkarr packets on the mainline DHT.
+    #[tsify(optional)]
     pub(crate) pkarr: Option<PkarrConfig>,
     /// The maximum age of a record in seconds.
     /// If the user pkarr record is older than this, it will be automatically refreshed.
+    #[tsify(optional)]
     pub(crate) user_max_record_age: Option<NonZeroU64>,
 }
 
