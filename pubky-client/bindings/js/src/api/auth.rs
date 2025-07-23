@@ -43,10 +43,13 @@ impl Client {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
-        options: Option<SignupOptions>,
+        options: JsValue,
     ) -> JsResult<Session> {
-        // Use unwrap_or_default to handle the case where no options are passed from JS.
-        let options = options.unwrap_or_default();
+        let options: SignupOptions = if options.is_null() || options.is_undefined() {
+            SignupOptions::default()
+        } else {
+            serde_wasm_bindgen::from_value(options)?
+        };
 
         // Start the native signup request builder.
         let mut signup_request = self.0.signup(keypair.as_inner(), homeserver.as_inner());
