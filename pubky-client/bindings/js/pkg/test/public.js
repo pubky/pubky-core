@@ -1,6 +1,6 @@
 import test from 'tape'
 
-import { Client, Keypair, PublicKey, setLogLevel} from '../index.cjs'
+import { Client, Keypair, PublicKey} from '../index.cjs'
 import { createSignupToken } from './utils.js';
 
 const HOMESERVER_PUBLICKEY = PublicKey.from('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo')

@@ -6,8 +6,6 @@ use serde::Serialize;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RootResponse {
-    description: &'static str,
-    version: &'static str,
     public_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     tos_pubky_url: Option<String>,
@@ -28,8 +26,6 @@ pub async fn handler(State(state): State<AppState>) -> HttpResult<impl IntoRespo
     };
 
     let response = RootResponse {
-        description: env!("CARGO_PKG_DESCRIPTION"),
-        version: env!("CARGO_PKG_VERSION"),
         public_key: state.server_public_key.to_string(),
         tos_pubky_url,
         tos_icann_url,
@@ -52,8 +48,6 @@ mod tests {
         let response = server.get("/").expect_success().await;
         let json = response.json::<serde_json::Value>();
 
-        assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
-        assert_eq!(json["description"], env!("CARGO_PKG_DESCRIPTION"));
         assert_eq!(json["publicKey"], context.keypair.public_key().to_string());
         assert!(json["tosPubkyUrl"].is_null());
         assert!(json["tosIcannUrl"].is_null());

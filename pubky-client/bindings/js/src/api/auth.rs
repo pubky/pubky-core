@@ -1,5 +1,7 @@
 //! Wasm bindings for the Auth api
 
+use serde::{Deserialize, Serialize};
+use tsify::Tsify;
 use url::Url;
 
 use pubky_common::capabilities::Capabilities;
@@ -17,18 +19,14 @@ use super::super::constructor::Client;
 use wasm_bindgen::prelude::*;
 
 /// Optional parameters for the `signup` method.
-#[wasm_bindgen]
-#[derive(Default, serde::Deserialize)]
-#[serde(default)]
+#[derive(Tsify, Serialize, Deserialize, Debug, Default)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
 pub struct SignupOptions {
     /// The signup token or invite code.
-    #[wasm_bindgen(getter_with_clone, js_name = signupToken)]
-    #[serde(rename = "signupToken")]
     pub signup_token: Option<String>,
 
     /// A boolean indicating acceptance of the Terms of Service.
-    #[wasm_bindgen(js_name = acceptTos)]
-    #[serde(rename = "acceptTos")]
     pub accept_tos: Option<bool>,
 }
 
@@ -43,13 +41,10 @@ impl Client {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
-        options: JsValue,
+        options: Option<SignupOptions>,
     ) -> JsResult<Session> {
-        let options: SignupOptions = if options.is_null() || options.is_undefined() {
-            SignupOptions::default()
-        } else {
-            serde_wasm_bindgen::from_value(options)?
-        };
+        // Use unwrap_or_default to handle the case where no options are passed from JS.
+        let options = options.unwrap_or_default();
 
         // Start the native signup request builder.
         let mut signup_request = self.0.signup(keypair.as_inner(), homeserver.as_inner());
