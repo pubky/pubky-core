@@ -24,9 +24,11 @@ use wasm_bindgen::prelude::*;
 #[serde(rename_all = "camelCase")]
 pub struct SignupOptions {
     /// The signup token or invite code.
+    #[tsify(optional)]
     pub signup_token: Option<String>,
 
     /// A boolean indicating acceptance of the Terms of Service.
+    #[tsify(optional)]
     pub accept_tos: Option<bool>,
 }
 
