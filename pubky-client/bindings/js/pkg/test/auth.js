@@ -15,7 +15,7 @@ test('Auth: basic', async (t) => {
   const signupToken = await createSignupToken(client)
 
   // Use the received token to sign up.
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken)
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken})
 
   const session = await client.session(publicKey)
   t.ok(session, "signup")
@@ -44,13 +44,13 @@ test("Auth: multi-user (cookies)", async (t) => {
   const aliceSignupToken = await createSignupToken(client)
   const bobSignupToken = await createSignupToken(client)
 
-  await client.signup(alice, HOMESERVER_PUBLICKEY , aliceSignupToken)
+  await client.signup(alice, HOMESERVER_PUBLICKEY , {aliceSignupToken})
 
   let session = await client.session(alice.publicKey())
   t.ok(session, "signup")
 
   {
-    await client.signup(bob, HOMESERVER_PUBLICKEY, bobSignupToken)
+    await client.signup(bob, HOMESERVER_PUBLICKEY, {bobSignupToken})
 
     const session = await client.session(bob.publicKey())
     t.ok(session, "signup")
@@ -91,7 +91,7 @@ test("Auth: 3rd party signin", async (t) => {
 
     const signupToken = await createSignupToken(client)
 
-    await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+    await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
     await client.sendAuthToken(keypair, pubkyauthUrl)
   }
@@ -131,7 +131,7 @@ test('getHomeserver success', async (t) => {
 
   const signupToken = await createSignupToken(client)
 
-  await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  await client.signup(keypair, HOMESERVER_PUBLICKEY, {signupToken});
 
   let homeserver = await client.getHomeserver(publicKey);
   t.is(homeserver.z32(), HOMESERVER_PUBLICKEY.z32(), "homeserver is correct");

@@ -1013,6 +1013,7 @@ dependencies = [
  "pubky-common",
  "pubky-testnet",
  "reqwest",
+ "tempfile",
  "tokio",
  "tracing-subscriber",
 ]
@@ -2894,6 +2895,7 @@ dependencies = [
  "pubky-common",
  "reqwest",
  "serde",
+ "serde_json",
  "serde_valid",
  "tempfile",
  "thiserror 2.0.12",
