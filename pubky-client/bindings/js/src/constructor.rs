@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 
 use super::js_result::JsResult;
 
-static TESTNET_RELAYS: [&str; 1] = ["http://localhost:15411/"];
+static TESTNET_RELAY_PORT: &str = "15411";
 
 // ------------------------------------------------------------------------------------------------
 // JS style config objects for the client.
@@ -104,18 +104,24 @@ impl Client {
     }
 
     /// Create a client with with configurations appropriate for local testing:
-    /// - set Pkarr relays to `["http://localhost:15411"]` instead of default relay.
-    /// - transform `pubky://<pkarr public key>` to `http://<pkarr public key` instead of `https:`
-    ///     and read the homeserver HTTP port from the [reserved service parameter key](pubky_common::constants::reserved_param_keys::HTTP_PORT)
+    /// - set Pkarr relays to `http://<host>:15411` (defaults to `localhost`).
+    /// - transform `pubky://<pkarr public key>` to `http://<host>` instead of `https:`
+    ///   and read the homeserver HTTP port from the PKarr record.
     #[wasm_bindgen]
-    pub fn testnet() -> Self {
+    pub fn testnet(host: Option<String>) -> Self {
+        let hostname = host.unwrap_or_else(|| "localhost".to_string());
+        let testnet_relay = format!("http://{}:{}/", hostname, TESTNET_RELAY_PORT);
+
         let mut builder = pubky::Client::builder();
 
         builder.pkarr(|builder| {
             builder
-                .relays(&TESTNET_RELAYS)
+                .relays(&[testnet_relay.as_str()])
                 .expect("testnet relays are valid urls")
         });
+
+        // Store the testnet hostname for URL transformations.
+        builder.testnet_host(hostname);
 
         let client = builder.build().expect("testnet build should be infallible");
 

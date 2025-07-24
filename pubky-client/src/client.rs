@@ -16,25 +16,47 @@ pub struct ClientBuilder {
     /// Maximum age before a user record should be republished.
     /// Defaults to 1 hour.
     max_record_age: Option<Duration>,
+    /// The hostname to use for testnet URL transformations (WASM only).
+    #[cfg(target_arch = "wasm32")]
+    testnet_host: Option<String>,
 }
 
 impl ClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
-    /// Creates a client connected to a local test network with hardcoded configurations:
-    /// 1. local DHT with bootstrapping nodes: `&["localhost:6881"]`
-    /// 2. Pkarr Relay running on port [15411][pubky_common::constants::testnet_ports::PKARR_RELAY]
+    /// Creates a client connected to a local test network using `localhost`.
+    /// To use a custom host, see `testnet_with_host`.
     pub fn testnet(&mut self) -> &mut Self {
+        self.testnet_with_host("localhost")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Creates a client connected to a local test network with a custom homeserver
+    /// host other than `localhost`.
+    ///
+    /// Configures:
+    /// 1. local DHT with bootstrapping nodes: `&["<host>:6881"]`
+    /// 2. Pkarr Relay: `http://<host>:<PKARR_RELAY_PORT>`
+    pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
         self.pkarr
             .bootstrap(&[format!(
-                "localhost:{}",
+                "{}:{}",
+                host,
                 pubky_common::constants::testnet_ports::BOOTSTRAP
             )])
             .relays(&[format!(
-                "http://localhost:{}",
+                "http://{}:{}",
+                host,
                 pubky_common::constants::testnet_ports::PKARR_RELAY
             )])
             .expect("relays urls infallible");
 
+        self
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    /// Sets the testnet host for wasm builds.
+    pub fn testnet_host(&mut self, host: String) -> &mut Self {
+        self.testnet_host = Some(host);
         self
     }
 
@@ -112,6 +134,9 @@ impl ClientBuilder {
             cookie_store,
 
             max_record_age,
+
+            #[cfg(target_arch = "wasm32")]
+            testnet_host: self.testnet_host.clone(),
         })
     }
 }
@@ -137,6 +162,10 @@ pub struct Client {
 
     /// The record age threshold before republishing.
     pub(crate) max_record_age: Duration,
+
+    /// The hostname to use for testnet URL transformations (WASM only).
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) testnet_host: Option<String>,
 }
 
 impl Client {
