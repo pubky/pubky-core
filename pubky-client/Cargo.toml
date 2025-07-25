@@ -29,7 +29,7 @@ thiserror = "2.0.11"
 url = "2.5.4"
 bytes = "^1.10.0"
 base64 = "0.22.1"
-pkarr = { version = "3.7.1", features = ["full"] }
+pkarr = { workspace = true, features = ["full"] }
 cookie = "0.18.1"
 cookie_store = { version = "0.21.1", default-features = false }
 anyhow = "1.0.95"
