@@ -28,7 +28,7 @@ opt-level = 'z'
 
 
 [workspace.dependencies]
-# Setting "default-features = false" because cargo doesn't allow member crates to have their own "default-features".
+# Setting "default-features = false" because cargo doesn't allow member crates to override the root "default-features" flag, which if not set, is implied to be true.
 # Member crates that need "default-features = false" should leave it out of their dependency specification, as it's inherited from here.
 # Member crates that need "default-features = true" should add a "default" feature to the features list, which is equivalent.
 pkarr = { version = "3.9.0", default-features = false }
