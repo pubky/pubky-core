@@ -53,10 +53,17 @@ impl ClientBuilder {
         self
     }
 
-    #[cfg(target_arch = "wasm32")]
-    /// Sets the testnet host for wasm builds.
+    /// Sets the testnet host. This is only used for WASM builds.
     pub fn testnet_host(&mut self, host: String) -> &mut Self {
-        self.testnet_host = Some(host);
+        // The field itself is still conditional, so the logic is gated.
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.testnet_host = Some(host);
+        }
+        // This avoids an "unused parameter" warning on non-WASM builds.
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = host;
+
         self
     }
 
