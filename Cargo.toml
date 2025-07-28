@@ -7,7 +7,14 @@ members = [
   "examples",
   "e2e",
 ]
-
+default-members = [
+  "pubky-common",
+  "pkarr-republisher",
+  "pubky-homeserver",
+  "http-relay",
+  "pubky-testnet",
+  "pubky-client",
+] # `ws publish` will only attempt to publish these ones. 
 resolver = "2"
 
 [workspace.package]
