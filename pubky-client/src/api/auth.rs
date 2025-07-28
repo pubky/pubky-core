@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
-use reqwest::{IntoUrl, Method, StatusCode};
+use reqwest::{Method, Url};
 use std::collections::HashMap;
-use url::Url;
+use std::future::Future;
 
 use pkarr::{Keypair, PublicKey};
 use pubky_common::{
@@ -12,9 +12,9 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{Client, cross_debug, handle_http_error, internal::pkarr::PublishStrategy};
+use crate::{Client, http::HttpClient, internal::pkarr::PublishStrategy};
 
-impl Client {
+impl<H: HttpClient> Client<H> {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
@@ -29,31 +29,23 @@ impl Client {
         homeserver: &PublicKey,
         signup_token: Option<&str>,
     ) -> Result<Session> {
-        // 1) Construct the base URL: "https://<homeserver>/signup"
-        let mut url = Url::parse(&format!("https://{}", homeserver))?;
-        url.set_path("/signup");
-
-        // 2) If we have a signup_token, append it to the query string.
+        // 1. Construct the signup URL.
+        let mut url = Url::parse(&format!("https://{}/signup", homeserver))?;
         if let Some(token) = signup_token {
             url.query_pairs_mut().append_pair("signup_token", token);
         }
 
-        // 3) Create an AuthToken (e.g. with root capability).
+        // 2. Create and serialize the authentication token.
         let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
         let request_body = auth_token.serialize();
 
-        // 4) Send POST request with the AuthToken in the body
-        let response = self
-            .cross_request(Method::POST, url)
-            .await
-            .body(request_body)
-            .send()
+        // 3. Perform the request using the abstract HttpClient.
+        let response_bytes = self
+            .http
+            .request(Method::POST, url, Some(request_body), None)
             .await?;
 
-        // 5) Check for non-2xx status codes
-        handle_http_error!(response);
-
-        // 6) Publish the homeserver record
+        // 4. Publish the homeserver record. This now happens before deserializing the session.
         self.publish_homeserver(
             keypair,
             Some(&homeserver.to_string()),
@@ -61,14 +53,8 @@ impl Client {
         )
         .await?;
 
-        // 7) Store session cookie in local store
-        #[cfg(not(target_arch = "wasm32"))]
-        self.cookie_store
-            .store_session_after_signup(&response, &keypair.public_key());
-
-        // 8) Parse the response body into a `Session`
-        let bytes = response.bytes().await?;
-        Ok(Session::deserialize(&bytes)?)
+        // 5. Deserialize the session from the response bytes.
+        Ok(Session::deserialize(&response_bytes)?)
     }
 
     /// Check the current session for a given Pubky in its homeserver.
@@ -76,36 +62,25 @@ impl Client {
     /// Returns None  if not signed in, or [reqwest::Error]
     /// if the response has any other `>=404` status code.
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
-        let response = self
-            .cross_request(Method::GET, format!("pubky://{}/session", pubky))
-            .await
-            .send()
-            .await?;
+        let url = Url::parse(&format!("pubky://{}/session", pubky))?;
 
-        if response.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
+        match self.http.request(Method::GET, url, None, None).await {
+            Ok(bytes) => Ok(Some(Session::deserialize(&bytes)?)),
+            Err(e) => {
+                // Check for a 404 Not Found error to return Ok(None).
+                // This is a pragmatic way to handle it with a generic error type.
+                if e.to_string().contains("404") {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
         }
-
-        handle_http_error!(response);
-
-        let bytes = response.bytes().await?;
-
-        Ok(Some(Session::deserialize(&bytes)?))
     }
-
     /// Signout from a homeserver.
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
-        let response = self
-            .cross_request(Method::DELETE, format!("pubky://{}/session", pubky))
-            .await
-            .send()
-            .await?;
-
-        handle_http_error!(response);
-
-        #[cfg(not(target_arch = "wasm32"))]
-        self.cookie_store.delete_session_after_signout(pubky);
-
+        let url = Url::parse(&format!("pubky://{}/session", pubky))?;
+        self.http.request(Method::DELETE, url, None, None).await?;
         Ok(())
     }
 
@@ -114,225 +89,115 @@ impl Client {
     /// PKarr record if it is missing or older than 1 hour. We don't mind if it succeed
     /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
-        self.signin_and_ensure_record_published(keypair, false)
-            .await
-    }
-
-    /// Signin to a homeserver and ensure the user's PKarr record is published.
-    ///
-    /// Same as `signin(keypair)` but gives the option to wait for the pkarr packet to be
-    /// published in sync. `signin(keypair)` does publish the packet async.
-    pub async fn signin_and_ensure_record_published(
-        &self,
-        keypair: &Keypair,
-        publish_sync: bool,
-    ) -> Result<Session> {
         let token = AuthToken::sign(keypair, vec![Capability::root()]);
         let session = self.signin_with_authtoken(&token).await?;
 
-        if publish_sync {
-            // Wait for the publish to complete.
-            self.publish_homeserver(keypair, None, PublishStrategy::IfOlderThan)
-                .await?;
-        } else {
-            // Spawn a background task to republish the record.
-            let client_clone = self.clone();
-            let keypair_clone = keypair.clone();
-
-            let future = async move {
-                // Resolve the record and republish if existing and older MAX_HOMESERVER_RECORD_AGE_SECS
-                let _ = client_clone
-                    .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
-                    .await;
-            };
-            // Spawn a background task to republish the record.
-            #[cfg(not(target_arch = "wasm32"))]
-            tokio::spawn(future);
-            #[cfg(target_arch = "wasm32")]
-            wasm_bindgen_futures::spawn_local(future);
-        }
+        // The responsibility of running this in the background is moved to the caller.
+        // The core library now performs the action synchronously for simplicity.
+        self.publish_homeserver(keypair, None, PublishStrategy::IfOlderThan)
+            .await?;
 
         Ok(session)
     }
 
-    pub async fn send_auth_token<T: IntoUrl>(
-        &self,
-        keypair: &Keypair,
-        pubkyauth_url: &T,
-    ) -> Result<()> {
-        let pubkyauth_url = Url::parse(
-            pubkyauth_url
-                .as_str()
-                .replace("pubkyauth_url", "http")
-                .as_str(),
-        )?;
-
+    /// Send an authorization token to a relay for a pubkyauth request.
+    pub async fn send_auth_token(&self, keypair: &Keypair, pubkyauth_url_str: &str) -> Result<()> {
+        let pubkyauth_url = Url::parse(&pubkyauth_url_str.replace("pubkyauth_url", "http"))?;
         let query_params: HashMap<String, String> =
             pubkyauth_url.query_pairs().into_owned().collect();
 
         let relay = query_params
             .get("relay")
-            .map(|r| url::Url::parse(r).expect("Relay query param to be valid URL"))
-            .expect("Missing relay query param");
-
-        let client_secret = query_params
+            .and_then(|r| Url::parse(r).ok())
+            .ok_or_else(|| anyhow!("Missing or invalid 'relay' in pubkyauth URL"))?;
+        let client_secret: [u8; 32] = query_params
             .get("secret")
-            .map(|s| {
-                let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-                let bytes = engine.decode(s).expect("invalid client_secret");
-                let arr: [u8; 32] = bytes.try_into().expect("invalid client_secret");
-
-                arr
+            .and_then(|s| {
+                base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD)
+                    .decode(s)
+                    .ok()
             })
-            .expect("Missing client secret");
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| anyhow!("Missing or invalid 'secret' in pubkyauth URL"))?;
 
         let capabilities = query_params
             .get("caps")
-            .map(|caps_string| {
-                caps_string
-                    .split(',')
-                    .filter_map(|cap| Capability::try_from(cap).ok())
+            .map(|s| {
+                s.split(',')
+                    .filter_map(|sub| Capability::try_from(sub).ok())
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 
         let token = AuthToken::sign(keypair, capabilities);
-
         let encrypted_token = encrypt(&token.serialize(), &client_secret);
 
         let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-
-        let mut callback_url = relay.clone();
-        let mut path_segments = callback_url.path_segments_mut().unwrap();
-        path_segments.pop_if_empty();
+        let mut callback_url = relay;
         let channel_id = engine.encode(hash(&client_secret).as_bytes());
-        path_segments.push(&channel_id);
-        drop(path_segments);
+        callback_url
+            .path_segments_mut()
+            .map_err(|_| anyhow!("Cannot modify relay URL path"))?
+            .pop_if_empty()
+            .push(&channel_id);
 
-        let response = self
-            .cross_request(Method::POST, callback_url)
-            .await
-            .body(encrypted_token)
-            .send()
+        self.http
+            .request(Method::POST, callback_url, Some(encrypted_token), None)
             .await?;
-
-        handle_http_error!(response);
-
         Ok(())
     }
 
+    /// Internal helper to sign in using a pre-made `AuthToken`.
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
-        let response = self
-            .cross_request(Method::POST, format!("pubky://{}/session", token.pubky()))
-            .await
-            .body(token.serialize())
-            .send()
+        let url = Url::parse(&format!("pubky://{}/session", token.pubky()))?;
+        let response_bytes = self
+            .http
+            .request(Method::POST, url, Some(token.serialize()), None)
             .await?;
-
-        handle_http_error!(response);
-
-        let bytes = response.bytes().await?;
-
-        Ok(Session::deserialize(&bytes)?)
-    }
-
-    pub(crate) fn create_auth_request(
-        &self,
-        relay: &mut Url,
-        capabilities: &Capabilities,
-    ) -> Result<(Url, [u8; 32])> {
-        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-
-        let client_secret: [u8; 32] = random_bytes::<32>();
-
-        let pubkyauth_url = Url::parse(&format!(
-            "pubkyauth:///?caps={capabilities}&secret={}&relay={relay}",
-            engine.encode(client_secret)
-        ))?;
-
-        let mut segments = relay
-            .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("Invalid relay"))?;
-
-        // remove trailing slash if any.
-        segments.pop_if_empty();
-        let channel_id = &engine.encode(hash(&client_secret).as_bytes());
-        segments.push(channel_id);
-        drop(segments);
-
-        Ok((pubkyauth_url, client_secret))
+        Ok(Session::deserialize(&response_bytes)?)
     }
 
     /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
     /// verifying that AuthToken, and if capabilities were requested, signing in to
     /// the Pubky's homeserver and returning the [Session] information.
-    pub fn auth_request<T: IntoUrl>(
+    pub fn auth_request(
         &self,
-        relay: T,
+        relay_url_str: &str,
         capabilities: &Capabilities,
-    ) -> Result<AuthRequest> {
-        // TODO: use `async_compat` to remove the dependency on Tokio runtime.
-        let mut relay: Url = relay.into_url()?;
+    ) -> Result<AuthRequest<H>> {
+        let mut relay = Url::parse(relay_url_str)?;
+        let (url, client_secret) = Self::create_auth_request_url(&mut relay, capabilities)?;
 
-        let (url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
-
-        let (tx, rx) = flume::bounded(1);
-
-        let this = self.clone();
-
-        let future = async move {
-            let result = this
-                .subscribe_to_auth_response(relay, &client_secret, tx.clone())
-                .await;
-            let _ = tx.send(result);
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        tokio::spawn(future);
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(future);
-
-        Ok(AuthRequest { url, rx })
+        Ok(AuthRequest {
+            url,
+            relay,
+            client_secret,
+            client: self.clone(),
+        })
     }
-    pub(crate) async fn subscribe_to_auth_response(
-        &self,
-        relay: Url,
-        client_secret: &[u8; 32],
-        tx: flume::Sender<Result<PublicKey>>,
-    ) -> anyhow::Result<PublicKey> {
-        let response = loop {
-            match self
-                .cross_request(Method::GET, relay.clone())
-                .await
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    break Ok(response);
-                }
-                Err(error) => {
-                    // TODO: test again after Rqewest support timeout
-                    if error.is_timeout() && !tx.is_disconnected() {
-                        cross_debug!("Connection to HttpRelay timedout, reconnecting...");
 
-                        continue;
-                    }
+    /// Internal helper to construct the `pubkyauth://` URL.
+    fn create_auth_request_url(
+        relay: &mut Url,
+        capabilities: &Capabilities,
+    ) -> Result<(Url, [u8; 32])> {
+        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
+        let client_secret: [u8; 32] = random_bytes::<32>();
+        let secret_encoded = engine.encode(client_secret);
 
-                    break Err(error);
-                }
-            }
-        }?;
+        let pubkyauth_url = Url::parse(&format!(
+            "pubkyauth:///?caps={}&secret={}&relay={}",
+            capabilities, secret_encoded, relay
+        ))?;
 
-        let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, client_secret)
-            .map_err(|e| anyhow::anyhow!("Got invalid token: {e}"))?;
-        let token = AuthToken::verify(&token_bytes)?;
+        let channel_id = engine.encode(hash(&client_secret).as_bytes());
+        relay
+            .path_segments_mut()
+            .map_err(|_| anyhow!("Cannot modify relay URL path"))?
+            .pop_if_empty()
+            .push(&channel_id);
 
-        if !token.capabilities().is_empty() {
-            self.signin_with_authtoken(&token).await?;
-        }
-
-        Ok(token.pubky().clone())
+        Ok((pubkyauth_url, client_secret))
     }
 
     /// Republish the user's Pkarr record pointing to their homeserver if
@@ -372,42 +237,89 @@ impl Client {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct AuthRequest {
-    url: Url,
-    pub(crate) rx: flume::Receiver<Result<PublicKey>>,
+use crate::NativeClient;
+
+impl NativeClient {
+    /// Signs out from a homeserver and clears the local session cookie.
+    ///
+    /// This method wraps the generic signout logic and adds the native-specific
+    /// action of explicitly deleting the session cookie from the custom `CookieJar`.
+    pub async fn signout_and_clear_session(&self, pubky: &PublicKey) -> Result<()> {
+        // First, call the generic signout method to perform the HTTP DELETE request.
+        Client::signout(self, pubky).await?;
+
+        // After the request succeeds, explicitly delete the cookie from the native store.
+        self.http.cookie_store.delete_session_after_signout(pubky);
+
+        Ok(())
+    }
 }
 
-impl AuthRequest {
-    /// Returns the Pubky Auth URL.
+/// Represents a pending authentication request.
+/// This struct is now generic and holds a clone of the client.
+#[derive(Debug, Clone)]
+pub struct AuthRequest<H: HttpClient> {
+    url: Url,
+    relay: Url,
+    client_secret: [u8; 32],
+    client: Client<H>,
+}
+
+impl<H: HttpClient> AuthRequest<H> {
+    /// Returns the `pubkyauth://` URL that should be presented to the user.
     pub fn url(&self) -> &Url {
         &self.url
     }
 
-    // TODO: Return better errors
+    /// Waits for the user to respond to the auth request.
+    /// This method now contains the long-polling logic and must be awaited.
+    pub fn response(&self) -> impl Future<Output = Result<PublicKey>> + '_ {
+        async move {
+            // This loop performs long-polling against the relay server.
+            let encrypted_token = loop {
+                match self
+                    .client
+                    .http
+                    .request(Method::GET, self.relay.clone(), None, None)
+                    .await
+                {
+                    Ok(bytes) => break bytes,
+                    Err(e) => {
+                        // A simple timeout check. In a real scenario, more robust
+                        // error handling (e.g., exponential backoff) might be needed.
+                        if e.to_string().contains("timeout") {
+                            continue;
+                        }
+                        return Err(e);
+                    }
+                }
+            };
 
-    /// Returns the result of an Auth request.
-    pub async fn response(&self) -> Result<PublicKey> {
-        self.rx
-            .recv_async()
-            .await
-            .expect("sender dropped unexpectedly")
+            let token_bytes = decrypt(&encrypted_token, &self.client_secret)
+                .map_err(|e| anyhow!("Got invalid token: {}", e))?;
+            let token = AuthToken::verify(&token_bytes)?;
+
+            if !token.capabilities().is_empty() {
+                self.client.signin_with_authtoken(&token).await?;
+            }
+
+            Ok(token.pubky().clone())
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{NativeClient, internal::pkarr::PublishStrategy};
     use pkarr::Keypair;
-
-    use crate::{Client, internal::pkarr::PublishStrategy};
 
     #[tokio::test]
     async fn test_get_homeserver() {
         let dht = mainline::Testnet::new(3).unwrap();
-        let client = Client::builder()
-            .pkarr(|builder| builder.bootstrap(&dht.bootstrap))
-            .build()
-            .unwrap();
+        let mut config = NativeClient::config();
+        config.pkarr(|builder| builder.bootstrap(&dht.bootstrap));
+
+        let client = NativeClient::from_config(config).unwrap();
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
 

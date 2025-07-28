@@ -2818,6 +2818,7 @@ name = "pubky"
 version = "0.5.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "bytes",
  "cookie",
@@ -2949,13 +2950,17 @@ dependencies = [
 name = "pubky-wasm"
 version = "0.5.2"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "console_log",
+ "futures-lite",
  "getrandom 0.3.1",
  "js-sys",
  "log",
  "pkarr",
  "pubky",
  "pubky-common",
+ "reqwest",
  "serde",
  "serde-wasm-bindgen",
  "tsify",

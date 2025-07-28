@@ -9,13 +9,14 @@
 
 pub mod api;
 mod client;
+pub mod http;
 pub mod internal;
 mod macros;
 pub use client::*;
 
 pub use api::{auth::AuthRequest, public::ListBuilder};
 pub use client::Client;
-pub use client::ClientBuilder;
+pub use client::ClientConfig;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};

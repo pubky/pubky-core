@@ -1,34 +1,37 @@
 use anyhow::Result;
-use reqwest::{IntoUrl, Method};
+use reqwest::Method;
 
-use crate::{Client, handle_http_error};
+use crate::{Client, http::HttpClient};
 
-impl Client {
-    /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
+// The implementation block is now generic over the HttpClient.
+impl<H: HttpClient> Client<H> {
+    /// Returns a `ListBuilder` to fluently construct a list request.
     ///
-    /// `url` sets the path you want to lest within.
-    pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
-        Ok(ListBuilder::new(self, url))
+    /// # Arguments
+    /// * `url` - The `pubky://` URL of the directory you want to list.
+    pub fn list(&self, url: &str) -> ListBuilder<H> {
+        ListBuilder::new(self, url)
     }
 }
 
-/// Helper struct to edit Pubky homeserver's list API options before sending them.
+/// A fluent builder for creating a Pubky "list" API request.
 #[derive(Debug)]
-pub struct ListBuilder<'a> {
+pub struct ListBuilder<'a, H: HttpClient> {
+    client: &'a Client<H>,
     url: String,
     reverse: bool,
     limit: Option<u16>,
-    cursor: Option<&'a str>,
-    client: &'a Client,
+    cursor: Option<String>,
     shallow: bool,
 }
 
-impl<'a> ListBuilder<'a> {
-    /// Create a new List request builder
-    pub(crate) fn new<T: IntoUrl>(client: &'a Client, url: T) -> Self {
+// The ListBuilder implementation is now also generic.
+impl<'a, H: HttpClient> ListBuilder<'a, H> {
+    /// Creates a new `ListBuilder`.
+    fn new(client: &'a Client<H>, url: &str) -> Self {
         Self {
             client,
-            url: url.as_str().to_string(),
+            url: url.to_string(),
             limit: None,
             cursor: None,
             reverse: false,
@@ -36,48 +39,54 @@ impl<'a> ListBuilder<'a> {
         }
     }
 
-    /// Set the `reverse` option.
+    /// Set the `reverse` option to list items in reverse order.
     pub fn reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
         self
     }
 
-    /// Set the `limit` value.
+    /// Set the `limit` for the number of items returned.
     pub fn limit(mut self, limit: u16) -> Self {
-        self.limit = limit.into();
+        self.limit = Some(limit);
         self
     }
 
-    /// Set the `cursor` value.
-    ///
-    /// Either a full `pubky://` Url (from previous list response),
-    /// or a path (to a file or directory) relative to the `url`
-    pub fn cursor(mut self, cursor: &'a str) -> Self {
-        self.cursor = cursor.into();
+    /// Set the `cursor` to paginate through results.
+    /// This can be a full `pubky://` URL from a previous response or a relative path.
+    pub fn cursor(mut self, cursor: &str) -> Self {
+        self.cursor = Some(cursor.to_string());
         self
     }
 
+    /// Set the `shallow` option to list only directories and files at the current
+    /// level, rather than a flat list of all files recursively.
     pub fn shallow(mut self, shallow: bool) -> Self {
         self.shallow = shallow;
         self
     }
 
-    /// Send the list request.
+    /// Sends the configured list request.
     ///
-    /// Returns a list of Pubky URLs of the files in the path of the `url`
-    /// respecting [ListBuilder::reverse], [ListBuilder::limit] and [ListBuilder::cursor]
-    /// options.
+    /// # Returns
+    /// A `Vec<String>` where each string is a `pubky://` URL of an item in the directory.
     pub async fn send(self) -> Result<Vec<String>> {
+        // Build the final URL with all query parameters.
         let mut url = url::Url::parse(&self.url)?;
 
+        // The public API works on directories, which should end with a '/'.
+        // This ensures we are always querying a directory path.
         if !url.path().ends_with('/') {
             let path = url.path().to_string();
-            let mut parts = path.split('/').collect::<Vec<&str>>();
-            parts.pop();
-
-            let path = format!("{}/", parts.join("/"));
-
-            url.set_path(&path)
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                if let Some(parent_str) = parent.to_str() {
+                    let new_path = if parent_str.is_empty() {
+                        "/".to_string()
+                    } else {
+                        format!("{}/", parent_str)
+                    };
+                    url.set_path(&new_path);
+                }
+            }
         }
 
         let mut query = url.query_pairs_mut();
@@ -85,33 +94,21 @@ impl<'a> ListBuilder<'a> {
         if self.reverse {
             query.append_key_only("reverse");
         }
-
         if self.shallow {
             query.append_key_only("shallow");
         }
-
         if let Some(limit) = self.limit {
             query.append_pair("limit", &limit.to_string());
         }
-
-        if let Some(cursor) = self.cursor {
+        if let Some(cursor) = &self.cursor {
             query.append_pair("cursor", cursor);
         }
-
         drop(query);
 
-        let response = self
-            .client
-            .cross_request(Method::GET, url)
-            .await
-            .send()
-            .await?;
+        // Perform the request using the abstract client.request() method.
+        let bytes = self.client.request(Method::GET, url.as_str(), None).await?;
 
-        handle_http_error!(response);
-
-        // TODO: bail on too large files.
-        let bytes = response.bytes().await?;
-
+        // Parse the response body into a list of URL strings.
         Ok(String::from_utf8_lossy(&bytes)
             .lines()
             .map(String::from)
