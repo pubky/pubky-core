@@ -1,5 +1,7 @@
 //! Wasm bindings for the Auth api
 
+use serde::{Deserialize, Serialize};
+use tsify::Tsify;
 use url::Url;
 
 use pubky_common::capabilities::Capabilities;
@@ -16,6 +18,20 @@ use super::super::constructor::Client;
 
 use wasm_bindgen::prelude::*;
 
+/// Optional parameters for the `signup` method.
+#[derive(Tsify, Serialize, Deserialize, Debug, Default)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct SignupOptions {
+    /// The signup token or invite code.
+    #[tsify(optional)]
+    pub signup_token: Option<String>,
+
+    /// A boolean indicating acceptance of the Terms of Service.
+    #[tsify(optional)]
+    pub accept_tos: Option<bool>,
+}
+
 #[wasm_bindgen]
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -27,18 +43,31 @@ impl Client {
         &self,
         keypair: &Keypair,
         homeserver: &PublicKey,
-        signup_token: Option<String>,
+        options: Option<SignupOptions>,
     ) -> JsResult<Session> {
-        Ok(Session(
-            self.0
-                .signup(
-                    keypair.as_inner(),
-                    homeserver.as_inner(),
-                    signup_token.as_deref(),
-                )
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?,
-        ))
+        // Use unwrap_or_default to handle the case where no options are passed from JS.
+        let options = options.unwrap_or_default();
+
+        // Start the native signup request builder.
+        let mut signup_request = self.0.signup(keypair.as_inner(), homeserver.as_inner());
+
+        // Conditionally add the signup token if it was provided.
+        if let Some(token) = options.signup_token.as_deref() {
+            signup_request = signup_request.with_signup_token(token);
+        }
+
+        // Conditionally accept ToS if the flag is true.
+        if let Some(true) = options.accept_tos {
+            signup_request = signup_request.accept_tos();
+        }
+
+        // Execute the configured request and map the result for the Wasm boundary.
+        let session = signup_request
+            .send()
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        Ok(Session(session))
     }
 
     /// Check the current session for a given Pubky in its homeserver.
