@@ -2947,7 +2947,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-wasm"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "console_log",
  "getrandom 0.3.1",
