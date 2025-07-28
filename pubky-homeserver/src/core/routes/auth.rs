@@ -182,16 +182,26 @@ fn create_session_and_cookie(
     Ok(session)
 }
 
-/// Assuming that if the server is addressed by anything other than
-/// localhost, or IP addresses, it is not addressed from a browser in an
-/// secure (HTTPs) window, thus it no need to `secure` and `same_site=none` to cookies
+/// Determines if the host requires secure cookie attributes.
+///
+/// It's considered secure if the host is a pkarr public key or a fully-qualified
+/// domain name (contains a dot). IP addresses and simple hostnames (like Docker
+/// container names or localhost) are treated as non-secure development environments.
 fn is_secure(host: &str) -> bool {
+    // A pkarr public key is always a secure context.
+    if PublicKey::try_from(host).is_ok() {
+        return true;
+    }
+
+    // Fallback to parsing as a regular host.
     url::Host::parse(host)
         .map(|host| match host {
-            url::Host::Domain(domain) => domain != "localhost",
-            _ => false,
+            // A domain is secure only if it's a FQDN (contains a dot).
+            url::Host::Domain(domain) => domain.contains('.'),
+            // Treat all direct IP addresses as non-secure for local/test setups.
+            url::Host::Ipv4(_) | url::Host::Ipv6(_) => false,
         })
-        .unwrap_or_default()
+        .unwrap_or(false) // Default to non-secure on parsing failure.
 }
 
 #[cfg(test)]
@@ -204,6 +214,8 @@ mod tests {
     fn test_is_secure() {
         assert!(!is_secure(""));
         assert!(!is_secure("127.0.0.1"));
+        assert!(!is_secure("homeserver"));
+        assert!(!is_secure("testnet"));
         assert!(!is_secure("167.86.102.121"));
         assert!(!is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"));
         assert!(!is_secure("localhost"));

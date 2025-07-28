@@ -207,8 +207,20 @@ impl Client {
         }
 
         if let Some(e) = so_far {
+            // Check if the resolved domain is a testnet domain. It is if it's "localhost"
+            // or if it matches the testnet_host configured in the client.
+            let is_testnet_domain = e.domain().map_or(false, |domain| {
+                if domain == "localhost" {
+                    return true;
+                }
+                if let Some(test_host) = &self.testnet_host {
+                    return domain == test_host;
+                }
+                false
+            });
+
             // TODO: detect loopback IPs and other equivalent to localhost
-            if e.domain() == Some("localhost") {
+            if is_testnet_domain {
                 url.set_scheme("http")
                     .expect("couldn't replace pubky:// with http://");
 
