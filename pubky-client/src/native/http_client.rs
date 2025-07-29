@@ -1,4 +1,6 @@
-use crate::{http_client::HttpClient, internal::cookies::CookieJar};
+use super::cookies::CookieJar;
+use crate::http_client::HttpClient;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::{Method, Url, header::HeaderMap};

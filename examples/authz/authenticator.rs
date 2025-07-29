@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
 
     let client = if cli.testnet {
         dbg!("HERE");
-        let client = Client::builder().testnet().build()?;
+        let client = Client::testnet()?;
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
@@ -80,12 +80,12 @@ async fn main() -> Result<()> {
 
         client
     } else {
-        Client::builder().build()?
+        Client::default()
     };
 
     println!("Sending AuthToken to the 3rd party app...");
 
-    client.send_auth_token(&keypair, &url).await?;
+    client.send_auth_token(&keypair, url.as_str()).await?;
 
     Ok(())
 }

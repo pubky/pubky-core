@@ -146,7 +146,7 @@ impl<H: HttpClient> Client<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Client;
+    use crate::NativeClient;
     use pkarr::Keypair;
     use pkarr::dns::rdata::SVCB;
 
@@ -162,10 +162,7 @@ mod tests {
             .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
             .sign(&keypair)?;
         // Use our helper to extract the host.
-        let extracted_host =
-            Client::<crate::native_http_client::NativeHttpClient>::extract_host_from_packet(
-                &signed_packet,
-            );
+        let extracted_host = NativeClient::extract_host_from_packet(&signed_packet);
         // Verify that the extracted host matches what we set.
         assert_eq!(extracted_host.as_deref(), Some(host));
         Ok(())

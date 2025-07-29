@@ -3,8 +3,6 @@ use std::{collections::HashMap, sync::RwLock};
 
 use pkarr::PublicKey;
 
-use crate::cross_debug;
-
 #[derive(Default, Debug)]
 pub struct CookieJar {
     /// A special store for Pubky session cookies, keyed by the Pkarr domain.
@@ -28,7 +26,7 @@ impl CookieJar {
             .remove(&domain_key)
             .is_some()
         {
-            cross_debug!("Deleted session cookie for {}", domain_key);
+            tracing::debug!("Deleted session cookie for {}", domain_key);
         }
     }
 }
@@ -52,7 +50,10 @@ impl CookieStore for CookieJar {
                             // store it in our special `pubky_sessions` map.
                             if cookie.name() == session_cookie_name {
                                 let domain_key = format!("_pubky.{}", pubky);
-                                cross_debug!("Storing special session cookie for {}", domain_key);
+                                tracing::debug!(
+                                    "Storing special session cookie for {}",
+                                    domain_key
+                                );
                                 self.pubky_sessions
                                     .write()
                                     .unwrap()
