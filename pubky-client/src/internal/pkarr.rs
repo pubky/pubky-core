@@ -8,7 +8,7 @@ use pkarr::{
     errors::QueryError,
 };
 
-use crate::{Client, http_client::HttpClient};
+use crate::{BaseClient, http_client::HttpClient};
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.
@@ -34,7 +34,7 @@ pub(crate) enum PublishStrategy {
     IfOlderThan,
 }
 
-impl<H: HttpClient> Client<H> {
+impl<H: HttpClient> BaseClient<H> {
     /// Unified method to update the homeserver record.
     ///
     /// If `host` is provided, that value is used; otherwise the host is extracted from the
@@ -146,7 +146,7 @@ impl<H: HttpClient> Client<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NativeClient;
+    use crate::Client;
     use pkarr::Keypair;
     use pkarr::dns::rdata::SVCB;
 
@@ -162,7 +162,7 @@ mod tests {
             .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
             .sign(&keypair)?;
         // Use our helper to extract the host.
-        let extracted_host = NativeClient::extract_host_from_packet(&signed_packet);
+        let extracted_host = Client::extract_host_from_packet(&signed_packet);
         // Verify that the extracted host matches what we set.
         assert_eq!(extracted_host.as_deref(), Some(host));
         Ok(())

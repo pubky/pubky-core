@@ -53,7 +53,7 @@ impl ClientConfig {
 /// This client contains the core business logic and is generic over an `HttpClient`
 /// implementation, allowing it to operate in any environment (native, WASM, test).
 #[derive(Clone, Debug)]
-pub struct Client<H: HttpClient> {
+pub struct BaseClient<H: HttpClient> {
     /// The abstract HTTP client for making network requests.
     pub http: H,
     /// The client for interacting with the Pkarr DHT.
@@ -62,8 +62,8 @@ pub struct Client<H: HttpClient> {
     pub max_record_age: Duration,
 }
 
-impl<H: HttpClient> Client<H> {
-    /// Creates a new `Client` by injecting its dependencies: a platform-specific
+impl<H: HttpClient> BaseClient<H> {
+    /// Creates a new `BaseClient` by injecting its dependencies: a platform-specific
     /// HTTP implementation and a configured Pkarr client.
     pub fn new(
         http_client: H,
@@ -125,7 +125,7 @@ mod tests {
         let mock_http = MockHttpClient::default();
         let last_url = mock_http.last_called_url.clone();
 
-        let client = Client {
+        let client = BaseClient {
             http: mock_http,
             pkarr: pkarr::ClientBuilder::default()
                 .build()
@@ -144,24 +144,5 @@ mod tests {
         assert_eq!(result, b"mock response".to_vec());
         let called_url = last_url.lock().unwrap().clone().unwrap();
         assert_eq!(called_url.as_str(), expected_https_url);
-    }
-
-    #[tokio::test]
-    async fn test_native_client_fetches_icann_domain() -> Result<()> {
-        // 1. Arrange: Create a real NativeClient.
-        // This uses the actual reqwest-based NativeHttpClient internally.
-        let client = Client::default();
-
-        // 2. Act: Make a real network request to an ICANN domain.
-        let response_body = client.get("https://google.com").await?;
-
-        // 3. Assert: Check that the request was successful and returned a non-empty body.
-        // A successful get from google.com should always have content.
-        assert!(
-            !response_body.is_empty(),
-            "Response body from google.com should not be empty"
-        );
-
-        Ok(())
     }
 }

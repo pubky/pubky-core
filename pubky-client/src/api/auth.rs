@@ -12,9 +12,9 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{Client, http_client::HttpClient, internal::pkarr::PublishStrategy};
+use crate::{BaseClient, http_client::HttpClient, internal::pkarr::PublishStrategy};
 
-impl<H: HttpClient> Client<H> {
+impl<H: HttpClient> BaseClient<H> {
     /// Signup to a homeserver and update Pkarr accordingly.
     ///
     /// The homeserver is a Pkarr domain name, where the TLD is a Pkarr public key
@@ -64,7 +64,7 @@ impl<H: HttpClient> Client<H> {
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         let url = Url::parse(&format!("pubky://{}/session", pubky))?;
 
-        match self.http.request(Method::GET, url, None, None).await {
+        match self.request(Method::GET, url.as_str(), None).await {
             Ok(bytes) => Ok(Some(Session::deserialize(&bytes)?)),
             Err(e) => {
                 // Check for a 404 Not Found error to return Ok(None).
@@ -80,7 +80,7 @@ impl<H: HttpClient> Client<H> {
     /// Signout from a homeserver.
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
         let url = Url::parse(&format!("pubky://{}/session", pubky))?;
-        self.http.request(Method::DELETE, url, None, None).await?;
+        self.request(Method::DELETE, url.as_str(), None).await?;
         Ok(())
     }
 
@@ -151,8 +151,7 @@ impl<H: HttpClient> Client<H> {
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let url = Url::parse(&format!("pubky://{}/session", token.pubky()))?;
         let response_bytes = self
-            .http
-            .request(Method::POST, url, Some(token.serialize()), None)
+            .request(Method::POST, url.as_str(), Some(token.serialize()))
             .await?;
         Ok(Session::deserialize(&response_bytes)?)
     }
@@ -244,7 +243,7 @@ pub struct AuthRequest<H: HttpClient> {
     url: Url,
     relay: Url,
     client_secret: [u8; 32],
-    client: Client<H>,
+    client: BaseClient<H>,
 }
 
 impl<H: HttpClient> AuthRequest<H> {
@@ -292,29 +291,67 @@ impl<H: HttpClient> AuthRequest<H> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{NativeClient, internal::pkarr::PublishStrategy};
-    use pkarr::Keypair;
+    use super::*;
+    use crate::http_client::HttpClient;
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use reqwest::{Method, Url, header::HeaderMap};
+    use std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
+
+    /// A mock HTTP client that records the request it received.
+    #[derive(Clone, Default)]
+    struct MockHttpClient {
+        last_request: Arc<Mutex<Option<(Method, Url, Vec<u8>)>>>,
+    }
+
+    #[async_trait]
+    impl HttpClient for MockHttpClient {
+        async fn request(
+            &self,
+            method: Method,
+            url: Url,
+            body: Option<Vec<u8>>,
+            _headers: Option<HeaderMap>,
+        ) -> Result<Vec<u8>> {
+            // Record the details of the request that was made.
+            *self.last_request.lock().unwrap() = Some((method, url, body.unwrap_or_default()));
+
+            // Return a fake successful session object.
+            let fake_session = Session::new(&pkarr::Keypair::random().public_key(), &[], None);
+            Ok(fake_session.serialize())
+        }
+    }
 
     #[tokio::test]
-    async fn test_get_homeserver() {
-        let dht = mainline::Testnet::new(3).unwrap();
-        let mut config = NativeClient::config();
-        config.pkarr(|builder| builder.bootstrap(&dht.bootstrap));
+    async fn test_signin_sends_correct_request() {
+        // 1. Arrange
+        let mock_http = MockHttpClient::default();
+        let last_request_handle = mock_http.last_request.clone();
 
-        let client = NativeClient::from_config(config).unwrap();
+        let client = BaseClient {
+            http: mock_http,
+            pkarr: pkarr::Client::builder()
+                .build()
+                .expect("Default pkarr client should succeed"),
+            max_record_age: Duration::from_secs(3600),
+        };
+
         let keypair = Keypair::random();
-        let pubky = keypair.public_key();
 
-        let homeserver_key = Keypair::random().public_key().to_z32();
-        client
-            .publish_homeserver(
-                &keypair,
-                Some(homeserver_key.as_str()),
-                PublishStrategy::Force,
-            )
-            .await
-            .unwrap();
-        let homeserver = client.get_homeserver(&pubky).await;
-        assert_eq!(homeserver, Some(homeserver_key));
+        // 2. Act
+        // We still call the method as before.
+        let _ = client.signin(&keypair).await.unwrap();
+
+        // 3. Assert
+        let (_method, _url, body) = last_request_handle.lock().unwrap().clone().unwrap();
+        let received_token = AuthToken::verify(&body)
+            .expect("The token received by the mock client should be valid");
+
+        // Assert that the deterministic parts of the token are correct.
+        assert_eq!(received_token.pubky(), &keypair.public_key());
+        assert_eq!(received_token.capabilities(), &[Capability::root()]);
     }
 }

@@ -35,7 +35,7 @@ pub struct PubkyClientConfig {
 /// `WasmHttpClient` for web environments.
 #[wasm_bindgen]
 pub struct Client {
-    pub(crate) inner: pubky::Client<WasmHttpClient>,
+    pub(crate) inner: pubky::BaseClient<WasmHttpClient>,
 }
 
 #[wasm_bindgen]
@@ -80,7 +80,7 @@ impl Client {
         let http_client = WasmHttpClient::new(pkarr_client.clone(), None);
 
         // 5. Assemble the final generic client.
-        let inner = pubky::Client::new(http_client, pkarr_client, max_record_age);
+        let inner = pubky::BaseClient::new(http_client, pkarr_client, max_record_age);
 
         Ok(Self { inner })
     }
@@ -105,7 +105,7 @@ impl Client {
 
         let http_client = WasmHttpClient::new(pkarr_client.clone(), Some(hostname));
 
-        let inner = pubky::Client::new(http_client, pkarr_client, None);
+        let inner = pubky::BaseClient::new(http_client, pkarr_client, None);
 
         Ok(Self { inner })
     }

@@ -3,16 +3,17 @@ use reqwest::{Method, RequestBuilder};
 use std::sync::Arc;
 use url::Url;
 
-use crate::{BuildError, Client, ClientConfig, DEFAULT_USER_AGENT};
+use crate::client::DEFAULT_USER_AGENT;
+use crate::{BaseClient, BuildError, ClientConfig};
 
 use super::cookies::CookieJar;
 use super::http_client::NativeHttpClient;
 
 /// A type alias for the native-specific Pubky client, for convenience.
-pub type NativeClient = Client<NativeHttpClient>;
+pub type Client = BaseClient<NativeHttpClient>;
 
-/// Implementation block providing convenient constructors for the `NativeClient`.
-impl NativeClient {
+/// Implementation block providing convenient constructors for the `Client`.
+impl Client {
     /// Returns a default configuration object for the native client.
     pub fn config() -> ClientConfig {
         ClientConfig::new()
@@ -47,7 +48,7 @@ impl NativeClient {
         };
 
         // 4. Create the final generic `Client` instance using the universal constructor.
-        Ok(Client::new(
+        Ok(BaseClient::new(
             native_http_client,
             pkarr_client,
             config.max_record_age,
@@ -84,13 +85,13 @@ impl NativeClient {
 
 /// Provides access to the raw `reqwest` client for advanced use cases.
 ///
-/// This struct is created by `NativeClient::raw()` and allows you to get the
+/// This struct is created by `Client::raw()` and allows you to get the
 /// full `reqwest::Response` object for inspecting headers, status, etc.
 pub struct RawNativeClient<'a> {
-    client: &'a NativeClient,
+    client: &'a Client,
 }
 
-impl NativeClient {
+impl Client {
     /// Returns a raw client for making reqwest-like advanced HTTP requests.
     pub fn raw(&self) -> RawNativeClient {
         RawNativeClient { client: self }
@@ -117,7 +118,7 @@ impl<'a> RawNativeClient<'a> {
     }
 }
 
-impl Default for NativeClient {
+impl Default for Client {
     /// Returns a Native Pubky Client with default configuration.
     fn default() -> Self {
         Self::from_config(ClientConfig::new())
@@ -134,7 +135,7 @@ mod tests {
     async fn test_native_client_fetches_icann_domain() -> Result<()> {
         // 1. Arrange: Create a real NativeClient.
         // This uses the actual reqwest-based NativeHttpClient internally.
-        let client = Client::default();
+        let client = BaseClient::default();
 
         // 2. Act: Make a real network request to an ICANN domain.
         let response_body = client.get("https://google.com").await?;

@@ -5,9 +5,9 @@
 use anyhow::{Result, anyhow};
 use reqwest::{Method, Url};
 
-use crate::{Client, http_client::HttpClient};
+use crate::{BaseClient, http_client::HttpClient};
 
-impl<H: HttpClient> Client<H> {
+impl<H: HttpClient> BaseClient<H> {
     /// Performs a generic HTTP request after handling URL scheme specifics.
     ///
     /// This is the primary internal method that all convenience methods (get, post, etc.)

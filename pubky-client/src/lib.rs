@@ -14,19 +14,22 @@ pub mod internal;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 
-pub use api::{auth::AuthRequest, public::ListBuilder};
-pub use client::Client;
+// --- PUBLIC API EXPORTS ---
+
+// Export the generic base client for advanced users or other platforms (e.g. wasm in bindings/js)
+pub use client::BaseClient;
+// Export the configuration object.
 pub use client::ClientConfig;
-pub use client::*;
 
+// Conditionally export the easy-to-use native `Client` for native rust users.
+// When a user on a native target writes `use pubky::Client`, this is what they will get.
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::client::NativeClient;
+pub use native::client::Client;
 
-// Re-exports
+// Export common types.
+pub use api::{auth::AuthRequest, public::ListBuilder};
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::recovery_file;
 
-pub mod errors {
-    pub use super::*;
-    pub use BuildError;
-}
+// Export error type.
+pub use client::BuildError;

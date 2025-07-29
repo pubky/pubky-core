@@ -1,10 +1,10 @@
 use anyhow::Result;
 use reqwest::Method;
 
-use crate::{Client, http_client::HttpClient};
+use crate::{BaseClient, http_client::HttpClient};
 
 // The implementation block is now generic over the HttpClient.
-impl<H: HttpClient> Client<H> {
+impl<H: HttpClient> BaseClient<H> {
     /// Returns a `ListBuilder` to fluently construct a list request.
     ///
     /// # Arguments
@@ -17,7 +17,7 @@ impl<H: HttpClient> Client<H> {
 /// A fluent builder for creating a Pubky "list" API request.
 #[derive(Debug)]
 pub struct ListBuilder<'a, H: HttpClient> {
-    client: &'a Client<H>,
+    client: &'a BaseClient<H>,
     url: String,
     reverse: bool,
     limit: Option<u16>,
@@ -28,7 +28,7 @@ pub struct ListBuilder<'a, H: HttpClient> {
 // The ListBuilder implementation is now also generic.
 impl<'a, H: HttpClient> ListBuilder<'a, H> {
     /// Creates a new `ListBuilder`.
-    fn new(client: &'a Client<H>, url: &str) -> Self {
+    fn new(client: &'a BaseClient<H>, url: &str) -> Self {
         Self {
             client,
             url: url.to_string(),
