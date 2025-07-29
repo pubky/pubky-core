@@ -35,27 +35,24 @@ async fn main() -> Result<()> {
 
     // Build the request
     println!("> {} {}", args.method, args.url);
-    let response = client
-        .raw() // Get the raw client
-        .request(args.method, args.url) // Create the request builder
-        .send()
-        .await?;
+    let response = client.request(args.method, args.url.as_str(), None).await?;
 
-    // The rest of the printing logic works perfectly.
     println!("< Response:");
-    println!("< {:?} {}", response.version(), response.status());
-    for (name, value) in response.headers() {
+    println!("< {}", response.status);
+
+    // Iterate over the .headers field.
+    for (name, value) in &response.headers {
         if let Ok(v) = value.to_str() {
             println!("< {}: {}", name, v);
         }
     }
     println!("<");
 
-    let bytes = response.bytes().await?;
+    let bytes = response.body;
 
-    match String::from_utf8(bytes.to_vec()) {
+    match String::from_utf8(bytes) {
         Ok(string) => println!("{}", string),
-        Err(_) => println!("{:?}", bytes),
+        Err(e) => println!("{:?}", e.into_bytes()),
     }
 
     Ok(())
