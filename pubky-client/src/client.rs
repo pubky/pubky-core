@@ -138,6 +138,11 @@ impl NativeClient {
         ))
     }
 
+    /// Returns a Native Pubky Client with default configuration.
+    pub fn default() -> Result<Self, BuildError> {
+        Self::from_config(ClientConfig::new())
+    }
+
     /// A convenience method to create a client connected to a local test network.
     pub fn testnet(host: &str) -> Result<Self, BuildError> {
         let mut config = Self::config();
@@ -164,4 +169,80 @@ pub enum BuildError {
     #[error(transparent)]
     /// Error building Pkarr client.
     PkarrBuildError(#[from] pkarr::errors::BuildError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http_client::HttpClient;
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use reqwest::{Method, Url, header::HeaderMap};
+    use std::sync::{Arc, Mutex};
+
+    /// A mock HTTP client for testing.
+    #[derive(Clone, Default)]
+    struct MockHttpClient {
+        last_called_url: Arc<Mutex<Option<Url>>>,
+    }
+
+    #[async_trait]
+    impl HttpClient for MockHttpClient {
+        async fn request(
+            &self,
+            _method: Method,
+            url: Url,
+            _body: Option<Vec<u8>>,
+            _headers: Option<HeaderMap>,
+        ) -> Result<Vec<u8>> {
+            *self.last_called_url.lock().unwrap() = Some(url);
+            Ok(b"mock response".to_vec())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_rewrites_pubky_scheme() {
+        // 1. Arrange
+        let mock_http = MockHttpClient::default();
+        let last_url = mock_http.last_called_url.clone();
+
+        let client = Client {
+            http: mock_http,
+            pkarr: pkarr::ClientBuilder::default()
+                .build()
+                .expect("should build"), // A default pkarr client is fine for this test.
+            max_record_age: Duration::from_secs(3600),
+        };
+
+        let pkarr_key = pkarr::Keypair::random().public_key().to_string();
+        let pubky_url = format!("pubky://{}/path", pkarr_key);
+        let expected_https_url = format!("https://_pubky.{}/path", pkarr_key);
+
+        // 2. Act
+        let result = client.get(&pubky_url).await.unwrap();
+
+        // 3. Assert
+        assert_eq!(result, b"mock response".to_vec());
+        let called_url = last_url.lock().unwrap().clone().unwrap();
+        assert_eq!(called_url.as_str(), expected_https_url);
+    }
+
+    #[tokio::test]
+    async fn test_native_client_fetches_icann_domain() -> Result<()> {
+        // 1. Arrange: Create a real NativeClient.
+        // This uses the actual reqwest-based NativeHttpClient internally.
+        let client = NativeClient::default()?;
+
+        // 2. Act: Make a real network request to an ICANN domain.
+        let response_body = client.get("https://google.com").await?;
+
+        // 3. Assert: Check that the request was successful and returned a non-empty body.
+        // A successful get from google.com should always have content.
+        assert!(
+            !response_body.is_empty(),
+            "Response body from google.com should not be empty"
+        );
+
+        Ok(())
+    }
 }
