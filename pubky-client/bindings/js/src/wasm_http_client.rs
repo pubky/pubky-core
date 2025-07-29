@@ -3,11 +3,11 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use futures_lite::StreamExt;
-use pkarr::{PublicKey, extra::endpoints::Endpoint};
-use pubky::http_client::HttpClient;
+use pkarr::PublicKey;
+use pubky::http_client::{HttpClient, HttpResponse};
 use reqwest::{
-    Method, Url,
-    header::{HeaderMap, HeaderName},
+    Method, StatusCode, Url,
+    header::{HeaderMap, HeaderName, HeaderValue},
 };
 use wasm_bindgen::{JsCast, JsValue}; // FIX: Import the JsCast trait to use .dyn_into()
 use wasm_bindgen_futures::JsFuture;
@@ -88,6 +88,49 @@ impl WasmHttpClient {
     }
 }
 
+/// Converts a `web_sys::Response` into a `pubky::http_client::HttpResponse`.
+async fn http_response_from_web_sys(resp: &Response) -> Result<HttpResponse> {
+    // 1. Get status code
+    let status = StatusCode::from_u16(resp.status())?;
+
+    // 2. Get headers
+    let mut headers = HeaderMap::new();
+    let js_resp_headers = resp.headers();
+    let iterator = js_sys::try_iter(&js_resp_headers)
+        .map_err(|_| anyhow!("Response headers are not iterable"))?
+        .ok_or_else(|| anyhow!("Could not create headers iterator"))?;
+
+    for item in iterator {
+        let item = item.map_err(|_| anyhow!("Error iterating headers"))?;
+        let arr: js_sys::Array = item.dyn_into().unwrap();
+        let key = arr.get(0).as_string().unwrap();
+        let value = arr.get(1).as_string().unwrap();
+
+        if let (Ok(h_name), Ok(h_value)) = (
+            HeaderName::from_bytes(key.as_bytes()),
+            HeaderValue::from_bytes(value.as_bytes()),
+        ) {
+            headers.append(h_name, h_value);
+        }
+    }
+
+    // 3. Get body
+    let promise = resp
+        .array_buffer()
+        .map_err(|e| anyhow!("Failed to get array buffer promise: {:?}", e))?;
+    let buffer_value = JsFuture::from(promise)
+        .await
+        .map_err(|e| anyhow!("Failed to await array buffer: {:?}", e))?;
+    let body = js_sys::Uint8Array::new(&buffer_value).to_vec();
+
+    // 4. Return the final struct
+    Ok(HttpResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
 #[async_trait(?Send)]
 impl HttpClient for WasmHttpClient {
     async fn request(
@@ -96,7 +139,7 @@ impl HttpClient for WasmHttpClient {
         mut url: Url,
         body: Option<Vec<u8>>,
         headers: Option<HeaderMap>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<HttpResponse> {
         // 1. Prepare URL and get the special `pubky-host` header if needed.
         let pubky_host_header = self.prepare_request_for_fetch(&mut url).await?;
 
@@ -149,15 +192,6 @@ impl HttpClient for WasmHttpClient {
             ));
         }
 
-        // 5. Get the response body as bytes.
-        let promise = resp
-            .array_buffer()
-            .map_err(|e| anyhow!("Failed to get array buffer promise: {:?}", e))?;
-        let buffer_value = JsFuture::from(promise)
-            .await
-            .map_err(|e| anyhow!("Failed to await array buffer: {:?}", e))?;
-        let byte_array = js_sys::Uint8Array::new(&buffer_value);
-
-        Ok(byte_array.to_vec())
+        http_response_from_web_sys(&resp).await
     }
 }

@@ -5,7 +5,10 @@
 use anyhow::{Result, anyhow};
 use reqwest::{Method, Url};
 
-use crate::{BaseClient, http_client::HttpClient};
+use crate::{
+    BaseClient,
+    http_client::{HttpClient, HttpResponse},
+};
 
 impl<H: HttpClient> BaseClient<H> {
     /// Performs a generic HTTP request after handling URL scheme specifics.
@@ -20,13 +23,13 @@ impl<H: HttpClient> BaseClient<H> {
     /// * `body` - An optional request body as bytes.
     ///
     /// # Returns
-    /// A `Result` containing the response body as a `Vec<u8>`.
+    /// A `Result` containing the full `HttpResponse` with status, headers, and body.
     pub async fn request(
         &self,
         method: Method,
         url_str: &str,
         body: Option<Vec<u8>>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<HttpResponse> {
         // Attempt to parse the URL.
         let mut url =
             Url::parse(url_str).map_err(|e| anyhow!("Invalid URL '{}': {}", url_str, e))?;
@@ -45,32 +48,32 @@ impl<H: HttpClient> BaseClient<H> {
     }
 
     /// Convenience method to make a `GET` request to a URL.
-    pub async fn get(&self, url: &str) -> Result<Vec<u8>> {
+    pub async fn get(&self, url: &str) -> Result<HttpResponse> {
         self.request(Method::GET, url, None).await
     }
 
     /// Convenience method to make a `POST` request to a URL with a body.
-    pub async fn post(&self, url: &str, body: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn post(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse> {
         self.request(Method::POST, url, Some(body)).await
     }
 
     /// Convenience method to make a `PUT` request to a URL with a body.
-    pub async fn put(&self, url: &str, body: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn put(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse> {
         self.request(Method::PUT, url, Some(body)).await
     }
 
     /// Convenience method to make a `PATCH` request to a URL with a body.
-    pub async fn patch(&self, url: &str, body: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn patch(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse> {
         self.request(Method::PATCH, url, Some(body)).await
     }
 
     /// Convenience method to make a `DELETE` request to a URL.
-    pub async fn delete(&self, url: &str) -> Result<Vec<u8>> {
+    pub async fn delete(&self, url: &str) -> Result<HttpResponse> {
         self.request(Method::DELETE, url, None).await
     }
 
     /// Convenience method to make a `HEAD` request to a URL.
-    pub async fn head(&self, url: &str) -> Result<Vec<u8>> {
+    pub async fn head(&self, url: &str) -> Result<HttpResponse> {
         self.request(Method::HEAD, url, None).await
     }
 }

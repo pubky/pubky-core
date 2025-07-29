@@ -1,13 +1,7 @@
-use pkarr::PublicKey;
-use reqwest::{Method, RequestBuilder};
-use std::sync::Arc;
-use url::Url;
-
-use crate::client::DEFAULT_USER_AGENT;
-use crate::{BaseClient, BuildError, ClientConfig};
-
 use super::cookies::CookieJar;
 use super::http_client::NativeHttpClient;
+use crate::{BaseClient, BuildError, ClientConfig, DEFAULT_USER_AGENT};
+use std::sync::Arc;
 
 /// A type alias for the native-specific Pubky client, for convenience.
 pub type Client = BaseClient<NativeHttpClient>;
@@ -31,14 +25,12 @@ impl Client {
         let pkarr_http = reqwest::ClientBuilder::from(pkarr_client.clone())
             .cookie_provider(cookie_store.clone())
             .user_agent(DEFAULT_USER_AGENT)
-            .build()
-            .expect("Native pkarr reqwest client build should not fail");
+            .build()?;
 
         let icann_http = reqwest::Client::builder()
             .cookie_provider(cookie_store.clone())
             .user_agent(DEFAULT_USER_AGENT)
-            .build()
-            .expect("Native icann reqwest client build should not fail");
+            .build()?;
 
         // 3. Assemble the concrete `NativeHttpClient`.
         let native_http_client = NativeHttpClient {
@@ -83,41 +75,6 @@ impl Client {
     }
 }
 
-/// Provides access to the raw `reqwest` client for advanced use cases.
-///
-/// This struct is created by `Client::raw()` and allows you to get the
-/// full `reqwest::Response` object for inspecting headers, status, etc.
-pub struct RawNativeClient<'a> {
-    client: &'a Client,
-}
-
-impl Client {
-    /// Returns a raw client for making reqwest-like advanced HTTP requests.
-    pub fn raw(&self) -> RawNativeClient {
-        RawNativeClient { client: self }
-    }
-}
-
-impl<'a> RawNativeClient<'a> {
-    /// Creates a `reqwest::RequestBuilder` for advanced configuration.
-    ///
-    /// It automatically selects the correct underlying client for Pkarr or ICANN domains.
-    pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        let is_pkarr_domain = url
-            .host_str()
-            .and_then(|h| PublicKey::try_from(h).ok())
-            .is_some();
-
-        let http_client = if is_pkarr_domain {
-            &self.client.http.pkarr_client
-        } else {
-            &self.client.http.icann_client
-        };
-
-        http_client.request(method, url)
-    }
-}
-
 impl Default for Client {
     /// Returns a Native Pubky Client with default configuration.
     fn default() -> Self {
@@ -138,12 +95,12 @@ mod tests {
         let client = BaseClient::default();
 
         // 2. Act: Make a real network request to an ICANN domain.
-        let response_body = client.get("https://google.com").await?;
+        let response = client.get("https://google.com").await?;
 
         // 3. Assert: Check that the request was successful and returned a non-empty body.
         // A successful get from google.com should always have content.
         assert!(
-            !response_body.is_empty(),
+            !response.body.is_empty(),
             "Response body from google.com should not be empty"
         );
 

@@ -1,6 +1,12 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use reqwest::{Method, Url, header::HeaderMap};
+use reqwest::{Method, StatusCode, Url, header::HeaderMap};
+
+pub struct HttpResponse {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    pub body: Vec<u8>,
+}
 
 /// Abstract interface for an HTTP client.
 /// This allows swapping the backend between native `reqwest` and WASM `web_sys::fetch`.
@@ -14,7 +20,7 @@ pub trait HttpClient: Clone + Send + Sync + 'static {
         url: Url,
         body: Option<Vec<u8>>,
         headers: Option<HeaderMap>,
-    ) -> Result<Vec<u8>>;
+    ) -> Result<HttpResponse>;
 }
 
 // For WASM (single-threaded) environments, do NOT require Send or Sync.
@@ -27,5 +33,5 @@ pub trait HttpClient: Clone + 'static {
         url: Url,
         body: Option<Vec<u8>>,
         headers: Option<HeaderMap>,
-    ) -> Result<Vec<u8>>;
+    ) -> Result<HttpResponse>;
 }

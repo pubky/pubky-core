@@ -1,5 +1,5 @@
 use super::cookies::CookieJar;
-use crate::http_client::HttpClient;
+use crate::http_client::{HttpClient, HttpResponse};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -25,7 +25,7 @@ impl HttpClient for NativeHttpClient {
         url: Url,
         body: Option<Vec<u8>>,
         headers: Option<HeaderMap>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<HttpResponse> {
         // Determine if the URL is for a Pkarr domain to select the correct client.
         let is_pkarr_domain = url
             .host_str()
@@ -52,7 +52,10 @@ impl HttpClient for NativeHttpClient {
         // Ensure the request was successful before processing the body.
         let successful_response = response.error_for_status()?;
 
-        // Return the response body as a vector of bytes.
-        Ok(successful_response.bytes().await?.to_vec())
+        Ok(HttpResponse {
+            status: successful_response.status(),
+            headers: successful_response.headers().clone(),
+            body: successful_response.bytes().await?.to_vec(),
+        })
     }
 }

@@ -40,7 +40,7 @@ impl<H: HttpClient> BaseClient<H> {
         let request_body = auth_token.serialize();
 
         // 3. Perform the request using the abstract HttpClient.
-        let response_bytes = self
+        let response = self
             .http
             .request(Method::POST, url, Some(request_body), None)
             .await?;
@@ -54,7 +54,7 @@ impl<H: HttpClient> BaseClient<H> {
         .await?;
 
         // 5. Deserialize the session from the response bytes.
-        Ok(Session::deserialize(&response_bytes)?)
+        Ok(Session::deserialize(&response.body)?)
     }
 
     /// Check the current session for a given Pubky in its homeserver.
@@ -62,21 +62,21 @@ impl<H: HttpClient> BaseClient<H> {
     /// Returns None  if not signed in, or [reqwest::Error]
     /// if the response has any other `>=404` status code.
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
-        let url = Url::parse(&format!("pubky://{}/session", pubky))?;
+        let url_str = format!("pubky://{}/session", pubky);
 
-        match self.request(Method::GET, url.as_str(), None).await {
-            Ok(bytes) => Ok(Some(Session::deserialize(&bytes)?)),
-            Err(e) => {
-                // Check for a 404 Not Found error to return Ok(None).
-                // This is a pragmatic way to handle it with a generic error type.
-                if e.to_string().contains("404") {
+        match self.request(Method::GET, &url_str, None).await {
+            Ok(response) => {
+                // Now we can check the status code directly! No more string matching.
+                if response.status == 404 {
                     Ok(None)
                 } else {
-                    Err(e)
+                    Ok(Some(Session::deserialize(&response.body)?))
                 }
             }
+            Err(e) => Err(e),
         }
     }
+
     /// Signout from a homeserver.
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
         let url = Url::parse(&format!("pubky://{}/session", pubky))?;
@@ -150,10 +150,10 @@ impl<H: HttpClient> BaseClient<H> {
     /// Internal helper to sign in using a pre-made `AuthToken`.
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let url = Url::parse(&format!("pubky://{}/session", token.pubky()))?;
-        let response_bytes = self
+        let response = self
             .request(Method::POST, url.as_str(), Some(token.serialize()))
             .await?;
-        Ok(Session::deserialize(&response_bytes)?)
+        Ok(Session::deserialize(&response.body)?)
     }
 
     /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
@@ -257,7 +257,7 @@ impl<H: HttpClient> AuthRequest<H> {
     pub fn response(&self) -> impl Future<Output = Result<PublicKey>> + '_ {
         async move {
             // This loop performs long-polling against the relay server.
-            let encrypted_token = loop {
+            let encrypted_token_response = loop {
                 match self
                     .client
                     .http
@@ -276,7 +276,7 @@ impl<H: HttpClient> AuthRequest<H> {
                 }
             };
 
-            let token_bytes = decrypt(&encrypted_token, &self.client_secret)
+            let token_bytes = decrypt(&encrypted_token_response.body, &self.client_secret)
                 .map_err(|e| anyhow!("Got invalid token: {}", e))?;
             let token = AuthToken::verify(&token_bytes)?;
 
@@ -292,10 +292,10 @@ impl<H: HttpClient> AuthRequest<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::http_client::HttpClient;
+    use crate::http_client::{HttpClient, HttpResponse};
     use anyhow::Result;
     use async_trait::async_trait;
-    use reqwest::{Method, Url, header::HeaderMap};
+    use reqwest::{Method, StatusCode, Url, header::HeaderMap};
     use std::{
         sync::{Arc, Mutex},
         time::Duration,
@@ -315,13 +315,17 @@ mod tests {
             url: Url,
             body: Option<Vec<u8>>,
             _headers: Option<HeaderMap>,
-        ) -> Result<Vec<u8>> {
+        ) -> Result<HttpResponse> {
             // Record the details of the request that was made.
             *self.last_request.lock().unwrap() = Some((method, url, body.unwrap_or_default()));
 
             // Return a fake successful session object.
             let fake_session = Session::new(&pkarr::Keypair::random().public_key(), &[], None);
-            Ok(fake_session.serialize())
+            Ok(HttpResponse {
+                status: StatusCode::OK,
+                headers: HeaderMap::new(),
+                body: fake_session.serialize(),
+            })
         }
     }
 

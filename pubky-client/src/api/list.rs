@@ -106,10 +106,10 @@ impl<'a, H: HttpClient> ListBuilder<'a, H> {
         drop(query);
 
         // Perform the request using the abstract client.request() method.
-        let bytes = self.client.request(Method::GET, url.as_str(), None).await?;
+        let response = self.client.request(Method::GET, url.as_str(), None).await?;
 
         // Parse the response body into a list of URL strings.
-        Ok(String::from_utf8_lossy(&bytes)
+        Ok(String::from_utf8_lossy(&response.body)
             .lines()
             .map(String::from)
             .collect())

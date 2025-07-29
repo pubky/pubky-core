@@ -1,9 +1,7 @@
-use super::http_client::HttpClient;
 use std::{fmt::Debug, time::Duration};
 
-// Static constants remain unchanged.
-pub static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"));
-pub static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
+use super::http_client::HttpClient;
+use crate::DEFAULT_RELAYS;
 
 /// Holds the platform-agnostic configuration for a `Client`.
 ///
@@ -88,15 +86,18 @@ pub enum BuildError {
     #[error(transparent)]
     /// Error building Pkarr client.
     PkarrBuildError(#[from] pkarr::errors::BuildError),
+
+    #[error("HTTP client build error: {0}")]
+    HttpClient(#[from] reqwest::Error),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::http_client::HttpClient;
+    use crate::http_client::{HttpClient, HttpResponse};
     use anyhow::Result;
     use async_trait::async_trait;
-    use reqwest::{Method, Url, header::HeaderMap};
+    use reqwest::{Method, StatusCode, Url, header::HeaderMap};
     use std::sync::{Arc, Mutex};
 
     /// A mock HTTP client for testing.
@@ -113,9 +114,14 @@ mod tests {
             url: Url,
             _body: Option<Vec<u8>>,
             _headers: Option<HeaderMap>,
-        ) -> Result<Vec<u8>> {
+        ) -> Result<HttpResponse> {
             *self.last_called_url.lock().unwrap() = Some(url);
-            Ok(b"mock response".to_vec())
+
+            Ok(HttpResponse {
+                status: StatusCode::OK,
+                headers: HeaderMap::new(),
+                body: b"mock response".to_vec(),
+            })
         }
     }
 
@@ -138,10 +144,10 @@ mod tests {
         let expected_https_url = format!("https://_pubky.{}/path", pkarr_key);
 
         // 2. Act
-        let result = client.get(&pubky_url).await.unwrap();
+        let response = client.get(&pubky_url).await.unwrap();
 
         // 3. Assert
-        assert_eq!(result, b"mock response".to_vec());
+        assert_eq!(response.body, b"mock response".to_vec());
         let called_url = last_url.lock().unwrap().clone().unwrap();
         assert_eq!(called_url.as_str(), expected_https_url);
     }
