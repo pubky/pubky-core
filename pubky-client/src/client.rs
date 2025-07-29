@@ -1,10 +1,10 @@
-use super::http::HttpClient;
+use super::http_client::HttpClient;
 use std::{fmt::Debug, time::Duration};
 
 #[cfg(not(target_arch = "wasm32"))]
-use super::http::NativeHttpClient;
-#[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
+#[cfg(not(target_arch = "wasm32"))]
+use super::native_http_client::NativeHttpClient;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 

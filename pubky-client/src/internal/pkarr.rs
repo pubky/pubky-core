@@ -8,7 +8,7 @@ use pkarr::{
     errors::QueryError,
 };
 
-use crate::{Client, http::HttpClient};
+use crate::{Client, http_client::HttpClient};
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.
@@ -163,7 +163,9 @@ mod tests {
             .sign(&keypair)?;
         // Use our helper to extract the host.
         let extracted_host =
-            Client::<crate::http::NativeHttpClient>::extract_host_from_packet(&signed_packet);
+            Client::<crate::native_http_client::NativeHttpClient>::extract_host_from_packet(
+                &signed_packet,
+            );
         // Verify that the extracted host matches what we set.
         assert_eq!(extracted_host.as_deref(), Some(host));
         Ok(())

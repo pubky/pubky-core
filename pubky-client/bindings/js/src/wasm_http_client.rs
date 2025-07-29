@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use futures_lite::StreamExt;
 use pkarr::{PublicKey, extra::endpoints::Endpoint};
-use pubky::http::HttpClient;
+use pubky::http_client::HttpClient;
 use reqwest::{
     Method, Url,
     header::{HeaderMap, HeaderName},

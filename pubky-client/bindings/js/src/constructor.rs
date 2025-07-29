@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*; // Import ClientConfig directly
 
-use super::http_client::WasmHttpClient;
 use super::js_result::JsResult;
+use super::wasm_http_client::WasmHttpClient;
 
 static TESTNET_RELAY_PORT: &str = "15411";
 

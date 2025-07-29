@@ -1,7 +1,7 @@
 use anyhow::Result;
 use reqwest::Method;
 
-use crate::{Client, http::HttpClient};
+use crate::{Client, http_client::HttpClient};
 
 // The implementation block is now generic over the HttpClient.
 impl<H: HttpClient> Client<H> {

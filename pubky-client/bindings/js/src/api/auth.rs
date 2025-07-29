@@ -5,8 +5,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     constructor::Client,
-    http_client::WasmHttpClient,
     js_result::JsResult,
+    wasm_http_client::WasmHttpClient,
     wrappers::{
         keys::{Keypair, PublicKey},
         session::Session,

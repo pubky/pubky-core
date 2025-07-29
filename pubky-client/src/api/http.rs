@@ -5,7 +5,7 @@
 use anyhow::{Result, anyhow};
 use reqwest::{Method, Url};
 
-use crate::{Client, http::HttpClient};
+use crate::{Client, http_client::HttpClient};
 
 impl<H: HttpClient> Client<H> {
     /// Performs a generic HTTP request after handling URL scheme specifics.

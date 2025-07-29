@@ -12,7 +12,7 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{Client, http::HttpClient, internal::pkarr::PublishStrategy};
+use crate::{Client, http_client::HttpClient, internal::pkarr::PublishStrategy};
 
 impl<H: HttpClient> Client<H> {
     /// Signup to a homeserver and update Pkarr accordingly.

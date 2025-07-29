@@ -9,14 +9,20 @@
 
 pub mod api;
 mod client;
-pub mod http;
+pub mod http_client;
 pub mod internal;
 mod macros;
 pub use client::*;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod native_http_client;
+
 pub use api::{auth::AuthRequest, public::ListBuilder};
 pub use client::Client;
 pub use client::ClientConfig;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use client::NativeClient;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
