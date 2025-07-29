@@ -1,134 +1,112 @@
 use std::{num::NonZeroU64, time::Duration};
 
+use pubky::ClientConfig;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::prelude::*; // Import ClientConfig directly
 
+use super::http_client::WasmHttpClient;
 use super::js_result::JsResult;
 
 static TESTNET_RELAY_PORT: &str = "15411";
 
-// ------------------------------------------------------------------------------------------------
-// JS style config objects for the client.
-// ------------------------------------------------------------------------------------------------
-
-/// Pkarr Config
+// JS style config objects remain the same.
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct PkarrConfig {
-    /// The list of relays to access the DHT with.
     #[tsify(optional)]
     pub(crate) relays: Option<Vec<String>>,
-    /// The timeout for DHT requests in milliseconds.
-    /// Default is 2000ms.
     #[tsify(optional)]
     pub(crate) request_timeout: Option<NonZeroU64>,
 }
-
-/// Pubky Client Config
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct PubkyClientConfig {
-    /// Configuration on how to access pkarr packets on the mainline DHT.
     #[tsify(optional)]
     pub(crate) pkarr: Option<PkarrConfig>,
-    /// The maximum age of a record in seconds.
-    /// If the user pkarr record is older than this, it will be automatically refreshed.
     #[tsify(optional)]
     pub(crate) user_max_record_age: Option<NonZeroU64>,
 }
 
-// ------------------------------------------------------------------------------------------------
-// JS Client constructor
-// ------------------------------------------------------------------------------------------------
-
+/// The WASM-exposed Pubky client.
+/// This is a wrapper around the generic `pubky::Client`, configured with the
+/// `WasmHttpClient` for web environments.
 #[wasm_bindgen]
-pub struct Client(pub(crate) pubky::Client);
-
-impl Default for Client {
-    fn default() -> Self {
-        Self::new(None).expect("No config constructor should be infallible")
-    }
+pub struct Client {
+    pub(crate) inner: pubky::Client<WasmHttpClient>,
 }
 
 #[wasm_bindgen]
 impl Client {
-    #[wasm_bindgen(constructor)]
     /// Create a new Pubky Client with an optional configuration.
+    #[wasm_bindgen(constructor)]
     pub fn new(config_opt: Option<PubkyClientConfig>) -> JsResult<Self> {
-        let mut builder = pubky::Client::builder();
+        // 1. Create a config object using the correct platform-agnostic constructor.
+        let mut config = ClientConfig::new();
+        let mut max_record_age: Option<Duration> = None;
 
-        let config = match config_opt {
-            Some(config) => config,
-            None => {
-                return Ok(Self(
-                    builder
-                        .build()
-                        .expect("building a default NativeClient should be infallible"),
-                ));
-            }
-        };
-
-        if let Some(pkarr) = config.pkarr {
-            // Set pkarr relays
-            if let Some(relays) = pkarr.relays {
-                let mut relay_set_error: Option<JsValue> = None;
-                builder.pkarr(|pkarr_builder| {
-                    pkarr_builder.no_relays(); // Remove default pkarr config
-                    if let Err(e) = pkarr_builder.relays(&relays) {
-                        relay_set_error =
-                            Some(JsValue::from_str(&format!("Failed to set relays. {}", e)));
+        // 2. Apply JS config if provided.
+        if let Some(js_config) = config_opt {
+            if let Some(pkarr_conf) = js_config.pkarr {
+                // We combine both pkarr configurations into a single call.
+                config.pkarr(|pkarr_builder| {
+                    if let Some(relays) = &pkarr_conf.relays {
+                        pkarr_builder.no_relays(); // Remove default pkarr relays
+                        if let Err(e) = pkarr_builder.relays(relays) {
+                            log::error!("Failed to set relays: {}", e);
+                        }
+                    }
+                    if let Some(timeout) = pkarr_conf.request_timeout {
+                        pkarr_builder.request_timeout(Duration::from_millis(timeout.get()));
                     }
                     pkarr_builder
                 });
-                if let Some(e) = relay_set_error {
-                    return Err(e);
-                }
             }
-            // Set pkarr timeout
-            if let Some(timeout) = pkarr.request_timeout {
-                builder.pkarr(|pkarr_builder| {
-                    pkarr_builder.request_timeout(Duration::from_millis(timeout.get()));
-                    pkarr_builder
-                });
+            if let Some(age) = js_config.user_max_record_age {
+                let duration = Duration::from_secs(age.get());
+                max_record_age = Some(duration);
+                config.max_record_age(duration);
             }
         }
 
-        // Set homeserver max record age
-        if let Some(max_record_age) = config.user_max_record_age {
-            builder.max_record_age(Duration::from_secs(max_record_age.get()));
-        }
+        // 3. Build the platform-agnostic components.
+        let pkarr_client = config
+            .build_pkarr_client()
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-        let native_client = builder
-            .build()
-            .map_err(|e| JsValue::from_str(&format!("Failed to build client. {}", e)))?;
-        Ok(Self(native_client))
+        // 4. Create the WASM-specific HTTP client.
+        let http_client = WasmHttpClient::new(pkarr_client.clone(), None);
+
+        // 5. Assemble the final generic client.
+        let inner = pubky::Client::new(http_client, pkarr_client, max_record_age);
+
+        Ok(Self { inner })
     }
 
-    /// Create a client with with configurations appropriate for local testing:
-    /// - set Pkarr relays to `http://<host>:15411` (defaults to `localhost`).
-    /// - transform `pubky://<pkarr public key>` to `http://<host>` instead of `https:`
-    ///   and read the homeserver HTTP port from the PKarr record.
+    /// Create a client configured for local testing.
     #[wasm_bindgen]
-    pub fn testnet(host: Option<String>) -> Self {
+    pub fn testnet(host: Option<String>) -> JsResult<Self> {
         let hostname = host.unwrap_or_else(|| "localhost".to_string());
         let testnet_relay = format!("http://{}:{}/", hostname, TESTNET_RELAY_PORT);
 
-        let mut builder = pubky::Client::builder();
-
-        builder.pkarr(|builder| {
+        let mut config = ClientConfig::new();
+        config.pkarr(|builder| {
             builder
+                .no_relays()
                 .relays(&[testnet_relay.as_str()])
-                .expect("testnet relays are valid urls")
+                .expect("testnet relays should be valid urls")
         });
 
-        // Store the testnet hostname for URL transformations.
-        builder.testnet_host(hostname);
+        let pkarr_client = config
+            .build_pkarr_client()
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-        let client = builder.build().expect("testnet build should be infallible");
+        let http_client = WasmHttpClient::new(pkarr_client.clone(), Some(hostname));
 
-        Self(client)
+        let inner = pubky::Client::new(http_client, pkarr_client, None);
+
+        Ok(Self { inner })
     }
 }

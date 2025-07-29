@@ -1,7 +1,12 @@
-use std::{fmt::Debug, sync::Arc, time::Duration};
+use super::http::HttpClient;
+use std::{fmt::Debug, time::Duration};
 
-use super::http::{HttpClient, NativeHttpClient};
+#[cfg(not(target_arch = "wasm32"))]
+use super::http::NativeHttpClient;
+#[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
 // Static constants remain unchanged.
 static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"));
@@ -86,9 +91,11 @@ impl<H: HttpClient> Client<H> {
 }
 
 /// A type alias for the native-specific Pubky client, for convenience.
+#[cfg(not(target_arch = "wasm32"))]
 pub type NativeClient = Client<NativeHttpClient>;
 
 /// Implementation block providing convenient constructors for the `NativeClient`.
+#[cfg(not(target_arch = "wasm32"))]
 impl NativeClient {
     /// Returns a default configuration object for the native client.
     pub fn config() -> ClientConfig {

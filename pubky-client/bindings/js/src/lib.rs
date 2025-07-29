@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 
 pub mod api;
 pub mod constructor;
+mod http_client;
 mod js_result;
 pub mod wrappers;
 

@@ -237,8 +237,10 @@ impl<H: HttpClient> Client<H> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::NativeClient;
 
+#[cfg(not(target_arch = "wasm32"))]
 impl NativeClient {
     /// Signs out from a homeserver and clears the local session cookie.
     ///

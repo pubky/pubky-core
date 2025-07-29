@@ -4,8 +4,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::{Method, Url, header::HeaderMap};
 
-use crate::internal::cookies::CookieJar;
-
 /// Abstract interface for an HTTP client.
 /// This allows swapping the backend between native `reqwest` and WASM `web_sys::fetch`.
 // For native (multi-threaded) environments, require Send + Sync.
@@ -34,9 +32,13 @@ pub trait HttpClient: Clone + 'static {
     ) -> Result<Vec<u8>>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::internal::cookies::CookieJar;
+
 /// The native Reqwest-based implementation of `HttpClient`.
 /// It internally manages two `reqwest` clients: one for Pkarr domains (with custom TLS)
 /// and one for standard ICANN domains.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub struct NativeHttpClient {
     pub pkarr_client: reqwest::Client,
@@ -45,6 +47,7 @@ pub struct NativeHttpClient {
     pub cookie_store: Arc<CookieJar>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl HttpClient for NativeHttpClient {
     async fn request(

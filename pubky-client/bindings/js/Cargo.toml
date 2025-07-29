@@ -24,6 +24,8 @@ categories = [
 crate-type = ["cdylib"]
 
 [dependencies]
+async-trait = "0.1.88"
+anyhow = "1.0.95"
 wasm-bindgen = "0.2.100"
 console_log = { version = "1.0.0", features = ["color"] }
 log = "0.4.25"
@@ -40,6 +42,10 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "RequestInit",
     "Headers",
     "ServiceWorkerGlobalScope",
+    "RequestMode",
+    "Response",
 ] }
 url = "2.5.4"
 getrandom = { version = "0.3.1", features = ["wasm_js"] }
+futures-lite = "2.6.0"
+reqwest = { version = "0.12.12", default-features = false }
