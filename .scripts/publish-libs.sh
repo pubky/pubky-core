@@ -24,6 +24,6 @@ cargo ws publish --no-git-commit --publish-as-is
 
 # Publish the npm package to npmjs.com.
 echo "Publishing the npm package to npmjs.com..."
-(cd pubky-client/pkg && npm ci && npm run build && npm publish)
+(cd pubky-client/bindings/js/pkg && npm ci && npm run build && npm publish)
 
 echo "Done"
