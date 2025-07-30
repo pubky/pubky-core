@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::key_republisher_generic::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
+use crate::core::key_republisher_generic::{KeyRepublisher, KeyRepublisherContext};
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
 use crate::persistence::lmdb::LmDB;
@@ -59,8 +59,8 @@ pub struct HomeserverCore {
     // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
     #[allow(dead_code)]
-    // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
-    pub(crate) key_republisher: HomeserverKeyRepublisher,
+    // Keep this alive. Republishing is stopped when the KeyRepublisher is dropped.
+    pub(crate) key_republisher: KeyRepublisher,
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
     /// Keep context alive.
@@ -119,13 +119,14 @@ impl HomeserverCore {
             .await
             .map_err(HomeserverBuildError::PubkyTlsServer)?;
 
-        let key_republisher = HomeserverKeyRepublisher::start(
+        let ks_ctx = derive_key_publisher_context(
             &context,
             icann_http_socket.port(),
             pubky_tls_socket.port(),
-        )
-        .await
-        .map_err(HomeserverBuildError::KeyRepublisher)?;
+        );
+        let key_republisher = KeyRepublisher::start(&ks_ctx)
+            .await
+            .map_err(HomeserverBuildError::KeyRepublisher)?;
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::start(&context);
@@ -234,5 +235,29 @@ impl HomeserverCore {
 impl Drop for HomeserverCore {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+fn derive_key_publisher_context(
+    ctx: &AppContext,
+    local_icann_http_port: u16,
+    local_pubky_tls_port: u16,
+) -> KeyRepublisherContext {
+    KeyRepublisherContext {
+        public_ip: ctx.config_toml.pkdns.public_ip,
+        public_pubky_tls_port: ctx
+            .config_toml
+            .pkdns
+            .public_pubky_tls_port
+            .unwrap_or(local_pubky_tls_port),
+        public_icann_http_port: ctx
+            .config_toml
+            .pkdns
+            .public_icann_http_port
+            .unwrap_or(local_icann_http_port),
+        icann_domain: ctx.config_toml.pkdns.icann_domain.clone(),
+
+        keypair: ctx.keypair.clone(),
+        pkarr_client: ctx.pkarr_client.clone(),
     }
 }

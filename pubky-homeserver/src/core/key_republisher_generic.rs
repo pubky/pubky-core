@@ -1,36 +1,44 @@
-//! Background task to republish the homeserver's pkarr packet to the DHT.
+//! Background task to republish a service's pkarr packet to the DHT.
 //!
-//! This task is started by the [crate::HomeserverCore] and runs until the homeserver is stopped.
+//! This task should be started on service startup and run until the service is stopped.
 //!
 //! The task is responsible for:
-//! - Republishing the homeserver's pkarr packet to the DHT every hour.
-//! - Stopping the task when the homeserver is stopped.
+//! - Republishing the service's pkarr packet to the DHT every hour.
+//! - Stopping the task when the service is stopped.
 
 use std::net::IpAddr;
+
+use crate::Domain;
 
 use anyhow::Result;
 use pkarr::dns::Name;
 use pkarr::errors::PublishError;
+use pkarr::Keypair;
 use pkarr::{dns::rdata::SVCB, SignedPacket};
-
-use crate::app_context::AppContext;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
-/// Republishes the homeserver's pkarr packet to the DHT every hour.
-pub struct HomeserverKeyRepublisher {
+/// Information needed to start the KeyRepublisher
+pub struct KeyRepublisherContext {
+    pub public_ip: IpAddr,
+    pub public_pubky_tls_port: u16,
+    pub public_icann_http_port: u16,
+    pub icann_domain: Option<Domain>,
+
+    pub(crate) pkarr_client: pkarr::Client,
+    pub(crate) keypair: Keypair,
+}
+
+/// Republishes the service's pkarr packet to the DHT every hour.
+pub struct KeyRepublisher {
     join_handle: JoinHandle<()>,
 }
 
-impl HomeserverKeyRepublisher {
-    pub async fn start(
-        context: &AppContext,
-        icann_http_port: u16,
-        pubky_tls_port: u16,
-    ) -> Result<Self> {
-        let signed_packet = create_signed_packet(context, icann_http_port, pubky_tls_port)?;
-        let join_handle =
-            Self::start_periodic_republish(context.pkarr_client.clone(), &signed_packet).await?;
+impl KeyRepublisher {
+    pub async fn start(context: &KeyRepublisherContext) -> Result<Self> {
+        let signed_packet = create_signed_packet(context)?;
+        let pkarr_client = context.pkarr_client.clone();
+        let join_handle = Self::start_periodic_republish(pkarr_client, &signed_packet).await?;
         Ok(Self { join_handle })
     }
 
@@ -40,12 +48,9 @@ impl HomeserverKeyRepublisher {
     ) -> Result<(), PublishError> {
         let res = client.publish(signed_packet, None).await;
         if let Err(e) = &res {
-            tracing::warn!(
-                "Failed to publish the homeserver's pkarr packet to the DHT: {}",
-                e
-            );
+            tracing::warn!("Failed to publish the service's pkarr packet to the DHT: {e}");
         } else {
-            tracing::info!("Published the homeserver's pkarr packet to the DHT.");
+            tracing::info!("Published the service's pkarr packet to the DHT.");
         }
         res
     }
@@ -84,34 +89,22 @@ impl HomeserverKeyRepublisher {
     }
 }
 
-impl Drop for HomeserverKeyRepublisher {
+impl Drop for KeyRepublisher {
     fn drop(&mut self) {
         self.stop();
     }
 }
 
-pub fn create_signed_packet(
-    context: &AppContext,
-    local_icann_http_port: u16,
-    local_pubky_tls_port: u16,
-) -> Result<SignedPacket> {
+fn create_signed_packet(context: &KeyRepublisherContext) -> Result<SignedPacket> {
     let root_name: Name = "."
         .try_into()
         .expect(". is the root domain and always valid");
 
     let mut signed_packet_builder = SignedPacket::builder();
 
-    let public_ip = context.config_toml.pkdns.public_ip;
-    let public_pubky_tls_port = context
-        .config_toml
-        .pkdns
-        .public_pubky_tls_port
-        .unwrap_or(local_pubky_tls_port);
-    let public_icann_http_port = context
-        .config_toml
-        .pkdns
-        .public_icann_http_port
-        .unwrap_or(local_icann_http_port);
+    let public_ip = context.public_ip;
+    let public_pubky_tls_port = context.public_pubky_tls_port;
+    let public_icann_http_port = context.public_icann_http_port;
 
     // `SVCB(HTTPS)` record pointing to the pubky tls port and the public ip address
     // This is what is used in all applications expect for browsers.
@@ -135,7 +128,7 @@ pub fn create_signed_packet(
     //
     // TODO: Is it possible to point the SVCB record to the IP address via a `A` record?
     // This would remove the ICANN domain dependency.
-    if let Some(domain) = &context.config_toml.pkdns.icann_domain {
+    if let Some(domain) = &context.icann_domain {
         let mut svcb = SVCB::new(10, root_name.clone());
 
         let http_port_be_bytes = public_icann_http_port.to_be_bytes();
@@ -163,12 +156,24 @@ mod tests {
 
     use super::*;
 
+    impl KeyRepublisherContext {
+        /// Create a new KeyRepublisher for testing
+        pub fn test() -> Self {
+            KeyRepublisherContext {
+                public_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                public_pubky_tls_port: 8080,
+                public_icann_http_port: 8080,
+                icann_domain: Some(Domain::new("localhost".to_string()).unwrap()),
+                keypair: Keypair::random(),
+                pkarr_client: pkarr::ClientBuilder::default().build().unwrap(),
+            }
+        }
+    }
+
     #[tokio::test]
     async fn test_resolve_https_endpoint_with_pkarr_client() {
-        let context = AppContext::test();
-        let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
-            .await
-            .unwrap();
+        let context = KeyRepublisherContext::test();
+        let _republisher = KeyRepublisher::start(&context).await.unwrap();
         let pkarr_client = context.pkarr_client.clone();
         let hs_pubky = context.keypair.public_key();
         // Make sure the pkarr packet of the hs is resolvable.
@@ -187,11 +192,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_endpoints() {
-        let mut context = AppContext::test();
+        let mut context = KeyRepublisherContext::test();
         context.keypair = pkarr::Keypair::random();
-        let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
-            .await
-            .unwrap();
+        let _republisher = KeyRepublisher::start(&context).await.unwrap();
         let pubkey = context.keypair.public_key();
 
         let client = pkarr::Client::builder().build().unwrap();
