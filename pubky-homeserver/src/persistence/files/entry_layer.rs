@@ -114,45 +114,6 @@ impl<A: Access> LayeredAccess for EntryAccessor<A> {
     async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
         self.inner.presign(path, args).await
     }
-
-    type BlockingReader = A::BlockingReader;
-    type BlockingWriter = A::BlockingWriter;
-    type BlockingLister = A::BlockingLister;
-    type BlockingDeleter = A::BlockingDeleter;
-
-    fn blocking_read(
-        &self,
-        path: &str,
-        args: opendal::raw::OpRead,
-    ) -> opendal::Result<(opendal::raw::RpRead, Self::BlockingReader)> {
-        self.inner.blocking_read(path, args)
-    }
-
-    fn blocking_write(
-        &self,
-        _path: &str,
-        _args: opendal::raw::OpWrite,
-    ) -> opendal::Result<(opendal::raw::RpWrite, Self::BlockingWriter)> {
-        Err(opendal::Error::new(
-            opendal::ErrorKind::Unsupported,
-            "Writing is not supported in blocking mode",
-        ))
-    }
-
-    fn blocking_delete(&self) -> opendal::Result<(opendal::raw::RpDelete, Self::BlockingDeleter)> {
-        Err(opendal::Error::new(
-            opendal::ErrorKind::Unsupported,
-            "Deleting is not supported in blocking mode",
-        ))
-    }
-
-    fn blocking_list(
-        &self,
-        path: &str,
-        args: opendal::raw::OpList,
-    ) -> opendal::Result<(opendal::raw::RpList, Self::BlockingLister)> {
-        self.inner.blocking_list(path, args)
-    }
 }
 
 /// Wrapper around the writer that updates the entry in the database when the file is closed.

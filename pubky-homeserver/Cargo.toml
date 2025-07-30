@@ -60,10 +60,10 @@ fast-glob = "0.4.5"
 tokio-util = "0.7.15"
 percent-encoding = "2.3.1"
 serde_valid = "1.0.5"
-opendal = { version = "0.53.3", features = ["services-fs"] }
+opendal = { version = "0.54.0", features = ["services-fs"] }
 infer = "0.19.0"
 mime_guess = "2.0.5"
-dav-server-opendalfs = "0.6.1"
+dav-server-opendalfs = "0.6.2"
 dav-server = "0.8.0"
 
 
