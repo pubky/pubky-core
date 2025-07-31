@@ -127,12 +127,12 @@ impl Testnet {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
-    /// Create a [ClientBuilder] and configure it to use this local test network.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
+    /// Create a `pubky::ClientConfig` and configure it to use this local test network.
+    pub fn pubky_client_config(&self) -> pubky::ClientConfig {
         let relays = self.dht_relay_urls();
 
-        let mut builder = pubky::Client::builder();
-        builder.pkarr(|builder| {
+        let mut config = pubky::Client::config();
+        config.pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
             if relays.is_empty() {
@@ -142,13 +142,17 @@ impl Testnet {
                     .relays(&relays)
                     .expect("testnet relays should be valid urls");
             }
-            // 100ms timeout for requests. This makes methods like `resolve_most_recent` fast
-            // because it doesn't need to wait the default 2s which would slow down the tests.
             builder.request_timeout(Duration::from_millis(2000));
             builder
         });
 
-        builder
+        config
+    }
+
+    /// Create a `pubky::Client` and configured to use this local test network.
+    pub fn pubky_client(&self) -> pubky::Client {
+        let config = self.pubky_client_config();
+        pubky::Client::from_config(config).expect("testnet default client should build")
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
@@ -198,7 +202,7 @@ mod test {
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver_suite().await.unwrap();
-        let client = testnet.pubky_client_builder().build().unwrap();
+        let client = testnet.pubky_client();
         let hs = testnet.homeservers.first().unwrap();
         let keypair = Keypair::random();
         let pubky = keypair.public_key();
@@ -259,7 +263,7 @@ mod test {
                         panic!("Failed to create homeserver suite: {}", e);
                     }
                 };
-                let client = testnet.pubky_client_builder().build().unwrap();
+                let client = testnet.pubky_client();
                 let hs = testnet.homeservers.first().unwrap();
                 let keypair = Keypair::random();
                 let pubky = keypair.public_key();

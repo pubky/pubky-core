@@ -1,22 +1,21 @@
-//! Wasm bindings for the /pub/ api
+//! Wasm bindings for the /pub/ API
 
-use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
+use crate::constructor::Client;
 use crate::js_result::JsResult;
-
-use super::super::constructor::Client;
 
 #[wasm_bindgen]
 impl Client {
-    /// Returns a list of Pubky urls (as strings).
+    /// Returns a list of Pubky URLs (as strings) from a directory.
     ///
-    /// - `url`:     The Pubky url (string) to the directory you want to list its content.
-    /// - `cursor`:  Either a full `pubky://` Url (from previous list response),
-    ///                 or a path (to a file or directory) relative to the `url`
-    /// - `reverse`: List in reverse order
-    /// - `limit`    Limit the number of urls in the response
-    /// - `shallow`: List directories and files, instead of flat list of files.
+    /// @param {string} url - The `pubky://` URL of the directory to list.
+    /// @param {string | undefined} cursor - A cursor to paginate results, from a previous response.
+    /// @param {boolean | undefined} reverse - If `true`, lists items in reverse order.
+    /// @param {number | undefined} limit - The maximum number of URLs to return.
+    /// @param {boolean | undefined} shallow - If `true`, lists directories as single entries instead of recursively listing files.
+    /// @returns {Promise<string[]>} A promise that resolves to an array of URL strings.
+    /// @throws Will throw an error if the request fails.
     #[wasm_bindgen]
     pub async fn list(
         &self,
@@ -25,49 +24,28 @@ impl Client {
         reverse: Option<bool>,
         limit: Option<u16>,
         shallow: Option<bool>,
-    ) -> JsResult<Array> {
-        // TODO: try later to return Vec<String> from async function.
+    ) -> JsResult<Vec<String>> {
+        // Start with the basic list builder from the core client.
+        let mut builder = self.inner.list(url);
 
-        if let Some(cursor) = cursor {
-            return self
-                .0
-                .list(url)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?
-                .reverse(reverse.unwrap_or(false))
-                .limit(limit.unwrap_or(u16::MAX))
-                .cursor(&cursor)
-                .shallow(shallow.unwrap_or(false))
-                .send()
-                .await
-                .map(|urls| {
-                    let js_array = Array::new();
-
-                    for url in urls {
-                        js_array.push(&JsValue::from_str(&url));
-                    }
-
-                    js_array
-                })
-                .map_err(|e| JsValue::from_str(&e.to_string()));
+        // Conditionally apply each optional parameter to the builder.
+        if let Some(c) = &cursor {
+            builder = builder.cursor(c);
+        }
+        if let Some(r) = reverse {
+            builder = builder.reverse(r);
+        }
+        if let Some(l) = limit {
+            builder = builder.limit(l);
+        }
+        if let Some(s) = shallow {
+            builder = builder.shallow(s);
         }
 
-        self.0
-            .list(url)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?
-            .reverse(reverse.unwrap_or(false))
-            .limit(limit.unwrap_or(u16::MAX))
-            .shallow(shallow.unwrap_or(false))
+        // Send the fully configured request and map the error type for JS.
+        builder
             .send()
             .await
-            .map(|urls| {
-                let js_array = Array::new();
-
-                for url in urls {
-                    js_array.push(&JsValue::from_str(&url));
-                }
-
-                js_array
-            })
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

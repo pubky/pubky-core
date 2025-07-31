@@ -28,27 +28,31 @@ async fn main() -> Result<()> {
         .init();
 
     let client = if args.testnet {
-        Client::builder().testnet().build()?
+        Client::testnet()?
     } else {
-        Client::builder().build()?
+        Client::default()
     };
 
     // Build the request
-    let response = client.get(args.url).send().await?;
+    println!("> {} {}", args.method, args.url);
+    let response = client.request(args.method, args.url.as_str(), None).await?;
 
     println!("< Response:");
-    println!("< {:?} {}", response.version(), response.status());
-    for (name, value) in response.headers() {
+    println!("< {}", response.status);
+
+    // Iterate over the .headers field.
+    for (name, value) in &response.headers {
         if let Ok(v) = value.to_str() {
-            println!("< {name}: {v}");
+            println!("< {}: {}", name, v);
         }
     }
+    println!("<");
 
-    let bytes = response.bytes().await?;
+    let bytes = response.body;
 
-    match String::from_utf8(bytes.to_vec()) {
-        Ok(string) => println!("<\n{}", string),
-        Err(_) => println!("<\n{:?}", bytes),
+    match String::from_utf8(bytes) {
+        Ok(string) => println!("{}", string),
+        Err(e) => println!("{:?}", e.into_bytes()),
     }
 
     Ok(())

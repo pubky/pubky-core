@@ -1,86 +1,35 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 
-#[cfg(not(target_arch = "wasm32"))]
-use super::internal::cookies::CookieJar;
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::Arc;
-use std::time::Duration;
+use super::http_client::HttpClient;
+use crate::DEFAULT_RELAYS;
 
-static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
-
+/// Holds the platform-agnostic configuration for a `Client`.
+///
+/// This struct is used to configure and build the necessary components (like `pkarr::Client`)
+/// before they are combined with a platform-specific `HttpClient` to create a full `Client`.
 #[derive(Debug, Default, Clone)]
-pub struct ClientBuilder {
+pub struct ClientConfig {
     pkarr: pkarr::ClientBuilder,
-    http_request_timeout: Option<Duration>,
-    /// Maximum age before a user record should be republished.
-    /// Defaults to 1 hour.
-    max_record_age: Option<Duration>,
-    /// The hostname to use for testnet URL transformations (WASM only).
-    #[cfg(target_arch = "wasm32")]
-    testnet_host: Option<String>,
+    pub(crate) max_record_age: Option<Duration>,
 }
 
-impl ClientBuilder {
-    #[cfg(not(target_arch = "wasm32"))]
-    /// Creates a client connected to a local test network using `localhost`.
-    /// To use a custom host, see `testnet_with_host`.
-    pub fn testnet(&mut self) -> &mut Self {
-        self.testnet_with_host("localhost")
+impl ClientConfig {
+    /// Creates a new configuration with default settings, including default Pkarr relays.
+    pub fn new() -> Self {
+        let mut config = Self::default();
+        config.pkarr(|pkarr| {
+            pkarr
+                .relays(DEFAULT_RELAYS)
+                .expect("Default relays are valid")
+        });
+        config
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    /// Creates a client connected to a local test network with a custom homeserver
-    /// host other than `localhost`.
-    ///
-    /// Configures:
-    /// 1. local DHT with bootstrapping nodes: `&["<host>:6881"]`
-    /// 2. Pkarr Relay: `http://<host>:<PKARR_RELAY_PORT>`
-    pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
-        self.pkarr
-            .bootstrap(&[format!(
-                "{}:{}",
-                host,
-                pubky_common::constants::testnet_ports::BOOTSTRAP
-            )])
-            .relays(&[format!(
-                "http://{}:{}",
-                host,
-                pubky_common::constants::testnet_ports::PKARR_RELAY
-            )])
-            .expect("relays urls infallible");
-
-        self
-    }
-
-    /// Sets the testnet host. This is only used for WASM builds.
-    pub fn testnet_host(&mut self, host: String) -> &mut Self {
-        // The field itself is still conditional, so the logic is gated.
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.testnet_host = Some(host);
-        }
-        // This avoids an "unused parameter" warning on non-WASM builds.
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = host;
-
-        self
-    }
-
     /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
     pub fn pkarr<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut pkarr::ClientBuilder) -> &mut pkarr::ClientBuilder,
     {
         f(&mut self.pkarr);
-
-        self
-    }
-
-    /// Set HTTP requests timeout.
-    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.http_request_timeout = Some(timeout);
-
         self
     }
 
@@ -91,60 +40,44 @@ impl ClientBuilder {
         self
     }
 
-    /// Build [Client]
-    pub fn build(&self) -> Result<Client, BuildError> {
-        let pkarr = self.pkarr.build()?;
+    /// Builds the `pkarr::Client` from the specified configuration.
+    pub fn build_pkarr_client(&self) -> Result<pkarr::Client, BuildError> {
+        self.pkarr.build().map_err(Into::into)
+    }
+}
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let cookie_store = Arc::new(CookieJar::default());
+/// A generic, platform-agnostic Pubky Client.
+///
+/// This client contains the core business logic and is generic over an `HttpClient`
+/// implementation, allowing it to operate in any environment (native, WASM, test).
+#[derive(Clone, Debug)]
+pub struct BaseClient<H: HttpClient> {
+    /// The abstract HTTP client for making network requests.
+    pub http: H,
+    /// The client for interacting with the Pkarr DHT.
+    pub pkarr: pkarr::Client,
+    /// The record age threshold before republishing.
+    pub max_record_age: Duration,
+}
 
-        // TODO: allow custom user agent, but force a Pubky user agent information
-        let user_agent = DEFAULT_USER_AGENT;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone())
-            // TODO: use persistent cookie jar
-            .cookie_provider(cookie_store.clone())
-            .user_agent(user_agent);
-
-        #[cfg(target_arch = "wasm32")]
-        let http_builder = reqwest::Client::builder().user_agent(user_agent);
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let mut icann_http_builder = reqwest::Client::builder()
-            // TODO: use persistent cookie jar
-            .cookie_provider(cookie_store.clone())
-            .user_agent(user_agent);
-
-        // TODO: change this after Reqwest publish a release with timeout in wasm
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(timeout) = self.http_request_timeout {
-            http_builder = http_builder.timeout(timeout);
-
-            icann_http_builder = icann_http_builder.timeout(timeout);
+impl<H: HttpClient> BaseClient<H> {
+    /// Creates a new `BaseClient` by injecting its dependencies: a platform-specific
+    /// HTTP implementation and a configured Pkarr client.
+    pub fn new(
+        http_client: H,
+        pkarr_client: pkarr::Client,
+        max_record_age: Option<Duration>,
+    ) -> Self {
+        Self {
+            http: http_client,
+            pkarr: pkarr_client,
+            max_record_age: max_record_age.unwrap_or(Duration::from_secs(60 * 60)),
         }
+    }
 
-        // Maximum age before a homeserver record should be republished.
-        // Default is 1 hour. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
-        // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
-        let max_record_age = self.max_record_age.unwrap_or(Duration::from_secs(60 * 60));
-
-        Ok(Client {
-            pkarr,
-            http: http_builder.build().expect("config expected to not error"),
-
-            #[cfg(not(target_arch = "wasm32"))]
-            icann_http: icann_http_builder
-                .build()
-                .expect("config expected to not error"),
-            #[cfg(not(target_arch = "wasm32"))]
-            cookie_store,
-
-            max_record_age,
-
-            #[cfg(target_arch = "wasm32")]
-            testnet_host: self.testnet_host.clone(),
-        })
+    /// Returns a reference to the internal Pkarr Client.
+    pub fn pkarr(&self) -> &pkarr::Client {
+        &self.pkarr
     }
 }
 
@@ -153,52 +86,69 @@ pub enum BuildError {
     #[error(transparent)]
     /// Error building Pkarr client.
     PkarrBuildError(#[from] pkarr::errors::BuildError),
-}
 
-/// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
-#[derive(Clone, Debug)]
-pub struct Client {
-    pub(crate) http: reqwest::Client,
-    pub(crate) pkarr: pkarr::Client,
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie_store: std::sync::Arc<CookieJar>,
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) icann_http: reqwest::Client,
-
-    /// The record age threshold before republishing.
-    pub(crate) max_record_age: Duration,
-
-    /// The hostname to use for testnet URL transformations (WASM only).
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) testnet_host: Option<String>,
-}
-
-impl Client {
-    /// Returns a builder to edit settings before creating [Client].
-    pub fn builder() -> ClientBuilder {
-        let mut builder = ClientBuilder::default();
-        builder.pkarr(|pkarr| pkarr.relays(DEFAULT_RELAYS).expect("infallible"));
-        builder
-    }
-
-    // === Getters ===
-
-    /// Returns a reference to the internal Pkarr Client.
-    pub fn pkarr(&self) -> &pkarr::Client {
-        &self.pkarr
-    }
+    #[error("HTTP client build error: {0}")]
+    HttpClient(#[from] reqwest::Error),
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
+    use crate::http_client::{HttpClient, HttpResponse};
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use reqwest::{Method, StatusCode, Url, header::HeaderMap};
+    use std::sync::{Arc, Mutex};
+
+    /// A mock HTTP client for testing.
+    #[derive(Clone, Default)]
+    struct MockHttpClient {
+        last_called_url: Arc<Mutex<Option<Url>>>,
+    }
+
+    #[async_trait]
+    impl HttpClient for MockHttpClient {
+        async fn request(
+            &self,
+            _method: Method,
+            url: Url,
+            _body: Option<Vec<u8>>,
+            _headers: Option<HeaderMap>,
+        ) -> Result<HttpResponse> {
+            *self.last_called_url.lock().unwrap() = Some(url);
+
+            Ok(HttpResponse {
+                status: StatusCode::OK,
+                headers: HeaderMap::new(),
+                body: b"mock response".to_vec(),
+            })
+        }
+    }
 
     #[tokio::test]
-    async fn test_fetch() {
-        let client = Client::builder().build().unwrap();
-        let response = client.get("https://google.com/").send().await.unwrap();
-        assert_eq!(response.status(), 200);
+    async fn test_get_rewrites_pubky_scheme() {
+        // 1. Arrange
+        let mock_http = MockHttpClient::default();
+        let last_url = mock_http.last_called_url.clone();
+
+        let client = BaseClient {
+            http: mock_http,
+            pkarr: pkarr::ClientBuilder::default()
+                .build()
+                .expect("should build"), // A default pkarr client is fine for this test.
+            max_record_age: Duration::from_secs(3600),
+        };
+
+        let pkarr_key = pkarr::Keypair::random().public_key().to_string();
+        let pubky_url = format!("pubky://{}/path", pkarr_key);
+        let expected_https_url = format!("https://_pubky.{}/path", pkarr_key);
+
+        // 2. Act
+        let response = client.get(&pubky_url).await.unwrap();
+
+        // 3. Assert
+        assert_eq!(response.body, b"mock response".to_vec());
+        let called_url = last_url.lock().unwrap().clone().unwrap();
+        assert_eq!(called_url.as_str(), expected_https_url);
     }
 }

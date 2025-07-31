@@ -66,9 +66,14 @@ impl StaticTestnet {
         Ok(testnet)
     }
 
-    /// Create a new pubky client builder.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
-        self.testnet.pubky_client_builder()
+    /// Create a `pubky::Client` and configured to use this local test network.
+    pub fn pubky_client(&self) -> pubky::Client {
+        self.testnet.pubky_client()
+    }
+
+    /// Create a `pubky::ClientConfig` and configure it to use this local test network.
+    pub fn pubky_client_config(&self) -> pubky::ClientConfig {
+        self.testnet.pubky_client_config()
     }
 
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {

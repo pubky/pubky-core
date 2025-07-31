@@ -8,7 +8,7 @@ use pkarr::{
     errors::QueryError,
 };
 
-use crate::Client;
+use crate::{BaseClient, http_client::HttpClient};
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.
@@ -34,7 +34,7 @@ pub(crate) enum PublishStrategy {
     IfOlderThan,
 }
 
-impl Client {
+impl<H: HttpClient> BaseClient<H> {
     /// Unified method to update the homeserver record.
     ///
     /// If `host` is provided, that value is used; otherwise the host is extracted from the
