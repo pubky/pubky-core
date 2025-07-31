@@ -2825,7 +2825,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2850,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "argon2",
  "base32",
@@ -2869,7 +2869,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2957,7 +2957,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-wasm"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "console_log",
  "getrandom 0.3.1",
