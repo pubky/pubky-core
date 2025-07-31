@@ -108,6 +108,7 @@ impl DataDir for PersistentDataDir {
         if !secret_file_path.exists() {
             // Create a new secret file
             pkarr::Keypair::random().write_secret_key_file(&secret_file_path)?;
+            tracing::info!("Secret file created at {}", secret_file_path.display());
         }
         // Read the secret file
         let keypair = pkarr::Keypair::from_secret_key_file(&secret_file_path)?;
