@@ -10,8 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const cargoTomlContent = await readFile(path.join(__dirname, "../../Cargo.toml"), "utf8");
-const cargoPackageName = /\[package\]\nname = "(.*?)"/.exec(cargoTomlContent)[1]
-const name = cargoPackageName.replace(/-/g, '_')
+const pkgName = /\[package\]\nname = "(.*?)"/.exec(cargoTomlContent)[1];
+const base = pkgName.replace(/-wasm$/, "");
+const name = base.replace(/-/g, "_");
 
 const content = await readFile(path.join(__dirname, `../../pkg/nodejs/${name}.js`), "utf8");
 

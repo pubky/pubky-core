@@ -23,6 +23,8 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
             target,
             "--out-dir",
             &format!("pkg/{}", target),
+            "--out-name",
+            "pubky",
         ])
         .output()?;
 
