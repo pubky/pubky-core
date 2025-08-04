@@ -92,7 +92,7 @@ listen_socket = "127.0.0.1:6288"
 admin_password = "admin"
 
 [pkdns]
-# The public IP address and port of the homeserver pubky_drive_api to be advertised on the DHT.
+# The public IP address of the homeserver pubky_drive_api to be advertised on the DHT.
 # Must be set to be reachable from the outside.
 public_ip = "127.0.0.1"
 
