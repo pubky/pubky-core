@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
     println!("PublicKey: {}", keypair.public_key());
 
     let client = if cli.testnet {
-        let client = Client::testnet();
+        let client = Client::testnet()?;
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
 
         client
     } else {
-        Client::default()
+        Client::new()?
     };
 
     println!("Sending AuthToken to the 3rd party app...");

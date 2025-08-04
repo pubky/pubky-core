@@ -28,9 +28,9 @@ async fn main() -> Result<()> {
         .init();
 
     let client = if args.testnet {
-        Client::testnet()
+        Client::testnet()?
     } else {
-        Client::default()
+        Client::new()?
     };
 
     // Build the request

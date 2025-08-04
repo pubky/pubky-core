@@ -18,7 +18,7 @@ async fn main () {
   let testnet = EphemeralTestnet::start().await.unwrap();
 
   // Create a Pubky Client from the testnet.
-  let client = testnet.pubky_client();
+  let client = testnet.pubky_client().unwrap();
 
   // Use the homeserver
   let homeserver = testnet.homeserver_suite();

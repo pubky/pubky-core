@@ -176,6 +176,11 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a client configured for public mainline DHT and pkarr relays.
+    pub fn new() -> Result<Client, BuildError> {
+        Self::builder().build()
+    }
+
     /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> ClientBuilder {
         let mut builder = ClientBuilder::default();
@@ -185,7 +190,7 @@ impl Client {
 
     /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
     /// You need an instance of `pubky-testnet` running on `localhost`
-    pub fn testnet() -> Self {
+    pub fn testnet() -> Result<Client, BuildError> {
         let mut builder = Self::builder();
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -194,9 +199,7 @@ impl Client {
         #[cfg(target_arch = "wasm32")]
         builder.testnet_host("localhost".to_string());
 
-        builder
-            .build()
-            .expect("Default testnet client should build")
+        builder.build()
     }
 
     // === Getters ===
@@ -207,22 +210,13 @@ impl Client {
     }
 }
 
-impl Default for Client {
-    /// Creates a client configured for public mainline DHT and pkarr relays.
-    fn default() -> Self {
-        Self::builder()
-            .build()
-            .expect("Default mainnet client should build")
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[tokio::test]
     async fn test_fetch() {
-        let client = Client::builder().build().unwrap();
+        let client = Client::new().unwrap();
         let response = client.get("https://google.com/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }
