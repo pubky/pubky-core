@@ -12,7 +12,7 @@ use pubky::Keypair;
 async fn main () {
   // Mainline Dht testnet and a temporary homeserver for unit testing.
   let testnet = EphemeralTestnet::start().await.unwrap();
-  let client = testnet.pubky_client_builder().build().unwrap();
+  let client = testnet.pubky_client().unwrap();
 
   let homeserver = testnet.homeserver_suite();
 

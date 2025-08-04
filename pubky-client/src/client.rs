@@ -24,7 +24,7 @@ pub struct ClientBuilder {
 impl ClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     /// Creates a client connected to a local test network using `localhost`.
-    /// To use a custom host, see `testnet_with_host`.
+    /// To use a custom host, use `testnet_with_host`.
     pub fn testnet(&mut self) -> &mut Self {
         self.testnet_with_host("localhost")
     }
@@ -176,11 +176,30 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a client configured for public mainline DHT and pkarr relays.
+    pub fn new() -> Result<Client, BuildError> {
+        Self::builder().build()
+    }
+
     /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> ClientBuilder {
         let mut builder = ClientBuilder::default();
         builder.pkarr(|pkarr| pkarr.relays(DEFAULT_RELAYS).expect("infallible"));
         builder
+    }
+
+    /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
+    /// You need an instance of `pubky-testnet` running on `localhost`
+    pub fn testnet() -> Result<Client, BuildError> {
+        let mut builder = Self::builder();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        builder.testnet();
+
+        #[cfg(target_arch = "wasm32")]
+        builder.testnet_host("localhost".to_string());
+
+        builder.build()
     }
 
     // === Getters ===
@@ -197,7 +216,7 @@ mod test {
 
     #[tokio::test]
     async fn test_fetch() {
-        let client = Client::builder().build().unwrap();
+        let client = Client::new().unwrap();
         let response = client.get("https://google.com/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }

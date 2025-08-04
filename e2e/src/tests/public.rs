@@ -8,7 +8,7 @@ async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 
@@ -80,7 +80,7 @@ async fn put_get_delete() {
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
@@ -138,7 +138,7 @@ async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 
@@ -152,7 +152,7 @@ async fn unauthorized_put_delete() {
     let url = format!("pubky://{public_key}/pub/foo.txt");
     let url = url.as_str();
 
-    let other_client = testnet.pubky_client_builder().build().unwrap();
+    let other_client = testnet.pubky_client().unwrap();
     {
         let other = Keypair::random();
 
@@ -206,7 +206,7 @@ async fn list() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 
@@ -412,7 +412,7 @@ async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 
@@ -625,7 +625,7 @@ async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 
@@ -656,7 +656,7 @@ async fn list_events() {
 
     let feed_url = format!("https://{}/events/", server.public_key());
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let cursor;
 
@@ -724,7 +724,7 @@ async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 
@@ -741,7 +741,7 @@ async fn read_after_event() {
 
     let feed_url = format!("https://{}/events/", server.public_key());
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     {
         let response = client
@@ -777,7 +777,7 @@ async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let homeserver_pubky = homeserver.public_key();
 
@@ -853,7 +853,7 @@ async fn stream() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let keypair = Keypair::random();
 

@@ -15,7 +15,7 @@ use tokio::time::Instant;
 #[tokio::test]
 async fn test_limit_signin_get_session() {
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let mut config = ConfigToml::test();
     config.drive.rate_limits = vec![
@@ -65,7 +65,7 @@ async fn test_limit_signin_get_session() {
 async fn test_limit_signin_get_session_whitelist() {
     let keypair = Keypair::random();
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let mut config = ConfigToml::test();
     let mut limit = PathLimit::new(
@@ -120,7 +120,7 @@ async fn test_limit_signin_get_session_whitelist() {
 #[tokio::test]
 async fn test_limit_events() {
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let mut config = ConfigToml::test();
     config.drive.rate_limits = vec![
@@ -149,7 +149,7 @@ async fn test_limit_events() {
 #[tokio::test]
 async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client().unwrap();
 
     let mut config = ConfigToml::test();
     config.drive.rate_limits = vec![
@@ -234,7 +234,7 @@ async fn test_concurrent_write_read() {
     impl TestClient {
         fn new(testnet: &mut Testnet) -> Self {
             let keypair = Keypair::random();
-            let client = testnet.pubky_client_builder().build().unwrap();
+            let client = testnet.pubky_client().unwrap();
             Self { keypair, client }
         }
         pub async fn signup(&self, hs_pubkey: &PublicKey) {
