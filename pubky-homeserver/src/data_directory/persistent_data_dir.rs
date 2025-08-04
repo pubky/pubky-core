@@ -1,6 +1,5 @@
 use super::{data_dir::DataDir, ConfigToml};
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -62,21 +61,6 @@ impl PersistentDataDir {
     pub fn get_secret_file_path(&self) -> PathBuf {
         self.expanded_path.join("secret")
     }
-
-    /// Writes the keypair to the secret file.
-    /// If the file already exists, it will be overwritten.
-    pub fn write_keypair(&self, keypair: &pkarr::Keypair) -> anyhow::Result<()> {
-        let secret_file_path = self.get_secret_file_path();
-        let secret = keypair.secret_key();
-        let hex_string = hex::encode(secret);
-        std::fs::write(secret_file_path.clone(), hex_string)?;
-        #[cfg(unix)]
-        {
-            std::fs::set_permissions(&secret_file_path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        tracing::info!("Secret file created at {}", secret_file_path.display());
-        Ok(())
-    }
 }
 
 impl Default for PersistentDataDir {
@@ -123,16 +107,11 @@ impl DataDir for PersistentDataDir {
         let secret_file_path = self.get_secret_file_path();
         if !secret_file_path.exists() {
             // Create a new secret file
-            self.write_keypair(&pkarr::Keypair::random())?;
+            pkarr::Keypair::random().write_secret_key_file(&secret_file_path)?;
+            tracing::info!("Secret file created at {}", secret_file_path.display());
         }
         // Read the secret file
-        let secret = std::fs::read(secret_file_path)?;
-        let secret_string = String::from_utf8_lossy(&secret).trim().to_string();
-        let secret_bytes = hex::decode(secret_string)?;
-        let secret_bytes: [u8; 32] = secret_bytes.try_into().map_err(|_| {
-            anyhow::anyhow!("Failed to convert secret bytes into array of length 32")
-        })?;
-        let keypair = pkarr::Keypair::from_secret_key(&secret_bytes);
+        let keypair = pkarr::Keypair::from_secret_key_file(&secret_file_path)?;
         Ok(keypair)
     }
 }
