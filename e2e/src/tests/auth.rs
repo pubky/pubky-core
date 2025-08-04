@@ -12,7 +12,7 @@ async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client();
 
     let keypair = Keypair::random();
 
@@ -56,7 +56,7 @@ async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client();
 
     let keypair = Keypair::random();
     let pubky = keypair.public_key();
@@ -132,13 +132,13 @@ async fn authz() {
     // Third party app side
     let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client();
 
     let pubky_auth_request = client.auth_request(http_relay_url, &capabilities).unwrap();
 
     // Authenticator side
     {
-        let client = testnet.pubky_client_builder().build().unwrap();
+        let client = testnet.pubky_client();
 
         client
             .signup(&keypair, &server.public_key(), None)
@@ -197,7 +197,7 @@ async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client();
 
     let first_keypair = Keypair::random();
     let second_keypair = Keypair::random();
@@ -257,7 +257,7 @@ async fn authz_timeout_reconnect() {
     {
         let url = pubky_auth_request.url().clone();
 
-        let client = testnet.pubky_client_builder().build().unwrap();
+        let client = testnet.pubky_client();
         client
             .signup(&keypair, &server.public_key(), None)
             .await
@@ -316,7 +316,7 @@ async fn authz_timeout_reconnect() {
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client();
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
@@ -433,7 +433,7 @@ async fn test_republish_on_signin_not_old_enough() {
     // Setup the testnet and run a homeserver.
     let testnet = EphemeralTestnet::start().await.unwrap();
     // Create a client that will republish conditionally if a record is older than 1hr.
-    let client = testnet.pubky_client_builder().build().unwrap();
+    let client = testnet.pubky_client();
 
     let server = testnet.homeserver_suite();
     let keypair = Keypair::random();

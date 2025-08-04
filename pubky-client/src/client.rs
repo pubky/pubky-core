@@ -24,7 +24,7 @@ pub struct ClientBuilder {
 impl ClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     /// Creates a client connected to a local test network using `localhost`.
-    /// To use a custom host, see `testnet_with_host`.
+    /// To use a custom host, use `testnet_with_host`.
     pub fn testnet(&mut self) -> &mut Self {
         self.testnet_with_host("localhost")
     }
@@ -183,11 +183,36 @@ impl Client {
         builder
     }
 
+    /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
+    /// You need an instance of `pubky-testnet` running on `localhost`
+    pub fn testnet() -> Self {
+        let mut builder = Self::builder();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        builder.testnet();
+
+        #[cfg(target_arch = "wasm32")]
+        builder.testnet_host("localhost".to_string());
+
+        builder
+            .build()
+            .expect("Default testnet client should build")
+    }
+
     // === Getters ===
 
     /// Returns a reference to the internal Pkarr Client.
     pub fn pkarr(&self) -> &pkarr::Client {
         &self.pkarr
+    }
+}
+
+impl Default for Client {
+    /// Creates a client configured for public mainline DHT and pkarr relays.
+    fn default() -> Self {
+        Self::builder()
+            .build()
+            .expect("Default mainnet client should build")
     }
 }
 

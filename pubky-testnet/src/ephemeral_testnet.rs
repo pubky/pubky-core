@@ -31,6 +31,11 @@ impl EphemeralTestnet {
         self.testnet.pubky_client_builder()
     }
 
+    /// Creates a `pubky::Client` pre-configured to use this test network.
+    pub fn pubky_client(&self) -> pubky::Client {
+        self.testnet.pubky_client()
+    }
+
     /// Create a new pkarr client builder.
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
         self.testnet.pkarr_client_builder()

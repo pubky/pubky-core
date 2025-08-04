@@ -151,6 +151,19 @@ impl Testnet {
         builder
     }
 
+    /// Creates a `pubky::Client` pre-configured to use this test network.
+    ///
+    /// This is a convenience method that builds a client from `Self::pubky_client_builder`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client fails to build, which should not happen in a test context.
+    pub fn pubky_client(&self) -> pubky::Client {
+        self.pubky_client_builder()
+            .build()
+            .expect("Building pubky client in testnet should not fail")
+    }
+
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
         let relays = self.dht_relay_urls();
