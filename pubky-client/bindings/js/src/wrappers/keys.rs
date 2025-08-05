@@ -69,9 +69,8 @@ impl PublicKey {
     #[wasm_bindgen(js_name = "from")]
     /// @throws
     pub fn try_from(value: String) -> JsResult<PublicKey> {
-        Ok(PublicKey(pkarr::PublicKey::try_from(value).map_err(
-            |_| "Couldn't create a PublicKey from this type of value",
-        )?))
+        let native_pk = pkarr::PublicKey::try_from(value)?;
+        Ok(PublicKey(native_pk))
     }
 }
 

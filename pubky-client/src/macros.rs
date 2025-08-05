@@ -22,7 +22,7 @@ macro_rules! handle_http_error {
                     .to_string()
             });
 
-            return Err(crate::errors::Error::HttpStatus { status, message });
+            return Err($crate::errors::Error::HttpStatus { status, message });
         }
     };
 }

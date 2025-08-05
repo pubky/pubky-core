@@ -4,28 +4,12 @@ use std::time::Duration;
 use pkarr::{
     Keypair, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
-    errors::QueryError,
 };
 
 use crate::{
     Client,
-    errors::{Error, Result},
+    errors::{Error, PkarrError, Result},
 };
-
-/// Helper returns true if this error (or any of its sources) is one of our
-/// three recoverable `QueryError`s with simple retrial.
-fn should_retry(err: &Error) -> bool {
-    // Match on the inner QueryError to see if it's a type we can retry.
-    if let Error::PkarrQuery(query_err) = err {
-        matches!(
-            query_err,
-            QueryError::Timeout | QueryError::NoClosestNodes | QueryError::DhtErrorResponse(_, _)
-        )
-    } else {
-        // For any other kind of error, we don't retry.
-        false
-    }
-}
 
 /// The strategy to decide whether to (re)publish a homeserver record.
 pub(crate) enum PublishStrategy {
@@ -81,11 +65,18 @@ impl Client {
                 .publish_homeserver_inner(keypair, &host_str, existing.clone())
                 .await
             {
-                Ok(()) => break,
-                Err(e) if should_retry(&e) && attempt < 3 => {
-                    continue;
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    // Check if the error is a Pkarr error and if it's retryable.
+                    if let Error::Pkarr(pkarr_err) = &e {
+                        if pkarr_err.is_retryable() && attempt < 3 {
+                            // If so, continue the loop.
+                            continue;
+                        }
+                    }
+                    // For any other error, or on the last attempt, return the error.
+                    return Err(e);
                 }
-                Err(e) => return Err(e),
             }
         }
 
@@ -109,13 +100,17 @@ impl Client {
                 }
             }
         }
-        let svcb = SVCB::new(0, host.try_into()?);
-        let signed_packet = SignedPacket::builder()
+        let svcb = SVCB::new(0, host.try_into().map_err(PkarrError::from)?);
+        let signed_packet = builder
             .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
-            .sign(keypair)?;
+            .sign(keypair)
+            .map_err(PkarrError::from)?;
+
         self.pkarr
             .publish(&signed_packet, existing.map(|s| s.timestamp()))
-            .await?;
+            .await
+            .map_err(PkarrError::from)?;
+
         Ok(())
     }
 
@@ -149,6 +144,7 @@ impl Client {
 mod tests {
     use super::*;
     use crate::Client;
+    use anyhow::Result;
     use pkarr::Keypair;
     use pkarr::dns::rdata::SVCB;
 

@@ -26,48 +26,24 @@ impl Client {
         limit: Option<u16>,
         shallow: Option<bool>,
     ) -> JsResult<Array> {
-        // TODO: try later to return Vec<String> from async function.
-
-        if let Some(cursor) = cursor {
-            return self
-                .0
-                .list(url)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?
-                .reverse(reverse.unwrap_or(false))
-                .limit(limit.unwrap_or(u16::MAX))
-                .cursor(&cursor)
-                .shallow(shallow.unwrap_or(false))
-                .send()
-                .await
-                .map(|urls| {
-                    let js_array = Array::new();
-
-                    for url in urls {
-                        js_array.push(&JsValue::from_str(&url));
-                    }
-
-                    js_array
-                })
-                .map_err(|e| JsValue::from_str(&e.to_string()));
-        }
-
-        self.0
-            .list(url)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?
+        let mut builder = self
+            .0
+            .list(url)?
             .reverse(reverse.unwrap_or(false))
             .limit(limit.unwrap_or(u16::MAX))
-            .shallow(shallow.unwrap_or(false))
-            .send()
-            .await
-            .map(|urls| {
-                let js_array = Array::new();
+            .shallow(shallow.unwrap_or(false));
 
-                for url in urls {
-                    js_array.push(&JsValue::from_str(&url));
-                }
+        if let Some(cursor_val) = &cursor {
+            builder = builder.cursor(cursor_val);
+        }
 
-                js_array
-            })
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        let urls = builder.send().await?;
+
+        let js_array = Array::new();
+        for url in urls {
+            js_array.push(&JsValue::from_str(&url));
+        }
+
+        Ok(js_array)
     }
 }

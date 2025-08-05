@@ -176,8 +176,8 @@ impl Client {
 
         let relay = query_params
             .get("relay")
-            .map(|r| url::Url::parse(r).expect("Relay query param to be valid URL"))
-            .expect("Missing relay query param");
+            .ok_or_else(|| Error::Auth("Missing 'relay' query parameter".to_string()))
+            .and_then(|r| Url::parse(r).map_err(Error::from))?;
 
         let client_secret = query_params
             .get("secret")
@@ -391,14 +391,12 @@ impl AuthRequest {
         &self.url
     }
 
-    // TODO: Return better errors
-
     /// Returns the result of an Auth request.
     pub async fn response(&self) -> Result<PublicKey> {
-        self.rx
-            .recv_async()
-            .await
-            .expect("sender dropped unexpectedly")
+        match self.rx.recv_async().await {
+            Ok(result_from_task) => result_from_task,
+            Err(_) => Err(Error::AuthRequestExpired),
+        }
     }
 }
 
