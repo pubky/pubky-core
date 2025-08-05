@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::js_result::JsResult;
+use js_sys::Uint8Array;
 
 #[wasm_bindgen]
 pub struct Keypair(pkarr::Keypair);
@@ -25,8 +26,8 @@ impl Keypair {
 
     /// Returns the secret key of this keypair.
     #[wasm_bindgen(js_name = "secretKey")]
-    pub fn secret_key(&self) -> Vec<u8> {
-        self.0.secret_key().into_iter().collect()
+    pub fn secret_key(&self) -> Uint8Array {
+        Uint8Array::from(self.0.secret_key().as_ref())
     }
 
     /// Returns the [PublicKey] of this keypair.
@@ -54,15 +55,9 @@ pub struct PublicKey(pub(crate) pkarr::PublicKey);
 #[wasm_bindgen]
 impl PublicKey {
     /// Convert the PublicKey to Uint8Array
-    /// @deprecated Use `toUint8Array` instead
-    pub fn to_uint8array(&self) -> Vec<u8> {
-        self.0.as_bytes().to_vec()
-    }
-
-    /// Convert the PublicKey to Uint8Array
     #[wasm_bindgen(js_name = "toUint8Array")]
-    pub fn to_uint8array2(&self) -> Vec<u8> {
-        self.0.as_bytes().to_vec()
+    pub fn to_uint8array(&self) -> Uint8Array {
+        Uint8Array::from(self.0.as_bytes().as_ref())
     }
 
     #[wasm_bindgen]
