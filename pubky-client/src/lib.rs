@@ -7,22 +7,17 @@
 // TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-pub mod api;
+mod api;
 mod client;
-pub mod internal;
+mod errors;
+mod internal;
 mod macros;
-pub use client::*;
 
+// --- PUBLIC API EXPORTS ---
+pub use client::{Client, ClientBuilder};
+pub use errors::{BuildError, Error};
+// Export common types.
 pub use api::{auth::AuthRequest, public::ListBuilder};
-pub mod errors;
-pub use client::Client;
-pub use client::ClientBuilder;
-
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::recovery_file;
-
-pub mod errors {
-    pub use super::*;
-    pub use BuildError;
-}

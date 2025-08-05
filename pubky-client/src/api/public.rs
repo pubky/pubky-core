@@ -1,7 +1,6 @@
-use anyhow::Result;
 use reqwest::{IntoUrl, Method};
 
-use crate::{Client, handle_http_error};
+use crate::{Client, errors::Result, handle_http_error};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].

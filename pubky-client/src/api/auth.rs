@@ -1,4 +1,3 @@
-use anyhow::Result;
 use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
 use std::collections::HashMap;
@@ -12,7 +11,12 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{Client, cross_debug, handle_http_error, internal::pkarr::PublishStrategy};
+use crate::{
+    Client, cross_debug,
+    errors::{Error, Result},
+    handle_http_error,
+    internal::pkarr::PublishStrategy,
+};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -250,9 +254,9 @@ impl Client {
             engine.encode(client_secret)
         ))?;
 
-        let mut segments = relay
-            .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("Invalid relay"))?;
+        let mut segments = relay.path_segments_mut().map_err(|_| {
+            Error::InvalidUrlStructure("The http-relay URL cannot be used as a base.".to_string())
+        })?;
 
         // remove trailing slash if any.
         segments.pop_if_empty();
@@ -294,12 +298,13 @@ impl Client {
 
         Ok(AuthRequest { url, rx })
     }
+
     pub(crate) async fn subscribe_to_auth_response(
         &self,
         relay: Url,
         client_secret: &[u8; 32],
         tx: flume::Sender<Result<PublicKey>>,
-    ) -> anyhow::Result<PublicKey> {
+    ) -> Result<PublicKey> {
         let response = loop {
             match self
                 .cross_request(Method::GET, relay.clone())
@@ -324,9 +329,11 @@ impl Client {
         }?;
 
         let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, client_secret)
-            .map_err(|e| anyhow::anyhow!("Got invalid token: {e}"))?;
-        let token = AuthToken::verify(&token_bytes)?;
+        let token_bytes =
+            decrypt(&encrypted_token, client_secret).map_err(|e| Error::Crypto(e.to_string()))?;
+
+        let token = AuthToken::verify(&token_bytes)
+            .map_err(|e| Error::VerificationFailed(e.to_string()))?;
 
         if !token.capabilities().is_empty() {
             self.signin_with_authtoken(&token).await?;

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::convert::TryInto;
 use std::time::Duration;
 
@@ -8,21 +7,24 @@ use pkarr::{
     errors::QueryError,
 };
 
-use crate::Client;
+use crate::{
+    Client,
+    errors::{Error, Result},
+};
 
 /// Helper returns true if this error (or any of its sources) is one of our
 /// three recoverable `QueryError`s with simple retrial.
-fn should_retry(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|cause| cause.downcast_ref::<QueryError>())
-        .any(|q| {
-            matches!(
-                q,
-                QueryError::Timeout
-                    | QueryError::NoClosestNodes
-                    | QueryError::DhtErrorResponse(_, _)
-            )
-        })
+fn should_retry(err: &Error) -> bool {
+    // Match on the inner QueryError to see if it's a type we can retry.
+    if let Error::PkarrQuery(query_err) = err {
+        matches!(
+            query_err,
+            QueryError::Timeout | QueryError::NoClosestNodes | QueryError::DhtErrorResponse(_, _)
+        )
+    } else {
+        // For any other kind of error, we don't retry.
+        false
+    }
 }
 
 /// The strategy to decide whether to (re)publish a homeserver record.
