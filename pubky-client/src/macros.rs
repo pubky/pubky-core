@@ -14,9 +14,9 @@ macro_rules! cross_debug {
 macro_rules! handle_http_error {
     ($res:expr) => {
         if let Err(status) = $res.error_for_status_ref() {
-            return match $res.text().await {
-                Ok(text) => Err(anyhow::anyhow!("{status}. Error message: {text}")),
-                _ => Err(anyhow::anyhow!("{status}")),
+            match $res.text().await {
+                Ok(text) => format!("{status}. Error message: {text}"),
+                _ => status.to_string(),
             };
         }
     };

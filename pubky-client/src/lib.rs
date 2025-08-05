@@ -14,6 +14,7 @@ mod macros;
 pub use client::*;
 
 pub use api::{auth::AuthRequest, public::ListBuilder};
+pub mod errors;
 pub use client::Client;
 pub use client::ClientBuilder;
 
