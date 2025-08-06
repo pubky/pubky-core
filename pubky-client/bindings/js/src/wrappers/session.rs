@@ -16,12 +16,11 @@ impl Session {
     }
 
     /// Return the capabilities that this session has.
-    #[wasm_bindgen]
-    pub fn capabilities(&self) -> js_sys::Array {
-        let arr = js_sys::Array::new();
-        for cap in self.0.capabilities() {
-            arr.push(&wasm_bindgen::JsValue::from_str(&cap.to_string()));
-        }
-        arr
+    pub fn capabilities(&self) -> Vec<String> {
+        self.0
+            .capabilities()
+            .iter()
+            .map(|c| c.to_string())
+            .collect()
     }
 }
