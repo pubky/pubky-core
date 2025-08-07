@@ -1,7 +1,7 @@
 use std::sync::Arc;
-
-use sea_query::{PostgresQueryBuilder, QueryBuilder, SchemaBuilder, SqliteQueryBuilder};
-use sqlx::{any::install_default_drivers, AnyPool, Transaction};
+use sea_query_binder::{SqlxBinder, SqlxValues};
+use sea_query::{PostgresQueryBuilder, QueryBuilder, SchemaBuilder, SchemaStatementBuilder, SqliteQueryBuilder};
+use sqlx::{any::install_default_drivers, AnyPool};
 #[cfg(test)]
 use tempfile::TempDir;
 
@@ -78,13 +78,24 @@ impl DbConnection {
         &self.pool
     }
 
+    pub fn build_query<S>(&self, statement: S) -> (String, SqlxValues)
+    where S: SqlxBinder {
+        let (query, values) = statement.build_any_sqlx(self.query_builder());
+        (query, values)
+    }
+
+    pub fn build_schema<S>(&self, statement: S) -> String
+    where S: SchemaStatementBuilder {
+        statement.build_any(self.schema_builder())
+    }
+
     /// Get the query builder for the database backend
-    pub fn query_builder(&self) -> &dyn QueryBuilder {
+    fn query_builder(&self) -> &dyn QueryBuilder {
         &**self.query_builder
     }
 
     /// Get the schema builder for the database backend
-    pub fn schema_builder(&self) -> &dyn SchemaBuilder {
+    fn schema_builder(&self) -> &dyn SchemaBuilder {
         &**self.schema_builder
     }
 

@@ -1,8 +1,7 @@
 use sea_query::{ColumnDef, Expr, Query, SimpleExpr, Table};
-use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
-use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait};
+use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait, migrations::M20250806CreateUserMigration};
 
 /// The name of the migration table to keep track of which migrations have been applied.
 const MIGRATION_TABLE: &str = "migrations";
@@ -23,7 +22,7 @@ impl<'a> Migrator<'a> {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         // Add new migrations here. They run from top to bottom.
         vec![
-            // Box::new(CreateUserMigration)
+            Box::new(M20250806CreateUserMigration)
         ]
     }
 
@@ -94,17 +93,17 @@ impl<'a> Migrator<'a> {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = statement.build_any(self.db.schema_builder());
+        let query = self.db.build_schema(statement);
         sqlx::query(query.as_str()).execute(self.db.pool()).await?;
         Ok(())
     }
 
     /// Returns a list of migrations that have already run.
     async fn get_applied_migrations(&self) -> anyhow::Result<Vec<String>> {
-        let (query, _) = Query::select()
-            .column("name")
-            .from(MIGRATION_TABLE)
-            .build_any(self.db.query_builder());
+        let statement = Query::select()
+        .column("name")
+        .from(MIGRATION_TABLE).to_owned();
+        let (query, _) = self.db.build_query(statement);
 
         let rows = sqlx::query(&query).fetch_all(self.db.pool()).await?;
 
@@ -123,11 +122,12 @@ impl<'a> Migrator<'a> {
         tx: &mut Transaction<'static, sqlx::Any>,
         migration_name: &str,
     ) -> anyhow::Result<()> {
-        let (query, values) = Query::insert()
-            .into_table(MIGRATION_TABLE)
-            .columns(["name"])
-            .values([SimpleExpr::Value(migration_name.into())])?
-            .build_any_sqlx(self.db.query_builder());
+        let statement = Query::insert()
+        .into_table(MIGRATION_TABLE)
+        .columns(["name"])
+        .values([SimpleExpr::Value(migration_name.into())])?
+        .to_owned();
+        let (query, values) = self.db.build_query(statement);
 
         sqlx::query_with(&query, values).execute(&mut **tx).await?;
         Ok(())
@@ -178,7 +178,7 @@ mod tests {
                             .not_null(),
                     )
                     .to_owned();
-                let query = statement.build_any(db.schema_builder());
+                let query = db.build_schema(statement);
                 sqlx::query(query.as_str()).execute(&mut **tx).await?;
                 Ok(())
             }
@@ -225,7 +225,7 @@ mod tests {
                             .not_null(),
                     )
                     .to_owned();
-                let query = statement.build_any(db.schema_builder());
+                let query = db.build_schema(statement);
                 sqlx::query(query.as_str()).execute(&mut **tx).await?;
                 // Fail after the table is created
                 anyhow::bail!("test error");
