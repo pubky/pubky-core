@@ -49,7 +49,7 @@ impl Client {
         // 4) Send POST request with the AuthToken in the body
         let response = self
             .cross_request(Method::POST, url)
-            .await
+            .await?
             .body(request_body)
             .send()
             .await?;
@@ -82,7 +82,7 @@ impl Client {
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         let response = self
             .cross_request(Method::GET, format!("pubky://{}/session", pubky))
-            .await
+            .await?
             .send()
             .await?;
 
@@ -101,7 +101,7 @@ impl Client {
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
         let response = self
             .cross_request(Method::DELETE, format!("pubky://{}/session", pubky))
-            .await
+            .await?
             .send()
             .await?;
 
@@ -222,7 +222,7 @@ impl Client {
 
         let response = self
             .cross_request(Method::POST, callback_url)
-            .await
+            .await?
             .body(encrypted_token)
             .send()
             .await?;
@@ -235,7 +235,7 @@ impl Client {
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let response = self
             .cross_request(Method::POST, format!("pubky://{}/session", token.pubky()))
-            .await
+            .await?
             .body(token.serialize())
             .send()
             .await?;
@@ -315,7 +315,7 @@ impl Client {
         let response = loop {
             match self
                 .cross_request(Method::GET, relay.clone())
-                .await
+                .await?
                 .send()
                 .await
             {

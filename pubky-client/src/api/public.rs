@@ -102,7 +102,7 @@ impl<'a> ListBuilder<'a> {
         let response = self
             .client
             .cross_request(Method::GET, url)
-            .await
+            .await?
             .send()
             .await?;
 

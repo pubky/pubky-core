@@ -75,8 +75,7 @@ impl Client {
     /// Returns a [AuthRequest]
     #[wasm_bindgen(js_name = "authRequest")]
     pub fn auth_request(&self, relay: &str, capabilities: &str) -> JsResult<AuthRequest> {
-        let capabilities =
-            Capabilities::try_from(capabilities).map_err(|_| "Invalid capabilities")?;
+        let capabilities = Capabilities::try_from(capabilities)?;
 
         let auth_request = self.0.auth_request(relay, &capabilities)?;
 
@@ -107,6 +106,7 @@ impl Client {
                 return Err(JsError {
                     name: "HomeserverNotFound".to_string(),
                     message: "No homeserver found for the given public key.".to_string(),
+                    status_code: None,
                 });
             }
         };

@@ -1,6 +1,7 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
 use crate::Client;
+use crate::errors::Result;
 use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
@@ -130,15 +131,21 @@ impl Client {
 
     // === Private Methods ===
 
-    pub(crate) async fn cross_request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        self.request(method, url)
+    pub(crate) async fn cross_request<U: IntoUrl>(
+        &self,
+        method: Method,
+        url: U,
+    ) -> Result<RequestBuilder> {
+        Ok(self.request(method, url))
     }
 
-    pub async fn prepare_request(&self, _url: &mut Url) -> Option<String> {
-        None
+    pub async fn prepare_request(&self, _url: &mut Url) -> Result<Option<String>> {
+        Ok(None)
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+use crate::errors::{PkarrError, UrlError};
 #[cfg(target_arch = "wasm32")]
 use futures_lite::StreamExt;
 #[cfg(target_arch = "wasm32")]
@@ -147,26 +154,32 @@ use pkarr::extra::endpoints::Endpoint;
 #[cfg(target_arch = "wasm32")]
 impl Client {
     /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
-    pub(crate) async fn cross_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
+    pub(crate) async fn cross_request<T: IntoUrl>(
+        &self,
+        method: Method,
+        url: T,
+    ) -> Result<RequestBuilder> {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url)?;
 
-        if let Some(pubky_host) = self.prepare_request(&mut url).await {
-            self.http
+        if let Some(pubky_host) = self.prepare_request(&mut url).await? {
+            Ok(self
+                .http
                 .request(method, url.clone())
                 .header::<&str, &str>("pubky-host", &pubky_host)
-                .fetch_credentials_include()
+                .fetch_credentials_include())
         } else {
-            self.http
+            Ok(self
+                .http
                 .request(method, url.clone())
-                .fetch_credentials_include()
+                .fetch_credentials_include())
         }
     }
 
     /// - Transforms pubky:// url to http(s):// urls
     /// - Resolves a clearnet host to call with fetch
     /// - Returns the `pubky-host` value if available
-    pub async fn prepare_request(&self, url: &mut Url) -> Option<String> {
+    pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("").to_string();
 
         if url.scheme() == "pubky" {
@@ -182,15 +195,15 @@ impl Client {
         let mut pubky_host = None;
 
         if PublicKey::try_from(host.clone()).is_ok() {
-            self.transform_url(url).await;
+            self.transform_url(url).await?;
 
             pubky_host = Some(host);
         };
 
-        pubky_host
+        Ok(pubky_host)
     }
 
-    pub(crate) async fn transform_url(&self, url: &mut Url) {
+    pub(crate) async fn transform_url(&self, url: &mut Url) -> Result<()> {
         let clone = url.clone();
         let qname = clone.host_str().unwrap_or("");
         log::debug!("Prepare request {}", url.as_str());
@@ -261,5 +274,7 @@ impl Client {
             //  return an error.
             log::debug!("Could not resolve host: {}", qname);
         }
+
+        Ok(())
     }
 }

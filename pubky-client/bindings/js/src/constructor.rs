@@ -89,6 +89,7 @@ impl Client {
                     return Err(JsError {
                         name: "InvalidRelayUrl".to_string(),
                         message: error_message,
+                        status_code: None,
                     });
                 }
             }
