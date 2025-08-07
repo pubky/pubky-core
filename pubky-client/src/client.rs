@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::errors::BuildError;
+
 #[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
 #[cfg(not(target_arch = "wasm32"))]
@@ -146,13 +148,6 @@ impl ClientBuilder {
             testnet_host: self.testnet_host.clone(),
         })
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum BuildError {
-    #[error(transparent)]
-    /// Error building Pkarr client.
-    PkarrBuildError(#[from] pkarr::errors::BuildError),
 }
 
 /// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
 use std::collections::HashMap;
@@ -12,7 +11,12 @@ use pubky_common::{
     session::Session,
 };
 
-use crate::{Client, cross_debug, handle_http_error, internal::pkarr::PublishStrategy};
+use crate::{
+    Client, cross_debug,
+    errors::{AuthError, Result, UrlError},
+    handle_http_error,
+    internal::pkarr::PublishStrategy,
+};
 
 impl Client {
     /// Signup to a homeserver and update Pkarr accordingly.
@@ -45,7 +49,7 @@ impl Client {
         // 4) Send POST request with the AuthToken in the body
         let response = self
             .cross_request(Method::POST, url)
-            .await
+            .await?
             .body(request_body)
             .send()
             .await?;
@@ -78,7 +82,7 @@ impl Client {
     pub async fn session(&self, pubky: &PublicKey) -> Result<Option<Session>> {
         let response = self
             .cross_request(Method::GET, format!("pubky://{}/session", pubky))
-            .await
+            .await?
             .send()
             .await?;
 
@@ -97,7 +101,7 @@ impl Client {
     pub async fn signout(&self, pubky: &PublicKey) -> Result<()> {
         let response = self
             .cross_request(Method::DELETE, format!("pubky://{}/session", pubky))
-            .await
+            .await?
             .send()
             .await?;
 
@@ -170,21 +174,27 @@ impl Client {
         let query_params: HashMap<String, String> =
             pubkyauth_url.query_pairs().into_owned().collect();
 
-        let relay = query_params
+        // 1. Get the relay URL string from query parameters.
+        let relay_str = query_params
             .get("relay")
-            .map(|r| url::Url::parse(r).expect("Relay query param to be valid URL"))
-            .expect("Missing relay query param");
+            .ok_or_else(|| AuthError::Validation("Missing 'relay' query parameter".to_string()))?;
+        let relay = Url::parse(relay_str)?;
 
-        let client_secret = query_params
+        // 2. Get the client secret string.
+        let secret_str = query_params
             .get("secret")
-            .map(|s| {
-                let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-                let bytes = engine.decode(s).expect("invalid client_secret");
-                let arr: [u8; 32] = bytes.try_into().expect("invalid client_secret");
+            .ok_or_else(|| AuthError::Validation("Missing 'secret' query parameter".to_string()))?;
 
-                arr
-            })
-            .expect("Missing client secret");
+        // 3. Decode the base64 secret.
+        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
+        let secret_bytes = engine
+            .decode(secret_str)
+            .map_err(|e| AuthError::Validation(format!("Invalid base64 secret: {}", e)))?;
+
+        // 4. Ensure the decoded secret is the correct length.
+        let client_secret: [u8; 32] = secret_bytes
+            .try_into()
+            .map_err(|_| AuthError::Validation("Client secret must be 32 bytes".to_string()))?;
 
         let capabilities = query_params
             .get("caps")
@@ -197,13 +207,14 @@ impl Client {
             .unwrap_or_default();
 
         let token = AuthToken::sign(keypair, capabilities);
-
         let encrypted_token = encrypt(&token.serialize(), &client_secret);
-
         let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
 
         let mut callback_url = relay.clone();
-        let mut path_segments = callback_url.path_segments_mut().unwrap();
+        let mut path_segments = callback_url
+            .path_segments_mut()
+            .map_err(|_| UrlError::InvalidStructure("Relay URL cannot be a base".to_string()))?;
+
         path_segments.pop_if_empty();
         let channel_id = engine.encode(hash(&client_secret).as_bytes());
         path_segments.push(&channel_id);
@@ -211,7 +222,7 @@ impl Client {
 
         let response = self
             .cross_request(Method::POST, callback_url)
-            .await
+            .await?
             .body(encrypted_token)
             .send()
             .await?;
@@ -224,7 +235,7 @@ impl Client {
     pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let response = self
             .cross_request(Method::POST, format!("pubky://{}/session", token.pubky()))
-            .await
+            .await?
             .body(token.serialize())
             .send()
             .await?;
@@ -250,9 +261,9 @@ impl Client {
             engine.encode(client_secret)
         ))?;
 
-        let mut segments = relay
-            .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("Invalid relay"))?;
+        let mut segments = relay.path_segments_mut().map_err(|_| {
+            UrlError::InvalidStructure("The http-relay URL cannot be used as a base.".to_string())
+        })?;
 
         // remove trailing slash if any.
         segments.pop_if_empty();
@@ -294,16 +305,17 @@ impl Client {
 
         Ok(AuthRequest { url, rx })
     }
+
     pub(crate) async fn subscribe_to_auth_response(
         &self,
         relay: Url,
         client_secret: &[u8; 32],
         tx: flume::Sender<Result<PublicKey>>,
-    ) -> anyhow::Result<PublicKey> {
+    ) -> Result<PublicKey> {
         let response = loop {
             match self
                 .cross_request(Method::GET, relay.clone())
-                .await
+                .await?
                 .send()
                 .await
             {
@@ -325,8 +337,10 @@ impl Client {
 
         let encrypted_token = response.bytes().await?;
         let token_bytes = decrypt(&encrypted_token, client_secret)
-            .map_err(|e| anyhow::anyhow!("Got invalid token: {e}"))?;
-        let token = AuthToken::verify(&token_bytes)?;
+            .map_err(|e| AuthError::Crypto(e.to_string()))?;
+
+        let token = AuthToken::verify(&token_bytes)
+            .map_err(|e| AuthError::VerificationFailed(e.to_string()))?;
 
         if !token.capabilities().is_empty() {
             self.signin_with_authtoken(&token).await?;
@@ -384,14 +398,12 @@ impl AuthRequest {
         &self.url
     }
 
-    // TODO: Return better errors
-
     /// Returns the result of an Auth request.
     pub async fn response(&self) -> Result<PublicKey> {
-        self.rx
-            .recv_async()
-            .await
-            .expect("sender dropped unexpectedly")
+        match self.rx.recv_async().await {
+            Ok(result_from_task) => result_from_task,
+            Err(_) => Err(AuthError::RequestExpired.into()),
+        }
     }
 }
 

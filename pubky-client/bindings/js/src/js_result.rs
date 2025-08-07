@@ -1,13 +1,7 @@
-use wasm_bindgen::JsValue;
+use crate::js_error::JsError;
 
-/// Convenient type for functions that return a Err(JsValue).
+/// A convenient `Result` type alias for fallible functions exposed to WebAssembly.
 ///
-/// fn method() -> JsResult<T> {
-///     Ok(())
-/// }
-///
-/// fn method() -> JsResult<T> {
-///     Err(JsValue::from_str("error"))
-/// }
-///
-pub type JsResult<T> = Result<T, JsValue>;
+/// An `Err` variant will be automatically converted into a structured JavaScript exception
+/// that can be caught on the JS side.
+pub type JsResult<T> = Result<T, JsError>;

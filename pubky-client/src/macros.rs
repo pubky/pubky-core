@@ -12,12 +12,17 @@ macro_rules! cross_debug {
 
 #[macro_export]
 macro_rules! handle_http_error {
-    ($res:expr) => {
-        if let Err(status) = $res.error_for_status_ref() {
-            return match $res.text().await {
-                Ok(text) => Err(anyhow::anyhow!("{status}. Error message: {text}")),
-                _ => Err(anyhow::anyhow!("{status}")),
-            };
+    ($response:expr) => {
+        if !$response.status().is_success() {
+            let status = $response.status();
+            let message = $response.text().await.unwrap_or_else(|_| {
+                status
+                    .canonical_reason()
+                    .unwrap_or("Unknown Error")
+                    .to_string()
+            });
+
+            return Err($crate::errors::Error::HttpStatus { status, message });
         }
     };
 }
