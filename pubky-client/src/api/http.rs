@@ -149,7 +149,7 @@ impl Client {
     /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
     pub(crate) async fn cross_request<T: IntoUrl>(&self, method: Method, url: T) -> RequestBuilder {
         let original_url = url.as_str();
-        let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
+        let mut url = Url::parse(original_url)?;
 
         if let Some(pubky_host) = self.prepare_request(&mut url).await {
             self.http
@@ -170,10 +170,13 @@ impl Client {
         let host = url.host_str().unwrap_or("").to_string();
 
         if url.scheme() == "pubky" {
-            *url = Url::parse(&format!("https{}", &url.as_str()[5..]))
-                .expect("couldn't replace pubky:// with https://");
+            *url = Url::parse(&format!("https{}", &url.as_str()[5..]))?;
             url.set_host(Some(&format!("_pubky.{}", url.host_str().unwrap_or(""))))
-                .expect("couldn't map pubk://<pubky> to https://_pubky.<pubky>");
+                .map_err(|_| {
+                    UrlError::InvalidStructure(
+                        "couldn't map pubky:// to https://_pubky.*".to_string(),
+                    )
+                })?;
         }
 
         let mut pubky_host = None;
@@ -221,25 +224,35 @@ impl Client {
 
             // TODO: detect loopback IPs and other equivalent to localhost
             if is_testnet_domain {
-                url.set_scheme("http")
-                    .expect("couldn't replace pubky:// with http://");
+                url.set_scheme("http").map_err(|_| {
+                    UrlError::InvalidStructure(
+                        "couldn't set scheme to http for testnet".to_string(),
+                    )
+                })?;
 
                 let http_port = e
                     .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
                     .and_then(|x| <[u8; 2]>::try_from(x).ok())
                     .map(u16::from_be_bytes)
-                    .expect("could not find HTTP_PORT service param");
+                    .ok_or_else(|| {
+                        PkarrError::InvalidRecord(
+                            "could not find HTTP_PORT service param in Pkarr record".to_string(),
+                        )
+                    })?;
 
-                url.set_port(Some(http_port))
-                    .expect("coultdn't use the resolved endpoint's port");
+                url.set_port(Some(http_port)).map_err(|_| {
+                    UrlError::InvalidStructure("couldn't set resolved testnet port".to_string())
+                })?;
             } else if let Some(port) = e.port() {
-                url.set_port(Some(port))
-                    .expect("coultdn't use the resolved endpoint's port");
+                url.set_port(Some(port)).map_err(|_| {
+                    UrlError::InvalidStructure("couldn't set resolved port".to_string())
+                })?;
             }
 
             if let Some(domain) = e.domain() {
-                url.set_host(Some(domain))
-                    .expect("coultdn't use the resolved endpoint's domain");
+                url.set_host(Some(domain)).map_err(|_| {
+                    UrlError::InvalidStructure("couldn't set resolved domain".to_string())
+                })?;
             }
 
             log::debug!("Transformed URL to: {}", url.as_str());
