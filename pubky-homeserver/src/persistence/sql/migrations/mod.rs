@@ -1,4 +1,2 @@
-mod migration;
-mod migrator;
-mod m1_create_user;
+mod m20250806_create_user;
 

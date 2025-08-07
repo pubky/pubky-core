@@ -57,20 +57,6 @@ impl DbConnection {
         })
     }
 
-
-    #[cfg(test)]
-    pub async fn test() -> Self {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let path = temp_dir.path().join("sqlite.db");
-        std::fs::write(&path, "").unwrap();
-        let con_string = format!("sqlite://{}", path.display());
-        let mut db = DbConnection::new(&con_string)
-            .await
-            .expect("Failed to create test database");
-        db.temp_dir = Arc::new(Some(temp_dir));
-        db
-    }
-
     /// Detect database type from connection string
     fn detect_database_type_from_connection_string(con_string: &str) -> anyhow::Result<DbBackend> {
         if con_string.starts_with("postgres://") || con_string.starts_with("postgresql://") {
@@ -117,12 +103,35 @@ impl DbConnection {
 }
 
 #[cfg(test)]
+impl DbConnection {
+    pub async fn test_without_migrations() -> Self {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("sqlite.db");
+        std::fs::write(&path, "").unwrap();
+        let con_string = format!("sqlite://{}", path.display());
+        let mut db = DbConnection::new(&con_string)
+            .await
+            .expect("Failed to create test database");
+        db.temp_dir = Arc::new(Some(temp_dir));
+        db
+    }
+
+    pub async fn test() -> Self {
+        use crate::persistence::sql::migrator::Migrator;
+        let db = Self::test_without_migrations().await;
+        let migrator = Migrator::new(&db);
+        migrator.run().await.expect("Failed to run migrations");
+        db
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn test_db_connection() {
-        let db = DbConnection::test().await;
+        let db = DbConnection::test_without_migrations().await;
         assert_eq!(db.backend(), DbBackend::Sqlite);
     }
 }

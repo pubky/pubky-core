@@ -2,7 +2,7 @@ use sea_query::{ColumnDef, Expr, Query, SimpleExpr, Table};
 use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
-use crate::persistence::sql::{db_connection::DbConnection, migrations::migration::MigrationTrait};
+use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait};
 
 /// The name of the migration table to keep track of which migrations have been applied.
 const MIGRATION_TABLE: &str = "migrations";
@@ -33,7 +33,7 @@ impl<'a> Migrator<'a> {
     }
 
     /// Runs a specific list of migrations.
-    async fn run_migrations(&self, migrations: Vec<Box<dyn MigrationTrait>>) -> anyhow::Result<()> {
+    pub async fn run_migrations(&self, migrations: Vec<Box<dyn MigrationTrait>>) -> anyhow::Result<()> {
         self.create_migration_table().await?;
         let already_applied_migrations = self.get_applied_migrations().await?;
         let migrations_to_run = migrations
@@ -140,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_table() {
-        let db = DbConnection::test().await;
+        let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         let mut tx = db.pool().begin().await.unwrap();
@@ -184,7 +184,7 @@ mod tests {
             }
         }
 
-        let db = DbConnection::test().await;
+        let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(TestMigration)])
@@ -232,7 +232,7 @@ mod tests {
             }
         }
 
-        let db = DbConnection::test().await;
+        let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(TestMigration)])
@@ -265,7 +265,7 @@ mod tests {
             }
         }
 
-        let db = DbConnection::test().await;
+        let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         // Mark the migration as done
