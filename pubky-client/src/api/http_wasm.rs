@@ -1,7 +1,7 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
 use crate::Client;
-use crate::errors::{PkarrError, Result, UrlError};
+use crate::errors::{PkarrError, Result};
 use futures_lite::StreamExt;
 use pkarr::PublicKey;
 use pkarr::extra::endpoints::Endpoint;
@@ -41,11 +41,7 @@ impl Client {
         if url.scheme() == "pubky" {
             *url = Url::parse(&format!("https{}", &url.as_str()[5..]))?;
             url.set_host(Some(&format!("_pubky.{}", url.host_str().unwrap_or(""))))
-                .map_err(|_| {
-                    UrlError::InvalidStructure(
-                        "couldn't map pubky:// to https://_pubky.*".to_string(),
-                    )
-                })?;
+                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
         }
 
         let mut pubky_host = None;
@@ -93,11 +89,8 @@ impl Client {
 
             // TODO: detect loopback IPs and other equivalent to localhost
             if is_testnet_domain {
-                url.set_scheme("http").map_err(|_| {
-                    UrlError::InvalidStructure(
-                        "couldn't set scheme to http for testnet".to_string(),
-                    )
-                })?;
+                url.set_scheme("http")
+                    .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
 
                 let http_port = e
                     .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
@@ -109,19 +102,16 @@ impl Client {
                         )
                     })?;
 
-                url.set_port(Some(http_port)).map_err(|_| {
-                    UrlError::InvalidStructure("couldn't set resolved testnet port".to_string())
-                })?;
+                url.set_port(Some(http_port))
+                    .map_err(|_| url::ParseError::InvalidPort)?;
             } else if let Some(port) = e.port() {
-                url.set_port(Some(port)).map_err(|_| {
-                    UrlError::InvalidStructure("couldn't set resolved port".to_string())
-                })?;
+                url.set_port(Some(port))
+                    .map_err(|_| url::ParseError::InvalidPort)?;
             }
 
             if let Some(domain) = e.domain() {
-                url.set_host(Some(domain)).map_err(|_| {
-                    UrlError::InvalidStructure("couldn't set resolved domain".to_string())
-                })?;
+                url.set_host(Some(domain))
+                    .map_err(|_| url::ParseError::SetHostOnCannotBeABaseUrl)?;
             }
 
             log::debug!("Transformed URL to: {}", url.as_str());

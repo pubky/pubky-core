@@ -71,12 +71,13 @@ impl From<Error> for JsError {
     fn from(err: Error) -> Self {
         let mut status_code = None;
         let name = match &err {
-            Error::HttpStatus { status, .. } => {
-                status_code = Some(status.as_u16());
+            Error::Request(req_err) => {
+                if let pubky::errors::RequestError::Server { status, .. } = req_err {
+                    status_code = Some(status.as_u16());
+                }
                 "RequestError"
             }
-            Error::Http(_) | Error::HomeserverNotFound => "RequestError",
-            Error::Url(_) => "InvalidInput",
+            Error::Parse(_) => "InvalidInputError",
             Error::Authentication(_) => "AuthenticationError",
             Error::Pkarr(_) => "PkarrError",
         };

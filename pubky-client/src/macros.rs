@@ -22,7 +22,8 @@ macro_rules! handle_http_error {
                     .to_string()
             });
 
-            return Err($crate::errors::Error::HttpStatus { status, message });
+            let server_error = $crate::errors::RequestError::Server { status, message };
+            return Err($crate::errors::Error::from(server_error));
         }
     };
 }

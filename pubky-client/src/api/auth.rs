@@ -13,7 +13,7 @@ use pubky_common::{
 
 use crate::{
     Client, cross_debug,
-    errors::{AuthError, Result, UrlError},
+    errors::{AuthError, Result},
     handle_http_error,
     internal::pkarr::PublishStrategy,
 };
@@ -213,7 +213,7 @@ impl Client {
         let mut callback_url = relay.clone();
         let mut path_segments = callback_url
             .path_segments_mut()
-            .map_err(|_| UrlError::InvalidStructure("Relay URL cannot be a base".to_string()))?;
+            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
 
         path_segments.pop_if_empty();
         let channel_id = engine.encode(hash(&client_secret).as_bytes());
@@ -261,9 +261,9 @@ impl Client {
             engine.encode(client_secret)
         ))?;
 
-        let mut segments = relay.path_segments_mut().map_err(|_| {
-            UrlError::InvalidStructure("The http-relay URL cannot be used as a base.".to_string())
-        })?;
+        let mut segments = relay
+            .path_segments_mut()
+            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
 
         // remove trailing slash if any.
         segments.pop_if_empty();
@@ -336,11 +336,9 @@ impl Client {
         }?;
 
         let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, client_secret)
-            .map_err(|e| AuthError::Crypto(e.to_string()))?;
+        let token_bytes = decrypt(&encrypted_token, client_secret)?;
 
-        let token = AuthToken::verify(&token_bytes)
-            .map_err(|e| AuthError::VerificationFailed(e.to_string()))?;
+        let token = AuthToken::verify(&token_bytes)?;
 
         if !token.capabilities().is_empty() {
             self.signin_with_authtoken(&token).await?;

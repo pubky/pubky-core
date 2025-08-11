@@ -35,16 +35,6 @@ impl PkarrError {
     }
 }
 
-// --- Consolidated URL Error ---
-#[derive(Debug, Error)]
-pub enum UrlError {
-    #[error("Failed to parse URL: {0}")]
-    Parse(#[from] url::ParseError),
-
-    #[error("Invalid URL structure: {0}")]
-    InvalidStructure(String),
-}
-
 // --- Consolidated Authentication Error ---
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -52,10 +42,10 @@ pub enum AuthError {
     Session(#[from] pubky_common::session::Error),
 
     #[error("Token verification failed: {0}")]
-    VerificationFailed(String),
+    VerificationFailed(#[from] pubky_common::auth::Error),
 
     #[error("Cryptography error: {0}")]
-    Crypto(String),
+    DecryptError(#[from] pubky_common::crypto::DecryptError),
 
     #[error("General authentication error: {0}")]
     Validation(String),
@@ -64,29 +54,32 @@ pub enum AuthError {
     RequestExpired,
 }
 
-// --- The Main Operational Error Enum ---
+// --- Consolidated Request Error ---
 #[derive(Debug, Error)]
-pub enum Error {
-    #[error("HTTP request failed with status {status}: {message}")]
-    HttpStatus {
+pub enum RequestError {
+    #[error("HTTP transport error: {0}")]
+    Transport(#[from] reqwest::Error),
+    #[error("Server responded with an error: {status} - {message}")]
+    Server {
         status: reqwest::StatusCode,
         message: String,
     },
+}
 
-    #[error("HTTP transport error")]
-    Http(#[from] reqwest::Error),
+// --- The Main Operational Error Enum ---
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Request failed: {0}")]
+    Request(#[from] RequestError),
 
     #[error("Pkarr operation failed: {0}")]
     Pkarr(#[from] PkarrError),
 
-    #[error("URL error: {0}")]
-    Url(#[from] UrlError),
+    #[error("Failed to parse URL: {0}")]
+    Parse(#[from] url::ParseError),
 
     #[error("Authentication error: {0}")]
     Authentication(#[from] AuthError),
-
-    #[error("Homeserver not found for the given public key")]
-    HomeserverNotFound,
 }
 
 /// A specialized `Result` type for `pubky` operations.
@@ -110,8 +103,10 @@ impl_from_for_error!(pkarr::errors::PublishError, Error::Pkarr);
 impl_from_for_error!(pkarr::errors::QueryError, Error::Pkarr);
 impl_from_for_error!(pkarr::dns::SimpleDnsError, Error::Pkarr);
 
-// URL Errors
-impl_from_for_error!(url::ParseError, Error::Url);
-
 // Auth Errors
 impl_from_for_error!(pubky_common::session::Error, Error::Authentication);
+impl_from_for_error!(pubky_common::auth::Error, Error::Authentication);
+impl_from_for_error!(pubky_common::crypto::DecryptError, Error::Authentication);
+
+// Request Errors
+impl_from_for_error!(reqwest::Error, Error::Request);

@@ -9,7 +9,7 @@
 
 mod api;
 mod client;
-mod errors;
+pub mod errors;
 mod internal;
 mod macros;
 
