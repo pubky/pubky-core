@@ -9,21 +9,3 @@ macro_rules! cross_debug {
         println!($($arg)*);
     };
 }
-
-#[macro_export]
-macro_rules! handle_http_error {
-    ($response:expr) => {
-        if !$response.status().is_success() {
-            let status = $response.status();
-            let message = $response.text().await.unwrap_or_else(|_| {
-                status
-                    .canonical_reason()
-                    .unwrap_or("Unknown Error")
-                    .to_string()
-            });
-
-            let server_error = $crate::errors::RequestError::Server { status, message };
-            return Err($crate::errors::Error::from(server_error));
-        }
-    };
-}

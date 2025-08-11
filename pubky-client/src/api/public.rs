@@ -1,6 +1,6 @@
 use reqwest::{IntoUrl, Method};
 
-use crate::{Client, errors::Result, handle_http_error};
+use crate::{Client, api::auth::check_http_status, errors::Result};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
@@ -106,7 +106,7 @@ impl<'a> ListBuilder<'a> {
             .send()
             .await?;
 
-        handle_http_error!(response);
+        let response = check_http_status(response).await?;
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;

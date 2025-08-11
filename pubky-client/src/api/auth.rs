@@ -1,5 +1,5 @@
 use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
-use reqwest::{IntoUrl, Method, StatusCode};
+use reqwest::{IntoUrl, Method, Response, StatusCode};
 use std::collections::HashMap;
 use url::Url;
 
@@ -12,9 +12,8 @@ use pubky_common::{
 };
 
 use crate::{
-    Client, cross_debug,
-    errors::{AuthError, Result},
-    handle_http_error,
+    Client, Error, cross_debug,
+    errors::{AuthError, RequestError, Result},
     internal::pkarr::PublishStrategy,
 };
 
@@ -55,7 +54,7 @@ impl Client {
             .await?;
 
         // 5) Check for non-2xx status codes
-        handle_http_error!(response);
+        let response = check_http_status(response).await?;
 
         // 6) Publish the homeserver record
         self.publish_homeserver(
@@ -90,7 +89,7 @@ impl Client {
             return Ok(None);
         }
 
-        handle_http_error!(response);
+        let response = check_http_status(response).await?;
 
         let bytes = response.bytes().await?;
 
@@ -105,7 +104,7 @@ impl Client {
             .send()
             .await?;
 
-        handle_http_error!(response);
+        check_http_status(response).await?;
 
         #[cfg(not(target_arch = "wasm32"))]
         self.cookie_store.delete_session_after_signout(pubky);
@@ -227,7 +226,7 @@ impl Client {
             .send()
             .await?;
 
-        handle_http_error!(response);
+        check_http_status(response).await?;
 
         Ok(())
     }
@@ -240,7 +239,7 @@ impl Client {
             .send()
             .await?;
 
-        handle_http_error!(response);
+        let response = check_http_status(response).await?;
 
         let bytes = response.bytes().await?;
 
@@ -402,6 +401,28 @@ impl AuthRequest {
             Ok(result_from_task) => result_from_task,
             Err(_) => Err(AuthError::RequestExpired.into()),
         }
+    }
+}
+
+/// Checks an HTTP response for a success status code.
+///
+/// If the status is successful (2xx), the original response is returned.
+/// If the status is an error (4xx or 5xx), the response body is consumed
+/// to create a `PubkyError::Request(RequestError::Server)` and returned as an `Err`.
+pub async fn check_http_status(response: Response) -> Result<Response> {
+    if !response.status().is_success() {
+        let status = response.status();
+        let message = response.text().await.unwrap_or_else(|_| {
+            status
+                .canonical_reason()
+                .unwrap_or("Unknown Error")
+                .to_string()
+        });
+
+        let server_error = RequestError::Server { status, message };
+        Err(Error::from(server_error))
+    } else {
+        Ok(response)
     }
 }
 
