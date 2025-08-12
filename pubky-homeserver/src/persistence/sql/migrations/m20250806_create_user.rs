@@ -39,7 +39,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
             )
             .col(
                 ColumnDef::new(User::CreatedAt)
-                    .timestamp()
+                    .date_time()
                     .not_null()
                     .default(Expr::current_timestamp()),
             )
@@ -104,7 +104,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_migration() {
         let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);

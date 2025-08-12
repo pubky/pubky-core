@@ -128,7 +128,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_user() {
         let db = DbConnection::test().await;
         let user_repo = UserRepository::new(&db);
@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(user.used_bytes, 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_update_user() {
         let db = DbConnection::test().await;
         let user_repo = UserRepository::new(&db);
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(updated_user.used_bytes, 10);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_delete_user() {
         let db = DbConnection::test().await;
         let user_repo = UserRepository::new(&db);
