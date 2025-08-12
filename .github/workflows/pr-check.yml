@@ -38,18 +38,18 @@ jobs:
 
   test:
     services:
-    postgres:
-      image: postgres:16-alpine          # official image
-      env:
-        POSTGRES_USER: test_user
-        POSTGRES_PASSWORD: test_pass
-        POSTGRES_DB: test_db
-      ports: ['5432:5432']                # optional – makes it reachable on localhost
-      options: >-                         # give the container a health check
-        --health-cmd="pg_isready -U test_user"
-        --health-interval=5s
-        --health-timeout=5s
-        --health-retries=5
+      postgres:
+        image: postgres:16-alpine          # official image
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_db
+        ports: ['5432:5432']                # optional – makes it reachable on localhost
+        options: >-                         # give the container a health check
+          --health-cmd="pg_isready -U test_user"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
 
     env:
       # Your code can read these, or just use the defaults above
