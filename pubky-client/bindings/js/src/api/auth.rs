@@ -106,7 +106,7 @@ impl Client {
                 return Err(JsError {
                     name: "HomeserverNotFound".to_string(),
                     message: "No homeserver found for the given public key.".to_string(),
-                    status_code: None,
+                    data: None,
                 });
             }
         };

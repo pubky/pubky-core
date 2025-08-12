@@ -33,7 +33,7 @@ pub enum PubkyErrorName {
 ///
 /// @property name - A machine-readable error code from {@link PubkyErrorName}. Use this for programmatic error handling.
 /// @property message - A human-readable, descriptive error message suitable for logging.
-/// @property statusCode - If the error was an HTTP error, this field contains the HTTP status code.
+/// @property data - An optional payload containing structured context. If the error was an HTTP error, this field contains the HTTP status code.
 ///
 /// @example
 /// ```typescript
@@ -53,7 +53,7 @@ pub struct PubkyError {
     pub name: PubkyErrorName,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status_code: Option<u16>,
+    pub data: Option<serde_json::Value>,
 }
 
 // --- Rust-to-JavaScript Error Conversion Pipeline ---
@@ -63,17 +63,17 @@ pub struct PubkyError {
 pub struct JsError {
     pub name: String,
     pub message: String,
-    pub status_code: Option<u16>,
+    pub data: Option<serde_json::Value>,
 }
 
 /// Converts a native `pubky::Error` into a `JsError`.
 impl From<Error> for JsError {
     fn from(err: Error) -> Self {
-        let mut status_code = None;
+        let mut data = None;
         let name = match &err {
-            Error::Request(req_err) => {
-                if let pubky::errors::RequestError::Server { status, .. } = req_err {
-                    status_code = Some(status.as_u16());
+            PubkyError::Request(req_err) => {
+                if let RequestError::Server { status, .. } = req_err {
+                    data = Some(serde_json::json!({ "statusCode": status.as_u16() }));
                 }
                 "RequestError"
             }
@@ -85,7 +85,7 @@ impl From<Error> for JsError {
         Self {
             name: name.to_string(),
             message: err.to_string(),
-            status_code,
+            data,
         }
     }
 }
@@ -96,7 +96,7 @@ impl From<BuildError> for JsError {
         Self {
             name: "InternalError".to_string(),
             message: err.to_string(),
-            status_code: None,
+            data: None,
         }
     }
 }
@@ -107,7 +107,7 @@ impl From<RecoveryFileError> for JsError {
         Self {
             name: "ClientStateError".to_string(),
             message: err.to_string(),
-            status_code: None,
+            data: None,
         }
     }
 }
@@ -118,7 +118,7 @@ impl From<url::ParseError> for JsError {
         Self {
             name: "InvalidInput".to_string(),
             message: err.to_string(),
-            status_code: None,
+            data: None,
         }
     }
 }
@@ -129,7 +129,7 @@ impl From<PublicKeyError> for JsError {
         Self {
             name: "InvalidInput".to_string(),
             message: err.to_string(),
-            status_code: None,
+            data: None,
         }
     }
 }
@@ -140,7 +140,7 @@ impl From<CapabilitiesError> for JsError {
         Self {
             name: "InvalidInput".to_string(),
             message: err.to_string(),
-            status_code: None,
+            data: None,
         }
     }
 }
@@ -154,7 +154,7 @@ impl From<JsValue> for JsError {
         Self {
             name: "InternalError".to_string(),
             message,
-            status_code: None,
+            data: None,
         }
     }
 }
