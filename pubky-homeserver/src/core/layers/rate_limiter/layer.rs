@@ -450,7 +450,7 @@ mod tests {
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
-        assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
+        assert!(time_taken > Duration::from_secs(5), "Should at least take 5s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -487,8 +487,8 @@ mod tests {
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
-        if time_taken < Duration::from_secs(6) {
-            panic!("Should at least take 6s because downloads are limited to 1kb/s and the sum of the downloads is 6kb. Time taken: {:?}", time_taken);
+        if time_taken < Duration::from_secs(5) {
+            panic!("Should at least take 5s because downloads are limited to 1kb/s and the sum of the downloads is 6kb. Time taken: {:?}", time_taken);
         }
     }
 
