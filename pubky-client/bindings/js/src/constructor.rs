@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::js_error::JsError;
+use crate::js_error::{PubkyError, PubkyErrorName};
 
 use super::js_result::JsResult;
 
@@ -86,8 +86,8 @@ impl Client {
                 });
 
                 if let Some(error_message) = relay_set_error {
-                    return Err(JsError {
-                        name: "InvalidRelayUrl".to_string(),
+                    return Err(PubkyError {
+                        name: PubkyErrorName::InvalidInputError,
                         message: error_message,
                         data: None,
                     });

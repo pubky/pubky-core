@@ -5,7 +5,7 @@ use url::Url;
 use pubky_common::capabilities::Capabilities;
 
 use crate::{
-    js_error::JsError,
+    js_error::{PubkyError, PubkyErrorName},
     js_result::JsResult,
     wrappers::{
         keys::{Keypair, PublicKey},
@@ -103,8 +103,8 @@ impl Client {
         let hs_z32 = match self.0.get_homeserver(public_key.as_inner()).await {
             Some(hs_z32) => hs_z32,
             None => {
-                return Err(JsError {
-                    name: "HomeserverNotFound".to_string(),
+                return Err(PubkyError {
+                    name: PubkyErrorName::PkarrError,
                     message: "No homeserver found for the given public key.".to_string(),
                     data: None,
                 });

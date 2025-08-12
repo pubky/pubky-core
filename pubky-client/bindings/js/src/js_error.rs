@@ -3,21 +3,25 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
 use pkarr::errors::PublicKeyError;
-use pubky::{BuildError, Error};
-use pubky_common::{
-    capabilities::Error as CapabilitiesError, recovery_file::Error as RecoveryFileError,
-};
+use pubky::errors::{BuildError, Error, RequestError};
+use pubky_common::capabilities::Error as CapabilitiesError;
+use pubky_common::recovery_file::Error as RecoveryFileError;
+
+// --- TypeScript Documentation & Schema ---
 
 /// A union type of all possible machine-readable codes for the `name` property
 /// of a {@link PubkyError}.
-#[derive(Tsify, Serialize, Deserialize)]
+///
+/// This provides a simplified, actionable set of error categories for developers
+/// to handle in their code.
+#[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub enum PubkyErrorName {
     /// A network or server request failed. Check the network connection or retry.
     RequestError,
     /// The error was caused by invalid user input, such as a malformed URL.
-    InvalidInput,
+    InvalidInputError,
     /// An error occurred during login, signup, or session validation.
     AuthenticationError,
     /// A failure in the underlying Pkarr DHT protocol.
@@ -33,7 +37,7 @@ pub enum PubkyErrorName {
 ///
 /// @property name - A machine-readable error code from {@link PubkyErrorName}. Use this for programmatic error handling.
 /// @property message - A human-readable, descriptive error message suitable for logging.
-/// @property data - An optional payload containing structured context. If the error was an HTTP error, this field contains the HTTP status code.
+/// @property data - An optional payload containing structured context, such as an HTTP status code.
 ///
 /// @example
 /// ```typescript
@@ -46,7 +50,7 @@ pub enum PubkyErrorName {
 ///   }
 /// }
 /// ```
-#[derive(Tsify, Serialize, Deserialize)]
+#[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct PubkyError {
@@ -58,121 +62,106 @@ pub struct PubkyError {
 
 // --- Rust-to-JavaScript Error Conversion Pipeline ---
 
-/// An intermediate representation for converting Rust errors into a structured JS exception.
-#[derive(Debug)]
-pub struct JsError {
-    pub name: String,
-    pub message: String,
-    pub data: Option<serde_json::Value>,
-}
-
-/// Converts a native `pubky::Error` into a `JsError`.
-impl From<Error> for JsError {
+/// Converts a native `pubky::Error` into a `PubkyError`.
+impl From<Error> for PubkyError {
     fn from(err: Error) -> Self {
         let mut data = None;
         let name = match &err {
-            PubkyError::Request(req_err) => {
+            Error::Request(req_err) => {
                 if let RequestError::Server { status, .. } = req_err {
                     data = Some(serde_json::json!({ "statusCode": status.as_u16() }));
                 }
-                "RequestError"
+                PubkyErrorName::RequestError
             }
-            Error::Parse(_) => "InvalidInputError",
-            Error::Authentication(_) => "AuthenticationError",
-            Error::Pkarr(_) => "PkarrError",
+            Error::Parse(_) => PubkyErrorName::InvalidInputError,
+            Error::Authentication(_) => PubkyErrorName::AuthenticationError,
+            Error::Pkarr(_) => PubkyErrorName::PkarrError,
         };
 
         Self {
-            name: name.to_string(),
+            name,
             message: err.to_string(),
             data,
         }
     }
 }
 
-/// Converts a `pubky::BuildError` into a `JsError`.
-impl From<BuildError> for JsError {
+/// Converts a `pubky::BuildError` into a `PubkyError`.
+impl From<BuildError> for PubkyError {
     fn from(err: BuildError) -> Self {
         Self {
-            name: "InternalError".to_string(),
+            name: PubkyErrorName::InternalError,
             message: err.to_string(),
             data: None,
         }
     }
 }
 
-/// Converts a `pubky_common::recovery_file::Error` into a `JsError`.
-impl From<RecoveryFileError> for JsError {
+/// Converts a `pubky_common::recovery_file::Error` into a `PubkyError`.
+impl From<RecoveryFileError> for PubkyError {
     fn from(err: RecoveryFileError) -> Self {
         Self {
-            name: "ClientStateError".to_string(),
+            name: PubkyErrorName::ClientStateError,
             message: err.to_string(),
             data: None,
         }
     }
 }
 
-/// Converts a `url::ParseError` into a `JsError`.
-impl From<url::ParseError> for JsError {
-    fn from(err: url::ParseError) -> Self {
-        Self {
-            name: "InvalidInput".to_string(),
-            message: err.to_string(),
-            data: None,
-        }
-    }
-}
-
-/// Converts a `pkarr::PublicKeyError` into a `JsError`.
-impl From<PublicKeyError> for JsError {
-    fn from(err: PublicKeyError) -> Self {
-        Self {
-            name: "InvalidInput".to_string(),
-            message: err.to_string(),
-            data: None,
-        }
-    }
-}
-
-/// Converts a `pubky_common::capabilities::Error` into a `JsError`.
-impl From<CapabilitiesError> for JsError {
+/// Converts a `pubky_common::capabilities::Error` into a `PubkyError`.
+impl From<CapabilitiesError> for PubkyError {
     fn from(err: CapabilitiesError) -> Self {
         Self {
-            name: "InvalidInput".to_string(),
+            name: PubkyErrorName::InvalidInputError,
             message: err.to_string(),
             data: None,
         }
     }
 }
 
-/// Converts a generic `JsValue` error into a `JsError`.
-impl From<JsValue> for JsError {
+/// Converts a `url::ParseError` into a `PubkyError`.
+impl From<url::ParseError> for PubkyError {
+    fn from(err: url::ParseError) -> Self {
+        Self {
+            name: PubkyErrorName::InvalidInputError,
+            message: err.to_string(),
+            data: None,
+        }
+    }
+}
+
+/// Converts a `pkarr::PublicKeyError` into a `PubkyError`.
+impl From<PublicKeyError> for PubkyError {
+    fn from(err: PublicKeyError) -> Self {
+        Self {
+            name: PubkyErrorName::InvalidInputError,
+            message: err.to_string(),
+            data: None,
+        }
+    }
+}
+
+/// Converts a generic `JsValue` error into a `PubkyError`.
+impl From<JsValue> for PubkyError {
     fn from(err: JsValue) -> Self {
         let message = err
             .as_string()
             .unwrap_or_else(|| "An unknown JavaScript error occurred.".to_string());
         Self {
-            name: "InternalError".to_string(),
+            name: PubkyErrorName::InternalError,
             message,
             data: None,
         }
     }
 }
 
-/// Converts `JsError` into a structured `JsValue` for throwing as a JavaScript exception.
-impl From<JsError> for JsValue {
-    fn from(err: JsError) -> Self {
-        let obj = js_sys::Object::new();
-
-        js_sys::Reflect::set(&obj, &"name".into(), &err.name.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"message".into(), &err.message.into()).unwrap();
-
-        if let Some(status_code) = err.status_code {
-            if let Ok(js_status_code) = serde_wasm_bindgen::to_value(&status_code) {
-                js_sys::Reflect::set(&obj, &"status_code".into(), &js_status_code).unwrap();
-            }
+/// Converts a simple string slice error message into a `PubkyError`.
+impl From<&str> for PubkyError {
+    fn from(err: &str) -> Self {
+        Self {
+            name: PubkyErrorName::InternalError,
+            message: err.to_string(),
+            data: None,
         }
-
-        obj.into()
     }
 }
