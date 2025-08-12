@@ -205,7 +205,7 @@ mod tests {
 
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -213,13 +213,13 @@ mod tests {
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .expect_success()
             .await;
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .add_header(
                 header::IF_MODIFIED_SINCE,
                 response.headers().get(header::LAST_MODIFIED).unwrap(),
@@ -237,7 +237,7 @@ mod tests {
 
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -245,13 +245,13 @@ mod tests {
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .expect_success()
             .await;
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .add_header(
                 header::IF_NONE_MATCH,
                 response.headers().get(header::ETAG).unwrap(),
@@ -269,7 +269,7 @@ mod tests {
 
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -277,7 +277,7 @@ mod tests {
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .await;
 
         response.assert_header(header::CONTENT_TYPE, "image/png");
@@ -291,7 +291,7 @@ mod tests {
 
         server
             .put("/pub/text.txt")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -299,7 +299,7 @@ mod tests {
 
         let response = server
             .get("/pub/text.txt")
-            .add_header("host", public_key.to_string())
+            .add_query_param("pubky-host", public_key.to_string())
             .await;
 
         response.assert_header(header::CONTENT_TYPE, "text/plain");
