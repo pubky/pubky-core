@@ -152,9 +152,10 @@ impl Client {
         let mut url = Url::parse(original_url).expect("Invalid url in inner_request");
 
         if let Some(pubky_host) = self.prepare_request(&mut url).await {
+            url.query_pairs_mut().append_pair("pubky-host", &pubky_host);
+
             self.http
                 .request(method, url.clone())
-                .header::<&str, &str>("pubky-host", &pubky_host)
                 .fetch_credentials_include()
         } else {
             self.http
