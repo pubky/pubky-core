@@ -1,6 +1,5 @@
 //! Wasm bindings for the /pub/ api
 
-use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::js_result::JsResult;
@@ -25,7 +24,7 @@ impl Client {
         reverse: Option<bool>,
         limit: Option<u16>,
         shallow: Option<bool>,
-    ) -> JsResult<Array> {
+    ) -> JsResult<Vec<String>> {
         let mut builder = self
             .0
             .list(url)?
@@ -38,12 +37,6 @@ impl Client {
         }
 
         let urls = builder.send().await?;
-
-        let js_array = Array::new();
-        for url in urls {
-            js_array.push(&JsValue::from_str(&url));
-        }
-
-        Ok(js_array)
+        Ok(urls)
     }
 }

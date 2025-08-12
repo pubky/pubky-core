@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
@@ -37,7 +39,7 @@ pub enum PubkyErrorName {
 ///
 /// @property name - A machine-readable error code from {@link PubkyErrorName}. Use this for programmatic error handling.
 /// @property message - A human-readable, descriptive error message suitable for logging.
-/// @property data - An optional payload containing structured context, such as an HTTP status code.
+/// @property data - An optional payload containing structured context for an error. For a `RequestError`, this may contain an object with the HTTP status code, e.g., `{ statusCode: 404 }`.
 ///
 /// @example
 /// ```typescript
@@ -68,19 +70,19 @@ pub struct PubkyJsError {
 // --- Constructors for Ergonomics ---
 impl PubkyJsError {
     /// Creates a new error with a name and message.
-    pub fn new(name: PubkyErrorName, message: String) -> Self {
+    pub fn new<T: Display>(name: PubkyErrorName, message: T) -> Self {
         Self {
             name,
-            message,
+            message: message.to_string(),
             data: JsValue::UNDEFINED,
         }
     }
 
     /// Creates a new error with a name, message, and structured data payload.
-    pub fn new_with_data(name: PubkyErrorName, message: String, data: JsValue) -> Self {
+    pub fn new_with_data<T: Display>(name: PubkyErrorName, message: T, data: JsValue) -> Self {
         Self {
             name,
-            message,
+            message: message.to_string(),
             data,
         }
     }
@@ -112,21 +114,21 @@ impl From<pubky::Error> for PubkyJsError {
             pubky::Error::Pkarr(_) => PubkyErrorName::PkarrError,
         };
 
-        Self::new_with_data(name, err.to_string(), data)
+        Self::new_with_data(name, err, data)
     }
 }
 
 /// Converts a `pubky::BuildError` into a `PubkyJsError`.
 impl From<BuildError> for PubkyJsError {
     fn from(err: BuildError) -> Self {
-        Self::new(PubkyErrorName::InternalError, err.to_string())
+        Self::new(PubkyErrorName::InternalError, err)
     }
 }
 
 /// Converts a `pubky_common::recovery_file::Error` into a `PubkyJsError`.
 impl From<RecoveryFileError> for PubkyJsError {
     fn from(err: RecoveryFileError) -> Self {
-        Self::new(PubkyErrorName::ClientStateError, err.to_string())
+        Self::new(PubkyErrorName::ClientStateError, err)
     }
 }
 
@@ -144,14 +146,14 @@ impl From<CapabilitiesError> for PubkyJsError {
 /// Converts a `url::ParseError` into a `PubkyJsError`.
 impl From<url::ParseError> for PubkyJsError {
     fn from(err: url::ParseError) -> Self {
-        Self::new(PubkyErrorName::InvalidInput, err.to_string())
+        Self::new(PubkyErrorName::InvalidInput, err)
     }
 }
 
 /// Converts a `pkarr::PublicKeyError` into a `PubkyJsError`.
 impl From<PublicKeyError> for PubkyJsError {
     fn from(err: PublicKeyError) -> Self {
-        Self::new(PubkyErrorName::InvalidInput, err.to_string())
+        Self::new(PubkyErrorName::InvalidInput, err)
     }
 }
 
