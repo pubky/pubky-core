@@ -39,12 +39,13 @@ impl MigrationTrait for M20250806CreateUserMigration {
             )
             .col(
                 ColumnDef::new(User::CreatedAt)
-                    .date_time()
+                    .timestamp()
                     .not_null()
-                    .default(Expr::current_timestamp()),
+                    .default(Expr::cust("now()")),
             )
             .to_owned();
         let query = db.build_schema(statement);
+        println!("query: {}", query);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
         Ok(())
     }
@@ -106,6 +107,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_migration() {
+        std::env::set_var("TEST_PG_CONNECTION_STRING", "postgres://localhost:5432/postgres");
         let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator

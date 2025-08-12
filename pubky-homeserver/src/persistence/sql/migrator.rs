@@ -136,6 +136,8 @@ impl<'a> Migrator<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::persistence::sql::connection_string::DbBackend;
+
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -193,10 +195,22 @@ mod tests {
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
         assert_eq!(applied_migrations, vec!["test_migration"]);
 
-        sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
-            .fetch_one(db.pool())
-            .await
-            .expect("Table should exist");
+        match db.backend() {
+            DbBackend::Sqlite => {
+                sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
+                .fetch_one(db.pool())
+                .await
+                .expect("Table should exist");
+            }
+            DbBackend::Postgres => {
+                sqlx::query("SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename='test_table';")
+                .fetch_one(db.pool())
+                .await
+                .expect("Table should exist");
+            }
+        };
+
+
     }
 
     #[tokio::test(flavor = "multi_thread")]
