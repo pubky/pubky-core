@@ -21,7 +21,7 @@ pub enum PubkyErrorName {
     /// A network or server request failed. Check the network connection or retry.
     RequestError,
     /// The error was caused by invalid user input, such as a malformed URL.
-    InvalidInputError,
+    InvalidInput,
     /// An error occurred during login, signup, or session validation.
     AuthenticationError,
     /// A failure in the underlying Pkarr DHT protocol.

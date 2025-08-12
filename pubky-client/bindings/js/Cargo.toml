@@ -26,12 +26,12 @@ crate-type = ["cdylib"]
 [dependencies]
 wasm-bindgen = "0.2.100"
 console_log = { version = "1.0.0", features = ["color"] }
-log = "0.4.25"
+log = "0.4.27"
 js-sys = "0.3.77"
 wasm-bindgen-futures = "0.4.50"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde-wasm-bindgen = "0.4"
+serde-wasm-bindgen = "0.6"
 tsify = "0.5.5"
 pubky = { path = "../../../pubky-client", default-features = false }
 pkarr = { workspace = true, features = ["relays"] }
@@ -43,4 +43,4 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "ServiceWorkerGlobalScope",
 ] }
 url = "2.5.4"
-getrandom = { version = "0.3.1", features = ["wasm_js"] }
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
