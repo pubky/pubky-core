@@ -59,7 +59,7 @@ impl Client {
             return Ok(());
         }
 
-        // 5) Retry loop: up to 3 attempts, 1s back-off, only on specific QueryErrors.
+        // 5) Retry loop: up to 3 attempts, only on specific QueryErrors.
         for attempt in 1..=3 {
             match self
                 .publish_homeserver_inner(keypair, &host_str, existing.clone())

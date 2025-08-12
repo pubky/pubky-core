@@ -163,12 +163,7 @@ impl Client {
         keypair: &Keypair,
         pubkyauth_url: &T,
     ) -> Result<()> {
-        let pubkyauth_url = Url::parse(
-            pubkyauth_url
-                .as_str()
-                .replace("pubkyauth_url", "http")
-                .as_str(),
-        )?;
+        let pubkyauth_url = Url::parse(pubkyauth_url.as_str())?;
 
         let query_params: HashMap<String, String> =
             pubkyauth_url.query_pairs().into_owned().collect();
