@@ -86,7 +86,7 @@ impl<'a> UserRepository<'a> {
 /// Iden for the user table.
 /// Basically a list of columns in the user table
 #[derive(Iden)]
-enum UserIden {
+pub enum UserIden {
     Id,
     CreatedAt,
     Disabled,
