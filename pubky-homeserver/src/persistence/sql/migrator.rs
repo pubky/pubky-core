@@ -119,7 +119,7 @@ impl<'a> Migrator<'a> {
     /// This is done by inserting a row into the migrations table with the migration name.
     async fn mark_migration_as_done(
         &self,
-        tx: &mut Transaction<'static, sqlx::Any>,
+        tx: &mut Transaction<'static, sqlx::Postgres>,
         migration_name: &str,
     ) -> anyhow::Result<()> {
         let statement = Query::insert()
@@ -136,8 +136,6 @@ impl<'a> Migrator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::sql::connection_string::DbBackend;
-
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -167,7 +165,7 @@ mod tests {
             async fn up(
                 &self,
                 db: &DbConnection,
-                tx: &mut Transaction<'static, sqlx::Any>,
+                tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 let statement = Table::create()
                     .table("test_table")
@@ -195,20 +193,10 @@ mod tests {
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
         assert_eq!(applied_migrations, vec!["test_migration"]);
 
-        match db.backend() {
-            DbBackend::Sqlite => {
-                sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
+        sqlx::query("SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename='test_table';")
                 .fetch_one(db.pool())
                 .await
                 .expect("Table should exist");
-            }
-            DbBackend::Postgres => {
-                sqlx::query("SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename='test_table';")
-                .fetch_one(db.pool())
-                .await
-                .expect("Table should exist");
-            }
-        };
 
 
     }
@@ -225,7 +213,7 @@ mod tests {
             async fn up(
                 &self,
                 db: &DbConnection,
-                tx: &mut Transaction<'static, sqlx::Any>,
+                tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 // Create table
                 let statement = Table::create()
@@ -273,7 +261,7 @@ mod tests {
             async fn up(
                 &self,
                 _: &DbConnection,
-                _: &mut Transaction<'static, sqlx::Any>,
+                _: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 Ok(())
             }

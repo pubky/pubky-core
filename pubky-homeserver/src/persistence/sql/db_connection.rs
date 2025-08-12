@@ -1,40 +1,24 @@
 #[cfg(test)]
+use std::sync::Arc;
+
+#[cfg(test)]
 use async_dropper::AsyncDrop;
 #[cfg(test)]
 use async_dropper::AsyncDropper;
 #[cfg(test)]
 use async_trait::async_trait;
-use sea_query::{
-    PostgresQueryBuilder, QueryBuilder, SchemaBuilder, SchemaStatementBuilder, SqliteQueryBuilder,
-};
-use sea_query_binder::{SqlxBinder, SqlxValues};
-use sqlx::{any::install_default_drivers, AnyPool};
-use std::sync::Arc;
-#[cfg(test)]
-use tempfile::TempDir;
+use sea_query::PostgresQueryBuilder;
+use sea_query::SchemaStatementBuilder;
+use sea_query_binder::SqlxBinder;
+use sea_query_binder::{SqlxValues};
+use sqlx::postgres::PgPool;
 
-use crate::persistence::sql::connection_string::{ConnectionString, DbBackend};
-
+use crate::persistence::sql::connection_string::ConnectionString;
 
 #[derive(Clone)]
 pub struct DbConnection {
     /// Connection pool to the database
-    pool: sqlx::Pool<sqlx::Any>,
-    /// Database backend type (postgres, sqlite, mysql, etc.)
-    database_type: DbBackend,
-
-    /// Schema builder for the database backend
-    /// Used to build schema statements
-    schema_builder: Arc<Box<dyn SchemaBuilder + Send + Sync>>,
-
-    /// Query builder for the database backend
-    /// Used to build query statements
-    query_builder: Arc<Box<dyn QueryBuilder + Send + Sync>>,
-
-    /// Temporary directory for sqlite test database
-    /// As soon as temp_dir goes out of scope, the database is deleted
-    #[cfg(test)]
-    temp_dir: Arc<Option<TempDir>>,
+    pool: PgPool,
 
     /// Test helper for postgres to drop the test database after the test
     #[cfg(test)]
@@ -43,52 +27,17 @@ pub struct DbConnection {
 
 impl DbConnection {
     pub async fn new(con_string: &ConnectionString) -> anyhow::Result<Self> {
-        install_default_drivers();
-        if con_string.backend() == DbBackend::Sqlite {
-            Self::create_sqlite_db_if_not_exists(con_string)?;
-        }
-        let pool: sqlx::Pool<sqlx::Any> = AnyPool::connect(con_string.as_str()).await?;
-        let schema_builder: Box<dyn SchemaBuilder + Send + Sync> = match con_string.backend() {
-            DbBackend::Postgres => Box::new(PostgresQueryBuilder::default()),
-            DbBackend::Sqlite => Box::new(SqliteQueryBuilder::default()),
-        };
-        let query_builder: Box<dyn QueryBuilder + Send + Sync> = match con_string.backend() {
-            DbBackend::Postgres => Box::new(PostgresQueryBuilder::default()),
-            DbBackend::Sqlite => Box::new(SqliteQueryBuilder::default()),
-        };
+        let pool: PgPool = PgPool::connect(con_string.as_str()).await?;
 
         Ok(Self {
             pool,
-            database_type: con_string.backend(),
-            schema_builder: Arc::new(schema_builder),
-            query_builder: Arc::new(query_builder),
-            #[cfg(test)]
-            temp_dir: Arc::new(None),
             #[cfg(test)]
             drop_pg_db_after_test: None,
         })
     }
 
-    /// Creates the sqlite database file if it does not exist
-    fn create_sqlite_db_if_not_exists(con_string: &ConnectionString) -> anyhow::Result<()> {
-        if !std::fs::exists(con_string.database_name())? {
-            tracing::info!(
-                "Creating sqlite database file at {}",
-                con_string.database_name()
-            );
-            std::fs::write(con_string.database_name(), "")?;
-        }
-
-        Ok(())
-    }
-
-    /// Get the database backend type
-    pub fn backend(&self) -> DbBackend {
-        self.database_type.clone()
-    }
-
     /// Get the connection pool
-    pub fn pool(&self) -> &sqlx::Pool<sqlx::Any> {
+    pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 
@@ -97,7 +46,7 @@ impl DbConnection {
     where
         S: SqlxBinder,
     {
-        let (query, values) = statement.build_any_sqlx(&**self.query_builder);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
         (query, values)
     }
 
@@ -106,7 +55,7 @@ impl DbConnection {
     where
         S: SchemaStatementBuilder,
     {
-        statement.build_any(&**self.schema_builder)
+        statement.build(PostgresQueryBuilder::default())
     }
 }
 
@@ -115,9 +64,9 @@ impl DbConnection {
 /// Otherwise the test will panic when the db connection is dropped
 #[cfg(test)]
 #[derive(Default)]
-struct DropPgDbAfterTest{
+struct DropPgDbAfterTest {
     db_name: String,
-    pool: Option<sqlx::Pool<sqlx::Any>>,
+    pool: Option<PgPool>,
 }
 #[cfg(test)]
 #[async_trait]
@@ -134,23 +83,14 @@ impl AsyncDrop for DropPgDbAfterTest {
     }
 }
 
+#[cfg(test)]
+const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
 
 #[cfg(test)]
 impl DbConnection {
-
-    pub async fn test_sqlite_db() -> anyhow::Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-        let path = temp_dir.path().join("sqlite.db");
-        let con_string = format!("sqlite://{}", path.display());
-        let mut db = Self::new(&ConnectionString::new(&con_string)?).await?;
-        db.temp_dir = Arc::new(Some(temp_dir));
-        Ok(db)
-    }
-
     pub async fn test_postgres_db(con_string: &ConnectionString) -> anyhow::Result<Self> {
         use uuid::Uuid;
 
-        assert_eq!(con_string.backend(), DbBackend::Postgres);
         let neutral_con = Self::new(&con_string).await?;
         let db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());
         let query = format!("CREATE DATABASE {}", db_name);
@@ -166,19 +106,20 @@ impl DbConnection {
         Ok(con)
     }
 
-    fn con_string_from_pg_test_env_var() -> Option<ConnectionString> {
-        let raw_con_string = std::env::var("TEST_PG_CONNECTION_STRING").ok()?;
-        ConnectionString::new(&raw_con_string).ok()
+    fn con_string_from_pg_test_env_var() -> ConnectionString {
+        match std::env::var("TEST_PG_CONNECTION_STRING") {
+            Ok(raw_con_string) => ConnectionString::new(&raw_con_string).unwrap(),
+            Err(_) => ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING).unwrap(),
+        }
     }
 
     /// Create a test database without running migrations
     /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
     /// If the DB_CONNECTION_STRING environment variable is set, the test database is created on the existing database
     pub async fn test_without_migrations() -> Self {
-        match Self::con_string_from_pg_test_env_var() {
-            Some(con_string) => Self::test_postgres_db(&con_string).await.unwrap(),
-            None => Self::test_sqlite_db().await.unwrap(),
-        }
+        Self::test_postgres_db(&Self::con_string_from_pg_test_env_var())
+            .await
+            .unwrap()
     }
 
     /// Create a test database and run migrations
@@ -195,24 +136,14 @@ impl DbConnection {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::sql::{connection_string::DbBackend};
-
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_sqlite_db() {
-        let db = DbConnection::test_sqlite_db().await.unwrap();
-        assert_eq!(db.backend(), DbBackend::Sqlite);
+    async fn test_pg_db_available() {
+        let _db = DbConnection::test_postgres_db(
+            &ConnectionString::new("postgres://localhost:5432/postgres").unwrap(),
+        )
+        .await
+        .unwrap();
     }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_pg_db() {
-        let db = DbConnection::test_postgres_db(&ConnectionString::new("postgres://localhost:5432/postgres").unwrap()).await.unwrap();
-        assert_eq!(db.backend(), DbBackend::Postgres);
-    }
-}
-
-
-mod test {
-
 }

@@ -1,18 +1,16 @@
 use std::{fmt::Display, str::FromStr};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum DbBackend {
-    Postgres,
-    Sqlite,
-}
-
 /// A connection string for a database
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectionString(url::Url);
 
 impl ConnectionString {
     pub fn new(con_string: &str) -> anyhow::Result<Self> {
-        Ok(Self(url::Url::parse(con_string)?))
+        let con = Self(url::Url::parse(con_string)?);
+        if !con.is_postgres() {
+            anyhow::bail!("Only postgres is supported");
+        }
+        Ok(con)
     }
 
     pub fn as_str(&self) -> &str {
@@ -23,23 +21,15 @@ impl ConnectionString {
         &self.0
     }
 
-    /// Get the database backend type
-    pub fn backend(&self) -> DbBackend {
-        match self.0.scheme() {
-            "postgres" | "postgresql" => DbBackend::Postgres,
-            "sqlite" => DbBackend::Sqlite,
-            _ => panic!("Unsupported database type"),
-        }
+    fn is_postgres(&self) -> bool {
+        self.0.scheme() == "postgres" || self.0.scheme() == "postgresql"
     }
 
     /// Get the database name
     /// For postgres, this is the database name directly
     /// For sqlite, this is the path to the database file
     pub fn database_name(&self) -> &str {
-        match self.backend() {
-            DbBackend::Postgres => self.0.path().trim_start_matches("/"),
-            DbBackend::Sqlite => self.0.path(),
-        }
+        self.0.path().trim_start_matches("/")
     }
 
     pub fn set_database_name(&mut self, db_name: &str) {

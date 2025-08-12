@@ -1,6 +1,6 @@
 use pkarr::PublicKey;
 use sea_query::{Expr, Iden, Query, SimpleExpr};
-use sqlx::{any::AnyRow, Executor, FromRow, Row};
+use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
 use crate::persistence::sql::db_connection::DbConnection;
 
@@ -21,7 +21,7 @@ impl<'a> UserRepository<'a> {
     /// Create a new user.
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Any> {
+    where E: Executor<'c, Database = sqlx::Postgres> {
         let statement =
         Query::insert().into_table(USER_TABLE)
             .columns([UserIden::Id])
@@ -40,7 +40,7 @@ impl<'a> UserRepository<'a> {
     /// Get a user by their public key.
     /// The executor can either be db.pool() or a transaction.
     pub async fn get<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Any> {
+    where E: Executor<'c, Database = sqlx::Postgres> {
         let statement = Query::select().from(USER_TABLE)
         .columns([UserIden::Id, UserIden::CreatedAt, UserIden::Disabled, UserIden::UsedBytes])
         .and_where(Expr::col(UserIden::Id).eq(public_key.to_string()))
@@ -51,11 +51,11 @@ impl<'a> UserRepository<'a> {
     }
 
     pub async fn update<'c, E>(&self, user: &UserEntity, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Any> {
+    where E: Executor<'c, Database = sqlx::Postgres> {
         let statement = Query::update()
             .table(USER_TABLE)
             .values(vec![
-                (UserIden::Disabled, SimpleExpr::Value((user.disabled as i64).into())),
+                (UserIden::Disabled, SimpleExpr::Value((user.disabled).into())),
                 (UserIden::UsedBytes, SimpleExpr::Value((user.used_bytes as i64).into())),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user.id.to_string()))
@@ -70,7 +70,7 @@ impl<'a> UserRepository<'a> {
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
     pub async fn delete<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<(), sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Any> {
+    where E: Executor<'c, Database = sqlx::Postgres> {
         let statement = Query::delete()
             .from_table(USER_TABLE)
             .and_where(Expr::col(UserIden::Id).eq(public_key.to_string()))
@@ -101,17 +101,16 @@ pub struct UserEntity {
     pub used_bytes: u64,
 }
 
-impl FromRow<'_, AnyRow> for UserEntity {
-    fn from_row(row: &AnyRow) -> Result<Self, sqlx::Error> {
+impl FromRow<'_, PgRow> for UserEntity {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id_name = UserIden::Id.to_string();
         let raw_pubkey: String = row.try_get(id_name.as_str())?;
-        let id = PublicKey::try_from(raw_pubkey.as_str()).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        let raw_disabled: i64 = row.try_get(UserIden::Disabled.to_string().as_str())?;
-        let disabled = raw_disabled != 0;
+        let id = PublicKey::try_from(raw_pubkey.as_str())
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let disabled: bool = row.try_get(UserIden::Disabled.to_string().as_str())?;
         let raw_used_bytes: i64 = row.try_get(UserIden::UsedBytes.to_string().as_str())?;
         let used_bytes = raw_used_bytes as u64;
-        let raw_created_at: String = row.try_get(UserIden::CreatedAt.to_string().as_str())?;
-        let created_at = sqlx::types::chrono::NaiveDateTime::parse_from_str(&raw_created_at, "%Y-%m-%d %H:%M:%S%.f").map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let created_at: sqlx::types::chrono::NaiveDateTime = row.try_get(UserIden::CreatedAt.to_string().as_str())?;
         Ok(UserEntity {
             id,
             created_at,

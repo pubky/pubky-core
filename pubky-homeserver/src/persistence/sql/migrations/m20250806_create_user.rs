@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, Table};
-use sqlx::{any::AnyRow, FromRow, Row, Transaction};
+use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait};
 
@@ -14,7 +14,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
     async fn up(
         &self,
         db: &DbConnection,
-        tx: &mut Transaction<'static, sqlx::Any>,
+        tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
         let statement = Table::create()
             .table(USER_TABLE)
@@ -27,9 +27,9 @@ impl MigrationTrait for M20250806CreateUserMigration {
             )
             .col(
                 ColumnDef::new(User::Disabled)
-                    .integer()
+                    .boolean()
                     .not_null()
-                    .default(0),
+                    .default(false),
             )
             .col(
                 ColumnDef::new(User::UsedBytes)
@@ -41,11 +41,10 @@ impl MigrationTrait for M20250806CreateUserMigration {
                 ColumnDef::new(User::CreatedAt)
                     .timestamp()
                     .not_null()
-                    .default(Expr::cust("now()")),
+                    .default(Expr::current_timestamp()),
             )
             .to_owned();
         let query = db.build_schema(statement);
-        println!("query: {}", query);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
         Ok(())
     }
@@ -71,22 +70,16 @@ struct UserEntity {
     pub used_bytes: u64,
 }
 
-impl FromRow<'_, AnyRow> for UserEntity {
-    fn from_row(row: &AnyRow) -> Result<Self, sqlx::Error> {
+impl FromRow<'_, PgRow> for UserEntity {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id_name = User::Id.to_string();
         let raw_pubkey: String = row.try_get(id_name.as_str())?;
         let id = PublicKey::try_from(raw_pubkey.as_str())
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        let raw_disabled: i64 = row.try_get(User::Disabled.to_string().as_str())?;
-        let disabled = raw_disabled != 0;
+        let disabled: bool = row.try_get(User::Disabled.to_string().as_str())?;
         let raw_used_bytes: i64 = row.try_get(User::UsedBytes.to_string().as_str())?;
         let used_bytes = raw_used_bytes as u64;
-        let raw_created_at: String = row.try_get(User::CreatedAt.to_string().as_str())?;
-        let created_at = sqlx::types::chrono::NaiveDateTime::parse_from_str(
-            &raw_created_at,
-            "%Y-%m-%d %H:%M:%S%.f",
-        )
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let created_at: sqlx::types::chrono::NaiveDateTime = row.try_get(User::CreatedAt.to_string().as_str())?;
         Ok(UserEntity {
             id,
             created_at,
