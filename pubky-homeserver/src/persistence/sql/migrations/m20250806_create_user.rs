@@ -100,7 +100,6 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_migration() {
-        std::env::set_var("TEST_PG_CONNECTION_STRING", "postgres://localhost:5432/postgres");
         let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator

@@ -43,7 +43,7 @@ jobs:
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB: test_db
+          POSTGRES_DB: postgres
         ports: ['5432:5432']                # optional – makes it reachable on localhost
         options: >-                         # give the container a health check
           --health-cmd="pg_isready -U test_user"

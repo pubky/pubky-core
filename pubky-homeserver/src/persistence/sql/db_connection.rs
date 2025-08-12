@@ -106,7 +106,7 @@ impl DbConnection {
         Ok(con)
     }
 
-    fn con_string_from_pg_test_env_var() -> ConnectionString {
+    pub fn con_string_from_pg_test_env_var() -> ConnectionString {
         match std::env::var("TEST_PG_CONNECTION_STRING") {
             Ok(raw_con_string) => ConnectionString::new(&raw_con_string).unwrap(),
             Err(_) => ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING).unwrap(),
@@ -140,10 +140,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_pg_db_available() {
-        let _db = DbConnection::test_postgres_db(
-            &ConnectionString::new("postgres://localhost:5432/postgres").unwrap(),
-        )
-        .await
-        .unwrap();
+        let _db = DbConnection::test_postgres_db(&DbConnection::con_string_from_pg_test_env_var())
+            .await
+            .unwrap();
     }
 }
