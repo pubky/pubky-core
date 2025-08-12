@@ -56,8 +56,13 @@ pub enum PubkyErrorName {
 pub struct PubkyError {
     pub name: PubkyErrorName,
     pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
+
+    #[serde(
+        with = "serde_wasm_bindgen::preserve",
+        skip_serializing_if = "JsValue::is_undefined"
+    )]
+    #[tsify(optional, type = "any")]
+    pub data: JsValue,
 }
 
 // --- Rust-to-JavaScript Error Conversion Pipeline ---
@@ -65,15 +70,23 @@ pub struct PubkyError {
 /// Converts a native `pubky::Error` into a `PubkyError`.
 impl From<Error> for PubkyError {
     fn from(err: Error) -> Self {
-        let mut data = None;
+        let mut data = JsValue::UNDEFINED;
         let name = match &err {
             Error::Request(req_err) => {
                 if let RequestError::Server { status, .. } = req_err {
-                    data = Some(serde_json::json!({ "statusCode": status.as_u16() }));
+                    // Manually construct the JS object for the data payload.
+                    let obj = js_sys::Object::new();
+                    js_sys::Reflect::set(
+                        &obj,
+                        &"statusCode".into(),
+                        &(status.as_u16() as f64).into(),
+                    )
+                    .unwrap();
+                    data = obj.into();
                 }
                 PubkyErrorName::RequestError
             }
-            Error::Parse(_) => PubkyErrorName::InvalidInputError,
+            Error::Parse(_) => PubkyErrorName::InvalidInput,
             Error::Authentication(_) => PubkyErrorName::AuthenticationError,
             Error::Pkarr(_) => PubkyErrorName::PkarrError,
         };
@@ -92,7 +105,7 @@ impl From<BuildError> for PubkyError {
         Self {
             name: PubkyErrorName::InternalError,
             message: err.to_string(),
-            data: None,
+            data: JsValue::UNDEFINED,
         }
     }
 }
@@ -103,7 +116,7 @@ impl From<RecoveryFileError> for PubkyError {
         Self {
             name: PubkyErrorName::ClientStateError,
             message: err.to_string(),
-            data: None,
+            data: JsValue::UNDEFINED,
         }
     }
 }
@@ -112,9 +125,9 @@ impl From<RecoveryFileError> for PubkyError {
 impl From<CapabilitiesError> for PubkyError {
     fn from(err: CapabilitiesError) -> Self {
         Self {
-            name: PubkyErrorName::InvalidInputError,
+            name: PubkyErrorName::InvalidInput,
             message: err.to_string(),
-            data: None,
+            data: JsValue::UNDEFINED,
         }
     }
 }
@@ -123,9 +136,9 @@ impl From<CapabilitiesError> for PubkyError {
 impl From<url::ParseError> for PubkyError {
     fn from(err: url::ParseError) -> Self {
         Self {
-            name: PubkyErrorName::InvalidInputError,
+            name: PubkyErrorName::InvalidInput,
             message: err.to_string(),
-            data: None,
+            data: JsValue::UNDEFINED,
         }
     }
 }
@@ -134,9 +147,9 @@ impl From<url::ParseError> for PubkyError {
 impl From<PublicKeyError> for PubkyError {
     fn from(err: PublicKeyError) -> Self {
         Self {
-            name: PubkyErrorName::InvalidInputError,
+            name: PubkyErrorName::InvalidInput,
             message: err.to_string(),
-            data: None,
+            data: JsValue::UNDEFINED,
         }
     }
 }
@@ -150,18 +163,7 @@ impl From<JsValue> for PubkyError {
         Self {
             name: PubkyErrorName::InternalError,
             message,
-            data: None,
-        }
-    }
-}
-
-/// Converts a simple string slice error message into a `PubkyError`.
-impl From<&str> for PubkyError {
-    fn from(err: &str) -> Self {
-        Self {
-            name: PubkyErrorName::InternalError,
-            message: err.to_string(),
-            data: None,
+            data: JsValue::UNDEFINED,
         }
     }
 }

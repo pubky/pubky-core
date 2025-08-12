@@ -2985,7 +2985,6 @@ dependencies = [
  "pubky-common",
  "serde",
  "serde-wasm-bindgen",
- "serde_json",
  "tsify",
  "url",
  "wasm-bindgen",

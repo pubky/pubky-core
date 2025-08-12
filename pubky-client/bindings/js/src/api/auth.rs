@@ -106,7 +106,7 @@ impl Client {
                 return Err(PubkyError {
                     name: PubkyErrorName::PkarrError,
                     message: "No homeserver found for the given public key.".to_string(),
-                    data: None,
+                    data: JsValue::UNDEFINED,
                 });
             }
         };

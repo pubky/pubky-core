@@ -87,9 +87,9 @@ impl Client {
 
                 if let Some(error_message) = relay_set_error {
                     return Err(PubkyError {
-                        name: PubkyErrorName::InvalidInputError,
+                        name: PubkyErrorName::InvalidInput,
                         message: error_message,
-                        data: None,
+                        data: JsValue::UNDEFINED,
                     });
                 }
             }
