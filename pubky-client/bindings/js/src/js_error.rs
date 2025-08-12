@@ -3,14 +3,14 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
 use pkarr::errors::PublicKeyError;
-use pubky::errors::{BuildError, Error, RequestError};
+use pubky::errors::{BuildError, RequestError};
 use pubky_common::capabilities::Error as CapabilitiesError;
 use pubky_common::recovery_file::Error as RecoveryFileError;
 
 // --- TypeScript Documentation & Schema ---
 
 /// A union type of all possible machine-readable codes for the `name` property
-/// of a {@link PubkyError}.
+/// of a {@link PubkyJsError}.
 ///
 /// This provides a simplified, actionable set of error categories for developers
 /// to handle in their code.
@@ -44,7 +44,7 @@ pub enum PubkyErrorName {
 /// try {
 ///   await client.signup(...);
 /// } catch (e) {
-///   const error = e as PubkyError;
+///   const error = e as PubkyJsError;
 ///   if (error.name === 'RequestError' && error.data?.statusCode === 404) {
 ///     // Handle not found...
 ///   }
@@ -53,7 +53,7 @@ pub enum PubkyErrorName {
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
-pub struct PubkyError {
+pub struct PubkyJsError {
     pub name: PubkyErrorName,
     pub message: String,
 
@@ -65,14 +65,35 @@ pub struct PubkyError {
     pub data: JsValue,
 }
 
-// --- Rust-to-JavaScript Error Conversion Pipeline ---
+// --- Constructors for Ergonomics ---
+impl PubkyJsError {
+    /// Creates a new error with a name and message.
+    pub fn new(name: PubkyErrorName, message: String) -> Self {
+        Self {
+            name,
+            message,
+            data: JsValue::UNDEFINED,
+        }
+    }
 
-/// Converts a native `pubky::Error` into a `PubkyError`.
-impl From<Error> for PubkyError {
-    fn from(err: Error) -> Self {
+    /// Creates a new error with a name, message, and structured data payload.
+    pub fn new_with_data(name: PubkyErrorName, message: String, data: JsValue) -> Self {
+        Self {
+            name,
+            message,
+            data,
+        }
+    }
+}
+
+// --- Rust-to-JavaScript pubky::Error Conversion Pipeline ---
+
+/// Converts a native `pubky::Error` into a `PubkyJsError`.
+impl From<pubky::Error> for PubkyJsError {
+    fn from(err: pubky::Error) -> Self {
         let mut data = JsValue::UNDEFINED;
         let name = match &err {
-            Error::Request(req_err) => {
+            pubky::Error::Request(req_err) => {
                 if let RequestError::Server { status, .. } = req_err {
                     // Manually construct the JS object for the data payload.
                     let obj = js_sys::Object::new();
@@ -86,43 +107,31 @@ impl From<Error> for PubkyError {
                 }
                 PubkyErrorName::RequestError
             }
-            Error::Parse(_) => PubkyErrorName::InvalidInput,
-            Error::Authentication(_) => PubkyErrorName::AuthenticationError,
-            Error::Pkarr(_) => PubkyErrorName::PkarrError,
+            pubky::Error::Parse(_) => PubkyErrorName::InvalidInput,
+            pubky::Error::Authentication(_) => PubkyErrorName::AuthenticationError,
+            pubky::Error::Pkarr(_) => PubkyErrorName::PkarrError,
         };
 
-        Self {
-            name,
-            message: err.to_string(),
-            data,
-        }
+        Self::new_with_data(name, err.to_string(), data)
     }
 }
 
-/// Converts a `pubky::BuildError` into a `PubkyError`.
-impl From<BuildError> for PubkyError {
+/// Converts a `pubky::BuildError` into a `PubkyJsError`.
+impl From<BuildError> for PubkyJsError {
     fn from(err: BuildError) -> Self {
-        Self {
-            name: PubkyErrorName::InternalError,
-            message: err.to_string(),
-            data: JsValue::UNDEFINED,
-        }
+        Self::new(PubkyErrorName::InternalError, err.to_string())
     }
 }
 
-/// Converts a `pubky_common::recovery_file::Error` into a `PubkyError`.
-impl From<RecoveryFileError> for PubkyError {
+/// Converts a `pubky_common::recovery_file::Error` into a `PubkyJsError`.
+impl From<RecoveryFileError> for PubkyJsError {
     fn from(err: RecoveryFileError) -> Self {
-        Self {
-            name: PubkyErrorName::ClientStateError,
-            message: err.to_string(),
-            data: JsValue::UNDEFINED,
-        }
+        Self::new(PubkyErrorName::ClientStateError, err.to_string())
     }
 }
 
-/// Converts a `pubky_common::capabilities::Error` into a `PubkyError`.
-impl From<CapabilitiesError> for PubkyError {
+/// Converts a `pubky_common::capabilities::Error` into a `PubkyJsError`.
+impl From<CapabilitiesError> for PubkyJsError {
     fn from(err: CapabilitiesError) -> Self {
         Self {
             name: PubkyErrorName::InvalidInput,
@@ -132,38 +141,26 @@ impl From<CapabilitiesError> for PubkyError {
     }
 }
 
-/// Converts a `url::ParseError` into a `PubkyError`.
-impl From<url::ParseError> for PubkyError {
+/// Converts a `url::ParseError` into a `PubkyJsError`.
+impl From<url::ParseError> for PubkyJsError {
     fn from(err: url::ParseError) -> Self {
-        Self {
-            name: PubkyErrorName::InvalidInput,
-            message: err.to_string(),
-            data: JsValue::UNDEFINED,
-        }
+        Self::new(PubkyErrorName::InvalidInput, err.to_string())
     }
 }
 
-/// Converts a `pkarr::PublicKeyError` into a `PubkyError`.
-impl From<PublicKeyError> for PubkyError {
+/// Converts a `pkarr::PublicKeyError` into a `PubkyJsError`.
+impl From<PublicKeyError> for PubkyJsError {
     fn from(err: PublicKeyError) -> Self {
-        Self {
-            name: PubkyErrorName::InvalidInput,
-            message: err.to_string(),
-            data: JsValue::UNDEFINED,
-        }
+        Self::new(PubkyErrorName::InvalidInput, err.to_string())
     }
 }
 
-/// Converts a generic `JsValue` error into a `PubkyError`.
-impl From<JsValue> for PubkyError {
+/// Converts a generic `JsValue` error into a `PubkyJsError`.
+impl From<JsValue> for PubkyJsError {
     fn from(err: JsValue) -> Self {
         let message = err
             .as_string()
             .unwrap_or_else(|| "An unknown JavaScript error occurred.".to_string());
-        Self {
-            name: PubkyErrorName::InternalError,
-            message,
-            data: JsValue::UNDEFINED,
-        }
+        Self::new(PubkyErrorName::InternalError, message)
     }
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::js_error::{PubkyError, PubkyErrorName};
+use crate::js_error::{PubkyErrorName, PubkyJsError};
 
 use super::js_result::JsResult;
 
@@ -86,11 +86,10 @@ impl Client {
                 });
 
                 if let Some(error_message) = relay_set_error {
-                    return Err(PubkyError {
-                        name: PubkyErrorName::InvalidInput,
-                        message: error_message,
-                        data: JsValue::UNDEFINED,
-                    });
+                    return Err(PubkyJsError::new(
+                        PubkyErrorName::InvalidInput,
+                        error_message,
+                    ));
                 }
             }
 
