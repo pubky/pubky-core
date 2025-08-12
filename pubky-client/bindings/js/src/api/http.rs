@@ -3,7 +3,7 @@
 use js_sys::Promise;
 use url::Url;
 use wasm_bindgen::prelude::*;
-use web_sys::{Headers, Request, RequestInit, ServiceWorkerGlobalScope};
+use web_sys::{Request, RequestInit, ServiceWorkerGlobalScope};
 
 use crate::constructor::Client;
 use crate::js_result::JsResult;
@@ -15,11 +15,12 @@ impl Client {
         // 1. parse
         let mut url = Url::parse(url).map_err(|e| JsValue::from_str(&e.to_string()))?;
         let req_init = init.unwrap_or_default();
-        // 2. add pubky-host header if needed
+
+        // 2. add pubky-host query string if needed
         if let Some(host) = self.0.prepare_request(&mut url).await {
-            let headers = Headers::new()?;
-            headers.append("pubky-host", &host)?;
-            req_init.set_headers(&headers.into());
+            if url.query_pairs().any(|(k, _)| k != "pubky-host") {
+                url.query_pairs_mut().append_pair("pubky-host", &host);
+            };
         }
         // 3. build JS Request
         let js_req = Request::new_with_str_and_init(url.as_str(), &req_init)
