@@ -50,7 +50,7 @@ where
 
 /// Extracts a PublicKey from the query parameter "pubky-host".
 fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
-    let pubky = req.uri().query().and_then(|query| {
+    req.uri().query().and_then(|query| {
         query.split('&').find_map(|pair| {
             let mut parts = pair.splitn(2, '=');
             if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
@@ -60,7 +60,5 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
             }
             None
         })
-    });
-
-    pubky
+    })
 }
