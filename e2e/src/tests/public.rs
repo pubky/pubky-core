@@ -49,12 +49,7 @@ async fn put_get_delete() {
     // We set `non.pubky.host` header as otherwise he client will use by default
     // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
     // the wrong tenant user
-    let response = client
-        .get(regular_url)
-        .header("Host", "non.pubky.host")
-        .send()
-        .await
-        .unwrap();
+    let response = client.get(regular_url).send().await.unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
     // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)

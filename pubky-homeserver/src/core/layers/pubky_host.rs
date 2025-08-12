@@ -48,35 +48,17 @@ where
     }
 }
 
-/// Extracts a PublicKey by checking, in order:
-/// 1. The "host" header.
-/// 2. The "pubky-host" header (which overwrites any previously found key).
-/// 3. The query parameter "pubky-host" if none was found in headers.
+/// Extracts a PublicKey from the query parameter "pubky-host".
 fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
-    let mut pubky = None;
-    // Check headers in order: "host" then "pubky-host".
-    for header in ["host", "pubky-host"].iter() {
-        if let Some(val) = req.headers().get(*header) {
-            if let Ok(s) = val.to_str() {
-                if let Ok(key) = PublicKey::try_from(s) {
-                    pubky = Some(key);
+    req.uri().query().and_then(|query| {
+        query.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
+                if key == "pubky-host" {
+                    return PublicKey::try_from(val).ok();
                 }
             }
-        }
-    }
-    // If still no key, fall back to query parameter.
-    if pubky.is_none() {
-        pubky = req.uri().query().and_then(|query| {
-            query.split('&').find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
-                    if key == "pubky-host" {
-                        return PublicKey::try_from(val).ok();
-                    }
-                }
-                None
-            })
-        });
-    }
-    pubky
+            None
+        })
+    })
 }
