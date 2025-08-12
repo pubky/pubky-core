@@ -65,7 +65,7 @@ mod tests {
     use axum::http::StatusCode;
     use pkarr::Keypair;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_info_counts() {
         // Setup test DB
         let context = AppContext::test();

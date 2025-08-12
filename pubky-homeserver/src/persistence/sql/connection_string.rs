@@ -73,7 +73,7 @@ impl Display for ConnectionString {
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_create_db() {
         let con_strings = vec![
             "postgres://localhost:5432/pubky_homeserver",

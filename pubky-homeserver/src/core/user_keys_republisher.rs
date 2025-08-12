@@ -177,7 +177,7 @@ mod tests {
     }
 
     /// Test that the republisher tries to republish all keys passed.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
         let pkarr_builder = pkarr::ClientBuilder::default();

@@ -415,7 +415,7 @@ mod tests {
         socket
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_throttle_upload() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/upload"),
@@ -453,7 +453,7 @@ mod tests {
         assert!(time_taken > Duration::from_secs(6), "Should at least take 6s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_throttle_download() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/download"),
@@ -492,7 +492,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_limit_parallel_requests_with_ip_key() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/upload"),
@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_limit_parallel_requests_with_user_key() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/upload"),

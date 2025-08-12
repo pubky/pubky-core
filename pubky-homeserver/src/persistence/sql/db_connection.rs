@@ -1,6 +1,8 @@
+#[cfg(test)]
 use async_dropper::AsyncDrop;
 #[cfg(test)]
 use async_dropper::AsyncDropper;
+#[cfg(test)]
 use async_trait::async_trait;
 use sea_query::{
     PostgresQueryBuilder, QueryBuilder, SchemaBuilder, SchemaStatementBuilder, SqliteQueryBuilder,
@@ -197,7 +199,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_sqlite_db() {
         let db = DbConnection::test_sqlite_db().await.unwrap();
         assert_eq!(db.backend(), DbBackend::Sqlite);
