@@ -9,8 +9,23 @@ impl Client {
         Ok(None)
     }
 
-    // === Private Methods ===
-
+    /// Constructs a [`reqwest::RequestBuilder`] for the given HTTP `method` and `url`,
+    /// routing through the client’s unified request path.
+    ///
+    /// This method ensures that special Pubky and pkarr URL schemes or hosts are
+    /// normalized and resolved according to platform-specific rules (native or WASM),
+    /// including:
+    /// - Translating `pubky://` URLs into the appropriate HTTPS form.
+    /// - Detecting pkarr public key hostnames and applying the correct resolution/TLS handling.
+    /// - Routing standard ICANN domains through the `icann_http` client on native builds.
+    ///
+    /// On native targets, this is effectively a thin wrapper around [`Client::request`],
+    /// while on WASM it also performs host transformation and may add the `pubky-host` header.
+    ///
+    /// Returns a [`Result`] containing the prepared `RequestBuilder`, or a URL/transport
+    /// parsing error if the supplied `url` is invalid.
+    ///
+    /// [`Client::request`]: crate::Client::request
     pub(crate) async fn cross_request<U: IntoUrl>(
         &self,
         method: Method,
