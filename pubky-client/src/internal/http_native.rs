@@ -1,5 +1,4 @@
-use crate::Client;
-use crate::errors::Result;
+use crate::{Client, Result};
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 

@@ -8,8 +8,9 @@ use super::internal::cookies::CookieJar;
 use std::sync::Arc;
 use std::time::Duration;
 
-static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
+const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
+const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
+const DEFAULT_MAX_RECORD_AGE_SECS: u64 = 60 * 60;
 
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
@@ -129,7 +130,9 @@ impl ClientBuilder {
         // Maximum age before a homeserver record should be republished.
         // Default is 1 hour. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
         // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
-        let max_record_age = self.max_record_age.unwrap_or(Duration::from_secs(60 * 60));
+        let max_record_age = self
+            .max_record_age
+            .unwrap_or(Duration::from_secs(DEFAULT_MAX_RECORD_AGE_SECS));
 
         Ok(Client {
             pkarr,
@@ -212,7 +215,7 @@ mod test {
     #[tokio::test]
     async fn test_fetch() {
         let client = Client::new().unwrap();
-        let response = client.get("https://google.com/").send().await.unwrap();
+        let response = client.get("https://example.com/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }
 }

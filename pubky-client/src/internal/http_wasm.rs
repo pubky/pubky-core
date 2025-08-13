@@ -35,7 +35,7 @@ impl Client {
     /// - Transforms pubky:// url to http(s):// urls
     /// - Resolves a clearnet host to call with fetch
     /// - Returns the `pubky-host` value if available
-    async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
+    pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("").to_string();
 
         if url.scheme() == "pubky" {

@@ -1,6 +1,6 @@
 use reqwest::{IntoUrl, Method};
 
-use crate::{Client, api::auth::check_http_status, errors::Result};
+use crate::{Client, Result, api::auth::check_http_status};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
