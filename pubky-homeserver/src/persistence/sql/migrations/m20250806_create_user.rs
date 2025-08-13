@@ -53,7 +53,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
         let query = db.build_schema(statement);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
-        let index =sea_query::Index::create()
+        let index = sea_query::Index::create()
             .name("idx_user_public_key")
             .table(USER_TABLE)
             .col(User::PublicKey)

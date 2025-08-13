@@ -1,7 +1,7 @@
 use sea_query::{ColumnDef, Expr, Query, SimpleExpr, Table};
 use sqlx::{Row, Transaction};
 
-use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration}};
+use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration}};
 
 /// The name of the migration table to keep track of which migrations have been applied.
 const MIGRATION_TABLE: &str = "migrations";
@@ -23,7 +23,8 @@ impl<'a> Migrator<'a> {
         // Add new migrations here. They run from top to bottom.
         vec![
             Box::new(M20250806CreateUserMigration),
-            Box::new(M20250812CreateSignupCodeMigration)
+            Box::new(M20250812CreateSignupCodeMigration),
+            Box::new(M20250813CreateSessionMigration)
         ]
     }
 

@@ -69,7 +69,7 @@ impl<'a> UserRepository<'a> {
 
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn delete<'c, E>(&self, user_id: u32, executor: E) -> Result<(), sqlx::Error>
+    pub async fn delete<'c, E>(&self, user_id: i32, executor: E) -> Result<(), sqlx::Error>
     where E: Executor<'c, Database = sqlx::Postgres> {
         let statement = Query::delete()
             .from_table(USER_TABLE)
@@ -95,8 +95,8 @@ pub enum UserIden {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct UserEntity {
-    pub id: u32,
+pub struct UserEntity {
+    pub id: i32,
     pub public_key: PublicKey,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
@@ -114,7 +114,7 @@ impl FromRow<'_, PgRow> for UserEntity {
         let used_bytes = raw_used_bytes as u64;
         let created_at: sqlx::types::chrono::NaiveDateTime = row.try_get(UserIden::CreatedAt.to_string().as_str())?;
         Ok(UserEntity {
-            id: id as u32,
+            id,
             public_key,
             created_at,
             disabled,

@@ -3,11 +3,11 @@ use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Table};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::{
-    lmdb::tables::users::USERS_TABLE, sql::{db_connection::DbConnection, entities::user::UserIden, migration::MigrationTrait}
+    lmdb::tables::users::USERS_TABLE,
+    sql::{db_connection::DbConnection, entities::user::UserIden, migration::MigrationTrait},
 };
 
 const TABLE: &str = "sessions";
-
 
 pub struct M20250813CreateSessionMigration;
 
@@ -18,6 +18,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
         db: &DbConnection,
         tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
+        // Create table
         let statement = Table::create()
             .table(TABLE)
             .if_not_exists()
@@ -38,11 +39,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
                     .small_unsigned()
                     .not_null(),
             )
-            .col(
-                ColumnDef::new(SessionIden::User)
-                    .integer()
-                    .not_null(),
-            )
+            .col(ColumnDef::new(SessionIden::User).integer().not_null())
             .col(
                 ColumnDef::new(SessionIden::Capabilities)
                     .array(sea_query::ColumnType::Text)
@@ -58,6 +55,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
         let query = db.build_schema(statement);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
+        // Create foreign key
         let foreign_key = ForeignKey::create()
             .name("fk_session_user")
             .from(TABLE, SessionIden::User)
@@ -65,8 +63,16 @@ impl MigrationTrait for M20250813CreateSessionMigration {
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
         let query = db.build_schema(foreign_key);
-        let con: &mut sqlx::PgConnection = &mut **tx;
-        let db_con: &sqlx::PgConnection = &db.pool().acquire().await?;
+        sqlx::query(query.as_str()).execute(&mut **tx).await?;
+
+        // Create index on secret
+        let index = sea_query::Index::create()
+            .name("idx_session_secret")
+            .table(TABLE)
+            .col(SessionIden::Secret)
+            .index_type(sea_query::IndexType::BTree)
+            .to_owned();
+        let query = db.build_schema(index);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -103,7 +109,8 @@ impl FromRow<'_, PgRow> for SessionEntity {
         let secret: String = row.try_get(SessionIden::Secret.to_string().as_str())?;
         let version: i16 = row.try_get(SessionIden::Version.to_string().as_str())?;
         let user: i32 = row.try_get(SessionIden::User.to_string().as_str())?;
-        let capabilities: Vec<String> = row.try_get(SessionIden::Capabilities.to_string().as_str())?;
+        let capabilities: Vec<String> =
+            row.try_get(SessionIden::Capabilities.to_string().as_str())?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
         Ok(SessionEntity {
@@ -122,7 +129,12 @@ mod tests {
     use pkarr::Keypair;
     use sea_query::{Query, SimpleExpr};
 
-    use crate::persistence::{lmdb::tables::users::USERS_TABLE, sql::{entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator}};
+    use crate::persistence::{
+        lmdb::tables::users::USERS_TABLE,
+        sql::{
+            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
+        },
+    };
 
     use super::*;
 
@@ -156,13 +168,24 @@ mod tests {
         // Create a session
         let statement = Query::insert()
             .into_table(TABLE)
-            .columns([SessionIden::Secret, SessionIden::Version, SessionIden::User, SessionIden::Capabilities])
+            .columns([
+                SessionIden::Secret,
+                SessionIden::Version,
+                SessionIden::User,
+                SessionIden::Capabilities,
+            ])
             .values(vec![
                 SimpleExpr::Value(secret.into()),
                 SimpleExpr::Value(1.into()),
                 SimpleExpr::Value(1.into()),
-                SimpleExpr::Value(vec!["read", "write"].into_iter().map(|s| s.to_string()).collect::<Vec<String>>().into()),
-                ])
+                SimpleExpr::Value(
+                    vec!["read", "write"]
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>()
+                        .into(),
+                ),
+            ])
             .unwrap()
             .to_owned();
         let (query, values) = db.build_query(statement);
@@ -176,9 +199,9 @@ mod tests {
             .from(TABLE)
             .columns([
                 SessionIden::Id,
-                SessionIden::Secret, 
-                SessionIden::Version, 
-                SessionIden::User, 
+                SessionIden::Secret,
+                SessionIden::Version,
+                SessionIden::User,
                 SessionIden::Capabilities,
                 SessionIden::CreatedAt,
             ])
