@@ -136,12 +136,10 @@ impl ClientBuilder {
 
         Ok(Client {
             pkarr,
-            http: http_builder.build().expect("config expected to not error"),
+            http: http_builder.build()?,
 
             #[cfg(not(target_arch = "wasm32"))]
-            icann_http: icann_http_builder
-                .build()
-                .expect("config expected to not error"),
+            icann_http: icann_http_builder.build()?,
             #[cfg(not(target_arch = "wasm32"))]
             cookie_store,
 
