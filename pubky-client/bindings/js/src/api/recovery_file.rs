@@ -1,5 +1,5 @@
 use js_sys::Uint8Array;
-use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::{js_result::JsResult, wrappers::keys::Keypair};
 
@@ -16,7 +16,7 @@ pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Uint8Array {
 /// using the `passphrase`.
 #[wasm_bindgen(js_name = "decryptRecoveryFile")]
 pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> JsResult<Keypair> {
-    pubky_common::recovery_file::decrypt_recovery_file(recovery_file, passphrase)
-        .map(Keypair::from)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    let native_keypair =
+        pubky_common::recovery_file::decrypt_recovery_file(recovery_file, passphrase)?;
+    Ok(Keypair::from(native_keypair))
 }

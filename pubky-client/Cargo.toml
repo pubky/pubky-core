@@ -32,7 +32,6 @@ base64 = "0.22.1"
 pkarr = { workspace = true, features = ["full"] }
 cookie = "0.18.1"
 cookie_store = { version = "0.21.1", default-features = false }
-anyhow = "1.0.95"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
 

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
+use crate::js_error::{PubkyErrorName, PubkyJsError};
+
 use super::js_result::JsResult;
 
 static TESTNET_RELAY_PORT: &str = "15411";
@@ -74,19 +76,23 @@ impl Client {
         if let Some(pkarr) = config.pkarr {
             // Set pkarr relays
             if let Some(relays) = pkarr.relays {
-                let mut relay_set_error: Option<JsValue> = None;
+                let mut relay_set_error: Option<String> = None;
                 builder.pkarr(|pkarr_builder| {
-                    pkarr_builder.no_relays(); // Remove default pkarr config
+                    pkarr_builder.no_relays();
                     if let Err(e) = pkarr_builder.relays(&relays) {
-                        relay_set_error =
-                            Some(JsValue::from_str(&format!("Failed to set relays. {}", e)));
+                        relay_set_error = Some(e.to_string());
                     }
                     pkarr_builder
                 });
-                if let Some(e) = relay_set_error {
-                    return Err(e);
+
+                if let Some(error_message) = relay_set_error {
+                    return Err(PubkyJsError::new(
+                        PubkyErrorName::InvalidInput,
+                        error_message,
+                    ));
                 }
             }
+
             // Set pkarr timeout
             if let Some(timeout) = pkarr.request_timeout {
                 builder.pkarr(|pkarr_builder| {
@@ -101,9 +107,7 @@ impl Client {
             builder.max_record_age(Duration::from_secs(max_record_age.get()));
         }
 
-        let native_client = builder
-            .build()
-            .map_err(|e| JsValue::from_str(&format!("Failed to build client. {}", e)))?;
+        let native_client = builder.build()?;
         Ok(Self(native_client))
     }
 

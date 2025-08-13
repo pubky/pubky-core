@@ -1,7 +1,6 @@
-use anyhow::Result;
 use reqwest::{IntoUrl, Method};
 
-use crate::{Client, handle_http_error};
+use crate::{Client, api::auth::check_http_status, errors::Result};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
@@ -103,11 +102,11 @@ impl<'a> ListBuilder<'a> {
         let response = self
             .client
             .cross_request(Method::GET, url)
-            .await
+            .await?
             .send()
             .await?;
 
-        handle_http_error!(response);
+        let response = check_http_status(response).await?;
 
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;
