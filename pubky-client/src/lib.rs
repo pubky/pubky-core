@@ -12,7 +12,9 @@ mod client;
 mod constants;
 pub mod errors;
 mod internal;
-pub mod macros;
+mod macros;
+
+pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
 pub use client::{Client, ClientBuilder};
