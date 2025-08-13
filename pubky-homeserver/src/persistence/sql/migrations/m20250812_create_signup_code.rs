@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 use pkarr::PublicKey;
-use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Table};
+use sea_query::{ColumnDef, Expr, Iden, Table};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
-use crate::persistence::{
-    lmdb::tables::users::USERS_TABLE,
-    sql::{db_connection::DbConnection, entities::user::UserIden, migration::MigrationTrait},
-};
+use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait};
 
 const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
@@ -34,19 +31,11 @@ impl MigrationTrait for M20250812CreateSignupCodeMigration {
                     .not_null()
                     .default(Expr::current_timestamp()),
             )
+            // UsedBy is the user pubkey directly. No Foreign Key needed because 
+            // if the user is deleted, we don't want the code to be reused.
             .col(ColumnDef::new(SignupCodeIden::UsedBy).string_len(52).null())
             .to_owned();
         let query = db.build_schema(statement);
-        sqlx::query(query.as_str()).execute(&mut **tx).await?;
-
-        let foreign_key = ForeignKey::create()
-            .name("fk_signup_code_used_by")
-            .from(SIGNUP_CODE_TABLE, SignupCodeIden::UsedBy)
-            .to(USERS_TABLE, UserIden::Id)
-            .on_delete(ForeignKeyAction::Cascade)
-            .to_owned();
-
-        let query = db.build_schema(foreign_key);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -99,7 +88,7 @@ mod tests {
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_create_user_migration() {
+    async fn test_create_code_migration() {
         let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
@@ -112,23 +101,12 @@ mod tests {
 
         // Create a user
         let pubkey = Keypair::random().public_key();
-        let statement = Query::insert()
-            .into_table(USERS_TABLE)
-            .columns([UserIden::Id])
-            .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
-            .unwrap()
-            .to_owned();
-        let (query, values) = db.build_query(statement);
-        sqlx::query_with(query.as_str(), values)
-            .execute(db.pool())
-            .await
-            .unwrap();
-
+        let code_id = "JZY0-D6MY-ZFNG";
         // Create a signup code
         let statement = Query::insert()
             .into_table(SIGNUP_CODE_TABLE)
             .columns([SignupCodeIden::Id])
-            .values(vec![SimpleExpr::Value("JZY0-D6MY-ZFNG".into())])
+            .values(vec![SimpleExpr::Value(code_id.into())])
             .unwrap()
             .to_owned();
         let (query, values) = db.build_query(statement);
@@ -151,18 +129,16 @@ mod tests {
             .fetch_one(db.pool())
             .await
             .unwrap();
-        assert_eq!(code.id, "JZY0-D6MY-ZFNG");
+        assert_eq!(code.id, code_id);
         assert_eq!(code.used_by, None);
 
         // Use signup code
         let statement = Query::update()
             .table(SIGNUP_CODE_TABLE)
-            .values(vec![
-                (
-                    SignupCodeIden::UsedBy,
-                    SimpleExpr::Value(pubkey.to_string().into()),
-                ),
-            ])
+            .values(vec![(
+                SignupCodeIden::UsedBy,
+                SimpleExpr::Value(pubkey.to_string().into()),
+            )])
             .and_where(Expr::col(SignupCodeIden::Id).eq(code.id))
             .to_owned();
         let (query, values) = db.build_query(statement);
@@ -185,33 +161,7 @@ mod tests {
             .fetch_one(db.pool())
             .await
             .unwrap();
-        assert_eq!(code.id, "JZY0-D6MY-ZFNG");
+        assert_eq!(code.id, code_id);
         assert_eq!(code.used_by, Some(pubkey.clone()));
-
-        // Check foreign key delete cascade
-        let statement = Query::delete()
-            .from_table(USERS_TABLE)
-            .and_where(Expr::col(UserIden::Id).eq(pubkey.to_string()))
-            .to_owned();
-        let (query, values) = db.build_query(statement);
-        sqlx::query_with(query.as_str(), values)
-            .execute(db.pool())
-            .await
-            .unwrap();
-
-        // Read signup code again. Should be deleted.
-        let statement = Query::select()
-            .from(SIGNUP_CODE_TABLE)
-            .columns([
-                SignupCodeIden::Id,
-                SignupCodeIden::CreatedAt,
-                SignupCodeIden::UsedBy,
-            ])
-            .to_owned();
-        let (query, _) = db.build_query(statement);
-        sqlx::query(query.as_str())
-            .fetch_one(db.pool())
-            .await
-            .expect_err("Signup code should be deleted");
     }
 }

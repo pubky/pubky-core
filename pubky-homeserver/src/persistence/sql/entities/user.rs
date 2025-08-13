@@ -21,10 +21,10 @@ impl<'a> UserRepository<'a> {
     /// Create a new user.
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    where E: Executor<'c, Database = sqlx::Postgres> + Clone {
         let statement =
         Query::insert().into_table(USER_TABLE)
-            .columns([UserIden::Id])
+            .columns([UserIden::PublicKey])
             .values(vec![
                 SimpleExpr::Value(public_key.to_string().into()),
             ]).unwrap().returning_all().to_owned();
@@ -42,8 +42,8 @@ impl<'a> UserRepository<'a> {
     pub async fn get<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<UserEntity, sqlx::Error>
     where E: Executor<'c, Database = sqlx::Postgres> {
         let statement = Query::select().from(USER_TABLE)
-        .columns([UserIden::Id, UserIden::CreatedAt, UserIden::Disabled, UserIden::UsedBytes])
-        .and_where(Expr::col(UserIden::Id).eq(public_key.to_string()))
+        .columns([UserIden::Id, UserIden::PublicKey, UserIden::CreatedAt, UserIden::Disabled, UserIden::UsedBytes])
+        .and_where(Expr::col(UserIden::PublicKey).eq(public_key.to_string()))
         .to_owned();
         let (query, values) = self.db.build_query(statement);
         let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
@@ -58,7 +58,7 @@ impl<'a> UserRepository<'a> {
                 (UserIden::Disabled, SimpleExpr::Value((user.disabled).into())),
                 (UserIden::UsedBytes, SimpleExpr::Value((user.used_bytes as i64).into())),
             ])
-            .and_where(Expr::col(UserIden::Id).eq(user.id.to_string()))
+            .and_where(Expr::col(UserIden::Id).eq(user.id))
             .returning_all()
             .to_owned();
         
@@ -69,11 +69,11 @@ impl<'a> UserRepository<'a> {
 
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn delete<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<(), sqlx::Error>
+    pub async fn delete<'c, E>(&self, user_id: u32, executor: E) -> Result<(), sqlx::Error>
     where E: Executor<'c, Database = sqlx::Postgres> {
         let statement = Query::delete()
             .from_table(USER_TABLE)
-            .and_where(Expr::col(UserIden::Id).eq(public_key.to_string()))
+            .and_where(Expr::col(UserIden::Id).eq(user_id))
             .to_owned();
         
         let (query, values) = self.db.build_query(statement);
@@ -88,14 +88,16 @@ impl<'a> UserRepository<'a> {
 #[derive(Iden)]
 pub enum UserIden {
     Id,
+    PublicKey,
     CreatedAt,
     Disabled,
     UsedBytes,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct UserEntity {
-    pub id: PublicKey,
+struct UserEntity {
+    pub id: u32,
+    pub public_key: PublicKey,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
     pub used_bytes: u64,
@@ -103,23 +105,23 @@ pub struct UserEntity {
 
 impl FromRow<'_, PgRow> for UserEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id_name = UserIden::Id.to_string();
-        let raw_pubkey: String = row.try_get(id_name.as_str())?;
-        let id = PublicKey::try_from(raw_pubkey.as_str())
+        let id: i32 = row.try_get(UserIden::Id.to_string().as_str())?;
+        let raw_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
+        let public_key = PublicKey::try_from(raw_pubkey.as_str())
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let disabled: bool = row.try_get(UserIden::Disabled.to_string().as_str())?;
         let raw_used_bytes: i64 = row.try_get(UserIden::UsedBytes.to_string().as_str())?;
         let used_bytes = raw_used_bytes as u64;
         let created_at: sqlx::types::chrono::NaiveDateTime = row.try_get(UserIden::CreatedAt.to_string().as_str())?;
         Ok(UserEntity {
-            id,
+            id: id as u32,
+            public_key,
             created_at,
             disabled,
             used_bytes,
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -134,16 +136,33 @@ mod tests {
         let user_pubkey = Keypair::random().public_key();
 
         // Test create user
-        let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
-        assert_eq!(user.id, user_pubkey);
-        assert_eq!(user.disabled, false);
-        assert_eq!(user.used_bytes, 0);
+        let created_user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        assert_eq!(created_user.public_key, user_pubkey);
+        assert_eq!(created_user.disabled, false);
+        assert_eq!(created_user.used_bytes, 0);
+        assert_eq!(created_user.id, 1);
 
         // Test get user
         let user = user_repo.get(&user_pubkey, db.pool()).await.unwrap();
-        assert_eq!(user.id, user_pubkey);
+        assert_eq!(user.public_key, user_pubkey);
         assert_eq!(user.disabled, false);
         assert_eq!(user.used_bytes, 0);
+        assert_eq!(user.id, created_user.id);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_create_user_twice() {
+        let db = DbConnection::test().await;
+        let user_repo = UserRepository::new(&db);
+        let user_pubkey = Keypair::random().public_key();
+
+        // Test create user
+        let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        assert_eq!(user.public_key, user_pubkey);
+        assert_eq!(user.disabled, false);
+        assert_eq!(user.used_bytes, 0);
+
+        user_repo.create(&user_pubkey, db.pool()).await.expect_err("Should fail to create user twice");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -171,14 +190,14 @@ mod tests {
 
         // Create a user first
         let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
-        assert_eq!(user.id, user_pubkey);
+        assert_eq!(user.public_key, user_pubkey);
 
         // Verify the user exists
         let retrieved_user = user_repo.get(&user_pubkey, db.pool()).await.unwrap();
-        assert_eq!(retrieved_user.id, user_pubkey);
+        assert_eq!(retrieved_user.public_key, user_pubkey);
 
         // Delete the user
-        user_repo.delete(&user_pubkey, db.pool()).await.unwrap();
+        user_repo.delete(user.id, db.pool()).await.unwrap();
 
         // Verify the user no longer exists
         let result = user_repo.get(&user_pubkey, db.pool()).await;

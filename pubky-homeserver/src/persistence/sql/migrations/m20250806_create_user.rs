@@ -21,9 +21,15 @@ impl MigrationTrait for M20250806CreateUserMigration {
             .if_not_exists()
             .col(
                 ColumnDef::new(User::Id)
+                    .integer()
+                    .primary_key()
+                    .auto_increment(),
+            )
+            .col(
+                ColumnDef::new(User::PublicKey)
                     .string_len(52)
                     .not_null()
-                    .primary_key(),
+                    .unique_key(),
             )
             .col(
                 ColumnDef::new(User::Disabled)
@@ -46,6 +52,15 @@ impl MigrationTrait for M20250806CreateUserMigration {
             .to_owned();
         let query = db.build_schema(statement);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
+
+        let index =sea_query::Index::create()
+            .name("idx_user_public_key")
+            .table(USER_TABLE)
+            .col(User::PublicKey)
+            .index_type(sea_query::IndexType::BTree)
+            .to_owned();
+        let query = db.build_schema(index);
+        sqlx::query(query.as_str()).execute(&mut **tx).await?;
         Ok(())
     }
 
@@ -57,6 +72,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
 #[derive(Iden)]
 enum User {
     Id,
+    PublicKey,
     CreatedAt,
     Disabled,
     UsedBytes,
@@ -64,7 +80,8 @@ enum User {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct UserEntity {
-    pub id: PublicKey,
+    pub id: u32,
+    pub public_key: PublicKey,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
     pub used_bytes: u64,
@@ -72,16 +89,17 @@ struct UserEntity {
 
 impl FromRow<'_, PgRow> for UserEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id_name = User::Id.to_string();
-        let raw_pubkey: String = row.try_get(id_name.as_str())?;
-        let id = PublicKey::try_from(raw_pubkey.as_str())
+        let id: i32 = row.try_get(User::Id.to_string().as_str())?;
+        let raw_pubkey: String = row.try_get(User::PublicKey.to_string().as_str())?;
+        let public_key = PublicKey::try_from(raw_pubkey.as_str())
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let disabled: bool = row.try_get(User::Disabled.to_string().as_str())?;
         let raw_used_bytes: i64 = row.try_get(User::UsedBytes.to_string().as_str())?;
         let used_bytes = raw_used_bytes as u64;
         let created_at: sqlx::types::chrono::NaiveDateTime = row.try_get(User::CreatedAt.to_string().as_str())?;
         Ok(UserEntity {
-            id,
+            id: id as u32,
+            public_key,
             created_at,
             disabled,
             used_bytes,
@@ -111,7 +129,7 @@ mod tests {
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
             .into_table(USER_TABLE)
-            .columns([User::Id])
+            .columns([User::PublicKey])
             .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
             .unwrap()
             .to_owned();
@@ -125,14 +143,14 @@ mod tests {
         // Read user
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([User::Id, User::CreatedAt, User::Disabled, User::UsedBytes])
+            .columns([User::Id, User::PublicKey, User::CreatedAt, User::Disabled, User::UsedBytes])
             .to_owned();
         let (query, _) = db.build_query(statement);
         let user: UserEntity = sqlx::query_as(query.as_str())
             .fetch_one(db.pool())
             .await
             .unwrap();
-        assert_eq!(user.id, pubkey);
+        assert_eq!(user.public_key, pubkey);
         assert_eq!(user.disabled, false);
         assert_eq!(user.used_bytes, 0);
     }

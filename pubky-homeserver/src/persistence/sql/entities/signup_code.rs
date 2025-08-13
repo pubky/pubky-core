@@ -10,7 +10,7 @@ use crate::persistence::sql::db_connection::DbConnection;
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
-/// Repository that handles all the queries regarding the UserEntity.
+/// Repository that handles all the queries regarding the SignupCodeEntity.
 pub struct SignupCodeRepository<'a> {
     pub db: &'a DbConnection,
 }
@@ -22,7 +22,7 @@ impl<'a> SignupCodeRepository<'a> {
         Self { db }
     }
 
-    /// Create a new user.
+    /// Create a new signup code.
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'c, E>(&self, id: &SignupCodeId, executor: E) -> Result<SignupCodeEntity, sqlx::Error>
     where E: Executor<'c, Database = sqlx::Postgres> {
@@ -31,7 +31,7 @@ impl<'a> SignupCodeRepository<'a> {
             .columns([SignupCodeIden::Id])
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
-            ]).unwrap().returning_all().to_owned();
+            ]).expect("Should be valid values").returning_all().to_owned();
 
         let (query, values) = self.db.build_query(statement);
 
@@ -165,7 +165,6 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
-
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -198,6 +197,6 @@ mod tests {
         let updated_code = signup_code_repo.get(&signup_code_id, db.pool()).await.unwrap();
         assert_eq!(updated_code.id, signup_code_id);
         assert_eq!(updated_code.used_by, Some(user_pubkey));
-    }
 
+    }
 }
