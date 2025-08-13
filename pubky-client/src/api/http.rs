@@ -1,10 +1,8 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
 use crate::Client;
-use crate::errors::Result;
 use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
-use url::Url;
 
 impl Client {
     /// Start building a `Request` with the `Method` and `Url`.
@@ -13,7 +11,7 @@ impl Client {
     /// the request body before sending.
     ///
     /// Differs from [reqwest::Client::request], in that it can make requests to:
-    /// 1. HTTPs URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTPs URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -42,7 +40,7 @@ impl Client {
     /// Convenience method to make a `GET` request to a URL.
     ///
     /// Differs from [reqwest::Client::get], in that it can make requests to:
-    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTP(s) URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -67,7 +65,7 @@ impl Client {
     /// Convenience method to make a `PUT` request to a URL.
     ///
     /// Differs from [reqwest::Client::put], in that it can make requests to:
-    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTP(s) URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -83,7 +81,7 @@ impl Client {
     /// Convenience method to make a `PATCH` request to a URL.
     ///
     /// Differs from [reqwest::Client::patch], in that it can make requests to:
-    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTP(s) URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -99,7 +97,7 @@ impl Client {
     /// Convenience method to make a `DELETE` request to a URL.
     ///
     /// Differs from [reqwest::Client::delete], in that it can make requests to:
-    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTP(s) URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -115,7 +113,7 @@ impl Client {
     /// Convenience method to make a `HEAD` request to a URL.
     ///
     /// Differs from [reqwest::Client::head], in that it can make requests to:
-    /// 1. HTTP(s) URLs with with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTP(s) URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -126,19 +124,5 @@ impl Client {
     /// This method fails whenever the supplied `Url` cannot be parsed.
     pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::HEAD, url)
-    }
-
-    // === Private Methods ===
-
-    pub(crate) async fn cross_request<U: IntoUrl>(
-        &self,
-        method: Method,
-        url: U,
-    ) -> Result<RequestBuilder> {
-        Ok(self.request(method, url))
-    }
-
-    pub async fn prepare_request(&self, _url: &mut Url) -> Result<Option<String>> {
-        Ok(None)
     }
 }

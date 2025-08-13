@@ -13,9 +13,11 @@ pub mod errors;
 mod internal;
 mod macros;
 
+pub mod prelude;
+
 // --- PUBLIC API EXPORTS ---
 pub use client::{Client, ClientBuilder};
-pub use errors::{BuildError, Error};
+pub use errors::{BuildError, Error, Result};
 // Export common types.
 pub use api::{auth::AuthRequest, public::ListBuilder};
 // Re-exports

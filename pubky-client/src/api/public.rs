@@ -1,20 +1,20 @@
 use reqwest::{IntoUrl, Method};
 
-use crate::{Client, api::auth::check_http_status, errors::Result};
+use crate::{Client, Result, api::auth::check_http_status};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
     ///
     /// `url` sets the path you want to lest within.
     pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
-        Ok(ListBuilder::new(self, url))
+        ListBuilder::new(self, url)
     }
 }
 
 /// Helper struct to edit Pubky homeserver's list API options before sending them.
 #[derive(Debug)]
 pub struct ListBuilder<'a> {
-    url: String,
+    url: url::Url,
     reverse: bool,
     limit: Option<u16>,
     cursor: Option<&'a str>,
@@ -24,15 +24,16 @@ pub struct ListBuilder<'a> {
 
 impl<'a> ListBuilder<'a> {
     /// Create a new List request builder
-    pub(crate) fn new<T: IntoUrl>(client: &'a Client, url: T) -> Self {
-        Self {
+    pub(crate) fn new<T: IntoUrl>(client: &'a Client, url: T) -> Result<Self> {
+        let url = url.into_url()?;
+        Ok(Self {
             client,
-            url: url.as_str().to_string(),
+            url,
             limit: None,
             cursor: None,
             reverse: false,
             shallow: false,
-        }
+        })
     }
 
     /// Set the `reverse` option.
@@ -66,20 +67,18 @@ impl<'a> ListBuilder<'a> {
     /// Returns a list of Pubky URLs of the files in the path of the `url`
     /// respecting [ListBuilder::reverse], [ListBuilder::limit] and [ListBuilder::cursor]
     /// options.
-    pub async fn send(self) -> Result<Vec<String>> {
-        let mut url = url::Url::parse(&self.url)?;
-
-        if !url.path().ends_with('/') {
-            let path = url.path().to_string();
+    pub async fn send(mut self) -> Result<Vec<String>> {
+        if !self.url.path().ends_with('/') {
+            let path = self.url.path().to_string();
             let mut parts = path.split('/').collect::<Vec<&str>>();
             parts.pop();
 
             let path = format!("{}/", parts.join("/"));
 
-            url.set_path(&path)
+            self.url.set_path(&path)
         }
 
-        let mut query = url.query_pairs_mut();
+        let mut query = self.url.query_pairs_mut();
 
         if self.reverse {
             query.append_key_only("reverse");
@@ -101,7 +100,7 @@ impl<'a> ListBuilder<'a> {
 
         let response = self
             .client
-            .cross_request(Method::GET, url)
+            .cross_request(Method::GET, self.url)
             .await?
             .send()
             .await?;
