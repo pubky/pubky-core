@@ -1,15 +1,16 @@
 use std::fmt::Debug;
 
-use crate::{
-    constants::{DEFAULT_MAX_RECORD_AGE, DEFAULT_RELAYS, DEFAULT_USER_AGENT},
-    errors::BuildError,
-};
+use crate::errors::BuildError;
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 use std::time::Duration;
+
+const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
+const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
+const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {

@@ -9,7 +9,6 @@
 
 mod api;
 mod client;
-mod constants;
 pub mod errors;
 mod internal;
 mod macros;
