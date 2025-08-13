@@ -1,4 +1,8 @@
-use reqwest::{Response, cookie::CookieStore, header::HeaderValue};
+use reqwest::{
+    Response,
+    cookie::CookieStore,
+    header::{HeaderValue, SET_COOKIE},
+};
 use std::{collections::HashMap, sync::RwLock};
 
 use pkarr::PublicKey;
@@ -16,7 +20,7 @@ impl CookieJar {
         for (header_name, header_value) in response.headers() {
             let cookie_name = &pubky.to_string();
 
-            if header_name == "set-cookie"
+            if header_name == SET_COOKIE
                 && header_value.as_ref().starts_with(cookie_name.as_bytes())
             {
                 if let Ok(Ok(cookie)) =
@@ -80,6 +84,11 @@ impl CookieStore for CookieJar {
             }
         }
 
-        HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
+        if s.is_empty() {
+            // Skip emitting empty Cookie header.
+            None
+        } else {
+            HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
+        }
     }
 }

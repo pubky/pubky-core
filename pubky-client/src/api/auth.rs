@@ -1,4 +1,4 @@
-use base64::{Engine, alphabet::URL_SAFE, engine::general_purpose::NO_PAD};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{IntoUrl, Method, Response, StatusCode};
 use std::collections::HashMap;
 use url::Url;
@@ -180,8 +180,7 @@ impl Client {
             .ok_or_else(|| AuthError::Validation("Missing 'secret' query parameter".to_string()))?;
 
         // 3. Decode the base64 secret.
-        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-        let secret_bytes = engine
+        let secret_bytes = URL_SAFE_NO_PAD
             .decode(secret_str)
             .map_err(|e| AuthError::Validation(format!("Invalid base64 secret: {}", e)))?;
 
@@ -202,7 +201,6 @@ impl Client {
 
         let token = AuthToken::sign(keypair, capabilities);
         let encrypted_token = encrypt(&token.serialize(), &client_secret);
-        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
 
         let mut callback_url = relay.clone();
         let mut path_segments = callback_url
@@ -210,7 +208,7 @@ impl Client {
             .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
 
         path_segments.pop_if_empty();
-        let channel_id = engine.encode(hash(&client_secret).as_bytes());
+        let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
         path_segments.push(&channel_id);
         drop(path_segments);
 
@@ -246,13 +244,11 @@ impl Client {
         relay: &mut Url,
         capabilities: &Capabilities,
     ) -> Result<(Url, [u8; 32])> {
-        let engine = base64::engine::GeneralPurpose::new(&URL_SAFE, NO_PAD);
-
         let client_secret: [u8; 32] = random_bytes::<32>();
 
         let pubkyauth_url = Url::parse(&format!(
             "pubkyauth:///?caps={capabilities}&secret={}&relay={relay}",
-            engine.encode(client_secret)
+            URL_SAFE_NO_PAD.encode(client_secret)
         ))?;
 
         let mut segments = relay
@@ -261,7 +257,7 @@ impl Client {
 
         // remove trailing slash if any.
         segments.pop_if_empty();
-        let channel_id = &engine.encode(hash(&client_secret).as_bytes());
+        let channel_id = &URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
         segments.push(channel_id);
         drop(segments);
 

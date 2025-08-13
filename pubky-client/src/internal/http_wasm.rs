@@ -22,7 +22,7 @@ impl Client {
             Ok(self
                 .http
                 .request(method, url.clone())
-                .header::<&str, &str>("pubky-host", &pubky_host)
+                .header("pubky-host", pubky_host)
                 .fetch_credentials_include())
         } else {
             Ok(self
@@ -55,7 +55,7 @@ impl Client {
         Ok(pubky_host)
     }
 
-    pub(crate) async fn transform_url(&self, url: &mut Url) -> Result<()> {
+    async fn transform_url(&self, url: &mut Url) -> Result<()> {
         let clone = url.clone();
         let qname = clone.host_str().unwrap_or("");
         log::debug!("Prepare request {}", url.as_str());
