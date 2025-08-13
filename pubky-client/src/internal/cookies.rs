@@ -84,6 +84,11 @@ impl CookieStore for CookieJar {
             }
         }
 
-        HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
+        if s.is_empty() {
+            // Skip emitting empty Cookie header.
+            None
+        } else {
+            HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
+        }
     }
 }

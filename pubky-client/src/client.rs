@@ -177,6 +177,16 @@ impl Client {
         Self::builder().build()
     }
 
+    /// Returns Pubky Client’s default pkarr relays.
+    pub fn default_relays() -> &'static [&'static str] {
+        DEFAULT_RELAYS
+    }
+
+    /// Returns the current max record age threshold.
+    pub fn max_record_age(&self) -> Duration {
+        self.max_record_age
+    }
+
     /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> ClientBuilder {
         let mut builder = ClientBuilder::default();
