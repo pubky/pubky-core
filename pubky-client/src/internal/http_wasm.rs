@@ -22,7 +22,7 @@ impl Client {
             Ok(self
                 .http
                 .request(method, url.clone())
-                .header::<&str, &str>("pubky-host", &pubky_host)
+                .header("pubky-host", pubky_host)
                 .fetch_credentials_include())
         } else {
             Ok(self
@@ -35,7 +35,7 @@ impl Client {
     /// - Transforms pubky:// url to http(s):// urls
     /// - Resolves a clearnet host to call with fetch
     /// - Returns the `pubky-host` value if available
-    pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
+    async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("").to_string();
 
         if url.scheme() == "pubky" {
@@ -55,7 +55,7 @@ impl Client {
         Ok(pubky_host)
     }
 
-    pub(crate) async fn transform_url(&self, url: &mut Url) -> Result<()> {
+    async fn transform_url(&self, url: &mut Url) -> Result<()> {
         let clone = url.clone();
         let qname = clone.host_str().unwrap_or("");
         log::debug!("Prepare request {}", url.as_str());

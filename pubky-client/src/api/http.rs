@@ -1,10 +1,8 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
 use crate::Client;
-use crate::errors::Result;
 use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
-use url::Url;
 
 impl Client {
     /// Start building a `Request` with the `Method` and `Url`.
@@ -126,19 +124,5 @@ impl Client {
     /// This method fails whenever the supplied `Url` cannot be parsed.
     pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
         self.request(Method::HEAD, url)
-    }
-
-    // === Private Methods ===
-
-    pub(crate) async fn cross_request<U: IntoUrl>(
-        &self,
-        method: Method,
-        url: U,
-    ) -> Result<RequestBuilder> {
-        Ok(self.request(method, url))
-    }
-
-    pub async fn prepare_request(&self, _url: &mut Url) -> Result<Option<String>> {
-        Ok(None)
     }
 }
