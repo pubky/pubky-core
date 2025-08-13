@@ -9,9 +9,10 @@
 
 mod api;
 mod client;
+mod constants;
 pub mod errors;
 mod internal;
-mod macros;
+pub mod macros;
 
 // --- PUBLIC API EXPORTS ---
 pub use client::{Client, ClientBuilder};

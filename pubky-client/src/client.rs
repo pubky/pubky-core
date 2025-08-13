@@ -1,16 +1,15 @@
 use std::fmt::Debug;
 
-use crate::errors::BuildError;
+use crate::{
+    constants::{DEFAULT_MAX_RECORD_AGE, DEFAULT_RELAYS, DEFAULT_USER_AGENT},
+    errors::BuildError,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 use std::time::Duration;
-
-const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
-const DEFAULT_MAX_RECORD_AGE_SECS: u64 = 60 * 60;
 
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
@@ -130,9 +129,7 @@ impl ClientBuilder {
         // Maximum age before a homeserver record should be republished.
         // Default is 1 hour. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
         // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
-        let max_record_age = self
-            .max_record_age
-            .unwrap_or(Duration::from_secs(DEFAULT_MAX_RECORD_AGE_SECS));
+        let max_record_age = self.max_record_age.unwrap_or(DEFAULT_MAX_RECORD_AGE);
 
         Ok(Client {
             pkarr,
