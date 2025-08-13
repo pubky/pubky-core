@@ -16,7 +16,6 @@ impl Session {
     }
 
     /// Return the capabilities that this session has.
-    #[wasm_bindgen]
     pub fn capabilities(&self) -> Vec<String> {
         self.0
             .capabilities()

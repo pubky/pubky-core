@@ -5,6 +5,7 @@ use url::Url;
 use pubky_common::capabilities::Capabilities;
 
 use crate::{
+    js_error::{PubkyErrorName, PubkyJsError},
     js_result::JsResult,
     wrappers::{
         keys::{Keypair, PublicKey},
@@ -36,8 +37,7 @@ impl Client {
                     homeserver.as_inner(),
                     signup_token.as_deref(),
                 )
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?,
+                .await?,
         ))
     }
 
@@ -47,30 +47,25 @@ impl Client {
     /// or throws the received error if the response has any other `>=400` status code.
     #[wasm_bindgen]
     pub async fn session(&self, pubky: &PublicKey) -> JsResult<Option<Session>> {
-        self.0
-            .session(pubky.as_inner())
-            .await
-            .map(|s| s.map(Session))
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        let session = self.0.session(pubky.as_inner()).await?;
+
+        Ok(session.map(Session))
     }
 
     /// Signout from a homeserver.
     #[wasm_bindgen]
     pub async fn signout(&self, pubky: &PublicKey) -> JsResult<()> {
-        self.0
-            .signout(pubky.as_inner())
-            .await
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        self.0.signout(pubky.as_inner()).await?;
+
+        Ok(())
     }
 
     /// Signin to a homeserver using the root Keypair.
     #[wasm_bindgen]
     pub async fn signin(&self, keypair: &Keypair) -> JsResult<()> {
-        self.0
-            .signin(keypair.as_inner())
-            .await
-            .map(|_| ())
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        self.0.signin(keypair.as_inner()).await?;
+
+        Ok(())
     }
 
     /// Return `pubkyauth://` url and wait for the incoming [AuthToken]
@@ -80,13 +75,9 @@ impl Client {
     /// Returns a [AuthRequest]
     #[wasm_bindgen(js_name = "authRequest")]
     pub fn auth_request(&self, relay: &str, capabilities: &str) -> JsResult<AuthRequest> {
-        let auth_request = self
-            .0
-            .auth_request(
-                relay,
-                &Capabilities::try_from(capabilities).map_err(|_| "Invalid capaiblities")?,
-            )
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let capabilities = Capabilities::try_from(capabilities)?;
+
+        let auth_request = self.0.auth_request(relay, &capabilities)?;
 
         Ok(AuthRequest(auth_request))
     }
@@ -95,12 +86,11 @@ impl Client {
     /// source of the pubkyauth request url.
     #[wasm_bindgen(js_name = "sendAuthToken")]
     pub async fn send_auth_token(&self, keypair: &Keypair, pubkyauth_url: &str) -> JsResult<()> {
-        let pubkyauth_url: Url = pubkyauth_url.try_into().map_err(|_| "Invalid relay Url")?;
+        let pubkyauth_url: Url = pubkyauth_url.try_into()?;
 
         self.0
             .send_auth_token(keypair.as_inner(), &pubkyauth_url)
-            .await
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            .await?;
 
         Ok(())
     }
@@ -112,7 +102,12 @@ impl Client {
     pub async fn get_homeserver(&self, public_key: &PublicKey) -> JsResult<PublicKey> {
         let hs_z32 = match self.0.get_homeserver(public_key.as_inner()).await {
             Some(hs_z32) => hs_z32,
-            None => return Err(JsValue::from_str("No homeserver found")),
+            None => {
+                return Err(PubkyJsError::new(
+                    PubkyErrorName::PkarrError,
+                    "No homeserver found for the given public key.",
+                ));
+            }
         };
         PublicKey::try_from(hs_z32)
     }
@@ -133,8 +128,7 @@ impl Client {
     pub async fn republish_homeserver(&self, keypair: &Keypair, host: &PublicKey) -> JsResult<()> {
         self.0
             .republish_homeserver(keypair.as_inner(), host.as_inner())
-            .await
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            .await?;
 
         Ok(())
     }
@@ -161,10 +155,8 @@ impl AuthRequest {
     /// Otherwise it will throw an error.
     #[wasm_bindgen]
     pub async fn response(&self) -> JsResult<PublicKey> {
-        self.0
-            .response()
-            .await
-            .map(PublicKey::from)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        let pubky = self.0.response().await?;
+
+        Ok(PublicKey::from(pubky))
     }
 }
