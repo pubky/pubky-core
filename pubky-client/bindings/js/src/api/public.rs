@@ -36,7 +36,12 @@ impl Client {
             builder = builder.cursor(cursor_val);
         }
 
-        let urls = builder.send().await?;
+        let urls = builder
+            .send()
+            .await?
+            .into_iter()
+            .map(|u| u.to_string())
+            .collect::<Vec<String>>();
         Ok(urls)
     }
 }

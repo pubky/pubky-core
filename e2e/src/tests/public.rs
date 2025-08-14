@@ -236,6 +236,7 @@ async fn list() {
 
     {
         let list = client.list(&url).unwrap().send().await.unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -252,6 +253,7 @@ async fn list() {
 
     {
         let list = client.list(&url).unwrap().limit(2).send().await.unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -272,6 +274,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -292,6 +295,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -312,6 +316,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -332,6 +337,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -351,6 +357,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -374,6 +381,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -395,6 +403,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -450,6 +459,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -475,6 +485,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -496,6 +507,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -517,6 +529,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -538,6 +551,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -564,6 +578,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -586,6 +601,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -608,6 +624,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,

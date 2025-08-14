@@ -1,6 +1,7 @@
 use reqwest::{IntoUrl, Method};
+use url::Url;
 
-use crate::{Client, Result, api::auth::check_http_status};
+use crate::{Client, Result, api::util::check_http_status};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
@@ -64,10 +65,10 @@ impl<'a> ListBuilder<'a> {
 
     /// Send the list request.
     ///
-    /// Returns a list of Pubky URLs of the files in the path of the `url`
+    /// Returns a list of URLs of the files in the path of the `url`
     /// respecting [ListBuilder::reverse], [ListBuilder::limit] and [ListBuilder::cursor]
     /// options.
-    pub async fn send(mut self) -> Result<Vec<String>> {
+    pub async fn send(mut self) -> Result<Vec<Url>> {
         if !self.url.path().ends_with('/') {
             let path = self.url.path().to_string();
             let mut parts = path.split('/').collect::<Vec<&str>>();
@@ -110,9 +111,10 @@ impl<'a> ListBuilder<'a> {
         // TODO: bail on too large files.
         let bytes = response.bytes().await?;
 
-        Ok(String::from_utf8_lossy(&bytes)
-            .lines()
-            .map(String::from)
-            .collect())
+        let mut out = Vec::new();
+        for line in String::from_utf8_lossy(&bytes).lines() {
+            out.push(Url::parse(line)?);
+        }
+        Ok(out)
     }
 }

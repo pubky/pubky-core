@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use reqwest::{IntoUrl, Method, Response, StatusCode};
+use reqwest::{IntoUrl, Method, StatusCode};
 use std::collections::HashMap;
 use url::Url;
 
@@ -12,8 +12,10 @@ use pubky_common::{
 };
 
 use crate::{
-    Client, Error, cross_debug,
-    errors::{AuthError, RequestError, Result},
+    Client,
+    api::util::check_http_status,
+    cross_debug,
+    errors::{AuthError, Result},
     internal::pkarr::PublishStrategy,
 };
 
@@ -112,20 +114,27 @@ impl Client {
         Ok(())
     }
 
-    /// Signin to a homeserver.
+    /// Signin to a homeserver and spawn backgrown task to publish record.
+    /// This is the default method for signing in that has better UX (less waiting time)
+    ///
     /// After a successful signin, a background task is spawned to republish the user's
     /// PKarr record if it is missing or older than 1 hour. We don't mind if it succeed
     /// or fails. We want signin to return fast.
     pub async fn signin(&self, keypair: &Keypair) -> Result<Session> {
-        self.signin_and_ensure_record_published(keypair, false)
-            .await
+        self.inner_signin_and_publish(keypair, false).await
+    }
+
+    /// Signin and synchronously ensure the user's PKarr record is (re)published when stale.
+    /// This is method is safer than `signin()` (ensures the record is published) but has worse UX (more waiting time)
+    pub async fn signin_and_publish(&self, keypair: &Keypair) -> Result<Session> {
+        self.inner_signin_and_publish(keypair, true).await
     }
 
     /// Signin to a homeserver and ensure the user's PKarr record is published.
     ///
     /// Same as `signin(keypair)` but gives the option to wait for the pkarr packet to be
     /// published in sync. `signin(keypair)` does publish the packet async.
-    pub async fn signin_and_ensure_record_published(
+    async fn inner_signin_and_publish(
         &self,
         keypair: &Keypair,
         publish_sync: bool,
@@ -392,28 +401,6 @@ impl AuthRequest {
             Ok(result_from_task) => result_from_task,
             Err(_) => Err(AuthError::RequestExpired.into()),
         }
-    }
-}
-
-/// Checks an HTTP response for a success status code.
-///
-/// If the status is successful (2xx), the original response is returned.
-/// If the status is an error (4xx or 5xx), the response body is consumed
-/// to create a `PubkyError::Request(RequestError::Server)` and returned as an `Err`.
-pub async fn check_http_status(response: Response) -> Result<Response> {
-    if !response.status().is_success() {
-        let status = response.status();
-        let message = response.text().await.unwrap_or_else(|_| {
-            status
-                .canonical_reason()
-                .unwrap_or("Unknown Error")
-                .to_string()
-        });
-
-        let server_error = RequestError::Server { status, message };
-        Err(Error::from(server_error))
-    } else {
-        Ok(response)
     }
 }
 

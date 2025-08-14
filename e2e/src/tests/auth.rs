@@ -404,10 +404,7 @@ async fn test_republish_on_signin_old_enough() {
 
     // Immediately sign in. This should update the record
     // with PublishStrategy::IfOlderThan.
-    client
-        .signin_and_ensure_record_published(&keypair, true)
-        .await
-        .unwrap();
+    client.signin_and_publish(&keypair).await.unwrap();
 
     let record2 = client
         .pkarr()
@@ -453,10 +450,7 @@ async fn test_republish_on_signin_not_old_enough() {
 
     // Immediately sign in. This updates the record
     // with PublishStrategy::IfOlderThan.
-    client
-        .signin_and_ensure_record_published(&keypair, true)
-        .await
-        .unwrap();
+    client.signin_and_publish(&keypair).await.unwrap();
 
     let record2 = client
         .pkarr()
