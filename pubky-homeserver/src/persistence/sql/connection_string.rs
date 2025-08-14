@@ -17,10 +17,6 @@ impl ConnectionString {
         self.0.as_str()
     }
 
-    pub fn as_url(&self) -> &url::Url {
-        &self.0
-    }
-
     fn is_postgres(&self) -> bool {
         self.0.scheme() == "postgres" || self.0.scheme() == "postgresql"
     }

@@ -5,6 +5,28 @@ use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 use crate::persistence::sql::db_connection::DbConnection;
 
 pub const USER_TABLE: &str = "users";
+// pub enum ExecutorHolder<'a> {
+//     Pool(sqlx::pool::PoolConnection<sqlx::Postgres>),
+//     Transaction(&'a sqlx::Transaction<'static, sqlx::Postgres>),
+// }
+
+// impl<'a> ExecutorHolder<'a> {
+//     pub async fn from_pool(pool: sqlx::PgPool) -> Result<Self, sqlx::Error> {
+//         let con = pool.acquire().await?;
+//         Ok(ExecutorHolder::Pool(con))
+//     }
+
+//     pub fn from_tx(tx: &'a sqlx::Transaction<'static, sqlx::Postgres>) -> Self {
+//         ExecutorHolder::Transaction(tx)
+//     }
+
+//     pub async fn get_con<'c>(&self) -> &sqlx::PgConnection {
+//         match self {
+//             ExecutorHolder::Pool(pool) => &**pool,
+//             ExecutorHolder::Transaction(tx) => &***tx,
+//         }
+//     }
+// }
 
 /// Repository that handles all the queries regarding the UserEntity.
 pub struct UserRepository<'a> {

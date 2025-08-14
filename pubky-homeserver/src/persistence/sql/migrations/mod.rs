@@ -1,7 +1,9 @@
 mod m20250806_create_user;
 mod m20250812_create_signup_code;
 mod m20250813_create_session;
+mod m20250814_create_event;
 
 pub (crate) use m20250806_create_user::M20250806CreateUserMigration;
 pub (crate) use m20250812_create_signup_code::M20250812CreateSignupCodeMigration;
 pub (crate) use m20250813_create_session::M20250813CreateSessionMigration;
+pub (crate) use m20250814_create_event::M20250814CreateEventMigration;
