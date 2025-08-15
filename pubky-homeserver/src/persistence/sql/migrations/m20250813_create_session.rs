@@ -34,11 +34,6 @@ impl MigrationTrait for M20250813CreateSessionMigration {
                     .not_null()
                     .unique_key(),
             )
-            .col(
-                ColumnDef::new(SessionIden::Version)
-                    .small_unsigned()
-                    .not_null(),
-            )
             .col(ColumnDef::new(SessionIden::User).integer().not_null())
             .col(
                 ColumnDef::new(SessionIden::Capabilities)
@@ -87,7 +82,6 @@ impl MigrationTrait for M20250813CreateSessionMigration {
 enum SessionIden {
     Id,
     Secret,
-    Version,
     User,
     Capabilities,
     CreatedAt,
@@ -97,7 +91,6 @@ enum SessionIden {
 struct SessionEntity {
     pub id: i32,
     pub secret: String,
-    pub version: u16,
     pub user: i32,
     pub capabilities: Vec<String>,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
@@ -107,7 +100,6 @@ impl FromRow<'_, PgRow> for SessionEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id: i32 = row.try_get(SessionIden::Id.to_string().as_str())?;
         let secret: String = row.try_get(SessionIden::Secret.to_string().as_str())?;
-        let version: i16 = row.try_get(SessionIden::Version.to_string().as_str())?;
         let user: i32 = row.try_get(SessionIden::User.to_string().as_str())?;
         let capabilities: Vec<String> =
             row.try_get(SessionIden::Capabilities.to_string().as_str())?;
@@ -116,7 +108,6 @@ impl FromRow<'_, PgRow> for SessionEntity {
         Ok(SessionEntity {
             id,
             secret,
-            version: version as u16,
             user,
             capabilities,
             created_at,
@@ -170,13 +161,11 @@ mod tests {
             .into_table(TABLE)
             .columns([
                 SessionIden::Secret,
-                SessionIden::Version,
                 SessionIden::User,
                 SessionIden::Capabilities,
             ])
             .values(vec![
                 SimpleExpr::Value(secret.into()),
-                SimpleExpr::Value(1.into()),
                 SimpleExpr::Value(1.into()),
                 SimpleExpr::Value(
                     vec!["read", "write"]
@@ -200,7 +189,6 @@ mod tests {
             .columns([
                 SessionIden::Id,
                 SessionIden::Secret,
-                SessionIden::Version,
                 SessionIden::User,
                 SessionIden::Capabilities,
                 SessionIden::CreatedAt,
@@ -212,7 +200,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(session.secret, secret);
-        assert_eq!(session.version, 1);
         assert_eq!(session.user, 1);
         assert_eq!(session.capabilities, vec!["read", "write"]);
     }

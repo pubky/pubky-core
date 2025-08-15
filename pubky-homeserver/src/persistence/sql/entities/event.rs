@@ -1,10 +1,10 @@
 use std::{fmt::Display, str::FromStr};
 
+use pkarr::{PublicKey};
 use sea_query::{Expr, Iden, Query, SimpleExpr};
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
-use futures_util::stream::{self, StreamExt};
 
-use crate::{persistence::sql::db_connection::DbConnection, shared::webdav::WebDavPath};
+use crate::{persistence::sql::{db_connection::DbConnection, entities::user::{UserIden, USER_TABLE}}, shared::webdav::WebDavPath};
 
 pub const EVENT_TABLE: &str = "events";
 
@@ -22,7 +22,7 @@ impl<'a> EventRepository<'a> {
 
     /// Create a new event.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'c, E>(&self, user_id: i32, event_type: EventType, path: &WebDavPath, executor: E) -> Result<EventEntity, sqlx::Error>
+    pub async fn create<'c, E>(&self, user_id: i32, event_type: EventType, path: &WebDavPath, executor: E) -> Result<i64, sqlx::Error>
     where E: Executor<'c, Database = sqlx::Postgres> {
         let statement =
         Query::insert().into_table(EVENT_TABLE)
@@ -31,12 +31,13 @@ impl<'a> EventRepository<'a> {
                 SimpleExpr::Value(event_type.to_string().into()),
                 SimpleExpr::Value(user_id.into()),
                 SimpleExpr::Value(path.as_str().into()),
-            ]).expect("Failed to build insert statement").returning_all().to_owned();
+            ]).expect("Failed to build insert statement").returning_col(EventIden::Id).to_owned();
 
         let (query, values) = self.db.build_query(statement);
 
-        let event: EventEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
-        Ok(event)
+        let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(executor).await?;
+        let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
+        Ok(event_id)
     }
 
     /// Get a list of events by the cursor. The cursor is the id of the last event in the list.
@@ -46,9 +47,12 @@ impl<'a> EventRepository<'a> {
     pub async fn get_by_cursor<'c, E>(&self, cursor: i64, limit: u64, executor: E) 
     -> Result<Vec<EventEntity>, sqlx::Error>
     where E: Executor<'c, Database = sqlx::Postgres> {
-        let statement = Query::select().from(EVENT_TABLE)
-        .columns([EventIden::Id, EventIden::Type, EventIden::User, EventIden::Path, EventIden::CreatedAt])
-        .and_where(Expr::col(EventIden::Id).gte(cursor))
+        let statement = Query::select()
+        .columns([(EVENT_TABLE, EventIden::Id), (EVENT_TABLE, EventIden::User), (EVENT_TABLE, EventIden::Type), (EVENT_TABLE, EventIden::User), (EVENT_TABLE, EventIden::Path), (EVENT_TABLE, EventIden::CreatedAt)])
+        .column((USER_TABLE, UserIden::PublicKey))
+        .from(EVENT_TABLE)
+        .left_join(USER_TABLE, Expr::col((EVENT_TABLE, EventIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))))
+        .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor))
         .limit(limit)
         .to_owned();
         let (query, values) = self.db.build_query(statement);
@@ -99,6 +103,7 @@ impl FromStr for EventType {
 pub struct EventEntity {
     pub id: i64,
     pub event_type: EventType,
+    pub user_pubkey: PublicKey,
     pub user_id: i32,
     pub path: WebDavPath,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
@@ -107,9 +112,11 @@ pub struct EventEntity {
 impl FromRow<'_, PgRow> for EventEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id: i64 = row.try_get(EventIden::Id.to_string().as_str())?;
+        let user_id: i32 = row.try_get(EventIden::User.to_string().as_str())?;
         let event_type: String = row.try_get(EventIden::Type.to_string().as_str())?;
         let event_type = EventType::from_str(&event_type).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        let user_id: i32 = row.try_get(EventIden::User.to_string().as_str())?;
+        let user_public_key: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
+        let user_public_key = PublicKey::from_str(&user_public_key).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let path: String = row.try_get(EventIden::Path.to_string().as_str())?;
         let path = WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
@@ -117,6 +124,7 @@ impl FromRow<'_, PgRow> for EventEntity {
         Ok(EventEntity {
             id,
             event_type,
+            user_pubkey: user_public_key,
             user_id,
             path,
             created_at,
@@ -150,7 +158,8 @@ mod tests {
         // Test get session
         let events = event_repo.get_by_cursor(5, 4, db.pool()).await.unwrap();
         assert_eq!(events.len(), 4);
-        assert_eq!(events[0].id, 5);
+        assert_eq!(events[0].id, 6);
+        assert_eq!(events[0].user_pubkey, user_pubkey);
         assert_eq!(events[0].user_id, user.id);
         assert_eq!(events[0].path, WebDavPath::new("/test").unwrap());
         assert_eq!(events[0].event_type, EventType::Put);
