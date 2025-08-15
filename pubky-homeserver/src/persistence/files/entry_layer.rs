@@ -199,7 +199,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_entry_layer() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = LmDB::test();

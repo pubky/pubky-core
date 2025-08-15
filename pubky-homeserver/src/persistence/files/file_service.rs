@@ -120,7 +120,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_write_get_delete_lmdb_and_opendal() {
         let context = AppContext::test();
         let file_service = FileService::new_from_context(&context).unwrap();
@@ -222,7 +222,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_write_get_basic() {
         let context = AppContext::test();
         let file_service = FileService::new_from_context(&context).unwrap();
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(content.as_ref(), test_data);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_update_basic() {
         let mut context = AppContext::test();
         context.config_toml.general.user_storage_quota_mb = 1;
@@ -276,7 +276,7 @@ mod tests {
     }
 
     /// Override and existing entry and check if the data usage is updated correctly.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_override_existing_entry() {
         let mut context = AppContext::test();
         context.config_toml.general.user_storage_quota_mb = 1;
@@ -305,7 +305,7 @@ mod tests {
     }
 
     /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_exactly_to_quota() {
         let mut context = AppContext::test();
         context.config_toml.general.user_storage_quota_mb = 1;
@@ -327,7 +327,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_above_quota() {
         let mut context = AppContext::test();
         context.config_toml.general.user_storage_quota_mb = 1;
@@ -353,7 +353,7 @@ mod tests {
     }
 
     /// Override and existing entry and check if the data usage is updated correctly.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_override_existing_above_quota() {
         let mut context = AppContext::test();
         context.config_toml.general.user_storage_quota_mb = 1;

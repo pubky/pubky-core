@@ -173,7 +173,7 @@ mod tests {
         .unwrap()
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_root() {
         let context = AppContext::test();
         let server = create_test_server(&context);
@@ -181,7 +181,7 @@ mod tests {
         response.assert_status_ok();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_generate_signup_token_fail() {
         let context = AppContext::test();
         let server = create_test_server(&context);
@@ -198,7 +198,7 @@ mod tests {
         response.assert_status_unauthorized();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_generate_signup_token_success() {
         let context = AppContext::test();
         let server = create_test_server(&context);

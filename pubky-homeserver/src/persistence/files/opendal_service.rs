@@ -262,7 +262,7 @@ mod tests {
     use crate::persistence::files::opendal_test_operators::OpendalTestOperators;
     use crate::shared::webdav::WebDavPath;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_build_storage_operator_from_config_file_system() {
         let mut context = AppContext::test();
         context.config_toml.storage = StorageConfigToml::FileSystem;
@@ -280,7 +280,7 @@ mod tests {
 
     /// Make sure that the OpendalService returns a DiskSpaceQuotaExceeded error if the user has exceeded the quota.
     /// This is important because the UserQuotaLayer will return a RateLimited error if the user has exceeded the quota.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_quota_exceeded_error() {
         let mut context = AppContext::test();
         context.config_toml.general.user_storage_quota_mb = 1;
@@ -301,7 +301,7 @@ mod tests {
     }
 
     /// Test the chunked reading of a file.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_content_chunked() {
         let operators = OpendalTestOperators::new();
         for (_scheme, operator) in operators.operators() {
@@ -362,7 +362,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_write_content_stream() {
         let operators = OpendalTestOperators::new();
         for (_scheme, operator) in operators.operators() {
