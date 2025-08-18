@@ -322,7 +322,7 @@ impl Client {
                     break Ok(response);
                 }
                 Err(error) => {
-                    // TODO: test again after Rqewest support timeout
+                    // TODO: test again after Reqwest support timeout
                     if error.is_timeout() && !tx.is_disconnected() {
                         cross_debug!("Connection to HttpRelay timedout, reconnecting...");
 
@@ -375,9 +375,9 @@ impl Client {
         .await
     }
 
-    /// Get the homeserver for a given Pubky public key.
+    /// Resolve the homeserver public key for a given Pubky public key.
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
-    pub async fn get_homeserver(&self, pubky: &PublicKey) -> Option<String> {
+    pub async fn resolve_homeserver(&self, pubky: &PublicKey) -> Option<String> {
         let packet = self.pkarr.resolve_most_recent(pubky).await?;
         Self::extract_host_from_packet(&packet)
     }
@@ -429,7 +429,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let homeserver = client.get_homeserver(&pubky).await;
+        let homeserver = client.resolve_homeserver(&pubky).await;
         assert_eq!(homeserver, Some(homeserver_key));
     }
 }
