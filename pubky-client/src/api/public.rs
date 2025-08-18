@@ -6,7 +6,7 @@ use crate::{Client, Result, api::util::check_http_status};
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
     ///
-    /// `url` sets the path you want to lest within.
+    /// `url` sets the path you want to list within.
     pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
         ListBuilder::new(self, url)
     }

@@ -22,4 +22,7 @@ pub use errors::{BuildError, Error, Result};
 pub use api::{auth::AuthRequest, public::ListBuilder};
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
-pub use pubky_common::recovery_file;
+pub use pubky_common::{
+    capabilities::{Capabilities, Capability},
+    recovery_file,
+};

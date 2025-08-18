@@ -19,6 +19,9 @@ pub struct ClientBuilder {
     /// Maximum age before a user record should be republished.
     /// Defaults to 1 hour.
     max_record_age: Option<Duration>,
+    /// Additional user-agent segment appended after the default prefix for app-level telemetry.
+    user_agent_extra: Option<String>,
+
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
     testnet_host: Option<String>,
@@ -87,6 +90,14 @@ impl ClientBuilder {
         self
     }
 
+    /// Append an extra user-agent segment after the default `pubky.org@<version>`.
+    /// Enables app-level telemetry
+    /// Example: `.user_agent_extra("myapp/1.2.3")`
+    pub fn user_agent_extra<S: Into<String>>(&mut self, extra: S) -> &mut Self {
+        self.user_agent_extra = Some(extra.into());
+        self
+    }
+
     /// Set max age a record can have before it must be republished.
     /// Defaults to 1 hour if not overridden.
     pub fn max_record_age(&mut self, max_age: Duration) -> &mut Self {
@@ -101,8 +112,13 @@ impl ClientBuilder {
         #[cfg(not(target_arch = "wasm32"))]
         let cookie_store = Arc::new(CookieJar::default());
 
-        // TODO: allow custom user agent, but force a Pubky user agent information
-        let user_agent = DEFAULT_USER_AGENT;
+        // Compose user agent with optional extra part.
+        let user_agent = match &self.user_agent_extra {
+            Some(extra) if !extra.trim().is_empty() => {
+                &format!("{DEFAULT_USER_AGENT} {}", extra.trim())
+            }
+            _ => DEFAULT_USER_AGENT,
+        };
 
         #[cfg(not(target_arch = "wasm32"))]
         let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone())
