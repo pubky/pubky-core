@@ -10,7 +10,7 @@ pub use crate::{PubkyClient, PubkyClientBuilder};
 pub use crate::PubkyAgent;
 
 // Auth and listing helpers:
-pub use crate::{api::auth::AuthRequest, api::public::ListBuilder};
+pub use crate::{agent::auth_req::AuthRequest, client::list::ListBuilder};
 
 // Capabilities for auth flows
 pub use crate::{Capabilities, Capability};

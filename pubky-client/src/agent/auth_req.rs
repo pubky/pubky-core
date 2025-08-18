@@ -1,3 +1,5 @@
+// Copy pasted from old `.src/api/auth.rs`
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{IntoUrl, Method, StatusCode};
 use std::collections::HashMap;
@@ -13,10 +15,10 @@ use pubky_common::{
 
 use crate::{
     Client,
-    api::util::check_http_status,
+    client::pkarr::PublishStrategy,
     cross_debug,
     errors::{AuthError, Result},
-    internal::pkarr::PublishStrategy,
+    util::check_http_status,
 };
 
 impl Client {
@@ -408,7 +410,7 @@ impl AuthRequest {
 mod tests {
     use pkarr::Keypair;
 
-    use crate::{Client, internal::pkarr::PublishStrategy};
+    use crate::{Client, client::pkarr::PublishStrategy};
 
     #[tokio::test]
     async fn test_get_homeserver() {

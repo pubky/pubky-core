@@ -15,9 +15,10 @@ use pubky_common::{
 
 use crate::{
     BuildError, PubkyClient,
-    api::{auth::AuthRequest, util::check_http_status},
+    agent::auth_req::AuthRequest,
+    client::pkarr::PublishStrategy,
     errors::{AuthError, Result},
-    internal::pkarr::PublishStrategy,
+    util::check_http_status,
 };
 
 /// Stateful, per-identity API driver that operates atop a shared [PubkyClient].

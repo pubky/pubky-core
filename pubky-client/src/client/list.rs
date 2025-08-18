@@ -1,7 +1,7 @@
 use reqwest::{IntoUrl, Method};
 use url::Url;
 
-use crate::{Client, Result, api::util::check_http_status};
+use crate::{Client, Result, util::check_http_status};
 
 impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
