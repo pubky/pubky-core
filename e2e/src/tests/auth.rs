@@ -12,41 +12,30 @@ async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let client = testnet.pubky_client().unwrap();
-
     let keypair = Keypair::random();
+    let public_key = keypair.public_key();
+    let agent = testnet.pubky_agent(keypair).unwrap();
 
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
+    agent.signup(&server.public_key(), None).await.unwrap();
 
-    let session = client
-        .session(&keypair.public_key())
-        .await
-        .unwrap()
-        .unwrap();
+    let session = agent.session().await.unwrap().unwrap();
 
     assert!(session.capabilities().contains(&Capability::root()));
 
-    client.signout(&keypair.public_key()).await.unwrap();
+    agent.signout().await.unwrap();
 
     {
-        let session = client.session(&keypair.public_key()).await.unwrap();
+        let session = agent.session().await.unwrap();
 
         assert!(session.is_none());
     }
 
-    client.signin(&keypair).await.unwrap();
+    agent.signin().await.unwrap();
 
     {
-        let session = client
-            .session(&keypair.public_key())
-            .await
-            .unwrap()
-            .unwrap();
+        let session = agent.session().await.unwrap().unwrap();
 
-        assert_eq!(session.pubky(), &keypair.public_key());
+        assert_eq!(session.pubky(), &public_key);
         assert!(session.capabilities().contains(&Capability::root()));
     }
 }

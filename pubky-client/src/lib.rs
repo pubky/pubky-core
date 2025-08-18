@@ -7,6 +7,7 @@
 // TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
+mod agent;
 mod api;
 mod client;
 pub mod errors;
@@ -16,7 +17,8 @@ mod macros;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
-pub use client::{Client, ClientBuilder};
+pub use agent::PubkyAgent;
+pub use client::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 // Export common types.
 pub use api::{auth::AuthRequest, public::ListBuilder};
@@ -26,3 +28,9 @@ pub use pubky_common::{
     capabilities::{Capabilities, Capability},
     recovery_file,
 };
+
+// --- Back-compat aliases (soft-deprecated) ---
+#[allow(deprecated)]
+pub type Client = PubkyClient;
+#[allow(deprecated)]
+pub type ClientBuilder = PubkyClientBuilder;

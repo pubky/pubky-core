@@ -4,11 +4,11 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
-use pubky::Keypair;
+use pubky::{Keypair, PubkyAgent, PubkyClient};
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
 };
@@ -160,6 +160,22 @@ impl Testnet {
     /// Panics if the client fails to build, which should not happen in a test context.
     pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
         self.pubky_client_builder().build()
+    }
+
+    /// Creates a `pubky::PubkyAgent` pre-configured to use this test network.
+    /// Will instantiate a single global `pubky_client` to be shared across all agents created.
+    ///
+    /// This is a convenience method that builds an agent over `Self::pubky_client_builder`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client fails to build, which should not happen in a test context.
+    pub fn pubky_agent(&self, keypair: Keypair) -> Result<pubky::PubkyAgent, pubky::BuildError> {
+        static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
+            once_cell::sync::OnceCell::new();
+        let client =
+            DEFAULT.get_or_try_init(|| self.pubky_client_builder().build().map(Arc::new))?;
+        Ok(PubkyAgent::with_client(client.clone(), keypair))
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.

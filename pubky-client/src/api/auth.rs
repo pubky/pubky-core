@@ -385,7 +385,7 @@ impl Client {
 
 #[derive(Debug, Clone)]
 pub struct AuthRequest {
-    url: Url,
+    pub(crate) url: Url,
     pub(crate) rx: flume::Receiver<Result<PublicKey>>,
 }
 

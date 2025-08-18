@@ -8,18 +8,19 @@ use super::internal::cookies::CookieJar;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Transport-only client for Pubky. Reusable, stateless w.r.t. user identities.
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Default, Clone)]
-pub struct ClientBuilder {
+pub struct PubkyClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
     /// Maximum age before a user record should be republished.
     /// Defaults to 1 hour.
     max_record_age: Option<Duration>,
-    /// Additional user-agent segment appended after the default prefix for app-level telemetry.
+    /// Optional user-agent segment appended to the default UA for app-level telemetry.
     user_agent_extra: Option<String>,
 
     /// The hostname to use for testnet URL transformations (WASM only).
@@ -27,7 +28,7 @@ pub struct ClientBuilder {
     testnet_host: Option<String>,
 }
 
-impl ClientBuilder {
+impl PubkyClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     /// Creates a client connected to a local test network using `localhost`.
     /// To use a custom host, use `testnet_with_host`.
@@ -106,7 +107,7 @@ impl ClientBuilder {
     }
 
     /// Build [Client]
-    pub fn build(&self) -> Result<Client, BuildError> {
+    pub fn build(&self) -> Result<PubkyClient, BuildError> {
         let pkarr = self.pkarr.build()?;
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -148,7 +149,7 @@ impl ClientBuilder {
         // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
         let max_record_age = self.max_record_age.unwrap_or(DEFAULT_MAX_RECORD_AGE);
 
-        Ok(Client {
+        Ok(PubkyClient {
             pkarr,
             http: http_builder.build()?,
 
@@ -165,9 +166,9 @@ impl ClientBuilder {
     }
 }
 
-/// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
+/// Transport client for Pubky homeserver API and generic HTTP to Pubky and Icann URLs.
 #[derive(Clone, Debug)]
-pub struct Client {
+pub struct PubkyClient {
     pub(crate) http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
 
@@ -185,13 +186,13 @@ pub struct Client {
     pub(crate) testnet_host: Option<String>,
 }
 
-impl Client {
+impl PubkyClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
-    pub fn new() -> Result<Client, BuildError> {
+    pub fn new() -> Result<PubkyClient, BuildError> {
         Self::builder().build()
     }
 
-    /// Returns Pubky Client’s default pkarr relays.
+    /// Returns PubkyClient’s default pkarr relays.
     pub fn default_relays() -> &'static [&'static str] {
         DEFAULT_RELAYS
     }
@@ -202,15 +203,15 @@ impl Client {
     }
 
     /// Returns a builder to edit settings before creating [Client].
-    pub fn builder() -> ClientBuilder {
-        let mut builder = ClientBuilder::default();
+    pub fn builder() -> PubkyClientBuilder {
+        let mut builder = PubkyClientBuilder::default();
         builder.pkarr(|pkarr| pkarr.relays(DEFAULT_RELAYS).expect("infallible"));
         builder
     }
 
     /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
     /// You need an instance of `pubky-testnet` running on `localhost`
-    pub fn testnet() -> Result<Client, BuildError> {
+    pub fn testnet() -> Result<PubkyClient, BuildError> {
         let mut builder = Self::builder();
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -236,7 +237,7 @@ mod test {
 
     #[tokio::test]
     async fn test_fetch() {
-        let client = Client::new().unwrap();
+        let client = PubkyClient::new().unwrap();
         let response = client.get("https://example.com/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }
