@@ -11,8 +11,9 @@ use crate::{
     persistence::{
         files::{FileIoError, FileService},
         lmdb::LmDB,
+        sql::DbConnection,
     },
-    ConfigToml, DataDir, PersistentDataDir,
+    ConfigToml, DataDir
 };
 use pkarr::Keypair;
 use std::{sync::Arc, time::Duration};
@@ -32,6 +33,9 @@ pub enum AppContextConversionError {
     /// Failed to open LMDB.
     #[error("Failed to open LMDB: {0}")]
     LmDB(anyhow::Error),
+    /// Failed to open SQL DB.
+    #[error("Failed to open SQL DB: {0}")]
+    SqlDb(sqlx::Error),
     /// Failed to build storage operator.
     #[error("Failed to build storage operator: {0}")]
     Storage(FileIoError),
@@ -45,10 +49,12 @@ pub enum AppContextConversionError {
 ///
 /// Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 ///
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppContext {
     /// A list of all shared resources.
     pub(crate) db: LmDB,
+    /// The SQL database connection.
+    pub(crate) sql_db: DbConnection,
     /// The storage operator to store files.
     pub(crate) file_service: FileService,
     pub(crate) config_toml: ConfigToml,
@@ -66,16 +72,13 @@ pub struct AppContext {
 impl AppContext {
     /// Create a new AppContext for testing.
     #[cfg(any(test, feature = "testing"))]
-    pub fn test() -> Self {
+    pub async fn test() -> Self {
         let data_dir = MockDataDir::test();
-        Self::try_from(data_dir).expect("failed to build AppContext from DataDirMock")
+        Self::read_from(data_dir).await.expect("failed to build AppContext from DataDirMock")
     }
-}
 
-impl TryFrom<Arc<dyn DataDir>> for AppContext {
-    type Error = AppContextConversionError;
-
-    fn try_from(dir: Arc<dyn DataDir>) -> Result<Self, Self::Error> {
+    /// Create a new AppContext from a data directory.
+    pub async fn read_from<D: DataDir + 'static>(dir: D) -> Result<Self, AppContextConversionError> {
         dir.ensure_data_dir_exists_and_is_writable()
             .map_err(AppContextConversionError::DataDir)?;
         let conf = dir
@@ -90,8 +93,12 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
         let file_service = FileService::new_from_config(&conf, dir.path(), db.clone())
             .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
+
+        let sql_db = Self::connect_to_sql_db(&conf).await?;
+
         Ok(Self {
             db,
+            sql_db,
             pkarr_client: pkarr_builder
                 .clone()
                 .build()
@@ -100,29 +107,11 @@ impl TryFrom<Arc<dyn DataDir>> for AppContext {
             pkarr_builder,
             config_toml: conf,
             keypair,
-            data_dir: dir,
+            data_dir: Arc::new(dir),
         })
     }
 }
 
-impl TryFrom<PersistentDataDir> for AppContext {
-    type Error = AppContextConversionError;
-
-    fn try_from(dir: PersistentDataDir) -> Result<Self, Self::Error> {
-        let arc_dir: Arc<dyn DataDir> = Arc::new(dir);
-        Self::try_from(arc_dir)
-    }
-}
-
-#[cfg(any(test, feature = "testing"))]
-impl TryFrom<MockDataDir> for AppContext {
-    type Error = AppContextConversionError;
-
-    fn try_from(dir: MockDataDir) -> Result<Self, Self::Error> {
-        let arc_dir: Arc<dyn DataDir> = Arc::new(dir);
-        Self::try_from(arc_dir)
-    }
-}
 
 impl AppContext {
     /// Build the pkarr client builder based on the config.
@@ -151,5 +140,24 @@ impl AppContext {
             builder.request_timeout(duration);
         }
         builder
+    }
+
+    /// Connect to the SQL database.
+    /// If we are in a test environment and it's a test db connection string,
+    /// we use an empheral test db.
+    /// Otherwise, we use the normal db connection.
+    async fn connect_to_sql_db(config_toml: &ConfigToml) -> Result<DbConnection, AppContextConversionError> {
+        #[cfg(any(test, feature = "testing"))]
+        {
+        // If we are in a test environment and it's a test db connection string,
+        // we use an empheral test db.
+            if config_toml.general.db_url.is_test_db() {
+                return Ok(DbConnection::test().await);
+            } else {
+                return Ok(DbConnection::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?);
+            }
+        }
+        // If we are not in a test environment, we use the normal db connection.
+        Ok(DbConnection::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?)
     }
 }

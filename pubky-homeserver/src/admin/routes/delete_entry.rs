@@ -31,10 +31,10 @@ mod tests {
         let _entry = file_service.write(entry_path, buffer).await.unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_delete_entry() {
         // Set everything up
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
@@ -82,10 +82,10 @@ mod tests {
         assert!(events[1].contains("DEL"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_file_not_found() {
         // Set everything up
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
@@ -106,10 +106,10 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_invalid_pubkey() {
         // Set everything up
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let db = context.db.clone();
         let app_state = AppState::new(
             db.clone(),
