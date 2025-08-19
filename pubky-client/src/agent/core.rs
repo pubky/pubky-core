@@ -1,8 +1,8 @@
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use once_cell::sync::OnceCell;
+use reqwest::{IntoUrl, Method, Response, StatusCode, header::COOKIE};
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use reqwest::{IntoUrl, Method, Response, StatusCode, header::COOKIE};
 use url::Url;
 
 use pkarr::{Keypair, PublicKey};
@@ -17,62 +17,108 @@ use crate::{
     BuildError, PubkyClient,
     agent::auth_req::AuthRequest,
     client::pkarr::PublishStrategy,
-    errors::{AuthError, Result},
+    errors::{AuthError, Error, Result},
     util::check_http_status,
 };
 
 /// Stateful, per-identity API driver that operates atop a shared [PubkyClient].
 #[derive(Clone, Debug)]
 pub struct PubkyAgent {
-    client: Arc<PubkyClient>,
-    keypair: Keypair,
+    pub(crate) client: Arc<PubkyClient>,
+
+    /// Optional identity material. Supports keyless agents.
+    pub(crate) keypair: Option<Keypair>,
+
+    /// Known public key for this agent (derived from keypair or pubkyauth).
+    pub(crate) pubky: Arc<std::sync::RwLock<Option<PublicKey>>>,
+
+    /// Per-agent session cookie secret for `_pubky.<pubky>` (native only).
     #[cfg(not(target_arch = "wasm32"))]
-    sessions: std::sync::Arc<std::sync::RwLock<HashMap<String /* _pubky.<pubky> */, String>>>,
+    pub(crate) session_secret: Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl PubkyAgent {
-    pub fn with_client(client: Arc<PubkyClient>, keypair: Keypair) -> Self {
+    pub fn with_client(client: Arc<PubkyClient>, keypair: Option<Keypair>) -> Self {
+        let initial_pubky = keypair.as_ref().map(|k| k.public_key());
         Self {
             client,
             keypair,
+            pubky: Arc::new(std::sync::RwLock::new(initial_pubky)),
             #[cfg(not(target_arch = "wasm32"))]
-            sessions: std::sync::Arc::new(std::sync::RwLock::new(HashMap::new())),
+            session_secret: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
     /// Convenience that uses a lazily-initialized default transport.
-    pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
-        static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
-            once_cell::sync::OnceCell::new();
+    pub fn new(keypair: Option<Keypair>) -> std::result::Result<Self, BuildError> {
+        static DEFAULT: OnceCell<Arc<PubkyClient>> = OnceCell::new();
         let client = DEFAULT.get_or_try_init(|| PubkyClient::new().map(Arc::new))?;
         Ok(Self::with_client(client.clone(), keypair))
     }
 
-    /// Return this agent's public key (by value).
-    pub fn pubky(&self) -> PublicKey {
-        self.keypair.public_key()
+    /// Returns the known public key, if any.
+    pub fn pubky(&self) -> Option<PublicKey> {
+        match self.pubky.read() {
+            Ok(g) => g.clone(),
+            Err(_) => None,
+        }
     }
 
-    fn homeserver_url(&self, path: &str) -> String {
-        let p = path.trim_start_matches('/');
-        format!("pubky://{}/{}", self.pubky(), p)
+    /// Require a public key; error if unknown.
+    fn require_pubky(&self) -> Result<PublicKey> {
+        self.pubky()
+            .ok_or_else(|| Error::from(AuthError::Validation("Agent has no known pubky".into())))
     }
 
+    /// Require a keypair; error if missing.
+    fn require_keypair(&self) -> Result<&Keypair> {
+        self.keypair
+            .as_ref()
+            .ok_or_else(|| Error::from(AuthError::Validation("Agent has no keypair".into())))
+    }
+
+    /// Base URL of this agent’s homeserver: `pubky://<pubky>/`.
+    fn homeserver_base(&self) -> Result<Url> {
+        let pk = self.require_pubky()?;
+        Url::parse(&format!("pubky://{}/", pk)).map_err(Into::into)
+    }
+
+    /// Build a request. If `path_or_url` is relative, targets this agent’s homeserver.
     async fn request(&self, method: Method, path_or_url: &str) -> Result<reqwest::RequestBuilder> {
-        let url = if path_or_url.starts_with("pubky://") || path_or_url.starts_with("http") {
-            path_or_url.to_string()
-        } else {
-            self.homeserver_url(path_or_url)
+        let url = match Url::parse(path_or_url) {
+            Ok(abs) => abs,
+            Err(_) => {
+                let mut base = self.homeserver_base()?;
+                base.set_path(path_or_url);
+                base
+            }
         };
 
-        let rb = self.client.cross_request(method, &url).await?;
+        let rb = self.client.cross_request(method, url.clone()).await?;
 
+        // Attach session cookie only when the target host is this agent’s homeserver.
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let host = format!("_pubky.{}", self.pubky());
-            if let Some(secret) = self.sessions.read().unwrap().get(&host).cloned() {
-                let cookie_name = self.pubky().to_string();
-                return Ok(rb.header(COOKIE, format!("{cookie_name}={secret}")));
+            let matches_agent = self
+                .pubky()
+                .and_then(|pk| {
+                    let host = url.host_str().unwrap_or("");
+                    if host.starts_with("_pubky.") {
+                        let tail = &host["_pubky.".len()..];
+                        PublicKey::try_from(tail).ok().map(|h| h == pk)
+                    } else {
+                        PublicKey::try_from(host).ok().map(|h| h == pk)
+                    }
+                })
+                .unwrap_or(false);
+
+            if matches_agent {
+                if let Ok(g) = self.session_secret.read() {
+                    if let Some(secret) = g.as_ref() {
+                        let cookie_name = self.require_pubky()?.to_string();
+                        return Ok(rb.header(COOKIE, format!("{cookie_name}={secret}")));
+                    }
+                }
             }
         }
 
@@ -80,20 +126,18 @@ impl PubkyAgent {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn capture_session_cookie(&self, response: &Response) {
+    fn capture_session_cookie_for(&self, response: &Response, pubky: &PublicKey) {
         use reqwest::header::SET_COOKIE;
-        let cookie_name = self.pubky().to_string();
-        let host_key = format!("_pubky.{}", self.pubky());
+        let cookie_name = pubky.to_string();
 
         for (name, val) in response.headers().iter() {
             if name == SET_COOKIE {
                 if let Ok(v) = std::str::from_utf8(val.as_bytes()) {
                     if let Ok(parsed) = cookie::Cookie::parse(v.to_owned()) {
                         if parsed.name() == cookie_name {
-                            self.sessions
-                                .write()
-                                .unwrap()
-                                .insert(host_key.clone(), parsed.value().to_string());
+                            if let Ok(mut slot) = self.session_secret.write() {
+                                *slot = Some(parsed.value().to_string());
+                            }
                         }
                     }
                 }
@@ -101,11 +145,19 @@ impl PubkyAgent {
         }
     }
 
-    // === Generic homeserver verbs (relative to this agent's pubky) ===
+    #[cfg(not(target_arch = "wasm32"))]
+    fn capture_session_cookie(&self, response: &Response) -> Result<()> {
+        let pk = self.require_pubky()?;
+        self.capture_session_cookie_for(response, &pk);
+        Ok(())
+    }
+
+    // === Homeserver verbs relative to this agent’s pubky ===
+
     pub async fn get(&self, path: &str) -> Result<Response> {
         let resp = self.request(Method::GET, path).await?.send().await?;
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&resp);
+        let _ = self.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -117,7 +169,7 @@ impl PubkyAgent {
             .send()
             .await?;
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&resp);
+        let _ = self.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -129,7 +181,7 @@ impl PubkyAgent {
             .send()
             .await?;
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&resp);
+        let _ = self.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -141,155 +193,142 @@ impl PubkyAgent {
             .send()
             .await?;
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&resp);
+        let _ = self.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
     pub async fn delete(&self, path: &str) -> Result<Response> {
         let resp = self.request(Method::DELETE, path).await?.send().await?;
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&resp);
+        let _ = self.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
     pub async fn head(&self, path: &str) -> Result<Response> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&resp);
+        let _ = self.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
-    // === Homeserver identity/session flows ===
+    // === Session/identity flows ===
 
-    /// Signup to a homeserver and update Pkarr accordingly.
-    ///
-    /// The homeserver is a Pkarr public key domain string (`"pubky.<pk>"` variant accepted by server).
+    /// Signup to a homeserver and publish `_pubky` record. Requires a keypair.
     pub async fn signup(
         &self,
         homeserver: &PublicKey,
         signup_token: Option<&str>,
     ) -> Result<Session> {
-        // 1) Construct the base URL: "https://<homeserver>/signup"
+        let kp = self.require_keypair()?;
+
         let mut url = Url::parse(&format!("https://{}", homeserver))?;
         url.set_path("/signup");
-
-        // 2) Optional signup token.
         if let Some(token) = signup_token {
             url.query_pairs_mut().append_pair("signup_token", token);
         }
 
-        // 3) Create an AuthToken (root capability).
-        let auth_token = AuthToken::sign(&self.keypair, vec![Capability::root()]);
-        let request_body = auth_token.serialize();
-
-        // 4) Send POST request with the AuthToken in the body
+        let auth_token = AuthToken::sign(kp, vec![Capability::root()]);
         let response = self
             .client
             .cross_request(Method::POST, url)
             .await?
-            .body(request_body)
+            .body(auth_token.serialize())
             .send()
             .await?;
 
         let response = check_http_status(response).await?;
 
-        // 5) Publish the homeserver record
         self.client
-            .publish_homeserver(
-                &self.keypair,
-                Some(&homeserver.to_string()),
-                PublishStrategy::Force,
-            )
+            .publish_homeserver(kp, Some(&homeserver.to_string()), PublishStrategy::Force)
             .await?;
 
-        // 6) Capture session cookie (native)
-        #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&response);
+        // On successful signup, the agent’s pubky is known from the keypair.
+        if let Ok(mut g) = self.pubky.write() {
+            *g = Some(kp.public_key());
+        }
 
-        // 7) Parse the response body into a `Session`
+        #[cfg(not(target_arch = "wasm32"))]
+        self.capture_session_cookie_for(&response, &kp.public_key());
+
         let bytes = response.bytes().await?;
         Ok(Session::deserialize(&bytes)?)
     }
 
-    /// Check the current session for this Pubky in its homeserver.
-    ///
-    /// Returns None if not signed in, or [reqwest::Error] if other `>=404`.
+    /// Retrieve session for current pubky. Fails if pubky is unknown.
     pub async fn session(&self) -> Result<Option<Session>> {
-        let response = self
-            .request(Method::GET, &format!("pubky://{}/session", self.pubky()))
-            .await?
-            .send()
-            .await?;
-
+        let response = self.request(Method::GET, "/session").await?.send().await?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
-
         let response = check_http_status(response).await?;
         let bytes = response.bytes().await?;
         Ok(Some(Session::deserialize(&bytes)?))
     }
 
-    /// Signout from the homeserver.
+    /// Signout from homeserver and clear this agent’s cookie.
     pub async fn signout(&self) -> Result<()> {
         let response = self
-            .request(Method::DELETE, &format!("pubky://{}/session", self.pubky()))
+            .request(Method::DELETE, "/session")
             .await?
             .send()
             .await?;
-
         check_http_status(response).await?;
 
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.sessions
-                .write()
-                .unwrap()
-                .remove(&format!("_pubky.{}", self.pubky()));
+        if let Ok(mut slot) = self.session_secret.write() {
+            *slot = None;
         }
-
         Ok(())
     }
 
-    /// Signin to a homeserver.
-    /// After a successful signin, republishes the user's PKarr record in background.
+    /// Signin by locally signing an AuthToken. Requires keypair.
     pub async fn signin(&self) -> Result<Session> {
         self.signin_and_ensure_record_published(false).await
     }
 
-    /// Signin and ensure the user's PKarr record is published, optionally syncing.
+    /// Signin and publish `_pubky` if stale. Requires keypair.
     pub async fn signin_and_publish(&self) -> Result<Session> {
         self.signin_and_ensure_record_published(true).await
     }
 
     async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<Session> {
-        let token = AuthToken::sign(&self.keypair, vec![Capability::root()]);
+        let kp = self.require_keypair()?;
+
+        // Ensure agent knows its pubky
+        if let Ok(mut g) = self.pubky.write() {
+            *g = Some(kp.public_key());
+        }
+
+        let token = AuthToken::sign(kp, vec![Capability::root()]);
         let session = self.signin_with_authtoken(&token).await?;
 
         if publish_sync {
             self.client
-                .publish_homeserver(&self.keypair, None, PublishStrategy::IfOlderThan)
+                .publish_homeserver(kp, None, PublishStrategy::IfOlderThan)
                 .await?;
         } else {
-            let client_clone = self.client.clone();
-            let keypair_clone = self.keypair.clone();
-            let future = async move {
-                let _ = client_clone
-                    .publish_homeserver(&keypair_clone, None, PublishStrategy::IfOlderThan)
+            let client = self.client.clone();
+            let kp_cloned = kp.clone();
+            let fut = async move {
+                let _ = client
+                    .publish_homeserver(&kp_cloned, None, PublishStrategy::IfOlderThan)
                     .await;
             };
             #[cfg(not(target_arch = "wasm32"))]
-            tokio::spawn(future);
+            tokio::spawn(fut);
             #[cfg(target_arch = "wasm32")]
-            wasm_bindgen_futures::spawn_local(future);
+            wasm_bindgen_futures::spawn_local(fut);
         }
 
         Ok(session)
     }
 
+    /// Send a signed AuthToken to a relay channel. Requires keypair.
     pub async fn send_auth_token<T: IntoUrl>(&self, pubkyauth_url: &T) -> Result<()> {
+        let kp = self.require_keypair()?;
+
         let pubkyauth_url = Url::parse(pubkyauth_url.as_str())?;
-        let query_params: std::collections::HashMap<String, String> =
+        let query_params: HashMap<String, String> =
             pubkyauth_url.query_pairs().into_owned().collect();
 
         let relay_str = query_params
@@ -303,7 +342,7 @@ impl PubkyAgent {
 
         let secret_bytes = URL_SAFE_NO_PAD
             .decode(secret_str)
-            .map_err(|e| AuthError::Validation(format!("Invalid base64 secret: {}", e)))?;
+            .map_err(|e| AuthError::Validation(format!("Invalid base64 secret: {e}")))?;
 
         let client_secret: [u8; 32] = secret_bytes
             .try_into()
@@ -319,7 +358,7 @@ impl PubkyAgent {
             })
             .unwrap_or_default();
 
-        let token = AuthToken::sign(&self.keypair, capabilities);
+        let token = AuthToken::sign(kp, capabilities);
         let encrypted_token = encrypt(&token.serialize(), &client_secret);
 
         let mut callback_url = relay.clone();
@@ -343,6 +382,7 @@ impl PubkyAgent {
         Ok(())
     }
 
+    /// Create an auth request and spawn a listener for the response token.
     pub fn auth_request<T: IntoUrl>(
         &self,
         relay: T,
@@ -419,9 +459,14 @@ impl PubkyAgent {
 
         let encrypted_token = response.bytes().await?;
         let token_bytes = decrypt(&encrypted_token, client_secret)?;
-
         let token = AuthToken::verify(&token_bytes)?;
 
+        // Update known pubky from the token.
+        if let Ok(mut g) = self.pubky.write() {
+            *g = Some(token.pubky().clone());
+        }
+
+        // If capabilities were requested, sign in to establish session cookies.
         if !token.capabilities().is_empty() {
             self.signin_with_authtoken(&token).await?;
         }
@@ -430,17 +475,23 @@ impl PubkyAgent {
     }
 
     async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
+        let url = format!("pubky://{}/session", token.pubky());
         let response = self
             .client
-            .cross_request(Method::POST, format!("pubky://{}/session", token.pubky()))
+            .cross_request(Method::POST, url)
             .await?
             .body(token.serialize())
             .send()
             .await?;
 
         let response = check_http_status(response).await?;
+
+        // Remember pubky and capture cookie for this identity.
+        if let Ok(mut g) = self.pubky.write() {
+            *g = Some(token.pubky().clone());
+        }
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie(&response);
+        self.capture_session_cookie_for(&response, token.pubky());
 
         let bytes = response.bytes().await?;
         Ok(Session::deserialize(&bytes)?)

@@ -170,7 +170,10 @@ impl Testnet {
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn pubky_agent(&self, keypair: Keypair) -> Result<pubky::PubkyAgent, pubky::BuildError> {
+    pub fn pubky_agent(
+        &self,
+        keypair: Option<Keypair>,
+    ) -> Result<pubky::PubkyAgent, pubky::BuildError> {
         static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
             once_cell::sync::OnceCell::new();
         let client =

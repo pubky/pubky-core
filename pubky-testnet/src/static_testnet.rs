@@ -78,7 +78,10 @@ impl StaticTestnet {
     }
 
     /// Creates a `pubky::PubkyAgent` pre-configured to use this test network.
-    pub fn pubky_agent(&self, keypair: Keypair) -> Result<pubky::PubkyAgent, pubky::BuildError> {
+    pub fn pubky_agent(
+        &self,
+        keypair: Option<Keypair>,
+    ) -> Result<pubky::PubkyAgent, pubky::BuildError> {
         self.testnet.pubky_agent(keypair)
     }
 

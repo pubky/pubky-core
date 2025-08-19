@@ -14,7 +14,7 @@ async fn basic_authn() {
 
     let keypair = Keypair::random();
     let public_key = keypair.public_key();
-    let agent = testnet.pubky_agent(keypair).unwrap();
+    let agent = testnet.pubky_agent(Some(keypair)).unwrap();
 
     agent.signup(&server.public_key(), None).await.unwrap();
 
