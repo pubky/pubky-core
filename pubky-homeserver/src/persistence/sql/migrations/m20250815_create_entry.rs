@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Table};
+use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Index, Table};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::{
@@ -64,6 +64,7 @@ impl MigrationTrait for M20250815CreateEntryMigration {
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create foreign key
+        // Ensures that the user exists when creating an entry.
         let foreign_key = ForeignKey::create()
             .name("fk_entry_user")
             .from(TABLE, EntryIden::User)
@@ -71,6 +72,20 @@ impl MigrationTrait for M20250815CreateEntryMigration {
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
         let query = db.build_schema(foreign_key);
+        sqlx::query(query.as_str()).execute(&mut **tx).await?;
+
+        // Create a unique index on user and path.
+        // Speeds up lookups for specific entries by user and path.
+        // Makes sure that there are no duplicate entries for the same user and path.
+        let index = Index::create()
+            .name("idx_entry_user_path")
+            .table(TABLE)
+            .col(EntryIden::User)
+            .col(EntryIden::Path)
+            .unique()
+            .index_type(sea_query::IndexType::BTree)
+            .to_owned();
+        let query = db.build_schema(index);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -140,7 +155,7 @@ mod tests {
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_create_event_migration() {
+    async fn test_create_entry_migration() {
         let db = DbConnection::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
@@ -166,8 +181,7 @@ mod tests {
             .unwrap();
 
         let bytes: Vec<u8> = vec![0; 32];
-        // let bytes = 
-        // Create an event
+        // Create an entry
         let statement = Query::insert()
             .into_table(TABLE)
             .columns([
@@ -192,7 +206,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Read event
+        // Read entry
         let statement = Query::select()
             .from(TABLE)
             .columns([
@@ -215,5 +229,65 @@ mod tests {
         assert_eq!(entry.content_hash, vec![0; 32]);
         assert_eq!(entry.content_length, 100);
         assert_eq!(entry.content_type, "text/plain");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_create_entry_twice_should_fail() {
+        // Test Unique constraint. Unique user and path.
+        let db = DbConnection::test_without_migrations().await;
+        let migrator = Migrator::new(&db);
+        migrator
+            .run_migrations(vec![
+                Box::new(M20250806CreateUserMigration),
+                Box::new(M20250815CreateEntryMigration),
+            ])
+            .await
+            .expect("Should run successfully");
+
+        // Create a user
+        let pubkey = Keypair::random().public_key();
+        let statement = Query::insert()
+            .into_table(USERS_TABLE)
+            .columns([UserIden::PublicKey])
+            .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
+            .unwrap()
+            .to_owned();
+        let (query, values) = db.build_query(statement);
+        sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let bytes: Vec<u8> = vec![0; 32];
+        // Create an entry
+        let statement = Query::insert()
+            .into_table(TABLE)
+            .columns([
+                EntryIden::User,
+                EntryIden::Path,
+                EntryIden::ContentHash,
+                EntryIden::ContentLength,
+                EntryIden::ContentType,
+            ])
+            .values(vec![
+                SimpleExpr::Value(1.into()),
+                SimpleExpr::Value("/test".into()),
+                SimpleExpr::Value(bytes.clone().into()),
+                SimpleExpr::Value(100.into()),
+                SimpleExpr::Value("text/plain".into()),
+            ])
+            .unwrap()
+            .to_owned();
+        let (query, values) = db.build_query(statement);
+        sqlx::query_with(query.as_str(), values.clone())
+            .execute(db.pool())
+            .await
+            .expect("Should work first time");
+
+        // Create the same entry again
+        let result = sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await;
+        assert!(result.is_err(), "Should fail second time");
     }
 }

@@ -1,7 +1,7 @@
 use sea_query::{ColumnDef, Expr, Query, SimpleExpr, Table};
 use sqlx::{Row, Transaction};
 
-use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration, M20250814CreateEventMigration}};
+use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration, M20250814CreateEventMigration, M20250815CreateEntryMigration}};
 
 /// The name of the migration table to keep track of which migrations have been applied.
 const MIGRATION_TABLE: &str = "migrations";
@@ -26,6 +26,7 @@ impl<'a> Migrator<'a> {
             Box::new(M20250812CreateSignupCodeMigration),
             Box::new(M20250813CreateSessionMigration),
             Box::new(M20250814CreateEventMigration),
+            Box::new(M20250815CreateEntryMigration),
         ]
     }
 
