@@ -48,13 +48,14 @@ pub use agent::core::PubkyAgent;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 // Export common types.
-pub use agent::auth_req::AuthRequest;
+pub use agent::auth::AuthRequest;
 pub use client::list::ListBuilder;
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::{
     capabilities::{Capabilities, Capability},
     recovery_file,
+    session::Session,
 };
 
 // --- Back-compat aliases (soft-deprecated) ---

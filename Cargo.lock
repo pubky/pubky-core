@@ -1010,6 +1010,7 @@ version = "0.5.1"
 dependencies = [
  "bytes",
  "pkarr",
+ "pubky",
  "pubky-common",
  "pubky-testnet",
  "reqwest",

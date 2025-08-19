@@ -1,12 +1,7 @@
 use std::fmt::Debug;
+use std::time::Duration;
 
 use crate::errors::BuildError;
-
-#[cfg(not(target_arch = "wasm32"))]
-use super::internal::cookies::CookieJar;
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::Arc;
-use std::time::Duration;
 
 /// Transport-only client for Pubky. Reusable, stateless w.r.t. user identities.
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
@@ -110,9 +105,6 @@ impl PubkyClientBuilder {
     pub fn build(&self) -> Result<PubkyClient, BuildError> {
         let pkarr = self.pkarr.build()?;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let cookie_store = Arc::new(CookieJar::default());
-
         // Compose user agent with optional extra part.
         let user_agent = match &self.user_agent_extra {
             Some(extra) if !extra.trim().is_empty() => {
@@ -122,19 +114,13 @@ impl PubkyClientBuilder {
         };
 
         #[cfg(not(target_arch = "wasm32"))]
-        let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone())
-            // TODO: use persistent cookie jar
-            .cookie_provider(cookie_store.clone())
-            .user_agent(user_agent);
+        let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone()).user_agent(user_agent);
 
         #[cfg(target_arch = "wasm32")]
         let http_builder = reqwest::Client::builder().user_agent(user_agent);
 
         #[cfg(not(target_arch = "wasm32"))]
-        let mut icann_http_builder = reqwest::Client::builder()
-            // TODO: use persistent cookie jar
-            .cookie_provider(cookie_store.clone())
-            .user_agent(user_agent);
+        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent);
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
@@ -155,8 +141,6 @@ impl PubkyClientBuilder {
 
             #[cfg(not(target_arch = "wasm32"))]
             icann_http: icann_http_builder.build()?,
-            #[cfg(not(target_arch = "wasm32"))]
-            cookie_store,
 
             max_record_age,
 
@@ -171,9 +155,6 @@ impl PubkyClientBuilder {
 pub struct PubkyClient {
     pub(crate) http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie_store: std::sync::Arc<CookieJar>,
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) icann_http: reqwest::Client,
