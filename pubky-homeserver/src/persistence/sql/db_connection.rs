@@ -1,11 +1,11 @@
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use std::sync::Arc;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use async_dropper::AsyncDrop;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use async_dropper::AsyncDropper;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use async_trait::async_trait;
 use sea_query::PostgresQueryBuilder;
 use sea_query::SchemaStatementBuilder;
@@ -21,17 +21,17 @@ pub struct DbConnection {
     pool: PgPool,
 
     /// Test helper for postgres to drop the test database after the test
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     drop_pg_db_after_test: Option<Arc<AsyncDropper<DropPgDbAfterTest>>>,
 }
 
 impl DbConnection {
-    pub async fn new(con_string: &ConnectionString) -> anyhow::Result<Self> {
+    pub async fn new(con_string: &ConnectionString) -> Result<Self, sqlx::Error> {
         let pool: PgPool = PgPool::connect(con_string.as_str()).await?;
 
         Ok(Self {
             pool,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             drop_pg_db_after_test: None,
         })
     }
@@ -62,13 +62,13 @@ impl DbConnection {
 /// Helper struct to drop the postgres test database after the db connection is dropped
 /// Important: This requires the tokio::test(flavor = "multi_thread") attribute,
 /// Otherwise the test will panic when the db connection is dropped
-#[cfg(test)]
-#[derive(Default)]
+#[cfg(any(test, feature = "testing"))]
+#[derive(Default, Debug)]
 struct DropPgDbAfterTest {
     db_name: String,
     pool: Option<PgPool>,
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 #[async_trait]
 impl AsyncDrop for DropPgDbAfterTest {
     async fn async_drop(&mut self) {
@@ -83,10 +83,10 @@ impl AsyncDrop for DropPgDbAfterTest {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 impl DbConnection {
     pub async fn test_postgres_db(con_string: &ConnectionString) -> anyhow::Result<Self> {
         use uuid::Uuid;

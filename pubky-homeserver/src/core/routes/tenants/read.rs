@@ -183,7 +183,7 @@ mod tests {
 
     pub async fn create_environment(
     ) -> anyhow::Result<(AppContext, Router, TestServer, PublicKey, String)> {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let router = HomeserverCore::create_router(&context);
         let server = axum_test::TestServer::new(router.clone()).unwrap();
 

@@ -80,7 +80,7 @@ pub struct AdminServer {
 impl AdminServer {
     /// Create a new admin server from a data directory.
     pub async fn from_data_dir(data_dir: PersistentDataDir) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::try_from(data_dir).map_err(AdminServerBuildError::DataDir)?;
+        let context = AppContext::read_from(data_dir).await.map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
@@ -93,7 +93,7 @@ impl AdminServer {
     /// Create a new admin server from a mock data directory.
     #[cfg(any(test, feature = "testing"))]
     pub async fn from_mock_dir(mock_dir: MockDataDir) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::try_from(mock_dir).map_err(AdminServerBuildError::DataDir)?;
+        let context = AppContext::read_from(mock_dir).await.map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
@@ -175,7 +175,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_root() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let server = create_test_server(&context);
         let response = server.get("/").expect_success().await;
         response.assert_status_ok();
@@ -183,7 +183,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_generate_signup_token_fail() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let server = create_test_server(&context);
         // No password
         let response = server.get("/generate_signup_token").expect_failure().await;
@@ -200,7 +200,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_generate_signup_token_success() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let server = create_test_server(&context);
         let response = server
             .get("/generate_signup_token")

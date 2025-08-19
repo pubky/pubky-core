@@ -264,7 +264,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_build_storage_operator_from_config_file_system() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.storage = StorageConfigToml::FileSystem;
 
         let service =
@@ -282,7 +282,7 @@ mod tests {
     /// This is important because the UserQuotaLayer will return a RateLimited error if the user has exceeded the quota.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_quota_exceeded_error() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");

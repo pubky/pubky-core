@@ -122,7 +122,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_write_get_delete_lmdb_and_opendal() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();
         let pubkey = pkarr::Keypair::random().public_key();
@@ -224,7 +224,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_write_get_basic() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();
 
@@ -252,7 +252,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_update_basic() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();
@@ -278,7 +278,7 @@ mod tests {
     /// Override and existing entry and check if the data usage is updated correctly.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_override_existing_entry() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();
@@ -307,7 +307,7 @@ mod tests {
     /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_exactly_to_quota() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();
@@ -329,7 +329,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_above_quota() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();
@@ -355,7 +355,7 @@ mod tests {
     /// Override and existing entry and check if the data usage is updated correctly.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_data_usage_override_existing_above_quota() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.db.clone();

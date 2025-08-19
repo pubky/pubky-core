@@ -68,7 +68,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_info_counts() {
         // Setup test DB
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let mut db = context.db.clone();
         let key1 = Keypair::random().public_key();
         let key2 = Keypair::random().public_key();

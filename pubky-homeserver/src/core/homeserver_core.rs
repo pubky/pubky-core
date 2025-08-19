@@ -77,29 +77,16 @@ impl HomeserverCore {
         dir_path: PathBuf,
     ) -> std::result::Result<Self, HomeserverBuildError> {
         let data_dir = PersistentDataDir::new(dir_path);
-        Self::from_persistent_data_dir(data_dir).await
-    }
-
-    /// Create a Homeserver from a data directory.
-    pub async fn from_persistent_data_dir(
-        data_dir: PersistentDataDir,
-    ) -> std::result::Result<Self, HomeserverBuildError> {
-        Self::from_data_dir(Arc::new(data_dir)).await
-    }
-
-    /// Create a Homeserver from a mock data directory.
-    #[cfg(any(test, feature = "testing"))]
-    pub async fn from_mock_data_dir(
-        mock_dir: MockDataDir,
-    ) -> std::result::Result<Self, HomeserverBuildError> {
-        Self::from_data_dir(Arc::new(mock_dir)).await
+        Self::from_data_dir(data_dir).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub(crate) async fn from_data_dir(
-        dir: Arc<dyn DataDir>,
+    pub(crate) async fn from_data_dir<D: DataDir + 'static>(
+        dir: D,
     ) -> std::result::Result<Self, HomeserverBuildError> {
-        let context = AppContext::try_from(dir).map_err(HomeserverBuildError::AppContext)?;
+        let context = AppContext::read_from(dir)
+            .await
+            .map_err(HomeserverBuildError::AppContext)?;
         Self::new(context).await
     }
 

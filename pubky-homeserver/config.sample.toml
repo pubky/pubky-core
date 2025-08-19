@@ -1,4 +1,9 @@
 [general]
+# The URL of the Postgres database.
+# Important: The database must be created manually.
+# Default: "postgres://localhost:5432/pubky_homeserver"
+db_url = "postgres://localhost:5432/pubky_homeserver"
+
 # The mode for the signup. Default: "token_required" Options:
 # "open" - anyone can signup.
 # "token_required" - a signup token is required to signup.

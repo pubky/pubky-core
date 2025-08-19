@@ -34,7 +34,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_delete_entry() {
         // Set everything up
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
@@ -85,7 +85,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_file_not_found() {
         // Set everything up
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
@@ -109,7 +109,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_invalid_pubkey() {
         // Set everything up
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let db = context.db.clone();
         let app_state = AppState::new(
             db.clone(),
