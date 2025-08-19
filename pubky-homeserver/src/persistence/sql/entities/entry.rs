@@ -29,7 +29,7 @@ impl<'a> EntryRepository<'a> {
         &self,
         user_id: i32,
         path: &WebDavPath,
-        content_hash: &[u8; 32],
+        content_hash: &pubky_common::crypto::Hash,
         content_length: u64,
         content_type: &str,
         executor: E,
@@ -49,7 +49,7 @@ impl<'a> EntryRepository<'a> {
             .values(vec![
                 SimpleExpr::Value(user_id.into()),
                 SimpleExpr::Value(path.as_str().into()),
-                SimpleExpr::Value(content_hash.to_vec().into()),
+                SimpleExpr::Value(content_hash.as_bytes().to_vec().into()),
                 SimpleExpr::Value(content_length.into()),
                 SimpleExpr::Value(content_type.to_string().into()),
             ])
@@ -189,7 +189,7 @@ pub struct EntryEntity {
     pub id: i64,
     pub user_id: i32,
     pub path: EntryPath,
-    pub content_hash: [u8; 32],
+    pub content_hash: pubky_common::crypto::Hash,
     pub content_length: u64,
     pub content_type: String,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
@@ -210,7 +210,7 @@ impl FromRow<'_, PgRow> for EntryEntity {
         let content_hash: [u8; 32] = content_hash_vec
             .try_into()
             .map_err(|_| sqlx::Error::Decode("Content hash must be exactly 32 bytes".into()))?;
-            
+        let content_hash = pubky_common::crypto::Hash::from_bytes(content_hash);
         let content_length: i64 = row.try_get(EntryIden::ContentLength.to_string().as_str())?;
         let content_type: String = row.try_get(EntryIden::ContentType.to_string().as_str())?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
@@ -250,7 +250,7 @@ mod tests {
             .create(
                 user.id,
                 &WebDavPath::new("/test").unwrap(),
-                &[0; 32],
+                &pubky_common::crypto::Hash::from_bytes([0; 32]),
                 100,
                 "text/plain",
                 db.pool(),
