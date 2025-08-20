@@ -1,5 +1,4 @@
 use http_relay::HttpRelay;
-use pkarr::Keypair;
 
 use crate::Testnet;
 
@@ -38,11 +37,8 @@ impl EphemeralTestnet {
     }
 
     /// Creates a `pubky::PubkyAgent` pre-configured to use this test network.
-    pub fn pubky_agent(
-        &self,
-        keypair: Option<Keypair>,
-    ) -> Result<pubky::PubkyAgent, pubky::BuildError> {
-        self.testnet.pubky_agent(keypair)
+    pub fn pubky_agent_random(&self) -> Result<pubky::PubkyAgent, pubky::BuildError> {
+        self.testnet.pubky_agent_random()
     }
 
     /// Create a new pkarr client builder.

@@ -165,20 +165,19 @@ impl Testnet {
     /// Creates a `pubky::PubkyAgent` pre-configured to use this test network.
     /// Will instantiate a single global `pubky_client` to be shared across all agents created.
     ///
-    /// This is a convenience method that builds an agent over `Self::pubky_client_builder`.
+    /// This is a convenience method that builds an agent over `Self::pubky_client_builder`
+    /// and creates an ephemeral random KeyPair for this user.
     ///
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn pubky_agent(
-        &self,
-        keypair: Option<Keypair>,
-    ) -> Result<pubky::PubkyAgent, pubky::BuildError> {
+    pub fn pubky_agent_random(&self) -> Result<pubky::PubkyAgent, pubky::BuildError> {
         static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
             once_cell::sync::OnceCell::new();
+        let keypair = Keypair::random();
         let client =
             DEFAULT.get_or_try_init(|| self.pubky_client_builder().build().map(Arc::new))?;
-        Ok(PubkyAgent::with_client(client.clone(), keypair))
+        Ok(PubkyAgent::with_client(client.clone(), Some(keypair)))
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
@@ -228,16 +227,12 @@ mod test {
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver_suite().await.unwrap();
-        let client = testnet.pubky_client_builder().build().unwrap();
         let hs = testnet.homeservers.first().unwrap();
-        let keypair = Keypair::random();
-        let pubky = keypair.public_key();
 
-        let session = client
-            .signup(&keypair, &hs.public_key(), None)
-            .await
-            .unwrap();
-        assert_eq!(session.pubky(), &pubky);
+        let agent = testnet.pubky_agent_random().unwrap();
+
+        let session = agent.signup(&hs.public_key(), None).await.unwrap();
+        assert_eq!(session.pubky(), &agent.pubky().unwrap());
     }
 
     #[tokio::test]
@@ -289,16 +284,13 @@ mod test {
                         panic!("Failed to create homeserver suite: {}", e);
                     }
                 };
-                let client = testnet.pubky_client_builder().build().unwrap();
                 let hs = testnet.homeservers.first().unwrap();
-                let keypair = Keypair::random();
-                let pubky = keypair.public_key();
 
-                let session = client
-                    .signup(&keypair, &hs.public_key(), None)
-                    .await
-                    .unwrap();
-                assert_eq!(session.pubky(), &pubky);
+                let agent = testnet.pubky_agent_random().unwrap();
+
+                let session = agent.signup(&hs.public_key(), None).await.unwrap();
+
+                assert_eq!(session.pubky(), &agent.pubky().unwrap());
                 tokio::time::sleep(Duration::from_secs(3)).await;
             });
             handles.push(handle);

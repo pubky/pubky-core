@@ -45,6 +45,12 @@ impl PubkyAgent {
         Ok(Self::with_client(client.clone(), keypair))
     }
 
+    /// Construct an agent with a fresh random keypair using the shared default transport.
+    /// Useful for quick tests in non-persistant flows.
+    pub fn new_random() -> std::result::Result<Self, BuildError> {
+        Self::new(Some(Keypair::random()))
+    }
+
     /// Returns the known public key, if any.
     pub fn pubky(&self) -> Option<PublicKey> {
         match self.pubky.read() {
