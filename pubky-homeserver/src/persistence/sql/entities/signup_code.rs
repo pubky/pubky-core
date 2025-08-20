@@ -2,30 +2,23 @@ use std::{fmt::Display, str::FromStr};
 
 use pkarr::PublicKey;
 use pubky_common::crypto::random_bytes;
-use sea_query::{Expr, Iden, Query, SimpleExpr};
+use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 use base32::{decode, encode, Alphabet};
 
-use crate::persistence::sql::db_connection::SqlDb;
+use crate::persistence::sql::{UnifiedExecutor};
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
 /// Repository that handles all the queries regarding the SignupCodeEntity.
-pub struct SignupCodeRepository<'a> {
-    pub db: &'a SqlDb,
-}
+pub struct SignupCodeRepository;
 
-impl<'a> SignupCodeRepository<'a> {
-
-    /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a SqlDb) -> Self {
-        Self { db }
-    }
+impl SignupCodeRepository {
 
     /// Create a new signup code.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'c, E>(&self, id: &SignupCodeId, executor: E) -> Result<SignupCodeEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn create<'a>(id: &SignupCodeId, executor: &mut UnifiedExecutor<'a>) -> Result<SignupCodeEntity, sqlx::Error> {
         let statement =
         Query::insert().into_table(SIGNUP_CODE_TABLE)
             .columns([SignupCodeIden::Id])
@@ -33,27 +26,26 @@ impl<'a> SignupCodeRepository<'a> {
                 SimpleExpr::Value(id.to_string().into()),
             ]).expect("Should be valid values").returning_all().to_owned();
 
-        let (query, values) = self.db.build_query(statement);
-
-        let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(code)
     }
 
     /// Get a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn get<'c, E>(&self, id: &SignupCodeId, executor: E) -> Result<SignupCodeEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn get<'a>(id: &SignupCodeId, executor: &mut UnifiedExecutor<'a>) -> Result<SignupCodeEntity, sqlx::Error> {
         let statement = Query::select().from(SIGNUP_CODE_TABLE)
         .columns([SignupCodeIden::Id, SignupCodeIden::CreatedAt, SignupCodeIden::UsedBy])
         .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
         .to_owned();
-        let (query, values) = self.db.build_query(statement);
-        let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(code)
     }
 
-    pub async fn mark_as_used<'c, E>(&self, id: &SignupCodeId, used_by: &PublicKey, executor: E) -> Result<SignupCodeEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn mark_as_used<'a>(id: &SignupCodeId, used_by: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<SignupCodeEntity, sqlx::Error> {
         let statement = Query::update()
             .table(SIGNUP_CODE_TABLE)
             .values(vec![
@@ -63,8 +55,9 @@ impl<'a> SignupCodeRepository<'a> {
             .returning_all()
             .to_owned();
         
-        let (query, values) = self.db.build_query(statement);
-        let updated_code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let updated_code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(updated_code)
     }
 }
@@ -165,21 +158,22 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
+    use crate::persistence::sql::SqlDb;
+
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_signup_code() {
         let db = SqlDb::test().await;
-        let signup_code_repo = SignupCodeRepository::new(&db);
         let signup_code_id = SignupCodeId::random();
 
         // Test create code
-        let code = signup_code_repo.create(&signup_code_id, db.pool()).await.unwrap();
+        let code = SignupCodeRepository::create(&signup_code_id, &mut db.pool().into()).await.unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
 
         // Test get code
-        let code = signup_code_repo.get(&signup_code_id, db.pool()).await.unwrap();
+        let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into()).await.unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
     }
@@ -187,16 +181,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_mark_as_used() {
         let db = SqlDb::test().await;
-        let signup_code_repo = SignupCodeRepository::new(&db);
         let signup_code_id = SignupCodeId::random();
-        let _ = signup_code_repo.create(&signup_code_id, db.pool()).await.unwrap();
+        let _ = SignupCodeRepository::create(&signup_code_id, &mut db.pool().into()).await.unwrap();
         
         let user_pubkey = Keypair::random().public_key();
 
-        signup_code_repo.mark_as_used(&signup_code_id, &user_pubkey, db.pool()).await.unwrap();
-        let updated_code = signup_code_repo.get(&signup_code_id, db.pool()).await.unwrap();
+        SignupCodeRepository::mark_as_used(&signup_code_id, &user_pubkey, &mut db.pool().into()).await.unwrap();
+        let updated_code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into()).await.unwrap();
         assert_eq!(updated_code.id, signup_code_id);
         assert_eq!(updated_code.used_by, Some(user_pubkey));
-
     }
 }

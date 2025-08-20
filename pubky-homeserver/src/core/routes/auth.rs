@@ -1,6 +1,5 @@
 use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::signup_tokens::SignupTokenError;
-use crate::persistence::lmdb::tables::users::User;
 use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
 use crate::persistence::sql::user::UserRepository;
 use crate::shared::{HttpError, HttpResult};
@@ -39,9 +38,9 @@ pub async fn signup(
     let token = state.verifier.verify(&body)?;
     let public_key = token.pubky();
 
+    let mut tx = state.sql_db.pool().begin().await?;
     // 2) Ensure the user does *not* already exist
-    let user_repo = UserRepository::new(&state.sql_db);
-    match user_repo.get(public_key, state.sql_db.pool()).await {
+    match UserRepository::get(public_key, &mut (&mut tx).into()).await {
         Ok(_) => {
                 return Err(HttpError::new_with_message(
                     StatusCode::CONFLICT,
@@ -70,39 +69,34 @@ pub async fn signup(
                 format!("Invalid signup token format: {}", e),
             )
         })?;
-        // Validate it in the DB (marks it used)
 
-        let signup_code_repo = SignupCodeRepository::new(&state.sql_db);
-        let code = signup_code_repo.get(&signup_code_id, state.sql_db.pool()).await?;
-        if let Err(e) = state
-            .db
-            .validate_and_consume_signup_token(signup_token_param, public_key)
-        {
-            tracing::warn!("Failed to signup. Invalid signup token: {:?}", e);
-            match e {
-                SignupTokenError::AlreadyUsed => {
-                    return Err(HttpError::new_with_message(
-                        StatusCode::UNAUTHORIZED,
-                        "Token already used",
-                    ));
-                }
-                SignupTokenError::InvalidToken => {
-                    return Err(HttpError::new_with_message(
-                        StatusCode::UNAUTHORIZED,
-                        "Invalid token",
-                    ));
-                }
-                SignupTokenError::DatabaseError(e) => {
-                    return Err(e.into());
-                }
+        // Validate it in the DB (marks it used)
+        let code = match SignupCodeRepository::get(&signup_code_id, &mut (&mut tx).into()).await {
+            Ok(code) => code,
+            Err(sqlx::Error::RowNotFound) => {
+                return Err(HttpError::new_with_message(
+                    StatusCode::UNAUTHORIZED,
+                    "Invalid token",
+                ));
             }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
+
+        if code.used_by.is_some() {
+            return Err(HttpError::new_with_message(
+                StatusCode::UNAUTHORIZED,
+                "Token already used",
+            ));
         }
+
+        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, &mut (&mut tx).into()).await?;
     }
 
     // 4) Create the new user record
-    // let mut wtxn = state.db.env.write_txn()?;
-    // users.put(&mut wtxn, public_key, &User::default())?;
-    // wtxn.commit()?;
+    let _ = UserRepository::create(public_key, &mut (&mut tx).into()).await?;
+    tx.commit().await?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(

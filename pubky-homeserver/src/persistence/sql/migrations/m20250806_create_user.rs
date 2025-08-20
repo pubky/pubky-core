@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use pkarr::PublicKey;
-use sea_query::{ColumnDef, Expr, Iden, Table};
+use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
+use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait};
@@ -50,7 +51,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = db.build_schema(statement);
+        let query = statement.build(PostgresQueryBuilder::default());
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         let index = sea_query::Index::create()
@@ -59,7 +60,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
             .col(User::PublicKey)
             .index_type(sea_query::IndexType::BTree)
             .to_owned();
-        let query = db.build_schema(index);
+        let query = index.build(PostgresQueryBuilder::default());
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
         Ok(())
     }
@@ -133,7 +134,7 @@ mod tests {
             .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
             .unwrap()
             .to_owned();
-        let (query, values) = db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
@@ -145,7 +146,7 @@ mod tests {
             .from(USER_TABLE)
             .columns([User::Id, User::PublicKey, User::CreatedAt, User::Disabled, User::UsedBytes])
             .to_owned();
-        let (query, _) = db.build_query(statement);
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
         let user: UserEntity = sqlx::query_as(query.as_str())
             .fetch_one(db.pool())
             .await

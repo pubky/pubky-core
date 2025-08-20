@@ -1,4 +1,5 @@
-use sea_query::{ColumnDef, Expr, Query, SimpleExpr, Table};
+use sea_query::{ColumnDef, Expr, PostgresQueryBuilder, Query, SimpleExpr, Table};
+use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
 use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration, M20250814CreateEventMigration, M20250815CreateEntryMigration}};
@@ -97,7 +98,7 @@ impl<'a> Migrator<'a> {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = self.db.build_schema(statement);
+        let query = statement.build(PostgresQueryBuilder::default());
         sqlx::query(query.as_str()).execute(self.db.pool()).await?;
         Ok(())
     }
@@ -107,7 +108,7 @@ impl<'a> Migrator<'a> {
         let statement = Query::select()
         .column("name")
         .from(MIGRATION_TABLE).to_owned();
-        let (query, _) = self.db.build_query(statement);
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
 
         let rows = sqlx::query(&query).fetch_all(self.db.pool()).await?;
 
@@ -131,7 +132,7 @@ impl<'a> Migrator<'a> {
         .columns(["name"])
         .values([SimpleExpr::Value(migration_name.into())])?
         .to_owned();
-        let (query, values) = self.db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
         sqlx::query_with(&query, values).execute(&mut **tx).await?;
         Ok(())
@@ -182,7 +183,7 @@ mod tests {
                             .not_null(),
                     )
                     .to_owned();
-                let query = db.build_schema(statement);
+                let query = statement.build(PostgresQueryBuilder::default());
                 sqlx::query(query.as_str()).execute(&mut **tx).await?;
                 Ok(())
             }
@@ -231,7 +232,7 @@ mod tests {
                             .not_null(),
                     )
                     .to_owned();
-                let query = db.build_schema(statement);
+                let query = statement.build(PostgresQueryBuilder::default());
                 sqlx::query(query.as_str()).execute(&mut **tx).await?;
                 // Fail after the table is created
                 anyhow::bail!("test error");

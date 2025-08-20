@@ -7,10 +7,7 @@ use async_dropper::AsyncDrop;
 use async_dropper::AsyncDropper;
 #[cfg(any(test, feature = "testing"))]
 use async_trait::async_trait;
-use sea_query::PostgresQueryBuilder;
-use sea_query::SchemaStatementBuilder;
-use sea_query_binder::SqlxBinder;
-use sea_query_binder::{SqlxValues};
+
 use sqlx::postgres::PgPool;
 
 use crate::persistence::sql::connection_string::ConnectionString;
@@ -47,22 +44,9 @@ impl SqlDb {
         &self.pool
     }
 
-    /// Build a query with the db backend specific query builder
-    pub fn build_query<S>(&self, statement: S) -> (String, SqlxValues)
-    where
-        S: SqlxBinder,
-    {
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
-        (query, values)
-    }
 
-    /// Build a schema with the db backend specific schema builder
-    pub fn build_schema<S>(&self, statement: S) -> String
-    where
-        S: SchemaStatementBuilder,
-    {
-        statement.build(PostgresQueryBuilder::default())
-    }
+
+
 }
 
 /// Helper struct to drop the postgres test database after the db connection is dropped

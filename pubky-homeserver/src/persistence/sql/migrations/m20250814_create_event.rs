@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Table};
+use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, PostgresQueryBuilder, Table};
+use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::{
@@ -50,7 +51,7 @@ impl MigrationTrait for M20250814CreateEventMigration {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = db.build_schema(statement);
+        let query = statement.build(PostgresQueryBuilder::default());
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create foreign key
@@ -60,7 +61,7 @@ impl MigrationTrait for M20250814CreateEventMigration {
             .to(USERS_TABLE, UserIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
-        let query = db.build_schema(foreign_key);
+        let query = foreign_key.build(PostgresQueryBuilder::default());
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -141,7 +142,7 @@ mod tests {
             .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
             .unwrap()
             .to_owned();
-        let (query, values) = db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
             .await
@@ -162,7 +163,7 @@ mod tests {
             ])
             .unwrap()
             .to_owned();
-        let (query, values) = db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
             .await
@@ -179,7 +180,7 @@ mod tests {
                 EventIden::CreatedAt,
             ])
             .to_owned();
-        let (query, _) = db.build_query(statement);
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
         let event: EventEntity = sqlx::query_as(query.as_str())
             .fetch_one(db.pool())
             .await

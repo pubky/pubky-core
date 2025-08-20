@@ -1,11 +1,11 @@
 use pkarr::PublicKey;
-use sea_query::{Expr, Iden, Query, SimpleExpr};
+use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
 use crate::{
     persistence::sql::{
-        db_connection::SqlDb,
-        entities::user::{UserIden, USER_TABLE},
+        entities::user::{UserIden, USER_TABLE}, UnifiedExecutor,
     },
     shared::webdav::{EntryPath, WebDavPath},
 };
@@ -14,29 +14,25 @@ pub const ENTRY_TABLE: &str = "entries";
 
 /// Repository that handles all the queries regarding the EntryEntity.
 pub struct EntryRepository<'a> {
-    pub db: &'a SqlDb,
+    pub executor: UnifiedExecutor<'a>,
 }
 
 impl<'a> EntryRepository<'a> {
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a SqlDb) -> Self {
-        Self { db }
+    pub fn new(executor: UnifiedExecutor<'a>) -> Self {
+        Self { executor }
     }
 
     /// Create a new entry.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'c, E>(
-        &self,
+    pub async fn create<'c>(
+        &mut self,
         user_id: i32,
         path: &WebDavPath,
         content_hash: &pubky_common::crypto::Hash,
         content_length: u64,
         content_type: &str,
-        executor: E,
-    ) -> Result<i64, sqlx::Error>
-    where
-        E: Executor<'c, Database = sqlx::Postgres>,
-    {
+    ) -> Result<i64, sqlx::Error> {
         let statement = Query::insert()
             .into_table(ENTRY_TABLE)
             .columns([
@@ -57,19 +53,17 @@ impl<'a> EntryRepository<'a> {
             .returning_col(EntryIden::Id)
             .to_owned();
 
-        let (query, values) = self.db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
-        let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(executor).await?;
+        let con = self.executor.get_con().await?;
+        let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let entry_id: i64 = ret_row.try_get(EntryIden::Id.to_string().as_str())?;
         Ok(entry_id)
     }
 
     /// Get an entry by its id.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn get<'c, E>(&self, id: i64, executor: E) -> Result<EntryEntity, sqlx::Error>
-    where
-        E: Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn get<'c>(&mut self, id: i64) -> Result<EntryEntity, sqlx::Error> {
         let statement = Query::select()
             .from(ENTRY_TABLE)
             .columns([
@@ -88,19 +82,17 @@ impl<'a> EntryRepository<'a> {
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).eq(id))
             .to_owned();
-        let (query, values) = self.db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = self.executor.get_con().await?;
         let entry: EntryEntity = sqlx::query_as_with(&query, values)
-            .fetch_one(executor)
+            .fetch_one(con)
             .await?;
         Ok(entry)
     }
 
     /// Get an entry by its path.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn get_by_path<'c, E>(&self, path: &EntryPath, executor: E) -> Result<EntryEntity, sqlx::Error>
-    where
-        E: Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn get_by_path<'c>(&mut self, path: &EntryPath) -> Result<EntryEntity, sqlx::Error> {
         let statement = Query::select()
             .from(ENTRY_TABLE)
             .columns([
@@ -120,9 +112,10 @@ impl<'a> EntryRepository<'a> {
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).eq(path.path().as_str()))
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
             .to_owned();
-        let (query, values) = self.db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = self.executor.get_con().await?;
         let entry: EntryEntity = sqlx::query_as_with(&query, values)
-            .fetch_one(executor)
+            .fetch_one(con)
             .await?;
         Ok(entry)
     }
@@ -131,25 +124,20 @@ impl<'a> EntryRepository<'a> {
 
     /// Delete an entry by its id.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn delete<'c, E>(&self, id: i64, executor: E) -> Result<(), sqlx::Error>
-    where
-        E: Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn delete<'c>(&mut self, id: i64) -> Result<(), sqlx::Error> {
         let statement = Query::delete()
             .from_table(ENTRY_TABLE)
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).eq(id))
             .to_owned();
-        let (query, values) = self.db.build_query(statement);
-        sqlx::query_with(&query, values).execute(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = self.executor.get_con().await?;
+        sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
     }
 
     /// Delete an entry by its path.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn delete_by_path<'c, E>(&self, path: &EntryPath, executor: E) -> Result<(), sqlx::Error>
-    where
-        E: Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn delete_by_path<'c>(&mut self, path: &EntryPath) -> Result<(), sqlx::Error> {
         // First get the id of the entry to delete
         let subquery = Query::select()
             .column((ENTRY_TABLE, EntryIden::Id))
@@ -167,8 +155,9 @@ impl<'a> EntryRepository<'a> {
             .from_table(ENTRY_TABLE)
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).in_subquery(subquery))
             .to_owned();
-        let (query, values) = self.db.build_query(statement);
-        sqlx::query_with(&query, values).execute(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = self.executor.get_con().await?;
+        sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
     }
 }
@@ -231,19 +220,18 @@ impl FromRow<'_, PgRow> for EntryEntity {
 mod tests {
     use pkarr::Keypair;
 
-    use crate::persistence::sql::entities::user::UserRepository;
+    use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_entry() {
         let db = SqlDb::test().await;
-        let user_repo = UserRepository::new(&db);
-        let entry_repo = EntryRepository::new(&db);
+        let mut entry_repo = EntryRepository::new(db.pool().into());
         let user_pubkey = Keypair::random().public_key();
 
         // Test create user
-        let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
 
         // Test create entry
         let entry_id = entry_repo
@@ -253,13 +241,12 @@ mod tests {
                 &pubky_common::crypto::Hash::from_bytes([0; 32]),
                 100,
                 "text/plain",
-                db.pool(),
             )
             .await
             .unwrap();
 
         // Test get entry
-        let entry = entry_repo.get(entry_id, db.pool()).await.unwrap();
+        let entry = entry_repo.get(entry_id).await.unwrap();
         assert_eq!(entry.id, entry_id);
         assert_eq!(entry.user_id, user.id);
         assert_eq!(entry.path, EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap()));
@@ -268,12 +255,12 @@ mod tests {
         assert_eq!(entry.content_type, "text/plain");
 
         // test get by path
-        let entry_by_path = entry_repo.get_by_path(&entry.path, db.pool()).await.unwrap();
+        let entry_by_path = entry_repo.get_by_path(&entry.path).await.unwrap();
         assert_eq!(entry_by_path.id, entry_id);
 
         // test delete
-        entry_repo.delete_by_path(&entry.path, db.pool()).await.unwrap();
-        entry_repo.get_by_path(&entry.path, db.pool()).await.expect_err("Entry should be deleted");
+        entry_repo.delete_by_path(&entry.path).await.unwrap();
+        entry_repo.get_by_path(&entry.path).await.expect_err("Entry should be deleted");
 
     }
 }

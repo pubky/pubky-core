@@ -10,4 +10,4 @@ pub use db_connection::SqlDb;
 pub use connection_string::ConnectionString;
 pub use migrator::Migrator;
 pub use entities::*;
-pub use db_executor::UnfiedExecutor;
+pub use db_executor::UnifiedExecutor;

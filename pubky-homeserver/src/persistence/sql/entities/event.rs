@@ -1,29 +1,29 @@
 use std::{fmt::Display, str::FromStr};
 
 use pkarr::{PublicKey};
-use sea_query::{Expr, Iden, Query, SimpleExpr};
+use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
-use crate::{persistence::sql::{db_connection::SqlDb, entities::user::{UserIden, USER_TABLE}}, shared::webdav::WebDavPath};
+use crate::{persistence::sql::{entities::user::{UserIden, USER_TABLE}, UnifiedExecutor}, shared::webdav::WebDavPath};
 
 pub const EVENT_TABLE: &str = "events";
 
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository<'a> {
-    pub db: &'a SqlDb,
+    pub executor: UnifiedExecutor<'a>,
 }
 
 impl<'a> EventRepository<'a> {
 
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a SqlDb) -> Self {
-        Self { db }
+    pub fn new(executor: UnifiedExecutor<'a>) -> Self {
+        Self { executor }
     }
 
     /// Create a new event.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'c, E>(&self, user_id: i32, event_type: EventType, path: &WebDavPath, executor: E) -> Result<i64, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn create<'c>(&mut self, user_id: i32, event_type: EventType, path: &WebDavPath) -> Result<i64, sqlx::Error> {
         let statement =
         Query::insert().into_table(EVENT_TABLE)
             .columns([EventIden::Type, EventIden::User, EventIden::Path])
@@ -33,9 +33,10 @@ impl<'a> EventRepository<'a> {
                 SimpleExpr::Value(path.as_str().into()),
             ]).expect("Failed to build insert statement").returning_col(EventIden::Id).to_owned();
 
-        let (query, values) = self.db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
-        let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(executor).await?;
+        let con = self.executor.get_con().await?;
+        let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
         Ok(event_id)
     }
@@ -44,9 +45,7 @@ impl<'a> EventRepository<'a> {
     /// If you don't to use the cursor, set it to 0.
     /// The limit is the maximum number of events to return.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn get_by_cursor<'c, E>(&self, cursor: i64, limit: u64, executor: E) 
-    -> Result<Vec<EventEntity>, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn get_by_cursor<'c>(&mut self, cursor: i64, limit: u64) -> Result<Vec<EventEntity>, sqlx::Error> {
         let statement = Query::select()
         .columns([(EVENT_TABLE, EventIden::Id), (EVENT_TABLE, EventIden::User), (EVENT_TABLE, EventIden::Type), (EVENT_TABLE, EventIden::User), (EVENT_TABLE, EventIden::Path), (EVENT_TABLE, EventIden::CreatedAt)])
         .column((USER_TABLE, UserIden::PublicKey))
@@ -55,8 +54,9 @@ impl<'a> EventRepository<'a> {
         .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor))
         .limit(limit)
         .to_owned();
-        let (query, values) = self.db.build_query(statement);
-        let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = self.executor.get_con().await?;
+        let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
         Ok(events)
     }
 }
@@ -136,27 +136,26 @@ impl FromRow<'_, PgRow> for EventEntity {
 mod tests {
     use pkarr::Keypair;
 
-    use crate::persistence::sql::entities::user::UserRepository;
+    use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_list_event() {
         let db = SqlDb::test().await;
-        let user_repo = UserRepository::new(&db);
-        let event_repo = EventRepository::new(&db);
+        let mut event_repo = EventRepository::new(db.pool().into());
         let user_pubkey = Keypair::random().public_key();
 
         // Test create user
-        let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
 
         // Test create session
         for _ in 0..10 {
-            let _ = event_repo.create(user.id, EventType::Put, &WebDavPath::new("/test").unwrap(), db.pool()).await.unwrap();
+            let _ = event_repo.create(user.id, EventType::Put, &WebDavPath::new("/test").unwrap()).await.unwrap();
         }
 
         // Test get session
-        let events = event_repo.get_by_cursor(5, 4, db.pool()).await.unwrap();
+        let events = event_repo.get_by_cursor(5, 4).await.unwrap();
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].id, 6);
         assert_eq!(events[0].user_pubkey, user_pubkey);

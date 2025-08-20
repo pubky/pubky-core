@@ -1,34 +1,22 @@
 use pkarr::PublicKey;
-use sea_query::{Expr, Iden, Query, SimpleExpr};
-use sqlx::{postgres::PgRow, Executor, FromRow, Row};
+use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query_binder::SqlxBinder;
+use sqlx::{postgres::PgRow, FromRow, Row};
 
-use crate::persistence::sql::db_connection::SqlDb;
+use crate::persistence::sql::UnifiedExecutor;
 
 pub const USER_TABLE: &str = "users";
 
 
 
-
-
-
-
-
 /// Repository that handles all the queries regarding the UserEntity.
-pub struct UserRepository<'a> {
-    pub db: &'a SqlDb,
-}
+pub struct UserRepository;
 
-impl<'a> UserRepository<'a> {
-
-    /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a SqlDb) -> Self {
-        Self { db }
-    }
+impl UserRepository {
 
     /// Create a new user.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> + Clone {
+    pub async fn create<'a>(public_key: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error>{
         let statement =
         Query::insert().into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
@@ -36,29 +24,28 @@ impl<'a> UserRepository<'a> {
                 SimpleExpr::Value(public_key.to_string().into()),
             ]).unwrap().returning_all().to_owned();
 
-        let (query, values) = self.db.build_query(statement);
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
-        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
+        let con = executor.get_con().await?;
+        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         
-
         Ok(user)
     }
 
     /// Get a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn get<'c, E>(&self, public_key: &PublicKey, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn get<'a>(public_key: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::select().from(USER_TABLE)
         .columns([UserIden::Id, UserIden::PublicKey, UserIden::CreatedAt, UserIden::Disabled, UserIden::UsedBytes])
         .and_where(Expr::col(UserIden::PublicKey).eq(public_key.to_string()))
         .to_owned();
-        let (query, values) = self.db.build_query(statement);
-        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(user)
     }
 
-    pub async fn update<'c, E>(&self, user: &UserEntity, executor: E) -> Result<UserEntity, sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn update<'a>(user: &UserEntity, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::update()
             .table(USER_TABLE)
             .values(vec![
@@ -69,22 +56,23 @@ impl<'a> UserRepository<'a> {
             .returning_all()
             .to_owned();
         
-        let (query, values) = self.db.build_query(statement);
-        let updated_user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let updated_user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(updated_user)
     }
 
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn delete<'c, E>(&self, user_id: i32, executor: E) -> Result<(), sqlx::Error>
-    where E: Executor<'c, Database = sqlx::Postgres> {
+    pub async fn delete<'a>(user_id: i32, executor: &mut UnifiedExecutor<'a>) -> Result<(), sqlx::Error> {
         let statement = Query::delete()
             .from_table(USER_TABLE)
             .and_where(Expr::col(UserIden::Id).eq(user_id))
             .to_owned();
         
-        let (query, values) = self.db.build_query(statement);
-        sqlx::query_with(&query, values).execute(executor).await?;
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
     }
 }
@@ -134,23 +122,24 @@ impl FromRow<'_, PgRow> for UserEntity {
 mod tests {
     use pkarr::Keypair;
 
+    use crate::persistence::sql::SqlDb;
+
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_user() {
         let db = SqlDb::test().await;
-        let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
 
         // Test create user
-        let created_user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        let created_user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
         assert_eq!(created_user.public_key, user_pubkey);
         assert_eq!(created_user.disabled, false);
         assert_eq!(created_user.used_bytes, 0);
         assert_eq!(created_user.id, 1);
 
         // Test get user
-        let user = user_repo.get(&user_pubkey, db.pool()).await.unwrap();
+        let user = UserRepository::get(&user_pubkey, &mut db.pool().into()).await.unwrap();
         assert_eq!(user.public_key, user_pubkey);
         assert_eq!(user.disabled, false);
         assert_eq!(user.used_bytes, 0);
@@ -160,30 +149,28 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_twice() {
         let db = SqlDb::test().await;
-        let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
 
         // Test create user
-        let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
         assert_eq!(user.public_key, user_pubkey);
         assert_eq!(user.disabled, false);
         assert_eq!(user.used_bytes, 0);
 
-        user_repo.create(&user_pubkey, db.pool()).await.expect_err("Should fail to create user twice");
+        UserRepository::create(&user_pubkey, &mut db.pool().into()).await.expect_err("Should fail to create user twice");
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_user() {
         let db = SqlDb::test().await;
-        let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
-        let mut user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        let mut user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
         
         user.used_bytes = 10;
         user.disabled = true;
 
-        user_repo.update(&user, db.pool()).await.unwrap();
-        let updated_user = user_repo.get(&user_pubkey, db.pool()).await.unwrap();
+        UserRepository::update(&user, &mut db.pool().into()).await.unwrap();
+        let updated_user = UserRepository::get(&user_pubkey, &mut db.pool().into()).await.unwrap();
         assert_eq!(updated_user.id, user.id);
         assert_eq!(updated_user.disabled, true);
         assert_eq!(updated_user.used_bytes, 10);
@@ -192,22 +179,21 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_delete_user() {
         let db = SqlDb::test().await;
-        let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
 
         // Create a user first
-        let user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
         assert_eq!(user.public_key, user_pubkey);
 
         // Verify the user exists
-        let retrieved_user = user_repo.get(&user_pubkey, db.pool()).await.unwrap();
+        let retrieved_user = UserRepository::get(&user_pubkey, &mut db.pool().into()).await.unwrap();
         assert_eq!(retrieved_user.public_key, user_pubkey);
 
         // Delete the user
-        user_repo.delete(user.id, db.pool()).await.unwrap();
+        UserRepository::delete(user.id, &mut db.pool().into()).await.unwrap();
 
         // Verify the user no longer exists
-        let result = user_repo.get(&user_pubkey, db.pool()).await;
+        let result = UserRepository::get(&user_pubkey, &mut db.pool().into()).await;
         assert!(result.is_err());
     }
 }
