@@ -7,8 +7,7 @@ use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
 use crate::persistence::lmdb::LmDB;
-#[cfg(any(test, feature = "testing"))]
-use crate::MockDataDir;
+use crate::persistence::sql::DbConnection;
 use crate::{app_context::AppContext, PersistentDataDir};
 use crate::{DataDir, SignupMode};
 use anyhow::Result;
@@ -28,6 +27,7 @@ use std::{
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: LmDB,
+    pub(crate) sql_db: DbConnection,
     pub(crate) file_service: FileService,
     pub(crate) signup_mode: SignupMode,
     /// If `Some(bytes)` the quota is enforced, else unlimited.
@@ -139,6 +139,7 @@ impl HomeserverCore {
 
         let state = AppState {
             verifier: AuthVerifier::default(),
+            sql_db: context.sql_db.clone(),
             db: context.db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),

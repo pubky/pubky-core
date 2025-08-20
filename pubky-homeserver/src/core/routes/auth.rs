@@ -1,6 +1,8 @@
 use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::signup_tokens::SignupTokenError;
 use crate::persistence::lmdb::tables::users::User;
+use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+use crate::persistence::sql::user::UserRepository;
 use crate::shared::{HttpError, HttpResult};
 use crate::{core::AppState, SignupMode};
 use axum::{
@@ -38,15 +40,21 @@ pub async fn signup(
     let public_key = token.pubky();
 
     // 2) Ensure the user does *not* already exist
-    let txn = state.db.env.read_txn()?;
-    let users = state.db.tables.users;
-    if users.get(&txn, public_key)?.is_some() {
-        return Err(HttpError::new_with_message(
-            StatusCode::CONFLICT,
-            "User already exists",
-        ));
+    let user_repo = UserRepository::new(&state.sql_db);
+    match user_repo.get(public_key, state.sql_db.pool()).await {
+        Ok(_) => {
+                return Err(HttpError::new_with_message(
+                    StatusCode::CONFLICT,
+                    "User already exists",
+                ));
+        }
+        Err(sqlx::Error::RowNotFound) => {
+            // User does not exist, continue
+        }
+        Err(e) => {
+            return Err(e.into());
+        }
     }
-    txn.commit()?;
 
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
     if state.signup_mode == SignupMode::TokenRequired {
@@ -56,7 +64,16 @@ pub async fn signup(
                 StatusCode::BAD_REQUEST,
                 "Token required",
             ))?;
+        let signup_code_id = SignupCodeId::new(signup_token_param.clone()).map_err(|e| {
+            HttpError::new_with_message(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid signup token format: {}", e),
+            )
+        })?;
         // Validate it in the DB (marks it used)
+
+        let signup_code_repo = SignupCodeRepository::new(&state.sql_db);
+        let code = signup_code_repo.get(&signup_code_id, state.sql_db.pool()).await?;
         if let Err(e) = state
             .db
             .validate_and_consume_signup_token(signup_token_param, public_key)

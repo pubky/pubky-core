@@ -25,6 +25,12 @@ pub struct DbConnection {
     drop_pg_db_after_test: Option<Arc<AsyncDropper<DropPgDbAfterTest>>>,
 }
 
+impl std::fmt::Debug for DbConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DbConnection")
+    }
+}
+
 impl DbConnection {
     pub async fn new(con_string: &ConnectionString) -> Result<Self, sqlx::Error> {
         let pool: PgPool = PgPool::connect(con_string.as_str()).await?;

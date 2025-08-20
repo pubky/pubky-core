@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use sqlx::Transaction;
 
 #[async_trait]
-pub trait MigrationTrait {
+pub trait MigrationTrait: Send + Sync {
     /// Run the migration.
     /// Use the tx to perform all the necessary operations.
     /// In case of an error, the tx is automatically rolled back.
