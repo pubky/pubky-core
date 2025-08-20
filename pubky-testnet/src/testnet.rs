@@ -8,7 +8,7 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
-use pubky::{Keypair, PubkyAgent, PubkyClient};
+use pubky::{KeyedAgent, KeylessAgent, Keypair, PubkyClient};
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
 };
@@ -128,7 +128,7 @@ impl Testnet {
     }
 
     /// Create a [ClientBuilder] and configure it to use this local test network.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
+    pub fn client_builder(&self) -> pubky::ClientBuilder {
         let relays = self.dht_relay_urls();
 
         let mut builder = pubky::Client::builder();
@@ -153,31 +153,43 @@ impl Testnet {
 
     /// Creates a `pubky::Client` pre-configured to use this test network.
     ///
-    /// This is a convenience method that builds a client from `Self::pubky_client_builder`.
+    /// This is a convenience method that builds a client from `Self::client_builder`.
     ///
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
-        self.pubky_client_builder().build()
+    pub fn client(&self) -> Result<pubky::Client, pubky::BuildError> {
+        self.client_builder().build()
     }
 
-    /// Creates a `pubky::PubkyAgent` pre-configured to use this test network.
-    /// Will instantiate a single global `pubky_client` to be shared across all agents created.
+    /// Creates a `Keyed`` `pubky::PubkyAgent` pre-configured to use this test network.
+    /// Will instantiate a single global `client` to be shared across all agents created.
     ///
-    /// This is a convenience method that builds an agent over `Self::pubky_client_builder`
+    /// This is a convenience method that builds an agent over `Self::client_builder`
     /// and creates an ephemeral random KeyPair for this user.
     ///
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn pubky_agent_random(&self) -> Result<pubky::PubkyAgent, pubky::BuildError> {
+    pub fn agent_keyed_random(&self) -> Result<KeyedAgent, pubky::BuildError> {
         static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
             once_cell::sync::OnceCell::new();
         let keypair = Keypair::random();
-        let client =
-            DEFAULT.get_or_try_init(|| self.pubky_client_builder().build().map(Arc::new))?;
-        Ok(PubkyAgent::with_client(client.clone(), Some(keypair)))
+        let client = DEFAULT.get_or_try_init(|| self.client_builder().build().map(Arc::new))?;
+        Ok(pubky::KeyedAgent::with_client(client.clone(), keypair))
+    }
+
+    /// Creates a `Keyless` `pubky::PubkyAgent` pre-configured to use this test network.
+    /// Will instantiate a single global `client` to be shared across all agents created.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client fails to build, which should not happen in a test context.
+    pub fn agent_keyless(&self) -> Result<KeylessAgent, pubky::BuildError> {
+        static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
+            once_cell::sync::OnceCell::new();
+        let client = DEFAULT.get_or_try_init(|| self.client_builder().build().map(Arc::new))?;
+        Ok(pubky::KeylessAgent::with_client(client.clone()))
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
@@ -229,7 +241,7 @@ mod test {
         testnet.create_homeserver_suite().await.unwrap();
         let hs = testnet.homeservers.first().unwrap();
 
-        let agent = testnet.pubky_agent_random().unwrap();
+        let agent = testnet.agent_keyed_random().unwrap();
 
         let session = agent.signup(&hs.public_key(), None).await.unwrap();
         assert_eq!(session.pubky(), &agent.pubky().unwrap());
@@ -286,7 +298,7 @@ mod test {
                 };
                 let hs = testnet.homeservers.first().unwrap();
 
-                let agent = testnet.pubky_agent_random().unwrap();
+                let agent = testnet.agent_keyed_random().unwrap();
 
                 let session = agent.signup(&hs.public_key(), None).await.unwrap();
 

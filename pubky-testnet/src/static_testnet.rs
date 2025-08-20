@@ -6,6 +6,7 @@ use std::{
 
 use crate::Testnet;
 use http_relay::HttpRelay;
+use pubky::{KeyedAgent, KeylessAgent};
 use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
 
 /// A simple testnet with
@@ -67,18 +68,23 @@ impl StaticTestnet {
     }
 
     /// Create a new pubky client builder.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
-        self.testnet.pubky_client_builder()
+    pub fn client_builder(&self) -> pubky::ClientBuilder {
+        self.testnet.client_builder()
     }
 
     /// Creates a `pubky::Client` pre-configured to use this test network.
-    pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
-        self.testnet.pubky_client()
+    pub fn client(&self) -> Result<pubky::Client, pubky::BuildError> {
+        self.testnet.client()
     }
 
-    /// Creates a `pubky::PubkyAgent` pre-configured to use this test network.
-    pub fn pubky_agent_random(&self) -> Result<pubky::PubkyAgent, pubky::BuildError> {
-        self.testnet.pubky_agent_random()
+    /// Creates a `Keyed` `pubky::PubkyAgent` pre-configured to use this test network with `KeyPair::random`
+    pub fn agent_keyed_random(&self) -> Result<KeyedAgent, pubky::BuildError> {
+        self.testnet.agent_keyed_random()
+    }
+
+    /// Creates a `Keyless` `pubky::PubkyAgent` pre-configured to use this test network.
+    pub fn agent_keyless(&self) -> Result<KeylessAgent, pubky::BuildError> {
+        self.testnet.agent_keyless()
     }
 
     /// Create a new pkarr client builder.

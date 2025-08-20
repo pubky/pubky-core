@@ -14,30 +14,28 @@ async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
-    let keypair = Keypair::random();
-    let public_key = keypair.public_key();
-    let agent = testnet.pubky_agent(Some(keypair)).unwrap();
+    let user = testnet.agent_keyed_random().unwrap();
 
-    agent.signup(&server.public_key(), None).await.unwrap();
+    user.signup(&server.public_key(), None).await.unwrap();
 
-    let session = agent.session().await.unwrap().unwrap();
+    let session = user.session().await.unwrap().unwrap();
 
     assert!(session.capabilities().contains(&Capability::root()));
 
-    agent.signout().await.unwrap();
+    user.signout().await.unwrap();
 
     {
-        let session = agent.session().await.unwrap();
+        let session = user.session().await.unwrap();
 
         assert!(session.is_none());
     }
 
-    agent.signin().await.unwrap();
+    user.signin().await.unwrap();
 
     {
-        let session = agent.session().await.unwrap().unwrap();
+        let session = user.session().await.unwrap().unwrap();
 
-        assert_eq!(session.pubky(), &public_key);
+        assert_eq!(session.pubky(), &user.pubky().unwrap());
         assert!(session.capabilities().contains(&Capability::root()));
     }
 }
@@ -116,33 +114,36 @@ async fn authz() {
 
     let http_relay_url = testnet.http_relay().local_link_url();
 
-    let keypair = Keypair::random();
-    let pubky = keypair.public_key();
-
     // Third-party app (keyless)
     let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
-    let app = testnet.pubky_agent(None).unwrap();
-    let pubky_auth_request = app.auth_request(http_relay_url, &capabilities).unwrap();
+    let keyless_app = testnet.agent_keyless().unwrap();
+    let pubky_auth_request = keyless_app
+        .auth_request(http_relay_url, &capabilities)
+        .unwrap();
 
     // Authenticator (user)
-    let user = testnet.pubky_agent(Some(keypair)).unwrap();
+    let user = testnet.agent_keyed_random().unwrap();
     user.signup(&server.public_key(), None).await.unwrap();
     user.send_auth_token(pubky_auth_request.url())
         .await
         .unwrap();
 
     let public_key = pubky_auth_request.response().await.unwrap();
-    assert_eq!(&public_key, &pubky);
+    assert_eq!(public_key, user.pubky().unwrap());
 
-    let session = app.session().await.unwrap().unwrap();
+    let session = keyless_app.session().await.unwrap().unwrap();
     assert_eq!(session.capabilities(), &capabilities.0);
 
+    // Ensure the same user pubky has been authed on the keyless app from cold keypair
+    assert_eq!(user.pubky(), keyless_app.pubky());
+
     // Access control enforcement
-    app.put("/pub/pubky.app/foo", Vec::<u8>::new())
+    keyless_app
+        .put("/pub/pubky.app/foo", Vec::<u8>::new())
         .await
         .unwrap();
 
-    let err = app
+    let err = keyless_app
         .put("/pub/pubky.app", Vec::<u8>::new())
         .await
         .unwrap_err();
@@ -150,7 +151,7 @@ async fn authz() {
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 
-    let err = app
+    let err = keyless_app
         .put("/pub/foo.bar/file", Vec::<u8>::new())
         .await
         .unwrap_err();

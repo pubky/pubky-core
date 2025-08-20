@@ -1,9 +1,11 @@
 use reqwest::{Method, Response, header::COOKIE};
 use url::Url;
 
-use crate::{PubkyAgent, PublicKey, errors::Result, util::check_http_status};
+use crate::{
+    PubkyAgent, PublicKey, agent::state::sealed::Sealed, errors::Result, util::check_http_status,
+};
 
-impl PubkyAgent {
+impl<S: Sealed> PubkyAgent<S> {
     /// Build a request. If `path_or_url` is relative, targets this agent’s homeserver.
     pub async fn request(
         &self,
@@ -28,8 +30,7 @@ impl PubkyAgent {
                 .pubky()
                 .and_then(|pk| {
                     let host = url.host_str().unwrap_or("");
-                    if host.starts_with("_pubky.") {
-                        let tail = &host["_pubky.".len()..];
+                    if let Some(tail) = host.strip_prefix("_pubky.") {
                         PublicKey::try_from(tail).ok().map(|h| h == pk)
                     } else {
                         PublicKey::try_from(host).ok().map(|h| h == pk)

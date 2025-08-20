@@ -7,7 +7,7 @@ pub use crate::{BuildError, Error, Keypair, PublicKey};
 pub use crate::{PubkyClient, PubkyClientBuilder};
 
 // Agent to use on behalf of a user
-pub use crate::PubkyAgent;
+pub use crate::{KeyedAgent, KeylessAgent, PubkyAgent};
 
 // Auth and listing helpers:
 pub use crate::{Session, agent::auth::AuthRequest, client::list::ListBuilder};
