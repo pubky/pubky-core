@@ -3,7 +3,7 @@ use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, Table};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
-use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait};
+use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait};
 
 const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
@@ -13,7 +13,7 @@ pub struct M20250812CreateSignupCodeMigration;
 impl MigrationTrait for M20250812CreateSignupCodeMigration {
     async fn up(
         &self,
-        db: &DbConnection,
+        db: &SqlDb,
         tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
         let statement = Table::create()
@@ -89,7 +89,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_code_migration() {
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![

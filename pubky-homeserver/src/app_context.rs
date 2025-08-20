@@ -11,7 +11,7 @@ use crate::{
     persistence::{
         files::{FileIoError, FileService},
         lmdb::LmDB,
-        sql::DbConnection,
+        sql::SqlDb,
     },
     ConfigToml, DataDir
 };
@@ -54,7 +54,7 @@ pub struct AppContext {
     /// A list of all shared resources.
     pub(crate) db: LmDB,
     /// The SQL database connection.
-    pub(crate) sql_db: DbConnection,
+    pub(crate) sql_db: SqlDb,
     /// The storage operator to store files.
     pub(crate) file_service: FileService,
     pub(crate) config_toml: ConfigToml,
@@ -146,18 +146,18 @@ impl AppContext {
     /// If we are in a test environment and it's a test db connection string,
     /// we use an empheral test db.
     /// Otherwise, we use the normal db connection.
-    async fn connect_to_sql_db(config_toml: &ConfigToml) -> Result<DbConnection, AppContextConversionError> {
+    async fn connect_to_sql_db(config_toml: &ConfigToml) -> Result<SqlDb, AppContextConversionError> {
         #[cfg(any(test, feature = "testing"))]
         {
         // If we are in a test environment and it's a test db connection string,
         // we use an empheral test db.
             if config_toml.general.db_url.is_test_db() {
-                return Ok(DbConnection::test().await);
+                return Ok(SqlDb::test().await);
             } else {
-                return Ok(DbConnection::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?);
+                return Ok(SqlDb::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?);
             }
         }
         // If we are not in a test environment, we use the normal db connection.
-        Ok(DbConnection::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?)
+        Ok(SqlDb::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?)
     }
 }

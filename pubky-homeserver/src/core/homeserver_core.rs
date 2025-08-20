@@ -7,7 +7,7 @@ use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
 use crate::persistence::lmdb::LmDB;
-use crate::persistence::sql::DbConnection;
+use crate::persistence::sql::SqlDb;
 use crate::{app_context::AppContext, PersistentDataDir};
 use crate::{DataDir, SignupMode};
 use anyhow::Result;
@@ -27,7 +27,7 @@ use std::{
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
     pub(crate) db: LmDB,
-    pub(crate) sql_db: DbConnection,
+    pub(crate) sql_db: SqlDb,
     pub(crate) file_service: FileService,
     pub(crate) signup_mode: SignupMode,
     /// If `Some(bytes)` the quota is enforced, else unlimited.

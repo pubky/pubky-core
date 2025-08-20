@@ -100,9 +100,9 @@ pub async fn signup(
     }
 
     // 4) Create the new user record
-    let mut wtxn = state.db.env.write_txn()?;
-    users.put(&mut wtxn, public_key, &User::default())?;
-    wtxn.commit()?;
+    // let mut wtxn = state.db.env.write_txn()?;
+    // users.put(&mut wtxn, public_key, &User::default())?;
+    // wtxn.commit()?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(

@@ -4,7 +4,7 @@ use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::{
     lmdb::tables::users::USERS_TABLE,
-    sql::{db_connection::DbConnection, entities::user::UserIden, migration::MigrationTrait},
+    sql::{db_connection::SqlDb, entities::user::UserIden, migration::MigrationTrait},
 };
 
 const TABLE: &str = "entries";
@@ -15,7 +15,7 @@ pub struct M20250815CreateEntryMigration;
 impl MigrationTrait for M20250815CreateEntryMigration {
     async fn up(
         &self,
-        db: &DbConnection,
+        db: &SqlDb,
         tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
         // Create table
@@ -156,7 +156,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_entry_migration() {
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![
@@ -234,7 +234,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_entry_twice_should_fail() {
         // Test Unique constraint. Unique user and path.
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![

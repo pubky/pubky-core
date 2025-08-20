@@ -1,20 +1,20 @@
 use sea_query::{ColumnDef, Expr, Query, SimpleExpr, Table};
 use sqlx::{Row, Transaction};
 
-use crate::persistence::sql::{db_connection::DbConnection, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration, M20250814CreateEventMigration, M20250815CreateEntryMigration}};
+use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration, M20250814CreateEventMigration, M20250815CreateEntryMigration}};
 
 /// The name of the migration table to keep track of which migrations have been applied.
 const MIGRATION_TABLE: &str = "migrations";
 
 /// Migrator is responsible for running migrations on the database.
 pub struct Migrator<'a> {
-    db: &'a DbConnection,
+    db: &'a SqlDb,
 }
 
 impl<'a> Migrator<'a> {
     /// Creates a new migrator.
     /// db: The database connection to use.
-    pub fn new(db: &'a DbConnection) -> Self {
+    pub fn new(db: &'a SqlDb) -> Self {
         Self { db }
     }
 
@@ -144,7 +144,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_table() {
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         let mut tx = db.pool().begin().await.unwrap();
@@ -168,7 +168,7 @@ mod tests {
 
             async fn up(
                 &self,
-                db: &DbConnection,
+                db: &SqlDb,
                 tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 let statement = Table::create()
@@ -188,7 +188,7 @@ mod tests {
             }
         }
 
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(TestMigration)])
@@ -216,7 +216,7 @@ mod tests {
 
             async fn up(
                 &self,
-                db: &DbConnection,
+                db: &SqlDb,
                 tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 // Create table
@@ -238,7 +238,7 @@ mod tests {
             }
         }
 
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(TestMigration)])
@@ -264,14 +264,14 @@ mod tests {
 
             async fn up(
                 &self,
-                _: &DbConnection,
+                _: &SqlDb,
                 _: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 Ok(())
             }
         }
 
-        let db = DbConnection::test_without_migrations().await;
+        let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         // Mark the migration as done

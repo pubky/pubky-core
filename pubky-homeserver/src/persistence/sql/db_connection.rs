@@ -16,7 +16,7 @@ use sqlx::postgres::PgPool;
 use crate::persistence::sql::connection_string::ConnectionString;
 
 #[derive(Clone)]
-pub struct DbConnection {
+pub struct SqlDb {
     /// Connection pool to the database
     pool: PgPool,
 
@@ -25,13 +25,13 @@ pub struct DbConnection {
     drop_pg_db_after_test: Option<Arc<AsyncDropper<DropPgDbAfterTest>>>,
 }
 
-impl std::fmt::Debug for DbConnection {
+impl std::fmt::Debug for SqlDb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "DbConnection")
     }
 }
 
-impl DbConnection {
+impl SqlDb {
     pub async fn new(con_string: &ConnectionString) -> Result<Self, sqlx::Error> {
         let pool: PgPool = PgPool::connect(con_string.as_str()).await?;
 
@@ -93,7 +93,7 @@ impl AsyncDrop for DropPgDbAfterTest {
 const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
 
 #[cfg(any(test, feature = "testing"))]
-impl DbConnection {
+impl SqlDb {
     pub async fn test_postgres_db(con_string: &ConnectionString) -> anyhow::Result<Self> {
         use uuid::Uuid;
 
@@ -146,7 +146,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_pg_db_available() {
-        let _db = DbConnection::test_postgres_db(&DbConnection::con_string_from_pg_test_env_var())
+        let _db = SqlDb::test_postgres_db(&SqlDb::con_string_from_pg_test_env_var())
             .await
             .unwrap();
     }

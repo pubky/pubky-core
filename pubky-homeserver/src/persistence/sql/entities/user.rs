@@ -2,43 +2,26 @@ use pkarr::PublicKey;
 use sea_query::{Expr, Iden, Query, SimpleExpr};
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
-use crate::persistence::sql::db_connection::DbConnection;
+use crate::persistence::sql::db_connection::SqlDb;
 
 pub const USER_TABLE: &str = "users";
-pub enum ExecutorHolder<'a> {
-    Pool(sqlx::pool::PoolConnection<sqlx::Postgres>),
-    Transaction(&'a sqlx::Transaction<'static, sqlx::Postgres>),
-}
 
-impl<'a> ExecutorHolder<'a> {
-    pub async fn from_pool(pool: &sqlx::PgPool) -> Result<Self, sqlx::Error> {
-        let con = pool.acquire().await?;
-        Ok(ExecutorHolder::Pool(con))
-    }
 
-    pub fn from_tx(tx: &'a sqlx::Transaction<'static, sqlx::Postgres>) -> Self {
-        ExecutorHolder::Transaction(tx)
-    }
 
-    pub async fn get_con<'c>(&self) -> &sqlx::PgConnection {
-        match self {
-            ExecutorHolder::Pool(pool) => &**pool,
-            ExecutorHolder::Transaction(tx) => &***tx,
-        }
-    }
-}
+
+
 
 
 
 /// Repository that handles all the queries regarding the UserEntity.
 pub struct UserRepository<'a> {
-    pub db: &'a DbConnection,
+    pub db: &'a SqlDb,
 }
 
 impl<'a> UserRepository<'a> {
 
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a DbConnection) -> Self {
+    pub fn new(db: &'a SqlDb) -> Self {
         Self { db }
     }
 
@@ -155,7 +138,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_user() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
 
@@ -176,7 +159,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_twice() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
 
@@ -191,7 +174,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_user() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
         let mut user = user_repo.create(&user_pubkey, db.pool()).await.unwrap();
@@ -208,7 +191,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_delete_user() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
 

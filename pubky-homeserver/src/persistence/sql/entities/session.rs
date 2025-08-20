@@ -5,19 +5,19 @@ use pubky_common::{capabilities::Capability, crypto::random_bytes};
 use sea_query::{Expr, Iden, Query, SimpleExpr};
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
-use crate::persistence::sql::{db_connection::DbConnection, entities::user::{UserIden, USER_TABLE}};
+use crate::persistence::sql::{db_connection::SqlDb, entities::user::{UserIden, USER_TABLE}};
 
 pub const SESSION_TABLE: &str = "sessions";
 
 /// Repository that handles all the queries regarding the UserEntity.
 pub struct SessionRepository<'a> {
-    pub db: &'a DbConnection,
+    pub db: &'a SqlDb,
 }
 
 impl<'a> SessionRepository<'a> {
 
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a DbConnection) -> Self {
+    pub fn new(db: &'a SqlDb) -> Self {
         Self { db }
     }
 
@@ -176,7 +176,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_session() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let session_repo = SessionRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();

@@ -6,19 +6,19 @@ use sea_query::{Expr, Iden, Query, SimpleExpr};
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 use base32::{decode, encode, Alphabet};
 
-use crate::persistence::sql::db_connection::DbConnection;
+use crate::persistence::sql::db_connection::SqlDb;
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
 /// Repository that handles all the queries regarding the SignupCodeEntity.
 pub struct SignupCodeRepository<'a> {
-    pub db: &'a DbConnection,
+    pub db: &'a SqlDb,
 }
 
 impl<'a> SignupCodeRepository<'a> {
 
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a DbConnection) -> Self {
+    pub fn new(db: &'a SqlDb) -> Self {
         Self { db }
     }
 
@@ -169,7 +169,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_signup_code() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let signup_code_repo = SignupCodeRepository::new(&db);
         let signup_code_id = SignupCodeId::random();
 
@@ -186,7 +186,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_mark_as_used() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let signup_code_repo = SignupCodeRepository::new(&db);
         let signup_code_id = SignupCodeId::random();
         let _ = signup_code_repo.create(&signup_code_id, db.pool()).await.unwrap();

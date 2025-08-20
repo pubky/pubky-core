@@ -4,7 +4,7 @@ use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
 use crate::{
     persistence::sql::{
-        db_connection::DbConnection,
+        db_connection::SqlDb,
         entities::user::{UserIden, USER_TABLE},
     },
     shared::webdav::{EntryPath, WebDavPath},
@@ -14,12 +14,12 @@ pub const ENTRY_TABLE: &str = "entries";
 
 /// Repository that handles all the queries regarding the EntryEntity.
 pub struct EntryRepository<'a> {
-    pub db: &'a DbConnection,
+    pub db: &'a SqlDb,
 }
 
 impl<'a> EntryRepository<'a> {
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a DbConnection) -> Self {
+    pub fn new(db: &'a SqlDb) -> Self {
         Self { db }
     }
 
@@ -237,7 +237,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_entry() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let entry_repo = EntryRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();

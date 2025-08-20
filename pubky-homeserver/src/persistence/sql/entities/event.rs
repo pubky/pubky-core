@@ -4,19 +4,19 @@ use pkarr::{PublicKey};
 use sea_query::{Expr, Iden, Query, SimpleExpr};
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
-use crate::{persistence::sql::{db_connection::DbConnection, entities::user::{UserIden, USER_TABLE}}, shared::webdav::WebDavPath};
+use crate::{persistence::sql::{db_connection::SqlDb, entities::user::{UserIden, USER_TABLE}}, shared::webdav::WebDavPath};
 
 pub const EVENT_TABLE: &str = "events";
 
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository<'a> {
-    pub db: &'a DbConnection,
+    pub db: &'a SqlDb,
 }
 
 impl<'a> EventRepository<'a> {
 
     /// Create a new repository. This is very lightweight.
-    pub fn new(db: &'a DbConnection) -> Self {
+    pub fn new(db: &'a SqlDb) -> Self {
         Self { db }
     }
 
@@ -142,7 +142,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_list_event() {
-        let db = DbConnection::test().await;
+        let db = SqlDb::test().await;
         let user_repo = UserRepository::new(&db);
         let event_repo = EventRepository::new(&db);
         let user_pubkey = Keypair::random().public_key();
