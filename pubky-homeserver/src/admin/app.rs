@@ -100,7 +100,7 @@ impl AdminServer {
     /// Run the admin server.
     pub async fn start(context: &AppContext) -> Result<Self, AdminServerBuildError> {
         let password = context.config_toml.admin.admin_password.clone();
-        let state = AppState::new(context.db.clone(), context.file_service.clone(), &password);
+        let state = AppState::new(context.db.clone(), context.sql_db.clone(), context.file_service.clone(), &password);
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)
@@ -165,6 +165,7 @@ mod tests {
         TestServer::new(create_app(
             AppState::new(
                 context.db.clone(),
+                context.sql_db.clone(),
                 FileService::new_from_context(context).unwrap(),
                 "",
             ),

@@ -11,6 +11,7 @@ use crate::persistence::sql::{UnifiedExecutor};
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
+
 /// Repository that handles all the queries regarding the SignupCodeEntity.
 pub struct SignupCodeRepository;
 
@@ -43,6 +44,36 @@ impl SignupCodeRepository {
         let con = executor.get_con().await?;
         let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(code)
+    }
+
+    /// Get overview statistics for signup codes.
+    /// The executor can either be db.pool() or a transaction.
+    pub async fn get_overview<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<SignupCodeOverview, sqlx::Error> {
+        // Query to get total number of signup codes
+        let total_statement = Query::select()
+            .expr(Expr::col(SignupCodeIden::Id).count())
+            .from(SIGNUP_CODE_TABLE)
+            .to_owned();
+        
+        let (total_query, total_values) = total_statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let total_count: i64 = sqlx::query_scalar_with(&total_query, total_values).fetch_one(con).await?;
+
+        // Query to get number of unused signup codes (where used_by is NULL)
+        let unused_statement = Query::select()
+            .expr(Expr::col(SignupCodeIden::Id).count())
+            .from(SIGNUP_CODE_TABLE)
+            .and_where(Expr::col(SignupCodeIden::UsedBy).is_null())
+            .to_owned();
+        
+        let (unused_query, unused_values) = unused_statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let unused_count: i64 = sqlx::query_scalar_with(&unused_query, unused_values).fetch_one(con).await?;
+
+        Ok(SignupCodeOverview {
+            num_signup_codes: total_count as u64,
+            num_unused_signup_codes: unused_count as u64,
+        })
     }
 
     pub async fn mark_as_used<'a>(id: &SignupCodeId, used_by: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<SignupCodeEntity, sqlx::Error> {
@@ -127,6 +158,13 @@ impl FromStr for SignupCodeId {
     }
 }
 
+/// Overview statistics for signup codes
+#[derive(Debug, Clone)]
+pub struct SignupCodeOverview {
+    pub num_signup_codes: u64,
+    pub num_unused_signup_codes: u64,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SignupCodeEntity {
     pub id: SignupCodeId,
@@ -190,5 +228,47 @@ mod tests {
         let updated_code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into()).await.unwrap();
         assert_eq!(updated_code.id, signup_code_id);
         assert_eq!(updated_code.used_by, Some(user_pubkey));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_overview() {
+        let db = SqlDb::test().await;
+        
+        // Initially, there should be no signup codes
+        let overview = SignupCodeRepository::get_overview(&mut db.pool().into()).await.unwrap();
+        assert_eq!(overview.num_signup_codes, 0);
+        assert_eq!(overview.num_unused_signup_codes, 0);
+
+        // Create some signup codes
+        let code1 = SignupCodeId::random();
+        let code2 = SignupCodeId::random();
+        let code3 = SignupCodeId::random();
+        
+        let _ = SignupCodeRepository::create(&code1, &mut db.pool().into()).await.unwrap();
+        let _ = SignupCodeRepository::create(&code2, &mut db.pool().into()).await.unwrap();
+        let _ = SignupCodeRepository::create(&code3, &mut db.pool().into()).await.unwrap();
+
+        // After creating 3 codes, all should be unused
+        let overview = SignupCodeRepository::get_overview(&mut db.pool().into()).await.unwrap();
+        assert_eq!(overview.num_signup_codes, 3);
+        assert_eq!(overview.num_unused_signup_codes, 3);
+
+        // Mark one code as used
+        let user_pubkey = Keypair::random().public_key();
+        SignupCodeRepository::mark_as_used(&code1, &user_pubkey, &mut db.pool().into()).await.unwrap();
+
+        // Now there should be 3 total codes, 2 unused
+        let overview = SignupCodeRepository::get_overview(&mut db.pool().into()).await.unwrap();
+        assert_eq!(overview.num_signup_codes, 3);
+        assert_eq!(overview.num_unused_signup_codes, 2);
+
+        // Mark another code as used
+        let user_pubkey2 = Keypair::random().public_key();
+        SignupCodeRepository::mark_as_used(&code2, &user_pubkey2, &mut db.pool().into()).await.unwrap();
+
+        // Now there should be 3 total codes, 1 unused
+        let overview = SignupCodeRepository::get_overview(&mut db.pool().into()).await.unwrap();
+        assert_eq!(overview.num_signup_codes, 3);
+        assert_eq!(overview.num_unused_signup_codes, 1);
     }
 }

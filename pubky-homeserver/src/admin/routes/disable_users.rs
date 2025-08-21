@@ -101,6 +101,7 @@ mod tests {
         // Setup server
         let app_state = AppState::new(
             db.clone(),
+            context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
         );

@@ -54,6 +54,50 @@ impl UserRepository {
         Ok(users)
     }
 
+    /// Get the overview of the users.
+    pub async fn get_overview<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<UserOverview, sqlx::Error> { 
+        // Get total count and total used bytes
+        let statement = Query::select()
+        .from(USER_TABLE)
+        .expr_as(
+            Expr::col(UserIden::Id).count(),
+            "count"
+        )
+        .expr_as(
+            Expr::col(UserIden::UsedBytes).sum().div(1024*1024).cast_as("bigint"),
+            "total_used_mbytes"
+        )
+        .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let row = sqlx::query_with(&query, values).fetch_one(executor.get_con().await?).await?;
+        
+        let count: i64 = row.try_get("count")?;
+        let total_used_bytes: i64 = row.try_get("total_used_mbytes")?;
+        
+        // Get disabled count
+        let statement = Query::select()
+        .from(USER_TABLE)
+        .expr_as(
+            Expr::col(UserIden::Id).count(),
+            "disabled_count"
+        )
+        .and_where(Expr::col(UserIden::Disabled).eq(true))
+        .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let row = sqlx::query_with(&query, values).fetch_one(executor.get_con().await?).await?;
+        
+        let disabled_count: i64 = row.try_get("disabled_count")?;
+        
+        // Create the overview
+        let overview = UserOverview {
+            count: count as u64,
+            disabled_count: disabled_count as u64,
+            total_used_mb: total_used_bytes as u64,
+        };
+        
+        Ok(overview)
+    }
+
     pub async fn update<'a>(user: &UserEntity, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::update()
             .table(USER_TABLE)
@@ -105,6 +149,13 @@ pub struct UserEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
     pub used_bytes: u64,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct UserOverview {
+    pub count: u64,
+    pub disabled_count: u64,
+    pub total_used_mb: u64,
 }
 
 impl FromRow<'_, PgRow> for UserEntity {
@@ -201,8 +252,37 @@ mod tests {
         // Delete the user
         UserRepository::delete(user.id, &mut db.pool().into()).await.unwrap();
 
-        // Verify the user no longer exists
-        let result = UserRepository::get(&user_pubkey, &mut db.pool().into()).await;
-        assert!(result.is_err());
+        // Verify the user is deleted
+        UserRepository::get(&user_pubkey, &mut db.pool().into()).await.expect_err("User should be deleted");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_overview() {
+        let db = SqlDb::test().await;
+        
+        // Create multiple users with different states
+        let user1_pubkey = Keypair::random().public_key();
+        let user2_pubkey = Keypair::random().public_key();
+        let user3_pubkey = Keypair::random().public_key();
+        
+        let mut user1 = UserRepository::create(&user1_pubkey, &mut db.pool().into()).await.unwrap();
+        let mut user2 = UserRepository::create(&user2_pubkey, &mut db.pool().into()).await.unwrap();
+        let _ = UserRepository::create(&user3_pubkey, &mut db.pool().into()).await.unwrap();
+        
+        // Set some user properties
+        let megabytes = 1024*1024;
+        user1.used_bytes = megabytes*1024;
+        user1.disabled = false;
+        UserRepository::update(&user1, &mut db.pool().into()).await.unwrap();
+        
+        user2.used_bytes = megabytes*2048;
+        user2.disabled = true;
+        UserRepository::update(&user2, &mut db.pool().into()).await.unwrap();
+        
+        // Get overview
+        let overview = UserRepository::get_overview(&mut db.pool().into()).await.unwrap();
+        assert_eq!(overview.count, 3); // Total users
+        assert_eq!(overview.disabled_count, 1); // One disabled user
+        assert_eq!(overview.total_used_mb, 3072); // 1024 + 2048
     }
 }
