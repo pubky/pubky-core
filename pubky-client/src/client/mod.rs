@@ -3,4 +3,3 @@ pub mod core;
 pub mod http;
 mod internal;
 pub mod list;
-pub mod pkarr;

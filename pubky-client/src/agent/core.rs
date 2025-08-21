@@ -1,7 +1,6 @@
 use once_cell::sync::OnceCell;
 
 use std::sync::Arc;
-use url::Url;
 
 use pkarr::{Keypair, PublicKey};
 

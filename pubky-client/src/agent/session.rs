@@ -8,7 +8,6 @@ use pubky_common::{auth::AuthToken, capabilities::Capability, session::Session};
 use crate::{
     PubkyAgent,
     agent::state::{Keyed, sealed::Sealed},
-    client::pkarr::PublishStrategy,
     errors::Result,
     util::check_http_status,
 };
@@ -16,7 +15,12 @@ use crate::{
 impl<S: Sealed> PubkyAgent<S> {
     /// Retrieve session for current pubky. Fails if pubky is unknown.
     pub async fn session(&self) -> Result<Option<Session>> {
-        let response = self.homeserver().get("/session").await?;
+        let response = self
+            .homeserver()
+            .request(Method::GET, "/session")
+            .await?
+            .send()
+            .await?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -91,8 +95,8 @@ impl PubkyAgent<Keyed> {
 
         let response = check_http_status(response).await?;
 
-        self.client
-            .publish_homeserver(kp, Some(&homeserver.to_string()), PublishStrategy::Force)
+        self.pkdns()
+            .publish_homeserver_force(Some(&homeserver))
             .await?;
 
         // On successful signup, the agent’s pubky is known from the keypair.
@@ -124,16 +128,12 @@ impl PubkyAgent<Keyed> {
         let session = self.signin_with_authtoken(&token).await?;
 
         if publish_sync {
-            self.client
-                .publish_homeserver(kp, None, PublishStrategy::IfOlderThan)
-                .await?;
+            self.pkdns().publish_homeserver_if_stale(None).await?;
         } else {
-            let client = self.client.clone();
-            let kp_cloned = kp.clone();
+            // Fire-and-forget path: refresh in the background
+            let agent = self.clone();
             let fut = async move {
-                let _ = client
-                    .publish_homeserver(&kp_cloned, None, PublishStrategy::IfOlderThan)
-                    .await;
+                let _ = agent.pkdns().publish_homeserver_if_stale(None).await;
             };
             #[cfg(not(target_arch = "wasm32"))]
             tokio::spawn(fut);

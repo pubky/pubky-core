@@ -27,7 +27,11 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
     }
 
     /// Build a request. If `path_or_url` is relative, target this agent’s homeserver.
-    async fn request(&self, method: Method, path_or_url: &str) -> Result<reqwest::RequestBuilder> {
+    pub(crate) async fn request(
+        &self,
+        method: Method,
+        path_or_url: &str,
+    ) -> Result<reqwest::RequestBuilder> {
         let url = match Url::parse(path_or_url) {
             Ok(abs) => abs,
             Err(_) => {
