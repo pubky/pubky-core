@@ -4,8 +4,8 @@ use std::time::Duration;
 use crate::errors::BuildError;
 
 /// Transport-only client for Pubky. Reusable, stateless w.r.t. user identities.
+pub const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Default, Clone)]
@@ -171,11 +171,6 @@ impl PubkyClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
     pub fn new() -> Result<PubkyClient, BuildError> {
         Self::builder().build()
-    }
-
-    /// Returns PubkyClient’s default pkarr relays.
-    pub fn default_relays() -> &'static [&'static str] {
-        DEFAULT_RELAYS
     }
 
     /// Returns the current max record age threshold.

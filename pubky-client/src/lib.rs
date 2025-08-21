@@ -47,8 +47,9 @@ pub mod prelude;
 pub use agent::{core::PubkyAgent, state::KeyedAgent, state::KeylessAgent};
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
-// Export common types.
+// Export common types and constants
 pub use agent::auth::AuthRequest;
+pub use client::core::DEFAULT_RELAYS;
 pub use client::list::ListBuilder;
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};

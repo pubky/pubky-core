@@ -194,6 +194,13 @@ impl<S: Sealed> PubkyAgent<S> {
         }
     }
 
+    /// Returns a reference to the internal `PubkyClient`
+    /// Raw transport handle. No per-agent cookie injection. Use `homeserver()` for
+    /// authenticated, agent-scoped requests.
+    pub fn client(&self) -> &PubkyClient {
+        Arc::as_ref(&self.client)
+    }
+
     pub(crate) fn set_pubky_if_empty(&self, pk: &PublicKey) {
         if let Ok(mut g) = self.pubky.write() {
             if g.is_none() {

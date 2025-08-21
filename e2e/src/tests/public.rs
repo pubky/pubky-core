@@ -1,80 +1,72 @@
-// use bytes::Bytes;
-// use pkarr::Keypair;
-// use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
-// use reqwest::{Method, StatusCode};
+use bytes::Bytes;
+use pkarr::Keypair;
+use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
+use reqwest::{Method, StatusCode};
 
-// #[tokio::test]
-// async fn put_get_delete() {
-//     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+#[tokio::test]
+async fn put_get_delete() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-//     let client = testnet.pubky_client().unwrap();
+    let user = testnet.agent_keyed_random().unwrap();
 
-//     let keypair = Keypair::random();
+    user.signup(&server.public_key(), None).await.unwrap();
 
-//     client
-//         .signup(&keypair, &server.public_key(), None)
-//         .await
-//         .unwrap();
+    // relative URL is always based over own user homeserver
+    let path = "/pub/foo.txt";
 
-//     let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-//     let url = url.as_str();
+    user.homeserver()
+        .put(path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
 
-//     client
-//         .put(url)
-//         .body(vec![0, 1, 2, 3, 4])
-//         .send()
-//         .await
-//         .unwrap()
-//         .error_for_status()
-//         .unwrap();
+    // Use Pubky native method to get data from homeserver
+    let response = user.homeserver().get(path).await.unwrap();
 
-//     // Use Pubky native method to get data from homeserver
-//     let response = client.get(url).send().await.unwrap();
+    let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
+    assert_eq!(content_header, "text/plain");
 
-//     let content_header = response.headers().get("content-type").unwrap();
-//     // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
-//     assert_eq!(content_header, "text/plain");
+    let byte_value = response.bytes().await.unwrap();
+    assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-//     let byte_value = response.bytes().await.unwrap();
-//     assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    // Use regular web method to get data from homeserver (with query pubky-host)
+    let regular_url = format!(
+        "{}pub/foo.txt?pubky-host={}",
+        server.icann_http_url(),
+        user.pubky().unwrap()
+    );
 
-//     // Use regular web method to get data from homeserver (with query pubky-host)
-//     let regular_url = format!(
-//         "{}pub/foo.txt?pubky-host={}",
-//         server.icann_http_url(),
-//         keypair.public_key()
-//     );
+    // We set `non.pubky.host` header as otherwise he client will use by default
+    // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
+    // the wrong tenant user
+    let response = user
+        .client()
+        .request(Method::GET, regular_url)
+        .header("Host", "non.pubky.host")
+        .send()
+        .await
+        .unwrap();
 
-//     // We set `non.pubky.host` header as otherwise he client will use by default
-//     // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
-//     // the wrong tenant user
-//     let response = client
-//         .get(regular_url)
-//         .header("Host", "non.pubky.host")
-//         .send()
-//         .await
-//         .unwrap();
+    let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
+    assert_eq!(content_header, "text/plain");
 
-//     let content_header = response.headers().get("content-type").unwrap();
-//     // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
-//     assert_eq!(content_header, "text/plain");
+    let byte_value = response.bytes().await.unwrap();
+    assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-//     let byte_value = response.bytes().await.unwrap();
-//     assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    user.homeserver()
+        .delete(path)
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
 
-//     client
-//         .delete(url)
-//         .send()
-//         .await
-//         .unwrap()
-//         .error_for_status()
-//         .unwrap();
-
-//     let response = client.get(url).send().await.unwrap();
-
-//     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-// }
+    // Should not exist, PubkyError of 404 type
+    assert!(user.homeserver().get(path).await.is_err());
+}
 
 // #[tokio::test]
 // async fn put_quota_applied() {

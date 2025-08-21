@@ -283,64 +283,61 @@ async fn authz() {
 //     );
 // }
 
-// #[tokio::test]
-// async fn test_signup_with_token() {
-//     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-//     let mut testnet = Testnet::new().await.unwrap();
-//     let client = testnet.pubky_client().unwrap();
+#[tokio::test]
+async fn test_signup_with_token() {
+    // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
+    let mut testnet = Testnet::new().await.unwrap();
+    let user = testnet.agent_keyed_random().unwrap();
+    let user2 = testnet.agent_keyed_random().unwrap();
 
-//     let mut mock_dir = MockDataDir::test();
-//     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-//     let server = testnet
-//         .create_homeserver_suite_with_mock(mock_dir)
-//         .await
-//         .unwrap();
-//     let keypair = Keypair::random();
+    let mut mock_dir = MockDataDir::test();
+    mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
+    let server = testnet
+        .create_homeserver_suite_with_mock(mock_dir)
+        .await
+        .unwrap();
 
-//     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
-//     let invalid_signup = client
-//         .signup(&keypair, &server.public_key(), Some("AAAA-BBBB-CCCC"))
-//         .await;
-//     assert!(
-//         invalid_signup.is_err(),
-//         "Signup should fail with an invalid signup token"
-//     );
-//     let err = invalid_signup.unwrap_err();
-//     assert!(
-//         err.to_string().to_lowercase().contains("401"),
-//         "Signup should fail with a 401 status code"
-//     );
+    // 2. Try to signup with an invalid token "AAAAA" and expect failure.
+    let invalid_signup = user
+        .signup(&server.public_key(), Some("AAAA-BBBB-CCCC"))
+        .await;
+    assert!(
+        invalid_signup.is_err(),
+        "Signup should fail with an invalid signup token"
+    );
+    let err = invalid_signup.unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("401"),
+        "Signup should fail with a 401 status code"
+    );
 
-//     // 3. Call the admin endpoint to generate a valid signup token.
-//     let valid_token = server.admin().create_signup_token().await.unwrap();
+    // 3. Call the admin endpoint to generate a valid signup token.
+    let valid_token = server.admin().create_signup_token().await.unwrap();
 
-//     // 4. Now signup with the valid token. Expect success and a session back.
-//     let session = client
-//         .signup(&keypair, &server.public_key(), Some(&valid_token))
-//         .await
-//         .unwrap();
-//     assert!(
-//         !session.pubky().to_string().is_empty(),
-//         "Session should contain a valid public key"
-//     );
+    // 4. Now signup with the valid token. Expect success and a session back.
+    let session = user
+        .signup(&server.public_key(), Some(&valid_token))
+        .await
+        .unwrap();
+    assert!(
+        !session.pubky().to_string().is_empty(),
+        "Session should contain a valid public key"
+    );
 
-//     // 5. Finally, sign in with the same keypair and verify that a session is returned.
-//     let signin_session = client.signin(&keypair).await.unwrap();
-//     assert_eq!(
-//         signin_session.pubky(),
-//         &keypair.public_key(),
-//         "Signed-in session should correspond to the same public key"
-//     );
+    // 5. Finally, sign in with the same keypair and verify that a session is returned.
+    let signin_session = user.signin().await.unwrap();
+    assert_eq!(
+        signin_session.pubky(),
+        &user.pubky().unwrap(),
+        "Signed-in session should correspond to the same public key"
+    );
 
-//     // 6. Signup with the same token again and expect failure.
-//     let new_keypair = Keypair::random();
-//     let signup_again = client
-//         .signup(&new_keypair, &server.public_key(), Some(&valid_token))
-//         .await;
-//     let err = signup_again.expect_err("Signup with an already used token should fail");
-//     assert!(err.to_string().contains("401"));
-//     assert!(err.to_string().contains("Token already used"));
-// }
+    // 6. Signup with the same token again and expect failure.
+    let signup_again = user2.signup(&server.public_key(), Some(&valid_token)).await;
+    let err = signup_again.expect_err("Signup with an already used token should fail");
+    assert!(err.to_string().contains("401"));
+    assert!(err.to_string().contains("Token already used"));
+}
 
 // // This test verifies that when a signin happens immediately after signup,
 // // the record is not republished on signin (its timestamp remains unchanged)
