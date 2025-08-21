@@ -108,9 +108,6 @@ impl PubkyAgent<Keyed> {
     /// - You already manage a long-lived `PubkyClient` (connection reuse, pkarr cache).
     /// - You are spawning multiple agents and want them to share transport resources.
     ///
-    /// If a `keypair` is provided, the agent’s `pubky` is initialized from it; otherwise the
-    /// `pubky` becomes known later (e.g., after a pubkyauth handshake).
-    ///
     /// # Examples
     /// ```no_run
     /// # use std::sync::Arc;
@@ -169,6 +166,12 @@ impl PubkyAgent<Keyed> {
     /// ```
     pub fn random() -> std::result::Result<Self, BuildError> {
         Self::new(Keypair::random())
+    }
+
+    /// Borrow the agent’s keypair.
+    #[inline]
+    pub fn keypair(&self) -> &Keypair {
+        self.keypair.get()
     }
 
     /// Drop the keypair, producing a keyless agent that keeps the session and pubky.
