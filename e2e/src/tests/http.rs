@@ -9,7 +9,7 @@ async fn http_get_pubky() {
     let client = testnet.pubky_client().unwrap();
 
     let response = client
-        .get(format!("https://{}/", server.public_key()))
+        .request(Method::GET, format!("https://{}/", server.public_key()))
         .send()
         .await
         .unwrap();

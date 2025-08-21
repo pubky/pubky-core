@@ -214,12 +214,18 @@ impl PubkyClient {
 
 #[cfg(test)]
 mod test {
+    use reqwest::Method;
+
     use super::*;
 
     #[tokio::test]
     async fn test_fetch() {
         let client = PubkyClient::new().unwrap();
-        let response = client.get("https://example.com/").send().await.unwrap();
+        let response = client
+            .request(Method::GET, "https://example.com/")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 200);
     }
 }
