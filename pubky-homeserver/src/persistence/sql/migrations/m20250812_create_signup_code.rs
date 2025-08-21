@@ -14,7 +14,6 @@ pub struct M20250812CreateSignupCodeMigration;
 impl MigrationTrait for M20250812CreateSignupCodeMigration {
     async fn up(
         &self,
-        db: &SqlDb,
         tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
         let statement = Table::create()

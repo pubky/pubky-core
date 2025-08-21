@@ -57,7 +57,7 @@ impl<'a> Migrator<'a> {
         let mut tx = self.db.pool().begin().await?;
         // Execute the migration
         let result: Result<(), anyhow::Error> = {
-            migration.up(self.db, &mut tx).await?;
+            migration.up(&mut tx).await?;
             self.mark_migration_as_done(&mut tx, migration.name())
                 .await?;
             Ok(())
@@ -169,7 +169,6 @@ mod tests {
 
             async fn up(
                 &self,
-                db: &SqlDb,
                 tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 let statement = Table::create()
@@ -217,7 +216,6 @@ mod tests {
 
             async fn up(
                 &self,
-                db: &SqlDb,
                 tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 // Create table
@@ -265,8 +263,7 @@ mod tests {
 
             async fn up(
                 &self,
-                _: &SqlDb,
-                _: &mut Transaction<'static, sqlx::Postgres>,
+                _tx: &mut Transaction<'static, sqlx::Postgres>,
             ) -> anyhow::Result<()> {
                 Ok(())
             }

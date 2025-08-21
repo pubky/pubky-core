@@ -15,7 +15,6 @@ pub struct UserRepository;
 impl UserRepository {
 
     /// Create a new user.
-    /// The executor can either be db.pool() or a transaction.
     pub async fn create<'a>(public_key: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error>{
         let statement =
         Query::insert().into_table(USER_TABLE)
@@ -33,7 +32,6 @@ impl UserRepository {
     }
 
     /// Get a user by their public key.
-    /// The executor can either be db.pool() or a transaction.
     pub async fn get<'a>(public_key: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::select().from(USER_TABLE)
         .columns([UserIden::Id, UserIden::PublicKey, UserIden::CreatedAt, UserIden::Disabled, UserIden::UsedBytes])
@@ -43,6 +41,17 @@ impl UserRepository {
         let con = executor.get_con().await?;
         let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(user)
+    }
+
+    /// Get all users.
+    pub async fn get_all<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<Vec<UserEntity>, sqlx::Error> {
+        let statement = Query::select().from(USER_TABLE)
+        .columns([UserIden::Id, UserIden::PublicKey, UserIden::CreatedAt, UserIden::Disabled, UserIden::UsedBytes])
+        .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let users: Vec<UserEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
+        Ok(users)
     }
 
     pub async fn update<'a>(user: &UserEntity, executor: &mut UnifiedExecutor<'a>) -> Result<UserEntity, sqlx::Error> {

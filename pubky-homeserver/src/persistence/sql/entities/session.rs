@@ -11,20 +11,13 @@ use crate::persistence::sql::{entities::user::{UserIden, USER_TABLE}, UnifiedExe
 pub const SESSION_TABLE: &str = "sessions";
 
 /// Repository that handles all the queries regarding the UserEntity.
-pub struct SessionRepository<'a> {
-    pub executor: UnifiedExecutor<'a>,
-}
+pub struct SessionRepository;
 
-impl<'a> SessionRepository<'a> {
-
-    /// Create a new repository. This is very lightweight.
-    pub fn new(executor: UnifiedExecutor<'a>) -> Self {
-        Self { executor }
-    }
+impl SessionRepository {
 
     /// Create a new user.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'c>(&mut self, user_id: i32, capabilities: &[Capability]) -> Result<SessionSecret, sqlx::Error> {
+    pub async fn create<'a>(user_id: i32, capabilities: &[Capability], executor: &mut UnifiedExecutor<'a>) -> Result<SessionSecret, sqlx::Error> {
         let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
         let statement =
         Query::insert().into_table(SESSION_TABLE)
@@ -37,7 +30,7 @@ impl<'a> SessionRepository<'a> {
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
-        let con = self.executor.get_con().await?;
+        let con = executor.get_con().await?;
         let row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let session_secret: String = row.try_get(SessionIden::Secret.to_string().as_str())?;
         SessionSecret::new(session_secret).map_err(|e| sqlx::Error::Decode(e.into()))
@@ -45,7 +38,7 @@ impl<'a> SessionRepository<'a> {
 
     /// Get a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn get_by_secret<'c>(&mut self, secret: &SessionSecret) -> Result<SessionEntity, sqlx::Error> {
+    pub async fn get_by_secret<'a>(secret: &SessionSecret, executor: &mut UnifiedExecutor<'a>) -> Result<SessionEntity, sqlx::Error> {
         let statement = Query::select().from(SESSION_TABLE)
         .columns([(SESSION_TABLE, SessionIden::Id), (SESSION_TABLE, SessionIden::Secret), (SESSION_TABLE, SessionIden::User), (SESSION_TABLE, SessionIden::Capabilities), (SESSION_TABLE, SessionIden::CreatedAt)])
         .column((USER_TABLE, UserIden::PublicKey))
@@ -53,21 +46,21 @@ impl<'a> SessionRepository<'a> {
         .and_where(Expr::col((SESSION_TABLE, SessionIden::Secret)).eq(secret.to_string()))
         .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
-        let con = self.executor.get_con().await?;
+        let con = executor.get_con().await?;
         let user: SessionEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(user)
     }
 
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
-    pub async fn delete<'c>(&mut self, secret: &SessionSecret) -> Result<(), sqlx::Error> {
+    pub async fn delete<'a>(secret: &SessionSecret, executor: &mut UnifiedExecutor<'a>) -> Result<(), sqlx::Error> {
         let statement = Query::delete()
             .from_table(SESSION_TABLE)
             .and_where(Expr::col(SessionIden::Secret).eq(secret.to_string()))
             .to_owned();
         
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
-        let con = self.executor.get_con().await?;
+        let con = executor.get_con().await?;
         sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
     }
@@ -178,26 +171,25 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_session() {
         let db = SqlDb::test().await;
-        let mut session_repo = SessionRepository::new(db.pool().into());
         let user_pubkey = Keypair::random().public_key();
 
         // Test create user
         let user = UserRepository::create(&user_pubkey, &mut db.pool().into()).await.unwrap();
 
         // Test create session
-        let secret = session_repo.create(user.id, &[Capability::root()]).await.unwrap();
-        let session = session_repo.get_by_secret(&secret).await.unwrap();
+        let secret = SessionRepository::create(user.id, &[Capability::root()], &mut db.pool().into()).await.unwrap();
+        let session = SessionRepository::get_by_secret(&secret, &mut db.pool().into()).await.unwrap();
 
         // Test get session
-        let session = session_repo.get_by_secret(&session.secret).await.unwrap();
+        let session = SessionRepository::get_by_secret(&session.secret, &mut db.pool().into()).await.unwrap();
         assert_eq!(session.user_id, user.id);
         assert_eq!(session.capabilities, vec![Capability::root().to_string()]);
 
         // Test delete session
-        session_repo.delete(&session.secret).await.unwrap();
+        SessionRepository::delete(&session.secret, &mut db.pool().into()).await.unwrap();
 
         // Test get session again
-        let result = session_repo.get_by_secret(&session.secret).await;
+        let result = SessionRepository::get_by_secret(&session.secret, &mut db.pool().into()).await;
         assert!(result.is_err());
     }
 

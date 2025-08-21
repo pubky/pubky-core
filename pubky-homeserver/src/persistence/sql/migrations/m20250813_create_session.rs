@@ -16,7 +16,6 @@ pub struct M20250813CreateSessionMigration;
 impl MigrationTrait for M20250813CreateSessionMigration {
     async fn up(
         &self,
-        db: &SqlDb,
         tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
         // Create table

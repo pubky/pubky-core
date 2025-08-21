@@ -1,7 +1,7 @@
-use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
-use crate::persistence::lmdb::tables::signup_tokens::SignupTokenError;
+use crate::core::err_if_user_is_invalid::get_user_or_http_error;
+use crate::persistence::sql::session::SessionRepository;
 use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
-use crate::persistence::sql::user::UserRepository;
+use crate::persistence::sql::user::{UserEntity, UserRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{core::AppState, SignupMode};
 use axum::{
@@ -9,11 +9,10 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
-use base32::{encode, Alphabet};
+use axum_extra::extract::Host;
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
+use pubky_common::{capabilities::Capability, session::Session};
 use std::collections::HashMap;
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
@@ -28,7 +27,6 @@ use tower_cookies::{
 /// 4) Create a session and set the cookie (using the shared helper).
 pub async fn signup(
     State(state): State<AppState>,
-    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
     Host(host): Host,
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
@@ -42,10 +40,10 @@ pub async fn signup(
     // 2) Ensure the user does *not* already exist
     match UserRepository::get(public_key, &mut (&mut tx).into()).await {
         Ok(_) => {
-                return Err(HttpError::new_with_message(
-                    StatusCode::CONFLICT,
-                    "User already exists",
-                ));
+            return Err(HttpError::new_with_message(
+                StatusCode::CONFLICT,
+                "User already exists",
+            ));
         }
         Err(sqlx::Error::RowNotFound) => {
             // User does not exist, continue
@@ -91,28 +89,21 @@ pub async fn signup(
             ));
         }
 
-        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, &mut (&mut tx).into()).await?;
+        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, &mut (&mut tx).into())
+            .await?;
     }
 
     // 4) Create the new user record
-    let _ = UserRepository::create(public_key, &mut (&mut tx).into()).await?;
+    let user = UserRepository::create(public_key, &mut (&mut tx).into()).await?;
     tx.commit().await?;
 
     // 5) Create session & set cookie
-    create_session_and_cookie(
-        &state,
-        cookies,
-        &host,
-        public_key,
-        token.capabilities(),
-        user_agent,
-    )
+    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
 }
 
 /// Fails if user doesn’t exist, otherwise logs them in by creating a session.
 pub async fn signin(
     State(state): State<AppState>,
-    user_agent: Option<TypedHeader<UserAgent>>,
     cookies: Cookies,
     Host(host): Host,
     body: Bytes,
@@ -122,59 +113,25 @@ pub async fn signin(
     let public_key = token.pubky();
 
     // 2) Ensure user *does* exist
-    let txn = state.db.env.read_txn()?;
-    let users = state.db.tables.users;
-    let user_exists = users.get(&txn, public_key)?.is_some();
-    txn.commit()?;
-    if !user_exists {
-        return Err(HttpError::new_with_message(
-            StatusCode::NOT_FOUND,
-            "User does not exist",
-        ));
-    }
+    let user = get_user_or_http_error(&public_key, &mut state.sql_db.pool().into(), false).await?;
 
     // 3) Create the session & set cookie
-    create_session_and_cookie(
-        &state,
-        cookies,
-        &host,
-        public_key,
-        token.capabilities(),
-        user_agent,
-    )
+    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
 }
 
 /// Creates and stores a session, sets the cookie, returns session as JSON/string.
-fn create_session_and_cookie(
+async fn create_session_and_cookie(
     state: &AppState,
     cookies: Cookies,
     host: &str,
-    public_key: &PublicKey,
+    user: &UserEntity,
     capabilities: &[Capability],
-    user_agent: Option<TypedHeader<UserAgent>>,
 ) -> HttpResult<impl IntoResponse> {
-    err_if_user_is_invalid(public_key, &state.db, false)?;
-
-    // 1) Create session
-    let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
-    let session = Session::new(
-        public_key,
-        capabilities,
-        user_agent.map(|ua| ua.to_string()),
-    )
-    .serialize();
-
-    // 2) Insert session into DB
-    let mut wtxn = state.db.env.write_txn()?;
-    state
-        .db
-        .tables
-        .sessions
-        .put(&mut wtxn, &session_secret, &session)?;
-    wtxn.commit()?;
+    let session_secret =
+        SessionRepository::create(user.id, capabilities, &mut state.sql_db.pool().into()).await?;
 
     // 3) Build and set cookie
-    let mut cookie = Cookie::new(public_key.to_string(), session_secret);
+    let mut cookie = Cookie::new(user.public_key.to_string(), session_secret.to_string());
     cookie.set_path("/");
     if is_secure(host) {
         // Allow this cookie only to be sent over HTTPS.
@@ -190,7 +147,8 @@ fn create_session_and_cookie(
     cookie.set_expires(expiry);
     cookies.add(cookie);
 
-    Ok(session)
+    let session = Session::new(&user.public_key, capabilities, None);
+    Ok(session.serialize())
 }
 
 /// Determines if the host requires secure cookie attributes.

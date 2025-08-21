@@ -16,7 +16,6 @@ pub struct M20250814CreateEventMigration;
 impl MigrationTrait for M20250814CreateEventMigration {
     async fn up(
         &self,
-        db: &SqlDb,
         tx: &mut Transaction<'static, sqlx::Postgres>,
     ) -> anyhow::Result<()> {
         // Create table

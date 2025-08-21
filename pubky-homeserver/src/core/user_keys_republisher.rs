@@ -9,12 +9,12 @@ use tokio::{
     time::{interval, Instant},
 };
 
-use crate::{app_context::AppContext, persistence::lmdb::LmDB};
+use crate::{app_context::AppContext, persistence::{sql::{user::UserRepository, SqlDb}}};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum UserKeysRepublisherError {
     #[error(transparent)]
-    DB(heed::Error),
+    DB(sqlx::Error),
     #[error(transparent)]
     Pkarr(ResilientClientBuilderError),
 }
@@ -29,7 +29,7 @@ pub(crate) struct UserKeysRepublisher {
 impl UserKeysRepublisher {
     /// Run the user keys republisher with an initial delay.
     pub fn start_delayed(context: &AppContext, initial_delay: Duration) -> Self {
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
         let is_disabled = context.config_toml.pkdns.user_keys_republisher_interval == 0;
         if is_disabled {
             tracing::info!("User keys republisher is disabled.");
@@ -61,7 +61,7 @@ impl UserKeysRepublisher {
         pkarr_builder.no_relays(); // Disable relays to avoid their rate limiting.
         let handle = tokio::spawn(async move {
             tokio::time::sleep(initial_delay).await;
-            Self::run_loop(db, republish_interval, pkarr_builder).await
+            Self::run_loop(&db, republish_interval, pkarr_builder).await
         });
         Self {
             handle: Some(handle),
@@ -69,13 +69,12 @@ impl UserKeysRepublisher {
     }
 
     // Get all user public keys from the database.
-    async fn get_all_user_keys(db: LmDB) -> Result<Vec<PublicKey>, heed::Error> {
-        let rtxn = db.env.read_txn()?;
-        let users = db.tables.users.iter(&rtxn)?;
+    async fn get_all_user_keys(db: &SqlDb) -> Result<Vec<PublicKey>, sqlx::Error> {
+        let users = UserRepository::get_all(&mut db.pool().into()).await?;
 
         let keys: Vec<PublicKey> = users
-            .map(|result| result.map(|val| val.0))
-            .filter_map(Result::ok) // Errors: Db corruption or out of memory. For this use case, we just ignore it.
+            .into_iter()
+            .map(|user| user.public_key)
             .collect();
         Ok(keys)
     }
@@ -87,7 +86,7 @@ impl UserKeysRepublisher {
     /// - If the database cannot be read, an error is returned.
     /// - If the pkarr keys cannot be republished, an error is returned.
     async fn republish_keys_once(
-        db: LmDB,
+        db: &SqlDb,
         pkarr_builder: pkarr::ClientBuilder,
     ) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
         let keys = Self::get_all_user_keys(db)
@@ -109,13 +108,13 @@ impl UserKeysRepublisher {
     }
 
     /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
-    async fn run_loop(db: LmDB, republish_interval: Duration, pkarr_builder: pkarr::ClientBuilder) {
+    async fn run_loop(db: &SqlDb, republish_interval: Duration, pkarr_builder: pkarr::ClientBuilder) {
         let mut interval = interval(republish_interval);
         loop {
             interval.tick().await;
             let start = Instant::now();
             tracing::debug!("Republishing user keys...");
-            let result = match Self::republish_keys_once(db.clone(), pkarr_builder.clone()).await {
+            let result = match Self::republish_keys_once(db, pkarr_builder.clone()).await {
                 Ok(result) => result,
                 Err(e) => {
                     tracing::error!("Error republishing user keys: {:?}", e);
@@ -160,19 +159,16 @@ impl Drop for UserKeysRepublisher {
 #[cfg(test)]
 mod tests {
     use crate::core::user_keys_republisher::UserKeysRepublisher;
-    use crate::persistence::lmdb::tables::users::User;
-    use crate::persistence::lmdb::LmDB;
+    use crate::persistence::sql::user::UserRepository;
+    use crate::persistence::sql::SqlDb;
     use pkarr::Keypair;
 
-    async fn init_db_with_users(count: usize) -> LmDB {
-        let db = LmDB::test();
-        let mut wtxn = db.env.write_txn().unwrap();
+    async fn init_db_with_users(count: usize) -> SqlDb {
+        let db = SqlDb::test().await;
         for _ in 0..count {
-            let user = User::default();
             let public_key = Keypair::random().public_key();
-            db.tables.users.put(&mut wtxn, &public_key, &user).unwrap();
+            UserRepository::create(&public_key, &mut db.pool().into()).await.unwrap();
         }
-        wtxn.commit().unwrap();
         db
     }
 
@@ -181,7 +177,7 @@ mod tests {
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
         let pkarr_builder = pkarr::ClientBuilder::default();
-        let result = UserKeysRepublisher::republish_keys_once(db, pkarr_builder)
+        let result = UserKeysRepublisher::republish_keys_once(&db, pkarr_builder)
             .await
             .unwrap();
         assert_eq!(result.len(), 10);

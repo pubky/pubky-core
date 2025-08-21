@@ -7,7 +7,7 @@ pub trait MigrationTrait: Send + Sync {
     /// Run the migration.
     /// Use the tx to perform all the necessary operations.
     /// In case of an error, the tx is automatically rolled back.
-    async fn up(&self, db: &SqlDb, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()>;
+    async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()>;
 
     /// The name of the migration.
     /// This is used to identify the migration in the database.

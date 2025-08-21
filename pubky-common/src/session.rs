@@ -9,17 +9,15 @@ use alloc::vec::Vec;
 
 use crate::{capabilities::Capability, timestamp::Timestamp};
 
-// TODO: add IP address?
-// TODO: use https://crates.io/crates/user-agent-parser to parse the session
-// and get more informations from the user-agent.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 /// Pubky homeserver session struct.
 pub struct Session {
     version: usize,
     pubky: PublicKey,
     created_at: u64,
-    /// User specified name, defaults to the user-agent.
+    /// Deprecated. Will always be empty.
     name: String,
+    /// Deprecated. Will always be empty.
     user_agent: String,
     capabilities: Vec<Capability>,
 }
