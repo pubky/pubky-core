@@ -20,20 +20,24 @@
 // │  ├─ mod.rs               — Submodule wiring; `pub use` of PubkyClient and PubkyClientBuilder.
 // │  ├─ core.rs              — PubkyClient and builder: reqwest clients, pkarr client, defaults, timeouts, UA, testnet toggles.
 // │  ├─ http.rs              — HTTP verb helpers resolving `pubky://` and pkarr-TLD HTTPS into concrete requests.
-// │  ├─ list.rs              — Homeserver listing API (`PubkyClient::list()` and `ListBuilder` options + send).
-// │  ├─ pkarr.rs             — Record publish/extract helpers and `PublishStrategy` (no HTTP changes).
 // │  └─ internal/            — Platform-specific transport glue (kept minimal).
 // │     ├─ mod.rs            — Platform feature gating for native/wasm internals.
-// │     ├─ cookies.rs        — Native cookie jar for ICANN domains only; ignores `_pubky.<pubkey>` to prevent session leakage.
 // │     ├─ http_native.rs    — Native `cross_request` delegating to `request`; `prepare_request` no-op.
 // │     └─ http_wasm.rs      — WASM `cross_request`/`prepare_request`: `pubky://` rewrite, endpoint resolution, testnet host/port mapping.
 // │
-// └─ agent/                  — Stateful identity (“driver”): per-user keys and sessions atop shared transport PubkyClient.
-//    ├─ mod.rs               — Submodule wiring; `pub use` of PubkyAgent; no logic.
-//    ├─ core.rs              — PubkyAgent struct: holds keypair, Arc<PubkyClient>, per-agent session cache, request builder.
-//    ├─ verbs.rs             — Agent-scoped HTTP verbs targeting the agent’s homeserver (GET/PUT/POST/PATCH/DELETE/HEAD).
-//    ├─ session.rs           — Signup/signin/signout/session flows; ensures pkarr republish on signin (sync/async).
-//    └─ auth_req.rs          — Auth handshake types and logic (`AuthRequest`, `auth_request`, relay subscription).
+// └─ agent/                  — Stateful identity (“driver”): per-user keys/sessions atop shared PubkyClient.
+//    ├─ mod.rs               — Submodule wiring; re-exports public agent API; no logic.
+//    ├─ state.rs             — Type-state markers (Keyed/Keyless), sealed trait, and MaybeKeypair wrapper.
+//    ├─ core.rs              — `PubkyAgent<S>` (Keyed/Keyless): constructors (new/random/with_client/into_keyless),
+//    │                         identity storage (pubky + native session cookie), helpers (`pubky()`).
+//    ├─ homeserver.rs        — Namespaced view `Homeserver<'a, S>`: agent-scoped HTTP verbs (GET/PUT/POST/PATCH/DELETE/HEAD)
+//    │                         and the `List` Homeserver API methods.
+//    ├─ session.rs           — Signup/signin/signout/session flows; cookie capture (native); ensures pkarr republish via `pkdns()`.
+//    ├─ auth.rs              — Pubkyauth handshake: `AuthRequest`, `auth_request(..)`, `send_auth_token(..)`,
+//    │                         and relay subscription loop.
+//    └─ pkdns.rs             — Namespaced PKARR helper view `Pkdns<'a, S>`:
+//                              `republish_homeserver_force(..)`, `republish_homeserver_if_stale(..)`, `get_homeserver(..)`,
+//                              pulling `max_record_age` & pkarr client from `PubkyClient` and (when needed) using the agent’s keypair.
 
 mod agent;
 mod client;
@@ -49,8 +53,8 @@ pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 // Export common types and constants
 pub use agent::auth::AuthRequest;
+pub use agent::homeserver::ListBuilder;
 pub use client::core::DEFAULT_RELAYS;
-pub use client::list::ListBuilder;
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::{

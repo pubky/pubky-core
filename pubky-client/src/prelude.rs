@@ -10,7 +10,7 @@ pub use crate::{PubkyClient, PubkyClientBuilder};
 pub use crate::{KeyedAgent, KeylessAgent, PubkyAgent};
 
 // Auth and listing helpers:
-pub use crate::{Session, agent::auth::AuthRequest, client::list::ListBuilder};
+pub use crate::{AuthRequest, ListBuilder, Session};
 
 // Capabilities for auth flows
 pub use crate::{Capabilities, Capability};
