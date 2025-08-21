@@ -16,7 +16,7 @@ use crate::{
 impl<S: Sealed> PubkyAgent<S> {
     /// Retrieve session for current pubky. Fails if pubky is unknown.
     pub async fn session(&self) -> Result<Option<Session>> {
-        let response = self.request(Method::GET, "/session").await?.send().await?;
+        let response = self.homeserver().get("/session").await?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -27,11 +27,7 @@ impl<S: Sealed> PubkyAgent<S> {
 
     /// Signout from homeserver and clear this agent’s cookie.
     pub async fn signout(&self) -> Result<()> {
-        let response = self
-            .request(Method::DELETE, "/session")
-            .await?
-            .send()
-            .await?;
+        let response = self.homeserver().delete("/session").await?;
         check_http_status(response).await?;
 
         #[cfg(not(target_arch = "wasm32"))]

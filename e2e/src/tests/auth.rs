@@ -139,11 +139,13 @@ async fn authz() {
 
     // Access control enforcement
     keyless_app
+        .homeserver()
         .put("/pub/pubky.app/foo", Vec::<u8>::new())
         .await
         .unwrap();
 
     let err = keyless_app
+        .homeserver()
         .put("/pub/pubky.app", Vec::<u8>::new())
         .await
         .unwrap_err();
@@ -152,6 +154,7 @@ async fn authz() {
     );
 
     let err = keyless_app
+        .homeserver()
         .put("/pub/foo.bar/file", Vec::<u8>::new())
         .await
         .unwrap_err();

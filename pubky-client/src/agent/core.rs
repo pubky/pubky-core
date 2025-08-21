@@ -208,10 +208,4 @@ impl<S: Sealed> PubkyAgent<S> {
         self.pubky()
             .ok_or_else(|| Error::from(AuthError::Validation("Agent has no known pubky".into())))
     }
-
-    /// Base URL of this agent’s homeserver: `pubky://<pubky>/`.
-    pub(crate) fn homeserver_base(&self) -> Result<Url> {
-        let pk = self.require_pubky()?;
-        Url::parse(&format!("pubky://{}/", pk)).map_err(Into::into)
-    }
 }
