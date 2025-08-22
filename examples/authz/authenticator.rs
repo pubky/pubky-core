@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::Client;
-use std::path::PathBuf;
+use pubky::{Client, KeyedAgent};
+use std::{path::PathBuf, sync::Arc};
 use url::Url;
 
 use pubky_common::{capabilities::Capability, crypto::PublicKey};
@@ -30,6 +30,7 @@ async fn main() -> Result<()> {
     let recovery_file = std::fs::read(&cli.recovery_file)?;
     println!("\nSuccessfully opened recovery file");
 
+    let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
     let url = cli.url;
 
     let caps = url
@@ -66,25 +67,24 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted recovery file...");
     println!("PublicKey: {}", keypair.public_key());
 
-    let client = if cli.testnet {
+    let user = if cli.testnet {
         let client = Client::testnet()?;
+        let user = KeyedAgent::with_client(Arc::new(client), keypair);
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
-        if client.signin(&keypair).await.is_err() {
-            client
-                .signup(&keypair, &PublicKey::try_from(HOMESERVER).unwrap(), None)
-                .await?;
+        if user.signin().await.is_err() {
+            user.signup(homeserver, None).await?;
         };
 
-        client
+        user
     } else {
-        Client::new()?
+        KeyedAgent::new(keypair)?
     };
 
     println!("Sending AuthToken to the 3rd party app...");
 
-    client.send_auth_token(&keypair, &url).await?;
+    user.send_auth_token(&url).await?;
 
     Ok(())
 }

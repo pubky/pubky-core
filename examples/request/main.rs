@@ -1,11 +1,11 @@
-use std::env;
+use std::{env, sync::Arc};
 
 use anyhow::Result;
 use clap::Parser;
 use reqwest::Method;
 use url::Url;
 
-use pubky::Client;
+use pubky::{Client, KeylessAgent};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -27,14 +27,15 @@ async fn main() -> Result<()> {
         .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
         .init();
 
-    let client = if args.testnet {
-        Client::testnet()?
+    // For a basic GET request to any homeserver no session or key material is needed.
+    let agent = if args.testnet {
+        KeylessAgent::with_client(Arc::new(Client::testnet()?))
     } else {
-        Client::new()?
+        KeylessAgent::new()?
     };
 
     // Build the request
-    let response = client.get(args.url).send().await?;
+    let response = agent.homeserver().get(args.url.as_str()).await?;
 
     println!("< Response:");
     println!("< {:?} {}", response.version(), response.status());
