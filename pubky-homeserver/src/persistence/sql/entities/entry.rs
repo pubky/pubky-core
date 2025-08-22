@@ -113,6 +113,22 @@ impl EntryRepository {
         Ok(entry)
     }
 
+    pub async fn update<'a>(entry: EntryEntity, executor: &mut UnifiedExecutor<'a>) -> Result<(), sqlx::Error> {
+        let statement = Query::update()
+            .table(ENTRY_TABLE)
+            .columns([EntryIden::ContentHash, EntryIden::ContentLength, EntryIden::ContentType])
+            .values(vec![
+                SimpleExpr::Value(entry.content_hash.as_bytes().to_vec().into()),
+                SimpleExpr::Value(entry.content_length.into()),
+                SimpleExpr::Value(entry.content_type.into()),
+            ])
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        sqlx::query_with(&query, values).execute(con).await?;
+        Ok(())
+    }
+
 
 
     /// Delete an entry by its id.

@@ -5,7 +5,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
 
-use crate::{persistence::sql::{entities::user::{UserIden, USER_TABLE}, UnifiedExecutor}, shared::webdav::WebDavPath};
+use crate::{persistence::sql::{entities::user::{UserIden, USER_TABLE}, UnifiedExecutor}, shared::webdav::{EntryPath, WebDavPath}};
 
 pub const EVENT_TABLE: &str = "events";
 
@@ -95,10 +95,9 @@ impl FromStr for EventType {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EventEntity {
     pub id: i64,
-    pub event_type: EventType,
-    pub user_pubkey: PublicKey,
     pub user_id: i32,
-    pub path: WebDavPath,
+    pub event_type: EventType,
+    pub path: EntryPath,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
 }
 
@@ -117,9 +116,8 @@ impl FromRow<'_, PgRow> for EventEntity {
         Ok(EventEntity {
             id,
             event_type,
-            user_pubkey: user_public_key,
             user_id,
-            path,
+            path: EntryPath::new(user_public_key, path),
             created_at,
         })
     }
@@ -150,9 +148,8 @@ mod tests {
         let events = EventRepository::get_by_cursor(5, 4, &mut db.pool().into()).await.unwrap();
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].id, 6);
-        assert_eq!(events[0].user_pubkey, user_pubkey);
         assert_eq!(events[0].user_id, user.id);
-        assert_eq!(events[0].path, WebDavPath::new("/test").unwrap());
+        assert_eq!(events[0].path, EntryPath::new(user_pubkey, WebDavPath::new("/test").unwrap()));
         assert_eq!(events[0].event_type, EventType::Put);
     }
 

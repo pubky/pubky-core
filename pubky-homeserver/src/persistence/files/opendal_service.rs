@@ -5,7 +5,7 @@ use crate::AppContext;
 use crate::{
     persistence::{
         files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
-        lmdb::LmDB,
+        lmdb::LmDB, sql::SqlDb,
     },
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
@@ -23,7 +23,7 @@ use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStr
 pub fn build_storage_operator(
     storage_config: &StorageConfigToml,
     data_directory: &Path,
-    db: &LmDB,
+    db: &SqlDb,
     user_quota_bytes: u64,
 ) -> Result<Operator, FileIoError> {
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
@@ -81,7 +81,7 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
     build_storage_operator(
         &context.config_toml.storage,
         context.data_dir.path(),
-        &context.db,
+        &context.sql_db,
         quota_bytes,
     )
 }
@@ -103,7 +103,7 @@ impl OpendalService {
     pub fn new_from_config(
         config: &StorageConfigToml,
         data_directory: &Path,
-        db: &LmDB,
+        db: &SqlDb,
         user_quota_bytes: u64,
     ) -> Result<Self, FileIoError> {
         let operator = build_storage_operator(config, data_directory, db, user_quota_bytes)?;

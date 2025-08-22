@@ -1,6 +1,7 @@
 use crate::persistence::files::entry_service::EntryService;
 use crate::persistence::files::FileMetadataBuilder;
-use crate::persistence::lmdb::LmDB;
+use crate::persistence::sql::entry::EntryRepository;
+use crate::persistence::sql::SqlDb;
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
@@ -24,11 +25,11 @@ fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
 /// Layer that wraps the access layer and updates the entry in the database when the file is written or deleted.
 #[derive(Clone)]
 pub struct EntryLayer {
-    pub(crate) db: LmDB,
+    pub(crate) db: SqlDb,
 }
 
 impl EntryLayer {
-    pub fn new(db: LmDB) -> Self {
+    pub fn new(db: SqlDb) -> Self {
         Self { db }
     }
 }
@@ -143,7 +144,7 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
         let file_metadata = self.metadata_builder.clone().finalize();
         if let Err(e) = self
             .entry_service
-            .write_entry(&self.entry_path, &file_metadata)
+            .write_entry(&self.entry_path, &file_metadata).await
         {
             tracing::error!(
                 "Failed to write entry {} to database: {:?}. Potential orphaned file.",
@@ -193,7 +194,7 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::files::opendal_test_operators::OpendalTestOperators,
+        persistence::{files::opendal_test_operators::OpendalTestOperators, sql::event::{EventRepository, EventType}},
         shared::webdav::WebDavPath,
     };
 
@@ -202,7 +203,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_entry_layer() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
-            let db = LmDB::test();
+            let db = SqlDb::test().await;
             let layer = EntryLayer::new(db.clone());
             let operator = operator.layer(layer);
 
@@ -215,11 +216,17 @@ mod tests {
                 .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the entry is written to the database correctly
-            let entry = db.get_entry(&entry_path).expect("Entry should exist");
-            assert_eq!(entry.content_length(), 10);
-            let events = db.list_events(None, None).expect("Should succeed");
-            assert_eq!(events.len(), 2);
-            assert_eq!(events[0], format!("PUT pubky://{}", entry_path.as_str()));
+            let entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+                .await
+                .expect("Entry should exist");
+            assert_eq!(entry.content_length, 10);
+            let events = EventRepository::get_by_cursor(0, 9999, &mut db.pool().into())
+                .await
+                .expect("Should succeed");
+            assert_eq!(events.len(), 1);
+            let first_event = events.first().expect("Should succeed");
+            assert_eq!(first_event.path, entry_path);
+            assert_eq!(first_event.event_type, EventType::Put);
 
             // Overwrite the file
             operator
@@ -228,11 +235,17 @@ mod tests {
                 .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the entry is written to the database correctly
-            let entry = db.get_entry(&entry_path).expect("Entry should exist");
-            assert_eq!(entry.content_length(), 20);
-            let events = db.list_events(None, None).expect("Should succeed");
-            assert_eq!(events.len(), 3);
-            assert_eq!(events[1], format!("PUT pubky://{}", entry_path.as_str()));
+            let entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+                .await
+                .expect("Entry should exist");
+            assert_eq!(entry.content_length, 20);
+            let events = EventRepository::get_by_cursor(0, 9999, &mut db.pool().into())
+                .await
+                .expect("Should succeed");
+            assert_eq!(events.len(), 2);
+            let second_event = events.get(1).expect("Should succeed");
+            assert_eq!(second_event.path, entry_path);
+            assert_eq!(second_event.event_type, EventType::Put);
 
             // Delete the file
             operator
@@ -241,11 +254,16 @@ mod tests {
                 .expect("Should succeed");
 
             // Make sure the entry is deleted from the database correctly
-            db.get_entry(&entry_path)
+            let entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+                .await
                 .expect_err("Entry should not exist");
-            let events = db.list_events(None, None).expect("Should succeed");
-            assert_eq!(events.len(), 4);
-            assert_eq!(events[2], format!("DEL pubky://{}", entry_path.as_str()));
+            let events = EventRepository::get_by_cursor(0, 9999, &mut db.pool().into())
+                .await
+                .expect("Should succeed");
+            assert_eq!(events.len(), 3);
+            let third_event = events.get(2).expect("Should succeed");
+            assert_eq!(third_event.path, entry_path);
+            assert_eq!(third_event.event_type, EventType::Delete);
         }
     }
 }
