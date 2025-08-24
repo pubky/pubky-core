@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use pkarr::Keypair;
+use pubky::PubkyPath;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use reqwest::{Method, StatusCode};
 
@@ -17,6 +18,16 @@ async fn put_get_delete() {
 
     user.homeserver()
         .put(path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // let's repeat the same request but using a strongly typed PubkyPath based over our own homeserver (user=None)
+    let path_pubky = PubkyPath::new(None, "/pub/foo.txt").unwrap();
+
+    user.homeserver()
+        .put(path_pubky, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
         .error_for_status()

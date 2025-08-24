@@ -20,10 +20,10 @@
 // │  ├─ mod.rs               — Submodule wiring; `pub use` of PubkyClient and PubkyClientBuilder.
 // │  ├─ core.rs              — PubkyClient and builder: reqwest clients, pkarr client, defaults, timeouts, UA, testnet toggles.
 // │  ├─ http.rs              — HTTP verb helpers resolving `pubky://` and pkarr-TLD HTTPS into concrete requests.
-// │  └─ internal/            — Platform-specific transport glue (kept minimal).
+// │  └─ http_targets/            — Platform-specific transport glue (kept minimal).
 // │     ├─ mod.rs            — Platform feature gating for native/wasm internals.
-// │     ├─ http_native.rs    — Native `cross_request` delegating to `request`; `prepare_request` no-op.
-// │     └─ http_wasm.rs      — WASM `cross_request`/`prepare_request`: `pubky://` rewrite, endpoint resolution, testnet host/port mapping.
+// │     ├─ native.rs    — Native `cross_request` delegating to `request`; `prepare_request` no-op.
+// │     └─ wasm.rs      — WASM `cross_request`/`prepare_request`: `pubky://` rewrite, endpoint resolution, testnet host/port mapping.
 // │
 // └─ agent/                  — Stateful identity (“driver”): per-user keys/sessions atop shared PubkyClient.
 //    ├─ mod.rs               — Submodule wiring; re-exports public agent API; no logic.
@@ -52,6 +52,7 @@ pub use agent::{core::PubkyAgent, state::KeyedAgent, state::KeylessAgent};
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 // Export common types and constants
+pub use crate::agent::path::{FilePath, PubkyPath};
 pub use agent::auth::AuthRequest;
 pub use agent::homeserver::ListBuilder;
 pub use client::core::DEFAULT_RELAYS;
