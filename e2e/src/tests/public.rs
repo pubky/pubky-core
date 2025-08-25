@@ -1,7 +1,4 @@
-use bytes::Bytes;
-use pkarr::Keypair;
-use pubky::PubkyPath;
-use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
+use pubky_testnet::{pubky::PubkyPath, pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
@@ -214,220 +211,228 @@ async fn put_get_delete() {
 //     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 // }
 
-// #[tokio::test]
-// async fn list() {
-//     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+#[tokio::test]
+async fn list() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
 
-//     let client = testnet.pubky_client().unwrap();
+    let user = testnet.agent_keyed_random().unwrap();
+    let pubky = user.pubky().unwrap();
 
-//     let keypair = Keypair::random();
+    user.signup(&server.public_key(), None).await.unwrap();
 
-//     client
-//         .signup(&keypair, &server.public_key(), None)
-//         .await
-//         .unwrap();
+    let paths = vec![
+        "/pub/a.wrong/a.txt",
+        "/pub/example.com/a.txt",
+        "/pub/example.com/b.txt",
+        "/pub/example.com/cc-nested/z.txt",
+        "/pub/example.wrong/a.txt",
+        "/pub/example.com/c.txt",
+        "/pub/example.com/d.txt",
+        "/pub/z.wrong/a.txt",
+    ];
 
-//     let pubky = keypair.public_key();
+    for path in paths {
+        user.homeserver().put(path, vec![0]).await.unwrap();
+    }
 
-//     let urls = vec![
-//         format!("pubky://{pubky}/pub/a.wrong/a.txt"),
-//         format!("pubky://{pubky}/pub/example.com/a.txt"),
-//         format!("pubky://{pubky}/pub/example.com/b.txt"),
-//         format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-//         format!("pubky://{pubky}/pub/example.wrong/a.txt"),
-//         format!("pubky://{pubky}/pub/example.com/c.txt"),
-//         format!("pubky://{pubky}/pub/example.com/d.txt"),
-//         format!("pubky://{pubky}/pub/z.wrong/a.txt"),
-//     ];
+    let path = "/pub/example.com/extra";
 
-//     for url in urls {
-//         client.put(url).body(vec![0]).send().await.unwrap();
-//     }
+    {
+        let list = user.homeserver().list(path).unwrap().send().await.unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//     let url = format!("pubky://{pubky}/pub/example.com/extra");
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/a.txt"),
+                format!("pubky://{pubky}/pub/example.com/b.txt"),
+                format!("pubky://{pubky}/pub/example.com/c.txt"),
+                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky://{pubky}/pub/example.com/d.txt"),
+            ],
+            "normal list with no limit or cursor"
+        );
+    }
 
-//     {
-//         let list = client.list(&url).unwrap().send().await.unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .limit(2)
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/a.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/b.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/c.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/d.txt"),
-//             ],
-//             "normal list with no limit or cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/a.txt"),
+                format!("pubky://{pubky}/pub/example.com/b.txt"),
+            ],
+            "normal list with limit but no cursor"
+        );
+    }
 
-//     {
-//         let list = client.list(&url).unwrap().limit(2).send().await.unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .limit(2)
+            .cursor("a.txt")
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/a.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/b.txt"),
-//             ],
-//             "normal list with limit but no cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/b.txt"),
+                format!("pubky://{pubky}/pub/example.com/c.txt"),
+            ],
+            "normal list with limit and a file cursor"
+        );
+    }
 
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .limit(2)
-//             .cursor("a.txt")
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .limit(2)
+            .cursor("cc-nested/")
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/b.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/c.txt"),
-//             ],
-//             "normal list with limit and a file cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky://{pubky}/pub/example.com/d.txt"),
+            ],
+            "normal list with limit and a directory cursor"
+        );
+    }
 
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .limit(2)
-//             .cursor("cc-nested/")
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .limit(2)
+            .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/d.txt"),
-//             ],
-//             "normal list with limit and a directory cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/b.txt"),
+                format!("pubky://{pubky}/pub/example.com/c.txt"),
+            ],
+            "normal list with limit and a full url cursor"
+        );
+    }
 
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .limit(2)
-//             .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .limit(2)
+            .cursor("/a.txt")
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/b.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/c.txt"),
-//             ],
-//             "normal list with limit and a full url cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/b.txt"),
+                format!("pubky://{pubky}/pub/example.com/c.txt"),
+            ],
+            "normal list with limit and a leading / cursor"
+        );
+    }
 
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .limit(2)
-//             .cursor("/a.txt")
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .reverse(true)
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/b.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/c.txt"),
-//             ],
-//             "normal list with limit and a leading / cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/d.txt"),
+                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky://{pubky}/pub/example.com/c.txt"),
+                format!("pubky://{pubky}/pub/example.com/b.txt"),
+                format!("pubky://{pubky}/pub/example.com/a.txt"),
+            ],
+            "reverse list with no limit or cursor"
+        );
+    }
 
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .reverse(true)
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .reverse(true)
+            .limit(2)
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/d.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/c.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/b.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/a.txt"),
-//             ],
-//             "reverse list with no limit or cursor"
-//         );
-//     }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/d.txt"),
+                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+            ],
+            "reverse list with limit but no cursor"
+        );
+    }
 
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .reverse(true)
-//             .limit(2)
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    {
+        let list = user
+            .homeserver()
+            .list(path)
+            .unwrap()
+            .reverse(true)
+            .limit(2)
+            .cursor("d.txt")
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/d.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-//             ],
-//             "reverse list with limit but no cursor"
-//         );
-//     }
-
-//     {
-//         let list = client
-//             .list(&url)
-//             .unwrap()
-//             .reverse(true)
-//             .limit(2)
-//             .cursor("d.txt")
-//             .send()
-//             .await
-//             .unwrap();
-//         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-//         assert_eq!(
-//             list,
-//             vec![
-//                 format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-//                 format!("pubky://{pubky}/pub/example.com/c.txt"),
-//             ],
-//             "reverse list with limit and cursor"
-//         );
-//     }
-// }
+        assert_eq!(
+            list,
+            vec![
+                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky://{pubky}/pub/example.com/c.txt"),
+            ],
+            "reverse list with limit and cursor"
+        );
+    }
+}
 
 // #[tokio::test]
 // async fn list_shallow() {

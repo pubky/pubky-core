@@ -2,7 +2,7 @@ use reqwest::{Method, Response};
 use url::Url;
 
 use crate::{
-    Error, PubkyAgent, PubkyPath,
+    PubkyAgent, PubkyPath,
     agent::{path::IntoPubkyPath, state::sealed::Sealed},
     errors::Result,
     util::check_http_status,
@@ -101,27 +101,21 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
         check_http_status(resp).await
     }
 
-    pub async fn head<P: IntoPubkyPath>(&self, path: P) -> Result<Response>
-    where
-        P: TryInto<PubkyPath, Error = Error>,
-    {
+    pub async fn head<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         check_http_status(resp).await
     }
 
     /// Directory listing helper (agent-scoped). Relative `path` is resolved to this agent.
-    pub fn list<P: IntoPubkyPath>(&self, path: P) -> ListBuilder<'_, S>
-    where
-        P: TryInto<PubkyPath, Error = Error>,
-    {
-        ListBuilder {
+    pub fn list<P: IntoPubkyPath>(&self, path: P) -> Result<ListBuilder<'_, S>> {
+        Ok(ListBuilder {
             agent: self.0,
-            path: path.try_into().expect("validated by caller"),
+            url: self.to_url(path)?,
             reverse: false,
             shallow: false,
             limit: None,
             cursor: None,
-        }
+        })
     }
 }
 
@@ -129,7 +123,7 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
 #[derive(Debug)]
 pub struct ListBuilder<'a, S: Sealed> {
     agent: &'a PubkyAgent<S>,
-    path: PubkyPath,
+    url: Url,
     reverse: bool,
     shallow: bool,
     limit: Option<u16>,
@@ -156,7 +150,7 @@ impl<'a, S: Sealed> ListBuilder<'a, S> {
 
     pub async fn send(self) -> Result<Vec<Url>> {
         // Resolve now (absolute stays absolute, relative is based on agent’s homeserver)
-        let mut url = Url::parse(&self.path.to_pubky_url(Some(&self.agent.require_pubky()?))?)?;
+        let mut url = self.url;
 
         // ensure directory semantics (trailing slash)
         if !url.path().ends_with('/') {
