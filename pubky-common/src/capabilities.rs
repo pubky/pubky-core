@@ -1,31 +1,172 @@
-//! Capabilities defining what scopes of resources can be accessed with what actions.
-
-use std::fmt::Display;
+//! Capabilities define *what* a bearer can access (a scoped path) and *how* (a set of actions).
+//!
+//! ## String format
+//!
+//! A single capability is serialized as: `"<scope>:<actions>"`
+//!
+//! - `scope` must start with `/` (e.g. `"/pub/app/"`, `"/"`).
+//! - `actions` is a compact string of letters, currently:
+//!   - `r` => read (GET)
+//!   - `w` => write (PUT/POST/DELETE)
+//!
+//! Examples:
+//!
+//! - Read+write everything: `"/:rw"`
+//! - Read-only a file: `"/pub/foo.txt:r"`
+//! - Read-write a directory: `"/pub/my.app/:rw"`
+//!
+//! Multiple capabilities are serialized as a comma-separated list,
+//! e.g. `"/pub/my.app/:rw,/pub/foo.txt:r"`.
+//!
+//! ## Builder ergonomics
+//!
+//! ```rust
+//! use pubky_common::capabilities::{Capability, Capabilities};
+//!
+//! // Single-cap builder
+//! let cap = Capability::builder("/pub/my.app/")
+//!     .read()
+//!     .write()
+//!     .finish();
+//! assert_eq!(cap.to_string(), "/pub/my.app/:rw");
+//!
+//! // Multiple caps builder
+//! let caps = Capabilities::builder()
+//!     .rw("/pub/my.app/")
+//!     .read("/pub/foo.txt")
+//!     .finish();
+//! assert_eq!(caps.to_string(), "/pub/my.app/:rw,/pub/foo.txt:r");
+//! ```
 
 use serde::{Deserialize, Serialize};
+use std::{collections::BTreeSet, fmt::Display};
 
+/// A single capability: a `scope` and the allowed `actions` within it.
+///
+/// The wire/string representation is `"<scope>:<actions>"`, see module docs.
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A Capability defines the scope of resources and the actions that the holder
-/// of this capability can access.
 pub struct Capability {
-    /// Scope of resources (for example directories).
+    /// Scope of resources (e.g. a directory or file). Must start with `/`.
     pub scope: String,
-    /// Actions allowed on the [Capability::scope].
+    /// Allowed actions within `scope`. Serialized as a compact action string (e.g. `"rw"`).
     pub actions: Vec<Action>,
 }
 
 impl Capability {
-    /// Create a root [Capability] at the `/` path with all the available [Action]s
+    /// Shorthand for a root capability at `/` with read+write.
+    ///
+    /// Equivalent to `Capability { scope: "/".into(), actions: vec![Read, Write] }`.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capability;
+    /// assert_eq!(Capability::root().to_string(), "/:rw");
+    /// ```
     pub fn root() -> Self {
         Capability {
             scope: "/".to_string(),
             actions: vec![Action::Read, Action::Write],
         }
     }
+
+    // ---- Shortcut constructors
+
+    /// Construct a read-only capability for `scope`.
+    ///
+    /// The scope is normalized to start with `/` if it does not already.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capability;
+    /// assert_eq!(Capability::read("pub/app").to_string(), "/pub/app:r");
+    /// ```
+    #[inline]
+    pub fn read<S: Into<String>>(scope: S) -> Self {
+        Self::builder(scope).read().finish()
+    }
+
+    /// Construct a write-only capability for `scope`.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capability;
+    /// assert_eq!(Capability::write("/pub/tmp").to_string(), "/pub/tmp:w");
+    /// ```
+    #[inline]
+    pub fn write<S: Into<String>>(scope: S) -> Self {
+        Self::builder(scope).write().finish()
+    }
+
+    /// Construct a read+write capability for `scope`.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capability;
+    /// assert_eq!(Capability::rw("/").to_string(), "/:rw");
+    /// ```
+    #[inline]
+    pub fn rw<S: Into<String>>(scope: S) -> Self {
+        Self::builder(scope).read().write().finish()
+    }
+
+    /// Start building a single capability for `scope`.
+    ///
+    /// The scope is normalized to have a leading `/`.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capability;
+    /// let cap = Capability::builder("pub/app").read().finish();
+    /// assert_eq!(cap.to_string(), "/pub/app:r");
+    /// ```
+    pub fn builder<S: Into<String>>(scope: S) -> CapabilityBuilder {
+        CapabilityBuilder {
+            scope: normalize_scope(scope.into()),
+            actions: BTreeSet::new(),
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Actions allowed on a given resource or scope of resources.
+/// Fluent builder for a single [`Capability`].
+///
+/// Use [`Capability::builder`] to construct, then chain `.read()/.write()` and `.finish()`.
+#[derive(Debug, Default)]
+pub struct CapabilityBuilder {
+    scope: String,
+    actions: BTreeSet<Action>,
+}
+
+impl CapabilityBuilder {
+    /// Allow **read** (GET) within the scope.
+    pub fn read(mut self) -> Self {
+        self.actions.insert(Action::Read);
+        self
+    }
+
+    /// Allow **write** (PUT/POST/DELETE) within the scope.
+    pub fn write(mut self) -> Self {
+        self.actions.insert(Action::Write);
+        self
+    }
+
+    /// Allow a specific action. Useful if more actions are added in the future.
+    pub fn allow(mut self, action: Action) -> Self {
+        self.actions.insert(action);
+        self
+    }
+
+    /// Finalize and produce the [`Capability`].
+    ///
+    /// Actions are de-duplicated and emitted in a stable order.
+    pub fn finish(self) -> Capability {
+        let v: Vec<Action> = self.actions.into_iter().collect();
+        // BTreeSet sorts; keep stable & dedup’d
+        Capability {
+            scope: self.scope,
+            actions: v,
+        }
+    }
+}
+
+/// Actions allowed on a given scope.
+///
+/// Display/serialization encodes these as single characters (`r`, `w`).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Action {
     /// Can read the scope at the specified path (GET requests).
     Read,
@@ -78,7 +219,13 @@ impl TryFrom<String> for Capability {
 
 impl TryFrom<&str> for Capability {
     type Error = Error;
-
+    /// Parse `"<scope>:<actions>"`. Scope must start with `/`; actions must be valid letters.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capability;
+    /// let cap: Capability = "/pub/app/:rw".try_into().unwrap();
+    /// assert_eq!(cap.to_string(), "/pub/app/:rw");
+    /// ```
     fn try_from(value: &str) -> Result<Self, Error> {
         if value.matches(':').count() != 1 {
             return Err(Error::InvalidFormat);
@@ -148,15 +295,113 @@ pub enum Error {
     InvalidCapabilities,
 }
 
+/// A wrapper around `Vec<Capability>` that controls how capabilities are
+/// serialized and built.
+///
+/// Serialization is a single comma-separated string (e.g. `"/:rw,/pub/app/:r"`),
+/// which is convenient for logs, URLs, or compact text payloads. It also comes
+/// with a fluent builder (`Capabilities::builder()`).
+///
+/// Note: this does **not** remove length prefixes in binary encodings; if you
+/// need a varint-free trailing field in a custom binary format, implement a
+/// bespoke encoder/decoder instead of serde.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-/// A wrapper around `Vec<Capability>` to enable serialization without
-/// a varint. Useful when [Capabilities] are at the end of a struct.
 pub struct Capabilities(pub Vec<Capability>);
 
 impl Capabilities {
-    /// Returns true if the list of capabilities contains a given capability.
+    /// Returns true if the list contains `capability`.
     pub fn contains(&self, capability: &Capability) -> bool {
         self.0.contains(capability)
+    }
+
+    /// Returns `true` if the list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the number of entries.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Start a fluent builder for multiple capabilities.
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capabilities;
+    /// let caps = Capabilities::builder().rw("/").finish();
+    /// assert_eq!(caps.to_string(), "/:rw");
+    /// ```
+    pub fn builder() -> CapsBuilder {
+        CapsBuilder::default()
+    }
+}
+
+/// Fluent builder for multiple [`Capability`] entries.
+///
+/// Build with high-level helpers (`.read()/.write()/.rw()`), or push prebuilt
+/// capabilities with `.cap()`, or use `.capability(scope, |b| ...)` to build inline.
+#[derive(Default, Debug)]
+pub struct CapsBuilder {
+    caps: Vec<Capability>,
+}
+
+impl CapsBuilder {
+    /// Create a new empty builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Push a prebuilt capability
+    pub fn cap(mut self, cap: Capability) -> Self {
+        self.caps.push(cap);
+        self
+    }
+
+    /// Build a capability inline and push it:
+    ///
+    /// ```
+    /// use pubky_common::capabilities::Capabilities;
+    /// let caps = Capabilities::builder()
+    ///     .capability("/pub/app/", |b| b.read().write())
+    ///     .finish();
+    /// assert_eq!(caps.to_string(), "/pub/app/:rw");
+    /// ```
+    pub fn capability<F>(mut self, scope: impl Into<String>, f: F) -> Self
+    where
+        F: FnOnce(CapabilityBuilder) -> CapabilityBuilder,
+    {
+        let cap = f(Capability::builder(scope)).finish();
+        self.caps.push(cap);
+        self
+    }
+
+    /// Add a read-only capability for `scope`.
+    pub fn read(mut self, scope: impl Into<String>) -> Self {
+        self.caps.push(Capability::read(scope));
+        self
+    }
+
+    /// Add a write-only capability for `scope`.
+    pub fn write(mut self, scope: impl Into<String>) -> Self {
+        self.caps.push(Capability::write(scope));
+        self
+    }
+
+    /// Add a read+write capability for `scope`.
+    pub fn rw(mut self, scope: impl Into<String>) -> Self {
+        self.caps.push(Capability::rw(scope));
+        self
+    }
+
+    /// Extend with an iterator of capabilities.
+    pub fn extend<I: IntoIterator<Item = Capability>>(mut self, iter: I) -> Self {
+        self.caps.extend(iter);
+        self
+    }
+
+    /// Finalize and produce the [`Capabilities`] list.
+    pub fn finish(self) -> Capabilities {
+        Capabilities(self.caps)
     }
 }
 
@@ -229,6 +474,15 @@ impl<'de> Deserialize<'de> for Capabilities {
     }
 }
 
+// --- helpers ---
+
+fn normalize_scope(mut s: String) -> String {
+    if !s.starts_with('/') {
+        s.insert(0, '/');
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +500,141 @@ mod tests {
         assert_eq!(cap.to_string(), expected_string);
 
         assert_eq!(Capability::try_from(expected_string), Ok(cap))
+    }
+
+    #[test]
+    fn root_capability_helper() {
+        let cap = Capability::root();
+        assert_eq!(cap.scope, "/");
+        assert_eq!(cap.actions, vec![Action::Read, Action::Write]);
+        assert_eq!(cap.to_string(), "/:rw");
+        // And it round-trips through the string form:
+        assert_eq!(Capability::try_from("/:rw"), Ok(cap));
+    }
+
+    #[test]
+    fn single_capability_via_builder_and_shortcuts() {
+        // Full builder:
+        let cap1 = Capability::builder("/pub/app/").read().write().finish();
+        assert_eq!(cap1.to_string(), "/pub/app/:rw");
+
+        // Shortcuts:
+        let cap_rw = Capability::rw("/pub/app/");
+        let cap_r = Capability::read("/pub/file.txt");
+        let cap_w = Capability::write("/pub/uploads/");
+
+        assert_eq!(cap_rw, cap1);
+        assert_eq!(cap_r.to_string(), "/pub/file.txt:r");
+        assert_eq!(cap_w.to_string(), "/pub/uploads/:w");
+    }
+
+    #[test]
+    fn multiple_caps_with_capsbuilder() {
+        let caps = Capabilities::builder()
+            .read("/pub/app/") // "/pub/app/:r"
+            .write("/pub/uploads/") // "/pub/uploads/:w"
+            .rw("/pub/app/data/") // "/pub/app/data/:rw"
+            .finish();
+
+        // String form is comma-separated, in insertion order:
+        assert_eq!(
+            caps.to_string(),
+            "/pub/app/:r,/pub/uploads/:w,/pub/app/data/:rw"
+        );
+
+        // Contains checks:
+        assert!(caps.contains(&Capability::read("/pub/app/")));
+        assert!(caps.contains(&Capability::write("/pub/uploads/")));
+        assert!(caps.contains(&Capability::rw("/pub/app/data/")));
+        assert!(!caps.contains(&Capability::write("/nope")));
+    }
+
+    #[test]
+    fn build_with_inline_capability_closure() {
+        // Build a capability inline with fine-grained control, then push it:
+        let caps = Capabilities::builder()
+            .capability("/pub/app/", |c| c.read().write())
+            .finish();
+
+        assert_eq!(caps.to_string(), "/pub/app/:rw");
+    }
+
+    #[test]
+    fn action_dedup_and_order_are_stable() {
+        // Insert actions in noisy order; builder dedups & sorts (Read < Write).
+        let cap = Capability::builder("/")
+            .write()
+            .read()
+            .read()
+            .write()
+            .finish();
+        assert_eq!(cap.actions, vec![Action::Read, Action::Write]);
+        assert_eq!(cap.to_string(), "/:rw");
+    }
+
+    #[test]
+    fn normalize_scope_adds_leading_slash() {
+        // No leading slash? The helpers normalize it.
+        let cap = Capability::read("pub/app");
+        assert_eq!(cap.scope, "/pub/app");
+        assert_eq!(cap.to_string(), "/pub/app:r");
+
+        // CapsBuilder helpers also normalize:
+        let caps = Capabilities::builder().rw("pub/app/data").finish();
+        assert_eq!(caps.to_string(), "/pub/app/data:rw");
+    }
+
+    #[test]
+    fn parse_from_string_list() {
+        // From a comma-separated string:
+        let parsed = Capabilities::try_from("/:rw,/pub/app/:r").unwrap();
+        let built = Capabilities::builder()
+            .rw("/") // "/:rw"
+            .read("/pub/app/") // "/pub/app/:r"
+            .finish();
+
+        assert_eq!(parsed, built);
+    }
+
+    #[test]
+    fn parse_errors_are_informative() {
+        // Invalid scope (doesn't start with '/'):
+        let e = Capability::try_from("not/abs:rw").unwrap_err();
+        assert!(matches!(e, Error::InvalidScope));
+
+        // Invalid format (missing ':'):
+        let e = Capability::try_from("/pub/app").unwrap_err();
+        assert!(matches!(e, Error::InvalidFormat));
+
+        // Invalid action:
+        let e = Capability::try_from("/pub/app:rx").unwrap_err();
+        assert!(matches!(e, Error::InvalidAction));
+    }
+
+    #[test]
+    fn capabilities_len_and_is_empty() {
+        let empty = Capabilities::builder().finish();
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+
+        let one = Capabilities::builder().read("/").finish();
+        assert!(!one.is_empty());
+        assert_eq!(one.len(), 1);
+    }
+
+    // Requires dev-dependency: serde_json
+    #[test]
+    fn serde_roundtrip_as_string() {
+        let caps = Capabilities::builder()
+            .rw("/pub/app/")
+            .read("/pub/file.txt")
+            .finish();
+
+        let json = serde_json::to_string(&caps).unwrap();
+        // Serialized as a single string:
+        assert_eq!(json, "\"/pub/app/:rw,/pub/file.txt:r\"");
+
+        let back: Capabilities = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, caps);
     }
 }

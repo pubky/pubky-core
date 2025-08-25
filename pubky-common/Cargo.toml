@@ -29,3 +29,4 @@ js-sys = "0.3.77"
 
 [dev-dependencies]
 postcard = "1.1.1"
+serde_json = "1"

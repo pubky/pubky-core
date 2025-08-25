@@ -7,7 +7,6 @@ publish = false
 [dependencies]
 pubky-testnet = { path = "../pubky-testnet" }
 pubky-common = { path = "../pubky-common" }
-pubky = { path = "../pubky-client" }
 tokio = { version = "1.45.1", features = ["full", "test-util"] }
 tracing-subscriber = "0.3.19"
 pkarr = { workspace = true }
