@@ -1,10 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{Client, KeyedAgent};
+use pubky::{Capabilities, Client, KeyedAgent, PublicKey};
 use std::{path::PathBuf, sync::Arc};
 use url::Url;
-
-use pubky_common::{capabilities::Capability, crypto::PublicKey};
 
 /// local testnet HOMESERVER
 const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
@@ -33,28 +31,10 @@ async fn main() -> Result<()> {
     let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
     let url = cli.url;
 
-    let caps = url
-        .query_pairs()
-        .filter_map(|(key, value)| {
-            if key == "caps" {
-                return Some(
-                    value
-                        .split(',')
-                        .filter_map(|cap| Capability::try_from(cap).ok())
-                        .collect::<Vec<_>>(),
-                );
-            };
-            None
-        })
-        .next()
-        .unwrap_or_default();
+    let caps = Capabilities::from(&url);
 
     if !caps.is_empty() {
-        println!("\nRequired Capabilities:");
-    }
-
-    for cap in &caps {
-        println!("    {} : {:?}", cap.scope, cap.actions);
+        println!("\nRequested capabilities:\n  {}", caps);
     }
 
     // === Consent form ===

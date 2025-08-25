@@ -16,7 +16,7 @@ use crate::{
     errors::{AuthError, Result},
 };
 
-use crate::{Capabilities, Capability, PubkyAgent, Session};
+use crate::{Capabilities, PubkyAgent, Session};
 
 #[derive(Debug, Clone)]
 pub struct AuthRequest {
@@ -158,15 +158,7 @@ impl PubkyAgent<Keyed> {
             .try_into()
             .map_err(|_| AuthError::Validation("Client secret must be 32 bytes".to_string()))?;
 
-        let capabilities = query_params
-            .get("caps")
-            .map(|caps_string| {
-                caps_string
-                    .split(',')
-                    .filter_map(|cap| Capability::try_from(cap).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let capabilities = Capabilities::from(&pubkyauth_url);
 
         let token = AuthToken::sign(kp, capabilities);
         let encrypted_token = encrypt(&token.serialize(), &client_secret);

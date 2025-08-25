@@ -23,6 +23,7 @@ argon2 = { version = "0.5.3", features = ["std"] }
 pubky-timestamp = { version = "0.4.0", features = ["full"] }
 serde = { version = "1.0.217", features = ["derive"] }
 pkarr = { workspace = true, features = ["keys"] }
+url = "2.5.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.77"

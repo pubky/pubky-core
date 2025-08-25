@@ -40,6 +40,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt::Display};
+use url::Url;
 
 /// A single capability: a `scope` and the allowed `actions` within it.
 ///
@@ -324,6 +325,37 @@ impl Capabilities {
         self.0.len()
     }
 
+    /// Parse capabilities from the `caps` query parameter.
+    ///
+    /// Expects a comma-separated list of capability strings, e.g.:
+    /// `?caps=/pub/app/:rw,/foo:r`
+    ///
+    /// Invalid entries are ignored.
+    ///
+    /// # Examples
+    /// ```
+    /// # use url::Url;
+    /// # use pubky_common::capabilities::Capabilities;
+    /// let url = Url::parse("https://example/app?caps=/pub/app/:rw,/foo:r").unwrap();
+    /// let caps = Capabilities::from_url(&url);
+    /// assert!(!caps.is_empty());
+    /// ```
+    pub fn from_url(url: &Url) -> Self {
+        // Get the first `caps` entry if present.
+        let value = url
+            .query_pairs()
+            .find_map(|(k, v)| (k == "caps").then(|| v.to_string()))
+            .unwrap_or_default();
+
+        // Parse comma-separated capabilities, skipping invalid pieces.
+        let caps = value
+            .split(',')
+            .filter_map(|s| Capability::try_from(s).ok())
+            .collect();
+
+        Capabilities(caps)
+    }
+
     /// Start a fluent builder for multiple capabilities.
     ///
     /// ```
@@ -430,6 +462,20 @@ impl TryFrom<&str> for Capabilities {
         }
 
         Ok(Capabilities(caps))
+    }
+}
+
+/// Allow `Capabilities::from(&url)` using the default `caps` key.
+impl From<&Url> for Capabilities {
+    fn from(url: &Url) -> Self {
+        Capabilities::from_url(url)
+    }
+}
+
+/// Allow `Capabilities::from(url)` (by value) using the default `caps` key.
+impl From<Url> for Capabilities {
+    fn from(url: Url) -> Self {
+        Capabilities::from_url(&url)
     }
 }
 
