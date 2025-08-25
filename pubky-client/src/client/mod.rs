@@ -1,4 +1,4 @@
-pub mod auth;
+pub mod core;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http;
-pub mod public;
+mod http_targets;

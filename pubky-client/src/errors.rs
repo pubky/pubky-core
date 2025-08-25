@@ -6,6 +6,7 @@ use thiserror::Error;
 pub enum BuildError {
     #[error("Failed to build the Pkarr client: {0}")]
     Pkarr(#[from] pkarr::errors::BuildError),
+
     #[error("Failed to build the HTTP client: {0}")]
     Http(#[from] reqwest::Error),
 }
@@ -61,11 +62,15 @@ pub enum AuthError {
 pub enum RequestError {
     #[error("HTTP transport error: {0}")]
     Transport(#[from] reqwest::Error),
+
     #[error("Server responded with an error: {status} - {message}")]
     Server {
         status: reqwest::StatusCode,
         message: String,
     },
+
+    #[error("Invalid request/URI: {message}")]
+    Validation { message: String },
 }
 
 // --- The Main Operational Error Enum ---

@@ -95,12 +95,12 @@ impl Client {
         Ok(())
     }
 
-    /// Get the homeserver id for a given Pubky public key.
+    /// Resolve the homeserver public key for a given Pubky public key.
     /// Looks up the pkarr packet for the given public key and returns the content of the first `_pubky` SVCB record.
-    /// Throws an error if no homeserver is found.
+    /// Throws a `PkarrError` error if no homeserver is found.
     #[wasm_bindgen(js_name = "getHomeserver")]
-    pub async fn get_homeserver(&self, public_key: &PublicKey) -> JsResult<PublicKey> {
-        let hs_z32 = match self.0.get_homeserver(public_key.as_inner()).await {
+    pub async fn resolve_homeserver(&self, public_key: &PublicKey) -> JsResult<PublicKey> {
+        let hs_z32 = match self.0.resolve_homeserver(public_key.as_inner()).await {
             Some(hs_z32) => hs_z32,
             None => {
                 return Err(PubkyJsError::new(
