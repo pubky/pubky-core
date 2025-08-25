@@ -46,9 +46,16 @@ impl Testnet {
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the default ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
-    pub async fn create_homeserver_suite(&mut self) -> Result<&HomeserverSuite> {
+    pub async fn create_homeserver(&mut self) -> Result<&HomeserverSuite> {
         let mock_dir =
             MockDataDir::new(ConfigToml::test(), Some(Keypair::from_secret_key(&[0; 32])))?;
+        self.create_homeserver_suite_with_mock(mock_dir).await
+    }
+
+    /// Creates a homeserver suite using a freshly generated random keypair.
+    /// Automatically listens on the configured ports and uses this Testnet's bootstrap nodes and relays.
+    pub async fn create_random_homeserver(&mut self) -> Result<&HomeserverSuite> {
+        let mock_dir = MockDataDir::new(ConfigToml::test(), Some(Keypair::random()))?;
         self.create_homeserver_suite_with_mock(mock_dir).await
     }
 
@@ -208,7 +215,7 @@ mod test {
     #[tokio::test]
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
-        testnet.create_homeserver_suite().await.unwrap();
+        testnet.create_homeserver().await.unwrap();
         let client = testnet.pubky_client_builder().build().unwrap();
         let hs = testnet.homeservers.first().unwrap();
         let keypair = Keypair::random();
@@ -233,11 +240,7 @@ mod test {
     #[tokio::test]
     async fn test_homeserver_resolvable() {
         let mut testnet = Testnet::new().await.unwrap();
-        let hs_pubky = testnet
-            .create_homeserver_suite()
-            .await
-            .unwrap()
-            .public_key();
+        let hs_pubky = testnet.create_homeserver().await.unwrap().public_key();
 
         // Make sure the pkarr packet of the hs is resolvable.
         let pkarr_client = testnet.pkarr_client_builder().build().unwrap();
@@ -264,7 +267,7 @@ mod test {
                         panic!("Failed to create testnet: {}", e);
                     }
                 };
-                match testnet.create_homeserver_suite().await {
+                match testnet.create_homeserver().await {
                     Ok(hs) => hs,
                     Err(e) => {
                         panic!("Failed to create homeserver suite: {}", e);
