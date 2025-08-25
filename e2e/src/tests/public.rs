@@ -33,6 +33,16 @@ async fn put_get_delete() {
         .error_for_status()
         .unwrap();
 
+    // again same request but using a tuple
+    let tuple_path = (user.pubky().unwrap(), "/pub/foo.txt");
+
+    user.homeserver()
+        .put(tuple_path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
     // Use Pubky native method to get data from homeserver
     let response = user.homeserver().get(path).await.unwrap();
 

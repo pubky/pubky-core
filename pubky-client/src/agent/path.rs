@@ -234,6 +234,46 @@ impl IntoPubkyPath for String {
     }
 }
 
+// For convenience: convert all sort of tuples. Flexible dev experience.
+
+// PublicKey + &str
+impl IntoPubkyPath for (PublicKey, &str) {
+    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+        PubkyPath::new(Some(self.0), self.1)
+    }
+}
+
+// &PublicKey + &str
+impl IntoPubkyPath for (&PublicKey, &str) {
+    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+        PubkyPath::new(Some(self.0.clone()), self.1)
+    }
+}
+
+// PublicKey + String
+impl IntoPubkyPath for (PublicKey, String) {
+    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+        PubkyPath::new(Some(self.0), self.1)
+    }
+}
+
+// &PublicKey + String
+impl IntoPubkyPath for (&PublicKey, String) {
+    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+        PubkyPath::new(Some(self.0.clone()), self.1)
+    }
+}
+
+// (&str, &str) where the first &str is a public key string
+impl IntoPubkyPath for (&str, &str) {
+    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+        let user = PublicKey::try_from(self.0).map_err(|_| RequestError::Validation {
+            message: format!("invalid user public key: {}", self.0),
+        })?;
+        PubkyPath::new(Some(user), self.1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
