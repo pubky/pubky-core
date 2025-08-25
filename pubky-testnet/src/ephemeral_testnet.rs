@@ -31,10 +31,14 @@ impl EphemeralTestnet {
     pub async fn start_with_random_keypair() -> anyhow::Result<Self> {
         let keypair = pkarr::Keypair::random();
 
-        let mut me = Self { testnet: Testnet::new().await? };
+        let mut me = Self {
+            testnet: Testnet::new().await?,
+        };
         let mock_data_dir = MockDataDir::new(ConfigToml::test(), Some(keypair))?;
         me.testnet.create_http_relay().await?;
-        me.testnet.create_homeserver_suite_with_mock(mock_data_dir).await?;
+        me.testnet
+            .create_homeserver_suite_with_mock(mock_data_dir)
+            .await?;
 
         Ok(me)
     }
@@ -95,7 +99,10 @@ mod test {
             let testnet = EphemeralTestnet::start_with_random_keypair().await.unwrap();
             let homeserver = testnet.homeserver_suite();
 
-            assert_ne!(homeserver.public_key().to_z32(), "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
+            assert_ne!(
+                homeserver.public_key().to_z32(),
+                "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+            );
         }
     }
 }
