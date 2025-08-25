@@ -1,6 +1,7 @@
 use http_relay::HttpRelay;
 
 use crate::Testnet;
+use pubky_homeserver::{ConfigToml, MockDataDir};
 
 /// A simple testnet with random ports assigned for all components.
 ///
@@ -22,6 +23,18 @@ impl EphemeralTestnet {
 
         me.testnet.create_http_relay().await?;
         me.testnet.create_homeserver_suite().await?;
+
+        Ok(me)
+    }
+
+    /// Run a new simple testnet with a random keypair.
+    pub async fn start_with_random_keypair() -> anyhow::Result<Self> {
+        let keypair = pkarr::Keypair::random();
+
+        let mut me = Self { testnet: Testnet::new().await? };
+        let mock_data_dir = MockDataDir::new(ConfigToml::test(), Some(keypair))?;
+        me.testnet.create_http_relay().await?;
+        me.testnet.create_homeserver_suite_with_mock(mock_data_dir).await?;
 
         Ok(me)
     }
@@ -73,6 +86,16 @@ mod test {
 
         {
             let _ = EphemeralTestnet::start().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_homeserver_with_random_keypair() {
+        {
+            let testnet = EphemeralTestnet::start_with_random_keypair().await.unwrap();
+            let homeserver = testnet.homeserver_suite();
+
+            assert_ne!(homeserver.public_key().to_z32(), "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo");
         }
     }
 }
