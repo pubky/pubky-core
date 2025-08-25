@@ -100,27 +100,19 @@ impl PubkyPath {
     pub fn parse(s: &str) -> Result<Self, Error> {
         // 1) Legacy scheme: pubky://<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky://") {
-            let (user_str, raw_path) = rest
+            let (user_str, path) = rest
                 .split_once('/')
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
 
             let user = PublicKey::try_from(user_str)
                 .map_err(|_| invalid(format!("invalid user public key: {user_str}")))?;
-            let path = FilePath::parse(raw_path)?;
-            return Ok(PubkyPath {
-                user: Some(user),
-                path,
-            });
+            return PubkyPath::new(Some(user), path);
         }
 
         // 2) `<user>/<path>`?
-        if let Some((first, rest)) = s.split_once('/') {
-            if let Ok(user) = PublicKey::try_from(first) {
-                let path = FilePath::parse(rest)?;
-                return Ok(PubkyPath {
-                    user: Some(user),
-                    path,
-                });
+        if let Some((user_id, path)) = s.split_once('/') {
+            if let Ok(user) = PublicKey::try_from(user_id) {
+                return PubkyPath::new(Some(user), path);
             } else {
                 // If it *looks* like `<something>/<path>` but the "something" is not a pubkey,
                 // and there's no leading '/', reject it (agent-scoped requires '/').
@@ -134,8 +126,7 @@ impl PubkyPath {
 
         // 3) Agent-scoped path: must start with '/'
         if s.starts_with('/') {
-            let path = FilePath::parse(s)?;
-            return Ok(PubkyPath { user: None, path });
+            return PubkyPath::new(None, s);
         }
 
         // Otherwise, reject (no leading '/' and not `<user>/<path>`).
@@ -236,41 +227,27 @@ impl IntoPubkyPath for String {
 
 // For convenience: convert all sort of tuples. Flexible dev experience.
 
-// PublicKey + &str
-impl IntoPubkyPath for (PublicKey, &str) {
+// (PublicKey, P), P is &str or String
+impl<P: AsRef<str>> IntoPubkyPath for (PublicKey, P) {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::new(Some(self.0), self.1)
+        PubkyPath::new(Some(self.0), self.1.as_ref())
     }
 }
 
-// &PublicKey + &str
-impl IntoPubkyPath for (&PublicKey, &str) {
+// (&PublicKey, P), P is &str or String
+impl<P: AsRef<str>> IntoPubkyPath for (&PublicKey, P) {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::new(Some(self.0.clone()), self.1)
+        PubkyPath::new(Some(self.0.clone()), self.1.as_ref())
     }
 }
 
-// PublicKey + String
-impl IntoPubkyPath for (PublicKey, String) {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::new(Some(self.0), self.1)
-    }
-}
-
-// &PublicKey + String
-impl IntoPubkyPath for (&PublicKey, String) {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::new(Some(self.0.clone()), self.1)
-    }
-}
-
-// (&str, &str) where the first &str is a public key string
-impl IntoPubkyPath for (&str, &str) {
+// (&str, P) where first is a pubkey string
+impl<P: AsRef<str>> IntoPubkyPath for (&str, P) {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
         let user = PublicKey::try_from(self.0).map_err(|_| RequestError::Validation {
             message: format!("invalid user public key: {}", self.0),
         })?;
-        PubkyPath::new(Some(user), self.1)
+        PubkyPath::new(Some(user), self.1.as_ref())
     }
 }
 
