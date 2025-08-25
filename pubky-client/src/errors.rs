@@ -1,4 +1,3 @@
-use core::convert::Infallible;
 use thiserror::Error;
 
 // --- Build-Time Error ---
@@ -7,6 +6,7 @@ use thiserror::Error;
 pub enum BuildError {
     #[error("Failed to build the Pkarr client: {0}")]
     Pkarr(#[from] pkarr::errors::BuildError),
+
     #[error("Failed to build the HTTP client: {0}")]
     Http(#[from] reqwest::Error),
 }

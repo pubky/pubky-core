@@ -1,8 +1,8 @@
-use reqwest::{Method, Response, header::COOKIE};
+use reqwest::{Method, Response};
 use url::Url;
 
 use crate::{
-    Error, PubkyAgent, PubkyPath, PublicKey,
+    Error, PubkyAgent, PubkyPath,
     agent::{path::IntoPubkyPath, state::sealed::Sealed},
     errors::Result,
     util::check_http_status,
@@ -43,29 +43,7 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
 
         // Attach session cookie only when the target host is this agent’s homeserver.
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            let matches_agent = self
-                .0
-                .pubky()
-                .and_then(|pk| {
-                    let host = url.host_str().unwrap_or("");
-                    if let Some(tail) = host.strip_prefix("_pubky.") {
-                        PublicKey::try_from(tail).ok().map(|h| h == pk)
-                    } else {
-                        PublicKey::try_from(host).ok().map(|h| h == pk)
-                    }
-                })
-                .unwrap_or(false);
-
-            if matches_agent {
-                if let Ok(g) = self.0.session_secret.read() {
-                    if let Some(secret) = g.as_ref() {
-                        let cookie_name = self.0.require_pubky()?.to_string();
-                        return Ok(rb.header(COOKIE, format!("{cookie_name}={secret}")));
-                    }
-                }
-            }
-        }
+        let rb = self.0.maybe_attach_session_cookie(&url, rb)?;
 
         Ok(rb)
     }
@@ -73,8 +51,6 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
     /// Convenience GET
     pub async fn get<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {
         let resp = self.request(Method::GET, path).await?.send().await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = self.0.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -89,8 +65,6 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
             .body(body)
             .send()
             .await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = self.0.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -105,8 +79,6 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
             .body(body)
             .send()
             .await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = self.0.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -121,15 +93,11 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
             .body(body)
             .send()
             .await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = self.0.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
     pub async fn delete<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {
         let resp = self.request(Method::DELETE, path).await?.send().await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = self.0.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 
@@ -138,8 +106,6 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
         P: TryInto<PubkyPath, Error = Error>,
     {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = self.0.capture_session_cookie(&resp);
         check_http_status(resp).await
     }
 

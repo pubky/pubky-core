@@ -207,10 +207,11 @@ impl<S: Sealed> PubkyAgent<S> {
 
         let response = check_http_status(response).await?;
 
-        // Set pubky and capture cookie for this identity.
+        // Set pubky and capture cookie for this identity,
+        // must be set before we try to capture the session cookie.
         self.set_pubky_if_empty(token.pubky());
         #[cfg(not(target_arch = "wasm32"))]
-        self.capture_session_cookie_for(&response, token.pubky());
+        self.capture_session_cookie(&response);
 
         let bytes = response.bytes().await?;
         Ok(Session::deserialize(&bytes)?)
