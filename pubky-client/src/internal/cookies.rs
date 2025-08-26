@@ -22,21 +22,18 @@ impl CookieJar {
 
             if header_name == SET_COOKIE
                 && header_value.as_ref().starts_with(cookie_name.as_bytes())
-            {
-                if let Ok(Ok(cookie)) =
+                && let Ok(Ok(cookie)) =
                     std::str::from_utf8(header_value.as_bytes()).map(cookie::Cookie::parse)
-                {
-                    if cookie.name() == cookie_name {
-                        let domain = format!("_pubky.{pubky}");
-                        cross_debug!("Storing cookie after signup. Cookie: {}", cookie);
+                && cookie.name() == cookie_name
+            {
+                let domain = format!("_pubky.{pubky}");
+                cross_debug!("Storing cookie after signup. Cookie: {}", cookie);
 
-                        self.pubky_sessions
-                            .write()
-                            .unwrap()
-                            .insert(domain, cookie.value().to_string());
-                    }
-                };
-            }
+                self.pubky_sessions
+                    .write()
+                    .unwrap()
+                    .insert(domain, cookie.value().to_string());
+            };
         }
     }
 
