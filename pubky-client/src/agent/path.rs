@@ -13,6 +13,8 @@ use pkarr::PublicKey;
 
 use crate::{Error, errors::RequestError};
 
+const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (agent scoped) or `pubky://<user>/<path>` (legacy)";
+
 #[inline]
 fn invalid(msg: impl Into<String>) -> Error {
     RequestError::Validation {
@@ -117,9 +119,7 @@ impl PubkyPath {
                 // If it *looks* like `<something>/<path>` but the "something" is not a pubkey,
                 // and there's no leading '/', reject it (agent-scoped requires '/').
                 if !s.starts_with('/') {
-                    return Err(invalid(
-                        "expected `<user>/<path>` (with a valid public key) or `/absolute/path`",
-                    ));
+                    return Err(invalid(EXPECTED_FORMS));
                 }
             }
         }
@@ -130,20 +130,10 @@ impl PubkyPath {
         }
 
         // Otherwise, reject (no leading '/' and not `<user>/<path>`).
-        Err(invalid(
-            "expected `pubky://<user>/<path>`, `<user>/<path>`, or `/absolute/path`",
-        ))
+        Err(invalid(EXPECTED_FORMS))
     }
 
-    /// Resolve (if needed) with a default user, returning a fully-qualified address.
-    pub fn with_default_user(&self, default: &PublicKey) -> ResolvedPubkyPath {
-        ResolvedPubkyPath {
-            user: self.user.clone().unwrap_or_else(|| default.clone()),
-            path: self.path.clone(),
-        }
-    }
-
-    /// `pubky://<user>/<path>` — requires a user; provide `default` to fill if missing.
+    /// `pubky://<user>/<path>` requires a user; provide `default` to fill if missing.
     pub fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
         let user = match (&self.user, default) {
             (Some(u), _) => u,
@@ -153,13 +143,6 @@ impl PubkyPath {
         let rel = self.path.as_str().trim_start_matches('/');
         Ok(format!("pubky://{}/{}", user, rel))
     }
-}
-
-/// A fully-qualified address (always has a user).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ResolvedPubkyPath {
-    pub user: PublicKey,
-    pub path: FilePath,
 }
 
 impl fmt::Display for PubkyPath {
