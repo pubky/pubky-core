@@ -49,6 +49,12 @@ impl Session {
 
     // === Setters ===
 
+    /// Set this session created at timestamp.
+    pub fn set_created_at(&mut self, created_at: u64) -> &mut Self {
+        self.created_at = created_at;
+        self
+    }
+
     /// Set this session user agent.
     pub fn set_user_agent(&mut self, user_agent: String) -> &mut Self {
         self.user_agent = user_agent;

@@ -139,33 +139,6 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 }
 
-/// Update the user quota by the given amount.
-/// This is used to update the user quota when a file is written or deleted.
-/// The bytes delta is the number of bytes that were added or removed from the user quota.
-/// It can be positive or negative.
-fn update_user_quota(
-    db: &LmDB,
-    user_pubkey: &pkarr::PublicKey,
-    bytes_delta: i64,
-) -> anyhow::Result<()> {
-    let mut wtxn = db.env.write_txn()?;
-    let mut user = db
-        .tables
-        .users
-        .get(&wtxn, user_pubkey)?
-        .ok_or(anyhow::anyhow!("User not found"))?;
-    user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
-    db.tables.users.put(&mut wtxn, user_pubkey, &user)?;
-    wtxn.commit()?;
-    Ok(())
-}
-
-fn does_user_exist(db: &LmDB, user_pubkey: &pkarr::PublicKey) -> anyhow::Result<bool> {
-    let wtxn = db.env.read_txn()?;
-    let user = db.tables.users.get(&wtxn, user_pubkey)?;
-    Ok(user.is_some())
-}
-
 /// Wrapper around the writer that updates the user quota when the file is closed.
 pub struct WriterWrapper<R, A: Access> {
     inner: R,

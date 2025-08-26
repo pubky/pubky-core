@@ -1,7 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes};
+use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Executor, FromRow, Row};
@@ -125,8 +125,16 @@ pub struct SessionEntity {
     pub secret: SessionSecret,
     pub user_id: i32,
     pub user_pubkey: PublicKey,
-    pub capabilities: Vec<String>,
+    pub capabilities: Vec<Capability>,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
+}
+
+impl SessionEntity {
+    pub fn to_legacy(&self) -> Session {
+        let mut session = Session::new(&self.user_pubkey, &self.capabilities, None);
+        session.set_created_at(self.created_at.and_utc().timestamp() as u64);
+        session
+    }
 }
 
 impl FromRow<'_, PgRow> for SessionEntity {
@@ -138,6 +146,7 @@ impl FromRow<'_, PgRow> for SessionEntity {
         let user_public_key: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
         let user_public_key: PublicKey = user_public_key.try_into().map_err(|e: pkarr::errors::PublicKeyError| sqlx::Error::Decode(e.into()))?;
         let capabilities: Vec<String> = row.try_get(SessionIden::Capabilities.to_string().as_str())?;
+        let capabilities: Vec<Capability> = capabilities.iter().map(|c| c.parse().map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))).collect::<Result<Vec<Capability>, sqlx::Error>>()?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
         Ok(SessionEntity {
@@ -183,7 +192,7 @@ mod tests {
         // Test get session
         let session = SessionRepository::get_by_secret(&session.secret, &mut db.pool().into()).await.unwrap();
         assert_eq!(session.user_id, user.id);
-        assert_eq!(session.capabilities, vec![Capability::root().to_string()]);
+        assert_eq!(session.capabilities, vec![Capability::root()]);
 
         // Test delete session
         SessionRepository::delete(&session.secret, &mut db.pool().into()).await.unwrap();

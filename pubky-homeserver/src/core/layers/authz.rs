@@ -1,4 +1,5 @@
 use crate::core::{extractors::PubkyHost, AppState};
+use crate::persistence::sql::session::{SessionRepository, SessionSecret};
 use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;
@@ -86,7 +87,7 @@ where
             };
 
             // Authorize the request
-            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
+            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path).await {
                 return Ok(e.into_response());
             }
 
@@ -97,7 +98,7 @@ where
 }
 
 /// Authorize write (PUT or DELETE) for Public paths.
-fn authorize(
+async fn authorize(
     state: &AppState,
     method: &Method,
     cookies: &Cookies,
@@ -135,24 +136,20 @@ fn authorize(
         }
     };
 
-    let session = match state.db.get_session(&session_secret)? {
-        Some(session) => session,
-        None => {
-            tracing::warn!(
-                "No session found in the database for session secret: {}, pubky: {}",
-                session_secret,
-                public_key
-            );
-            return Err(HttpError::unauthorized_with_message(
-                "No session found for session secret",
-            ));
+
+    let session =  match SessionRepository::get_by_secret(&session_secret, &mut (&mut state.sql_db.pool().into())).await {
+        Ok(session) => session,
+        Err(sqlx::Error::RowNotFound) => {
+            tracing::warn!("No session found in the database for session secret: {}, pubky: {}", session_secret, public_key);
+            return Err(HttpError::unauthorized_with_message("No session found for session secret"));
         }
+        Err(e) => return Err(e.into()),
     };
 
-    if session.pubky() != public_key {
+    if &session.user_pubkey != public_key {
         tracing::warn!(
             "Session public key does not match pubky-host: {} != {}",
-            session.pubky(),
+            session.user_pubkey,
             public_key
         );
         return Err(HttpError::unauthorized_with_message(
@@ -160,7 +157,7 @@ fn authorize(
         ));
     }
 
-    if session.capabilities().iter().any(|cap| {
+    if session.capabilities.iter().any(|cap| {
         path.starts_with(&cap.scope)
             && cap
                 .actions
@@ -180,8 +177,11 @@ fn authorize(
     }
 }
 
-pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {
-    cookies
+/// Get the session secret from the cookies.
+/// Returns None if the session secret is not found or invalid.
+pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<SessionSecret> {
+    let value = cookies
         .get(&public_key.to_string())
-        .map(|c| c.value().to_string())
+        .map(|c| c.value().to_string())?;
+    SessionSecret::new(value).ok()
 }

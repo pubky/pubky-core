@@ -1,5 +1,4 @@
 use crate::core::err_if_user_is_invalid::get_user_or_http_error;
-use crate::persistence::lmdb::tables::entries::Entry;
 use crate::persistence::sql::entry::EntryEntity;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
