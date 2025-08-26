@@ -22,7 +22,7 @@ impl EphemeralTestnet {
         };
 
         me.testnet.create_http_relay().await?;
-        me.testnet.create_homeserver_suite().await?;
+        me.testnet.create_homeserver().await?;
 
         Ok(me)
     }
@@ -53,7 +53,7 @@ impl EphemeralTestnet {
     }
 
     /// Get the homeserver in the testnet.
-    pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
+    pub fn homeserver(&self) -> &pubky_homeserver::HomeserverSuite {
         self.testnet
             .homeservers
             .first()
