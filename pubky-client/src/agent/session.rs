@@ -11,8 +11,8 @@ use url::Url;
 use pkarr::PublicKey;
 use pubky_common::{auth::AuthToken, capabilities::Capability, session::Session};
 
+use super::core::PubkyAgent;
 use crate::{
-    PubkyAgent,
     agent::state::{Keyed, sealed::Sealed},
     errors::Result,
     util::check_http_status,

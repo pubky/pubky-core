@@ -5,8 +5,8 @@ use pkarr::{
     dns::rdata::{RData, SVCB},
 };
 
+use super::core::PubkyAgent;
 use crate::{
-    PubkyAgent,
     agent::state::{Keyed, sealed::Sealed},
     errors::{Error, PkarrError, Result},
 };

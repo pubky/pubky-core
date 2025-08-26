@@ -48,7 +48,7 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
-pub use agent::{core::PubkyAgent, state::KeyedAgent, state::KeylessAgent};
+pub use agent::state::{KeyedAgent, KeylessAgent};
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 // Export common types and constants

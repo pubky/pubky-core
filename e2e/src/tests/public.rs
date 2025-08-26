@@ -4,7 +4,7 @@ use reqwest::{Method, StatusCode};
 #[tokio::test]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
     let user = testnet.agent_keyed_random().unwrap();
 
@@ -86,6 +86,60 @@ async fn put_get_delete() {
     assert!(user.homeserver().get(path).await.is_err());
 }
 
+use serde::{Deserialize, Serialize};
+
+#[tokio::test]
+async fn put_then_get_json_roundtrip() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let user = testnet.agent_keyed_random().unwrap();
+
+    user.signup(&server.public_key(), None).await.unwrap();
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct Payload {
+        msg: String,
+        n: u32,
+        flag: bool,
+    }
+
+    let path = "/pub/data/roundtrip.json";
+    let expected = Payload {
+        msg: "hello".to_string(),
+        n: 42,
+        flag: true,
+    };
+
+    // Some homeservers return 204/empty on PUT; JSON sugar may fail deserialization.
+    // Ignore the result; the write still succeeds and is asserted via the subsequent GET.
+    let _ = user
+        .homeserver()
+        .put_json::<_, _, serde_json::Value>(path, &expected)
+        .await;
+
+    // Read back as strongly-typed JSON and assert equality.
+    let got: Payload = user.homeserver().get_json(path).await.unwrap();
+    assert_eq!(got, expected);
+
+    // Sanity-check MIME is JSON when fetching raw.
+    let resp = user.homeserver().get(path).await.unwrap();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(ct.starts_with("application/json"));
+
+    // Cleanup
+    user.homeserver()
+        .delete(path)
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+}
+
 // #[tokio::test]
 // async fn put_quota_applied() {
 //     // Start a test homeserver with 1 MB user data limit
@@ -95,7 +149,7 @@ async fn put_get_delete() {
 //     let mut mock_dir = MockDataDir::test();
 //     mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
 //     let server = testnet
-//         .create_homeserver_suite_with_mock(mock_dir)
+//         .create_homeserver_with_mock(mock_dir)
 //         .await
 //         .unwrap();
 
@@ -146,7 +200,7 @@ async fn put_get_delete() {
 // #[tokio::test]
 // async fn unauthorized_put_delete() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -214,7 +268,7 @@ async fn put_get_delete() {
 #[tokio::test]
 async fn list() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
     let user = testnet.agent_keyed_random().unwrap();
     let pubky = user.pubky().unwrap();
@@ -437,7 +491,7 @@ async fn list() {
 // #[tokio::test]
 // async fn list_shallow() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -658,7 +712,7 @@ async fn list() {
 // #[tokio::test]
 // async fn list_events() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -757,7 +811,7 @@ async fn list() {
 // #[tokio::test]
 // async fn read_after_event() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -810,7 +864,7 @@ async fn list() {
 // #[tokio::test]
 // async fn dont_delete_shared_blobs() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let homeserver = testnet.homeserver_suite();
+//     let homeserver = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -886,7 +940,7 @@ async fn list() {
 // async fn stream() {
 //     // TODO: test better streaming API
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 

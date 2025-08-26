@@ -307,6 +307,7 @@ pub enum Error {
 /// need a varint-free trailing field in a custom binary format, implement a
 /// bespoke encoder/decoder instead of serde.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
+#[must_use]
 pub struct Capabilities(pub Vec<Capability>);
 
 impl Capabilities {

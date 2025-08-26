@@ -28,6 +28,7 @@ impl Client {
             let url = format!("https://_pubky.{}", url.split_at(8).1);
 
             return self.http.request(method, url);
+            // PublicKey has methods to extract a publickey from a well-formed URL
         } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
             // TODO: remove icann_http when we can control reqwest connection
             // and or create a tls config per connection.

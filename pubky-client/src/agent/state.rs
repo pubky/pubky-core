@@ -9,8 +9,8 @@ pub struct Keyed;
 pub struct Keyless;
 
 /// Aliases for ergonomics
-pub type KeyedAgent = crate::PubkyAgent<Keyed>;
-pub type KeylessAgent = crate::PubkyAgent<Keyless>;
+pub type KeyedAgent = super::core::PubkyAgent<Keyed>;
+pub type KeylessAgent = super::core::PubkyAgent<Keyless>;
 
 /// Sealed to keep the state space closed
 pub(crate) mod sealed {

@@ -4,7 +4,7 @@ use reqwest::Method;
 #[tokio::test]
 async fn http_get_pubky() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
     let client = testnet.pubky_client().unwrap();
 

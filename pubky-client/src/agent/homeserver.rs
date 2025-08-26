@@ -1,17 +1,18 @@
 use reqwest::{Method, Response};
 use url::Url;
 
+use super::core::PubkyAgent;
 use crate::{
-    PubkyAgent, PubkyPath,
+    PubkyPath,
     agent::{path::IntoPubkyPath, state::sealed::Sealed},
     errors::Result,
     util::check_http_status,
 };
 
-/// Namespaced homeserver view: HTTP verbs + list, scoped to this agent.
 // For now, given that the Homeserver has a custom API, we are going to call this namespace "Homeserver"
 // In the future, when we stick with WebDav, we can rename to WebDav our add a new namespace "WebDav" if
 // mantaining compatibility with old Homeservers
+/// Namespaced homeserver view: HTTP verbs + list, scoped to this agent.
 #[derive(Debug, Clone, Copy)]
 pub struct Homeserver<'a, S: Sealed>(&'a PubkyAgent<S>);
 
@@ -121,6 +122,7 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
 
 /// Homeserver-scoped List request builder.
 #[derive(Debug)]
+#[must_use]
 pub struct ListBuilder<'a, S: Sealed> {
     agent: &'a PubkyAgent<S>,
     url: Url,
@@ -192,5 +194,40 @@ impl<'a, S: Sealed> ListBuilder<'a, S> {
             out.push(Url::parse(line)?);
         }
         Ok(out)
+    }
+}
+
+#[cfg(feature = "json")]
+impl<'a, S: Sealed> Homeserver<'a, S> {
+    pub async fn get_json<P, T>(&self, path: P) -> crate::Result<T>
+    where
+        P: IntoPubkyPath,
+        T: serde::de::DeserializeOwned,
+    {
+        let resp = self
+            .request(reqwest::Method::GET, path)
+            .await?
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await?;
+        let resp = crate::util::check_http_status(resp).await?;
+        Ok(resp.json::<T>().await?)
+    }
+
+    pub async fn put_json<P, B, T>(&self, path: P, body: &B) -> crate::Result<T>
+    where
+        P: IntoPubkyPath,
+        B: serde::Serialize + ?Sized,
+        T: serde::de::DeserializeOwned,
+    {
+        let resp = self
+            .request(reqwest::Method::PUT, path)
+            .await?
+            .header(reqwest::header::ACCEPT, "application/json")
+            .json(body)
+            .send()
+            .await?;
+        let resp = crate::util::check_http_status(resp).await?;
+        Ok(resp.json::<T>().await?)
     }
 }

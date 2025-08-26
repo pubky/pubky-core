@@ -16,7 +16,8 @@ use crate::{
     errors::{AuthError, Result},
 };
 
-use crate::{Capabilities, PubkyAgent, Session};
+use super::core::PubkyAgent;
+use crate::{Capabilities, Session};
 
 #[derive(Debug, Clone)]
 pub struct AuthRequest {

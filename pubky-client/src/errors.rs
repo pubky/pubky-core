@@ -71,6 +71,9 @@ pub enum RequestError {
 
     #[error("Invalid request/URI: {message}")]
     Validation { message: String },
+
+    #[error("JSON decode error: {message}")]
+    DecodeJson { message: String },
 }
 
 // --- The Main Operational Error Enum ---

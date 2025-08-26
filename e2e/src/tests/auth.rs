@@ -12,7 +12,7 @@ use pubky_testnet::pubky::errors::{Error, RequestError};
 #[tokio::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
     let user = testnet.agent_keyed_random().unwrap();
 
@@ -43,7 +43,7 @@ async fn basic_authn() {
 // #[tokio::test]
 // async fn disabled_user() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -110,7 +110,7 @@ async fn basic_authn() {
 #[tokio::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
     let http_relay_url = testnet.http_relay().local_link_url();
 
@@ -166,7 +166,7 @@ async fn authz() {
 // #[tokio::test]
 // async fn multiple_users() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let client = testnet.pubky_client().unwrap();
 
@@ -205,7 +205,7 @@ async fn authz() {
 // #[tokio::test]
 // async fn authz_timeout_reconnect() {
 //     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 
 //     let http_relay = testnet.http_relay();
 //     let http_relay_url = http_relay.local_link_url();
@@ -292,10 +292,7 @@ async fn test_signup_with_token() {
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
-        .await
-        .unwrap();
+    let server = testnet.create_homeserver_with_mock(mock_dir).await.unwrap();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
     let invalid_signup = user
@@ -354,7 +351,7 @@ async fn test_signup_with_token() {
 //         .build()
 //         .unwrap();
 
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 //     let keypair = Keypair::random();
 
 //     // Signup publishes a new record.
@@ -400,7 +397,7 @@ async fn test_signup_with_token() {
 //     // Create a client that will republish conditionally if a record is older than 1hr.
 //     let client = testnet.pubky_client().unwrap();
 
-//     let server = testnet.homeserver_suite();
+//     let server = testnet.homeserver();
 //     let keypair = Keypair::random();
 
 //     // Signup publishes a new record.
@@ -447,7 +444,7 @@ async fn test_signup_with_token() {
 //         .max_record_age(max_record_age)
 //         .build()
 //         .unwrap();
-//     let server = testnet.create_homeserver_suite().await.unwrap();
+//     let server = testnet.create_homeserver().await.unwrap();
 //     let keypair = Keypair::random();
 
 //     // Signup publishes a new record.
