@@ -7,7 +7,7 @@ use axum::{
 use futures_util::stream::StreamExt;
 
 use crate::{
-    core::{err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState},
+    core::{err_if_user_is_invalid::{get_user_or_http_error}, extractors::PubkyHost, AppState},
     persistence::files::WriteStreamError,
     shared::{
         webdav::{EntryPath, WebDavPathPubAxum},
@@ -24,7 +24,7 @@ pub async fn delete(
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
+    get_user_or_http_error(pubky.public_key(), &mut (&mut state.sql_db.pool().into()), false).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     state.file_service.delete(&entry_path).await?;
@@ -38,7 +38,7 @@ pub async fn put(
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    err_if_user_is_invalid(public_key, &state.db, true)?;
+    get_user_or_http_error(public_key, &mut (&mut state.sql_db.pool().into()), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     // Check if the size hint exceeds the quota so we can fail early

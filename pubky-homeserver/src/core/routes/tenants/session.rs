@@ -3,7 +3,7 @@ use tower_cookies::Cookies;
 
 use crate::{
     core::{
-        err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost,
+        err_if_user_is_invalid::{get_user_or_http_error}, extractors::PubkyHost,
         layers::authz::session_secret_from_cookies, AppState,
     },
     shared::{HttpError, HttpResult},
@@ -14,7 +14,8 @@ pub async fn session(
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
+    get_user_or_http_error(pubky.public_key(), &mut (&mut state.sql_db.pool().into()), false).await?;
+
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Some(session) = state.db.get_session(&secret)? {
             // TODO: add content-type

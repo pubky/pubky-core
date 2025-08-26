@@ -1,8 +1,9 @@
+use crate::core::err_if_user_is_invalid::get_user_or_http_error;
 use crate::persistence::lmdb::tables::entries::Entry;
+use crate::persistence::sql::entry::EntryEntity;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
-        err_if_user_is_invalid::err_if_user_is_invalid,
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
@@ -16,16 +17,19 @@ use axum::{
 };
 use httpdate::HttpDate;
 use std::str::FromStr;
+use std::time::SystemTime;
+use sqlx::types::chrono::{DateTime, Utc};
 
 pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
+    get_user_or_http_error(pubky.public_key(), &mut (&mut state.sql_db.pool().into()), false).await?;
+
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
-    let entry = state.file_service.get_info(&entry_path).await?;
+    let entry = state.file_service.get_info(&entry_path, &mut (&mut state.sql_db.pool().into())).await?;
     let response = entry.to_response_headers().into_response();
     Ok(response)
 }
@@ -45,7 +49,7 @@ pub async fn get(
         return list(state, &entry_path, params);
     }
 
-    let entry = state.file_service.get_info(&entry_path).await?;
+    let entry = state.file_service.get_info(&entry_path, &mut (&mut state.sql_db.pool().into())).await?;
 
     // Handle IF_MODIFIED_SINCE
     if let Some(condition_http_date) = headers
@@ -53,7 +57,7 @@ pub async fn get(
         .and_then(|h| h.to_str().ok())
         .and_then(|s| HttpDate::from_str(s).ok())
     {
-        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+        let entry_http_date: HttpDate = to_http_date(&entry.modified_at);
         if condition_http_date >= entry_http_date {
             return not_modified_response(&entry);
         }
@@ -64,7 +68,7 @@ pub async fn get(
         .get(header::IF_NONE_MATCH)
         .and_then(|h| h.to_str().ok())
     {
-        let current_etag = format!("\"{}\"", entry.content_hash());
+        let current_etag = format!("\"{}\"", entry.content_hash);
         if request_etag
             .trim()
             .split(',')
@@ -113,33 +117,39 @@ pub fn list(
 }
 
 /// Creates the Not Modified response based on the entry data.
-fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
+fn not_modified_response(entry: &EntryEntity) -> HttpResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::NOT_MODIFIED)
-        .header(header::ETAG, format!("\"{}\"", entry.content_hash()))
-        .header(header::LAST_MODIFIED, entry.timestamp().format_http_date())
+        .header(header::ETAG, format!("\"{}\"", entry.content_hash))
+        .header(header::LAST_MODIFIED, to_http_date(&entry.modified_at).to_string().as_str())
         .body(Body::empty())?)
 }
 
-impl Entry {
+/// Convert a `NaiveDateTime` to a `HttpDate`.
+fn to_http_date(date: &sqlx::types::chrono::NaiveDateTime) -> HttpDate {
+    let sys_datetime = SystemTime::from(DateTime::<Utc>::from_naive_utc_and_offset(*date, Utc));
+    httpdate::HttpDate::from(sys_datetime)
+}
+
+impl EntryEntity {
     pub fn to_response_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_LENGTH, self.content_length().into());
+        headers.insert(header::CONTENT_LENGTH, self.content_length.into());
         headers.insert(
             header::LAST_MODIFIED,
-            HeaderValue::from_str(&self.timestamp().format_http_date())
+            HeaderValue::from_str(to_http_date(&self.modified_at).to_string().as_str())
                 .expect("http date is valid header value"),
         );
         headers.insert(
             header::CONTENT_TYPE,
-            self.content_type()
+            self.content_type.clone()
                 .try_into()
                 .or(HeaderValue::from_str(""))
                 .expect("valid header value"),
         );
         headers.insert(
             header::ETAG,
-            format!("\"{}\"", self.content_hash())
+            format!("\"{}\"", self.content_hash)
                 .try_into()
                 .expect("hex string is valid"),
         );

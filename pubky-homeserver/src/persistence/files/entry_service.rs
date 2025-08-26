@@ -1,12 +1,8 @@
-use pubky_common::timestamp::Timestamp;
-
 use crate::{
     persistence::{
         files::{FileIoError, FileMetadata},
-        lmdb::tables::{entries::Entry, events::Event},
         sql::{
-            entry::{EntryEntity, EntryRepository},
-            SqlDb, UnifiedExecutor,
+            entry::{EntryEntity, EntryRepository}, event::{EventRepository, EventType}, user::UserRepository, SqlDb, UnifiedExecutor
         },
     },
     shared::webdav::EntryPath,
@@ -23,6 +19,10 @@ impl EntryService {
         Self { db }
     }
 
+    pub fn db(&self) -> &SqlDb {
+        &self.db
+    }
+
     /// Write an entry to the database.
     ///
     /// This includes all associated operations:
@@ -33,53 +33,51 @@ impl EntryService {
         path: &EntryPath,
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<Entry, FileIoError> {
+    ) -> Result<EntryEntity, FileIoError> {
         let existing_entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => Some(entry),
             Err(sqlx::Error::RowNotFound) => None,
             Err(e) => return Err(e.into()),
         };
 
-        // Write entry
-        let mut entry = Entry::new();
-        entry.set_content_hash(metadata.hash);
-        entry.set_content_length(metadata.length);
-        entry.set_timestamp(&metadata.modified_at);
-        entry.set_content_type(metadata.content_type.clone());
-        let entry_key = path.to_string();
-        self.db
-            .tables
-            .entries
-            .put(&mut wtxn, entry_key.as_str(), &entry.serialize())?;
+        // Create/Update entry
+        let entry = if let Some(existing_entry) = existing_entry {
+            self.update_entry(existing_entry, metadata, executor).await?
+        } else {
+            self.create_entry(path, metadata, executor).await?
+        };
 
-        // Write a public [Event].
-        let url = format!("pubky://{}", entry_key);
-        let event = Event::put(&url);
-        let value = event.serialize();
-        self.db
-            .tables
-            .events
-            .put(&mut wtxn, metadata.modified_at.to_string().as_str(), &value)?;
-
-        wtxn.commit()?;
-
+        // Create event
+        EventRepository::create(entry.user_id, EventType::Put, path.path(), executor).await?;
         Ok(entry)
     }
 
+    /// Update an existing entry in the database.
     async fn update_entry<'a>(
         &self,
         mut entry: EntryEntity,
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EntryEntity, FileIoError> {
-        // Update entry
-        entry.set_content_hash(metadata.hash);
-        entry.set_content_length(metadata.length);
-        entry.set_timestamp(&metadata.modified_at);
-        entry.set_content_type(metadata.content_type.clone());
+        entry.content_hash = metadata.hash;
+        entry.content_length = metadata.length as u64;
+        entry.content_type = metadata.content_type.clone();
 
         EntryRepository::update(&entry, executor).await?;
 
+        Ok(entry)
+    }
+
+    /// Create a new entry in the database.
+    async fn create_entry<'a>(
+        &self,
+        path: &EntryPath,
+        metadata: &FileMetadata,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<EntryEntity, FileIoError> {
+        let user = UserRepository::get(path.pubkey(), executor).await?;
+        let entry_id = EntryRepository::create(user.id, path.path(), &metadata.hash, metadata.length as u64, &metadata.content_type, executor).await?;
+        let entry = EntryRepository::get(entry_id, executor).await?;
         Ok(entry)
     }
 
@@ -89,23 +87,18 @@ impl EntryService {
     /// - Write a public [Event]
     /// - Delete the entry from the database
     ///
-    pub fn delete_entry(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        let mut wtxn = self.db.env.write_txn()?;
+    pub async fn delete_entry<'a>(&self, path: &EntryPath, executor: &mut UnifiedExecutor<'a>) -> Result<(), FileIoError> {
+        let entry = match EntryRepository::get_by_path(path, executor).await {
+            Ok(entry) => entry,
+            Err(sqlx::Error::RowNotFound) => return Err(FileIoError::NotFound),
+            Err(e) => return Err(e.into()),
+        };
 
-        // Delete entry
-        let deleted = self.db.tables.entries.delete(&mut wtxn, path.as_str())?;
-        if !deleted {
-            return Err(FileIoError::NotFound);
-        }
+        EntryRepository::delete(entry.id, executor).await?;
 
-        // create DELETE event
-        let url = format!("pubky://{}", path.as_str());
-        let event = Event::delete(&url);
-        let value = event.serialize();
-        let key = Timestamp::now().to_string();
-        self.db.tables.events.put(&mut wtxn, &key, &value)?;
+        // Create event
+        EventRepository::create(entry.user_id, EventType::Delete, path.path(), executor).await?;
 
-        wtxn.commit()?;
         Ok(())
     }
 }

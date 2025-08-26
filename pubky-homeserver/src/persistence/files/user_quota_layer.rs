@@ -214,7 +214,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         let mut tx = self.db.pool().begin().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         let mut user = UserRepository::get(&self.entry_path.pubkey(), &mut (&mut tx).into())
             .await
-            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, format!("Failed to get user {}: {}", self.entry_path.pubkey(), e)))?;
         let current_user_bytes = user.used_bytes;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;

@@ -1,7 +1,7 @@
 use pkarr::PublicKey;
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use sqlx::{postgres::PgRow, Executor, FromRow, Row};
+use sqlx::{postgres::PgRow, types::chrono::{DateTime, NaiveDateTime}, FromRow, Row};
 
 use crate::{
     persistence::sql::{
@@ -66,6 +66,7 @@ impl EntryRepository {
                 (ENTRY_TABLE, EntryIden::ContentHash),
                 (ENTRY_TABLE, EntryIden::ContentLength),
                 (ENTRY_TABLE, EntryIden::ContentType),
+                (ENTRY_TABLE, EntryIden::ModifiedAt),
                 (ENTRY_TABLE, EntryIden::CreatedAt),
             ])
             .column((USER_TABLE, UserIden::PublicKey))
@@ -95,6 +96,7 @@ impl EntryRepository {
                 (ENTRY_TABLE, EntryIden::ContentHash),
                 (ENTRY_TABLE, EntryIden::ContentLength),
                 (ENTRY_TABLE, EntryIden::ContentType),
+                (ENTRY_TABLE, EntryIden::ModifiedAt),
                 (ENTRY_TABLE, EntryIden::CreatedAt),
             ])
             .column((USER_TABLE, UserIden::PublicKey))
@@ -113,14 +115,14 @@ impl EntryRepository {
         Ok(entry)
     }
 
-    pub async fn update<'a>(entry: EntryEntity, executor: &mut UnifiedExecutor<'a>) -> Result<(), sqlx::Error> {
+    pub async fn update<'a>(entry: &EntryEntity, executor: &mut UnifiedExecutor<'a>) -> Result<(), sqlx::Error> {
         let statement = Query::update()
             .table(ENTRY_TABLE)
-            .columns([EntryIden::ContentHash, EntryIden::ContentLength, EntryIden::ContentType])
             .values(vec![
-                SimpleExpr::Value(entry.content_hash.as_bytes().to_vec().into()),
-                SimpleExpr::Value(entry.content_length.into()),
-                SimpleExpr::Value(entry.content_type.into()),
+                (EntryIden::ContentHash, SimpleExpr::Value(entry.content_hash.as_bytes().to_vec().into())),
+                (EntryIden::ContentLength, SimpleExpr::Value(entry.content_length.into())),
+                (EntryIden::ContentType, SimpleExpr::Value(entry.content_type.clone().into())),
+                (EntryIden::ModifiedAt, Expr::current_timestamp().into()),
             ])
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
@@ -179,6 +181,7 @@ enum EntryIden {
     ContentHash,
     ContentLength,
     ContentType,
+    ModifiedAt,
     CreatedAt,
 }
 
@@ -190,6 +193,7 @@ pub struct EntryEntity {
     pub content_hash: pubky_common::crypto::Hash,
     pub content_length: u64,
     pub content_type: String,
+    pub modified_at: sqlx::types::chrono::NaiveDateTime,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
 }
 
@@ -211,6 +215,8 @@ impl FromRow<'_, PgRow> for EntryEntity {
         let content_hash = pubky_common::crypto::Hash::from_bytes(content_hash);
         let content_length: i64 = row.try_get(EntryIden::ContentLength.to_string().as_str())?;
         let content_type: String = row.try_get(EntryIden::ContentType.to_string().as_str())?;
+        let modified_at: sqlx::types::chrono::NaiveDateTime =
+            row.try_get(EntryIden::ModifiedAt.to_string().as_str())?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(EntryIden::CreatedAt.to_string().as_str())?;
         Ok(EntryEntity {
@@ -220,6 +226,7 @@ impl FromRow<'_, PgRow> for EntryEntity {
             content_hash,
             content_length: content_length as u64,
             content_type,
+            modified_at,
             created_at,
         })
     }
