@@ -111,7 +111,7 @@ impl FromStr for SessionSecret {
 
 
 #[derive(Iden)]
-enum SessionIden {
+pub enum SessionIden {
     Id,
     Secret,
     User,

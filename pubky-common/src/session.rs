@@ -16,8 +16,10 @@ pub struct Session {
     pubky: PublicKey,
     created_at: u64,
     /// Deprecated. Will always be empty.
+    #[deprecated]
     name: String,
     /// Deprecated. Will always be empty.
+    #[deprecated]
     user_agent: String,
     capabilities: Vec<Capability>,
 }
@@ -47,6 +49,11 @@ impl Session {
         &self.capabilities
     }
 
+    /// Returns the timestamp when this session was created.
+    pub fn created_at(&self) -> u64 {
+        self.created_at
+    }
+
     // === Setters ===
 
     /// Set this session created at timestamp.
@@ -56,6 +63,7 @@ impl Session {
     }
 
     /// Set this session user agent.
+    #[deprecated]
     pub fn set_user_agent(&mut self, user_agent: String) -> &mut Self {
         self.user_agent = user_agent;
 
