@@ -174,7 +174,7 @@ impl EntryRepository {
 }
 
 #[derive(Iden)]
-enum EntryIden {
+pub enum EntryIden {
     Id,
     Path,
     User,

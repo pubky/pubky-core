@@ -1,33 +1,61 @@
-use pubky_common::session::Session;
-use sea_query::{Expr, PostgresQueryBuilder, Query, SimpleExpr, Value};
+use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::types::chrono::NaiveDateTime;
 
-use crate::persistence::{lmdb::{tables::entries::Entry, LmDB}, sql::{session::{SessionIden, SESSION_TABLE}, user::UserRepository, SqlDb, UnifiedExecutor}};
+use crate::{
+    persistence::{
+        lmdb::{tables::entries::Entry, LmDB},
+        sql::{
+            entry::{EntryIden, ENTRY_TABLE},
+            user::UserRepository,
+            SqlDb, UnifiedExecutor,
+        },
+    },
+    shared::webdav::EntryPath,
+};
 
+/// Create a new signup code.
+/// The executor can either be db.pool() or a transaction.
+pub async fn create<'a>(
+    entry_path: &EntryPath,
+    entry: &Entry,
+    executor: &mut UnifiedExecutor<'a>,
+) -> Result<(), sqlx::Error> {
+    let sql_user = UserRepository::get(entry_path.pubkey(), executor).await?;
+    let micros = entry.timestamp().as_u64();
+    let secs = micros / 1_000_000;
+    let nanos = (micros % 1_000_000) * 1000;
+    let created_at = NaiveDateTime::from_timestamp(secs as i64, nanos as u32);
+    let statement = Query::insert()
+        .into_table(ENTRY_TABLE)
+        .columns([
+            EntryIden::User,
+            EntryIden::Path,
+            EntryIden::ContentHash,
+            EntryIden::ContentLength,
+            EntryIden::ContentType,
+            EntryIden::ModifiedAt,
+            EntryIden::CreatedAt,
+        ])
+        .values(vec![
+            SimpleExpr::Value(sql_user.id.into()),
+            SimpleExpr::Value(entry_path.path().as_str().into()),
+            SimpleExpr::Value(entry.content_hash().as_bytes().to_vec().into()),
+            SimpleExpr::Value((entry.content_length() as u64).into()),
+            SimpleExpr::Value(entry.content_type().to_string().into()),
+            SimpleExpr::Value(created_at.into()),
+            SimpleExpr::Value(created_at.into()),
+        ])
+        .expect("Failed to build insert statement")
+        .returning_col(EntryIden::Id)
+        .to_owned();
 
-    /// Create a new signup code.
-    /// The executor can either be db.pool() or a transaction.
-    pub async fn create<'a>(session_secret: &str, lmdb_session: &Session, executor: &mut UnifiedExecutor<'a>) -> Result<(), sqlx::Error> {
-        let sql_user = UserRepository::get(lmdb_session.pubky(), executor).await?;
-        let created_at = NaiveDateTime::from_timestamp(lmdb_session.created_at() as i64, 0);
-        let statement =
-        Query::insert().into_table(SESSION_TABLE)
-            .columns([SessionIden::Secret, SessionIden::User, SessionIden::Capabilities, SessionIden::CreatedAt])
-            .values(vec![
-                SimpleExpr::Value(session_secret.into()),
-                SimpleExpr::Value(sql_user.id.into()),
-                SimpleExpr::Value(lmdb_session.capabilities().iter().map(|c| c.to_string()).collect::<Vec<String>>().into()),
-                SimpleExpr::Value(created_at.into()),
-            ]).expect("Failed to build insert statement").to_owned();
+    let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
 
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
-
-        let con = executor.get_con().await?;
-        sqlx::query_with(&query, values).execute(con).await?;
-        Ok(())
-    }
-
+    let con = executor.get_con().await?;
+    sqlx::query_with(&query, values).fetch_one(con).await?;
+    Ok(())
+}
 
 pub async fn migrate_entries(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
     tracing::info!("Migrating entries from LMDB to SQL");
@@ -35,9 +63,10 @@ pub async fn migrate_entries(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> 
     let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
     for record in lmdb.tables.entries.iter(&lmdb_txn)? {
-            let (secret, bytes) = record?;
-            let session = Entry::deserialize(&bytes)?;
-            create(secret, &session,  &mut(&mut sql_tx).into()).await?;
+        let (path, bytes) = record?;
+        let entry_path: EntryPath = path.parse()?;
+        let entry = Entry::deserialize(&bytes)?;
+        create(&entry_path, &entry, &mut (&mut sql_tx).into()).await?;
         count += 1;
     }
     sql_tx.commit().await?;
@@ -45,16 +74,19 @@ pub async fn migrate_entries(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> 
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
+
 
     use pkarr::Keypair;
-    use pubky_common::capabilities::Capability;
-    use sqlx::types::chrono::DateTime;
+    use pubky_common::{crypto::Hash, timestamp::Timestamp};
 
-    use crate::persistence::sql::{session::{SessionRepository, SessionSecret}};
+    use crate::{
+        persistence::sql::{
+            entry::EntryRepository,
+        },
+        shared::webdav::WebDavPath,
+    };
 
     use super::*;
 
@@ -65,42 +97,80 @@ mod tests {
 
         let mut wtxn = lmdb.env.write_txn().unwrap();
 
-        // Session1
-        let session1_secret = SessionSecret::random();
+        // Entry1
         let user1_pubkey = Keypair::random().public_key();
-        UserRepository::create(&user1_pubkey, &mut sql_db.pool().into()).await.unwrap();
-        let created_at1 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let mut session1 = Session::new(&user1_pubkey, &[Capability::root()], None);
-        session1.set_created_at(created_at1);
-        lmdb.tables.sessions.put(&mut wtxn, &session1_secret.to_string(), &session1.serialize()).unwrap();
+        UserRepository::create(&user1_pubkey, &mut sql_db.pool().into())
+            .await
+            .unwrap();
+        let entry_path1 =
+            EntryPath::new(user1_pubkey, WebDavPath::new("/folder1/file1.txt").unwrap());
+        let mut entry1 = Entry::new();
+        entry1.set_content_hash(Hash::from_bytes([0u8; 32]));
+        entry1.set_content_length(100);
+        entry1.set_content_type("text/plain".to_string());
+        entry1.set_timestamp(&Timestamp::now());
+        lmdb.tables
+            .entries
+            .put(&mut wtxn, &entry_path1.as_str(), &entry1.serialize())
+            .unwrap();
 
-        // Session2
-        let session2_secret = SessionSecret::random();
+        // Entry2
         let user2_pubkey = Keypair::random().public_key();
-        UserRepository::create(&user2_pubkey, &mut sql_db.pool().into()).await.unwrap();
-        let created_at2 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let mut session2 = Session::new(&user2_pubkey, &[], None);
-        session2.set_created_at(created_at2);
-        lmdb.tables.sessions.put(&mut wtxn, &session2_secret.to_string(), &session2.serialize()).unwrap();
+        UserRepository::create(&user2_pubkey, &mut sql_db.pool().into())
+            .await
+            .unwrap();
+        let entry_path2 =
+            EntryPath::new(user2_pubkey, WebDavPath::new("/folder2/file2.txt").unwrap());
+        let mut entry2 = Entry::new();
+        entry2.set_content_hash(Hash::from_bytes([1u8; 32]));
+        entry2.set_content_length(200);
+        entry2.set_content_type("text/plain".to_string());
+        entry2.set_timestamp(&Timestamp::now());
+        lmdb.tables
+            .entries
+            .put(&mut wtxn, &entry_path2.as_str(), &entry2.serialize())
+            .unwrap();
 
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_sessions(&lmdb, &sql_db).await.unwrap();
+        migrate_entries(&lmdb, &sql_db).await.unwrap();
 
         // Check
-        let sql_session1 = SessionRepository::get_by_secret(&session1_secret, &mut sql_db.pool().into()).await.unwrap();
-        assert_eq!(sql_session1.created_at.format("%Y-%m-%d %H:%M:%S").to_string(), DateTime::from_timestamp(created_at1 as i64, 0).unwrap().naive_utc().format("%Y-%m-%d %H:%M:%S").to_string());
-        assert_eq!(sql_session1.user_pubkey, user1_pubkey);
-        assert_eq!(sql_session1.capabilities, vec![Capability::root()]);
-        assert_eq!(sql_session1.user_pubkey, user1_pubkey);
-        assert_eq!(sql_session1.secret, session1_secret);
+        let sql_entry1 = EntryRepository::get_by_path(&entry_path1, &mut sql_db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(
+            sql_entry1.content_hash.to_hex(),
+            entry1.content_hash().to_hex()
+        );
+        assert_eq!(sql_entry1.content_length, entry1.content_length() as u64);
+        assert_eq!(sql_entry1.content_type, entry1.content_type());
+        assert_eq!(
+            sql_entry1.modified_at.and_utc().timestamp() as u64,
+            entry1.timestamp().as_u64() / 1_000_000
+        );
+        assert_eq!(
+            sql_entry1.created_at.and_utc().timestamp() as u64,
+            entry1.timestamp().as_u64() / 1_000_000
+        );
 
-        let sql_session2 = SessionRepository::get_by_secret(&session2_secret, &mut sql_db.pool().into()).await.unwrap();
-        assert_eq!(sql_session2.created_at.format("%Y-%m-%d %H:%M:%S").to_string(), DateTime::from_timestamp(created_at2 as i64, 0).unwrap().naive_utc().format("%Y-%m-%d %H:%M:%S").to_string());
-        assert_eq!(sql_session2.user_pubkey, user2_pubkey);
-        assert_eq!(sql_session2.capabilities, vec![]);
-        assert_eq!(sql_session2.user_pubkey, user2_pubkey);
-        assert_eq!(sql_session2.secret, session2_secret);
+        let sql_entry2 = EntryRepository::get_by_path(&entry_path2, &mut sql_db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(
+            sql_entry2.content_hash.to_hex(),
+            entry2.content_hash().to_hex()
+        );
+        assert_eq!(sql_entry2.content_length, entry2.content_length() as u64);
+        assert_eq!(sql_entry2.content_type, entry2.content_type());
+        assert_eq!(
+            sql_entry2.modified_at.and_utc().timestamp() as u64,
+            entry2.timestamp().as_u64() / 1_000_000
+        );
+        assert_eq!(
+            sql_entry2.created_at.and_utc().timestamp() as u64,
+            entry2.timestamp().as_u64() / 1_000_000
+        );
     }
 }
