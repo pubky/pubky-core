@@ -3,7 +3,7 @@ use sea_query::{Expr, PostgresQueryBuilder, Query, SimpleExpr, Value};
 use sea_query_binder::SqlxBinder;
 use sqlx::types::chrono::NaiveDateTime;
 
-use crate::persistence::{lmdb::{LmDB}, sql::{session::{SessionIden, SESSION_TABLE}, user::UserRepository, SqlDb, UnifiedExecutor}};
+use crate::persistence::{lmdb::{tables::entries::Entry, LmDB}, sql::{session::{SessionIden, SESSION_TABLE}, user::UserRepository, SqlDb, UnifiedExecutor}};
 
 
     /// Create a new signup code.
@@ -29,19 +29,19 @@ use crate::persistence::{lmdb::{LmDB}, sql::{session::{SessionIden, SESSION_TABL
     }
 
 
-pub async fn migrate_sessions(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
-    tracing::info!("Migrating sessions from LMDB to SQL");
+pub async fn migrate_entries(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
+    tracing::info!("Migrating entries from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
     let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
-    for record in lmdb.tables.sessions.iter(&lmdb_txn)? {
+    for record in lmdb.tables.entries.iter(&lmdb_txn)? {
             let (secret, bytes) = record?;
-            let session = Session::deserialize(&bytes)?;
+            let session = Entry::deserialize(&bytes)?;
             create(secret, &session,  &mut(&mut sql_tx).into()).await?;
         count += 1;
     }
     sql_tx.commit().await?;
-    tracing::info!("Migrated {} sessions", count);
+    tracing::info!("Migrated {} entries", count);
     Ok(())
 }
 
