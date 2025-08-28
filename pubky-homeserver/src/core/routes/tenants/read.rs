@@ -1,5 +1,5 @@
 use crate::core::err_if_user_is_invalid::get_user_or_http_error;
-use crate::persistence::sql::entry::EntryEntity;
+use crate::persistence::sql::entry::{EntryEntity, EntryRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
@@ -33,7 +33,6 @@ pub async fn head(
     Ok(response)
 }
 
-#[axum::debug_handler]
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -85,14 +84,15 @@ pub async fn get(
     Ok(response)
 }
 
-pub fn list(
+pub async fn list(
     state: AppState,
     entry_path: &EntryPath,
     params: ListQueryParams,
 ) -> HttpResult<Response<Body>> {
     let txn = state.db.env.read_txn()?;
 
-    if !state.db.contains_directory(&txn, entry_path)? {
+    let contains_dir = EntryRepository::contains_directory(entry_path, &mut (&mut state.sql_db.pool().into())).await?;
+    if !contains_dir {
         return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
             "Directory Not Found",
@@ -100,14 +100,13 @@ pub fn list(
     }
 
     // Handle listing
-    let vec = state.db.list_entries(
-        &txn,
-        entry_path,
-        params.reverse,
-        params.limit,
-        params.cursor,
-        params.shallow,
-    )?;
+    let (entries, cursor) = if params.shallow {
+        EntryRepository::list_shallow(entry_path, params.limit, params.cursor, &mut (&mut state.sql_db.pool().into())).await?
+    } else {
+        EntryRepository::list_deep(entry_path, params.limit, params.cursor, &mut (&mut state.sql_db.pool().into())).await?
+    };
+    let pubky_urls = entries.iter().map(|entry| format!("pubky://{}", entry.to_string())).collect::<Vec<_>>();
+    pubky_urls.push(value);
 
     Ok(Response::builder()
         .status(StatusCode::OK)

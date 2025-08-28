@@ -19,7 +19,10 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::files::{FileIoError, FileService};
+    use crate::persistence::files::FileService;
+    use crate::persistence::sql::entry::EntryRepository;
+    use crate::persistence::sql::event::{EventRepository, EventType};
+    use crate::persistence::sql::user::UserRepository;
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use crate::AppContext;
     use axum::{routing::delete, Router};
@@ -38,16 +41,16 @@ mod tests {
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
         let file_service = FileService::new_from_context(&context).unwrap();
-        let app_state = AppState::new(db.clone(), context.sql_db.clone(), file_service.clone(), "");
+        let app_state = AppState::new(context.db.clone(), context.sql_db.clone(), file_service.clone(), "");
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
 
         // Write a test file
         let webdav_path = WebDavPath::new(format!("/pub/{}", file_path).as_str()).unwrap();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into()).await.unwrap();
         let entry_path = EntryPath::new(pubkey.clone(), webdav_path);
 
         write_test_file(&file_service, &entry_path).await;
@@ -60,26 +63,16 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // Check that the file is deleted
-        match db.get_entry(&entry_path) {
-            Ok(entry) => {
-                panic!("Entry should be deleted: {:?}", entry);
-            }
-            Err(FileIoError::NotFound) => {
-                // Ok
-            }
-            Err(e) => {
-                panic!("Error getting entry: {}", e);
-            }
-        }
+        EntryRepository::get_by_path(&entry_path, &mut db.pool().into()).await.expect_err("Should be deleted");
+        let events = EventRepository::get_by_cursor(0, 10, &mut db.pool().into()).await.unwrap();
 
-        let events = db.list_events(None, None).unwrap();
         assert_eq!(
             events.len(),
-            3,
+            2,
             "One PUT and one DEL event should be created. Last entry is the cursor."
         );
-        assert!(events[0].contains("PUT"));
-        assert!(events[1].contains("DEL"));
+        assert_eq!(events[0].event_type, EventType::Put);
+        assert_eq!(events[1].event_type, EventType::Delete);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -89,11 +82,9 @@ mod tests {
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
-        let db = context.db.clone();
-        let sql_db = context.sql_db.clone();
         let app_state = AppState::new(
-            db.clone(),
-            sql_db.clone(),
+            context.db.clone(),
+            context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
         );
@@ -112,10 +103,10 @@ mod tests {
     async fn test_invalid_pubkey() {
         // Set everything up
         let context = AppContext::test().await;
-        let db = context.db.clone();
+
         let sql_db = context.sql_db.clone();
         let app_state = AppState::new(
-            db.clone(),
+            context.db.clone(),
             sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",

@@ -1,4 +1,3 @@
-use crate::persistence::sql::db_connection::SqlDb;
 use async_trait::async_trait;
 use sqlx::Transaction;
 

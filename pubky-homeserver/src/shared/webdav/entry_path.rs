@@ -16,7 +16,7 @@ pub enum EntryPathError {
 /// A path to an entry.
 ///
 /// The path as a string is used to identify the entry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EntryPath {
     #[allow(dead_code)]
     pubkey: PublicKey,

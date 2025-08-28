@@ -43,6 +43,18 @@ impl UserRepository {
         Ok(user)
     }
 
+    /// Get the id of a user by their public key.
+    pub async fn get_id<'a>(public_key: &PublicKey, executor: &mut UnifiedExecutor<'a>) -> Result<i32, sqlx::Error> {
+        let statement = Query::select().from(USER_TABLE)
+        .columns([UserIden::Id])
+        .and_where(Expr::col(UserIden::PublicKey).eq(public_key.to_string()))
+        .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let id: i32 = sqlx::query_with(&query, values).fetch_one(con).await?.try_get(UserIden::Id.to_string().as_str())?;
+        Ok(id)
+    }
+
     /// Get all users.
     pub async fn get_all<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<Vec<UserEntity>, sqlx::Error> {
         let statement = Query::select().from(USER_TABLE)

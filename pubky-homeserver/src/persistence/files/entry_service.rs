@@ -75,8 +75,8 @@ impl EntryService {
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EntryEntity, FileIoError> {
-        let user = UserRepository::get(path.pubkey(), executor).await?;
-        let entry_id = EntryRepository::create(user.id, path.path(), &metadata.hash, metadata.length as u64, &metadata.content_type, executor).await?;
+        let user_id = UserRepository::get_id(path.pubkey(), executor).await?;
+        let entry_id = EntryRepository::create(user_id, path.path(), &metadata.hash, metadata.length as u64, &metadata.content_type, executor).await?;
         let entry = EntryRepository::get(entry_id, executor).await?;
         Ok(entry)
     }
