@@ -37,15 +37,15 @@ async fn main() -> Result<()> {
     tracing::info!("Http Relay: {}", testnet.http_relay().local_url());
     tracing::info!(
         "Homeserver ICANN HTTP: {}",
-        testnet.homeserver_suite().icann_http_url()
+        testnet.homeserver_app().icann_http_url()
     );
     tracing::info!(
         "Homeserver Pubky HTTPS: {}",
-        testnet.homeserver_suite().pubky_url()
+        testnet.homeserver_app().pubky_url()
     );
     tracing::info!(
         "Homeserver admin: http://{}",
-        testnet.homeserver_suite().admin().listen_socket()
+        testnet.homeserver_app().admin_server().listen_socket()
     );
 
     tokio::signal::ctrl_c().await?;

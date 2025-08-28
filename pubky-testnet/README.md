@@ -21,7 +21,7 @@ async fn main () {
   let client = testnet.pubky_client().unwrap();
 
   // Use the homeserver
-  let homeserver = testnet.homeserver_suite();
+  let homeserver = testnet.homeserver_app();
 
   // Use the relay
   let http_relay = testnet.http_relay();
