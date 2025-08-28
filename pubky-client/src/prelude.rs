@@ -11,8 +11,8 @@ pub use crate::{KeyedAgent, KeylessAgent};
 // Homeserver Paths / URLs
 pub use crate::{FilePath, PubkyPath};
 
-// Auth and listing helpers:
-pub use crate::{AuthRequest, ListBuilder, Session};
+// helpers:
+pub use crate::{ListBuilder, Session};
 
 // Capabilities for auth flows
 pub use crate::{Capabilities, Capability};

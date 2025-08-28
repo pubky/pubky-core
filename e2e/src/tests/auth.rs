@@ -1,4 +1,5 @@
 use pkarr::Keypair;
+use pubky_testnet::pubky::{AuthFlow, KeyedAgent, KeylessAgent, PubkyAuth};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -14,7 +15,7 @@ async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    let user = testnet.agent_keyed_random().unwrap();
+    let user = KeyedAgent::random().unwrap(); // Lazy constructor uses our global testnet pubky client
 
     user.signup(&server.public_key(), None).await.unwrap();
 
@@ -115,36 +116,40 @@ async fn authz() {
     let http_relay_url = testnet.http_relay().local_link_url();
 
     // Third-party app (keyless)
-    let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
-    let keyless_app = testnet.agent_keyless().unwrap();
-    let pubky_auth_request = keyless_app
-        .auth_request(http_relay_url, &capabilities)
-        .unwrap();
+    let caps = Capabilities::builder()
+        .rw("/pub/pubky.app/")
+        .read("/pub/foo.bar/file")
+        .finish();
 
-    // Authenticator (user)
-    let user = testnet.agent_keyed_random().unwrap();
-    user.signup(&server.public_key(), None).await.unwrap();
-    user.send_auth_token(pubky_auth_request.url())
-        .await
-        .unwrap();
+    let auth_flow = AuthFlow::new(Some(http_relay_url), &caps).unwrap();
+    let pubkyauth_url = auth_flow.pubkyauth_url().clone(); // needed by signer, show QR or deep-link
 
-    let public_key = pubky_auth_request.response().await.unwrap();
-    assert_eq!(public_key, user.pubky().unwrap());
+    // Start long-poll + signin now; this consumes the flow
+    let agent_task = tokio::spawn(async move { auth_flow.into_agent().await });
 
-    let session = keyless_app.session().await.unwrap().unwrap();
-    assert_eq!(session.capabilities(), &capabilities.0);
+    // Signer authenticator
+    let signer = KeyedAgent::random().unwrap();
+    signer.signup(&server.public_key(), None).await.unwrap();
+    signer.send_auth_token(&pubkyauth_url).await.unwrap();
+
+    // Retrieve the session-bound keyless agent
+    let user = agent_task.await.unwrap().unwrap();
+
+    assert_eq!(user.pubky().unwrap(), signer.pubky().unwrap());
+
+    let session = user.session().await.unwrap().unwrap();
+    assert_eq!(session.capabilities(), &caps.0);
 
     // Ensure the same user pubky has been authed on the keyless app from cold keypair
-    assert_eq!(user.pubky(), keyless_app.pubky());
+    assert_eq!(user.pubky(), signer.pubky());
 
     // Access control enforcement
-    keyless_app
-        .homeserver()
+    user.homeserver()
         .put("/pub/pubky.app/foo", Vec::<u8>::new())
         .await
         .unwrap();
 
-    let err = keyless_app
+    let err = user
         .homeserver()
         .put("/pub/pubky.app", Vec::<u8>::new())
         .await
@@ -153,7 +158,7 @@ async fn authz() {
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 
-    let err = keyless_app
+    let err = user
         .homeserver()
         .put("/pub/foo.bar/file", Vec::<u8>::new())
         .await
@@ -287,8 +292,8 @@ async fn authz() {
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
-    let user = testnet.agent_keyed_random().unwrap();
-    let user2 = testnet.agent_keyed_random().unwrap();
+    let user = KeyedAgent::random().unwrap();
+    let user2 = KeyedAgent::random().unwrap();
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;

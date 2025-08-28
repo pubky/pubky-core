@@ -8,7 +8,7 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
-use pubky::{KeyedAgent, KeylessAgent, Keypair};
+use pubky::Keypair;
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
 };
@@ -39,6 +39,11 @@ impl Testnet {
             homeservers: vec![],
             temp_dirs: vec![],
         };
+
+        // Set a global shared pubky client so lazily initialized actors (PubkyAgent, PubkyAuth, PubkySigner)
+        // work over this testnet
+        let client = Arc::new(testnet.client()?);
+        pubky::global::set_client(client);
 
         Ok(testnet)
     }
@@ -162,33 +167,6 @@ impl Testnet {
         self.client_builder().build()
     }
 
-    /// Creates a `Keyed`` `pubky::PubkyAgent` pre-configured to use this test network.
-    /// Will instantiate a single global `client` to be shared across all agents created.
-    ///
-    /// This is a convenience method that builds an agent over `Self::client_builder`
-    /// and creates an ephemeral random KeyPair for this user.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn agent_keyed_random(&self) -> Result<KeyedAgent, pubky::BuildError> {
-        let client = Arc::new(self.client_builder().build()?);
-        pubky::global::set_client(client);
-        KeyedAgent::random()
-    }
-
-    /// Creates a `Keyless` `pubky::PubkyAgent` pre-configured to use this test network.
-    /// Will instantiate a single global `client` to be shared across all agents created.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn agent_keyless(&self) -> Result<KeylessAgent, pubky::BuildError> {
-        let client = Arc::new(self.client_builder().build()?);
-        pubky::global::set_client(client);
-        KeylessAgent::new()
-    }
-
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
     pub fn pkarr_client_builder(&self) -> pkarr::ClientBuilder {
         let relays = self.dht_relay_urls();
@@ -210,7 +188,7 @@ mod test {
     use std::time::Duration;
 
     use crate::Testnet;
-    use pubky::Keypair;
+    use pubky::{KeyedAgent, Keypair};
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
@@ -238,7 +216,7 @@ mod test {
         testnet.create_homeserver().await.unwrap();
         let hs = testnet.homeservers.first().unwrap();
 
-        let agent = testnet.agent_keyed_random().unwrap();
+        let agent = KeyedAgent::random().unwrap();
 
         let session = agent.signup(&hs.public_key(), None).await.unwrap();
         assert_eq!(session.pubky(), &agent.pubky().unwrap());
@@ -291,7 +269,7 @@ mod test {
                 };
                 let hs = testnet.homeservers.first().unwrap();
 
-                let agent = testnet.agent_keyed_random().unwrap();
+                let agent = KeyedAgent::random().unwrap();
 
                 let session = agent.signup(&hs.public_key(), None).await.unwrap();
 

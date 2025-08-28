@@ -90,6 +90,9 @@ pub enum Error {
 
     #[error("Authentication error: {0}")]
     Authentication(#[from] AuthError),
+
+    #[error("Client build failed: {0}")]
+    Build(#[from] BuildError),
 }
 
 /// A specialized `Result` type for `pubky` operations.

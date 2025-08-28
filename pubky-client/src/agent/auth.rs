@@ -4,13 +4,12 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{IntoUrl, Method};
 use url::Url;
 
-use pkarr::PublicKey;
 use pubky_common::{
     auth::AuthToken,
-    crypto::{decrypt, encrypt, hash, random_bytes},
+    crypto::{encrypt, hash},
 };
 
-use crate::{agent::state::Keyless, util::check_http_status};
+use crate::util::check_http_status;
 use crate::{
     agent::state::{Keyed, sealed::Sealed},
     errors::{AuthError, Result},
@@ -18,120 +17,6 @@ use crate::{
 
 use super::core::PubkyAgent;
 use crate::{Capabilities, Session};
-
-#[derive(Debug, Clone)]
-pub struct AuthRequest {
-    url: Url,
-    rx: flume::Receiver<Result<PublicKey>>,
-}
-
-impl AuthRequest {
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
-
-    pub async fn response(&self) -> Result<PublicKey> {
-        match self.rx.recv_async().await {
-            Ok(result_from_task) => result_from_task,
-            Err(_) => Err(AuthError::RequestExpired.into()),
-        }
-    }
-}
-
-// Keyless side: initiates the request and waits for response
-impl PubkyAgent<Keyless> {
-    /// Create an auth request and spawn a listener for the response token.
-    pub fn auth_request<T: IntoUrl>(
-        &self,
-        relay: T,
-        capabilities: &Capabilities,
-    ) -> Result<AuthRequest> {
-        let mut relay: Url = relay.into_url()?;
-        let (url, client_secret) = self.create_auth_request(&mut relay, capabilities)?;
-
-        let (tx, rx) = flume::bounded(1);
-        let this = self.clone();
-
-        let future = async move {
-            let result = this
-                .subscribe_to_auth_response(relay, &client_secret, tx.clone())
-                .await;
-            let _ = tx.send(result);
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        tokio::spawn(future);
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(future);
-
-        Ok(AuthRequest { url, rx })
-    }
-
-    fn create_auth_request(
-        &self,
-        relay: &mut Url,
-        capabilities: &Capabilities,
-    ) -> Result<(Url, [u8; 32])> {
-        let client_secret: [u8; 32] = random_bytes::<32>();
-
-        let pubkyauth_url = Url::parse(&format!(
-            "pubkyauth:///?caps={capabilities}&secret={}&relay={relay}",
-            URL_SAFE_NO_PAD.encode(client_secret)
-        ))?;
-
-        let mut segments = relay
-            .path_segments_mut()
-            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
-        segments.pop_if_empty();
-        let channel_id = &URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
-        segments.push(channel_id);
-        drop(segments);
-
-        Ok((pubkyauth_url, client_secret))
-    }
-
-    async fn subscribe_to_auth_response(
-        &self,
-        relay: Url,
-        client_secret: &[u8; 32],
-        tx: flume::Sender<Result<PublicKey>>,
-    ) -> Result<PublicKey> {
-        let response = loop {
-            match self
-                .client
-                .cross_request(Method::GET, relay.clone())
-                .await?
-                .send()
-                .await
-            {
-                Ok(response) => break Ok(response),
-                Err(error) => {
-                    if error.is_timeout() && !tx.is_disconnected() {
-                        crate::cross_debug!("Connection to HttpRelay timed out, reconnecting...");
-                        continue;
-                    }
-                    break Err(error);
-                }
-            }
-        }?;
-
-        let encrypted_token = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted_token, client_secret)?;
-        let token = AuthToken::verify(&token_bytes)?;
-
-        // Update known pubky from the token.
-        if let Ok(mut g) = self.pubky.write() {
-            *g = Some(token.pubky().clone());
-        }
-
-        // If capabilities were requested, sign in to establish session cookies.
-        if !token.capabilities().is_empty() {
-            self.signin_with_authtoken(&token).await?;
-        }
-
-        Ok(token.pubky().clone())
-    }
-}
 
 impl PubkyAgent<Keyed> {
     /// Send a signed AuthToken to a relay channel. Requires keypair.
@@ -188,7 +73,7 @@ impl PubkyAgent<Keyed> {
 
 // Shared internals used by both sides (Keyed and Keyless)
 impl<S: Sealed> PubkyAgent<S> {
-    pub(crate) async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
+    pub async fn signin_with_authtoken(&self, token: &AuthToken) -> Result<Session> {
         let url = format!("pubky://{}/session", token.pubky());
         let response = self
             .client

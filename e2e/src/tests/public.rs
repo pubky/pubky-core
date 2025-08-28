@@ -1,4 +1,8 @@
-use pubky_testnet::{pubky::PubkyPath, pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
+use pubky_testnet::{
+    pubky::{KeyedAgent, PubkyPath},
+    pubky_homeserver::MockDataDir,
+    EphemeralTestnet, Testnet,
+};
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
@@ -6,7 +10,7 @@ async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    let user = testnet.agent_keyed_random().unwrap();
+    let user = KeyedAgent::random().unwrap();
 
     user.signup(&server.public_key(), None).await.unwrap();
 
@@ -92,7 +96,7 @@ use serde::{Deserialize, Serialize};
 async fn put_then_get_json_roundtrip() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
-    let user = testnet.agent_keyed_random().unwrap();
+    let user = KeyedAgent::random().unwrap();
 
     user.signup(&server.public_key(), None).await.unwrap();
 
@@ -270,7 +274,7 @@ async fn list() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    let user = testnet.agent_keyed_random().unwrap();
+    let user = KeyedAgent::random().unwrap();
     let pubky = user.pubky().unwrap();
 
     user.signup(&server.public_key(), None).await.unwrap();

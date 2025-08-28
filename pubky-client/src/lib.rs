@@ -40,6 +40,7 @@
 //                              pulling `max_record_age` & pkarr client from `PubkyClient` and (when needed) using the agent’s keypair.
 
 mod agent;
+mod auth;
 mod client;
 pub mod errors;
 pub mod global;
@@ -50,11 +51,11 @@ pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
 pub use agent::state::{KeyedAgent, KeylessAgent};
+pub use auth::{AuthFlow, PubkyAuth};
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 // Export common types and constants
 pub use crate::agent::path::{FilePath, PubkyPath};
-pub use agent::auth::AuthRequest;
 pub use agent::homeserver::ListBuilder;
 pub use client::core::DEFAULT_RELAYS;
 // Re-exports
