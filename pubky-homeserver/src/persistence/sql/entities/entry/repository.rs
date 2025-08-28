@@ -1,11 +1,11 @@
-use pkarr::PublicKey;
 use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
-    FromRow, Row,
+    Row
 };
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
+use crate::persistence::sql::entry::EntryEntity;
 use crate::{
     persistence::{ sql::{
         entities::user::{UserIden, USER_TABLE},
@@ -17,10 +17,7 @@ use crate::{
 
 pub const ENTRY_TABLE: &str = "entries";
 
-/// Cursor for listing entries.
-/// This is the id of the entry to start from. Set it to None to start from the beginning.
-/// Returns None if there are no more entries to return.
-pub type ListEntriesCursor = Option<u64>;
+
 
 /// Repository that handles all the queries regarding the EntryEntity.
 pub struct EntryRepository;
@@ -231,6 +228,46 @@ impl EntryRepository {
         Ok(count > 0)
     }
 
+    /// Get the id of the entry that is the cursor.
+    /// The user passes the last entry path as cursor. Basically, the user says: Give me all the entries after this one.
+    /// This is used to implement pagination.
+    /// This function returns the id of the entry that is the cursor. Works for both shallow and deep lists.
+    /// Returns 0 if the cursor is None or not found. This way, the pagination starts from the beginning.
+    async fn get_cursor_id<'a>(
+        cursor: Option<EntryPath>,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<i64, sqlx::Error> {
+
+        let path = match cursor {
+            Some(cursor) => cursor,
+            None => return Ok(0),
+        };
+
+        let statement = Query::select()
+            .from(ENTRY_TABLE)
+            .columns([
+                (ENTRY_TABLE, EntryIden::Id),
+            ])
+            .column((USER_TABLE, UserIden::PublicKey))
+            .left_join(
+                USER_TABLE,
+                Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
+            )
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", path.path())))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .order_by((ENTRY_TABLE, EntryIden::Id), Order::Desc)
+            .limit(1)
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let con = executor.get_con().await?;
+        let row = match sqlx::query_with(&query, values).fetch_optional(con).await? {
+            Some(row) => row,
+            None => return Ok(0),
+        };
+        let cursor_id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
+        Ok(cursor_id)
+    }
+
     /// List shallow files + folders.
     /// Path is the path to the folder.
     /// Limit is the maximum number of entries to return.
@@ -238,15 +275,16 @@ impl EntryRepository {
     pub async fn list_shallow<'a>(
         path: &EntryPath,
         limit: Option<u16>,
-        cursor: ListEntriesCursor,
+        cursor: Option<EntryPath>,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(Vec<EntryPath>, ListEntriesCursor), sqlx::Error> {
+    ) -> Result<Vec<EntryPath>, sqlx::Error> {
         let mut full_path = path.path().to_string();
         if !full_path.ends_with("/") {
             // Make sure the path is a folder
             full_path.push('/');
         }
 
+        let cursor_id = EntryRepository::get_cursor_id(cursor, executor).await?;
         // Use this regex to get the distinct paths
         // DISTINCT ON makes sure that the same path is only returned once
         // It also makes sure that the id associated with the distinct path is the highest id.
@@ -255,45 +293,32 @@ impl EntryRepository {
         let mut statement = Query::select()
             .from(ENTRY_TABLE)
             .expr(Expr::cust(regex))
-            .columns([
-                (ENTRY_TABLE, EntryIden::Id),
-            ])
             .left_join(
                 USER_TABLE,
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
-            .order_by("regpath", Order::Asc)
-            .order_by((ENTRY_TABLE, EntryIden::Id), Order::Desc)
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor_id.into())))
             .to_owned();
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
         statement = statement.limit(limit.into()).to_owned();
 
-        if let Some(cursor) = cursor {
-            statement = statement.and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor.into()))).to_owned();
-        }
-
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
         let con = executor.get_con().await?;
         let rows: Vec<PgRow> = sqlx::query_with(&query, values).fetch_all(con).await?;
 
-        let entries_cursor = rows.iter().map(|row| {
+        let entries = rows.iter().map(|row| {
             let user_pubkey = path.pubkey().clone();
-            let id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
             let regpath: String = row.try_get("regpath")?;
             let webdav_path = WebDavPath::new(&regpath).map_err(|e| sqlx::Error::Decode(e.into()))?;
             let entry_path = EntryPath::new(user_pubkey, webdav_path);
-            Ok((id, entry_path))
-        }).collect::<Result<Vec<(i64, EntryPath)>, sqlx::Error>>()?;
+            Ok(entry_path)
+        }).collect::<Result<Vec<EntryPath>, sqlx::Error>>()?;
 
-        let last_cursor = entries_cursor.last().map(|e| e.0 as u64);
-        let entries: Vec<EntryPath> = entries_cursor.into_iter().map(|(_, path)| path).collect();
-
-        let has_more = entries.len() == limit as usize;
-        Ok((entries, if has_more { last_cursor } else { None }))
+        Ok(entries)
     }
 
     /// List deep files + folders.
@@ -303,19 +328,19 @@ impl EntryRepository {
     pub async fn list_deep<'a>(
         path: &EntryPath,
         limit: Option<u16>,
-        cursor: ListEntriesCursor,
+        cursor: Option<EntryPath>,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(Vec<EntryPath>, ListEntriesCursor), sqlx::Error> {
+    ) -> Result<Vec<EntryPath>, sqlx::Error> {
         let mut full_path = path.path().to_string();
         if !full_path.ends_with("/") {
             // Make sure the path is a folder
             full_path.push('/');
         }
 
+        let cursor_id = EntryRepository::get_cursor_id(cursor, executor).await?;
         let mut statement = Query::select()
             .from(ENTRY_TABLE)
             .columns([
-                (ENTRY_TABLE, EntryIden::Id),
                 (ENTRY_TABLE, EntryIden::Path),
             ])
             .left_join(
@@ -324,34 +349,26 @@ impl EntryRepository {
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor_id.into())))
             .to_owned();
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
         statement = statement.limit(limit.into()).to_owned();
 
-        if let Some(cursor) = cursor {
-            statement = statement.and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor.into()))).to_owned();
-        }
-
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
         let con = executor.get_con().await?;
         let rows: Vec<PgRow> = sqlx::query_with(&query, values).fetch_all(con).await?;
 
-        let entries_cursor = rows.iter().map(|row| {
+        let entries = rows.iter().map(|row| {
             let user_pubkey = path.pubkey().clone();
-            let id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
             let path: String = row.try_get(EntryIden::Path.to_string().as_str())?;
             let webdav_path = WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
             let entry_path = EntryPath::new(user_pubkey, webdav_path);
-            Ok((id, entry_path))
-        }).collect::<Result<Vec<(i64, EntryPath)>, sqlx::Error>>()?;
+            Ok(entry_path)
+        }).collect::<Result<Vec<EntryPath>, sqlx::Error>>()?;
 
-        let last_cursor = entries_cursor.last().map(|e| e.0 as u64);
-        let entries: Vec<EntryPath> = entries_cursor.into_iter().map(|(_, path)| path).collect();
-
-        let has_more = entries.len() == limit as usize;
-        Ok((entries, if has_more { last_cursor } else { None }))
+        Ok(entries)
     }
 }
 
@@ -365,55 +382,6 @@ pub enum EntryIden {
     ContentType,
     ModifiedAt,
     CreatedAt,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct EntryEntity {
-    pub id: i64,
-    pub user_id: i32,
-    pub path: EntryPath,
-    pub content_hash: pubky_common::crypto::Hash,
-    pub content_length: u64,
-    pub content_type: String,
-    pub modified_at: sqlx::types::chrono::NaiveDateTime,
-    pub created_at: sqlx::types::chrono::NaiveDateTime,
-}
-
-impl FromRow<'_, PgRow> for EntryEntity {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
-        let user_id: i32 = row.try_get(EntryIden::User.to_string().as_str())?;
-        let user_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
-        let user_pubkey: PublicKey = user_pubkey
-            .parse()
-            .map_err(|e: pkarr::errors::PublicKeyError| sqlx::Error::Decode(e.into()))?;
-        let path: String = row.try_get(EntryIden::Path.to_string().as_str())?;
-        let webdav_path = WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        let entry_path = EntryPath::new(user_pubkey, webdav_path);
-        let content_hash_vec: Vec<u8> = row.try_get(EntryIden::ContentHash.to_string().as_str())?;
-
-        // Ensure content_hash is exactly 32 bytes
-        let content_hash: [u8; 32] = content_hash_vec
-            .try_into()
-            .map_err(|_| sqlx::Error::Decode("Content hash must be exactly 32 bytes".into()))?;
-        let content_hash = pubky_common::crypto::Hash::from_bytes(content_hash);
-        let content_length: i64 = row.try_get(EntryIden::ContentLength.to_string().as_str())?;
-        let content_type: String = row.try_get(EntryIden::ContentType.to_string().as_str())?;
-        let modified_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(EntryIden::ModifiedAt.to_string().as_str())?;
-        let created_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(EntryIden::CreatedAt.to_string().as_str())?;
-        Ok(EntryEntity {
-            id,
-            user_id,
-            path: entry_path,
-            content_hash,
-            content_length: content_length as u64,
-            content_type,
-            modified_at,
-            created_at,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -511,12 +479,11 @@ mod tests {
 
         // Test list shallow basic
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
-        let (entries, cursor) =
+        let entries =
             EntryRepository::list_shallow(&entry_path, None, None, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 5);
-        assert_eq!(cursor, None);
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
@@ -541,12 +508,11 @@ mod tests {
         );
 
         // Test list shallow with limit
-        let (entries, cursor) =
+        let entries =
             EntryRepository::list_shallow(&entry_path, Some(2), None, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
-        assert_eq!(cursor, Some(2));
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
@@ -560,12 +526,11 @@ mod tests {
         );
 
         // Test list shallow with cursor
-        let (entries, cursor) =
-            EntryRepository::list_shallow(&entry_path, None, Some(3), &mut db.pool().into())
+        let entries =
+            EntryRepository::list_shallow(&entry_path, None, Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
-        assert_eq!(cursor, None);
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
@@ -579,12 +544,11 @@ mod tests {
         );
 
         // Test list shallow with limit and cursor
-        let (entries, cursor) =
-            EntryRepository::list_shallow(&entry_path, Some(2), Some(3), &mut db.pool().into())
+        let entries =
+            EntryRepository::list_shallow(&entry_path, Some(2), Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
-        assert_eq!(cursor, Some(7));
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
@@ -599,16 +563,20 @@ mod tests {
 
         // Test list shallow with limit. Pull all entries.
         let mut set: HashSet<EntryPath> = HashSet::new();
-        let mut last_cursor: ListEntriesCursor = Some(0);
-        while last_cursor.is_some() {
-            let (new_entries, new_cursor) =
+        let mut last_cursor: Option<EntryPath> = None;
+        loop {
+            let new_entries =
             EntryRepository::list_shallow(&entry_path, Some(2), last_cursor, &mut db.pool().into())
                 .await
                 .unwrap();
+            if let Some(last_entry) = new_entries.last() {
+                last_cursor = Some(last_entry.clone());
+            } else {
+                break;
+            }
             for entry in new_entries {
                 set.insert(entry);
             }
-            last_cursor = new_cursor;
         }
         assert_eq!(set.len(), 5);
     }
@@ -647,20 +615,18 @@ mod tests {
 
         // Test basic
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
-        let (entries, cursor) =
+        let entries =
             EntryRepository::list_deep(&entry_path, None, None, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 7);
-        assert_eq!(cursor, None);
 
         // Test with limit
-        let (entries, cursor) =
+        let entries =
             EntryRepository::list_shallow(&entry_path, Some(2), None, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
-        assert_eq!(cursor, Some(2));
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
@@ -674,12 +640,11 @@ mod tests {
         );
 
         // Test with cursor
-        let (entries, cursor) =
-            EntryRepository::list_deep(&entry_path, None, Some(3), &mut db.pool().into())
+        let entries =
+            EntryRepository::list_deep(&entry_path, None, Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 4);
-        assert_eq!(cursor, None);
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/1/1.txt").unwrap())
@@ -701,12 +666,11 @@ mod tests {
         );
 
         // Test with limit and cursor
-        let (entries, cursor) =
-            EntryRepository::list_deep(&entry_path, Some(2), Some(3), &mut db.pool().into())
+        let entries =
+            EntryRepository::list_deep(&entry_path, Some(2), Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
-        assert_eq!(cursor, Some(5));
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/1/1.txt").unwrap())
@@ -721,16 +685,20 @@ mod tests {
 
         // Test with limit. Pull all entries.
         let mut set: HashSet<EntryPath> = HashSet::new();
-        let mut last_cursor: ListEntriesCursor = Some(0);
-        while last_cursor.is_some() {
-            let (new_entries, new_cursor) =
-            EntryRepository::list_deep(&entry_path, Some(2), last_cursor, &mut db.pool().into())
+        let mut last_cursor: Option<EntryPath> = None;
+        loop {
+            let new_entries =
+            EntryRepository::list_deep(&entry_path, Some(2), last_cursor.clone()    , &mut db.pool().into())
                 .await
                 .unwrap();
+            if let Some(last_entry) = new_entries.last() {
+                last_cursor = Some(last_entry.clone());
+            } else {
+                break;
+            }
             for entry in new_entries {
                 set.insert(entry);
             }
-            last_cursor = new_cursor;
         }
         assert_eq!(set.len(), 7);
     }

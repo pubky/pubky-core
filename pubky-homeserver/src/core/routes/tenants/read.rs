@@ -33,6 +33,7 @@ pub async fn head(
     Ok(response)
 }
 
+#[axum::debug_handler]
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -44,7 +45,7 @@ pub async fn get(
     let dav_path = path.0;
     let entry_path = EntryPath::new(public_key.clone(), dav_path.inner().clone());
     if entry_path.path().is_directory() {
-        return list(state, &entry_path, params);
+        return list(state, &entry_path, params).await;
     }
 
     let entry = state.file_service.get_info(&entry_path, &mut (&mut state.sql_db.pool().into())).await?;
@@ -89,8 +90,6 @@ pub async fn list(
     entry_path: &EntryPath,
     params: ListQueryParams,
 ) -> HttpResult<Response<Body>> {
-    let txn = state.db.env.read_txn()?;
-
     let contains_dir = EntryRepository::contains_directory(entry_path, &mut (&mut state.sql_db.pool().into())).await?;
     if !contains_dir {
         return Err(HttpError::new_with_message(
@@ -100,18 +99,18 @@ pub async fn list(
     }
 
     // Handle listing
-    let (entries, cursor) = if params.shallow {
-        EntryRepository::list_shallow(entry_path, params.limit, params.cursor, &mut (&mut state.sql_db.pool().into())).await?
+    // TODO: handle cursor
+    let entries = if params.shallow {
+        EntryRepository::list_shallow(entry_path, params.limit, None, &mut (&mut state.sql_db.pool().into())).await?
     } else {
-        EntryRepository::list_deep(entry_path, params.limit, params.cursor, &mut (&mut state.sql_db.pool().into())).await?
+        EntryRepository::list_deep(entry_path, params.limit, None, &mut (&mut state.sql_db.pool().into())).await?
     };
     let pubky_urls = entries.iter().map(|entry| format!("pubky://{}", entry.to_string())).collect::<Vec<_>>();
-    pubky_urls.push(value);
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
-        .body(Body::from(vec.join("\n")))?)
+        .body(Body::from(pubky_urls.join("\n")))?)
 }
 
 /// Creates the Not Modified response based on the entry data.

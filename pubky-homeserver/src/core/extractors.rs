@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use axum::{
     extract::{FromRequestParts, Query},
@@ -8,6 +8,8 @@ use axum::{
 };
 
 use pkarr::PublicKey;
+
+use crate::shared::webdav::EntryPath;
 
 #[derive(Debug, Clone)]
 pub struct PubkyHost(pub(crate) PublicKey);
@@ -48,9 +50,35 @@ where
 #[derive(Debug)]
 pub struct ListQueryParams {
     pub limit: Option<u16>,
-    pub cursor: Option<String>,
-    pub reverse: bool,
+    pub cursor: Option<EntryPath>,
     pub shallow: bool,
+}
+
+impl ListQueryParams {
+    /// Extracts the cursor from the query parameters.
+    /// If the cursor is not a valid EntryPath, returns None.
+    /// If the cursor is empty, returns None.
+    pub fn extract_cursor(params: &Query<HashMap<String, String>>) -> Option<EntryPath> {
+        let value = match params.get("cursor") {
+            Some(value) => value,
+            None => return None,
+        };
+        if value.is_empty() {
+            // Treat `cursor=` as None
+            return None;
+        }
+
+        let mut value = value.as_str();
+        if let Some(stripped_value) = value.strip_prefix("pubky://") {
+            value = stripped_value;
+        }
+
+        let path = match EntryPath::from_str(value) {
+            Ok(entry_path) => entry_path,
+            Err(_) => return None,
+        };
+        Some(path)
+    }
 }
 
 impl<S> FromRequestParts<S> for ListQueryParams
@@ -63,27 +91,15 @@ where
         let params: Query<HashMap<String, String>> =
             parts.extract().await.map_err(IntoResponse::into_response)?;
 
-        let reverse = params.contains_key("reverse");
         let shallow = params.contains_key("shallow");
         let limit = params
             .get("limit")
             // Treat `limit=` as None
             .and_then(|l| if l.is_empty() { None } else { Some(l) })
             .and_then(|l| l.parse::<u16>().ok());
-        let cursor = params
-            .get("cursor")
-            .map(|c| c.as_str())
-            // Treat `cursor=` as None
-            .and_then(|c| {
-                if c.is_empty() {
-                    None
-                } else {
-                    Some(c.to_string())
-                }
-            });
+        let cursor = Self::extract_cursor(&params);
 
         Ok(ListQueryParams {
-            reverse,
             shallow,
             limit,
             cursor,
