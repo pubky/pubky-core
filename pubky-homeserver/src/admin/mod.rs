@@ -4,5 +4,4 @@ mod auth_middleware;
 mod routes;
 mod trace;
 
-pub use app::AdminServer;
-pub use app::AdminServerBuildError;
+pub use app::{AdminServer, AdminServerBuildError};
