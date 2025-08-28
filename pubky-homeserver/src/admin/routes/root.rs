@@ -1,7 +1,5 @@
-use axum::{http::StatusCode, response::IntoResponse};
+use axum::response::IntoResponse;
 
-use crate::shared::HttpResult;
-
-pub async fn root() -> HttpResult<impl IntoResponse> {
-    Ok((StatusCode::OK, "Homeserver - Admin Endpoint"))
+pub async fn handler() -> Result<impl IntoResponse, String> {
+    Ok("Homeserver - Admin Endpoint")
 }
