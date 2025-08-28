@@ -8,7 +8,7 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
-use pubky::{KeyedAgent, KeylessAgent, Keypair, PubkyClient};
+use pubky::{KeyedAgent, KeylessAgent, Keypair};
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
 };
@@ -172,11 +172,9 @@ impl Testnet {
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
     pub fn agent_keyed_random(&self) -> Result<KeyedAgent, pubky::BuildError> {
-        static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
-            once_cell::sync::OnceCell::new();
-        let keypair = Keypair::random();
-        let client = DEFAULT.get_or_try_init(|| self.client_builder().build().map(Arc::new))?;
-        Ok(pubky::KeyedAgent::with_client(client.clone(), keypair))
+        let client = Arc::new(self.client_builder().build()?);
+        pubky::global::set_client(client);
+        KeyedAgent::random()
     }
 
     /// Creates a `Keyless` `pubky::PubkyAgent` pre-configured to use this test network.
@@ -186,10 +184,9 @@ impl Testnet {
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
     pub fn agent_keyless(&self) -> Result<KeylessAgent, pubky::BuildError> {
-        static DEFAULT: once_cell::sync::OnceCell<Arc<PubkyClient>> =
-            once_cell::sync::OnceCell::new();
-        let client = DEFAULT.get_or_try_init(|| self.client_builder().build().map(Arc::new))?;
-        Ok(pubky::KeylessAgent::with_client(client.clone()))
+        let client = Arc::new(self.client_builder().build()?);
+        pubky::global::set_client(client);
+        KeylessAgent::new()
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.

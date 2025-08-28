@@ -1,13 +1,11 @@
-use once_cell::sync::OnceCell;
-
-use std::sync::Arc;
-
 use pkarr::{Keypair, PublicKey};
+use std::sync::Arc;
 
 use crate::{
     BuildError, PubkyClient,
     agent::state::{Keyed, Keyless, MaybeKeypair, sealed::Sealed},
     errors::{AuthError, Error, Result},
+    global::global_client,
 };
 
 /// Stateful, per-identity API driver built on a shared [`PubkyClient`].
@@ -95,8 +93,7 @@ impl PubkyAgent<Keyless> {
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn new() -> std::result::Result<Self, BuildError> {
-        static DEFAULT: OnceCell<Arc<PubkyClient>> = OnceCell::new();
-        let client = DEFAULT.get_or_try_init(|| PubkyClient::new().map(Arc::new))?;
+        let client = global_client()?;
         Ok(Self::with_client(client.clone()))
     }
 }
@@ -145,8 +142,7 @@ impl PubkyAgent<Keyed> {
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
-        static DEFAULT: OnceCell<Arc<PubkyClient>> = OnceCell::new();
-        let client = DEFAULT.get_or_try_init(|| PubkyClient::new().map(Arc::new))?;
+        let client = global_client()?;
         Ok(Self::with_client(client.clone(), keypair))
     }
 

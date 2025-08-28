@@ -42,6 +42,7 @@
 mod agent;
 mod client;
 pub mod errors;
+pub mod global;
 mod macros;
 mod util;
 
