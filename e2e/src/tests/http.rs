@@ -5,7 +5,7 @@ use pubky_testnet::EphemeralTestnet;
 #[pubky_testnet::test]
 async fn http_get_pubky() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
 
     let client = testnet.client().unwrap();
 
