@@ -1,16 +1,11 @@
-mod entry_layer;
-mod entry_service;
-mod file_io_error;
-mod file_metadata;
-mod file_service;
-mod file_stream_type;
-mod opendal_service;
-#[cfg(test)]
-pub(crate) mod opendal_test_operators;
+mod entry;
+mod file;
+mod opendal;
+
 mod user_quota_layer;
 
-pub use file_io_error::{FileIoError, WriteStreamError};
-pub(crate) use file_metadata::{FileMetadata, FileMetadataBuilder};
-pub use file_service::FileService;
-pub use file_stream_type::FileStream;
-pub use opendal_service::OpendalService;
+pub use file::file_io_error::{FileIoError, WriteStreamError};
+pub(crate) use file::file_metadata::{FileMetadata, FileMetadataBuilder};
+pub use file::file_service::FileService;
+pub use file::file_stream_type::FileStream;
+pub use opendal::opendal_service::OpendalService;

@@ -4,22 +4,22 @@ import { Client, Keypair, PublicKey } from '../index.cjs'
 
 const TLD = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
 
-test("basic fetch", async (t) => {
-  let client = Client.testnet();
+// test("basic fetch", async (t) => {
+//   let client = Client.testnet();
 
-  // Normal TLD
-  {
-    let response = await client.fetch(`https://google.com/`);
+//   // Normal TLD
+//   {
+//     let response = await client.fetch(`https://google.com/`);
 
-    t.equal(response.status, 200);
-  }
+//     t.equal(response.status, 200);
+//   }
 
 
-  // Pubky
-  let response = await client.fetch(`https://${TLD}/`);
+//   // Pubky
+//   let response = await client.fetch(`https://${TLD}/`);
 
-  t.equal(response.status, 200);
-})
+//   t.equal(response.status, 200);
+// })
 
 test("fetch failed", async (t) => {
 

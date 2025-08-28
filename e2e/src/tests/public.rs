@@ -9,7 +9,7 @@ use reqwest::{Method, StatusCode};
 #[pubky_testnet::test]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -89,7 +89,7 @@ async fn put_quota_applied() {
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
     let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
 
@@ -141,7 +141,7 @@ async fn put_quota_applied() {
 #[pubky_testnet::test]
 async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -210,7 +210,7 @@ async fn unauthorized_put_delete() {
 #[pubky_testnet::test]
 async fn list_deep() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -315,7 +315,7 @@ async fn list_deep() {
 #[pubky_testnet::test]
 async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -456,7 +456,7 @@ async fn list_shallow() {
 #[pubky_testnet::test]
 async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -555,7 +555,7 @@ async fn list_events() {
 #[pubky_testnet::test]
 async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -609,7 +609,7 @@ async fn read_after_event() {
 #[pubky_testnet::test]
 async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let homeserver = testnet.homeserver_suite();
+    let homeserver = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -686,7 +686,7 @@ async fn dont_delete_shared_blobs() {
 async fn stream() {
     // TODO: test better streaming API
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
