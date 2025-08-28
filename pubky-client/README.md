@@ -14,7 +14,7 @@ async fn main () {
   let testnet = EphemeralTestnet::start().await.unwrap();
   let client = testnet.pubky_client().unwrap();
 
-  let homeserver = testnet.homeserver_suite();
+  let homeserver = testnet.homeserver_app();
 
   // Generate a keypair
   let keypair = Keypair::random();

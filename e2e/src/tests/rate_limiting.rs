@@ -37,7 +37,7 @@ async fn test_limit_signin_get_session() {
     ];
     let mock_dir = MockDataDir::new(config, None).unwrap();
     let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
 
@@ -83,7 +83,7 @@ async fn test_limit_signin_get_session_whitelist() {
     ];
     let mock_dir = MockDataDir::new(config, None).unwrap();
     let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
 
@@ -137,7 +137,7 @@ async fn test_limit_events() {
     ];
     let mock_dir = MockDataDir::new(config, None).unwrap();
     let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
 
@@ -167,7 +167,7 @@ async fn test_limit_upload() {
     ];
     let mock_dir = MockDataDir::new(config, None).unwrap();
     let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
 
@@ -224,7 +224,7 @@ async fn test_concurrent_write_read() {
     let mock_dir = MockDataDir::new(config, None).unwrap();
     let hs_pubkey = {
         let server = testnet
-            .create_homeserver_suite_with_mock(mock_dir)
+            .create_homeserver_app_with_mock(mock_dir)
             .await
             .unwrap();
         server.public_key()

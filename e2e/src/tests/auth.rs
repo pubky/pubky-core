@@ -11,7 +11,7 @@ use std::time::Duration;
 #[pubky_testnet::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -56,7 +56,7 @@ async fn basic_authn() {
 #[pubky_testnet::test]
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -88,7 +88,7 @@ async fn disabled_user() {
         "User should be able to read their own file"
     );
 
-    let admin_socket = server.admin().listen_socket();
+    let admin_socket = server.admin_server().listen_socket();
     let admin_client = reqwest::Client::new();
 
     // Disable the user
@@ -124,7 +124,7 @@ async fn disabled_user() {
 #[pubky_testnet::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let http_relay = testnet.http_relay();
     let http_relay_url = http_relay.local_link_url();
@@ -199,7 +199,7 @@ async fn authz() {
 #[pubky_testnet::test]
 async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let client = testnet.pubky_client().unwrap();
 
@@ -239,7 +239,7 @@ async fn multiple_users() {
 #[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
 
     let http_relay = testnet.http_relay();
     let http_relay_url = http_relay.local_link_url();
@@ -327,7 +327,7 @@ async fn test_signup_with_token() {
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
     let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
     let keypair = Keypair::random();
@@ -347,7 +347,7 @@ async fn test_signup_with_token() {
     );
 
     // 3. Call the admin endpoint to generate a valid signup token.
-    let valid_token = server.admin().create_signup_token().await.unwrap();
+    let valid_token = server.admin_server().create_signup_token().await.unwrap();
 
     // 4. Now signup with the valid token. Expect success and a session back.
     let session = client
@@ -393,7 +393,7 @@ async fn test_republish_on_signin_old_enough() {
         .build()
         .unwrap();
 
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
     let keypair = Keypair::random();
 
     // Signup publishes a new record.
@@ -443,7 +443,7 @@ async fn test_republish_on_signin_not_old_enough() {
     // Create a client that will republish conditionally if a record is older than 1hr.
     let client = testnet.pubky_client().unwrap();
 
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver_app();
     let keypair = Keypair::random();
 
     // Signup publishes a new record.
