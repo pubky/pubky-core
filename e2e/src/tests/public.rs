@@ -1,5 +1,5 @@
 use pubky_testnet::{
-    pubky::{KeyedAgent, PubkyPath},
+    pubky::{PubkyPath, PubkySigner},
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
@@ -10,14 +10,17 @@ async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    let user = KeyedAgent::random().unwrap();
+    let signer = PubkySigner::random().unwrap();
 
-    user.signup(&server.public_key(), None).await.unwrap();
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    let agent = signer.signin().await.unwrap();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
 
-    user.homeserver()
+    agent
+        .drive()
         .put(path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
@@ -27,7 +30,8 @@ async fn put_get_delete() {
     // let's repeat the same request but using a strongly typed PubkyPath based over our own homeserver (user=None)
     let path_pubky = PubkyPath::new(None, "/pub/foo.txt").unwrap();
 
-    user.homeserver()
+    agent
+        .drive()
         .put(path_pubky, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
@@ -35,9 +39,10 @@ async fn put_get_delete() {
         .unwrap();
 
     // again same request but using a tuple
-    let tuple_path = (user.pubky().unwrap(), "/pub/foo.txt");
+    let tuple_path = (agent.pubky(), "/pub/foo.txt");
 
-    user.homeserver()
+    agent
+        .drive()
         .put(tuple_path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
@@ -45,7 +50,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = user.homeserver().get(path).await.unwrap();
+    let response = agent.drive().get(path).await.unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
     // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
@@ -58,13 +63,13 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        user.pubky().unwrap()
+        agent.pubky()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
     // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
     // the wrong tenant user
-    let response = user
+    let response = agent
         .client()
         .request(Method::GET, regular_url)
         .header("Host", "non.pubky.host")
@@ -79,7 +84,8 @@ async fn put_get_delete() {
     let byte_value = response.bytes().await.unwrap();
     assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-    user.homeserver()
+    agent
+        .drive()
         .delete(path)
         .await
         .unwrap()
@@ -87,7 +93,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // Should not exist, PubkyError of 404 type
-    assert!(user.homeserver().get(path).await.is_err());
+    assert!(agent.drive().get(path).await.is_err());
 }
 
 use serde::{Deserialize, Serialize};
@@ -96,9 +102,10 @@ use serde::{Deserialize, Serialize};
 async fn put_then_get_json_roundtrip() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
-    let user = KeyedAgent::random().unwrap();
+    let signer = PubkySigner::random().unwrap();
 
-    user.signup(&server.public_key(), None).await.unwrap();
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let agent = signer.signin().await.unwrap();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
@@ -114,19 +121,15 @@ async fn put_then_get_json_roundtrip() {
         flag: true,
     };
 
-    // Some homeservers return 204/empty on PUT; JSON sugar may fail deserialization.
     // Ignore the result; the write still succeeds and is asserted via the subsequent GET.
-    let _ = user
-        .homeserver()
-        .put_json::<_, _, serde_json::Value>(path, &expected)
-        .await;
+    let _ = agent.drive().put_json(path, &expected).await;
 
     // Read back as strongly-typed JSON and assert equality.
-    let got: Payload = user.homeserver().get_json(path).await.unwrap();
+    let got: Payload = agent.drive().get_json(path).await.unwrap();
     assert_eq!(got, expected);
 
     // Sanity-check MIME is JSON when fetching raw.
-    let resp = user.homeserver().get(path).await.unwrap();
+    let resp = agent.drive().get(path).await.unwrap();
     let ct = resp
         .headers()
         .get("content-type")
@@ -136,7 +139,8 @@ async fn put_then_get_json_roundtrip() {
     assert!(ct.starts_with("application/json"));
 
     // Cleanup
-    user.homeserver()
+    agent
+        .drive()
         .delete(path)
         .await
         .unwrap()
@@ -274,10 +278,11 @@ async fn list() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    let user = KeyedAgent::random().unwrap();
-    let pubky = user.pubky().unwrap();
+    let signer = PubkySigner::random().unwrap();
+    let pubky = signer.pubky();
 
-    user.signup(&server.public_key(), None).await.unwrap();
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let agent = signer.signin().await.unwrap();
 
     let paths = vec![
         "/pub/a.wrong/a.txt",
@@ -291,13 +296,13 @@ async fn list() {
     ];
 
     for path in paths {
-        user.homeserver().put(path, vec![0]).await.unwrap();
+        agent.drive().put(path, vec![0]).await.unwrap();
     }
 
     let path = "/pub/example.com/extra";
 
     {
-        let list = user.homeserver().list(path).unwrap().send().await.unwrap();
+        let list = agent.drive().list(path).unwrap().send().await.unwrap();
         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
@@ -314,8 +319,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .limit(2)
@@ -335,8 +340,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .limit(2)
@@ -357,8 +362,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .limit(2)
@@ -379,8 +384,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .limit(2)
@@ -401,8 +406,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .limit(2)
@@ -423,8 +428,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .reverse(true)
@@ -447,8 +452,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .reverse(true)
@@ -469,8 +474,8 @@ async fn list() {
     }
 
     {
-        let list = user
-            .homeserver()
+        let list = agent
+            .drive()
             .list(path)
             .unwrap()
             .reverse(true)

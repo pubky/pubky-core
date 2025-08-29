@@ -6,7 +6,7 @@ use pubky_common::{
 use reqwest::Method;
 use url::Url;
 
-use crate::{KeylessAgent, PublicKey, Result, util::check_http_status};
+use crate::{PubkyAgent, PublicKey, Result, util::check_http_status};
 
 use super::PubkySigner;
 
@@ -51,20 +51,19 @@ impl PubkySigner {
     // All of these methods use root capabilities
 
     /// Signin by locally signing an AuthToken.
-    pub async fn signin(&self) -> Result<KeylessAgent> {
+    pub async fn signin(&self) -> Result<PubkyAgent> {
         self.signin_and_ensure_record_published(false).await
     }
 
     /// Signin and publish `_pubky` if stale.
-    pub async fn signin_and_publish(&self) -> Result<KeylessAgent> {
+    pub async fn signin_and_publish(&self) -> Result<PubkyAgent> {
         self.signin_and_ensure_record_published(true).await
     }
 
-    async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<KeylessAgent> {
+    async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<PubkyAgent> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
-        let agent = KeylessAgent::new()?;
-        agent.signin_with_authtoken(&token).await?;
+        let agent = PubkyAgent::new(self.client.clone(), &token).await?;
 
         if publish_sync {
             self.publish_homeserver_if_stale(None).await?;

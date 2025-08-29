@@ -8,7 +8,7 @@ use url::Url;
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 
 use crate::{
-    Capabilities, KeylessAgent, PubkyClient, cross_debug,
+    Capabilities, PubkyAgent, PubkyClient, cross_debug,
     errors::{AuthError, Result},
     global::global_client,
     util::check_http_status,
@@ -30,10 +30,10 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// One `PubkyAuth` <=> one relay channel (single-use).
 ///
 /// Typical usage:
-/// 1. Create with [`PubkyAuth::new`] or [`PubkyAuth::new_with_client`].
+/// 1. Create with [`PubkyAuth::new`].
 /// 2. Call [`PubkyAuth::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
 /// 3. Show the returned URL (QR/deeplink) to the signing device (e.g., Pubky Ring).
-/// 4. Await [`AuthSubscription::into_agent`] to obtain a session-bound [`KeylessAgent`].
+/// 4. Await [`AuthSubscription::into_agent`] to obtain a session-bound [`PubkyAgent`].
 ///
 /// Threading:
 /// - `PubkyAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
@@ -227,7 +227,7 @@ impl AuthSubscription {
         }
     }
 
-    /// Await the token and sign in to obtain a session-bound [`KeylessAgent`].
+    /// Await the token and sign in to obtain a session-bound [`PubkyAgent`].
     ///
     /// Steps:
     /// - Wait for `AuthToken` via [`AuthSubscription::token`].
@@ -241,11 +241,8 @@ impl AuthSubscription {
     /// let agent = sub.into_agent().await?;
     /// # Ok::<(), pubky::Error>(())
     /// ```
-    pub async fn into_agent(self) -> Result<KeylessAgent> {
-        let agent = KeylessAgent::with_client(self.client.clone());
-        let token = self.token().await?;
-        let _session = agent.signin_with_authtoken(&token).await?;
-        Ok(agent)
+    pub async fn into_agent(self) -> Result<PubkyAgent> {
+        PubkyAgent::new(self.client.clone(), &self.token().await?).await
     }
 
     /// Non-blocking probe for readiness.

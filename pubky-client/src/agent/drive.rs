@@ -2,34 +2,28 @@ use reqwest::{Method, Response};
 use url::Url;
 
 use super::core::PubkyAgent;
-use crate::{
-    PubkyPath,
-    agent::{path::IntoPubkyPath, state::sealed::Sealed},
-    errors::Result,
-    util::check_http_status,
-};
+use crate::{PubkyPath, agent::path::IntoPubkyPath, errors::Result, util::check_http_status};
 
 // For now, given that the Homeserver has a custom API, we are going to call this namespace "Homeserver"
 // In the future, when we stick with WebDav, we can rename to WebDav our add a new namespace "WebDav" if
 // mantaining compatibility with old Homeservers
 /// Namespaced homeserver view: HTTP verbs + list, scoped to this agent.
 #[derive(Debug, Clone, Copy)]
-pub struct Homeserver<'a, S: Sealed>(&'a PubkyAgent<S>);
+pub struct Drive<'a>(&'a PubkyAgent);
 
-impl<S: Sealed> PubkyAgent<S> {
+impl PubkyAgent {
     /// Entry point to homeserver-scoped verbs.
-    pub fn homeserver(&self) -> Homeserver<'_, S> {
-        Homeserver(self)
+    #[inline]
+    pub fn drive(&self) -> Drive<'_> {
+        Drive(self)
     }
 }
 
-impl<'a, S: Sealed> Homeserver<'a, S> {
-    #[inline]
+impl<'a> Drive<'a> {
     fn to_url<P: IntoPubkyPath>(&self, p: P) -> Result<Url> {
         let addr: PubkyPath = p.into_pubky_path()?;
-        let pubky_url = addr.to_pubky_url(Some(&self.0.require_pubky()?))?;
-        let url = Url::parse(&pubky_url)?;
-        Ok(url)
+        let pubky_url = addr.to_pubky_url(Some(self.0.session.pubky()))?;
+        Ok(Url::parse(&pubky_url)?)
     }
 
     /// Build a request. If `path` is relative, target this agent’s homeserver.
@@ -108,7 +102,7 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
     }
 
     /// Directory listing helper (agent-scoped). Relative `path` is resolved to this agent.
-    pub fn list<P: IntoPubkyPath>(&self, path: P) -> Result<ListBuilder<'_, S>> {
+    pub fn list<P: IntoPubkyPath>(&self, path: P) -> Result<ListBuilder<'_>> {
         Ok(ListBuilder {
             agent: self.0,
             url: self.to_url(path)?,
@@ -123,8 +117,8 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
 /// Homeserver-scoped List request builder.
 #[derive(Debug)]
 #[must_use]
-pub struct ListBuilder<'a, S: Sealed> {
-    agent: &'a PubkyAgent<S>,
+pub struct ListBuilder<'a> {
+    agent: &'a PubkyAgent,
     url: Url,
     reverse: bool,
     shallow: bool,
@@ -132,7 +126,7 @@ pub struct ListBuilder<'a, S: Sealed> {
     cursor: Option<String>,
 }
 
-impl<'a, S: Sealed> ListBuilder<'a, S> {
+impl<'a> ListBuilder<'a> {
     pub fn reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
         self
@@ -182,7 +176,7 @@ impl<'a, S: Sealed> ListBuilder<'a, S> {
         // go through the agent to get proper cookie scoping
         let rb = self
             .agent
-            .homeserver()
+            .drive()
             .request(Method::GET, url.as_str())
             .await?;
         let resp = rb.send().await?;
@@ -198,7 +192,7 @@ impl<'a, S: Sealed> ListBuilder<'a, S> {
 }
 
 #[cfg(feature = "json")]
-impl<'a, S: Sealed> Homeserver<'a, S> {
+impl<'a> Drive<'a> {
     pub async fn get_json<P, T>(&self, path: P) -> crate::Result<T>
     where
         P: IntoPubkyPath,
@@ -214,11 +208,10 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
         Ok(resp.json::<T>().await?)
     }
 
-    pub async fn put_json<P, B, T>(&self, path: P, body: &B) -> crate::Result<T>
+    pub async fn put_json<P, B>(&self, path: P, body: &B) -> Result<Response>
     where
         P: IntoPubkyPath,
         B: serde::Serialize + ?Sized,
-        T: serde::de::DeserializeOwned,
     {
         let resp = self
             .request(reqwest::Method::PUT, path)
@@ -227,7 +220,6 @@ impl<'a, S: Sealed> Homeserver<'a, S> {
             .json(body)
             .send()
             .await?;
-        let resp = crate::util::check_http_status(resp).await?;
-        Ok(resp.json::<T>().await?)
+        check_http_status(resp).await
     }
 }

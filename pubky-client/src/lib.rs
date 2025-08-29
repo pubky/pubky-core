@@ -51,14 +51,14 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
-pub use agent::state::{KeyedAgent, KeylessAgent};
+pub use agent::core::PubkyAgent;
 pub use auth::PubkyAuth;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
 pub use signer::PubkySigner;
 // Export common types and constants
 pub use crate::agent::path::{FilePath, PubkyPath};
-pub use agent::homeserver::ListBuilder;
+// pub use agent::homeserver::ListBuilder;
 pub use client::core::DEFAULT_RELAYS;
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
