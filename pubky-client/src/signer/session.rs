@@ -41,17 +41,10 @@ impl PubkySigner {
         Ok(Session::deserialize(&bytes)?)
     }
 
-    // pub async fn signup_into_agent(
-    //     self,
-    //     homeserver: &PublicKey,
-    //     signup_token: Option<&str>,
-    // ) -> Result<PubkyAgent<Keyless>> {
-    // }
-
     // All of these methods use root capabilities
 
     /// Signin by locally signing an AuthToken.
-    pub async fn signin(&self) -> Result<PubkyAgent> {
+    pub async fn into_agent(&self) -> Result<PubkyAgent> {
         self.signin_and_ensure_record_published(false).await
     }
 
