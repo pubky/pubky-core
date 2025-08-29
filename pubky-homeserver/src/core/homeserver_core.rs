@@ -55,19 +55,29 @@ pub enum HomeserverBuildError {
 
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
+    // XXX: dzdidi - group into own thing and move into HomeserverSuite
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+
+    // XXX: dzdidi - group into own thing and move into HomeserverSuite
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
     pub(crate) key_republisher: HomeserverKeyRepublisher,
+
+    // XXX: dzdidi - group into own thing and move into HomeserverSuite
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
+
     /// Keep context alive.
     context: AppContext,
+
+    // XXX: dzdidi - group into own thing and move into HomeserverSuite
     pub(crate) icann_http_handle: Handle,
-    pub(crate) pubky_tls_handle: Handle,
     pub(crate) icann_http_socket: SocketAddr,
+
+    // XXX: dzdidi - group into own thing and move into HomeserverSuite
+    pub(crate) pubky_tls_handle: Handle,
     pub(crate) pubky_tls_socket: SocketAddr,
 }
 
