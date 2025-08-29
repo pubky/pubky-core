@@ -37,6 +37,7 @@ fn base() -> Router<AppState> {
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
+        // XXX: dzdidi
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
@@ -44,6 +45,7 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
         ))
+        // XXX: dzdidi - remove it in favour of path containing pubky
         .layer(PubkyHostLayer)
         .with_state(state);
 
