@@ -122,11 +122,11 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth_flow = AuthFlow::new(Some(http_relay_url), &caps).unwrap();
-    let pubkyauth_url = auth_flow.pubkyauth_url().clone(); // needed by signer, show QR or deep-link
+    let auth = PubkyAuth::new(Some(http_relay_url), &caps).unwrap();
 
     // Start long-poll + signin now; this consumes the flow
-    let subscription = auth_flow.subscribe();
+    let (subscription, pubkyauth_url) = auth.subscribe();
+    // pubkyauth_url is needed by signer, display the QR or deep-link
 
     // Signer authenticator
     let signer = KeyedAgent::random().unwrap();

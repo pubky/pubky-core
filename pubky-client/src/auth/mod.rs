@@ -2,7 +2,4 @@
 
 mod flow;
 
-pub use flow::AuthFlow;
-
-// Optional alias if you prefer the name externally.
-pub type PubkyAuth = AuthFlow;
+pub use flow::PubkyAuth;
