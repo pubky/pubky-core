@@ -1,5 +1,4 @@
-use pkarr::Keypair;
-use pubky_testnet::pubky::{AuthFlow, KeyedAgent, KeylessAgent, PubkyAuth};
+use pubky_testnet::pubky::{KeyedAgent, Keypair, PubkyAuth, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -124,25 +123,25 @@ async fn authz() {
     // Third-party app (keyless)
     let auth = PubkyAuth::new(Some(http_relay_url), &caps).unwrap();
 
-    // Start long-poll + signin now; this consumes the flow
+    // Start long-poll; this consumes the flow
     let (subscription, pubkyauth_url) = auth.subscribe();
     // pubkyauth_url is needed by signer, display the QR or deep-link
 
     // Signer authenticator
-    let signer = KeyedAgent::random().unwrap();
+    let signer = PubkySigner::random().unwrap();
     signer.signup(&server.public_key(), None).await.unwrap();
     signer.send_auth_token(&pubkyauth_url).await.unwrap();
 
     // Retrieve the session-bound agent (third party app)
     let user = subscription.into_agent().await.unwrap();
 
-    assert_eq!(user.pubky().unwrap(), signer.pubky().unwrap());
+    assert_eq!(user.pubky().unwrap(), signer.pubky());
 
     let session = user.session().await.unwrap().unwrap();
     assert_eq!(session.capabilities(), &caps.0);
 
     // Ensure the same user pubky has been authed on the keyless app from cold keypair
-    assert_eq!(user.pubky(), signer.pubky());
+    assert_eq!(user.pubky().unwrap(), signer.pubky());
 
     // Access control enforcement
     user.homeserver()

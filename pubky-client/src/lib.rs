@@ -45,15 +45,17 @@ mod client;
 pub mod errors;
 pub mod global;
 mod macros;
+mod signer;
 mod util;
 
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
 pub use agent::state::{KeyedAgent, KeylessAgent};
-pub use auth::{AuthFlow, PubkyAuth};
+pub use auth::PubkyAuth;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use errors::{BuildError, Error, Result};
+pub use signer::PubkySigner;
 // Export common types and constants
 pub use crate::agent::path::{FilePath, PubkyPath};
 pub use agent::homeserver::ListBuilder;
