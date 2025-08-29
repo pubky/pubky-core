@@ -121,19 +121,20 @@ async fn authz() {
         .read("/pub/foo.bar/file")
         .finish();
 
+    // Third-party app (keyless)
     let auth_flow = AuthFlow::new(Some(http_relay_url), &caps).unwrap();
     let pubkyauth_url = auth_flow.pubkyauth_url().clone(); // needed by signer, show QR or deep-link
 
     // Start long-poll + signin now; this consumes the flow
-    let agent_task = tokio::spawn(async move { auth_flow.into_agent().await });
+    let subscription = auth_flow.subscribe();
 
     // Signer authenticator
     let signer = KeyedAgent::random().unwrap();
     signer.signup(&server.public_key(), None).await.unwrap();
     signer.send_auth_token(&pubkyauth_url).await.unwrap();
 
-    // Retrieve the session-bound keyless agent
-    let user = agent_task.await.unwrap().unwrap();
+    // Retrieve the session-bound agent (third party app)
+    let user = subscription.into_agent().await.unwrap();
 
     assert_eq!(user.pubky().unwrap(), signer.pubky().unwrap());
 

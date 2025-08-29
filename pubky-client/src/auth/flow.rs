@@ -1,16 +1,20 @@
-use std::sync::Arc;
-
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use futures_util::future::{AbortHandle, Abortable};
 use reqwest::Method;
+use std::sync::Arc;
 use url::Url;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::spawn_local;
 
+use crate::{
+    Capabilities, KeylessAgent, PubkyClient, cross_debug,
+    errors::{AuthError, Result},
+    global::global_client,
+    util::check_http_status,
+};
 use pubky_common::{
     auth::AuthToken,
     crypto::{decrypt, hash, random_bytes},
-};
-
-use crate::{
-    Capabilities, KeylessAgent, PubkyClient, cross_debug, errors::Result, global::global_client,
 };
 
 /// Default relay when none is supplied.
@@ -81,17 +85,53 @@ impl AuthFlow {
         &self.pubkyauth_url
     }
 
-    /// Block until the PubkySigner posts an encrypted token to the relay channel.
-    ///
-    /// Behavior:
-    /// - Performs a GET on the derived channel URL.
-    /// - Retries on timeouts. Propagates non-timeout transport errors.
-    /// - Decrypts with the client secret and verifies the token signature.
-    pub async fn wait_for_response(&self) -> Result<AuthToken> {
+    /// Start listening to the relay channel in the background and return a subscription handle.
+    /// The background task stops when the handle is dropped or after the first result is delivered.
+    pub fn subscribe(&self) -> AuthSubscription {
+        let (tx, rx) = flume::bounded(1);
+
+        let client = self.client.clone();
+        let relay_channel_url = self.relay_channel_url.clone();
+        let client_secret = self.client_secret; // copy
+
+        let (abort_handle, abort_reg) = AbortHandle::new_pair();
+
+        // Background polling future (single-shot delivery)
+        let fut = async move {
+            let res = Self::poll_for_token(client, relay_channel_url, client_secret).await;
+            // Ignore send failure if the receiver was dropped.
+            let _ = tx.send(res);
+        };
+
+        // Spawn abortable task cross-platform
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _join = tokio::spawn(Abortable::new(fut, abort_reg));
+            // We don't store JoinHandle: abort on Drop via AbortHandle is enough.
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
+        }
+
+        AuthSubscription {
+            client: self.client.clone(),
+            rx,
+            abort: abort_handle,
+        }
+    }
+
+    // Private helper used by subscribe(); mirrors wait_for_response() with status mapping.
+    async fn poll_for_token(
+        client: Arc<PubkyClient>,
+        relay_channel_url: Url,
+        client_secret: [u8; 32],
+    ) -> Result<AuthToken> {
+        use reqwest::StatusCode;
+
         let response = loop {
-            match self
-                .client
-                .cross_request(Method::GET, self.relay_channel_url.clone())
+            match client
+                .cross_request(Method::GET, relay_channel_url.clone())
                 .await?
                 .send()
                 .await
@@ -107,32 +147,53 @@ impl AuthFlow {
             }
         };
 
+        if response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::GONE {
+            return Err(AuthError::RequestExpired.into());
+        }
+
+        let response = check_http_status(response).await?;
         let encrypted = response.bytes().await?;
-        let token_bytes = decrypt(&encrypted, &self.client_secret)?;
+        let token_bytes = decrypt(&encrypted, &client_secret)?;
         let token = AuthToken::verify(&token_bytes)?;
         Ok(token)
     }
+}
 
-    /// Convenience: consume the flow and establish a session-bound keyless agent.
-    ///
-    /// Steps:
-    /// 1) Wait for the auth token.
-    /// 2) POST `pubky://<user>/session` with the verified token bytes.
-    /// 3) Capture the session cookie (native) and set the agent’s pubky.
-    pub async fn into_agent(self) -> Result<KeylessAgent> {
-        let token = self.wait_for_response().await?;
-        self.into_agent_with_token(token).await
+/// Handle returned by `AuthFlow::subscribe()`.
+#[derive(Debug)]
+pub struct AuthSubscription {
+    client: Arc<PubkyClient>,
+    rx: flume::Receiver<Result<AuthToken>>,
+    abort: AbortHandle,
+}
+
+impl AuthSubscription {
+    /// Await the verified `AuthToken`. Aborts on Drop.
+    pub async fn token(self) -> Result<AuthToken> {
+        match self.rx.recv_async().await {
+            Ok(res) => res,
+            Err(_) => Err(AuthError::RequestExpired.into()),
+        }
     }
 
-    /// Same as `into_agent`, but caller provides the already-verified token.
-    pub async fn into_agent_with_token(self, token: AuthToken) -> Result<KeylessAgent> {
-        // Build a keyless agent on the same client and reuse existing internal signin helper.
-        let agent = KeylessAgent::with_client(self.client);
-
-        // This calls the homeserver, captures cookie, sets agent.pubky(), and returns Session.
+    /// Await and convert into a session-bound keyless agent. Aborts on Drop.
+    pub async fn into_agent(self) -> Result<KeylessAgent> {
+        let agent = KeylessAgent::with_client(self.client.clone());
+        let token = self.token().await?;
         let _session = agent.signin_with_authtoken(&token).await?;
-
         Ok(agent)
+    }
+
+    /// Non-blocking check: returns immediately if a result is ready.
+    pub fn try_token(&self) -> Option<Result<AuthToken>> {
+        self.rx.try_recv().ok()
+    }
+}
+
+impl Drop for AuthSubscription {
+    fn drop(&mut self) {
+        // Stop background polling immediately.
+        self.abort.abort();
     }
 }
 
