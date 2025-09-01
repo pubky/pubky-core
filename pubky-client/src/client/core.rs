@@ -3,13 +3,48 @@ use std::time::Duration;
 
 use crate::errors::BuildError;
 
-/// Transport-only client for Pubky. Reusable, stateless w.r.t. user identities.
+/// Default HTTPS PKARR relay endpoints used by a fresh [`PubkyClient`].
+///
+/// You can keep these defaults or override them via the builder:
+/// ```
+/// # use pubky::{PubkyClient, PubkyClientBuilder};
+/// # fn main() -> Result<(), pubky::BuildError> {
+/// // Start from defaults; you can also supply your own entirely.
+/// let mut b = PubkyClient::builder();
+/// b.pkarr(|p| p.relays(&["https://pkarr.example.net/"]).expect("infallible"));
+/// let _client = b.build()?;
+/// # Ok(()) }
+/// ```
 pub const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Default, Clone)]
 #[must_use]
+/// Configures a [`PubkyClient`] before construction.
+///
+/// Prefer creating it via [`PubkyClient::builder()`]. Use this builder when you
+/// want to customize timeouts, record refresh policy, user-agent, relays, or
+/// testnet behavior (WASM).
+///
+/// # Defaults
+/// - Pkarr relays: [`DEFAULT_RELAYS`]
+/// - HTTP request timeout: reqwest default (no global timeout) unless set via
+///   [`Self::request_timeout`]
+/// - Max record age (before republish): 1 hour (see [`Self::max_record_age`])
+/// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
+///
+/// # Example
+/// ```no_run
+/// use std::time::Duration;
+/// # use pubky::{PubkyClient, PubkyClientBuilder};
+/// let client = PubkyClient::builder()
+///     .request_timeout(Duration::from_secs(10))
+///     .max_record_age(Duration::from_secs(30 * 60))
+///     .user_agent_extra("myapp/1.2.3")
+///     .build()?;
+/// # Ok::<_, pubky::BuildError>(())
+/// ```
 pub struct PubkyClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
@@ -151,7 +186,78 @@ impl PubkyClientBuilder {
     }
 }
 
-/// Transport client for Pubky homeserver API and generic HTTP to Pubky and Icann URLs.
+/// Transport client for Pubky homeserver APIs and generic HTTP, with PKARR-aware
+/// URL handling.
+///
+/// `PubkyClient` is the low-level, stateless engine the higher-level actors
+/// (`PubkyAgent`, `PubkyDrive`, `PkDns`, `PubkyAuth`) are built on. It owns:
+/// - A pkarr DHT client (for resolving `_pubky` endpoints and publishing records).
+/// - One or more reqwest HTTP clients (platform-specific).
+///
+/// ### What it does
+/// - Understands `pubky://<user>/<path>` and rewrites it to the correct HTTPS
+///   form for requests.
+/// - Detects pkarr public-key hosts and resolves them to concrete endpoints.
+/// - Exposes a unified `cross_request(..)` that works the same on native and
+///   WASM (WASM performs endpoint resolution & header injection; native is a thin wrapper).
+///
+/// ### What it *doesn’t* do
+/// - It is **not** session/identity aware. No cookies, no per-user scoping.
+///   For authenticated per-user flows use [`PubkyAgent`] (and then `agent.drive()`).
+///
+/// ### When to use
+/// - You want direct control over HTTP and PKARR resolution (power users, libs).
+/// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
+///
+/// For most apps, prefer the higher-level actors and let them reuse the default shared
+/// `Arc<PubkyClient>` under the hood.
+///
+/// ### Construction
+/// Use [`PubkyClient::builder()`] to tweak timeouts, max record age, relays, or
+/// user-agent; or pick sensible defaults via [`PubkyClient::new()`]. A
+/// [`PubkyClient::testnet()`] helper configures a local test network.
+///
+/// ### Platform notes
+/// - **Native:** standard TLS; ICANN domains are routed via an internal
+///   `icann_http` client, while pkarr/public-key hosts use the pkarr-backed client.
+/// - **WASM:** `cross_request(..)` resolves endpoints, rewrites hosts/ports
+///   (including localhost/testnet mapping), and may add a `pubky-host` header.
+///
+/// ### Examples
+/// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
+/// ```no_run
+/// # use pubky::PubkyClient;
+/// let client = PubkyClient::new()?;
+/// # Ok::<_, pubky::BuildError>(())
+/// ```
+///
+/// Fetching a standard ICANN URL (native) or any URL (WASM/native) with `cross_request`:
+/// ```no_run
+/// # use pubky::{PubkyClient, Result};
+/// # use reqwest::Method;
+/// # async fn run() -> Result<()> {
+/// let client = PubkyClient::new()?;
+/// let resp = client.cross_request(Method::GET, "https://example.com").await?
+///     .send().await?;
+/// assert!(resp.status().is_success());
+/// # Ok(()) }
+/// ```
+///
+/// Resolving and fetching a `pubky://` resource directly:
+/// ```no_run
+/// # use pubky::{PubkyClient, Result};
+/// # use reqwest::Method;
+/// # async fn run(user: &str) -> Result<()> {
+/// let client = PubkyClient::new()?;
+/// let url = format!("pubky://{}/pub/app/info.json", user);
+/// let resp = client.cross_request(Method::GET, &url).await?
+///     .send().await?;
+/// let info = resp.text().await?;
+/// # Ok(()) }
+/// ```
+///
+/// > Tip: For authenticated reads/writes, prefer `agent.drive().get(...)`, which
+/// > automatically scopes paths and attaches the right session cookie.
 #[derive(Clone, Debug)]
 pub struct PubkyClient {
     pub(crate) http: reqwest::Client,

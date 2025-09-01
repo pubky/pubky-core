@@ -53,12 +53,33 @@ impl FilePath {
         Ok(FilePath(out))
     }
 
-    #[inline]
+    /// Borrow this normalized absolute path as `&str`.
+    ///
+    /// Zero-cost: returns a slice into the internal `String` without allocating.
+    ///
+    /// # Example
+    /// ```
+    /// # use pubky::FilePath;
+    /// let p = FilePath::parse("pub/app")?;
+    /// assert_eq!(p.as_str(), "/pub/app");
+    /// # Ok::<_, pubky::Error>(())
+    /// ```
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    #[inline]
+    /// Consume this `FilePath` and return the owned `String`.
+    ///
+    /// Useful when passing the path to APIs that take ownership.
+    ///
+    /// # Example
+    /// ```
+    /// # use pubky::FilePath;
+    /// let p = FilePath::parse("/pub/app")?;
+    /// let s: String = p.into_string();
+    /// assert_eq!(s, "/pub/app");
+    /// # Ok::<_, pubky::Error>(())
+    /// ```
     pub fn into_string(self) -> String {
         self.0
     }
@@ -82,8 +103,8 @@ impl fmt::Display for FilePath {
 /// - `user: None`    when the input was an agent-scoped path (e.g. `/foo/bar` or `foo/bar`)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PubkyPath {
-    pub user: Option<PublicKey>,
-    pub path: FilePath,
+    pub(crate) user: Option<PublicKey>,
+    path: FilePath,
 }
 
 impl PubkyPath {

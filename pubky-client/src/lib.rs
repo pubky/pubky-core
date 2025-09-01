@@ -1,8 +1,38 @@
 //! #![doc = include_str!("../README.md")]
+//! **pubky sdk** a small, ergonomic library for building Pubky applications.
 //!
+//! # Quick start
+//! ```no_run
+//! use pubky::prelude::*;
+//!
+//! # async fn run() -> pubky::Result<()> {
+//! // Create a signer (holds your keypair). You can also persist/import your own keys.
+//! let signer = PubkySigner::new(Keypair::random())?;
+//!
+//! // Sign up on a homeserver (identified by its public key)
+//! let homeserver: PublicKey = "o4dksf...uyy".try_into().unwrap();
+//! let agent = signer.signup_into_agent(&homeserver, None).await?;
+//!
+//! // Read/write using the drive API (session-scoped)
+//! agent.drive().put("/pub/app/hello.txt", "hello").await?;
+//! let body = agent.drive().get("/pub/app/hello.txt").await?.bytes().await?;
+//! assert_eq!(&body, b"hello");
+//!
+//! // Publish or resolve your homeserver `_pubky` (PkDNS/PKARR) record
+//! signer.pkdns().publish_homeserver_if_stale(None).await?;
+//! let resolved = PkDns::new()?.get_homeserver(&signer.pubky()).await;
+//! println!("current homeserver: {:?}", resolved);
+//!
+//! // Keyless third-party app: start PubkyAuth and turn it into an agent
+//! let capabilities = Capabilities::builder().read("pub/pubky.app").finish();
+//! let (sub, url) = PubkyAuth::new(None, &capabilities)?.subscribe();  // None for default relay.
+//! // display `url` via QR or deeplink it so the Signer can send the auth token.
+//! // signer.send_auth_token(url);
+//! let agent = sub.into_agent().await?; // session-bound agent
+//! # Ok(()) }
+//! ```
 
-// TODO: deny missing docs.
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 // TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
