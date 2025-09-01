@@ -112,6 +112,6 @@ impl HomeserverSuite {
 
     /// Returns the `https://<server public key>` url
     pub fn icann_http_url(&self) -> url::Url {
-        url::Url::parse(&self.core.icann_http_url()).expect("valid url")
+        url::Url::parse(&self.core.icann_http_url_string()).expect("valid url")
     }
 }

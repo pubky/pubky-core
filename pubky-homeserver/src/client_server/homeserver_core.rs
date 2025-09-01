@@ -188,17 +188,17 @@ impl HomeserverCore {
     }
 
     /// Get the URL of the icann http server.
-    pub fn icann_http_url(&self) -> String {
+    pub fn icann_http_url_string(&self) -> String {
         format!("http://{}", self.icann_http_socket)
     }
 
     /// Get the URL of the pubky tls server with the Pubky DNS name.
-    pub fn pubky_tls_dns_url(&self) -> String {
+    pub fn pubky_tls_dns_url_string(&self) -> String {
         format!("https://{}", self.context.keypair.public_key())
     }
 
     /// Get the URL of the pubky tls server with the Pubky IP address.
-    pub fn pubky_tls_ip_url(&self) -> String {
+    pub fn pubky_tls_ip_url_ring(&self) -> String {
         format!("https://{}", self.pubky_tls_socket)
     }
 
