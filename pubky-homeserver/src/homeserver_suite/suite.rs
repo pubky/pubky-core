@@ -1,7 +1,7 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{ClientServer, ClientServerBuildError};
+use crate::data_directory::periodic_backup::PeriodicBackup;
 use crate::key_republisher::HomeserverKeyRepublisher;
-use crate::periodic_backup::PeriodicBackup;
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
