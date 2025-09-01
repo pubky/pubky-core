@@ -6,7 +6,7 @@ impl Client {
     /// Returns a [ListBuilder] to help pass options before calling [ListBuilder::send].
     ///
     /// `url` sets the path you want to lest within.
-    pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder> {
+    pub fn list<T: IntoUrl>(&self, url: T) -> Result<ListBuilder<'_>> {
         ListBuilder::new(self, url)
     }
 }
