@@ -11,7 +11,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-mod admin;
+mod admin_server;
 mod app_context;
 mod constants;
 mod core;
@@ -22,7 +22,7 @@ mod shared;
 pub mod tracing;
 mod user_keys_republisher;
 
-pub use admin::{AdminServer, AdminServerBuildError};
+pub use admin_server::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};
 pub use core::{HomeserverBuildError, HomeserverCore};
 pub use data_directory::*;

@@ -58,7 +58,7 @@ pub async fn info(State(state): State<AppState>) -> HttpResult<(StatusCode, Json
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::admin::app_state::AppState;
+    use crate::admin_server::app_state::AppState;
     use crate::persistence::files::FileService;
     use crate::AppContext;
     use axum::extract::State;

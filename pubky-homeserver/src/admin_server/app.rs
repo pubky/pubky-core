@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::routes::{
-    delete_entry,
+    dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
     generate_signup_token, info, root,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
+use crate::AppContext;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
-use crate::{admin::routes::dav_handler, app_context::AppContext};
 use crate::{AppContextConversionError, PersistentDataDir};
 use axum::routing::{any, delete, post};
 use axum::{routing::get, Router};
