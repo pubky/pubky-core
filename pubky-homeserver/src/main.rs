@@ -36,20 +36,20 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         "Homeserver HTTP listening on {}",
-        server.core().icann_http_url_string()
+        server.client_server().icann_http_url_string()
     );
 
     tracing::info!(
         "Homeserver Pubky TLS listening on {}",
-        server.core().pubky_tls_dns_url_string(),
+        server.client_server().pubky_tls_dns_url_string(),
     );
     tracing::info!(
         "Homeserver Pubky TLS listening on {}",
-        server.core().pubky_tls_ip_url_ring()
+        server.client_server().pubky_tls_ip_url_ring()
     );
     tracing::info!(
         "Admin server listening on http://{}",
-        server.admin().listen_socket()
+        server.admin_server().listen_socket()
     );
 
     tracing::info!("Press Ctrl+C to stop the Homeserver");

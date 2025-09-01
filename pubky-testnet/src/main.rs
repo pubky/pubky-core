@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     );
     tracing::info!(
         "Homeserver admin: http://{}",
-        testnet.homeserver_suite().admin().listen_socket()
+        testnet.homeserver_suite().admin_server().listen_socket()
     );
 
     tokio::signal::ctrl_c().await?;

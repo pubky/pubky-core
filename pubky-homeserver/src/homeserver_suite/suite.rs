@@ -1,5 +1,6 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
-use crate::client_server::{HomeserverBuildError, HomeserverCore};
+use crate::client_server::{ClientServer, ClientServerBuildError};
+use crate::key_republisher::HomeserverKeyRepublisher;
 use crate::periodic_backup::PeriodicBackup;
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
@@ -18,7 +19,7 @@ const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 pub enum HomeserverSuiteBuildError {
     /// Failed to build the homeserver.
     #[error("Failed to build homeserver: {0}")]
-    Homeserver(HomeserverBuildError),
+    Homeserver(ClientServerBuildError),
     /// Failed to build the admin server.
     #[error("Failed to build admin server: {0}")]
     Admin(AdminServerBuildError),
@@ -30,12 +31,17 @@ pub enum HomeserverSuiteBuildError {
 /// When dropped, the homeserver will stop.
 pub struct HomeserverSuite {
     context: AppContext,
+
     #[allow(dead_code)] // Keep this alive. When dropped, the homeserver will stop.
-    core: HomeserverCore,
+    client_server: ClientServer,
 
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+
+    #[allow(dead_code)]
+    // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
+    pub(crate) key_republisher: HomeserverKeyRepublisher,
 
     #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
     pub(crate) periodic_backup: PeriodicBackup,
@@ -72,31 +78,39 @@ impl HomeserverSuite {
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
-        // XXX: dzdidi - split the core
-        let core = HomeserverCore::new(context.clone()).await?;
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
 
         let periodic_backup = PeriodicBackup::start(&context);
 
         let admin_server = AdminServer::start(&context).await?;
+        let client_server = ClientServer::start(context.clone()).await?;
+
+        let key_republisher = HomeserverKeyRepublisher::start(
+            &context,
+            client_server.icann_http_socket.port(),
+            client_server.pubky_tls_socket.port(),
+        )
+        .await
+        .map_err(ClientServerBuildError::KeyRepublisher)?;
 
         Ok(Self {
             context,
             periodic_backup,
-            core,
+            client_server,
             admin_server,
             user_keys_republisher,
+            key_republisher,
         })
     }
 
     /// Get the core of the homeserver suite.
-    pub fn core(&self) -> &HomeserverCore {
-        &self.core
+    pub fn client_server(&self) -> &ClientServer {
+        &self.client_server
     }
 
     /// Get the admin server of the homeserver suite.
-    pub fn admin(&self) -> &AdminServer {
+    pub fn admin_server(&self) -> &AdminServer {
         &self.admin_server
     }
 
@@ -112,6 +126,6 @@ impl HomeserverSuite {
 
     /// Returns the `https://<server public key>` url
     pub fn icann_http_url(&self) -> url::Url {
-        url::Url::parse(&self.core.icann_http_url_string()).expect("valid url")
+        url::Url::parse(&self.client_server.icann_http_url_string()).expect("valid url")
     }
 }

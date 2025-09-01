@@ -86,7 +86,7 @@ async fn disabled_user() {
         "User should be able to read their own file"
     );
 
-    let admin_socket = server.admin().listen_socket();
+    let admin_socket = server.admin_server().listen_socket();
     let admin_client = reqwest::Client::new();
 
     // Disable the user
@@ -341,7 +341,7 @@ async fn test_signup_with_token() {
     );
 
     // 3. Call the admin endpoint to generate a valid signup token.
-    let valid_token = server.admin().create_signup_token().await.unwrap();
+    let valid_token = server.admin_server().create_signup_token().await.unwrap();
 
     // 4. Now signup with the valid token. Expect success and a session back.
     let session = client
