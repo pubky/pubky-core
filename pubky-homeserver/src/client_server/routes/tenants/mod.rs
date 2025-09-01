@@ -5,7 +5,7 @@
 
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
-use crate::core::{layers::authz::AuthorizationLayer, AppState};
+use crate::client_server::{layers::authz::AuthorizationLayer, AppState};
 
 pub mod read;
 pub mod session;

@@ -1,7 +1,7 @@
 use crate::persistence::lmdb::tables::entries::Entry;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
-    core::{
+    client_server::{
         err_if_user_is_invalid::err_if_user_is_invalid,
         extractors::{ListQueryParams, PubkyHost},
         AppState,
@@ -156,7 +156,7 @@ mod tests {
     use pkarr::{Keypair, PublicKey};
     use pubky_common::{auth::AuthToken, capabilities::Capability};
 
-    use crate::{app_context::AppContext, core::HomeserverCore};
+    use crate::{app_context::AppContext, client_server::HomeserverCore};
 
     pub async fn create_root_user(
         server: &axum_test::TestServer,

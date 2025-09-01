@@ -13,7 +13,7 @@ use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use crate::{core::AppState, AppContext};
+use crate::{client_server::AppState, AppContext};
 
 use super::layers::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,

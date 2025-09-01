@@ -1,5 +1,5 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
-use crate::core::{HomeserverBuildError, HomeserverCore};
+use crate::client_server::{HomeserverBuildError, HomeserverCore};
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;

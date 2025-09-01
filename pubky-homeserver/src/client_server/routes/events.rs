@@ -7,7 +7,7 @@ use axum::{
 use pubky_common::timestamp::Timestamp;
 
 use crate::{
-    core::{extractors::ListQueryParams, AppState},
+    client_server::{extractors::ListQueryParams, AppState},
     shared::{HttpError, HttpResult},
 };
 

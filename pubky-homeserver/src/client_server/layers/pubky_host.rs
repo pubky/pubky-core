@@ -1,4 +1,4 @@
-use crate::core::extractors::PubkyHost;
+use crate::client_server::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;

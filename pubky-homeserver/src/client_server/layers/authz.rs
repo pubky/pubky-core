@@ -1,4 +1,4 @@
-use crate::core::{extractors::PubkyHost, AppState};
+use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;

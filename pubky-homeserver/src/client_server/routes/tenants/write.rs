@@ -7,7 +7,9 @@ use axum::{
 use futures_util::stream::StreamExt;
 
 use crate::{
-    core::{err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState},
+    client_server::{
+        err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost, AppState,
+    },
     persistence::files::WriteStreamError,
     shared::{
         webdav::{EntryPath, WebDavPathPubAxum},
