@@ -11,14 +11,13 @@ use sqlx::{
 };
 
 use crate::{
-    persistence::sql::{
+    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT}, persistence::sql::{
         entities::user::{UserIden, USER_TABLE},
         UnifiedExecutor,
-    },
-    shared::{
+    }, shared::{
         timestamp_to_sqlx_datetime,
         webdav::{EntryPath, WebDavPath},
-    },
+    }
 };
 
 pub const EVENT_TABLE: &str = "events";
@@ -109,10 +108,15 @@ impl EventRepository {
     /// The limit is the maximum number of events to return.
     /// The executor can either be db.pool() or a transaction.
     pub async fn get_by_cursor<'a>(
-        cursor: i64,
-        limit: u16,
+        cursor: Option<i64>,
+        limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
+
+        let cursor = cursor.unwrap_or(0);
+        let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
+        let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
+
         let statement = Query::select()
             .columns([
                 (EVENT_TABLE, EventIden::Id),
@@ -244,7 +248,7 @@ mod tests {
         }
 
         // Test get session
-        let events = EventRepository::get_by_cursor(5, 4, &mut db.pool().into())
+        let events = EventRepository::get_by_cursor(Some(5), Some(4), &mut db.pool().into())
             .await
             .unwrap();
         assert_eq!(events.len(), 4);

@@ -4,10 +4,8 @@ use axum::{
     http::{header, Response, StatusCode},
     response::IntoResponse,
 };
-use pubky_common::timestamp::Timestamp;
 
-use crate::{
-    constants::DEFAULT_LIST_LIMIT, core::{extractors::ListQueryParams, AppState}, persistence::sql::event::EventRepository, shared::{HttpError, HttpResult}
+use crate::{core::{extractors::ListQueryParams, AppState}, persistence::sql::event::EventRepository, shared::{HttpError, HttpResult}
 };
 
 pub async fn feed(
@@ -24,9 +22,8 @@ pub async fn feed(
         Ok(cursor) => cursor,
         Err(e) => return Err(HttpError::bad_request("Invalid cursor")),
     };
-    let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
 
-    let events = EventRepository::get_by_cursor(cursor, limit, &mut state.sql_db.pool().into()).await?;
+    let events = EventRepository::get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into()).await?;
     let result = events.iter().map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str())).collect::<Vec<String>>();
 
     Ok(Response::builder()

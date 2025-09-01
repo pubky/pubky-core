@@ -201,6 +201,7 @@ mod tests {
                 EntryIden::ContentHash,
                 EntryIden::ContentLength,
                 EntryIden::ContentType,
+
             ])
             .values(vec![
                 SimpleExpr::Value(1.into()),
@@ -228,6 +229,7 @@ mod tests {
                 EntryIden::ContentLength,
                 EntryIden::ContentType,
                 EntryIden::CreatedAt,
+                EntryIden::ModifiedAt,
             ])
             .to_owned();
         let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());

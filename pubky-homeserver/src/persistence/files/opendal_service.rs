@@ -260,6 +260,7 @@ impl OpendalService {
 mod tests {
     use super::*;
     use crate::persistence::files::opendal_test_operators::OpendalTestOperators;
+    use crate::persistence::sql::user::UserRepository;
     use crate::shared::webdav::WebDavPath;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -287,10 +288,7 @@ mod tests {
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pkarr::Keypair::random().public_key();
-        context
-            .db
-            .create_user(&pubky)
-            .expect("Failed to create user");
+        UserRepository::create(&pubky, &mut (&mut context.sql_db.pool().into())).await.unwrap();
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         let write_result = service.write(&path, vec![42u8; 1024 * 1024]).await;
         assert!(write_result.is_err());
