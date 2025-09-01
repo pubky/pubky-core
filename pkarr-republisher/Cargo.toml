@@ -16,7 +16,7 @@ pkarr = { workspace = true, features = ["default"] }
 tokio = { version = "1.45.1", features = ["full"] }
 tracing = "0.1.41"
 futures-lite = { version = "2.6.0" }
-thiserror = "2.0.12"
+thiserror = "2.0.16"
 
 # bin dependencies
 clap = { version = "4.5", features = ["derive"] }
