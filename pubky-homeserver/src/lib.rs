@@ -17,6 +17,7 @@ mod client_server;
 mod constants;
 mod data_directory;
 mod homeserver_suite;
+mod periodic_backup;
 mod persistence;
 mod shared;
 pub mod tracing;
