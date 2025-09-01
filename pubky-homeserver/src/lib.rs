@@ -17,6 +17,7 @@ mod client_server;
 mod constants;
 mod data_directory;
 mod homeserver_suite;
+mod key_republisher;
 mod periodic_backup;
 mod persistence;
 mod shared;
@@ -25,6 +26,6 @@ mod user_keys_republisher;
 
 pub use admin_server::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};
-pub use client_server::{HomeserverBuildError, HomeserverCore};
+pub use client_server::{ClientServer, ClientServerBuildError};
 pub use data_directory::*;
 pub use homeserver_suite::{HomeserverSuite, HomeserverSuiteBuildError};
