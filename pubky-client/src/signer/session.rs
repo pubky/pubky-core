@@ -34,29 +34,18 @@ impl PubkySigner {
         Ok(Session::deserialize(&bytes)?)
     }
 
-    /// Create an account on the homeserver and return a ready-to-use `PubkyAgent` bound to the new session.
+    /// Create an account on a homeserver and return a ready-to-use `PubkyAgent`.
     ///
-    /// Why this method:
-    /// - **No extra roundtrip**: it reuses the `/signup` HTTP response to build the agent.
-    /// - **Native**: captures `<pubky>=<secret>` from `Set-Cookie` headers.
-    /// - **Pkarr**: force-publishes the `_pubky` record so other parties discover the homeserver.
-    ///
-    /// Parameters:
-    /// - `homeserver`: the homeserver’s public key (host) to sign up on.
-    /// - `signup_token`: optional invite token if the server requires it.
-    pub async fn signup_into_agent(
+    /// Prefer this when you want to start acting as the user immediately after signup.
+    pub async fn signup_agent(
         &self,
         homeserver: &PublicKey,
         signup_token: Option<&str>,
     ) -> Result<PubkyAgent> {
         let response = self.post_signup(homeserver, signup_token).await?;
-
-        // Match the semantics of `signup()`: publish before returning.
         self.pkdns()
             .publish_homeserver_force(Some(homeserver))
             .await?;
-
-        // Build the agent directly from the signup response (captures cookie on native).
         PubkyAgent::new_from_response(self.client.clone(), response).await
     }
 
@@ -89,12 +78,12 @@ impl PubkySigner {
 
     // All of these methods use root capabilities
 
-    /// Signin by locally signing an AuthToken.
-    pub async fn into_agent(&self) -> Result<PubkyAgent> {
+    /// Sign in by locally signing a root-capability token. Returns a session-bound agent.
+    pub async fn signin(&self) -> Result<PubkyAgent> {
         self.signin_and_ensure_record_published(false).await
     }
 
-    /// Signin and publish `_pubky` if stale.
+    /// Signin and publish `_pubky` if stale in sync.
     pub async fn signin_and_publish(&self) -> Result<PubkyAgent> {
         self.signin_and_ensure_record_published(true).await
     }

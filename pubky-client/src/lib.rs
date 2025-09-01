@@ -11,7 +11,7 @@
 //!
 //! // Sign up on a homeserver (identified by its public key)
 //! let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
-//! let agent = signer.signup_into_agent(&homeserver, None).await?;
+//! let agent = signer.signup_agent(&homeserver, None).await?;
 //!
 //! // Read/write using the drive API (session-scoped)
 //! agent.drive().put("/pub/app/hello.txt", "hello").await?;
@@ -83,7 +83,7 @@
 // ├─ signer/                 -- High-level signer actor (holds keypair; can sign/publish/signup/signin).
 // │  ├─ core.rs              -- `PubkySigner`: constructors (`new`/`with_client`/`random`), accessors (`pubky`, `keypair`).
 // │  ├─ auth.rs              -- `send_auth_token(pubkyauth://…)` to an HTTP relay channel.
-// │  └─ session.rs           -- `signup` / `signup_into_agent` / `into_agent` / `signin_and_publish`,
+// │  └─ session.rs           -- `signup` / `signup_agent` / `signing` / `signin_and_publish`,
 // │                             pkdns republish helpers (sync or background).
 // │
 // ├─ pkdns/                  -- PKDNS/PKARR actor for resolving & publishing `_pubky` records.

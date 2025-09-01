@@ -13,7 +13,7 @@ async fn put_get_delete() {
     let signer = PubkySigner::random().unwrap();
 
     let agent = signer
-        .signup_into_agent(&server.public_key(), None)
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
@@ -106,7 +106,7 @@ async fn put_then_get_json_roundtrip() {
     let signer = PubkySigner::random().unwrap();
 
     let agent = signer
-        .signup_into_agent(&server.public_key(), None)
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
@@ -285,7 +285,7 @@ async fn list() {
     let pubky = signer.pubky();
 
     let agent = signer
-        .signup_into_agent(&server.public_key(), None)
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 

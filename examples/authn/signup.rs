@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
 
     let signer = PubkySigner::new(keypair)?;
     let agent = signer
-        .signup_into_agent(homeserver, cli.signup_code.as_deref())
+        .signup_agent(homeserver, cli.signup_code.as_deref())
         .await?;
 
     println!("Successfully signed up. Checking session:");
