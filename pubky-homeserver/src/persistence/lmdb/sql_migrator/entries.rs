@@ -11,7 +11,7 @@ use crate::{
             SqlDb, UnifiedExecutor,
         },
     },
-    shared::webdav::EntryPath,
+    shared::{timestamp_to_sqlx_datetime, webdav::EntryPath},
 };
 
 /// Create a new signup code.
@@ -22,10 +22,7 @@ pub async fn create<'a>(
     executor: &mut UnifiedExecutor<'a>,
 ) -> Result<(), sqlx::Error> {
     let sql_user = UserRepository::get(entry_path.pubkey(), executor).await?;
-    let micros = entry.timestamp().as_u64();
-    let secs = micros / 1_000_000;
-    let nanos = (micros % 1_000_000) * 1000;
-    let created_at = NaiveDateTime::from_timestamp(secs as i64, nanos as u32);
+    let created_at = timestamp_to_sqlx_datetime(entry.timestamp());
     let statement = Query::insert()
         .into_table(ENTRY_TABLE)
         .columns([

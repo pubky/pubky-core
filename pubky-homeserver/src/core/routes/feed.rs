@@ -7,23 +7,27 @@ use axum::{
 use pubky_common::timestamp::Timestamp;
 
 use crate::{
-    core::{extractors::ListQueryParams, AppState},
-    shared::{HttpError, HttpResult},
+    constants::DEFAULT_LIST_LIMIT, core::{extractors::ListQueryParams, AppState}, persistence::sql::event::EventRepository, shared::{HttpError, HttpResult}
 };
 
 pub async fn feed(
     State(state): State<AppState>,
     params: ListQueryParams,
 ) -> HttpResult<impl IntoResponse> {
-    if let Some(ref cursor) = params.cursor {
-        if Timestamp::try_from(cursor.to_string()).is_err() {
-            return Err(HttpError::bad_request(
-                "Cursor should be valid base32 Crockford encoding of a timestamp",
-            ));
-        }
-    }
 
-    let result = state.db.list_events(params.limit, params.cursor)?;
+    let cursor = match params.cursor {
+        Some(cursor) => cursor,
+        None => "0".to_string(),
+    };
+
+    let cursor = match EventRepository::parse_cursor(cursor.as_str(), &mut state.sql_db.pool().into()).await {
+        Ok(cursor) => cursor,
+        Err(e) => return Err(HttpError::bad_request("Invalid cursor")),
+    };
+    let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
+
+    let events = EventRepository::get_by_cursor(cursor, limit, &mut state.sql_db.pool().into()).await?;
+    let result = events.iter().map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str())).collect::<Vec<String>>();
 
     Ok(Response::builder()
         .status(StatusCode::OK)

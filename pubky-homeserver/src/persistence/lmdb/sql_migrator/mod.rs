@@ -2,6 +2,7 @@ mod users;
 mod signup_codes;
 mod sessions;
 mod entries;
+mod events;
 
 use crate::persistence::{lmdb::{sql_migrator::{entries::migrate_entries, sessions::migrate_sessions, signup_codes::migrate_signup_codes, users::migrate_users}, LmDB}, sql::SqlDb};
 

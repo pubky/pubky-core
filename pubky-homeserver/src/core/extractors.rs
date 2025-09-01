@@ -47,10 +47,10 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ListQueryParams {
     pub limit: Option<u16>,
-    pub cursor: Option<EntryPath>,
+    pub cursor: Option<String>,
     pub shallow: bool,
 }
 
@@ -58,7 +58,7 @@ impl ListQueryParams {
     /// Extracts the cursor from the query parameters.
     /// If the cursor is not a valid EntryPath, returns None.
     /// If the cursor is empty, returns None.
-    pub fn extract_cursor(params: &Query<HashMap<String, String>>) -> Option<EntryPath> {
+    pub fn extract_cursor(params: &Query<HashMap<String, String>>) -> Option<String> {
         let value = match params.get("cursor") {
             Some(value) => value,
             None => return None,
@@ -72,12 +72,7 @@ impl ListQueryParams {
         if let Some(stripped_value) = value.strip_prefix("pubky://") {
             value = stripped_value;
         }
-
-        let path = match EntryPath::from_str(value) {
-            Ok(entry_path) => entry_path,
-            Err(_) => return None,
-        };
-        Some(path)
+        Some(value.to_string())
     }
 }
 

@@ -98,12 +98,16 @@ pub async fn list(
         ));
     }
 
-    // Handle listing
-    // TODO: handle cursor
+    // Parse the cursor if it is present
+    let parsed_cursor = match params.cursor {
+        Some(cursor) => Some(EntryPath::from_str(&cursor).map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid cursor"))?),
+        None => None,
+    };
+
     let entries = if params.shallow {
-        EntryRepository::list_shallow(entry_path, params.limit, None, &mut (&mut state.sql_db.pool().into())).await?
+        EntryRepository::list_shallow(entry_path, params.limit, parsed_cursor, &mut (&mut state.sql_db.pool().into())).await?
     } else {
-        EntryRepository::list_deep(entry_path, params.limit, None, &mut (&mut state.sql_db.pool().into())).await?
+        EntryRepository::list_deep(entry_path, params.limit, parsed_cursor, &mut (&mut state.sql_db.pool().into())).await?
     };
     let pubky_urls = entries.iter().map(|entry| format!("pubky://{}", entry.to_string())).collect::<Vec<_>>();
 
