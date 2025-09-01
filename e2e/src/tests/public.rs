@@ -12,9 +12,10 @@ async fn put_get_delete() {
 
     let signer = PubkySigner::random().unwrap();
 
-    signer.signup(&server.public_key(), None).await.unwrap();
-
-    let agent = signer.into_agent().await.unwrap();
+    let agent = signer
+        .signup_into_agent(&server.public_key(), None)
+        .await
+        .unwrap();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
@@ -104,8 +105,10 @@ async fn put_then_get_json_roundtrip() {
     let server = testnet.homeserver();
     let signer = PubkySigner::random().unwrap();
 
-    signer.signup(&server.public_key(), None).await.unwrap();
-    let agent = signer.into_agent().await.unwrap();
+    let agent = signer
+        .signup_into_agent(&server.public_key(), None)
+        .await
+        .unwrap();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
@@ -281,8 +284,10 @@ async fn list() {
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.pubky();
 
-    signer.signup(&server.public_key(), None).await.unwrap();
-    let agent = signer.into_agent().await.unwrap();
+    let agent = signer
+        .signup_into_agent(&server.public_key(), None)
+        .await
+        .unwrap();
 
     let paths = vec![
         "/pub/a.wrong/a.txt",

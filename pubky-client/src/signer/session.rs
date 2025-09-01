@@ -11,12 +11,57 @@ use crate::{PubkyAgent, PublicKey, Result, util::check_http_status};
 use super::PubkySigner;
 
 impl PubkySigner {
-    /// Signup to a homeserver and publish `_pubky` pkarr record.
+    /// Create an account on the given homeserver and return the parsed `Session`.
+    ///
+    /// Side effects:
+    /// - Publishes the `_pubky` pkarr record pointing to `homeserver` (force mode).
+    ///
+    /// Notes:
+    /// - Uses a **root** capability token (sufficient for signup).
     pub async fn signup(
         &self,
         homeserver: &PublicKey,
         signup_token: Option<&str>,
     ) -> Result<Session> {
+        let response = self.post_signup(homeserver, signup_token).await?;
+
+        // Keep behavior consistent with the previous version: publish before returning.
+        self.publish_homeserver_force(Some(homeserver)).await?;
+
+        let bytes = response.bytes().await?;
+        Ok(Session::deserialize(&bytes)?)
+    }
+
+    /// Create an account on the homeserver and return a ready-to-use `PubkyAgent` bound to the new session.
+    ///
+    /// Why this method:
+    /// - **No extra roundtrip**: it reuses the `/signup` HTTP response to build the agent.
+    /// - **Native**: captures `<pubky>=<secret>` from `Set-Cookie` headers.
+    /// - **Pkarr**: force-publishes the `_pubky` record so other parties discover the homeserver.
+    ///
+    /// Parameters:
+    /// - `homeserver`: the homeserver’s public key (host) to sign up on.
+    /// - `signup_token`: optional invite token if the server requires it.
+    pub async fn signup_into_agent(
+        &self,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<PubkyAgent> {
+        let response = self.post_signup(homeserver, signup_token).await?;
+
+        // Match the semantics of `signup()`: publish before returning.
+        self.publish_homeserver_force(Some(homeserver)).await?;
+
+        // Build the agent directly from the signup response (captures cookie on native).
+        PubkyAgent::new_from_response(self.client.clone(), response).await
+    }
+
+    /// POST `https://<homeserver>/signup` with a root-capability token and return the checked response.
+    async fn post_signup(
+        &self,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<reqwest::Response> {
         let mut url = Url::parse(&format!("https://{}", homeserver))?;
         url.set_path("/signup");
         if let Some(token) = signup_token {
@@ -25,6 +70,7 @@ impl PubkySigner {
 
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let auth_token = AuthToken::sign(&self.keypair, capabilities);
+
         let response = self
             .client
             .cross_request(Method::POST, url)
@@ -33,12 +79,8 @@ impl PubkySigner {
             .send()
             .await?;
 
-        let response = check_http_status(response).await?;
-
-        self.publish_homeserver_force(Some(&homeserver)).await?;
-
-        let bytes = response.bytes().await?;
-        Ok(Session::deserialize(&bytes)?)
+        // Map non-2xx into our error type; keep body/headers intact for the caller.
+        check_http_status(response).await
     }
 
     // All of these methods use root capabilities

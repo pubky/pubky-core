@@ -40,6 +40,10 @@ pub struct PubkyAgent {
 }
 
 impl PubkyAgent {
+    /// Establish a session from a signed [`AuthToken`].
+    ///
+    /// This POSTs `pubky://{user}/session` with the token, validates the response,
+    /// and delegates construction to [`Self::new_from_response`].
     pub async fn new(client: Arc<PubkyClient>, token: &AuthToken) -> Result<PubkyAgent> {
         let url = format!("pubky://{}/session", token.pubky());
         let response = client
@@ -50,10 +54,20 @@ impl PubkyAgent {
             .await?;
 
         let response = check_http_status(response).await?;
+        Self::new_from_response(client, response).await
+    }
 
+    /// Construct an agent **from a successful `/session` or `/signup` response**.
+    ///
+    /// - Reads the `Session` body (to learn the user pubky).
+    /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
+    pub(crate) async fn new_from_response(
+        client: Arc<PubkyClient>,
+        response: reqwest::Response,
+    ) -> Result<PubkyAgent> {
         #[cfg(target_arch = "wasm32")]
         {
-            // WASM: cookies handled by browser; just parse the session body.
+            // WASM: cookies are browser-managed; just parse the session body.
             let bytes = response.bytes().await?;
             let session = Session::deserialize(&bytes)?;
             return Ok(PubkyAgent { client, session });
@@ -61,24 +75,47 @@ impl PubkyAgent {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Native: capture cookie before consuming the body.
-            let cookie = Self::capture_session_cookie(token.pubky(), &response)
-                .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
+            // 1) Snapshot all Set-Cookie header values before consuming the body.
+            let mut raw_set_cookies = Vec::new();
+            for val in response
+                .headers()
+                .get_all(reqwest::header::SET_COOKIE)
+                .iter()
+            {
+                if let Ok(raw) = std::str::from_utf8(val.as_bytes()) {
+                    raw_set_cookies.push(raw.to_owned());
+                }
+            }
 
+            // 2) Read and parse the session body (this consumes the response).
             let bytes = response.bytes().await?;
             let session = Session::deserialize(&bytes)?;
 
-            return Ok(PubkyAgent {
+            // 3) Find the cookie named exactly as the user's pubky.
+            let cookie_name = session.pubky().to_string();
+            let cookie = raw_set_cookies
+                .iter()
+                .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
+                .find(|c| c.name() == cookie_name)
+                .map(|c| c.value().to_string())
+                .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
+
+            Ok(PubkyAgent {
                 client,
                 session,
                 cookie,
-            });
+            })
         }
     }
 
     /// Returns the agent public key
     pub fn pubky(&self) -> PublicKey {
         self.session.pubky().clone()
+    }
+
+    /// Returns the agent session
+    pub fn session(&self) -> Session {
+        self.session.clone()
     }
 
     /// Returns a reference to the internal `PubkyClient`
