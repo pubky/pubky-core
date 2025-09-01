@@ -82,9 +82,9 @@ mod tests {
     use axum::Router;
     use pkarr::Keypair;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_disable_enable_user() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let pubkey = Keypair::random().public_key();
 
         // Create new user
@@ -101,6 +101,7 @@ mod tests {
         // Setup server
         let app_state = AppState::new(
             db.clone(),
+            context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
         );

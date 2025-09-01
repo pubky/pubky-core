@@ -94,6 +94,13 @@ impl From<heed::Error> for HttpError {
     }
 }
 
+// SQLX errors
+impl From<sqlx::Error> for HttpError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::internal_server_and_log(format!("SQLX error: {}", error))
+    }
+}
+
 // Anyhow errors
 impl From<anyhow::Error> for HttpError {
     fn from(error: anyhow::Error) -> Self {

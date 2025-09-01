@@ -3,7 +3,7 @@ use pkarr::Keypair;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use reqwest::{Method, StatusCode};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -76,7 +76,7 @@ async fn put_get_delete() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
@@ -133,7 +133,7 @@ async fn put_quota_applied() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -201,7 +201,7 @@ async fn unauthorized_put_delete() {
     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn list() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -407,7 +407,7 @@ async fn list() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -620,7 +620,7 @@ async fn list_shallow() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -719,7 +719,7 @@ async fn list_events() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -772,7 +772,7 @@ async fn read_after_event() {
     assert_eq!(body.as_ref(), &[0]);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver_suite();
@@ -847,7 +847,7 @@ async fn dont_delete_shared_blobs() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn stream() {
     // TODO: test better streaming API
     let testnet = EphemeralTestnet::start().await.unwrap();

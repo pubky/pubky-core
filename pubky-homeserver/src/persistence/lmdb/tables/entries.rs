@@ -1,6 +1,5 @@
 use super::super::LmDB;
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
-use crate::persistence::files::FileIoError;
 use crate::shared::webdav::EntryPath;
 use heed::{
     types::{Bytes, Str},
@@ -16,36 +15,36 @@ pub type EntriesTable = Database<Str, Bytes>;
 pub const ENTRIES_TABLE: &str = "entries";
 
 impl LmDB {
-    /// Get an entry from the database.
-    /// This doesn't include the file but only metadata.
-    pub fn get_entry(&self, path: &EntryPath) -> Result<Entry, FileIoError> {
-        let txn = self.env.read_txn()?;
-        let entry = match self.tables.entries.get(&txn, path.as_str())? {
-            Some(bytes) => Entry::deserialize(bytes)?,
-            None => return Err(FileIoError::NotFound),
-        };
-        Ok(entry)
-    }
+    // /// Get an entry from the database.
+    // /// This doesn't include the file but only metadata.
+    // pub fn get_entry(&self, path: &EntryPath) -> Result<Entry, FileIoError> {
+    //     let txn = self.env.read_txn()?;
+    //     let entry = match self.tables.entries.get(&txn, path.as_str())? {
+    //         Some(bytes) => Entry::deserialize(bytes)?,
+    //         None => return Err(FileIoError::NotFound),
+    //     };
+    //     Ok(entry)
+    // }
 
-    /// Bytes stored at `path`.
-    /// Fails if the entry does not exist.
-    pub fn get_entry_content_length(&self, path: &EntryPath) -> Result<u64, FileIoError> {
-        let content_length = self.get_entry(path)?.content_length() as u64;
-        Ok(content_length)
-    }
+    // /// Bytes stored at `path`.
+    // /// Fails if the entry does not exist.
+    // pub fn get_entry_content_length(&self, path: &EntryPath) -> Result<u64, FileIoError> {
+    //     let content_length = self.get_entry(path)?.content_length() as u64;
+    //     Ok(content_length)
+    // }
 
-    /// Bytes stored at `path`.
-    /// Returns 0 if the entry does not exist.
-    pub fn get_entry_content_length_default_zero(
-        &self,
-        path: &EntryPath,
-    ) -> Result<u64, FileIoError> {
-        match self.get_entry_content_length(path) {
-            Ok(length) => Ok(length),
-            Err(FileIoError::NotFound) => Ok(0),
-            Err(e) => Err(e),
-        }
-    }
+    // /// Bytes stored at `path`.
+    // /// Returns 0 if the entry does not exist.
+    // pub fn get_entry_content_length_default_zero(
+    //     &self,
+    //     path: &EntryPath,
+    // ) -> Result<u64, FileIoError> {
+    //     match self.get_entry_content_length(path) {
+    //         Ok(length) => Ok(length),
+    //         Err(FileIoError::NotFound) => Ok(0),
+    //         Err(e) => Err(e),
+    //     }
+    // }
 
     pub fn contains_directory(&self, txn: &RoTxn, entry_path: &EntryPath) -> anyhow::Result<bool> {
         Ok(self
