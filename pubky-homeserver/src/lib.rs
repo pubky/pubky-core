@@ -17,11 +17,10 @@ mod client_server;
 mod constants;
 mod data_directory;
 mod homeserver_suite;
-mod key_republisher;
 mod persistence;
+mod republishers;
 mod shared;
 pub mod tracing;
-mod user_keys_republisher;
 
 pub use admin_server::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};

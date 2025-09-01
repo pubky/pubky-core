@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
-pub struct HomeserverKeyRepublisher {
+pub(crate) struct HomeserverKeyRepublisher {
     join_handle: JoinHandle<()>,
 }
 
