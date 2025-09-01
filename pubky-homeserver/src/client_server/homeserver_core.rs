@@ -3,13 +3,12 @@ use std::time::Duration;
 
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
+use super::AppState;
 use crate::app_context::AppContextConversionError;
-use crate::persistence::files::FileService;
-use crate::persistence::lmdb::LmDB;
+use crate::DataDir;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{app_context::AppContext, PersistentDataDir};
-use crate::{DataDir, SignupMode};
 use anyhow::Result;
 use axum::Router;
 use axum_server::{
@@ -22,16 +21,6 @@ use std::{
     net::{SocketAddr, TcpListener},
     sync::Arc,
 };
-
-#[derive(Clone, Debug)]
-pub(crate) struct AppState {
-    pub(crate) verifier: AuthVerifier,
-    pub(crate) db: LmDB,
-    pub(crate) file_service: FileService,
-    pub(crate) signup_mode: SignupMode,
-    /// If `Some(bytes)` the quota is enforced, else unlimited.
-    pub(crate) user_quota_bytes: Option<u64>,
-}
 
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
