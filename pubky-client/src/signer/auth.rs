@@ -17,19 +17,16 @@ use crate::{
 use super::PubkySigner;
 
 impl PubkySigner {
-    // ----------------------------------------------------------------
-    // Auth: producing sessions for an app (e.g. Pubky Ring -> App)
-    // ----------------------------------------------------------------
-
-    /// Send a signed `AuthToken` to the relay channel encoded in a `pubkyauth://` URL.
-    ///
-    /// Requirements:
-    /// - `pubkyauth:///?caps=…&secret=<b64url>&relay=<relay_base>`
-    /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
+    /// Produces sessions for an app (e.g. Pubky Ring -> App). Sends a signed
+    /// `AuthToken` to the relay channel encoded in a `pubkyauth://` URL.
     ///
     /// Typical usage:
     /// - App constructs `PubkyAuth` and subscribe, shows QR/deeplink.
     /// - Signer calls `send_auth_token` with that URL.
+    ///
+    /// Requirements:
+    /// - `pubkyauth:///?caps=…&secret=<b64url>&relay=<relay_base>`
+    /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
     pub async fn send_auth_token<T: IntoUrl>(&self, pubkyauth_url: &T) -> Result<()> {
         let pubkyauth_url = Url::parse(pubkyauth_url.as_str())?;
 
