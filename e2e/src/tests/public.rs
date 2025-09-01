@@ -282,7 +282,7 @@ async fn list() {
     let pubky = signer.pubky();
 
     signer.signup(&server.public_key(), None).await.unwrap();
-    let agent = signer.signin().await.unwrap();
+    let agent = signer.into_agent().await.unwrap();
 
     let paths = vec![
         "/pub/a.wrong/a.txt",

@@ -132,11 +132,11 @@ impl Testnet {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
-    /// Create a [ClientBuilder] and configure it to use this local test network.
-    pub fn client_builder(&self) -> pubky::ClientBuilder {
+    /// Create a [PubkyClientBuilder] and configure it to use this local test network.
+    pub fn client_builder(&self) -> pubky::PubkyClientBuilder {
         let relays = self.dht_relay_urls();
 
-        let mut builder = pubky::Client::builder();
+        let mut builder = pubky::PubkyClient::builder();
         builder.pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
@@ -156,14 +156,14 @@ impl Testnet {
         builder
     }
 
-    /// Creates a `pubky::Client` pre-configured to use this test network.
+    /// Creates a `pubky::PubkyClient` pre-configured to use this test network.
     ///
     /// This is a convenience method that builds a client from `Self::client_builder`.
     ///
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn client(&self) -> Result<pubky::Client, pubky::BuildError> {
+    pub fn client(&self) -> Result<pubky::PubkyClient, pubky::BuildError> {
         self.client_builder().build()
     }
 
@@ -188,7 +188,7 @@ mod test {
     use std::time::Duration;
 
     use crate::Testnet;
-    use pubky::{KeyedAgent, Keypair};
+    use pubky::{Keypair, PubkySigner};
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
@@ -216,10 +216,10 @@ mod test {
         testnet.create_homeserver().await.unwrap();
         let hs = testnet.homeservers.first().unwrap();
 
-        let agent = KeyedAgent::random().unwrap();
+        let signer = PubkySigner::random().unwrap();
 
-        let session = agent.signup(&hs.public_key(), None).await.unwrap();
-        assert_eq!(session.pubky(), &agent.pubky().unwrap());
+        let session = signer.signup(&hs.public_key(), None).await.unwrap();
+        assert_eq!(session.pubky(), &signer.pubky());
     }
 
     #[tokio::test]
@@ -269,11 +269,11 @@ mod test {
                 };
                 let hs = testnet.homeservers.first().unwrap();
 
-                let agent = KeyedAgent::random().unwrap();
+                let signer = PubkySigner::random().unwrap();
 
-                let session = agent.signup(&hs.public_key(), None).await.unwrap();
+                let session = signer.signup(&hs.public_key(), None).await.unwrap();
 
-                assert_eq!(session.pubky(), &agent.pubky().unwrap());
+                assert_eq!(session.pubky(), &signer.pubky());
                 tokio::time::sleep(Duration::from_secs(3)).await;
             });
             handles.push(handle);
