@@ -59,11 +59,9 @@ pub struct ClientServer {
     /// Keep context alive.
     context: AppContext,
 
-    // XXX: dzdidi - group into own thing and move into HomeserverSuite
     pub(crate) icann_http_handle: Handle,
     pub(crate) icann_http_socket: SocketAddr,
 
-    // XXX: dzdidi - group into own thing and move into HomeserverSuite
     pub(crate) pubky_tls_handle: Handle,
     pub(crate) pubky_tls_socket: SocketAddr,
 }

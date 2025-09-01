@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use pubky_homeserver::{tracing::init_tracing_logs_if_set, HomeserverSuite};
+use pubky_homeserver::{tracing::init_tracing_logs_if_set, HomeserverApp};
 
 fn default_config_dir_path() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".pubky")
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     init_tracing_logs_if_set(&args.data_dir)?;
 
     tracing::info!("Use data directory: {}", args.data_dir.display());
-    let server = HomeserverSuite::start_with_persistent_data_dir_path(args.data_dir).await?;
+    let server = HomeserverApp::start_with_persistent_data_dir_path(args.data_dir).await?;
 
     tracing::info!(
         "Homeserver HTTP listening on {}",

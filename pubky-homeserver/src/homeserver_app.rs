@@ -13,9 +13,9 @@ use std::time::Duration;
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
-/// Errors that can occur when building a `HomeserverSuite`.
+/// Errors that can occur when building a `HomeserverApp`.
 #[derive(thiserror::Error, Debug)]
-pub enum HomeserverSuiteBuildError {
+pub enum HomeserverAppBuildError {
     /// Failed to build the homeserver.
     #[error("Failed to build homeserver: {0}")]
     Homeserver(ClientServerBuildError),
@@ -28,7 +28,7 @@ pub enum HomeserverSuiteBuildError {
 /// Core + Admin server.
 ///
 /// When dropped, the homeserver will stop.
-pub struct HomeserverSuite {
+pub struct HomeserverApp {
     context: AppContext,
 
     #[allow(dead_code)] // Keep this alive. When dropped, the homeserver will stop.
@@ -49,7 +49,7 @@ pub struct HomeserverSuite {
     admin_server: AdminServer,
 }
 
-impl HomeserverSuite {
+impl HomeserverApp {
     /// Run the homeserver with configurations from a data directory.
     pub async fn start_with_persistent_data_dir_path(dir_path: PathBuf) -> Result<Self> {
         let data_dir = PersistentDataDir::new(dir_path);
@@ -103,12 +103,12 @@ impl HomeserverSuite {
         })
     }
 
-    /// Get the core of the homeserver suite.
+    /// Get the core of the homeserver app.
     pub fn client_server(&self) -> &ClientServer {
         &self.client_server
     }
 
-    /// Get the admin server of the homeserver suite.
+    /// Get the admin server of the homeserver app.
     pub fn admin_server(&self) -> &AdminServer {
         &self.admin_server
     }

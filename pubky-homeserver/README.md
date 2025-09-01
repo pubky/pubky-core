@@ -7,15 +7,15 @@ Pubky homeserver that acts as user's agent on the Internet, providing data avail
 ### Library
 
 Use the Homeserver as a library in other crates/binaries or for testing purposes.
-The `HomeserverSuite` is all bells and wistles included.
+The `HomeserverApp` is all bells and wistles included.
 
 ```rust
 use anyhow::Result;
-use pubky_homeserver::HomeserverSuite;
+use pubky_homeserver::HomeserverApp;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  let suite = HomeserverSuite::run_with_data_dir_path(PathBuf::from("~/.pubky")).await?;
+  let app = HomeserverApp::run_with_data_dir_path(PathBuf::from("~/.pubky")).await?;
   println!(
       "Homeserver HTTP listening on {}",
       server.core().icann_http_url()
@@ -36,11 +36,11 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-Run the suite with a temporary directory and your custom config. This is a good way to test the server.
+Run the app with a temporary directory and your custom config. This is a good way to test the server.
 
 ```rust
 use anyhow::Result;
-use pubky_homeserver::{HomeserverSuite, DataDirMock};
+use pubky_homeserver::{HomeserverApp, DataDirMock};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -48,9 +48,9 @@ async fn main() -> anyhow::Result<()> {
   // Set config values however you like
   config.admin.admin_password = "alternative_password".to_string();
   // Creates a temporary directory that gets cleaned up 
-  // as soon as the suite is dropped.
+  // as soon as the app is dropped.
   let mock_dir = DataDirMock::new(config, None).unwrap(); 
-  let suite = HomeserverSuite::run_with_data_dir_mock(mock_dir).await.unwrap();
+  let app = HomeserverApp::run_with_data_dir_mock(mock_dir).await.unwrap();
 }
 
 
