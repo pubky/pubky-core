@@ -161,7 +161,7 @@ impl Drop for UserKeysRepublisher {
 mod tests {
     use crate::persistence::lmdb::tables::users::User;
     use crate::persistence::lmdb::LmDB;
-    use crate::user_keys_republisher::UserKeysRepublisher;
+    use crate::republishers::user_keys_republisher::UserKeysRepublisher;
     use pkarr::Keypair;
 
     async fn init_db_with_users(count: usize) -> LmDB {

@@ -1,7 +1,7 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{ClientServer, ClientServerBuildError};
 use crate::data_directory::periodic_backup::PeriodicBackup;
-use crate::key_republisher::HomeserverKeyRepublisher;
+use crate::republishers::{HomeserverKeyRepublisher, UserKeysRepublisher};
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
@@ -11,7 +11,6 @@ use pkarr::PublicKey;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::user_keys_republisher::UserKeysRepublisher;
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
 /// Errors that can occur when building a `HomeserverSuite`.
