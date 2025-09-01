@@ -20,6 +20,7 @@ mod homeserver_suite;
 mod persistence;
 mod shared;
 pub mod tracing;
+mod user_keys_republisher;
 
 pub use admin::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};

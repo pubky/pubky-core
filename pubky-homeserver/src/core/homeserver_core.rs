@@ -4,7 +4,6 @@ use std::time::Duration;
 use super::key_republisher::HomeserverKeyRepublisher;
 use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
-use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
 use crate::persistence::lmdb::LmDB;
 #[cfg(any(test, feature = "testing"))]
@@ -34,8 +33,6 @@ pub(crate) struct AppState {
     pub(crate) user_quota_bytes: Option<u64>,
 }
 
-const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
-
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
 pub enum HomeserverBuildError {
@@ -55,11 +52,6 @@ pub enum HomeserverBuildError {
 
 /// A side-effect-free Core of the [crate::Homeserver].
 pub struct HomeserverCore {
-    // XXX: dzdidi - group into own thing and move into HomeserverSuite
-    #[allow(dead_code)]
-    // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
-    pub(crate) user_keys_republisher: UserKeysRepublisher,
-
     // XXX: dzdidi - group into own thing and move into HomeserverSuite
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
@@ -136,12 +128,9 @@ impl HomeserverCore {
         )
         .await
         .map_err(HomeserverBuildError::KeyRepublisher)?;
-        let user_keys_republisher =
-            UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
         let periodic_backup = PeriodicBackup::start(&context);
 
         Ok(Self {
-            user_keys_republisher,
             key_republisher,
             periodic_backup,
             context,
