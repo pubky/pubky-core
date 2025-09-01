@@ -289,10 +289,12 @@ impl EntryRepository {
         // DISTINCT ON makes sure that the same path is only returned once
         // It also makes sure that the id associated with the distinct path is the highest id.
         // This makes the cursor work.
-        let regex = format!(r"DISTINCT ON (regpath) regexp_replace(entries.path, '^{}([^/]+)(/.*)?$', '{}\1') as regpath", full_path, full_path);
         let mut statement = Query::select()
             .from(ENTRY_TABLE)
-            .expr(Expr::cust(regex))
+            .expr(Expr::cust_with_values(
+                "DISTINCT ON (regpath) regexp_replace(entries.path, '^'||$1||'([^/]+)(/.*)?$', $1||'\\1') as regpath",
+                vec![sea_query::Value::from(full_path.clone())],
+            ))
             .left_join(
                 USER_TABLE,
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
