@@ -2,7 +2,6 @@
 
 pub mod auth;
 pub mod core;
-pub mod pkdns;
 pub mod session;
 
 pub use core::PubkySigner;

@@ -46,6 +46,7 @@ mod drive;
 pub mod errors;
 pub mod global;
 mod macros;
+mod pkdns;
 mod signer;
 mod util;
 
@@ -57,6 +58,7 @@ pub use auth::PubkyAuth;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use drive::core::PubkyDrive;
 pub use errors::{BuildError, Error, Result};
+pub use pkdns::core::PkDns;
 pub use signer::PubkySigner;
 // Export common types and constants
 pub use crate::drive::{

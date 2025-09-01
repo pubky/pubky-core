@@ -26,7 +26,9 @@ impl PubkySigner {
         let response = self.post_signup(homeserver, signup_token).await?;
 
         // Keep behavior consistent with the previous version: publish before returning.
-        self.publish_homeserver_force(Some(homeserver)).await?;
+        self.pkdns()
+            .publish_homeserver_force(Some(homeserver))
+            .await?;
 
         let bytes = response.bytes().await?;
         Ok(Session::deserialize(&bytes)?)
@@ -50,7 +52,9 @@ impl PubkySigner {
         let response = self.post_signup(homeserver, signup_token).await?;
 
         // Match the semantics of `signup()`: publish before returning.
-        self.publish_homeserver_force(Some(homeserver)).await?;
+        self.pkdns()
+            .publish_homeserver_force(Some(homeserver))
+            .await?;
 
         // Build the agent directly from the signup response (captures cookie on native).
         PubkyAgent::new_from_response(self.client.clone(), response).await
@@ -101,12 +105,12 @@ impl PubkySigner {
         let agent = PubkyAgent::new(self.client.clone(), &token).await?;
 
         if publish_sync {
-            self.publish_homeserver_if_stale(None).await?;
+            self.pkdns().publish_homeserver_if_stale(None).await?;
         } else {
             // Fire-and-forget path: refresh in the background
             let agent = self.clone();
             let fut = async move {
-                let _ = agent.publish_homeserver_if_stale(None).await;
+                let _ = agent.pkdns().publish_homeserver_if_stale(None).await;
             };
             #[cfg(not(target_arch = "wasm32"))]
             tokio::spawn(fut);
