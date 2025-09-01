@@ -1,6 +1,5 @@
-use http_relay::HttpRelay;
-
 use crate::Testnet;
+use http_relay::HttpRelay;
 
 /// A simple testnet with random ports assigned for all components.
 ///
@@ -21,9 +20,25 @@ impl EphemeralTestnet {
         };
 
         me.testnet.create_http_relay().await?;
-        me.testnet.create_homeserver_suite().await?;
+        me.testnet.create_homeserver().await?;
 
         Ok(me)
+    }
+
+    /// Run a new simple testnet network with a minimal setup.
+    pub async fn start_minimal() -> anyhow::Result<Self> {
+        let mut me = Self {
+            testnet: Testnet::new().await?,
+        };
+        me.testnet.create_http_relay().await?;
+        Ok(me)
+    }
+
+    /// Create an additional homeserver with a random keypair
+    pub async fn create_random_homeserver(
+        &mut self,
+    ) -> anyhow::Result<&pubky_homeserver::HomeserverSuite> {
+        self.testnet.create_random_homeserver().await
     }
 
     /// Create a new pubky client builder.
@@ -74,5 +89,21 @@ mod test {
         {
             let _ = EphemeralTestnet::start().await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn test_homeserver_with_random_keypair() {
+        let mut network = EphemeralTestnet::start_minimal().await.unwrap();
+        assert!(network.testnet.homeservers.len() == 0);
+
+        let _ = network.create_random_homeserver().await.unwrap();
+        let _ = network.create_random_homeserver().await.unwrap();
+        assert!(network.testnet.homeservers.len() == 2);
+
+        // The two newly created homeservers must have distinct public keys.
+        assert_ne!(
+            network.testnet.homeservers[0].public_key(),
+            network.testnet.homeservers[1].public_key()
+        );
     }
 }
