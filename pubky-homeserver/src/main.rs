@@ -36,16 +36,16 @@ async fn main() -> Result<()> {
 
     tracing::info!(
         "Homeserver HTTP listening on {}",
-        server.core().icann_http_url()
+        server.core().icann_http_url_string()
     );
 
     tracing::info!(
         "Homeserver Pubky TLS listening on {}",
-        server.core().pubky_tls_dns_url(),
+        server.core().pubky_tls_dns_url_string(),
     );
     tracing::info!(
         "Homeserver Pubky TLS listening on {}",
-        server.core().pubky_tls_ip_url()
+        server.core().pubky_tls_ip_url_ring()
     );
     tracing::info!(
         "Admin server listening on http://{}",
