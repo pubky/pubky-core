@@ -24,7 +24,10 @@ pub async fn feed(
     };
 
     let events = EventRepository::get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into()).await?;
-    let result = events.iter().map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str())).collect::<Vec<String>>();
+    let mut result = events.iter().map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str())).collect::<Vec<String>>();
+    let next_cursor = events.last().map(|event| event.id.to_string()).unwrap_or("".to_string());
+    result.push(format!("cursor: {}", next_cursor));
+
 
     Ok(Response::builder()
         .status(StatusCode::OK)

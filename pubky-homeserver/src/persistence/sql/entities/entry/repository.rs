@@ -286,13 +286,14 @@ impl EntryRepository {
 
         let cursor_id = EntryRepository::get_cursor_id(cursor, executor).await?;
         // Use this regex to get the distinct paths
+        // ^(?'fixed_directory'\/test\/)(?'path_segment'[^\/]*)(?'opt_slash_indicating_dir'\/?)(?'rest_of_path'.*)$
         // DISTINCT ON makes sure that the same path is only returned once
         // It also makes sure that the id associated with the distinct path is the highest id.
         // This makes the cursor work.
         let mut statement = Query::select()
             .from(ENTRY_TABLE)
             .expr(Expr::cust_with_values(
-                "DISTINCT ON (regpath) regexp_replace(entries.path, '^'||$1||'([^/]+)(/.*)?$', $1||'\\1') as regpath",
+                "DISTINCT ON (regpath) regexp_replace(entries.path, '^'||$1||'([^/]*)(\\/?)(.*)?$', $1||'\\1'||'\\2') as regpath",
                 vec![sea_query::Value::from(full_path.clone())],
             ))
             .left_join(
@@ -499,13 +500,13 @@ mod tests {
         );
         assert_eq!(
             entries[3],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())
         );
         assert_eq!(
             entries[4],
             EntryPath::new(
                 user_pubkey.clone(),
-                WebDavPath::new("/test/sub2").unwrap()
+                WebDavPath::new("/test/sub2/").unwrap()
             )
         );
 
@@ -535,13 +536,13 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(
             entries[0],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())
         );
         assert_eq!(
             entries[1],
             EntryPath::new(
                 user_pubkey.clone(),
-                WebDavPath::new("/test/sub2").unwrap()
+                WebDavPath::new("/test/sub2/").unwrap()
             )
         );
 
@@ -553,13 +554,13 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(
             entries[0],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())
         );
         assert_eq!(
             entries[1],
             EntryPath::new(
                 user_pubkey.clone(),
-                WebDavPath::new("/test/sub2").unwrap()
+                WebDavPath::new("/test/sub2/").unwrap()
             )
         );
 
