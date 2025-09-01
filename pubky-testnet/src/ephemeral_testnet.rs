@@ -37,7 +37,7 @@ impl EphemeralTestnet {
     /// Create an additional homeserver with a random keypair
     pub async fn create_random_homeserver(
         &mut self,
-    ) -> anyhow::Result<&pubky_homeserver::HomeserverSuite> {
+    ) -> anyhow::Result<&pubky_homeserver::HomeserverApp> {
         self.testnet.create_random_homeserver().await
     }
 
@@ -57,7 +57,7 @@ impl EphemeralTestnet {
     }
 
     /// Get the homeserver in the testnet.
-    pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
+    pub fn homeserver_app(&self) -> &pubky_homeserver::HomeserverApp {
         self.testnet
             .homeservers
             .first()

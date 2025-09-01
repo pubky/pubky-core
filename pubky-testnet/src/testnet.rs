@@ -10,7 +10,7 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::Keypair;
 use pubky_homeserver::{
-    storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
+    storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverApp, MockDataDir,
 };
 use url::Url;
 
@@ -23,7 +23,7 @@ pub struct Testnet {
     pub(crate) dht: pkarr::mainline::Testnet,
     pub(crate) pkarr_relays: Vec<pkarr_relay::Relay>,
     pub(crate) http_relays: Vec<HttpRelay>,
-    pub(crate) homeservers: Vec<HomeserverSuite>,
+    pub(crate) homeservers: Vec<HomeserverApp>,
 
     temp_dirs: Vec<tempfile::TempDir>,
 }
@@ -43,35 +43,35 @@ impl Testnet {
         Ok(testnet)
     }
 
-    /// Run the full homeserver suite with core and admin server
+    /// Run the full homeserver app with core and admin server
     /// Automatically listens on the default ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
-    pub async fn create_homeserver(&mut self) -> Result<&HomeserverSuite> {
+    pub async fn create_homeserver(&mut self) -> Result<&HomeserverApp> {
         let mock_dir =
             MockDataDir::new(ConfigToml::test(), Some(Keypair::from_secret_key(&[0; 32])))?;
-        self.create_homeserver_suite_with_mock(mock_dir).await
+        self.create_homeserver_app_with_mock(mock_dir).await
     }
 
-    /// Creates a homeserver suite using a freshly generated random keypair.
+    /// Creates a homeserver app using a freshly generated random keypair.
     /// Automatically listens on the configured ports and uses this Testnet's bootstrap nodes and relays.
-    pub async fn create_random_homeserver(&mut self) -> Result<&HomeserverSuite> {
+    pub async fn create_random_homeserver(&mut self) -> Result<&HomeserverApp> {
         let mock_dir = MockDataDir::new(ConfigToml::test(), Some(Keypair::random()))?;
-        self.create_homeserver_suite_with_mock(mock_dir).await
+        self.create_homeserver_app_with_mock(mock_dir).await
     }
 
-    /// Run the full homeserver suite with core and admin server
+    /// Run the full homeserver app with core and admin server
     /// Automatically listens on the configured ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
-    pub async fn create_homeserver_suite_with_mock(
+    pub async fn create_homeserver_app_with_mock(
         &mut self,
         mut mock_dir: MockDataDir,
-    ) -> Result<&HomeserverSuite> {
+    ) -> Result<&HomeserverApp> {
         mock_dir.config_toml.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
         mock_dir.config_toml.storage = StorageConfigToml::InMemory;
-        let homeserver = HomeserverSuite::start_with_mock_data_dir(mock_dir).await?;
+        let homeserver = HomeserverApp::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self
             .homeservers
@@ -270,7 +270,7 @@ mod test {
                 match testnet.create_homeserver().await {
                     Ok(hs) => hs,
                     Err(e) => {
-                        panic!("Failed to create homeserver suite: {}", e);
+                        panic!("Failed to create homeserver app: {}", e);
                     }
                 };
                 let client = testnet.pubky_client_builder().build().unwrap();
