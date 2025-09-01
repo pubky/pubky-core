@@ -34,7 +34,6 @@
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// TODO: deny unwrap only in test
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
 // Pubky crate codebase map. One stop place to get familiar with this codebase.

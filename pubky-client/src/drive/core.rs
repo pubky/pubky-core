@@ -183,9 +183,9 @@ impl PubkyDrive {
         };
         let host = url.host_str().unwrap_or("");
         if let Some(tail) = host.strip_prefix("_pubky.") {
-            PublicKey::try_from(tail).ok().map_or(false, |h| &h == user)
+            PublicKey::try_from(tail).ok().is_some_and(|h| &h == user)
         } else {
-            PublicKey::try_from(host).ok().map_or(false, |h| &h == user)
+            PublicKey::try_from(host).ok().is_some_and(|h| &h == user)
         }
     }
 
