@@ -1,0 +1,76 @@
+use std::sync::Arc;
+
+use crate::{BuildError, Keypair, PubkyClient, PublicKey, global::global_client};
+
+/// Key holder and signer.
+#[derive(Debug, Clone)]
+pub struct PubkySigner {
+    pub(crate) client: Arc<PubkyClient>,
+    pub(crate) keypair: Keypair,
+}
+
+impl PubkySigner {
+    /// Construct a Signer atop a specific transport [PubkyClient].
+    ///
+    /// Choose this when you already manage a long-lived `PubkyClient` (connection reuse, pkarr cache).
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use pubky::{PubkyClient, PubkySigner, Keypair};
+    /// let client = Arc::new(PubkyClient::new()?);
+    /// let user = PubkySigner::with_client(client.clone(), Keypair::random());
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
+    pub fn with_client(client: Arc<PubkyClient>, keypair: Keypair) -> Self {
+        Self { client, keypair }
+    }
+
+    /// Construct a Signer using a lazily-initialized, process-wide shared [PubkyClient].
+    ///
+    /// Choose this when:
+    /// - You don’t need to control client construction or lifecycle.
+    /// - You want the simplest setup to build your app.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use pubky::{PubkySigner, Keypair};
+    /// // Keyless agent: wait for pubkyauth to establish a session
+    /// let app  = PubkySigner::new(Keypair::random())?;
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
+    pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
+        let client = global_client()?;
+        Ok(Self::with_client(client.clone(), keypair))
+    }
+
+    /// Construct a Signer with a fresh random keypair, using the process-wide shared [PubkyClient].
+    ///
+    /// Purpose:
+    /// - Fast ephemeral identities for e2e tests or demos.
+    /// - Local experiments where keys are not persisted.
+    ///
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use pubky::PubkySigner;
+    /// let agent = PubkySigner::random()?;
+    /// // e.g., `agent.signup(&homeserver_pk, None).await?;`
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
+    pub fn random() -> std::result::Result<Self, BuildError> {
+        Self::new(Keypair::random())
+    }
+
+    /// Public key of this signer.
+    #[inline]
+    pub fn pubky(&self) -> PublicKey {
+        self.keypair.public_key()
+    }
+
+    /// Borrow the agent’s keypair.
+    #[inline]
+    pub fn keypair(&self) -> &Keypair {
+        &self.keypair
+    }
+}

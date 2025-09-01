@@ -67,13 +67,13 @@ impl StaticTestnet {
     }
 
     /// Create a new pubky client builder.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
-        self.testnet.pubky_client_builder()
+    pub fn client_builder(&self) -> pubky::PubkyClientBuilder {
+        self.testnet.client_builder()
     }
 
-    /// Creates a `pubky::Client` pre-configured to use this test network.
-    pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
-        self.testnet.pubky_client()
+    /// Creates a `pubky::PubkyClient` pre-configured to use this test network.
+    pub fn client(&self) -> Result<pubky::PubkyClient, pubky::BuildError> {
+        self.testnet.client()
     }
 
     /// Create a new pkarr client builder.
@@ -82,7 +82,7 @@ impl StaticTestnet {
     }
 
     /// Get the homeserver in the testnet.
-    pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
+    pub fn homeserver(&self) -> &pubky_homeserver::HomeserverSuite {
         self.testnet
             .homeservers
             .first()

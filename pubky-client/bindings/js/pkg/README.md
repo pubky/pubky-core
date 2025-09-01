@@ -287,5 +287,5 @@ Use the logged addresses as inputs to `Client`
 ```js
 import { Client } from "../index.js";
 
-const client = Client().testnet();
+const client = Client.testnet();
 ```

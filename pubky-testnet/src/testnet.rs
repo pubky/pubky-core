@@ -4,7 +4,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
@@ -40,22 +40,27 @@ impl Testnet {
             temp_dirs: vec![],
         };
 
+        // Set a global shared pubky client so lazily initialized actors (PubkyAgent, PubkyAuth, PubkySigner)
+        // work over this testnet
+        let client = Arc::new(testnet.client()?);
+        pubky::global::set_client(client);
+
         Ok(testnet)
     }
 
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the default ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
-    pub async fn create_homeserver_suite(&mut self) -> Result<&HomeserverSuite> {
+    pub async fn create_homeserver(&mut self) -> Result<&HomeserverSuite> {
         let mock_dir =
             MockDataDir::new(ConfigToml::test(), Some(Keypair::from_secret_key(&[0; 32])))?;
-        self.create_homeserver_suite_with_mock(mock_dir).await
+        self.create_homeserver_with_mock(mock_dir).await
     }
 
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the configured ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
-    pub async fn create_homeserver_suite_with_mock(
+    pub async fn create_homeserver_with_mock(
         &mut self,
         mut mock_dir: MockDataDir,
     ) -> Result<&HomeserverSuite> {
@@ -127,11 +132,11 @@ impl Testnet {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
-    /// Create a [ClientBuilder] and configure it to use this local test network.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
+    /// Create a [PubkyClientBuilder] and configure it to use this local test network.
+    pub fn client_builder(&self) -> pubky::PubkyClientBuilder {
         let relays = self.dht_relay_urls();
 
-        let mut builder = pubky::Client::builder();
+        let mut builder = pubky::PubkyClient::builder();
         builder.pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
@@ -151,15 +156,15 @@ impl Testnet {
         builder
     }
 
-    /// Creates a `pubky::Client` pre-configured to use this test network.
+    /// Creates a `pubky::PubkyClient` pre-configured to use this test network.
     ///
-    /// This is a convenience method that builds a client from `Self::pubky_client_builder`.
+    /// This is a convenience method that builds a client from `Self::client_builder`.
     ///
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
-        self.pubky_client_builder().build()
+    pub fn client(&self) -> Result<pubky::PubkyClient, pubky::BuildError> {
+        self.client_builder().build()
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
@@ -183,7 +188,7 @@ mod test {
     use std::time::Duration;
 
     use crate::Testnet;
-    use pubky::Keypair;
+    use pubky::{Keypair, PubkySigner};
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
@@ -208,17 +213,13 @@ mod test {
     #[tokio::test]
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
-        testnet.create_homeserver_suite().await.unwrap();
-        let client = testnet.pubky_client_builder().build().unwrap();
+        testnet.create_homeserver().await.unwrap();
         let hs = testnet.homeservers.first().unwrap();
-        let keypair = Keypair::random();
-        let pubky = keypair.public_key();
 
-        let session = client
-            .signup(&keypair, &hs.public_key(), None)
-            .await
-            .unwrap();
-        assert_eq!(session.pubky(), &pubky);
+        let signer = PubkySigner::random().unwrap();
+
+        let session = signer.signup(&hs.public_key(), None).await.unwrap();
+        assert_eq!(session.pubky(), &signer.pubky());
     }
 
     #[tokio::test]
@@ -233,11 +234,7 @@ mod test {
     #[tokio::test]
     async fn test_homeserver_resolvable() {
         let mut testnet = Testnet::new().await.unwrap();
-        let hs_pubky = testnet
-            .create_homeserver_suite()
-            .await
-            .unwrap()
-            .public_key();
+        let hs_pubky = testnet.create_homeserver().await.unwrap().public_key();
 
         // Make sure the pkarr packet of the hs is resolvable.
         let pkarr_client = testnet.pkarr_client_builder().build().unwrap();
@@ -264,22 +261,19 @@ mod test {
                         panic!("Failed to create testnet: {}", e);
                     }
                 };
-                match testnet.create_homeserver_suite().await {
+                match testnet.create_homeserver().await {
                     Ok(hs) => hs,
                     Err(e) => {
                         panic!("Failed to create homeserver suite: {}", e);
                     }
                 };
-                let client = testnet.pubky_client_builder().build().unwrap();
                 let hs = testnet.homeservers.first().unwrap();
-                let keypair = Keypair::random();
-                let pubky = keypair.public_key();
 
-                let session = client
-                    .signup(&keypair, &hs.public_key(), None)
-                    .await
-                    .unwrap();
-                assert_eq!(session.pubky(), &pubky);
+                let signer = PubkySigner::random().unwrap();
+
+                let session = signer.signup(&hs.public_key(), None).await.unwrap();
+
+                assert_eq!(session.pubky(), &signer.pubky());
                 tokio::time::sleep(Duration::from_secs(3)).await;
             });
             handles.push(handle);

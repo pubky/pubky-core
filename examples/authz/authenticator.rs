@@ -1,10 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::Client;
-use std::path::PathBuf;
+use pubky::{Capabilities, PubkyClient, PubkySigner, PublicKey};
+use std::{path::PathBuf, sync::Arc};
 use url::Url;
-
-use pubky_common::{capabilities::Capability, crypto::PublicKey};
 
 /// local testnet HOMESERVER
 const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
@@ -30,30 +28,13 @@ async fn main() -> Result<()> {
     let recovery_file = std::fs::read(&cli.recovery_file)?;
     println!("\nSuccessfully opened recovery file");
 
+    let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
     let url = cli.url;
 
-    let caps = url
-        .query_pairs()
-        .filter_map(|(key, value)| {
-            if key == "caps" {
-                return Some(
-                    value
-                        .split(',')
-                        .filter_map(|cap| Capability::try_from(cap).ok())
-                        .collect::<Vec<_>>(),
-                );
-            };
-            None
-        })
-        .next()
-        .unwrap_or_default();
+    let caps = Capabilities::from(&url);
 
     if !caps.is_empty() {
-        println!("\nRequired Capabilities:");
-    }
-
-    for cap in &caps {
-        println!("    {} : {:?}", cap.scope, cap.actions);
+        println!("\nRequested capabilities:\n  {}", caps);
     }
 
     // === Consent form ===
@@ -66,25 +47,22 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted recovery file...");
     println!("PublicKey: {}", keypair.public_key());
 
-    let client = if cli.testnet {
-        let client = Client::testnet()?;
+    let signer = if cli.testnet {
+        let client = PubkyClient::testnet()?;
+        let signer = PubkySigner::with_client(Arc::new(client), keypair);
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
-        if client.signin(&keypair).await.is_err() {
-            client
-                .signup(&keypair, &PublicKey::try_from(HOMESERVER).unwrap(), None)
-                .await?;
-        };
+        signer.signup(homeserver, None).await?;
 
-        client
+        signer
     } else {
-        Client::new()?
+        PubkySigner::new(keypair)?
     };
 
     println!("Sending AuthToken to the 3rd party app...");
 
-    client.send_auth_token(&keypair, &url).await?;
+    signer.send_auth_token(&url).await?;
 
     Ok(())
 }
