@@ -7,6 +7,10 @@ use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
 use pkarr::PublicKey;
 use std::path::PathBuf;
+use std::time::Duration;
+
+use crate::user_keys_republisher::UserKeysRepublisher;
+const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
 /// Errors that can occur when building a `HomeserverSuite`.
 #[derive(thiserror::Error, Debug)]
@@ -27,6 +31,11 @@ pub struct HomeserverSuite {
     context: AppContext,
     #[allow(dead_code)] // Keep this alive. When dropped, the homeserver will stop.
     core: HomeserverCore,
+
+    #[allow(dead_code)]
+    // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
+    pub(crate) user_keys_republisher: UserKeysRepublisher,
+
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
     admin_server: AdminServer,
 }
@@ -59,13 +68,18 @@ impl HomeserverSuite {
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
+        // XXX: dzdidi - split the core
         let core = HomeserverCore::new(context.clone()).await?;
+        let user_keys_republisher =
+            UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
+
         let admin_server = AdminServer::start(&context).await?;
 
         Ok(Self {
             context,
             core,
             admin_server,
+            user_keys_republisher,
         })
     }
 

@@ -6,7 +6,6 @@ mod key_republisher;
 mod layers;
 mod periodic_backup;
 pub(crate) mod routes;
-mod user_keys_republisher;
 
 pub use app::create_app;
 pub use homeserver_core::*;
