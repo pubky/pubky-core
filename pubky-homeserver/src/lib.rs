@@ -18,7 +18,6 @@ mod constants;
 mod data_directory;
 mod homeserver_suite;
 mod key_republisher;
-mod periodic_backup;
 mod persistence;
 mod shared;
 pub mod tracing;
