@@ -5,7 +5,6 @@ mod extractors;
 mod homeserver_core;
 mod key_republisher;
 mod layers;
-mod periodic_backup;
 pub(crate) mod routes;
 
 pub use app::create_app;

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::key_republisher::HomeserverKeyRepublisher;
-use super::periodic_backup::PeriodicBackup;
 use super::AppState;
 use crate::app_context::AppContextConversionError;
 use crate::DataDir;
@@ -45,10 +44,6 @@ pub struct HomeserverCore {
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
     pub(crate) key_republisher: HomeserverKeyRepublisher,
-
-    // XXX: dzdidi - group into own thing and move into HomeserverSuite
-    #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
-    pub(crate) periodic_backup: PeriodicBackup,
 
     /// Keep context alive.
     context: AppContext,
@@ -97,7 +92,6 @@ impl HomeserverCore {
     /// Create a Homeserver from an AppContext.
     /// - Publishes the homeserver's pkarr packet to the DHT.
     /// - (Optional) Publishes the user's keys to the DHT.
-    /// - (Optional) Runs a periodic backup of the database.
     /// - Creates the web server (router) for testing. Use `listen` to start the server.
     pub async fn new(context: AppContext) -> std::result::Result<Self, HomeserverBuildError> {
         let router = Self::create_router(&context);
@@ -117,11 +111,9 @@ impl HomeserverCore {
         )
         .await
         .map_err(HomeserverBuildError::KeyRepublisher)?;
-        let periodic_backup = PeriodicBackup::start(&context);
 
         Ok(Self {
             key_republisher,
-            periodic_backup,
             context,
             icann_http_handle,
             pubky_tls_handle,

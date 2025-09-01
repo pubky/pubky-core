@@ -1,5 +1,6 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{HomeserverBuildError, HomeserverCore};
+use crate::periodic_backup::PeriodicBackup;
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
@@ -35,6 +36,9 @@ pub struct HomeserverSuite {
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
     pub(crate) user_keys_republisher: UserKeysRepublisher,
+
+    #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
+    pub(crate) periodic_backup: PeriodicBackup,
 
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
     admin_server: AdminServer,
@@ -73,10 +77,13 @@ impl HomeserverSuite {
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
 
+        let periodic_backup = PeriodicBackup::start(&context);
+
         let admin_server = AdminServer::start(&context).await?;
 
         Ok(Self {
             context,
+            periodic_backup,
             core,
             admin_server,
             user_keys_republisher,
