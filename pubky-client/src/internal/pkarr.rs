@@ -68,11 +68,12 @@ impl Client {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     // Check if the error is a Pkarr error and if it's retryable.
-                    if let Error::Pkarr(pkarr_err) = &e {
-                        if pkarr_err.is_retryable() && attempt < 3 {
-                            // If so, continue the loop.
-                            continue;
-                        }
+                    if let Error::Pkarr(pkarr_err) = &e
+                        && pkarr_err.is_retryable()
+                        && attempt < 3
+                    {
+                        // If so, continue the loop.
+                        continue;
                     }
                     // For any other error, or on the last attempt, return the error.
                     return Err(e);

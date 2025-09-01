@@ -14,7 +14,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.87
+          toolchain: 1.89
           components: rustfmt
           override: true
       - name: Check formatting
@@ -28,13 +28,13 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.87
+          toolchain: 1.89
           components: clippy
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Lint with Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings -A clippy::needless_lifetimes
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   test:
     strategy:
@@ -56,7 +56,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.87
+          toolchain: 1.89
           override: true
       - name: Install Nextest
         uses: taiki-e/install-action@nextest
@@ -95,7 +95,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.87
+          toolchain: 1.89
           target: wasm32-unknown-unknown
           override: true
 
