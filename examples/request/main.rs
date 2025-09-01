@@ -5,7 +5,7 @@ use clap::Parser;
 use reqwest::Method;
 use url::Url;
 
-use pubky::{Client, KeylessAgent};
+use pubky::{PubkyClient, PubkyDrive};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -28,14 +28,14 @@ async fn main() -> Result<()> {
         .init();
 
     // For a basic GET request to any homeserver no session or key material is needed.
-    let agent = if args.testnet {
-        KeylessAgent::with_client(Arc::new(Client::testnet()?))
+    let drive = if args.testnet {
+        PubkyDrive::public_with_client(Arc::new(PubkyClient::testnet()?))
     } else {
-        KeylessAgent::new()?
+        PubkyDrive::public()?
     };
 
     // Build the request
-    let response = agent.homeserver().get(args.url.as_str()).await?;
+    let response = drive.get(args.url.as_str()).await?;
 
     println!("< Response:");
     println!("< {:?} {}", response.version(), response.status());

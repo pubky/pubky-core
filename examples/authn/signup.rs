@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{KeyedAgent, PublicKey};
+use pubky::{PubkySigner, PublicKey};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -32,11 +32,14 @@ async fn main() -> Result<()> {
 
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
-    let user = KeyedAgent::new(keypair)?;
-    user.signup(homeserver, cli.signup_code.as_deref()).await?;
+    let signer = PubkySigner::new(keypair)?;
+    signer
+        .signup(homeserver, cli.signup_code.as_deref())
+        .await?;
 
     println!("Successfully signed up. Checking session:");
 
+    let user = signer.into_agent().await.unwrap();
     let session = user.session().await?;
 
     println!("Successfully resolved current session at the homeserver.");

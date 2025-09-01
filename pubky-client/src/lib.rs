@@ -42,6 +42,7 @@
 mod agent;
 mod auth;
 mod client;
+mod drive;
 pub mod errors;
 pub mod global;
 mod macros;
@@ -54,10 +55,14 @@ pub mod prelude;
 pub use agent::core::PubkyAgent;
 pub use auth::PubkyAuth;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
+pub use drive::core::PubkyDrive;
 pub use errors::{BuildError, Error, Result};
 pub use signer::PubkySigner;
 // Export common types and constants
-pub use crate::agent::path::{FilePath, PubkyPath};
+pub use crate::drive::{
+    list::ListBuilder,
+    path::{FilePath, PubkyPath},
+};
 // pub use agent::homeserver::ListBuilder;
 pub use client::core::DEFAULT_RELAYS;
 // Re-exports
@@ -67,9 +72,3 @@ pub use pubky_common::{
     recovery_file,
     session::Session,
 };
-
-// --- Back-compat aliases (soft-deprecated) ---
-#[allow(deprecated)]
-pub type Client = PubkyClient;
-#[allow(deprecated)]
-pub type ClientBuilder = PubkyClientBuilder;

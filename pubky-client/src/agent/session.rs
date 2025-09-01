@@ -1,11 +1,7 @@
 use reqwest::{Method, StatusCode};
-use url::Url;
 
 #[cfg(not(target_arch = "wasm32"))]
-use reqwest::{
-    RequestBuilder,
-    header::{COOKIE, SET_COOKIE},
-};
+use reqwest::header::SET_COOKIE;
 
 use pkarr::PublicKey;
 use pubky_common::session::Session;
@@ -37,21 +33,6 @@ impl PubkyAgent {
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn url_is_this_agents_homeserver(&self, url: &Url) -> bool {
-        let host = url.host_str().unwrap_or("");
-        let pubky = self.session.pubky();
-        if let Some(tail) = host.strip_prefix("_pubky.") {
-            PublicKey::try_from(tail)
-                .ok()
-                .map_or(false, |h| &h == pubky)
-        } else {
-            PublicKey::try_from(host)
-                .ok()
-                .map_or(false, |h| &h == pubky)
-        }
-    }
-
     /// Extract `<pubky>=<secret>` from `Set-Cookie` on trusted auth flows.
     /// Uses `pubky` as to look for the cookie.
     ///
@@ -81,21 +62,5 @@ impl PubkyAgent {
             }
         }
         None
-    }
-
-    /// Attach session cookie only for this agent’s homeserver (native only).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn maybe_attach_session_cookie(
-        &self,
-        url: &Url,
-        rb: RequestBuilder,
-    ) -> Result<RequestBuilder> {
-        // 1) Only attach cookies when the target is *this* agent’s homeserver.
-        if !self.url_is_this_agents_homeserver(url) {
-            return Ok(rb);
-        }
-
-        // 2) Compute the cookie name from the agent’s pubky and attach the cookie.
-        Ok(rb.header(COOKIE, format!("{}={}", self.pubky(), self.cookie)))
     }
 }

@@ -14,7 +14,7 @@ async fn put_get_delete() {
 
     signer.signup(&server.public_key(), None).await.unwrap();
 
-    let agent = signer.signin().await.unwrap();
+    let agent = signer.into_agent().await.unwrap();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
@@ -105,7 +105,7 @@ async fn put_then_get_json_roundtrip() {
     let signer = PubkySigner::random().unwrap();
 
     signer.signup(&server.public_key(), None).await.unwrap();
-    let agent = signer.signin().await.unwrap();
+    let agent = signer.into_agent().await.unwrap();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {

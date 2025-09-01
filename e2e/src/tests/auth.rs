@@ -328,7 +328,7 @@ async fn test_signup_with_token() {
 
     // 5. Finally, sign in with the same keypair and verify that a session is returned.
     let pubky = signer.pubky();
-    let agent = signer.signin().await.unwrap();
+    let agent = signer.into_agent().await.unwrap();
     assert_eq!(
         agent.pubky(),
         pubky,

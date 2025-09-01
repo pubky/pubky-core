@@ -1,10 +1,10 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
-use crate::Client;
+use crate::PubkyClient;
 use pkarr::PublicKey;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 
-impl Client {
+impl PubkyClient {
     /// Start building a `Request` with the `Method` and `Url`.
     ///
     /// Returns a `RequestBuilder`, which will allow setting headers and
