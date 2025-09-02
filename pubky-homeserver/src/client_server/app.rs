@@ -40,9 +40,6 @@ const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientServerBuildError {
-    /// Failed to run the key republisher.
-    #[error("Key republisher error: {0}")]
-    KeyRepublisher(anyhow::Error),
     /// Failed to run the ICANN web server.
     #[error("ICANN web server error: {0}")]
     IcannWebServer(anyhow::Error),
