@@ -1,12 +1,14 @@
 use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::persistence::sql::session::{SessionRepository, SessionSecret};
 use crate::shared::{HttpError, HttpResult};
-use axum::http::Method;
+use axum::http::{HeaderMap, Method};
 use axum::response::IntoResponse;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use base64::engine::general_purpose::STANDARD as Base64;
+use base64::Engine;
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
@@ -14,7 +16,7 @@ use tower::{Layer, Service};
 use tower_cookies::Cookies;
 
 /// A Tower Layer to handle authorization for write operations.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthorizationLayer {
     state: AppState,
 }
@@ -37,7 +39,7 @@ impl<S> Layer<S> for AuthorizationLayer {
 }
 
 /// Middleware that performs authorization checks for write operations.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthorizationMiddleware<S> {
     inner: S,
     state: AppState,
@@ -64,10 +66,8 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let path = req.uri().path();
-
-            let pubky = match req.extensions().get::<PubkyHost>() {
-                Some(pk) => pk,
+            let public_key = match req.extensions().get::<PubkyHost>() {
+                Some(pk) => pk.public_key(),
                 None => {
                     tracing::warn!("Pubky Host is missing in request. Authorization failed.");
                     return Ok(HttpError::new_with_message(
@@ -78,19 +78,15 @@ where
                 }
             };
 
-            let cookies = match req.extensions().get::<Cookies>() {
-                Some(cookies) => cookies,
-                None => {
-                    tracing::warn!("No cookies found in request. Unauthorized.");
-                    return Ok(HttpError::unauthorized().into_response());
-                }
-            };
-
+            let path = req.uri().path();
+            let headers = req.headers();
+            let cookies = req.extensions().get::<Cookies>();
             // Authorize the request
-            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path).await
+            if let Err(e) =
+                authorize(&state, req.method(), cookies, public_key, path, headers).await
             {
                 return Ok(e.into_response());
-            }
+            };
 
             // If authorized, proceed to the inner service
             inner.call(req).await.map_err(|_| unreachable!())
@@ -102,9 +98,10 @@ where
 async fn authorize(
     state: &AppState,
     method: &Method,
-    cookies: &Cookies,
+    cookies: Option<&Cookies>,
     public_key: &PublicKey,
     path: &str,
+    headers: &HeaderMap,
 ) -> HttpResult<()> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
@@ -115,9 +112,9 @@ async fn authorize(
         }
     } else if path.starts_with("/dav/") {
         // XXX: at least for now
-        // if method == Method::GET {
-        //     return Ok(());
-        // }
+        if method == Method::GET {
+            return Ok(());
+        }
     } else {
         tracing::warn!(
             "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",
@@ -129,16 +126,31 @@ async fn authorize(
         ));
     }
 
-    let session_secret = match session_secret_from_cookies(cookies, public_key) {
-        Some(session_secret) => session_secret,
-        None => {
-            tracing::warn!(
-                "No session secret found in cookies for pubky-host: {}",
-                public_key
-            );
-            return Err(HttpError::unauthorized_with_message(
-                "No session secret found in cookies",
-            ));
+    let session_secret = if path.starts_with("/dav") {
+        match session_secret_from_header(headers, public_key) {
+            Some(session_secret) => session_secret,
+            None => {
+                tracing::warn!(
+                    "No session secret found in Authorization header for pubky-host: {}",
+                    public_key
+                );
+                return Err(HttpError::unauthorized_with_message(
+                    "No session secret found in Authorization header",
+                ));
+            }
+        }
+    } else {
+        match session_secret_from_cookies(cookies, public_key) {
+            Some(session_secret) => session_secret,
+            None => {
+                tracing::warn!(
+                    "No session secret found in cookies for pubky-host: {}",
+                    public_key
+                );
+                return Err(HttpError::unauthorized_with_message(
+                    "No session secret found in cookies",
+                ));
+            }
         }
     };
 
@@ -191,14 +203,32 @@ async fn authorize(
     }
 }
 
-/// Get the session secret from the cookies.
-/// Returns None if the session secret is not found or invalid.
 pub fn session_secret_from_cookies(
-    cookies: &Cookies,
+    cookies: Option<&Cookies>,
     public_key: &PublicKey,
 ) -> Option<SessionSecret> {
-    let value = cookies
+    cookies?
         .get(&public_key.to_string())
-        .map(|c| c.value().to_string())?;
-    SessionSecret::new(value).ok()
+        .and_then(|cookie| SessionSecret::new(cookie.value().to_string()).ok())
+}
+
+fn session_secret_from_header(
+    headers: &HeaderMap,
+    public_key: &PublicKey,
+) -> Option<SessionSecret> {
+    let auth_header = headers.get("Authorization")?;
+    let auth_str = auth_header.to_str().ok()?;
+    let base64_encoded = auth_str.strip_prefix("Basic ")?;
+    let decoded = Base64.decode(base64_encoded.trim()).ok()?;
+    let decoded_str = String::from_utf8(decoded).ok()?;
+    let mut parts = decoded_str.splitn(2, ':');
+
+    let key = parts.next()?;
+    let secret = parts.next()?;
+
+    if key == public_key.to_string() {
+        SessionSecret::new(secret.to_string()).ok()
+    } else {
+        None
+    }
 }

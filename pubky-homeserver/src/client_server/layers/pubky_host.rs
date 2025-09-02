@@ -52,16 +52,19 @@ where
 /// 1. The "host" header.
 /// 2. The "pubky-host" header (which overwrites any previously found key).
 /// 3. The query parameter "pubky-host" if none was found in headers.
+/// 4. The path fragment for webdav endpoint
 fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
     let mut pubky = None;
     // Check headers in order: "host" then "pubky-host".
-    for header in ["host", "pubky-host"].iter() {
-        if let Some(val) = req.headers().get(*header) {
-            if let Ok(s) = val.to_str() {
-                if let Ok(key) = PublicKey::try_from(s) {
-                    pubky = Some(key);
-                }
-            }
+    for header in ["host", "pubky-host"] {
+        if let Some(key) = req
+            .headers()
+            .get(header)
+            .and_then(|val| val.to_str().ok())
+            .and_then(|s| PublicKey::try_from(s).ok())
+        {
+            pubky = Some(key);
+            break;
         }
     }
     // If still no key, fall back to query parameter.
@@ -78,5 +81,15 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
             })
         });
     }
+
+    if pubky.is_none() {
+        let mut split = req.uri().path().split("/");
+        split.next(); // empty string
+        pubky = match split.next() {
+            Some("dav") => split.next().and_then(|p| PublicKey::try_from(p).ok()),
+            _ => None,
+        };
+    }
+
     pubky
 }

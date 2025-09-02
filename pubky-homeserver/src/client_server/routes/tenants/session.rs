@@ -17,7 +17,7 @@ pub async fn session(
 ) -> HttpResult<impl IntoResponse> {
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
 
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
+    if let Some(secret) = session_secret_from_cookies(Some(&cookies), pubky.public_key()) {
         if let Ok(session) =
             SessionRepository::get_by_secret(&secret, &mut state.sql_db.pool().into()).await
         {
@@ -36,7 +36,7 @@ pub async fn signout(
 ) -> HttpResult<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
+    if let Some(secret) = session_secret_from_cookies(Some(&cookies), pubky.public_key()) {
         SessionRepository::delete(&secret, &mut state.sql_db.pool().into()).await?;
     }
 
