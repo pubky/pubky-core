@@ -36,7 +36,7 @@
 //! let capabilities = Capabilities::builder().write("/pub/pubky.app/").finish();
 //! let (sub, url) = PubkyAuth::new(None, &capabilities)?.subscribe();  // None for default relay.
 //! // display `url` via QR or deeplink it so the Signer can send the auth token.
-//! // signer.send_auth_token(url);
+//! // signer.approve_pubkyauth_request(url);
 //! let agent = sub.into_agent().await?; // session-bound agent
 //! # Ok(()) }
 //! ```
@@ -82,7 +82,7 @@
 // │
 // ├─ signer/                 -- High-level signer actor (holds keypair; can sign/publish/signup/signin).
 // │  ├─ core.rs              -- `PubkySigner`: constructors (`new`/`with_client`/`random`), accessors (`pubky`, `keypair`).
-// │  ├─ auth.rs              -- `send_auth_token(pubkyauth://…)` to an HTTP relay channel.
+// │  ├─ auth.rs              -- `approve_pubkyauth_request(pubkyauth://…)` to an HTTP relay channel.
 // │  └─ session.rs           -- `signup` / `signup_agent` / `signing` / `signin_and_publish`,
 // │                             pkdns republish helpers (sync or background).
 // │
