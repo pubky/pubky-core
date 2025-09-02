@@ -169,7 +169,11 @@ impl PubkyDrive {
         }
     }
 
-    fn maybe_attach_session_cookie(&self, url: &Url, rb: RequestBuilder) -> RequestBuilder {
+    pub(crate) fn maybe_attach_session_cookie(
+        &self,
+        url: &Url,
+        rb: RequestBuilder,
+    ) -> RequestBuilder {
         if !self.has_session {
             return rb;
         }

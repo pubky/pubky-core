@@ -84,13 +84,16 @@ impl<'a> ListBuilder<'a> {
         // Resolve now (absolute stays absolute, relative is based on agent’s homeserver)
         let mut url = self.url;
 
-        // ensure directory semantics (trailing slash)
+        // Ensure directory semantics using URL segments (drop last segment, keep trailing slash)
         if !url.path().ends_with('/') {
-            let path = url.path().to_string();
-            let mut parts = path.split('/').collect::<Vec<_>>();
-            parts.pop();
-            let path = format!("{}/", parts.join("/"));
-            url.set_path(&path);
+            {
+                let mut segs = url
+                    .path_segments_mut()
+                    .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+                segs.pop_if_empty(); // remove possible trailing empty
+                segs.pop(); // drop last non-empty segment
+                segs.push(""); // ensure trailing slash
+            }
         }
 
         {
@@ -109,7 +112,16 @@ impl<'a> ListBuilder<'a> {
             }
         }
 
-        let rb = self.drive.request(Method::GET, url.as_str()).await?;
+        // Build the request without re-parsing the URL back through IntoPubkyPath
+        let rb = self
+            .drive
+            .client
+            .cross_request(Method::GET, url.clone())
+            .await?;
+        // Attach cookie only when hitting this agent’s homeserver (native)
+        #[cfg(not(target_arch = "wasm32"))]
+        let rb = self.drive.maybe_attach_session_cookie(&url, rb);
+
         let resp = rb.send().await?;
         let resp = check_http_status(resp).await?;
 

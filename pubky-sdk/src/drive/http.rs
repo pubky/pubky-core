@@ -17,16 +17,28 @@ impl PubkyDrive {
         .into())
     }
 
-    /// HTTP `HEAD`.
+    /// HTTP `HEAD` request for metadata/existence checks.
     ///
-    /// - In **session mode**, attaches the agent’s cookie when targeting that user’s homeserver.
-    /// - In **public mode**, unauthenticated read against user-qualified paths.
+    /// Resolves `path` to the target homeserver and issues a HEAD request:
+    /// - **Session mode:** attaches the agent’s session cookie when the URL targets
+    ///   this agent’s homeserver.
+    /// - **Public mode:** unauthenticated request; only works for public resources.
+    ///
+    /// Returns a `Response` whose **headers** contain metadata such as
+    /// `content-length`, `content-type`, `etag`, `last-modified`, etc. The body is
+    /// not downloaded. Non-2xx statuses are mapped into `RequestError::Server`.
+    ///
+    /// Common uses:
+    /// - **Exists check:** distinguish `404 Not Found` from success.
+    /// - **Lightweight metadata:** read size/type/etag without fetching the body.
     ///
     /// # Examples
     /// ```no_run
     /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
     /// let resp = drive.head("/pub/app/data.bin").await?;
-    /// let bytes = resp.bytes().await?;
+    /// if let Some(len) = resp.headers().get(reqwest::header::CONTENT_LENGTH) {
+    ///     println!("bytes: {}", len.to_str().unwrap_or("?"));
+    /// }
     /// # Ok(()) }
     /// ```
     pub async fn head<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {

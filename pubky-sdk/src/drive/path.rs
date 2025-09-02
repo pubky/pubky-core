@@ -10,6 +10,7 @@
 use std::{fmt, str::FromStr};
 
 use pkarr::PublicKey;
+use url::Url;
 
 use crate::{Error, errors::RequestError};
 
@@ -28,29 +29,66 @@ fn invalid(msg: impl Into<String>) -> Error {
 pub struct FilePath(String);
 
 impl FilePath {
-    /// Parse and normalize to an absolute path.
+    /// Parse, validate, and normalize to an absolute HTTP-safe path.
+    ///
+    /// Rules:
+    /// - Prepend a leading `/` if missing.
+    /// - No empty *internal* segments (rejects `//`), but preserves a trailing `/`.
+    /// - For safety, rejects `.` and `..` segments.
+    /// - Canonicalizes/percent-encodes segments using `url::Url` (UTF-8).
+    ///
+    /// Note: Provide *raw* human-readable segments (e.g. `"pub/My File.txt"`). Any literal `%`
+    /// will be encoded; pre-encoded sequences are **not** interpreted specially.
     pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
         let raw = s.as_ref();
         if raw.is_empty() {
             return Err(invalid("path cannot be empty"));
         }
 
-        // Normalize: prepend `/` if missing.
-        let out = if raw.starts_with('/') {
+        // Normalize to absolute.
+        let input = if raw.starts_with('/') {
             raw.to_string()
         } else {
             format!("/{}", raw)
         };
 
-        // Cheap sanity checks.
-        if !out.starts_with('/') {
-            return Err(invalid("path must start with '/'"));
-        }
-        if out.contains("//") {
-            return Err(invalid("path contains '//'"));
+        // Quick check for internal empty segments (we still allow a trailing '/').
+        if input.contains("//") && !input.ends_with("//") {
+            return Err(invalid("path contains empty segment ('//')"));
         }
 
-        Ok(FilePath(out))
+        // Preserve whether user asked for a trailing slash (except for root).
+        let wants_trailing = input.len() > 1 && input.ends_with('/');
+
+        // Rebuild via URL segments for RFC-compliant encoding.
+        let mut u = Url::parse("https://example.invalid")
+            .map_err(|_| invalid("internal URL setup failed"))?;
+        {
+            let mut segs = u
+                .path_segments_mut()
+                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)
+                .map_err(|_| invalid("internal URL path handling failed"))?;
+            segs.clear();
+
+            // Skip the leading empty segment from the absolute path.
+            for seg in input.trim_start_matches('/').split('/') {
+                if seg.is_empty() {
+                    // allow trailing slash only
+                    continue;
+                }
+                if seg == "." || seg == ".." {
+                    return Err(invalid("path cannot contain '.' or '..'"));
+                }
+                segs.push(seg); // will percent-encode as needed
+            }
+
+            if wants_trailing {
+                // Empty segment encodes a trailing slash.
+                segs.push("");
+            }
+        }
+
+        Ok(FilePath(u.path().to_string()))
     }
 
     /// Borrow this normalized absolute path as `&str`.
@@ -66,22 +104,6 @@ impl FilePath {
     /// ```
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-
-    /// Consume this `FilePath` and return the owned `String`.
-    ///
-    /// Useful when passing the path to APIs that take ownership.
-    ///
-    /// # Example
-    /// ```
-    /// # use pubky::FilePath;
-    /// let p = FilePath::parse("/pub/app")?;
-    /// let s: String = p.into_string();
-    /// assert_eq!(s, "/pub/app");
-    /// # Ok::<_, pubky::Error>(())
-    /// ```
-    pub fn into_string(self) -> String {
-        self.0
     }
 }
 
@@ -116,11 +138,22 @@ impl PubkyPath {
         })
     }
 
-    /// Parse all accepted forms:
-    /// - `pubky://<user>/<path>`
-    /// - `<user>/<path>`
-    /// - `/absolute/path`               (agent-scoped; requires leading '/')
-    pub fn parse(s: &str) -> Result<Self, Error> {
+    /// `pubky://<user>/<path>` requires a user; provide `default` to fill if missing.
+    pub fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
+        let user = match (&self.user, default) {
+            (Some(u), _) => u,
+            (None, Some(d)) => d,
+            (None, None) => return Err(invalid("missing user for pubky URL rendering")),
+        };
+        let rel = self.path.as_str().trim_start_matches('/');
+        Ok(format!("pubky://{}/{}", user, rel))
+    }
+}
+
+impl FromStr for PubkyPath {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         // 1) Legacy scheme: pubky://<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky://") {
             let (user_str, path) = rest
@@ -136,12 +169,8 @@ impl PubkyPath {
         if let Some((user_id, path)) = s.split_once('/') {
             if let Ok(user) = PublicKey::try_from(user_id) {
                 return PubkyPath::new(Some(user), path);
-            } else {
-                // If it *looks* like `<something>/<path>` but the "something" is not a pubkey,
-                // and there's no leading '/', reject it (agent-scoped requires '/').
-                if !s.starts_with('/') {
-                    return Err(invalid(EXPECTED_FORMS));
-                }
+            } else if !s.starts_with('/') {
+                return Err(invalid(EXPECTED_FORMS));
             }
         }
 
@@ -150,19 +179,7 @@ impl PubkyPath {
             return PubkyPath::new(None, s);
         }
 
-        // Otherwise, reject (no leading '/' and not `<user>/<path>`).
         Err(invalid(EXPECTED_FORMS))
-    }
-
-    /// `pubky://<user>/<path>` requires a user; provide `default` to fill if missing.
-    pub fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
-        let user = match (&self.user, default) {
-            (Some(u), _) => u,
-            (None, Some(d)) => d,
-            (None, None) => return Err(invalid("missing user for pubky URL rendering")),
-        };
-        let rel = self.path.as_str().trim_start_matches('/');
-        Ok(format!("pubky://{}/{}", user, rel))
     }
 }
 
@@ -201,12 +218,12 @@ impl IntoPubkyPath for &PubkyPath {
 }
 impl IntoPubkyPath for &str {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::parse(self)
+        PubkyPath::from_str(self)
     }
 }
 impl IntoPubkyPath for String {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::parse(&self)
+        PubkyPath::from_str(&self)
     }
 }
 impl<P: AsRef<str>> IntoPubkyPath for (PublicKey, P) {
@@ -250,8 +267,8 @@ mod tests {
         let s1 = format!("pubky://{}/pub/app/file", user);
         let s2 = format!("{}/pub/app/file", user);
 
-        let p1 = PubkyPath::parse(&s1).unwrap();
-        let p2 = PubkyPath::parse(&s2).unwrap();
+        let p1 = PubkyPath::from_str(&s1).unwrap();
+        let p2 = PubkyPath::from_str(&s2).unwrap();
 
         assert_eq!(p1.user, Some(user.clone()));
         assert_eq!(p2.user, Some(user.clone()));
@@ -267,13 +284,13 @@ mod tests {
     #[test]
     fn parse_agent_scoped_paths() {
         // Absolute, agent-scoped path is OK
-        let p_abs = PubkyPath::parse("/pub/app/file").unwrap();
+        let p_abs = PubkyPath::from_str("/pub/app/file").unwrap();
         assert!(p_abs.user.is_none());
         assert_eq!(p_abs.path.as_str(), "/pub/app/file");
 
         // Relative agent-scoped (no leading slash) is rejected
         assert!(matches!(
-            PubkyPath::parse("pub/app/file"),
+            PubkyPath::from_str("pub/app/file"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
@@ -291,15 +308,34 @@ mod tests {
 
         // Invalid user key in `<user>/<path>`
         assert!(matches!(
-            PubkyPath::parse("not-a-key/pub/app"),
+            PubkyPath::from_str("not-a-key/pub/app"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
         // Double-slash inside path
         let s_bad = format!("{}/pub//app", user);
         assert!(matches!(
-            PubkyPath::parse(&s_bad),
+            PubkyPath::from_str(&s_bad),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
+    }
+
+    #[test]
+    fn percent_encoding_and_unicode() {
+        assert_eq!(
+            FilePath::parse("pub/My File.txt").unwrap().as_str(),
+            "/pub/My%20File.txt"
+        );
+        assert_eq!(
+            FilePath::parse("/ä/β/漢").unwrap().as_str(),
+            "/%C3%A4/%CE%B2/%E6%BC%A2"
+        );
+    }
+
+    #[test]
+    fn rejects_dot_segments_but_allows_trailing_slash() {
+        assert!(FilePath::parse("/a/./b").is_err());
+        assert!(FilePath::parse("/a/../b").is_err());
+        assert_eq!(FilePath::parse("/pub/app/").unwrap().as_str(), "/pub/app/");
     }
 }
