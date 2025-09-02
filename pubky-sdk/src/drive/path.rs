@@ -1,11 +1,11 @@
 //! Typed addressing for files on a Pubky homeserver.
-//
-// Accepted inputs for `PubkyPath::parse`:
-// 1) `<user_pubkey>/<path>`            (preferred)
-// 2) `/absolute/or/relative/path`      (agent-scoped: no user yet, own user will be used)
-// 3) `pubky://<user_pubkey>/<path>`    (legacy)
-//
-// We intentionally do NOT accept `https://_pubky.<pk>/...` here.
+//!
+//! Accepted inputs for `PubkyPath::parse`:
+//! - `<user_pubkey>/<path>`            (preferred; explicit user)
+//! - `/absolute/path`                  (agent-scoped; user supplied elsewhere, must start with `/`)
+//! - `pubky://<user_pubkey>/<path>`    (URL compliant)
+//!
+//! Note: We intentionally do **not** accept `https://_pubky.<pk>/...` here.
 
 use std::{fmt, str::FromStr};
 
@@ -13,7 +13,7 @@ use pkarr::PublicKey;
 
 use crate::{Error, errors::RequestError};
 
-const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (agent scoped) or `pubky://<user>/<path>` (legacy)";
+const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (agent scoped) or `pubky://<user>/<path>` (URL compliant)";
 
 #[inline]
 fn invalid(msg: impl Into<String>) -> Error {
@@ -179,31 +179,14 @@ impl fmt::Display for PubkyPath {
 }
 
 // --- Conversions ---
-impl TryFrom<&str> for PubkyPath {
-    type Error = Error;
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        PubkyPath::parse(s)
-    }
-}
-impl TryFrom<String> for PubkyPath {
-    type Error = Error;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        PubkyPath::parse(&s)
-    }
-}
-
-impl TryFrom<&PubkyPath> for PubkyPath {
-    type Error = Error;
-    fn try_from(p: &PubkyPath) -> Result<Self, Self::Error> {
-        Ok(p.clone())
-    }
-}
-
+/// Minimal, ergonomic conversions accepted by high-level APIs.
+///
+/// Keep the typed `PublicKey` tuple forms (safe & explicit), plus common string forms.
+/// We intentionally **do not** accept `(&str, P)` to avoid “stringly-typed pubky” misuse.
 pub trait IntoPubkyPath {
     fn into_pubky_path(self) -> Result<PubkyPath, Error>;
 }
 
-// infallible for owned/borrowed PubkyPath
 impl IntoPubkyPath for PubkyPath {
     #[inline]
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
@@ -216,8 +199,6 @@ impl IntoPubkyPath for &PubkyPath {
         Ok(self.clone())
     }
 }
-
-// fallible parsers
 impl IntoPubkyPath for &str {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
         PubkyPath::parse(self)
@@ -228,30 +209,14 @@ impl IntoPubkyPath for String {
         PubkyPath::parse(&self)
     }
 }
-
-// For convenience: convert all sort of tuples. Flexible dev experience.
-
-// (PublicKey, P), P is &str or String
 impl<P: AsRef<str>> IntoPubkyPath for (PublicKey, P) {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
         PubkyPath::new(Some(self.0), self.1.as_ref())
     }
 }
-
-// (&PublicKey, P), P is &str or String
 impl<P: AsRef<str>> IntoPubkyPath for (&PublicKey, P) {
     fn into_pubky_path(self) -> Result<PubkyPath, Error> {
         PubkyPath::new(Some(self.0.clone()), self.1.as_ref())
-    }
-}
-
-// (&str, P) where first is a pubkey string
-impl<P: AsRef<str>> IntoPubkyPath for (&str, P) {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        let user = PublicKey::try_from(self.0).map_err(|_| RequestError::Validation {
-            message: format!("invalid user public key: {}", self.0),
-        })?;
-        PubkyPath::new(Some(user), self.1.as_ref())
     }
 }
 
