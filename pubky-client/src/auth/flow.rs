@@ -48,16 +48,42 @@ pub struct PubkyAuth {
 impl PubkyAuth {
     /// Build an auth flow bound to a specific `PubkyClient`.
     ///
-    /// Relay:
-    /// - If `relay` is `Some`, use it as the base URL (trailing slash optional).
-    /// - If `None`, use [`DEFAULT_HTTP_RELAY`].
-    /// - The channel path segment is derived as `base64url(hash(client_secret))`.
+    /// # Relay selection
+    /// - If `relay` is `Some`, that URL is used as the relay base (trailing slash optional).
+    /// - If `relay` is `None`, the flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted
+    ///   instance. **If that relay is unavailable your login cannot complete.** For larger
+    ///   or production apps, prefer running your own relay and passing its base URL here.
     ///
-    /// Capabilities:
-    /// - `caps` are encoded into the `pubkyauth://` URL consumed by the signer.
+    /// # What is an [HTTP relay](https://httprelay.io)?
+    /// A tiny server that provides one-shot “link” channels for **producer => consumer**
+    /// delivery: your app long-polls `GET /link/<channel>`, and the signer `POST`s the
+    /// encrypted token to the same channel; the relay just forwards bytes (no keys or
+    /// Pubky logic required). See the HTTP Relay docs for the `link` method.
     ///
-    /// Errors:
-    /// - Returns URL parsing errors for an invalid `relay`.
+    /// # Self-hosting a relay
+    /// HTTP Relay is open-source (MIT). You can run it from static binaries or Docker. A minimal
+    /// Docker quickstart is:
+    /// ```sh
+    /// docker run -p 8080:8080 jonasjasas/httprelay
+    /// ```
+    /// Then point this API at your instance, e.g. `Some(Url::parse("http://localhost:8080/link/")?)`.
+    /// See the project site for [downloads and options](https://httprelay.io/download/)
+    ///
+    /// # Security & channel derivation
+    /// - The per-flow channel path is `base64url(hash(client_secret))`.
+    /// - The AuthToken is **encrypted with `client_secret`**; the relay cannot decrypt it
+    ///   (it merely forwards the ciphertext).
+    ///
+    /// # Capabilities
+    /// `caps` are embedded into the `pubkyauth://` URL so the signer can review and approve them.
+    ///
+    /// # Errors
+    /// - Returns URL parse errors for an invalid `relay`.
+    ///
+    /// Internals:
+    /// - Generates a random `client_secret` (32 bytes) and a user-displayable `pubkyauth://` deep link.
+    /// - Derives the relay channel from `client_secret` and stores both the deep link and the
+    ///   fully-qualified channel URL for subsequent polling.
     pub fn new_with_client(
         client: Arc<PubkyClient>,
         relay: Option<impl Into<Url>>,
@@ -96,19 +122,42 @@ impl PubkyAuth {
     /// Build bound to a default process-wide shared `PubkyClient`.
     /// This is what you want to use for most of your apps.
     ///
-    /// Delegates to [`PubkyAuth::new_with_client`].
+    /// # Relay selection
+    /// - If `relay` is `Some`, that URL is used as the relay base (trailing slash optional).
+    /// - If `relay` is `None`, the flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted
+    ///   instance. **If that relay is unavailable your login cannot complete.** For larger
+    ///   or production apps, prefer running your own relay and passing its base URL here.
     ///
-    /// Relay:
-    /// - If `relay` is `Some`, use it as the base URL (trailing slash optional).
-    /// - If `None`, use [`DEFAULT_HTTP_RELAY`].
-    /// - The channel path segment is derived as `base64url(hash(client_secret))`.
+    /// # What is an [HTTP relay](https://httprelay.io)?
+    /// A tiny server that provides one-shot “link” channels for **producer => consumer**
+    /// delivery: your app long-polls `GET /link/<channel>`, and the signer `POST`s the
+    /// encrypted token to the same channel; the relay just forwards bytes (no keys or
+    /// Pubky logic required). See the HTTP Relay docs for the `link` method.
     ///
-    /// Capabilities:
-    /// - `caps` are encoded into the `pubkyauth://` URL consumed by the signer.
+    /// # Self-hosting a relay
+    /// HTTP Relay is open-source (MIT). You can run it from static binaries or Docker. A minimal
+    /// Docker quickstart is:
+    /// ```sh
+    /// docker run -p 8080:8080 jonasjasas/httprelay
+    /// ```
+    /// Then point this API at your instance, e.g. `Some(Url::parse("http://localhost:8080/link/")?)`.
+    /// See the project site for [downloads and options](https://httprelay.io/download/)
     ///
-    /// Errors:
-    /// - Propagates client build failures as `Error::Build`.
-    /// - Returns URL parsing errors for an invalid `relay`.
+    /// # Security & channel derivation
+    /// - The per-flow channel path is `base64url(hash(client_secret))`.
+    /// - The AuthToken is **encrypted with `client_secret`**; the relay cannot decrypt it
+    ///   (it merely forwards the ciphertext).
+    ///
+    /// # Capabilities
+    /// `caps` are embedded into the `pubkyauth://` URL so the signer can review and approve them.
+    ///
+    /// # Errors
+    /// - Returns URL parse errors for an invalid `relay`.
+    ///
+    /// Internals:
+    /// - Generates a random `client_secret` (32 bytes) and a user-displayable `pubkyauth://` deep link.
+    /// - Derives the relay channel from `client_secret` and stores both the deep link and the
+    ///   fully-qualified channel URL for subsequent polling.
     pub fn new(relay: Option<impl Into<Url>>, caps: &Capabilities) -> Result<Self> {
         let client = global_client()?;
         Self::new_with_client(client, relay, caps)
