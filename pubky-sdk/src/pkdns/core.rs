@@ -17,7 +17,7 @@ use crate::{
 /// Construct it **without** a keypair for read-only queries:
 /// ```no_run
 /// # async fn example() -> pubky::Result<()> {
-/// let pkdns = pubky::PkDns::new()?;
+/// let pkdns = pubky::Pkdns::new()?;
 /// if let Some(host) = pkdns.get_homeserver(&"o4dk…uyy".try_into().unwrap()).await {
 ///     println!("homeserver: {host}");
 /// }
@@ -27,12 +27,12 @@ use crate::{
 /// Or **with** a keypair for publishing:
 /// ```no_run
 /// # async fn example(client: std::sync::Arc<pubky::PubkyClient>, kp: pubky::Keypair) -> pubky::Result<()> {
-/// let pkdns = pubky::PkDns::with_client_and_keypair(client, kp);
+/// let pkdns = pubky::Pkdns::with_client_and_keypair(client, kp);
 /// pkdns.publish_homeserver_if_stale(None).await?;
 /// # Ok(()) }
 /// ```
 #[derive(Debug, Clone)]
-pub struct PkDns {
+pub struct Pkdns {
     client: Arc<PubkyClient>,
     keypair: Option<Keypair>,
 }
@@ -40,12 +40,12 @@ pub struct PkDns {
 impl PubkySigner {
     /// Get a PKDNS actor bound to this signer's client and keypair (publishing enabled).
     #[inline]
-    pub fn pkdns(&self) -> crate::PkDns {
-        crate::PkDns::with_client_and_keypair(self.client.clone(), self.keypair.clone())
+    pub fn pkdns(&self) -> crate::Pkdns {
+        crate::Pkdns::with_client_and_keypair(self.client.clone(), self.keypair.clone())
     }
 }
 
-impl PkDns {
+impl Pkdns {
     /// Read-only PKDNS actor using the global shared client.
     pub fn new() -> Result<Self> {
         Ok(Self {
@@ -111,7 +111,7 @@ impl PkDns {
     ) -> Result<()> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
             Error::from(AuthError::Validation(
-                "publishing `_pubky` requires a keypair (use PkDns::with_client_and_keypair or signer.pkdns())".into(),
+                "publishing `_pubky` requires a keypair (use Pkdns::with_client_and_keypair or signer.pkdns())".into(),
             ))
         })?;
         let pubky = kp.public_key();

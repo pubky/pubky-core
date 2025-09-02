@@ -29,7 +29,7 @@
 //!
 //! // Publish or resolve your homeserver `_pubky` (PkDNS/PKARR) record
 //! signer.pkdns().publish_homeserver_if_stale(None).await?;
-//! let resolved = PkDns::new()?.get_homeserver(&signer.pubky()).await;
+//! let resolved = Pkdns::new()?.get_homeserver(&signer.pubky()).await;
 //! println!("current homeserver: {:?}", resolved);
 //!
 //! // Keyless third-party app: start PubkyAuth and turn it into an agent
@@ -47,7 +47,7 @@
 
 // src/
 // ├─ lib.rs                  -- Crate root: declares modules, re-exports public API (PubkyClient, PubkyAgent,
-// │                             PubkyDrive, PubkyAuth, PkDns, PubkySigner, common types). Lints & crate docs.
+// │                             PubkyDrive, PubkyAuth, Pkdns, PubkySigner, common types). Lints & crate docs.
 // ├─ prelude.rs              -- Concentrated re-exports for quick-start imports.
 // ├─ macros.rs               -- Cross-platform logging macro(s) (`cross_debug!`) used internally.
 // ├─ errors.rs               -- Unified error types (Build/Request/Pkarr/Auth) + top-level Error/Result.
@@ -87,7 +87,7 @@
 // │                             pkdns republish helpers (sync or background).
 // │
 // ├─ pkdns/                  -- PKDNS/PKARR actor for resolving & publishing `_pubky` records.
-// │  └─ core.rs              -- `PkDns`: read-only (`new`/`with_client`) and publishing-capable
+// │  └─ core.rs              -- `Pkdns`: read-only (`new`/`with_client`) and publishing-capable
 // │                             (`with_client_and_keypair`, or via `signer.pkdns()`); `get_homeserver`,
 // │                             `publish_homeserver_{force,if_stale}`, internal host selection.
 //
@@ -112,7 +112,7 @@ pub use auth::PubkyAuth;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use drive::core::PubkyDrive;
 pub use errors::{BuildError, Error, Result};
-pub use pkdns::core::PkDns;
+pub use pkdns::core::Pkdns;
 pub use signer::PubkySigner;
 // Export common types and constants
 pub use crate::drive::{

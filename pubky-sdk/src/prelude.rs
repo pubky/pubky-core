@@ -16,7 +16,7 @@ pub use crate::PubkyAuth;
 // Homeserver drive storage API (http verbs + list)
 pub use crate::PubkyDrive;
 // Pkdns/Pkarr retrieval and publishing
-pub use crate::PkDns;
+pub use crate::Pkdns;
 
 // Helpers
 // Homeserver Paths / URLs
