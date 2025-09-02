@@ -1,9 +1,8 @@
 use reqwest::{Method, StatusCode};
-use std::sync::Arc;
 
 use pubky_common::{auth::AuthToken, session::Session};
 
-use crate::{PubkyClient, PublicKey, Result, util::check_http_status};
+use crate::{PubkyClient, PubkyDrive, PublicKey, Result, util::check_http_status};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
@@ -29,7 +28,7 @@ use crate::errors::AuthError;
 /// - `PubkyAgent` is cheap to clone and thread-safe; it shares the underlying `PubkyClient`.
 #[derive(Clone, Debug)]
 pub struct PubkyAgent {
-    pub(crate) client: Arc<PubkyClient>,
+    pub(crate) client: PubkyClient,
 
     /// Known session for this agent.
     pub(crate) session: Session,
@@ -44,7 +43,7 @@ impl PubkyAgent {
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response,
     /// and delegates construction to [`Self::new_from_response`].
-    pub async fn new(client: Arc<PubkyClient>, token: &AuthToken) -> Result<PubkyAgent> {
+    pub async fn new(client: &PubkyClient, token: &AuthToken) -> Result<PubkyAgent> {
         let url = format!("pubky://{}/session", token.pubky());
         let response = client
             .cross_request(Method::POST, url)
@@ -54,7 +53,7 @@ impl PubkyAgent {
             .await?;
 
         let response = check_http_status(response).await?;
-        Self::new_from_response(client, response).await
+        Self::new_from_response(client.clone(), response).await
     }
 
     /// Construct an agent **from a successful `/session` or `/signup` response**.
@@ -62,7 +61,7 @@ impl PubkyAgent {
     /// - Reads the `Session` body (to learn the user pubky).
     /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
     pub(crate) async fn new_from_response(
-        client: Arc<PubkyClient>,
+        client: PubkyClient,
         response: reqwest::Response,
     ) -> Result<PubkyAgent> {
         #[cfg(target_arch = "wasm32")]
@@ -122,7 +121,7 @@ impl PubkyAgent {
     /// Raw transport handle. No per-agent cookie injection. Use `homeserver()` for
     /// authenticated, agent-scoped requests.
     pub fn client(&self) -> &PubkyClient {
-        Arc::as_ref(&self.client)
+        &self.client
     }
 
     /// Retrieve session for current pubky from homeserver.
@@ -146,5 +145,24 @@ impl PubkyAgent {
         let response = self.drive().delete("/session").await?;
         check_http_status(response).await?;
         Ok(())
+    }
+}
+
+impl PubkyAgent {
+    /// Create a **session-mode** drive bound to this agent’s user and session.
+    ///
+    /// - Relative paths (e.g. `"/pub/app/file"`) are resolved to **this** user.
+    /// - On native targets, requests that target this user’s homeserver automatically
+    ///   carry the session cookie.
+    ///
+    /// See [`PubkyDrive`] for usage examples.
+    pub fn drive(&self) -> PubkyDrive {
+        PubkyDrive {
+            client: self.client.clone(),
+            pubky: Some(self.session.pubky().clone()),
+            has_session: true,
+            #[cfg(not(target_arch = "wasm32"))]
+            cookie: Some(self.cookie.clone()),
+        }
     }
 }

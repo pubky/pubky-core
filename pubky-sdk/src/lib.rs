@@ -1,5 +1,5 @@
 //! #![doc = include_str!("../README.md")]
-//! **pubky sdk** a small, ergonomic library for building Pubky applications.
+//! **Pubky SDK** a small, ergonomic library for building Pubky applications.
 //!
 //! # Quick start
 //! ```no_run
@@ -119,7 +119,6 @@ pub use crate::drive::{
     list::ListBuilder,
     path::{FilePath, PubkyPath},
 };
-// pub use agent::homeserver::ListBuilder;
 pub use client::core::DEFAULT_RELAYS;
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};

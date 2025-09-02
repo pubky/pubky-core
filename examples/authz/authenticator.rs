@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use pubky::{Capabilities, PubkyClient, PubkySigner, PublicKey};
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 use url::Url;
 
 /// local testnet HOMESERVER
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
 
     let signer = if cli.testnet {
         let client = PubkyClient::testnet()?;
-        let signer = PubkySigner::with_client(Arc::new(client), keypair);
+        let signer = PubkySigner::with_client(&client, keypair);
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.

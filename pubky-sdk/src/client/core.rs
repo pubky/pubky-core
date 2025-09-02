@@ -1,23 +1,11 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
+pub use pkarr::DEFAULT_RELAYS;
+
 use crate::errors::BuildError;
 
-/// Default HTTPS PKARR relay endpoints used by a fresh [`PubkyClient`].
-///
-/// You can keep these defaults or override them via the builder:
-/// ```
-/// # use pubky::{PubkyClient, PubkyClientBuilder};
-/// # fn main() -> Result<(), pubky::BuildError> {
-/// // Start from defaults; you can also supply your own entirely.
-/// let mut b = PubkyClient::builder();
-/// b.pkarr(|p| p.relays(&["https://pkarr.example.net/"]).expect("infallible"));
-/// let _client = b.build()?;
-/// # Ok(()) }
-/// ```
-pub const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Default, Clone)]
 #[must_use]
@@ -31,7 +19,6 @@ const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 /// - Pkarr relays: [`DEFAULT_RELAYS`]
 /// - HTTP request timeout: reqwest default (no global timeout) unless set via
 ///   [`Self::request_timeout`]
-/// - Max record age (before republish): 1 hour (see [`Self::max_record_age`])
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
 ///
 /// # Example
@@ -40,17 +27,25 @@ const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 /// # use pubky::{PubkyClient, PubkyClientBuilder};
 /// let client = PubkyClient::builder()
 ///     .request_timeout(Duration::from_secs(10))
-///     .max_record_age(Duration::from_secs(30 * 60))
 ///     .user_agent_extra("myapp/1.2.3")
 ///     .build()?;
 /// # Ok::<_, pubky::BuildError>(())
 /// ```
+///
+/// You can keep the default Pkarr relays or override them via the builder:
+/// ```
+/// # use pubky::{PubkyClient, PubkyClientBuilder};
+/// # fn main() -> Result<(), pubky::BuildError> {
+/// // Start from defaults; you can also supply your own entirely.
+/// let mut b = PubkyClient::builder();
+/// b.pkarr(|p| p.relays(&["https://pkarr.example.net/"]).expect("infallible"));
+/// let _client = b.build()?;
+/// # Ok(()) }
+/// ```
 pub struct PubkyClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
-    /// Maximum age before a user record should be republished.
-    /// Defaults to 1 hour.
-    max_record_age: Option<Duration>,
+
     /// Optional user-agent segment appended to the default UA for app-level telemetry.
     user_agent_extra: Option<String>,
 
@@ -130,13 +125,6 @@ impl PubkyClientBuilder {
         self
     }
 
-    /// Set max age a record can have before it must be republished.
-    /// Defaults to 1 hour if not overridden.
-    pub fn max_record_age(&mut self, max_age: Duration) -> &mut Self {
-        self.max_record_age = Some(max_age);
-        self
-    }
-
     /// Build [Client]
     pub fn build(&self) -> Result<PubkyClient, BuildError> {
         let pkarr = self.pkarr.build()?;
@@ -165,20 +153,12 @@ impl PubkyClientBuilder {
 
             icann_http_builder = icann_http_builder.timeout(timeout);
         }
-
-        // Maximum age before a homeserver record should be republished.
-        // Default is 1 hour. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
-        // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
-        let max_record_age = self.max_record_age.unwrap_or(DEFAULT_MAX_RECORD_AGE);
-
         Ok(PubkyClient {
             pkarr,
             http: http_builder.build()?,
 
             #[cfg(not(target_arch = "wasm32"))]
             icann_http: icann_http_builder.build()?,
-
-            max_record_age,
 
             #[cfg(target_arch = "wasm32")]
             testnet_host: self.testnet_host.clone(),
@@ -213,7 +193,7 @@ impl PubkyClientBuilder {
 /// `Arc<PubkyClient>` under the hood.
 ///
 /// ### Construction
-/// Use [`PubkyClient::builder()`] to tweak timeouts, max record age, relays, or
+/// Use [`PubkyClient::builder()`] to tweak timeouts, relays, or
 /// user-agent; or pick sensible defaults via [`PubkyClient::new()`]. A
 /// [`PubkyClient::testnet()`] helper configures a local test network.
 ///
@@ -266,9 +246,6 @@ pub struct PubkyClient {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) icann_http: reqwest::Client,
 
-    /// The record age threshold before republishing.
-    pub(crate) max_record_age: Duration,
-
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
     pub(crate) testnet_host: Option<String>,
@@ -280,15 +257,10 @@ impl PubkyClient {
         Self::builder().build()
     }
 
-    /// Returns the current max record age threshold.
-    pub fn max_record_age(&self) -> Duration {
-        self.max_record_age
-    }
-
     /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> PubkyClientBuilder {
         let mut builder = PubkyClientBuilder::default();
-        builder.pkarr(|pkarr| pkarr.relays(DEFAULT_RELAYS).expect("infallible"));
+        builder.pkarr(|pkarr| pkarr.relays(&DEFAULT_RELAYS).expect("infallible"));
         builder
     }
 

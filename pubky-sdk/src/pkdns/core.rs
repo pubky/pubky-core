@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use pkarr::{
@@ -11,6 +10,8 @@ use crate::{
     errors::{AuthError, Error, PkarrError, Result},
     global::global_client,
 };
+
+pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 
 /// PKDNS actor: resolve & publish `_pubky` PKARR records.
 ///
@@ -33,41 +34,71 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct Pkdns {
-    client: Arc<PubkyClient>,
+    client: PubkyClient,
     keypair: Option<Keypair>,
+    /// Maximum age before a user record should be republished.
+    /// Defaults to 1 hour.
+    stale_after: Duration,
 }
 
 impl PubkySigner {
     /// Get a PKDNS actor bound to this signer's client and keypair (publishing enabled).
     #[inline]
     pub fn pkdns(&self) -> crate::Pkdns {
-        crate::Pkdns::with_client_and_keypair(self.client.clone(), self.keypair.clone())
+        crate::Pkdns::with_client_and_keypair(&self.client, self.keypair.clone())
     }
 }
 
 impl Pkdns {
     /// Read-only PKDNS actor using the global shared client.
     pub fn new() -> Result<Self> {
+        let shared = global_client()?;
         Ok(Self {
-            client: global_client()?,
+            client: shared.as_ref().clone(),
             keypair: None,
+            stale_after: DEFAULT_STALE_AFTER,
         })
     }
 
     /// Read-only PKDNS actor on a specific client.
-    pub fn with_client(client: Arc<PubkyClient>) -> Self {
+    pub fn with_client(client: &PubkyClient) -> Self {
         Self {
-            client,
+            client: client.clone(),
             keypair: None,
+            stale_after: DEFAULT_STALE_AFTER,
         }
     }
 
     /// Publishing-capable PKDNS actor: provide a client and a keypair.
-    pub fn with_client_and_keypair(client: Arc<PubkyClient>, keypair: Keypair) -> Self {
+    pub fn with_client_and_keypair(client: &PubkyClient, keypair: Keypair) -> Self {
         Self {
-            client,
+            client: client.clone(),
             keypair: Some(keypair),
+            stale_after: DEFAULT_STALE_AFTER,
         }
+    }
+
+    /// Set how long an existing `_pubky` PKARR record is considered **fresh** (builder-style).
+    ///
+    /// If the current record’s age is **≤ this duration**, [`Self::publish_homeserver_if_stale`]
+    /// is a no-op; otherwise the record is (re)published.
+    ///
+    /// Defaults to 1 hour [DEFAULT_STALE_AFTER].
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # async fn ex() -> pubky::Result<()> {
+    /// let pkdns = pubky::PkDns::new()?
+    ///     .stale_after(Duration::from_secs(30 * 60)); // 30 minutes
+    ///
+    /// // Will re-publish same homeserver only if the existing record is older than 30 minutes.
+    /// pkdns.publish_homeserver_if_stale(None).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn set_stale_after(mut self, d: Duration) -> Self {
+        self.stale_after = d;
+        self
     }
 
     // -------------------- Reads (no keypair needed) --------------------
@@ -130,7 +161,7 @@ impl Pkdns {
             if let Some(ref record) = existing {
                 let elapsed = Timestamp::now() - record.timestamp();
                 let age = Duration::from_micros(elapsed.as_u64());
-                if age <= self.client.max_record_age() {
+                if age <= self.stale_after {
                     return Ok(());
                 }
             }

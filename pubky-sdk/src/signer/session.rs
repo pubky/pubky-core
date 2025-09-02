@@ -91,7 +91,7 @@ impl PubkySigner {
     async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<PubkyAgent> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
-        let agent = PubkyAgent::new(self.client.clone(), &token).await?;
+        let agent = PubkyAgent::new(&self.client, &token).await?;
 
         if publish_sync {
             self.pkdns().publish_homeserver_if_stale(None).await?;

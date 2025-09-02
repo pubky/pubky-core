@@ -7,7 +7,7 @@ use crate::Result;
 use crate::util::check_http_status;
 
 impl PubkyDrive {
-    fn require_session_for_write(&self) -> Result<()> {
+    fn err_if_require_session_for_write(&self) -> Result<()> {
         if self.has_session {
             return Ok(());
         }
@@ -67,7 +67,7 @@ impl PubkyDrive {
         P: IntoPubkyPath,
         B: Into<reqwest::Body>,
     {
-        self.require_session_for_write()?;
+        self.err_if_require_session_for_write()?;
         let resp = self
             .request(Method::PUT, path)
             .await?
@@ -93,7 +93,7 @@ impl PubkyDrive {
         P: IntoPubkyPath,
         B: Into<reqwest::Body>,
     {
-        self.require_session_for_write()?;
+        self.err_if_require_session_for_write()?;
         let resp = self
             .request(Method::POST, path)
             .await?
@@ -119,7 +119,7 @@ impl PubkyDrive {
         P: IntoPubkyPath,
         B: Into<reqwest::Body>,
     {
-        self.require_session_for_write()?;
+        self.err_if_require_session_for_write()?;
         let resp = self
             .request(Method::PATCH, path)
             .await?
@@ -141,7 +141,7 @@ impl PubkyDrive {
     /// # Ok(()) }
     /// ```
     pub async fn delete<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {
-        self.require_session_for_write()?;
+        self.err_if_require_session_for_write()?;
         let resp = self.request(Method::DELETE, path).await?.send().await?;
         check_http_status(resp).await
     }

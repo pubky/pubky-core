@@ -1,7 +1,6 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::future::{AbortHandle, Abortable};
 use reqwest::Method;
-use std::sync::Arc;
 use url::Url;
 
 #[cfg(target_arch = "wasm32")]
@@ -39,7 +38,7 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// - `PubkyAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
 #[derive(Debug)]
 pub struct PubkyAuth {
-    client: Arc<PubkyClient>,
+    client: PubkyClient,
     client_secret: [u8; 32],
     pubkyauth_url: Url,
     relay_channel_url: Url,
@@ -85,7 +84,7 @@ impl PubkyAuth {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new_with_client(
-        client: Arc<PubkyClient>,
+        client: &PubkyClient,
         relay: Option<impl Into<Url>>,
         caps: &Capabilities,
     ) -> Result<Self> {
@@ -112,7 +111,7 @@ impl PubkyAuth {
         drop(segments);
 
         Ok(Self {
-            client,
+            client: client.clone(),
             client_secret,
             pubkyauth_url,
             relay_channel_url: relay_url,
@@ -159,8 +158,8 @@ impl PubkyAuth {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new(relay: Option<impl Into<Url>>, caps: &Capabilities) -> Result<Self> {
-        let client = global_client()?;
-        Self::new_with_client(client, relay, caps)
+        let client = global_client()?.as_ref().clone();
+        Self::new_with_client(&client, relay, caps)
     }
 
     /// Consume the PubkyAuth, start background polling, and return `(subscription, pubkyauth_url)`.
@@ -191,7 +190,7 @@ impl PubkyAuth {
 
         // Background polling future (single-shot delivery)
         let fut = async move {
-            let res = Self::poll_for_token(client, relay_channel_url, client_secret).await;
+            let res = Self::poll_for_token(&client, relay_channel_url, client_secret).await;
             // Ignore send failure if the receiver was dropped.
             let _ = tx.send(res);
         };
@@ -217,7 +216,7 @@ impl PubkyAuth {
     /// - Non-2xx => mapped via [`check_http_status`].
     /// - Transport timeout => retry loop; other transport errors propagate.
     async fn poll_for_token(
-        client: Arc<PubkyClient>,
+        client: &PubkyClient,
         relay_channel_url: Url,
         client_secret: [u8; 32],
     ) -> Result<AuthToken> {
@@ -257,7 +256,7 @@ impl PubkyAuth {
 #[derive(Debug)]
 #[must_use = "hold on to this and call token().await or into_agent().await to complete the auth flow"]
 pub struct AuthSubscription {
-    client: Arc<PubkyClient>,
+    client: PubkyClient,
     rx: flume::Receiver<Result<AuthToken>>,
     abort: AbortHandle,
 }
@@ -291,7 +290,7 @@ impl AuthSubscription {
     /// # Ok::<(), pubky::Error>(())
     /// ```
     pub async fn into_agent(self) -> Result<PubkyAgent> {
-        PubkyAgent::new(self.client.clone(), &self.token().await?).await
+        PubkyAgent::new(&self.client.clone(), &self.token().await?).await
     }
 
     /// Non-blocking probe for readiness.

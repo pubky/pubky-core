@@ -1,8 +1,7 @@
-use std::{env, sync::Arc};
-
 use anyhow::Result;
 use clap::Parser;
 use reqwest::Method;
+use std::env;
 use url::Url;
 
 use pubky::{PubkyClient, PubkyDrive};
@@ -29,7 +28,7 @@ async fn main() -> Result<()> {
 
     // For a basic GET request to any homeserver no session or key material is needed.
     let drive = if args.testnet {
-        PubkyDrive::public_with_client(Arc::new(PubkyClient::testnet()?))
+        PubkyDrive::public_with_client(&PubkyClient::testnet()?)
     } else {
         PubkyDrive::public()?
     };

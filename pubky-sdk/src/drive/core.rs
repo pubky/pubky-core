@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use pkarr::PublicKey;
 use reqwest::{Method, RequestBuilder};
 use url::Url;
 
 use super::path::IntoPubkyPath;
 use crate::{
-    PubkyAgent, PubkyClient, PubkyPath,
+    PubkyClient, PubkyPath,
     errors::{RequestError, Result},
     global::global_client,
 };
@@ -58,32 +56,13 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct PubkyDrive {
-    client: Arc<PubkyClient>,
+    pub(crate) client: PubkyClient,
     /// When `Some(pubky)`, relative paths are agent-scoped and cookies may be attached.
     /// When `None`, only absolute user-qualified paths are accepted.
-    pubky: Option<PublicKey>,
+    pub(crate) pubky: Option<PublicKey>,
     pub(crate) has_session: bool,
     #[cfg(not(target_arch = "wasm32"))]
-    cookie: Option<String>,
-}
-
-impl PubkyAgent {
-    /// Create a **session-mode** drive bound to this agent’s user and session.
-    ///
-    /// - Relative paths (e.g. `"/pub/app/file"`) are resolved to **this** user.
-    /// - On native targets, requests that target this user’s homeserver automatically
-    ///   carry the session cookie.
-    ///
-    /// See [`PubkyDrive`] for usage examples.
-    pub fn drive(&self) -> PubkyDrive {
-        PubkyDrive {
-            client: self.client.clone(),
-            pubky: Some(self.session.pubky().clone()),
-            has_session: true,
-            #[cfg(not(target_arch = "wasm32"))]
-            cookie: Some(self.cookie.clone()),
-        }
-    }
+    pub(crate) cookie: Option<String>,
 }
 
 impl PubkyDrive {
@@ -103,7 +82,8 @@ impl PubkyDrive {
     /// # Ok(()) }
     /// ```
     pub fn public() -> Result<PubkyDrive> {
-        Ok(Self::public_with_client(global_client()?))
+        let client = global_client()?;
+        Ok(Self::public_with_client(&client))
     }
 
     /// Create a **public (unauthenticated)** drive with an explicit client.
@@ -123,9 +103,9 @@ impl PubkyDrive {
     /// let urls = drive.list("alice_pubky/pub/site/").limit(10).send().await?;
     /// # Ok(()) }
     /// ```
-    pub fn public_with_client(client: Arc<PubkyClient>) -> PubkyDrive {
+    pub fn public_with_client(client: &PubkyClient) -> PubkyDrive {
         PubkyDrive {
-            client,
+            client: client.clone(),
             pubky: None,
             has_session: false,
             #[cfg(not(target_arch = "wasm32"))]
