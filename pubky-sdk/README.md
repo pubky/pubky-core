@@ -53,4 +53,4 @@ Check more [examples](https://github.com/pubky/pubky-core/tree/main/examples) fo
 
 ## JS bindings
 
-Find a wrapper of this crate using `wasm_bindgen` in `pubky-client/bindings/js`
+Find a wrapper of this crate using `wasm_bindgen` in `pubky-sdk/bindings/js`
