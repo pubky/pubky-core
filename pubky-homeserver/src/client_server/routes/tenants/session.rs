@@ -15,7 +15,7 @@ pub async fn session(
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
+    if let Some(secret) = session_secret_from_cookies(Some(&cookies), pubky.public_key()) {
         if let Some(session) = state.db.get_session(&secret)? {
             // TODO: add content-type
             return Ok(session.serialize());
@@ -31,7 +31,7 @@ pub async fn signout(
 ) -> HttpResult<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
-    if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
+    if let Some(secret) = session_secret_from_cookies(Some(&cookies), pubky.public_key()) {
         state.db.delete_session(&secret)?;
     }
 

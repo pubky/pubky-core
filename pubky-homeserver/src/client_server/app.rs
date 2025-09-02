@@ -29,13 +29,50 @@ use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use super::layers::{
-    pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
-};
+use super::layers::{rate_limiter::RateLimiterLayer, trace::with_trace_layer};
 use super::routes::{auth, events, root, tenants};
 
 static HOMESERVER_VERSION: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
+
+fn base() -> Router<AppState> {
+    Router::new()
+        .route("/", get(root::handler))
+        .route("/signup", post(auth::signup))
+        .route("/session", post(auth::signin))
+        // Events
+        .route("/events/", get(events::feed))
+    // TODO: add size limit
+    // TODO: revisit if we enable streaming big payloads
+    // TODO: maybe add to a separate router (drive router?).
+}
+
+pub fn create_app(state: AppState, context: &AppContext) -> Router {
+    let app = base()
+        .merge(tenants::router(state.clone()))
+        .layer(CookieManagerLayer::new())
+        .layer(CorsLayer::very_permissive())
+        .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
+        .layer(RateLimiterLayer::new(
+            context.config_toml.drive.rate_limits.clone(),
+        ))
+        .with_state(state);
+
+    // Apply trace and pubky host layers to the complete router.
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
+}
+
+// Middleware to add a `Server` header to all responses
+async fn add_server_header(request: Request<Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+
+    // Add a custom header to the response
+    response
+        .headers_mut()
+        .insert(header::SERVER, HeaderValue::from_static(HOMESERVER_VERSION));
+
+    response
+}
 
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
@@ -124,13 +161,13 @@ impl ClientServer {
             Some(quota_mb * 1024 * 1024)
         };
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            db: context.db.clone(),
-            file_service: context.file_service.clone(),
-            signup_mode: context.config_toml.general.signup_mode.clone(),
-            user_quota_bytes: quota_bytes,
-        };
+        let state = AppState::new(
+            AuthVerifier::default(),
+            context.db.clone(),
+            context.file_service.clone(),
+            context.config_toml.general.signup_mode.clone(),
+            quota_bytes,
+        );
         super::create_app(state.clone(), context)
     }
 
@@ -208,46 +245,4 @@ impl Drop for ClientServer {
     fn drop(&mut self) {
         self.shutdown();
     }
-}
-
-fn base() -> Router<AppState> {
-    Router::new()
-        .route("/", get(root::handler))
-        .route("/signup", post(auth::signup))
-        .route("/session", post(auth::signin))
-        // Events
-        .route("/events/", get(events::feed))
-    // TODO: add size limit
-    // TODO: revisit if we enable streaming big payloads
-    // TODO: maybe add to a separate router (drive router?).
-}
-
-pub fn create_app(state: AppState, context: &AppContext) -> Router {
-    let app = base()
-        // XXX: dzdidi
-        .merge(tenants::router(state.clone()))
-        .layer(CookieManagerLayer::new())
-        .layer(CorsLayer::very_permissive())
-        .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
-        .layer(RateLimiterLayer::new(
-            context.config_toml.drive.rate_limits.clone(),
-        ))
-        // XXX: dzdidi - remove it in favour of path containing pubky
-        .layer(PubkyHostLayer)
-        .with_state(state);
-
-    // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
-}
-
-// Middleware to add a `Server` header to all responses
-async fn add_server_header(request: Request<Body>, next: Next) -> Response {
-    let mut response = next.run(request).await;
-
-    // Add a custom header to the response
-    response
-        .headers_mut()
-        .insert(header::SERVER, HeaderValue::from_static(HOMESERVER_VERSION));
-
-    response
 }
