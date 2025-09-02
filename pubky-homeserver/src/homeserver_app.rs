@@ -1,7 +1,9 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{ClientServer, ClientServerBuildError};
 use crate::data_directory::periodic_backup::PeriodicBackup;
-use crate::republishers::{HomeserverKeyRepublisher, UserKeysRepublisher};
+use crate::republishers::{
+    HomeserverKeyRepublisher, KeyRepublisherBuildError, UserKeysRepublisher,
+};
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
@@ -91,7 +93,7 @@ impl HomeserverApp {
             client_server.pubky_tls_socket.port(),
         )
         .await
-        .map_err(ClientServerBuildError::KeyRepublisher)?;
+        .map_err(KeyRepublisherBuildError::KeyRepublisher)?;
 
         Ok(Self {
             context,
