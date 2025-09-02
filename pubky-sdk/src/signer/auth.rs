@@ -27,7 +27,7 @@ impl PubkySigner {
     /// Requirements:
     /// - `pubkyauth:///?caps=…&secret=<b64url>&relay=<relay_base>`
     /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
-    pub async fn send_auth_token<T: IntoUrl>(&self, pubkyauth_url: &T) -> Result<()> {
+    pub async fn approve_pubkyauth_request<T: IntoUrl>(&self, pubkyauth_url: &T) -> Result<()> {
         let pubkyauth_url = Url::parse(pubkyauth_url.as_str())?;
 
         // 1) Extract query params

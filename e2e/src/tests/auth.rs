@@ -130,7 +130,10 @@ async fn authz() {
     // Signer authenticator
     let signer = PubkySigner::random().unwrap();
     signer.signup(&server.public_key(), None).await.unwrap();
-    signer.send_auth_token(&pubkyauth_url).await.unwrap();
+    signer
+        .approve_pubkyauth_request(&pubkyauth_url)
+        .await
+        .unwrap();
 
     // Retrieve the session-bound agent (third party app)
     let user = subscription.into_agent().await.unwrap();

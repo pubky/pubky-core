@@ -7,7 +7,7 @@
 //! resettable client that those “lazy constructors” can reuse. The goals:
 //!
 //! - **Ergonomics**: one-liners like `PubkySigner:new(kp)` and
-//!   `PubkyAuth::new(..)`.
+//!   `PubkyAuth::new(..)` just work.
 //! - **Performance**: reuse a single transport stack (connection pools, TLS state, pkarr cache).
 //! - **Safety**: resetting the global must not invalidate already-constructed agents.
 //!
