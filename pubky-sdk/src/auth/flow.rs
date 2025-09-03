@@ -162,6 +162,20 @@ impl PubkyAuth {
         Self::new_with_client(&client, relay, caps)
     }
 
+    /// Return the `pubkyauth://` deep link to display (QR/deeplink) to the signer.
+    ///
+    /// ⚠️ **Ordering matters if you use [`wait_for_agent`](Self::wait_for_agent).**
+    /// `wait_for_agent()` starts polling only when it is called. If you plan to use it,
+    /// call `pubkyauth_url()` to display the link and then **immediately** await
+    /// `wait_for_agent().await` so approvals aren’t missed during the gap.
+    ///
+    /// If you want “can’t-miss” semantics without thinking about ordering, use
+    /// [`subscribe`](Self::subscribe), which starts polling first and returns both the
+    /// subscription handle and this URL.
+    pub fn pubkyauth_url(&self) -> &Url {
+        &self.pubkyauth_url
+    }
+
     /// Consume the PubkyAuth, start background polling, and return `(subscription, pubkyauth_url)`.
     ///
     /// Semantics:
@@ -207,6 +221,66 @@ impl PubkyAuth {
             abort: abort_handle,
         };
         (auth_subscription, self.pubkyauth_url)
+    }
+
+    /// Block (via async/await) until the signer approves, then return a session-bound [`PubkyAgent`].
+    ///
+    /// This is the ergonomic, single-call variant of [`subscribe`] + [`AuthSubscription::into_agent`]
+    /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
+    ///
+    /// **How to use**
+    /// 1. Build a [`PubkyAuth`], read [`pubkyauth_url`](Self::pubkyauth_url), and display it (QR/deeplink).
+    /// 2. Call `wait_for_agent()`. Internally we start a lightweight polling task and await its result.
+    /// 3. On success you get a ready-to-use [`PubkyAgent`] with a valid server session.
+    ///
+    ///
+    /// ⚠️ **Important:** `wait_for_agent()` starts polling **when you call it**. If you use
+    /// [`pubkyauth_url`](Self::pubkyauth_url) to display the link, you **must** call
+    /// `wait_for_agent().await` **immediately after** displaying it. Any delay (e.g., extra I/O, sleeps,
+    /// user prompts) can allow a signer to approve before polling begins, increasing the chance of
+    /// missing the approval. If you cannot guarantee back-to-back calls, prefer
+    /// [`subscribe`](Self::subscribe), which starts polling before you show the URL.
+    ///
+    /// **When to prefer this**
+    /// - One-shot flows where blocking the current task is fine.
+    /// - For non-blocking UIs or multiple concurrent auth flows, use [`subscribe`] and hold the
+    ///   returned [`AuthSubscription`] instead.
+    ///
+    /// **Errors**
+    /// - [`AuthError::RequestExpired`]: the relay channel expired/cancelled before a token arrived.
+    /// - Other variants of [`crate::Error`] for transport/server/auth failures during sign-in.
+    ///
+    ///
+    /// # Examples
+    /// Basic script:
+    /// ```no_run
+    /// # use pubky::{PubkyAuth, Capabilities};
+    /// # async fn run() -> pubky::Result<()> {
+    /// let caps = Capabilities::builder().read("/pub/app/").finish();
+    /// let auth = PubkyAuth::new(None, &caps)?;
+    /// println!("Scan to sign in: {}", auth.pubkyauth_url());
+    /// let agent = auth.wait_for_agent().await?; // must be awaited right when displaying the pubky_auth!
+    /// println!("Signed in as {}", agent.pubky());
+    /// # Ok(()) }
+    /// ```
+    ///
+    /// With an overall timeout and clean cancellation:
+    /// ```no_run
+    /// # use pubky::{PubkyAuth, Capabilities, Error};
+    /// # use tokio::time::{timeout, Duration};
+    /// # async fn run() -> Result<(), Error> {
+    /// let auth = PubkyAuth::new(None, &Capabilities::default())?;
+    /// eprintln!("Open: {}", auth.pubkyauth_url());
+    /// match timeout(Duration::from_secs(120), auth.wait_for_agent()).await {
+    ///     Ok(Ok(agent)) => eprintln!("Welcome {}", agent.public_key()),
+    ///     Ok(Err(e))    => return Err(e),
+    ///     Err(_)        => eprintln!("Auth timed out; please try again."),
+    /// }
+    /// # Ok(()) }
+    /// ```
+    pub async fn wait_for_agent(self) -> Result<PubkyAgent> {
+        let (sub, _) = self.subscribe();
+        sub.into_agent().await
     }
 
     /// Poll the relay once a background task is running; decrypt and verify the token.
@@ -316,12 +390,6 @@ impl PubkyAuth {
     /// Returns the derived relay channel URL, mainly for diagnostics.
     pub fn relay_channel_url(&self) -> &Url {
         &self.relay_channel_url
-    }
-
-    /// Return the `pubkyauth://` deep link to show as QR or open via deeplink.
-    #[inline]
-    pub fn pubkyauth_url(&self) -> &Url {
-        &self.pubkyauth_url
     }
 
     /// Decode utilities for testing.
