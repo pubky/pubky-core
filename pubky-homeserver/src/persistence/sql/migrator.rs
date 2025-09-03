@@ -2,7 +2,15 @@ use sea_query::{ColumnDef, Expr, PostgresQueryBuilder, Query, SimpleExpr, Table}
 use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
-use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait, migrations::{M20250806CreateUserMigration, M20250812CreateSignupCodeMigration, M20250813CreateSessionMigration, M20250814CreateEventMigration, M20250815CreateEntryMigration}};
+use crate::persistence::sql::{
+    db_connection::SqlDb,
+    migration::MigrationTrait,
+    migrations::{
+        M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,
+        M20250813CreateSessionMigration, M20250814CreateEventMigration,
+        M20250815CreateEntryMigration,
+    },
+};
 
 /// The name of the migration table to keep track of which migrations have been applied.
 const MIGRATION_TABLE: &str = "migrations";
@@ -37,16 +45,26 @@ impl<'a> Migrator<'a> {
     }
 
     /// Runs a specific list of migrations.
-    pub async fn run_migrations(&self, migrations: Vec<Box<dyn MigrationTrait>>) -> anyhow::Result<()> {
-        self.create_migration_table().await.map_err(|e| e.context("Failed to create migration table"))?;
-        let already_applied_migrations = self.get_applied_migrations().await.map_err(|e| e.context("Failed to get applied migrations"))?;
+    pub async fn run_migrations(
+        &self,
+        migrations: Vec<Box<dyn MigrationTrait>>,
+    ) -> anyhow::Result<()> {
+        self.create_migration_table()
+            .await
+            .map_err(|e| e.context("Failed to create migration table"))?;
+        let already_applied_migrations = self
+            .get_applied_migrations()
+            .await
+            .map_err(|e| e.context("Failed to get applied migrations"))?;
         let migrations_to_run = migrations
             .into_iter()
             .filter(|m| !already_applied_migrations.contains(&m.name().to_string()))
             .collect::<Vec<_>>();
 
         for migration in migrations_to_run {
-            self.run_migration(&*migration).await.map_err(|e| e.context(format!("Failed to run migration {}", migration.name())))?;
+            self.run_migration(&*migration)
+                .await
+                .map_err(|e| e.context(format!("Failed to run migration {}", migration.name())))?;
         }
         Ok(())
     }
@@ -59,7 +77,8 @@ impl<'a> Migrator<'a> {
         let result: Result<(), anyhow::Error> = {
             migration.up(&mut tx).await?;
             self.mark_migration_as_done(&mut tx, migration.name())
-                .await.map_err(|e| e.context(format!("Failed to mark migration as done")))?;
+                .await
+                .map_err(|e| e.context("Failed to mark migration as done".to_string()))?;
             Ok(())
         };
 
@@ -98,7 +117,7 @@ impl<'a> Migrator<'a> {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = statement.build(PostgresQueryBuilder::default());
+        let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(self.db.pool()).await?;
         Ok(())
     }
@@ -106,9 +125,10 @@ impl<'a> Migrator<'a> {
     /// Returns a list of migrations that have already run.
     async fn get_applied_migrations(&self) -> anyhow::Result<Vec<String>> {
         let statement = Query::select()
-        .column("name")
-        .from(MIGRATION_TABLE).to_owned();
-        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
+            .column("name")
+            .from(MIGRATION_TABLE)
+            .to_owned();
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder);
 
         let rows = sqlx::query(&query).fetch_all(self.db.pool()).await?;
 
@@ -128,11 +148,11 @@ impl<'a> Migrator<'a> {
         migration_name: &str,
     ) -> anyhow::Result<()> {
         let statement = Query::insert()
-        .into_table(MIGRATION_TABLE)
-        .columns(["name"])
-        .values([SimpleExpr::Value(migration_name.into())])?
-        .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+            .into_table(MIGRATION_TABLE)
+            .columns(["name"])
+            .values([SimpleExpr::Value(migration_name.into())])?
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
 
         sqlx::query_with(&query, values).execute(&mut **tx).await?;
         Ok(())
@@ -197,12 +217,12 @@ mod tests {
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
         assert_eq!(applied_migrations, vec!["test_migration"]);
 
-        sqlx::query("SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename='test_table';")
-                .fetch_one(db.pool())
-                .await
-                .expect("Table should exist");
-
-
+        sqlx::query(
+            "SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename='test_table';",
+        )
+        .fetch_one(db.pool())
+        .await
+        .expect("Table should exist");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -246,9 +266,10 @@ mod tests {
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
         assert!(applied_migrations.is_empty());
 
-        let result = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
-            .fetch_one(db.pool())
-            .await;
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
+                .fetch_one(db.pool())
+                .await;
         assert!(result.is_err(), "Table should not exist");
     }
 
@@ -273,10 +294,20 @@ mod tests {
         let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         // Mark the migration as done
-        migrator.run_migration(&TestMigration).await.expect("Should work as usual");
+        migrator
+            .run_migration(&TestMigration)
+            .await
+            .expect("Should work as usual");
         // Try to forcefully run it again
-        migrator.run_migration(&TestMigration).await.expect_err("Should fail because it was already run (unique constraint)");
+        migrator
+            .run_migration(&TestMigration)
+            .await
+            .expect_err("Should fail because it was already run (unique constraint)");
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
-        assert_eq!(applied_migrations.len(), 1, "Migration should only be run once");
+        assert_eq!(
+            applied_migrations.len(),
+            1,
+            "Migration should only be run once"
+        );
     }
 }

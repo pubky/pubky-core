@@ -8,7 +8,7 @@ use crate::{
         sql::{
             event::{EventIden, EventType, EVENT_TABLE},
             user::UserRepository,
-            SqlDb, UnifiedExecutor,
+            UnifiedExecutor,
         },
     },
     shared::{timestamp_to_sqlx_datetime, webdav::EntryPath},
@@ -54,21 +54,24 @@ pub async fn create<'a>(
         .expect("Failed to build insert statement")
         .to_owned();
 
-    let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+    let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
 
     let con = executor.get_con().await?;
     sqlx::query_with(&query, values).execute(con).await?;
     Ok(())
 }
 
-pub async fn migrate_events<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
+pub async fn migrate_events<'a>(
+    lmdb: LmDB,
+    executor: &mut UnifiedExecutor<'a>,
+) -> anyhow::Result<()> {
     tracing::info!("Migrating events from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
     let mut count = 0;
     for record in lmdb.tables.events.iter(&lmdb_txn)? {
         let (timestamp, bytes) = record?;
         let timestamp: Timestamp = timestamp.to_string().try_into()?;
-        let event = Event::deserialize(&bytes)?;
+        let event = Event::deserialize(bytes)?;
         create(&timestamp, &event, executor).await?;
         count += 1;
     }
@@ -100,8 +103,10 @@ mod tests {
             .unwrap();
 
         // PUT pubky://user1_pubkey/folder1/file1.txt
-        let entry_path1 =
-            EntryPath::new(user1_pubkey.clone(), WebDavPath::new("/folder1/file1.txt").unwrap());
+        let entry_path1 = EntryPath::new(
+            user1_pubkey.clone(),
+            WebDavPath::new("/folder1/file1.txt").unwrap(),
+        );
         let event1 = Event::Put(format!("pubky://{}", entry_path1.as_str()));
         let timestamp1 = Timestamp::now();
         lmdb.tables
@@ -129,8 +134,10 @@ mod tests {
         UserRepository::create(&user2_pubkey, &mut sql_db.pool().into())
             .await
             .unwrap();
-        let entry_path2 =
-            EntryPath::new(user2_pubkey.clone(), WebDavPath::new("/folder2/file1.txt").unwrap());
+        let entry_path2 = EntryPath::new(
+            user2_pubkey.clone(),
+            WebDavPath::new("/folder2/file1.txt").unwrap(),
+        );
         // PUT pubky://user2_pubkey/folder2/file1.txt
         let event3 = Event::Put(format!("pubky://{}", entry_path2.as_str()));
         let timestamp3 = Timestamp::now();
@@ -146,7 +153,9 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_events(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
+        migrate_events(lmdb.clone(), &mut sql_db.pool().into())
+            .await
+            .unwrap();
 
         // Check
         let events: Vec<crate::persistence::sql::event::EventEntity> =
@@ -157,14 +166,35 @@ mod tests {
         assert_eq!(events[0].event_type, EventType::Put);
         assert_eq!(events[0].path, entry_path1);
         assert_eq!(events[0].user_pubkey, user1_pubkey);
-        assert_eq!(events[0].created_at.format("%Y-%m-%d %H:%M:%S").to_string(), DateTime::from_timestamp((timestamp1.as_u64() / 1_000_000) as i64, 0).unwrap().naive_utc().format("%Y-%m-%d %H:%M:%S").to_string());
+        assert_eq!(
+            events[0].created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            DateTime::from_timestamp((timestamp1.as_u64() / 1_000_000) as i64, 0)
+                .unwrap()
+                .naive_utc()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        );
         assert_eq!(events[1].event_type, EventType::Delete);
         assert_eq!(events[1].path, entry_path1);
         assert_eq!(events[1].user_pubkey, user1_pubkey);
-        assert_eq!(events[1].created_at.format("%Y-%m-%d %H:%M:%S").to_string(), DateTime::from_timestamp((timestamp2.as_u64() / 1_000_000) as i64, 0).unwrap().naive_utc().format("%Y-%m-%d %H:%M:%S").to_string());
+        assert_eq!(
+            events[1].created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            DateTime::from_timestamp((timestamp2.as_u64() / 1_000_000) as i64, 0)
+                .unwrap()
+                .naive_utc()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        );
         assert_eq!(events[2].event_type, EventType::Put);
         assert_eq!(events[2].path, entry_path2);
         assert_eq!(events[2].user_pubkey, user2_pubkey);
-        assert_eq!(events[2].created_at.format("%Y-%m-%d %H:%M:%S").to_string(), DateTime::from_timestamp((timestamp3.as_u64() / 1_000_000) as i64, 0).unwrap().naive_utc().format("%Y-%m-%d %H:%M:%S").to_string());
+        assert_eq!(
+            events[2].created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            DateTime::from_timestamp((timestamp3.as_u64() / 1_000_000) as i64, 0)
+                .unwrap()
+                .naive_utc()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        );
     }
 }

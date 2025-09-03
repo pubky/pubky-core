@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::persistence::lmdb::LmDB;
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
 use crate::shared::webdav::EntryPath;
@@ -184,10 +183,20 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
 
     async fn close(&mut self) -> Result<opendal::Metadata> {
         // Update the user quota.
-        let mut tx = self.db.pool().begin().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-        let mut user = UserRepository::get(&self.entry_path.pubkey(), &mut (&mut tx).into())
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
             .await
-            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, format!("Failed to get user {}: {}", self.entry_path.pubkey(), e)))?;
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+        let mut user = UserRepository::get(self.entry_path.pubkey(), &mut (&mut tx).into())
+            .await
+            .map_err(|e| {
+                opendal::Error::new(
+                    opendal::ErrorKind::Unexpected,
+                    format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
+                )
+            })?;
         let current_user_bytes = user.used_bytes;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;
@@ -211,7 +220,9 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         UserRepository::update(&user, &mut (&mut tx).into())
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-        tx.commit().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         Ok(metadata)
     }
 }
@@ -287,20 +298,25 @@ impl<R, A: Access> DeleterWrapper<R, A> {
 
         // TODO: Update user quota for each user
         for (user_pubkey, paths) in user_paths {
-            let mut tx = self.db.pool().begin().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-            let mut user = match UserRepository::get(&user_pubkey, &mut (&mut tx).into())
-                .await {
-                    Ok(user) => user,
-                    Err(sqlx::Error::RowNotFound) => {
-                        // User does not exist in the database, so we don't update the quota.
-                        // This can happen if the user was deleted before the file was deleted.
-                        // Shouldn't happen but we still handle it.
-                        continue;
-                    }
-                    Err(e) => {
-                        return Err(opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()));
-                    }
-                };
+            let mut tx =
+                self.db.pool().begin().await.map_err(|e| {
+                    opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                })?;
+            let mut user = match UserRepository::get(&user_pubkey, &mut (&mut tx).into()).await {
+                Ok(user) => user,
+                Err(sqlx::Error::RowNotFound) => {
+                    // User does not exist in the database, so we don't update the quota.
+                    // This can happen if the user was deleted before the file was deleted.
+                    // Shouldn't happen but we still handle it.
+                    continue;
+                }
+                Err(e) => {
+                    return Err(opendal::Error::new(
+                        opendal::ErrorKind::Unexpected,
+                        e.to_string(),
+                    ));
+                }
+            };
 
             let total_bytes: u64 = paths.iter().filter_map(|p| p.bytes_count).sum();
             let files_deleted_count =
@@ -311,7 +327,9 @@ impl<R, A: Access> DeleterWrapper<R, A> {
             UserRepository::update(&user, &mut (&mut tx).into())
                 .await
                 .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-            tx.commit().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+            tx.commit()
+                .await
+                .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         }
 
         Ok(())
@@ -363,7 +381,10 @@ mod tests {
 
     use super::*;
 
-    async fn get_user_data_usage(db: &SqlDb, user_pubkey: &pkarr::PublicKey) -> anyhow::Result<u64> {
+    async fn get_user_data_usage(
+        db: &SqlDb,
+        user_pubkey: &pkarr::PublicKey,
+    ) -> anyhow::Result<u64> {
         let user = UserRepository::get(user_pubkey, &mut db.pool().into())
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;

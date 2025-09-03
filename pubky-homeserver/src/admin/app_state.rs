@@ -1,7 +1,7 @@
 use dav_server::DavHandler;
 use dav_server_opendalfs::OpendalFs;
 
-use crate::persistence::{files::FileService, lmdb::LmDB, sql::SqlDb};
+use crate::persistence::{files::FileService, sql::SqlDb};
 
 #[derive(Clone)]
 pub(crate) struct AppState {

@@ -1,7 +1,10 @@
 #[cfg(test)]
 use crate::AppContext;
 use crate::{
-    persistence::{sql::{entry::{EntryEntity, EntryRepository}, SqlDb, UnifiedExecutor}},
+    persistence::sql::{
+        entry::{EntryEntity, EntryRepository},
+        SqlDb, UnifiedExecutor,
+    },
     shared::webdav::EntryPath,
     ConfigToml,
 };
@@ -50,7 +53,11 @@ impl FileService {
     }
 
     /// Get the metadata of a file.
-    pub async fn get_info(&self, path: &EntryPath, executor: &mut UnifiedExecutor<'_>) -> Result<EntryEntity, FileIoError> {
+    pub async fn get_info(
+        &self,
+        path: &EntryPath,
+        executor: &mut UnifiedExecutor<'_>,
+    ) -> Result<EntryEntity, FileIoError> {
         match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => Ok(entry),
             Err(sqlx::Error::RowNotFound) => Err(FileIoError::NotFound),
@@ -70,10 +77,10 @@ impl FileService {
     pub async fn write_stream(
         &self,
         path: &EntryPath,
-        stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send
+        stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<EntryEntity, FileIoError> {
         self.opendal.write_stream(path, stream).await?;
-        match EntryRepository::get_by_path(path, &mut (&mut self.db.pool().into())).await {
+        match EntryRepository::get_by_path(path, (&mut self.db.pool().into())).await {
             Ok(entry) => Ok(entry),
             Err(sqlx::Error::RowNotFound) => Err(FileIoError::NotFound),
             Err(e) => Err(e.into()),
@@ -122,7 +129,8 @@ impl FileService {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::{files::user_quota_layer::FILE_METADATA_SIZE, sql::user::UserRepository}, shared::webdav::WebDavPath,
+        persistence::{files::user_quota_layer::FILE_METADATA_SIZE, sql::user::UserRepository},
+        shared::webdav::WebDavPath,
     };
     use futures_lite::StreamExt;
 
@@ -135,7 +143,9 @@ mod tests {
         let db = context.sql_db.clone();
         let pubkey = pkarr::Keypair::random().public_key();
 
-        let user = UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        let user = UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         // User should not have any data usage yet
         assert_eq!(user.used_bytes, 0);
@@ -156,7 +166,9 @@ mod tests {
 
         // Test LMDB
         file_service.write_stream(&path, stream).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
         assert_eq!(
             user.used_bytes,
             test_data.len() as u64 + FILE_METADATA_SIZE,
@@ -183,10 +195,11 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
         assert_eq!(
-            user.used_bytes,
-            0,
+            user.used_bytes, 0,
             "Data usage should be 0 after deleting file"
         );
 
@@ -198,7 +211,9 @@ mod tests {
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         file_service.write_stream(&path, stream).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
         assert_eq!(
             user.used_bytes,
             test_data.len() as u64 + FILE_METADATA_SIZE,
@@ -226,10 +241,11 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
         assert_eq!(
-            user.used_bytes,
-            0,
+            user.used_bytes, 0,
             "Data usage should be 0 after deleting file"
         );
     }
@@ -241,7 +257,9 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         let test_data = b"Hello, world!";
         let buffer = Buffer::from(test_data.as_slice());
@@ -270,22 +288,25 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
         file_service.write(&path, buffer).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
-        assert_eq!(
-            user.used_bytes,
-            test_data.len() as u64 + FILE_METADATA_SIZE
-        );
+        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
+        assert_eq!(user.used_bytes, test_data.len() as u64 + FILE_METADATA_SIZE);
 
         // Delete the file and check if the data usage is updated correctly.
         file_service.delete(&path).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
         assert_eq!(user.used_bytes, 0);
     }
 
@@ -298,7 +319,9 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -313,7 +336,10 @@ mod tests {
         file_service.write(&path, buffer2).await.unwrap();
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap().used_bytes,
+            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+                .await
+                .unwrap()
+                .used_bytes,
             test_data2.len() as u64 + FILE_METADATA_SIZE
         );
     }
@@ -327,7 +353,9 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 - FILE_METADATA_SIZE as usize];
@@ -336,7 +364,10 @@ mod tests {
         file_service.write(&path, buffer).await.unwrap();
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap().used_bytes,
+            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+                .await
+                .unwrap()
+                .used_bytes,
             test_data.len() as u64 + FILE_METADATA_SIZE
         );
     }
@@ -349,7 +380,9 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 + 1];
@@ -363,7 +396,13 @@ mod tests {
             }
         }
 
-        assert_eq!(UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap().used_bytes, 0);
+        assert_eq!(
+            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+                .await
+                .unwrap()
+                .used_bytes,
+            0
+        );
     }
 
     /// Override and existing entry and check if the data usage is updated correctly.
@@ -375,7 +414,9 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -396,7 +437,10 @@ mod tests {
         }
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into())).await.unwrap().used_bytes,
+            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+                .await
+                .unwrap()
+                .used_bytes,
             test_data.len() as u64 + FILE_METADATA_SIZE
         );
     }

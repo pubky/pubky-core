@@ -1,15 +1,22 @@
 //! Migration from LMDB to SQL database.
 //! TODO: Remove this module after the migration is complete.
 
-mod users;
-mod signup_codes;
-mod sessions;
 mod entries;
 mod events;
+mod sessions;
+mod signup_codes;
+mod users;
 
-use crate::persistence::{lmdb::{sql_migrator::{entries::migrate_entries, events::migrate_events, sessions::migrate_sessions, signup_codes::migrate_signup_codes, users::migrate_users}, LmDB}, sql::{user::UserRepository, SqlDb}};
-
-
+use crate::persistence::{
+    lmdb::{
+        sql_migrator::{
+            entries::migrate_entries, events::migrate_events, sessions::migrate_sessions,
+            signup_codes::migrate_signup_codes, users::migrate_users,
+        },
+        LmDB,
+    },
+    sql::{user::UserRepository, SqlDb},
+};
 
 /// Migrate the LMDB to the SQL database.
 /// Does everything in one transaction. If one migration fails, the entire transaction is rolled back.

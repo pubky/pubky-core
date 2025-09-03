@@ -1,9 +1,11 @@
 use crate::{
-    persistence::{sql::{user::{UserEntity, UserRepository}, UnifiedExecutor}},
+    persistence::sql::{
+        user::{UserEntity, UserRepository},
+        UnifiedExecutor,
+    },
     shared::{HttpError, HttpResult},
 };
 use pkarr::PublicKey;
-
 
 /// Returns the user if it exists and is not disabled, otherwise returns an error.
 /// - User doesn't exist: returns 404

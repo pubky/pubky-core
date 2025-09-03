@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Index, PostgresQueryBuilder, Table};
+use sea_query::{
+    ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Index, PostgresQueryBuilder, Table,
+};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::{
@@ -13,10 +15,7 @@ pub struct M20250815CreateEntryMigration;
 
 #[async_trait]
 impl MigrationTrait for M20250815CreateEntryMigration {
-    async fn up(
-        &self,
-        tx: &mut Transaction<'static, sqlx::Postgres>,
-    ) -> anyhow::Result<()> {
+    async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         // Create table
         let statement = Table::create()
             .table(TABLE)
@@ -27,31 +26,15 @@ impl MigrationTrait for M20250815CreateEntryMigration {
                     .primary_key()
                     .auto_increment(),
             )
-            .col(
-                ColumnDef::new(EntryIden::Path)
-                    .string()
-                    .not_null(),
-            )
-            .col(
-                ColumnDef::new(EntryIden::User)
-                    .integer()
-                    .not_null(),
-            )
-            .col(
-                ColumnDef::new(EntryIden::ContentHash)
-                    .blob()
-                    .not_null(),
-            )
+            .col(ColumnDef::new(EntryIden::Path).string().not_null())
+            .col(ColumnDef::new(EntryIden::User).integer().not_null())
+            .col(ColumnDef::new(EntryIden::ContentHash).blob().not_null())
             .col(
                 ColumnDef::new(EntryIden::ContentLength)
                     .big_unsigned()
                     .not_null(),
             )
-            .col(
-                ColumnDef::new(EntryIden::ContentType)
-                    .string()
-                    .not_null(),
-            )
+            .col(ColumnDef::new(EntryIden::ContentType).string().not_null())
             .col(
                 ColumnDef::new(EntryIden::ModifiedAt)
                     .timestamp()
@@ -65,7 +48,7 @@ impl MigrationTrait for M20250815CreateEntryMigration {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = statement.build(PostgresQueryBuilder::default());
+        let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create foreign key
@@ -76,7 +59,7 @@ impl MigrationTrait for M20250815CreateEntryMigration {
             .to(USERS_TABLE, UserIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
-        let query = foreign_key.build(PostgresQueryBuilder::default());
+        let query = foreign_key.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create a unique index on user and path.
@@ -90,7 +73,7 @@ impl MigrationTrait for M20250815CreateEntryMigration {
             .unique()
             .index_type(sea_query::IndexType::BTree)
             .to_owned();
-        let query = index.build(PostgresQueryBuilder::default());
+        let query = index.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -159,7 +142,8 @@ mod tests {
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
-            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb,
+            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
+            SqlDb,
         },
     };
 
@@ -201,7 +185,6 @@ mod tests {
                 EntryIden::ContentHash,
                 EntryIden::ContentLength,
                 EntryIden::ContentType,
-
             ])
             .values(vec![
                 SimpleExpr::Value(1.into()),

@@ -1,6 +1,5 @@
 use crate::persistence::files::entry_service::EntryService;
 use crate::persistence::files::FileMetadataBuilder;
-use crate::persistence::sql::entry::EntryRepository;
 use crate::persistence::sql::{SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
@@ -142,19 +141,30 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
         let metadata = self.inner.close().await?;
         // Write successful, update the entry in the database.
         let file_metadata = self.metadata_builder.clone().finalize();
-        let mut tx = self.entry_service.db().pool().begin().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+        let mut tx = self
+            .entry_service
+            .db()
+            .pool()
+            .begin()
+            .await
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
         match self
             .entry_service
-            .write_entry(&self.entry_path, &file_metadata, &mut executor).await
+            .write_entry(&self.entry_path, &file_metadata, &mut executor)
+            .await
         {
             Ok(entry) => {
                 drop(executor);
-                tx.commit().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+                tx.commit().await.map_err(|e| {
+                    opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                })?;
             }
             Err(e) => {
                 drop(executor);
-                tx.rollback().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+                tx.rollback().await.map_err(|e| {
+                    opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                })?;
                 tracing::error!(
                     "Failed to write entry {} to database: {:?}. Potential orphaned file.",
                     self.entry_path,
@@ -187,17 +197,24 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
             .collect::<Vec<_>>();
 
         for path in deleted_paths {
-            let mut tx = self.entry_service.db().pool().begin().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+            let mut tx =
+                self.entry_service.db().pool().begin().await.map_err(|e| {
+                    opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                })?;
             let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
 
             match self.entry_service.delete_entry(&path, &mut executor).await {
                 Ok(()) => {
                     drop(executor);
-                    tx.commit().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+                    tx.commit().await.map_err(|e| {
+                        opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                    })?;
                 }
                 Err(e) => {
                     drop(executor);
-                    tx.rollback().await.map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+                    tx.rollback().await.map_err(|e| {
+                        opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                    })?;
                     tracing::error!("Failed to delete entry {} from database: {:?}", path, e);
                 }
             };
@@ -216,7 +233,13 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::{files::opendal_test_operators::OpendalTestOperators, sql::{event::{EventRepository, EventType}, user::UserRepository}},
+        persistence::{
+            files::opendal_test_operators::OpendalTestOperators,
+            sql::{
+                event::{EventRepository, EventType},
+                user::UserRepository,
+            },
+        },
         shared::webdav::WebDavPath,
     };
 
@@ -230,7 +253,9 @@ mod tests {
             let operator = operator.layer(layer);
 
             let pubkey = pkarr::Keypair::random().public_key();
-            UserRepository::create(&pubkey, &mut (&mut db.pool().into())).await.unwrap();
+            UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+                .await
+                .unwrap();
             let path = WebDavPath::new("/test.txt").unwrap();
             let entry_path = EntryPath::new(pubkey, path);
             operator

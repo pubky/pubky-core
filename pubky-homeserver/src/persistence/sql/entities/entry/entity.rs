@@ -1,18 +1,11 @@
 use pkarr::PublicKey;
-use sea_query::{Iden};
-use sqlx::{
-    postgres::PgRow,
-    FromRow, Row,
-};
+use sea_query::Iden;
+use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::{
-    persistence::sql::{
-        entities::user::UserIden, entry::EntryIden,
-
-    },
+    persistence::sql::{entities::user::UserIden, entry::EntryIden},
     shared::webdav::{EntryPath, WebDavPath},
 };
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EntryEntity {

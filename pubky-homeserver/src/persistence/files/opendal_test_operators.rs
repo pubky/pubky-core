@@ -44,7 +44,8 @@ pub struct OpendalTestOperators {
     fs_tmp_dir: Arc<TempDir>,
     pub gcs_operator: Option<Operator>,
     pub memory_operator: Operator,
-    #[allow(dead_code)] /// Cleaner will remove the gcp bucket when dropped
+    #[allow(dead_code)]
+    /// Cleaner will remove the gcp bucket when dropped
     gcp_cleaner: Option<Arc<AsyncDropper<OpendalGcpCleaner>>>,
 }
 
@@ -54,7 +55,9 @@ impl OpendalTestOperators {
         let (fs_operator, fs_tmp_dir) = get_fs_operator();
         let gcs_operator = get_gcs_operator(true).expect("GCS operator should be available");
         let gcp_cleaner = match &gcs_operator {
-            Some(operator) => Some(Arc::new(AsyncDropper::new(OpendalGcpCleaner::new(Some(operator.clone()))))),
+            Some(operator) => Some(Arc::new(AsyncDropper::new(OpendalGcpCleaner::new(Some(
+                operator.clone(),
+            ))))),
             None => None,
         };
         Self {
@@ -62,7 +65,7 @@ impl OpendalTestOperators {
             fs_tmp_dir: Arc::new(fs_tmp_dir),
             gcs_operator,
             memory_operator: get_memory_operator(),
-            gcp_cleaner
+            gcp_cleaner,
         }
     }
 
@@ -111,26 +114,30 @@ impl AsyncDrop for OpendalGcpCleaner {
         };
         // Delete all files in the GCS root directory that are related to the test.
         let test_root_dir = gcs_operator.info().root();
-        let base_gcs_operator =
-        match get_gcs_operator(false) {
+        let base_gcs_operator = match get_gcs_operator(false) {
             Ok(Some(operator)) => operator,
             Ok(None) => {
                 return;
-            },
+            }
             Err(e) => {
-                println!("Failed to cleanup the GCP test bucket. Directory: {}, Error: {}", test_root_dir, e);
+                println!(
+                    "Failed to cleanup the GCP test bucket. Directory: {}, Error: {}",
+                    test_root_dir, e
+                );
                 return;
-            },
+            }
         };
         match base_gcs_operator.remove_all(&test_root_dir).await {
             Ok(_) => {}
             Err(e) => {
-                println!("Failed to cleanup the GCP test bucket. Directory: {}, Error: {}", test_root_dir, e);
+                println!(
+                    "Failed to cleanup the GCP test bucket. Directory: {}, Error: {}",
+                    test_root_dir, e
+                );
             }
         }
     }
 }
-
 
 // impl Drop for OpendalTestOperators {
 //     fn drop(&mut self) {

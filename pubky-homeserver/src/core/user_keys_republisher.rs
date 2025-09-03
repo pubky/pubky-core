@@ -9,7 +9,10 @@ use tokio::{
     time::{interval, Instant},
 };
 
-use crate::{app_context::AppContext, persistence::{sql::{user::UserRepository, SqlDb}}};
+use crate::{
+    app_context::AppContext,
+    persistence::sql::{user::UserRepository, SqlDb},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum UserKeysRepublisherError {
@@ -72,10 +75,7 @@ impl UserKeysRepublisher {
     async fn get_all_user_keys(db: &SqlDb) -> Result<Vec<PublicKey>, sqlx::Error> {
         let users = UserRepository::get_all(&mut db.pool().into()).await?;
 
-        let keys: Vec<PublicKey> = users
-            .into_iter()
-            .map(|user| user.public_key)
-            .collect();
+        let keys: Vec<PublicKey> = users.into_iter().map(|user| user.public_key).collect();
         Ok(keys)
     }
 
@@ -108,7 +108,11 @@ impl UserKeysRepublisher {
     }
 
     /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
-    async fn run_loop(db: &SqlDb, republish_interval: Duration, pkarr_builder: pkarr::ClientBuilder) {
+    async fn run_loop(
+        db: &SqlDb,
+        republish_interval: Duration,
+        pkarr_builder: pkarr::ClientBuilder,
+    ) {
         let mut interval = interval(republish_interval);
         loop {
             interval.tick().await;
@@ -167,7 +171,9 @@ mod tests {
         let db = SqlDb::test().await;
         for _ in 0..count {
             let public_key = Keypair::random().public_key();
-            UserRepository::create(&public_key, &mut db.pool().into()).await.unwrap();
+            UserRepository::create(&public_key, &mut db.pool().into())
+                .await
+                .unwrap();
         }
         db
     }

@@ -13,11 +13,10 @@ use crate::{
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
         sql::{Migrator, SqlDb},
     },
-    ConfigToml, DataDir
+    ConfigToml, DataDir,
 };
 use pkarr::Keypair;
 use std::{sync::Arc, time::Duration};
-
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -78,11 +77,15 @@ impl AppContext {
     #[cfg(any(test, feature = "testing"))]
     pub async fn test() -> Self {
         let data_dir = MockDataDir::test();
-        Self::read_from(data_dir).await.expect("failed to build AppContext from DataDirMock")
+        Self::read_from(data_dir)
+            .await
+            .expect("failed to build AppContext from DataDirMock")
     }
 
     /// Create a new AppContext from a data directory.
-    pub async fn read_from<D: DataDir + 'static>(dir: D) -> Result<Self, AppContextConversionError> {
+    pub async fn read_from<D: DataDir + 'static>(
+        dir: D,
+    ) -> Result<Self, AppContextConversionError> {
         dir.ensure_data_dir_exists_and_is_writable()
             .map_err(AppContextConversionError::DataDir)?;
         let conf = dir
@@ -96,11 +99,19 @@ impl AppContext {
         let db = unsafe { LmDB::open(&db_path).map_err(AppContextConversionError::LmDB)? };
 
         let sql_db = Self::connect_to_sql_db(&conf).await?;
-        Migrator::new(&sql_db).run().await.map_err(|e| AppContextConversionError::Migrations(e))?;
+        Migrator::new(&sql_db)
+            .run()
+            .await
+            .map_err(AppContextConversionError::Migrations)?;
 
         // TODO: Remove this after the migration is complete.
-        if is_migration_needed(&sql_db).await.map_err(|e| AppContextConversionError::Migrations(e))? {
-            migrate_lmdb_to_sql(db.clone(), &sql_db).await.map_err(|e| AppContextConversionError::Migrations(e))?;
+        if is_migration_needed(&sql_db)
+            .await
+            .map_err(AppContextConversionError::Migrations)?
+        {
+            migrate_lmdb_to_sql(db.clone(), &sql_db)
+                .await
+                .map_err(AppContextConversionError::Migrations)?;
         }
 
         let file_service = FileService::new_from_config(&conf, dir.path(), sql_db.clone())
@@ -122,7 +133,6 @@ impl AppContext {
         })
     }
 }
-
 
 impl AppContext {
     /// Build the pkarr client builder based on the config.
@@ -157,18 +167,24 @@ impl AppContext {
     /// If we are in a test environment and it's a test db connection string,
     /// we use an empheral test db.
     /// Otherwise, we use the normal db connection.
-    async fn connect_to_sql_db(config_toml: &ConfigToml) -> Result<SqlDb, AppContextConversionError> {
+    async fn connect_to_sql_db(
+        config_toml: &ConfigToml,
+    ) -> Result<SqlDb, AppContextConversionError> {
         #[cfg(any(test, feature = "testing"))]
         {
-        // If we are in a test environment and it's a test db connection string,
-        // we use an empheral test db.
+            // If we are in a test environment and it's a test db connection string,
+            // we use an empheral test db.
             if config_toml.general.db_url.is_test_db() {
                 return Ok(SqlDb::test().await);
             } else {
-                return Ok(SqlDb::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?);
+                return Ok(SqlDb::new(&config_toml.general.db_url)
+                    .await
+                    .map_err(AppContextConversionError::SqlDb)?);
             }
         }
         // If we are not in a test environment, we use the normal db connection.
-        Ok(SqlDb::new(&config_toml.general.db_url).await.map_err(AppContextConversionError::SqlDb)?)
+        SqlDb::new(&config_toml.general.db_url)
+            .await
+            .map_err(AppContextConversionError::SqlDb)
     }
 }

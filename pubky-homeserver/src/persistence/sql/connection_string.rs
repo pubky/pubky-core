@@ -87,7 +87,7 @@ impl<'de> Deserialize<'de> for ConnectionString {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(Self::new(&s).map_err(serde::de::Error::custom)?)
+        Self::new(&s).map_err(serde::de::Error::custom)
     }
 }
 

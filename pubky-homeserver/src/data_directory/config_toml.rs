@@ -10,7 +10,9 @@ use super::{
 };
 
 use crate::{
-    data_directory::log_level::{LogLevel, TargetLevel}, persistence::sql::ConnectionString, shared::toml_merge
+    data_directory::log_level::{LogLevel, TargetLevel},
+    persistence::sql::ConnectionString,
+    shared::toml_merge,
 };
 use serde::{Deserialize, Serialize};
 use std::{

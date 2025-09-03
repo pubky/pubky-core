@@ -15,20 +15,23 @@ use axum::{
     response::IntoResponse,
 };
 use httpdate::HttpDate;
+use sqlx::types::chrono::{DateTime, Utc};
 use std::str::FromStr;
 use std::time::SystemTime;
-use sqlx::types::chrono::{DateTime, Utc};
 
 pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    get_user_or_http_error(pubky.public_key(), &mut (&mut state.sql_db.pool().into()), false).await?;
+    get_user_or_http_error(pubky.public_key(), (&mut state.sql_db.pool().into()), false).await?;
 
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
-    let entry = state.file_service.get_info(&entry_path, &mut (&mut state.sql_db.pool().into())).await?;
+    let entry = state
+        .file_service
+        .get_info(&entry_path, (&mut state.sql_db.pool().into()))
+        .await?;
     let response = entry.to_response_headers().into_response();
     Ok(response)
 }
@@ -48,7 +51,10 @@ pub async fn get(
         return list(state, &entry_path, params).await;
     }
 
-    let entry = state.file_service.get_info(&entry_path, &mut (&mut state.sql_db.pool().into())).await?;
+    let entry = state
+        .file_service
+        .get_info(&entry_path, (&mut state.sql_db.pool().into()))
+        .await?;
 
     // Handle IF_MODIFIED_SINCE
     if let Some(condition_http_date) = headers
@@ -90,7 +96,8 @@ pub async fn list(
     entry_path: &EntryPath,
     params: ListQueryParams,
 ) -> HttpResult<Response<Body>> {
-    let contains_dir = EntryRepository::contains_directory(entry_path, &mut (&mut state.sql_db.pool().into())).await?;
+    let contains_dir =
+        EntryRepository::contains_directory(entry_path, (&mut state.sql_db.pool().into())).await?;
     if !contains_dir {
         return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
@@ -100,16 +107,35 @@ pub async fn list(
 
     let parsed_cursor = match parse_cursor(params.cursor) {
         Ok(cursor) => cursor,
-        Err(_) => return Err(HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid cursor"))
+        Err(_) => {
+            return Err(HttpError::new_with_message(
+                StatusCode::BAD_REQUEST,
+                "Invalid cursor",
+            ))
+        }
     };
-
 
     let entries = if params.shallow {
-        EntryRepository::list_shallow(entry_path, params.limit, parsed_cursor, &mut (&mut state.sql_db.pool().into())).await?
+        EntryRepository::list_shallow(
+            entry_path,
+            params.limit,
+            parsed_cursor,
+            (&mut state.sql_db.pool().into()),
+        )
+        .await?
     } else {
-        EntryRepository::list_deep(entry_path, params.limit, parsed_cursor, &mut (&mut state.sql_db.pool().into())).await?
+        EntryRepository::list_deep(
+            entry_path,
+            params.limit,
+            parsed_cursor,
+            (&mut state.sql_db.pool().into()),
+        )
+        .await?
     };
-    let pubky_urls = entries.iter().map(|entry| format!("pubky://{}", entry.to_string())).collect::<Vec<_>>();
+    let pubky_urls = entries
+        .iter()
+        .map(|entry| format!("pubky://{}", entry))
+        .collect::<Vec<_>>();
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -136,7 +162,10 @@ fn not_modified_response(entry: &EntryEntity) -> HttpResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::NOT_MODIFIED)
         .header(header::ETAG, format!("\"{}\"", entry.content_hash))
-        .header(header::LAST_MODIFIED, to_http_date(&entry.modified_at).to_string().as_str())
+        .header(
+            header::LAST_MODIFIED,
+            to_http_date(&entry.modified_at).to_string().as_str(),
+        )
         .body(Body::empty())?)
 }
 
@@ -157,7 +186,8 @@ impl EntryEntity {
         );
         headers.insert(
             header::CONTENT_TYPE,
-            self.content_type.clone()
+            self.content_type
+                .clone()
                 .try_into()
                 .or(HeaderValue::from_str(""))
                 .expect("valid header value"),

@@ -1,23 +1,17 @@
-use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
-use sea_query_binder::SqlxBinder;
-use sqlx::{
-    postgres::PgRow,
-    Row
-};
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::sql::entry::EntryEntity;
 use crate::{
-    persistence::{ sql::{
+    persistence::sql::{
         entities::user::{UserIden, USER_TABLE},
-
         UnifiedExecutor,
-    }},
+    },
     shared::webdav::{EntryPath, WebDavPath},
 };
+use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query_binder::SqlxBinder;
+use sqlx::{postgres::PgRow, Row};
 
 pub const ENTRY_TABLE: &str = "entries";
-
-
 
 /// Repository that handles all the queries regarding the EntryEntity.
 pub struct EntryRepository;
@@ -53,7 +47,7 @@ impl EntryRepository {
             .returning_col(EntryIden::Id)
             .to_owned();
 
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
 
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
@@ -86,7 +80,7 @@ impl EntryRepository {
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).eq(id))
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let entry: EntryEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(entry)
@@ -118,7 +112,7 @@ impl EntryRepository {
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).eq(path.path().as_str()))
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let entry: EntryEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(entry)
@@ -146,7 +140,7 @@ impl EntryRepository {
                 (EntryIden::ModifiedAt, Expr::current_timestamp().into()),
             ])
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
@@ -162,7 +156,7 @@ impl EntryRepository {
             .from_table(ENTRY_TABLE)
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).eq(id))
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
@@ -191,7 +185,7 @@ impl EntryRepository {
             .from_table(ENTRY_TABLE)
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).in_subquery(subquery))
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
@@ -221,10 +215,12 @@ impl EntryRepository {
             .limit(1)
             .to_owned();
 
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
-        let count: i64 = sqlx::query_scalar_with(&query, values).fetch_one(con).await?;
-        
+        let count: i64 = sqlx::query_scalar_with(&query, values)
+            .fetch_one(con)
+            .await?;
+
         Ok(count > 0)
     }
 
@@ -237,7 +233,6 @@ impl EntryRepository {
         cursor: Option<EntryPath>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<i64, sqlx::Error> {
-
         let path = match cursor {
             Some(cursor) => cursor,
             None => return Ok(0),
@@ -245,9 +240,7 @@ impl EntryRepository {
 
         let statement = Query::select()
             .from(ENTRY_TABLE)
-            .columns([
-                (ENTRY_TABLE, EntryIden::Id),
-            ])
+            .columns([(ENTRY_TABLE, EntryIden::Id)])
             .column((USER_TABLE, UserIden::PublicKey))
             .left_join(
                 USER_TABLE,
@@ -258,7 +251,7 @@ impl EntryRepository {
             .order_by((ENTRY_TABLE, EntryIden::Id), Order::Desc)
             .limit(1)
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let row = match sqlx::query_with(&query, values).fetch_optional(con).await? {
             Some(row) => row,
@@ -309,17 +302,21 @@ impl EntryRepository {
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
         statement = statement.limit(limit.into()).to_owned();
 
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let rows: Vec<PgRow> = sqlx::query_with(&query, values).fetch_all(con).await?;
 
-        let entries = rows.iter().map(|row| {
-            let user_pubkey = path.pubkey().clone();
-            let regpath: String = row.try_get("regpath")?;
-            let webdav_path = WebDavPath::new(&regpath).map_err(|e| sqlx::Error::Decode(e.into()))?;
-            let entry_path = EntryPath::new(user_pubkey, webdav_path);
-            Ok(entry_path)
-        }).collect::<Result<Vec<EntryPath>, sqlx::Error>>()?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                let user_pubkey = path.pubkey().clone();
+                let regpath: String = row.try_get("regpath")?;
+                let webdav_path =
+                    WebDavPath::new(&regpath).map_err(|e| sqlx::Error::Decode(e.into()))?;
+                let entry_path = EntryPath::new(user_pubkey, webdav_path);
+                Ok(entry_path)
+            })
+            .collect::<Result<Vec<EntryPath>, sqlx::Error>>()?;
 
         Ok(entries)
     }
@@ -343,33 +340,37 @@ impl EntryRepository {
         let cursor_id = EntryRepository::get_cursor_id(cursor, executor).await?;
         let mut statement = Query::select()
             .from(ENTRY_TABLE)
-            .columns([
-                (ENTRY_TABLE, EntryIden::Path),
-            ])
+            .columns([(ENTRY_TABLE, EntryIden::Path)])
             .left_join(
                 USER_TABLE,
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
-            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor_id.into())))
+            .and_where(
+                Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor_id.into())),
+            )
             .to_owned();
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
         statement = statement.limit(limit.into()).to_owned();
 
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let rows: Vec<PgRow> = sqlx::query_with(&query, values).fetch_all(con).await?;
 
-        let entries = rows.iter().map(|row| {
-            let user_pubkey = path.pubkey().clone();
-            let path: String = row.try_get(EntryIden::Path.to_string().as_str())?;
-            let webdav_path = WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
-            let entry_path = EntryPath::new(user_pubkey, webdav_path);
-            Ok(entry_path)
-        }).collect::<Result<Vec<EntryPath>, sqlx::Error>>()?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                let user_pubkey = path.pubkey().clone();
+                let path: String = row.try_get(EntryIden::Path.to_string().as_str())?;
+                let webdav_path =
+                    WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
+                let entry_path = EntryPath::new(user_pubkey, webdav_path);
+                Ok(entry_path)
+            })
+            .collect::<Result<Vec<EntryPath>, sqlx::Error>>()?;
 
         Ok(entries)
     }
@@ -389,7 +390,7 @@ pub enum EntryIden {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashSet};
+    use std::collections::HashSet;
 
     use pkarr::Keypair;
 
@@ -482,16 +483,16 @@ mod tests {
 
         // Test list shallow basic
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
-        let entries =
-            EntryRepository::list_shallow(&entry_path, None, None, &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_shallow(&entry_path, None, None, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(entries.len(), 5);
         assert_eq!(
             entries[0],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
         );
-        assert_eq!(entries[1],
+        assert_eq!(
+            entries[1],
             EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
         );
         assert_eq!(
@@ -504,10 +505,7 @@ mod tests {
         );
         assert_eq!(
             entries[4],
-            EntryPath::new(
-                user_pubkey.clone(),
-                WebDavPath::new("/test/sub2/").unwrap()
-            )
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/").unwrap())
         );
 
         // Test list shallow with limit
@@ -522,17 +520,21 @@ mod tests {
         );
         assert_eq!(
             entries[1],
-            EntryPath::new(
-                user_pubkey.clone(),
-                WebDavPath::new("/test/2.txt").unwrap()
-            )
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
         );
 
         // Test list shallow with cursor
-        let entries =
-            EntryRepository::list_shallow(&entry_path, None, Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_shallow(
+            &entry_path,
+            None,
+            Some(EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/3.txt").unwrap(),
+            )),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(
             entries[0],
@@ -540,17 +542,21 @@ mod tests {
         );
         assert_eq!(
             entries[1],
-            EntryPath::new(
-                user_pubkey.clone(),
-                WebDavPath::new("/test/sub2/").unwrap()
-            )
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/").unwrap())
         );
 
         // Test list shallow with limit and cursor
-        let entries =
-            EntryRepository::list_shallow(&entry_path, Some(2), Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_shallow(
+            &entry_path,
+            Some(2),
+            Some(EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/3.txt").unwrap(),
+            )),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(
             entries[0],
@@ -558,20 +564,21 @@ mod tests {
         );
         assert_eq!(
             entries[1],
-            EntryPath::new(
-                user_pubkey.clone(),
-                WebDavPath::new("/test/sub2/").unwrap()
-            )
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/").unwrap())
         );
 
         // Test list shallow with limit. Pull all entries.
         let mut set: HashSet<EntryPath> = HashSet::new();
         let mut last_cursor: Option<EntryPath> = None;
         loop {
-            let new_entries =
-            EntryRepository::list_shallow(&entry_path, Some(2), last_cursor, &mut db.pool().into())
-                .await
-                .unwrap();
+            let new_entries = EntryRepository::list_shallow(
+                &entry_path,
+                Some(2),
+                last_cursor,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
             if let Some(last_entry) = new_entries.last() {
                 last_cursor = Some(last_entry.clone());
             } else {
@@ -618,10 +625,9 @@ mod tests {
 
         // Test basic
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
-        let entries =
-            EntryRepository::list_deep(&entry_path, None, None, &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_deep(&entry_path, None, None, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(entries.len(), 7);
 
         // Test with limit
@@ -636,21 +642,28 @@ mod tests {
         );
         assert_eq!(
             entries[1],
-            EntryPath::new(
-                user_pubkey.clone(),
-                WebDavPath::new("/test/2.txt").unwrap()
-            )
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
         );
 
         // Test with cursor
-        let entries =
-            EntryRepository::list_deep(&entry_path, None, Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_deep(
+            &entry_path,
+            None,
+            Some(EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/3.txt").unwrap(),
+            )),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(entries.len(), 4);
         assert_eq!(
             entries[0],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/1/1.txt").unwrap())
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub1/1/1.txt").unwrap()
+            )
         );
         assert_eq!(
             entries[1],
@@ -661,22 +674,38 @@ mod tests {
         );
         assert_eq!(
             entries[2],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/1.txt").unwrap())
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub2/1.txt").unwrap()
+            )
         );
         assert_eq!(
             entries[3],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/2.txt").unwrap())
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub2/2.txt").unwrap()
+            )
         );
 
         // Test with limit and cursor
-        let entries =
-            EntryRepository::list_deep(&entry_path, Some(2), Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())), &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_deep(
+            &entry_path,
+            Some(2),
+            Some(EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/3.txt").unwrap(),
+            )),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(
             entries[0],
-            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/1/1.txt").unwrap())
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub1/1/1.txt").unwrap()
+            )
         );
         assert_eq!(
             entries[1],
@@ -690,10 +719,14 @@ mod tests {
         let mut set: HashSet<EntryPath> = HashSet::new();
         let mut last_cursor: Option<EntryPath> = None;
         loop {
-            let new_entries =
-            EntryRepository::list_deep(&entry_path, Some(2), last_cursor.clone()    , &mut db.pool().into())
-                .await
-                .unwrap();
+            let new_entries = EntryRepository::list_deep(
+                &entry_path,
+                Some(2),
+                last_cursor.clone(),
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
             if let Some(last_entry) = new_entries.last() {
                 last_cursor = Some(last_entry.clone());
             } else {
@@ -717,9 +750,12 @@ mod tests {
             .unwrap();
 
         // Test directory that doesn't exist
-        let exists = EntryRepository::contains_directory(&EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap()), &mut db.pool().into())
-            .await
-            .unwrap();
+        let exists = EntryRepository::contains_directory(
+            &EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap()),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert!(!exists);
 
         // Test if directory exists
@@ -733,7 +769,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let exists = EntryRepository::contains_directory(&EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap()), &mut db.pool().into())
+        let exists = EntryRepository::contains_directory(
+            &EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap()),
+            &mut db.pool().into(),
+        )
         .await
         .unwrap();
         assert!(exists);
@@ -749,7 +788,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let exists = EntryRepository::contains_directory(&EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap()), &mut db.pool().into())
+        let exists = EntryRepository::contains_directory(
+            &EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap()),
+            &mut db.pool().into(),
+        )
         .await
         .unwrap();
         assert!(!exists);

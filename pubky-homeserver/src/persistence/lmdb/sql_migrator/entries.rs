@@ -7,7 +7,7 @@ use crate::{
         sql::{
             entry::{EntryIden, ENTRY_TABLE},
             user::UserRepository,
-            SqlDb, UnifiedExecutor,
+            UnifiedExecutor,
         },
     },
     shared::{timestamp_to_sqlx_datetime, webdav::EntryPath},
@@ -46,21 +46,24 @@ pub async fn create<'a>(
         .returning_col(EntryIden::Id)
         .to_owned();
 
-    let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+    let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
 
     let con = executor.get_con().await?;
     sqlx::query_with(&query, values).fetch_one(con).await?;
     Ok(())
 }
 
-pub async fn migrate_entries<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
+pub async fn migrate_entries<'a>(
+    lmdb: LmDB,
+    executor: &mut UnifiedExecutor<'a>,
+) -> anyhow::Result<()> {
     tracing::info!("Migrating entries from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
     let mut count = 0;
     for record in lmdb.tables.entries.iter(&lmdb_txn)? {
         let (path, bytes) = record?;
         let entry_path: EntryPath = path.parse()?;
-        let entry = Entry::deserialize(&bytes)?;
+        let entry = Entry::deserialize(bytes)?;
         create(&entry_path, &entry, executor).await?;
         count += 1;
     }
@@ -71,16 +74,10 @@ pub async fn migrate_entries<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>)
 #[cfg(test)]
 mod tests {
 
-
     use pkarr::Keypair;
     use pubky_common::{crypto::Hash, timestamp::Timestamp};
 
-    use crate::{
-        persistence::sql::{
-            entry::EntryRepository,
-        },
-        shared::webdav::WebDavPath,
-    };
+    use crate::{persistence::sql::entry::EntryRepository, shared::webdav::WebDavPath};
 
     use super::*;
 
@@ -128,7 +125,9 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_entries(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
+        migrate_entries(lmdb.clone(), &mut sql_db.pool().into())
+            .await
+            .unwrap();
 
         // Check
         let sql_entry1 = EntryRepository::get_by_path(&entry_path1, &mut sql_db.pool().into())

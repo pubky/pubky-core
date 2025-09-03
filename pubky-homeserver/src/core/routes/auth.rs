@@ -113,7 +113,7 @@ pub async fn signin(
     let public_key = token.pubky();
 
     // 2) Ensure user *does* exist
-    let user = get_user_or_http_error(&public_key, &mut state.sql_db.pool().into(), false).await?;
+    let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
 
     // 3) Create the session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await

@@ -1,5 +1,5 @@
-mod repository;
 mod entity;
+mod repository;
 
-pub use repository::{EntryRepository, EntryIden, ENTRY_TABLE};
 pub use entity::EntryEntity;
+pub use repository::{EntryIden, EntryRepository, ENTRY_TABLE};

@@ -8,7 +8,10 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     core::{err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState},
-    persistence::{files::WriteStreamError, sql::{entry::EntryRepository, user::UserRepository, SqlDb, UnifiedExecutor}},
+    persistence::{
+        files::WriteStreamError,
+        sql::{entry::EntryRepository, user::UserRepository, UnifiedExecutor},
+    },
     shared::{
         webdav::{EntryPath, WebDavPathPubAxum},
         HttpError, HttpResult,
@@ -21,7 +24,7 @@ pub async fn delete(
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(pubky.public_key(), &mut (&mut state.sql_db.pool().into()), false).await?;
+    get_user_or_http_error(pubky.public_key(), (&mut state.sql_db.pool().into()), false).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     state.file_service.delete(&entry_path).await?;
@@ -35,7 +38,7 @@ pub async fn put(
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(public_key, &mut (&mut state.sql_db.pool().into()), true).await?;
+    get_user_or_http_error(public_key, (&mut state.sql_db.pool().into()), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     // Check if the size hint exceeds the quota so we can fail early
@@ -45,7 +48,8 @@ pub async fn put(
         state.user_quota_bytes,
         &entry_path,
         &mut state.sql_db.pool().into(),
-    ).await?;
+    )
+    .await?;
 
     // Convert body stream to the format expected by file_service
     let body_stream = body.into_data_stream();
@@ -79,8 +83,13 @@ pub async fn fail_if_size_hint_bigger_than_user_quota<'a>(
         None => return Ok(()), // No quota, so all good
     };
 
-    let existing_entry_bytes = EntryRepository::get_by_path(entry_path, executor).await.map(|entry| entry.content_length as u64).unwrap_or(0);
-    let user_already_used_bytes = UserRepository::get(entry_path.pubkey(), executor).await.map(|user| user.used_bytes as u64)?;
+    let existing_entry_bytes = EntryRepository::get_by_path(entry_path, executor)
+        .await
+        .map(|entry| entry.content_length)
+        .unwrap_or(0);
+    let user_already_used_bytes = UserRepository::get(entry_path.pubkey(), executor)
+        .await
+        .map(|user| user.used_bytes)?;
 
     let is_quota_exceeded = user_already_used_bytes
         + content_size_hint.saturating_sub(existing_entry_bytes)
@@ -109,23 +118,39 @@ mod tests {
     async fn test_if_size_hint_all_good() {
         let db = SqlDb::test().await;
         let pubkey = Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into()).await.unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
         let body = Body::from("test");
 
-        fail_if_size_hint_bigger_than_user_quota(body.size_hint().exact(), Some(1024), &entry, &mut db.pool().into()).await
-            .expect("should not fail");
+        fail_if_size_hint_bigger_than_user_quota(
+            body.size_hint().exact(),
+            Some(1024),
+            &entry,
+            &mut db.pool().into(),
+        )
+        .await
+        .expect("should not fail");
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_if_size_hint_bigger_than_quota() {
         let db = SqlDb::test().await;
         let pubkey = Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into()).await.unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
         let body = Body::from("test");
 
-        fail_if_size_hint_bigger_than_user_quota(body.size_hint().exact(), Some(1), &entry, &mut db.pool().into()).await
-            .expect_err("should fail");
+        fail_if_size_hint_bigger_than_user_quota(
+            body.size_hint().exact(),
+            Some(1),
+            &entry,
+            &mut db.pool().into(),
+        )
+        .await
+        .expect_err("should fail");
     }
 }

@@ -11,13 +11,15 @@ use sqlx::{
 };
 
 use crate::{
-    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT}, persistence::sql::{
+    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT},
+    persistence::sql::{
         entities::user::{UserIden, USER_TABLE},
         UnifiedExecutor,
-    }, shared::{
+    },
+    shared::{
         timestamp_to_sqlx_datetime,
         webdav::{EntryPath, WebDavPath},
-    }
+    },
 };
 
 pub const EVENT_TABLE: &str = "events";
@@ -64,7 +66,7 @@ impl EventRepository {
             .returning_col(EventIden::Id)
             .to_owned();
 
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
 
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
@@ -78,7 +80,10 @@ impl EventRepository {
     /// The legacy cursor format is a timestamp.
     /// The cursor is the id of the last event in the list.
     /// If you don't to use the cursor, set it to "0".
-    pub async fn parse_cursor<'a>(cursor: &str, executor: &mut UnifiedExecutor<'a>) -> Result<i64, sqlx::Error> {
+    pub async fn parse_cursor<'a>(
+        cursor: &str,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<i64, sqlx::Error> {
         if let Ok(cursor) = cursor.parse::<u64>() {
             // Is new cursor format
             return Ok(cursor as i64);
@@ -96,7 +101,7 @@ impl EventRepository {
             .from(EVENT_TABLE)
             .and_where(Expr::col((EVENT_TABLE, EventIden::CreatedAt)).eq(datetime))
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
@@ -112,7 +117,6 @@ impl EventRepository {
         limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-
         let cursor = cursor.unwrap_or(0);
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
@@ -135,7 +139,7 @@ impl EventRepository {
             .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor))
             .limit(limit as u64)
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
         Ok(events)
@@ -223,7 +227,7 @@ mod tests {
 
     use super::*;
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
-    use std::ops::{Add};
+    use std::ops::Add;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_list_event() {
@@ -290,9 +294,10 @@ mod tests {
 
         // Test get session
         for (timestamp, should_be_event_id) in timestamp_events {
-            let event_id = EventRepository::parse_cursor(&timestamp.to_string(), &mut db.pool().into())
-                .await
-                .unwrap();
+            let event_id =
+                EventRepository::parse_cursor(&timestamp.to_string(), &mut db.pool().into())
+                    .await
+                    .unwrap();
             assert_eq!(should_be_event_id, event_id);
         }
     }

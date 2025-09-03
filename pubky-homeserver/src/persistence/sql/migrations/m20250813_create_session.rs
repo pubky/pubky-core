@@ -14,10 +14,7 @@ pub struct M20250813CreateSessionMigration;
 
 #[async_trait]
 impl MigrationTrait for M20250813CreateSessionMigration {
-    async fn up(
-        &self,
-        tx: &mut Transaction<'static, sqlx::Postgres>,
-    ) -> anyhow::Result<()> {
+    async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         // Create table
         let statement = Table::create()
             .table(TABLE)
@@ -47,7 +44,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = statement.build(PostgresQueryBuilder::default());
+        let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create foreign key
@@ -57,7 +54,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
             .to(USERS_TABLE, UserIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
-        let query = foreign_key.build(PostgresQueryBuilder::default());
+        let query = foreign_key.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create index on secret
@@ -67,7 +64,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
             .col(SessionIden::Secret)
             .index_type(sea_query::IndexType::BTree)
             .to_owned();
-        let query = index.build(PostgresQueryBuilder::default());
+        let query = index.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -124,7 +121,8 @@ mod tests {
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
-            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb,
+            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
+            SqlDb,
         },
     };
 

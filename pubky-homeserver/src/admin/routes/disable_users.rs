@@ -1,6 +1,6 @@
 use super::super::app_state::AppState;
 use crate::{
-    persistence::{lmdb::tables::users::UserQueryError, sql::user::UserRepository},
+    persistence::sql::user::UserRepository,
     shared::{HttpError, HttpResult, Z32Pubkey},
 };
 use axum::{
@@ -82,10 +82,14 @@ mod tests {
         let pubkey = Keypair::random().public_key();
 
         // Create new user
-        UserRepository::create(&pubkey, &mut context.sql_db.pool().into()).await.unwrap();
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
 
         // Check that the tenant is enabled
-        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into()).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
         assert!(!user.disabled);
 
         // Setup server
@@ -107,7 +111,9 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::OK);
 
         // Check that the tenant is disabled
-        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into()).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
         assert!(user.disabled);
 
         // Enable the tenant again
@@ -117,7 +123,9 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::OK);
 
         // Check that the tenant is enabled
-        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into()).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
         assert!(!user.disabled);
     }
 }

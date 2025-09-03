@@ -5,7 +5,7 @@ use crate::AppContext;
 use crate::{
     persistence::{
         files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
-        lmdb::LmDB, sql::SqlDb,
+        sql::SqlDb,
     },
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
@@ -288,7 +288,9 @@ mod tests {
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubky, &mut (&mut context.sql_db.pool().into())).await.unwrap();
+        UserRepository::create(&pubky, &mut (&mut context.sql_db.pool().into()))
+            .await
+            .unwrap();
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         let write_result = service.write(&path, vec![42u8; 1024 * 1024]).await;
         assert!(write_result.is_err());

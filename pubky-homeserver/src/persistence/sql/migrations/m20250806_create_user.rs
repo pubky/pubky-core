@@ -3,7 +3,7 @@ use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
-use crate::persistence::sql::{migration::MigrationTrait};
+use crate::persistence::sql::migration::MigrationTrait;
 
 const USER_TABLE: &str = "users";
 
@@ -11,10 +11,7 @@ pub struct M20250806CreateUserMigration;
 
 #[async_trait]
 impl MigrationTrait for M20250806CreateUserMigration {
-    async fn up(
-        &self,
-        tx: &mut Transaction<'static, sqlx::Postgres>,
-    ) -> anyhow::Result<()> {
+    async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         let statement = Table::create()
             .table(USER_TABLE)
             .if_not_exists()
@@ -49,7 +46,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = statement.build(PostgresQueryBuilder::default());
+        let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         let index = sea_query::Index::create()
@@ -58,7 +55,7 @@ impl MigrationTrait for M20250806CreateUserMigration {
             .col(User::PublicKey)
             .index_type(sea_query::IndexType::BTree)
             .to_owned();
-        let query = index.build(PostgresQueryBuilder::default());
+        let query = index.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
         Ok(())
     }
@@ -95,7 +92,8 @@ impl FromRow<'_, PgRow> for UserEntity {
         let disabled: bool = row.try_get(User::Disabled.to_string().as_str())?;
         let raw_used_bytes: i64 = row.try_get(User::UsedBytes.to_string().as_str())?;
         let used_bytes = raw_used_bytes as u64;
-        let created_at: sqlx::types::chrono::NaiveDateTime = row.try_get(User::CreatedAt.to_string().as_str())?;
+        let created_at: sqlx::types::chrono::NaiveDateTime =
+            row.try_get(User::CreatedAt.to_string().as_str())?;
         Ok(UserEntity {
             id: id as u32,
             public_key,
@@ -143,7 +141,13 @@ mod tests {
         // Read user
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([User::Id, User::PublicKey, User::CreatedAt, User::Disabled, User::UsedBytes])
+            .columns([
+                User::Id,
+                User::PublicKey,
+                User::CreatedAt,
+                User::Disabled,
+                User::UsedBytes,
+            ])
             .to_owned();
         let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
         let user: UserEntity = sqlx::query_as(query.as_str())

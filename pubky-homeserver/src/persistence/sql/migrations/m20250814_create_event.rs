@@ -13,10 +13,7 @@ pub struct M20250814CreateEventMigration;
 
 #[async_trait]
 impl MigrationTrait for M20250814CreateEventMigration {
-    async fn up(
-        &self,
-        tx: &mut Transaction<'static, sqlx::Postgres>,
-    ) -> anyhow::Result<()> {
+    async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         // Create table
         let statement = Table::create()
             .table(TABLE)
@@ -27,21 +24,9 @@ impl MigrationTrait for M20250814CreateEventMigration {
                     .primary_key()
                     .auto_increment(),
             )
-            .col(
-                ColumnDef::new(EventIden::Type)
-                    .string_len(3)
-                    .not_null(),
-            )
-            .col(
-                ColumnDef::new(EventIden::User)
-                    .integer()
-                    .not_null(),
-            )
-            .col(
-                ColumnDef::new(EventIden::Path)
-                    .string()
-                    .not_null(),
-            )
+            .col(ColumnDef::new(EventIden::Type).string_len(3).not_null())
+            .col(ColumnDef::new(EventIden::User).integer().not_null())
+            .col(ColumnDef::new(EventIden::Path).string().not_null())
             .col(
                 ColumnDef::new(EventIden::CreatedAt)
                     .timestamp()
@@ -49,7 +34,7 @@ impl MigrationTrait for M20250814CreateEventMigration {
                     .default(Expr::current_timestamp()),
             )
             .to_owned();
-        let query = statement.build(PostgresQueryBuilder::default());
+        let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Create foreign key
@@ -59,7 +44,7 @@ impl MigrationTrait for M20250814CreateEventMigration {
             .to(USERS_TABLE, UserIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
-        let query = foreign_key.build(PostgresQueryBuilder::default());
+        let query = foreign_key.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -115,7 +100,8 @@ mod tests {
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
-            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb,
+            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
+            SqlDb,
         },
     };
 
@@ -150,11 +136,7 @@ mod tests {
         // Create an event
         let statement = Query::insert()
             .into_table(TABLE)
-            .columns([
-                EventIden::Type,
-                EventIden::User,
-                EventIden::Path,
-            ])
+            .columns([EventIden::Type, EventIden::User, EventIden::Path])
             .values(vec![
                 SimpleExpr::Value("put".into()),
                 SimpleExpr::Value(1.into()),

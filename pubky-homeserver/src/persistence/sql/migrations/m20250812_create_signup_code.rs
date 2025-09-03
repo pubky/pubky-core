@@ -3,7 +3,7 @@ use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
-use crate::persistence::sql::{migration::MigrationTrait};
+use crate::persistence::sql::migration::MigrationTrait;
 
 const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
@@ -11,10 +11,7 @@ pub struct M20250812CreateSignupCodeMigration;
 
 #[async_trait]
 impl MigrationTrait for M20250812CreateSignupCodeMigration {
-    async fn up(
-        &self,
-        tx: &mut Transaction<'static, sqlx::Postgres>,
-    ) -> anyhow::Result<()> {
+    async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         let statement = Table::create()
             .table(SIGNUP_CODE_TABLE)
             .if_not_exists()
@@ -30,11 +27,11 @@ impl MigrationTrait for M20250812CreateSignupCodeMigration {
                     .not_null()
                     .default(Expr::current_timestamp()),
             )
-            // UsedBy is the user pubkey directly. No Foreign Key needed because 
+            // UsedBy is the user pubkey directly. No Foreign Key needed because
             // if the user is deleted, we don't want the code to be reused.
             .col(ColumnDef::new(SignupCodeIden::UsedBy).string_len(52).null())
             .to_owned();
-        let query = statement.build(PostgresQueryBuilder::default());
+        let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         Ok(())
@@ -83,7 +80,9 @@ mod tests {
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
-    use crate::persistence::sql::{migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb};
+    use crate::persistence::sql::{
+        migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb,
+    };
 
     use super::*;
 

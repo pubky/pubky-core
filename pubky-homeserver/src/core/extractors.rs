@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::{collections::HashMap, fmt::Display};
 
 use axum::{
     extract::{FromRequestParts, Query},
@@ -8,8 +8,6 @@ use axum::{
 };
 
 use pkarr::PublicKey;
-
-use crate::shared::webdav::EntryPath;
 
 #[derive(Debug, Clone)]
 pub struct PubkyHost(pub(crate) PublicKey);
@@ -59,10 +57,7 @@ impl ListQueryParams {
     /// If the cursor is not a valid EntryPath, returns None.
     /// If the cursor is empty, returns None.
     pub fn extract_cursor(params: &Query<HashMap<String, String>>) -> Option<String> {
-        let value = match params.get("cursor") {
-            Some(value) => value,
-            None => return None,
-        };
+        let value = params.get("cursor")?;
         if value.is_empty() {
             // Treat `cursor=` as None
             return None;

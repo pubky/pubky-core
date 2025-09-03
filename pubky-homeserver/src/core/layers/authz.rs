@@ -87,7 +87,8 @@ where
             };
 
             // Authorize the request
-            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path).await {
+            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path).await
+            {
                 return Ok(e.into_response());
             }
 
@@ -136,15 +137,23 @@ async fn authorize(
         }
     };
 
-
-    let session =  match SessionRepository::get_by_secret(&session_secret, &mut (&mut state.sql_db.pool().into())).await {
-        Ok(session) => session,
-        Err(sqlx::Error::RowNotFound) => {
-            tracing::warn!("No session found in the database for session secret: {}, pubky: {}", session_secret, public_key);
-            return Err(HttpError::unauthorized_with_message("No session found for session secret"));
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let session =
+        match SessionRepository::get_by_secret(&session_secret, (&mut state.sql_db.pool().into()))
+            .await
+        {
+            Ok(session) => session,
+            Err(sqlx::Error::RowNotFound) => {
+                tracing::warn!(
+                    "No session found in the database for session secret: {}, pubky: {}",
+                    session_secret,
+                    public_key
+                );
+                return Err(HttpError::unauthorized_with_message(
+                    "No session found for session secret",
+                ));
+            }
+            Err(e) => return Err(e.into()),
+        };
 
     if &session.user_pubkey != public_key {
         tracing::warn!(
@@ -179,7 +188,10 @@ async fn authorize(
 
 /// Get the session secret from the cookies.
 /// Returns None if the session secret is not found or invalid.
-pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<SessionSecret> {
+pub fn session_secret_from_cookies(
+    cookies: &Cookies,
+    public_key: &PublicKey,
+) -> Option<SessionSecret> {
     let value = cookies
         .get(&public_key.to_string())
         .map(|c| c.value().to_string())?;

@@ -43,10 +43,6 @@ impl SqlDb {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-
-
-
-
 }
 
 /// Helper struct to drop the postgres test database after the db connection is dropped

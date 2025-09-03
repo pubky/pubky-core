@@ -50,7 +50,9 @@ mod tests {
 
         // Write a test file
         let webdav_path = WebDavPath::new(format!("/pub/{}", file_path).as_str()).unwrap();
-        UserRepository::create(&pubkey, &mut db.pool().into()).await.unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         let entry_path = EntryPath::new(pubkey.clone(), webdav_path);
 
         write_test_file(&file_service, &entry_path).await;
@@ -63,8 +65,12 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // Check that the file is deleted
-        EntryRepository::get_by_path(&entry_path, &mut db.pool().into()).await.expect_err("Should be deleted");
-        let events = EventRepository::get_by_cursor(Some(0), Some(10), &mut db.pool().into()).await.unwrap();
+        EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+            .await
+            .expect_err("Should be deleted");
+        let events = EventRepository::get_by_cursor(Some(0), Some(10), &mut db.pool().into())
+            .await
+            .unwrap();
 
         assert_eq!(
             events.len(),

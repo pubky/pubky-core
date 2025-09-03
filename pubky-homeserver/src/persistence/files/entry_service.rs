@@ -2,7 +2,10 @@ use crate::{
     persistence::{
         files::{FileIoError, FileMetadata},
         sql::{
-            entry::{EntryEntity, EntryRepository}, event::{EventRepository, EventType}, user::UserRepository, SqlDb, UnifiedExecutor
+            entry::{EntryEntity, EntryRepository},
+            event::{EventRepository, EventType},
+            user::UserRepository,
+            SqlDb, UnifiedExecutor,
         },
     },
     shared::webdav::EntryPath,
@@ -42,7 +45,8 @@ impl EntryService {
 
         // Create/Update entry
         let entry = if let Some(existing_entry) = existing_entry {
-            self.update_entry(existing_entry, metadata, executor).await?
+            self.update_entry(existing_entry, metadata, executor)
+                .await?
         } else {
             self.create_entry(path, metadata, executor).await?
         };
@@ -76,7 +80,15 @@ impl EntryService {
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EntryEntity, FileIoError> {
         let user_id = UserRepository::get_id(path.pubkey(), executor).await?;
-        let entry_id = EntryRepository::create(user_id, path.path(), &metadata.hash, metadata.length as u64, &metadata.content_type, executor).await?;
+        let entry_id = EntryRepository::create(
+            user_id,
+            path.path(),
+            &metadata.hash,
+            metadata.length as u64,
+            &metadata.content_type,
+            executor,
+        )
+        .await?;
         let entry = EntryRepository::get(entry_id, executor).await?;
         Ok(entry)
     }
@@ -87,7 +99,11 @@ impl EntryService {
     /// - Write a public [Event]
     /// - Delete the entry from the database
     ///
-    pub async fn delete_entry<'a>(&self, path: &EntryPath, executor: &mut UnifiedExecutor<'a>) -> Result<(), FileIoError> {
+    pub async fn delete_entry<'a>(
+        &self,
+        path: &EntryPath,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<(), FileIoError> {
         let entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => entry,
             Err(sqlx::Error::RowNotFound) => return Err(FileIoError::NotFound),
