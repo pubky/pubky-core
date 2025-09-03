@@ -127,7 +127,7 @@ mod tests {
             .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
             .unwrap()
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
             .await
@@ -144,7 +144,7 @@ mod tests {
             ])
             .unwrap()
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
             .await
@@ -161,7 +161,7 @@ mod tests {
                 EventIden::CreatedAt,
             ])
             .to_owned();
-        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder);
         let event: EventEntity = sqlx::query_as(query.as_str())
             .fetch_one(db.pool())
             .await

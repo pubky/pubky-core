@@ -24,7 +24,7 @@ pub async fn delete(
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(pubky.public_key(), (&mut state.sql_db.pool().into()), false).await?;
+    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     state.file_service.delete(&entry_path).await?;
@@ -38,7 +38,7 @@ pub async fn put(
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(public_key, (&mut state.sql_db.pool().into()), true).await?;
+    get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     // Check if the size hint exceeds the quota so we can fail early

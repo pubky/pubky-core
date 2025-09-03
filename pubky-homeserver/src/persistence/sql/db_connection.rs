@@ -77,7 +77,7 @@ impl SqlDb {
     pub async fn test_postgres_db(con_string: &ConnectionString) -> anyhow::Result<Self> {
         use uuid::Uuid;
 
-        let neutral_con = Self::new(&con_string).await?;
+        let neutral_con = Self::new(con_string).await?;
         let db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());
         let query = format!("CREATE DATABASE {}", db_name);
 

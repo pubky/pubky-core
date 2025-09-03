@@ -80,7 +80,7 @@ impl FileService {
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<EntryEntity, FileIoError> {
         self.opendal.write_stream(path, stream).await?;
-        match EntryRepository::get_by_path(path, (&mut self.db.pool().into())).await {
+        match EntryRepository::get_by_path(path, &mut self.db.pool().into()).await {
             Ok(entry) => Ok(entry),
             Err(sqlx::Error::RowNotFound) => Err(FileIoError::NotFound),
             Err(e) => Err(e.into()),
@@ -143,7 +143,7 @@ mod tests {
         let db = context.sql_db.clone();
         let pubkey = pkarr::Keypair::random().public_key();
 
-        let user = UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -166,7 +166,7 @@ mod tests {
 
         // Test LMDB
         file_service.write_stream(&path, stream).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::get(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
         assert_eq!(
@@ -195,7 +195,7 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::get(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
         assert_eq!(
@@ -211,7 +211,7 @@ mod tests {
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         file_service.write_stream(&path, stream).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::get(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
         assert_eq!(
@@ -241,7 +241,7 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::get(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
         assert_eq!(
@@ -257,7 +257,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -288,7 +288,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -297,14 +297,14 @@ mod tests {
         let buffer = Buffer::from(test_data.clone());
 
         file_service.write(&path, buffer).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::get(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
         assert_eq!(user.used_bytes, test_data.len() as u64 + FILE_METADATA_SIZE);
 
         // Delete the file and check if the data usage is updated correctly.
         file_service.delete(&path).await.unwrap();
-        let user = UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+        let user = UserRepository::get(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
         assert_eq!(user.used_bytes, 0);
@@ -319,7 +319,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -336,7 +336,7 @@ mod tests {
         file_service.write(&path, buffer2).await.unwrap();
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            UserRepository::get(&pubkey, (&mut db.pool().into()))
                 .await
                 .unwrap()
                 .used_bytes,
@@ -353,7 +353,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -364,7 +364,7 @@ mod tests {
         file_service.write(&path, buffer).await.unwrap();
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            UserRepository::get(&pubkey, (&mut db.pool().into()))
                 .await
                 .unwrap()
                 .used_bytes,
@@ -380,7 +380,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -397,7 +397,7 @@ mod tests {
         }
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            UserRepository::get(&pubkey, (&mut db.pool().into()))
                 .await
                 .unwrap()
                 .used_bytes,
@@ -414,7 +414,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut (&mut db.pool().into()))
+        UserRepository::create(&pubkey, (&mut db.pool().into()))
             .await
             .unwrap();
 
@@ -437,7 +437,7 @@ mod tests {
         }
 
         assert_eq!(
-            UserRepository::get(&pubkey, &mut (&mut db.pool().into()))
+            UserRepository::get(&pubkey, (&mut db.pool().into()))
                 .await
                 .unwrap()
                 .used_bytes,

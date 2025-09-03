@@ -102,7 +102,7 @@ mod tests {
         entry1.set_timestamp(&Timestamp::now());
         lmdb.tables
             .entries
-            .put(&mut wtxn, &entry_path1.as_str(), &entry1.serialize())
+            .put(&mut wtxn, entry_path1.as_str(), &entry1.serialize())
             .unwrap();
 
         // Entry2
@@ -119,7 +119,7 @@ mod tests {
         entry2.set_timestamp(&Timestamp::now());
         lmdb.tables
             .entries
-            .put(&mut wtxn, &entry_path2.as_str(), &entry2.serialize())
+            .put(&mut wtxn, entry_path2.as_str(), &entry2.serialize())
             .unwrap();
 
         wtxn.commit().unwrap();

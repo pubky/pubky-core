@@ -108,7 +108,7 @@ mod tests {
             .values(vec![SimpleExpr::Value(code_id.into())])
             .unwrap()
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
             .await
@@ -123,7 +123,7 @@ mod tests {
                 SignupCodeIden::UsedBy,
             ])
             .to_owned();
-        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder);
         let code: SignupCodeEntity = sqlx::query_as(query.as_str())
             .fetch_one(db.pool())
             .await
@@ -140,7 +140,7 @@ mod tests {
             )])
             .and_where(Expr::col(SignupCodeIden::Id).eq(code.id))
             .to_owned();
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         sqlx::query_with(query.as_str(), values)
             .execute(db.pool())
             .await
@@ -155,7 +155,7 @@ mod tests {
                 SignupCodeIden::UsedBy,
             ])
             .to_owned();
-        let (query, _) = statement.build_sqlx(PostgresQueryBuilder::default());
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder);
         let code: SignupCodeEntity = sqlx::query_as(query.as_str())
             .fetch_one(db.pool())
             .await

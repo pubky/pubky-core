@@ -202,7 +202,7 @@ mod tests {
                             .not_null(),
                     )
                     .to_owned();
-                let query = statement.build(PostgresQueryBuilder::default());
+                let query = statement.build(PostgresQueryBuilder);
                 sqlx::query(query.as_str()).execute(&mut **tx).await?;
                 Ok(())
             }
@@ -250,7 +250,7 @@ mod tests {
                             .not_null(),
                     )
                     .to_owned();
-                let query = statement.build(PostgresQueryBuilder::default());
+                let query = statement.build(PostgresQueryBuilder);
                 sqlx::query(query.as_str()).execute(&mut **tx).await?;
                 // Fail after the table is created
                 anyhow::bail!("test error");

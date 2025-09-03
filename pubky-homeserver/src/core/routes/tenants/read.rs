@@ -24,13 +24,13 @@ pub async fn head(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    get_user_or_http_error(pubky.public_key(), (&mut state.sql_db.pool().into()), false).await?;
+    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
 
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
     let entry = state
         .file_service
-        .get_info(&entry_path, (&mut state.sql_db.pool().into()))
+        .get_info(&entry_path, &mut state.sql_db.pool().into())
         .await?;
     let response = entry.to_response_headers().into_response();
     Ok(response)
@@ -53,7 +53,7 @@ pub async fn get(
 
     let entry = state
         .file_service
-        .get_info(&entry_path, (&mut state.sql_db.pool().into()))
+        .get_info(&entry_path, &mut state.sql_db.pool().into())
         .await?;
 
     // Handle IF_MODIFIED_SINCE
@@ -97,7 +97,7 @@ pub async fn list(
     params: ListQueryParams,
 ) -> HttpResult<Response<Body>> {
     let contains_dir =
-        EntryRepository::contains_directory(entry_path, (&mut state.sql_db.pool().into())).await?;
+        EntryRepository::contains_directory(entry_path, &mut state.sql_db.pool().into()).await?;
     if !contains_dir {
         return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
@@ -120,7 +120,7 @@ pub async fn list(
             entry_path,
             params.limit,
             parsed_cursor,
-            (&mut state.sql_db.pool().into()),
+            &mut state.sql_db.pool().into(),
         )
         .await?
     } else {
@@ -128,7 +128,7 @@ pub async fn list(
             entry_path,
             params.limit,
             parsed_cursor,
-            (&mut state.sql_db.pool().into()),
+            &mut state.sql_db.pool().into(),
         )
         .await?
     };

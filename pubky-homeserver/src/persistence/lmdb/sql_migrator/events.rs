@@ -113,7 +113,7 @@ mod tests {
             .events
             .put(
                 &mut wtxn,
-                &timestamp1.to_string().as_str(),
+                timestamp1.to_string().as_str(),
                 &event1.serialize(),
             )
             .unwrap();
@@ -125,7 +125,7 @@ mod tests {
             .events
             .put(
                 &mut wtxn,
-                &timestamp2.to_string().as_str(),
+                timestamp2.to_string().as_str(),
                 &event2.serialize(),
             )
             .unwrap();
@@ -145,7 +145,7 @@ mod tests {
             .events
             .put(
                 &mut wtxn,
-                &timestamp3.to_string().as_str(),
+                timestamp3.to_string().as_str(),
                 &event3.serialize(),
             )
             .unwrap();

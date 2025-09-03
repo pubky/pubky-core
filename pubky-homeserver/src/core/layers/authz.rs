@@ -138,7 +138,7 @@ async fn authorize(
     };
 
     let session =
-        match SessionRepository::get_by_secret(&session_secret, (&mut state.sql_db.pool().into()))
+        match SessionRepository::get_by_secret(&session_secret, &mut state.sql_db.pool().into())
             .await
         {
             Ok(session) => session,

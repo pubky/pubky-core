@@ -177,9 +177,9 @@ impl AppContext {
             if config_toml.general.db_url.is_test_db() {
                 return Ok(SqlDb::test().await);
             } else {
-                return Ok(SqlDb::new(&config_toml.general.db_url)
+                return SqlDb::new(&config_toml.general.db_url)
                     .await
-                    .map_err(AppContextConversionError::SqlDb)?);
+                    .map_err(AppContextConversionError::SqlDb);
             }
         }
         // If we are not in a test environment, we use the normal db connection.

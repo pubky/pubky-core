@@ -54,12 +54,9 @@ impl OpendalTestOperators {
     pub fn new() -> Self {
         let (fs_operator, fs_tmp_dir) = get_fs_operator();
         let gcs_operator = get_gcs_operator(true).expect("GCS operator should be available");
-        let gcp_cleaner = match &gcs_operator {
-            Some(operator) => Some(Arc::new(AsyncDropper::new(OpendalGcpCleaner::new(Some(
+        let gcp_cleaner = gcs_operator.as_ref().map(|operator| Arc::new(AsyncDropper::new(OpendalGcpCleaner::new(Some(
                 operator.clone(),
-            ))))),
-            None => None,
-        };
+            )))));
         Self {
             fs_operator,
             fs_tmp_dir: Arc::new(fs_tmp_dir),

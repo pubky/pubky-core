@@ -250,7 +250,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(created_user.public_key, user_pubkey);
-        assert_eq!(created_user.disabled, false);
+        assert!(!created_user.disabled);
         assert_eq!(created_user.used_bytes, 0);
         assert_eq!(created_user.id, 1);
 
@@ -259,7 +259,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(user.public_key, user_pubkey);
-        assert_eq!(user.disabled, false);
+        assert!(!user.disabled);
         assert_eq!(user.used_bytes, 0);
         assert_eq!(user.id, created_user.id);
     }
@@ -274,7 +274,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(user.public_key, user_pubkey);
-        assert_eq!(user.disabled, false);
+        assert!(!user.disabled);
         assert_eq!(user.used_bytes, 0);
 
         UserRepository::create(&user_pubkey, &mut db.pool().into())
@@ -300,7 +300,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(updated_user.id, user.id);
-        assert_eq!(updated_user.disabled, true);
+        assert!(updated_user.disabled);
         assert_eq!(updated_user.used_bytes, 10);
     }
 
