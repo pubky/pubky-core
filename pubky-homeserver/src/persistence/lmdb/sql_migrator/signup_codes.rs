@@ -66,7 +66,10 @@ mod tests {
     use pkarr::Keypair;
     use sqlx::types::chrono::DateTime;
 
-    use crate::persistence::sql::{signup_code::{SignupCodeId, SignupCodeRepository}, SqlDb};
+    use crate::persistence::sql::{
+        signup_code::{SignupCodeId, SignupCodeRepository},
+        SqlDb,
+    };
 
     use super::*;
 
@@ -77,7 +80,7 @@ mod tests {
 
         let mut wtxn = lmdb.env.write_txn().unwrap();
         // Token1
-        let mut token1 = SignupToken::random(); 
+        let mut token1 = SignupToken::random();
         let user1_pubkey = Keypair::random().public_key();
         token1.created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)

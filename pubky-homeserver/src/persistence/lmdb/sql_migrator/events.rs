@@ -86,7 +86,10 @@ mod tests {
     use pubky_common::timestamp::Timestamp;
     use sqlx::types::chrono::DateTime;
 
-    use crate::{persistence::sql::{event::EventRepository, SqlDb}, shared::webdav::WebDavPath};
+    use crate::{
+        persistence::sql::{event::EventRepository, SqlDb},
+        shared::webdav::WebDavPath,
+    };
 
     use super::*;
 

@@ -77,7 +77,10 @@ mod tests {
     use pkarr::Keypair;
     use pubky_common::{crypto::Hash, timestamp::Timestamp};
 
-    use crate::{persistence::sql::{entry::EntryRepository, SqlDb}, shared::webdav::WebDavPath};
+    use crate::{
+        persistence::sql::{entry::EntryRepository, SqlDb},
+        shared::webdav::WebDavPath,
+    };
 
     use super::*;
 

@@ -77,7 +77,10 @@ mod tests {
     use pubky_common::capabilities::Capability;
     use sqlx::types::chrono::DateTime;
 
-    use crate::persistence::sql::{session::{SessionRepository, SessionSecret}, SqlDb};
+    use crate::persistence::sql::{
+        session::{SessionRepository, SessionSecret},
+        SqlDb,
+    };
 
     use super::*;
 
