@@ -9,8 +9,12 @@ use crate::client_server::{
     layers::authz::AuthorizationLayer, layers::pubky_host::PubkyHostLayer, AppState,
 };
 
-use crate::shared::HttpResult;
-use axum::{body::Body, extract::Request, extract::State, response::IntoResponse};
+use crate::shared::{HttpResult, Z32Pubkey};
+use axum::{
+    body::Body,
+    extract::{Path, Request, State},
+    response::IntoResponse,
+};
 
 pub mod read;
 pub mod session;
@@ -53,8 +57,10 @@ pub fn webdav_router(state: AppState) -> Router<AppState> {
 
 pub async fn dav_handler(
     State(state): State<AppState>,
+    Path((_key, _path)): Path<(Z32Pubkey, String)>,
     req: Request<Body>,
 ) -> HttpResult<impl IntoResponse> {
+    // TODO: handle pubky (part of path) somehow
     let dav_response = state.inner_dav_handler.handle(req).await;
     Ok(dav_response.into_response())
 }
