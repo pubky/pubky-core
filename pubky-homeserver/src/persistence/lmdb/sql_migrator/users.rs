@@ -1,24 +1,22 @@
 use sqlx::types::chrono::{DateTime};
 
-use crate::persistence::{lmdb::LmDB, sql::{user::UserRepository, SqlDb}};
+use crate::persistence::{lmdb::LmDB, sql::{user::UserRepository, UnifiedExecutor}};
 
 
 
-pub async fn migrate_users(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
+pub async fn migrate_users<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
     tracing::info!("Migrating users from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
-    let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
     for record in lmdb.tables.users.iter(&lmdb_txn)? {
         let (public_key, lmdb_user) = record?;
-        let mut sql_user = UserRepository::create(&public_key, &mut(&mut sql_tx).into()).await?;
+        let mut sql_user = UserRepository::create(&public_key, executor).await?;
         sql_user.created_at = DateTime::from_timestamp(lmdb_user.created_at as i64, 0).unwrap().naive_utc();
         sql_user.disabled = lmdb_user.disabled;
         sql_user.used_bytes = lmdb_user.used_bytes;
-        UserRepository::update(&sql_user, &mut(&mut sql_tx).into()).await?;
+        UserRepository::update(&sql_user, executor).await?;
         count += 1;
     }
-    sql_tx.commit().await?;
     tracing::info!("Migrated {} users", count);
     Ok(())
 }
@@ -30,7 +28,7 @@ mod tests {
 
     use pkarr::Keypair;
 
-    use crate::persistence::lmdb::tables::users::User;
+    use crate::persistence::{lmdb::tables::users::User, sql::SqlDb};
 
     use super::*;
 
@@ -58,7 +56,7 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_users(&lmdb, &sql_db).await.unwrap();
+        migrate_users(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
 
         // Check
         let sql_user1 = UserRepository::get(&user1_pubkey, &mut sql_db.pool().into()).await.unwrap();

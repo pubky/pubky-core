@@ -29,18 +29,16 @@ use crate::persistence::{lmdb::{LmDB}, sql::{session::{SessionIden, SESSION_TABL
     }
 
 
-pub async fn migrate_sessions(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
+pub async fn migrate_sessions<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
     tracing::info!("Migrating sessions from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
-    let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
     for record in lmdb.tables.sessions.iter(&lmdb_txn)? {
             let (secret, bytes) = record?;
             let session = Session::deserialize(&bytes)?;
-            create(secret, &session,  &mut(&mut sql_tx).into()).await?;
+            create(secret, &session,  executor).await?;
         count += 1;
     }
-    sql_tx.commit().await?;
     tracing::info!("Migrated {} sessions", count);
     Ok(())
 }
@@ -86,7 +84,7 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_sessions(&lmdb, &sql_db).await.unwrap();
+        migrate_sessions(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
 
         // Check
         let sql_session1 = SessionRepository::get_by_secret(&session1_secret, &mut sql_db.pool().into()).await.unwrap();

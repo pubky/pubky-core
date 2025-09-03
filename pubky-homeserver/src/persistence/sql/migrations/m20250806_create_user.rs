@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
-use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
-use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait};
+use crate::persistence::sql::{migration::MigrationTrait};
 
 const USER_TABLE: &str = "users";
 
@@ -111,8 +110,9 @@ impl FromRow<'_, PgRow> for UserEntity {
 mod tests {
     use pkarr::Keypair;
     use sea_query::{Query, SimpleExpr};
+    use sea_query_binder::SqlxBinder;
 
-    use crate::persistence::sql::migrator::Migrator;
+    use crate::persistence::sql::{migrator::Migrator, SqlDb};
 
     use super::*;
 

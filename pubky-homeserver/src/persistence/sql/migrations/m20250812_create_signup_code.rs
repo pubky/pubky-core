@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
-use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
-use crate::persistence::sql::{db_connection::SqlDb, migration::MigrationTrait};
+use crate::persistence::sql::{migration::MigrationTrait};
 
 const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
@@ -82,8 +81,9 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
 mod tests {
     use pkarr::Keypair;
     use sea_query::{Query, SimpleExpr};
+    use sea_query_binder::SqlxBinder;
 
-    use crate::persistence::sql::{migrations::M20250806CreateUserMigration, migrator::Migrator};
+    use crate::persistence::sql::{migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb};
 
     use super::*;
 

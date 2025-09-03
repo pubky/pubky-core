@@ -84,7 +84,7 @@ impl UserRepository {
         let row = sqlx::query_with(&query, values).fetch_one(executor.get_con().await?).await?;
         
         let count: i64 = row.try_get("count")?;
-        let total_used_bytes: i64 = row.try_get("total_used_mbytes")?;
+        let total_used_bytes: Option<i64> = row.try_get("total_used_mbytes")?;
         
         // Get disabled count
         let statement = Query::select()
@@ -104,7 +104,7 @@ impl UserRepository {
         let overview = UserOverview {
             count: count as u64,
             disabled_count: disabled_count as u64,
-            total_used_mb: total_used_bytes as u64,
+            total_used_mb: total_used_bytes.unwrap_or(0) as u64,
         };
         
         Ok(overview)
@@ -271,6 +271,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_get_overview() {
         let db = SqlDb::test().await;
+
+        // Initially, there should be no users
+        let overview = UserRepository::get_overview(&mut db.pool().into()).await.unwrap();
+        assert_eq!(overview.count, 0);
+        assert_eq!(overview.disabled_count, 0);
+        assert_eq!(overview.total_used_mb, 0);
         
         // Create multiple users with different states
         let user1_pubkey = Keypair::random().public_key();

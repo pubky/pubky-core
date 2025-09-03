@@ -1,6 +1,5 @@
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use sqlx::types::chrono::NaiveDateTime;
 
 use crate::{
     persistence::{
@@ -54,19 +53,17 @@ pub async fn create<'a>(
     Ok(())
 }
 
-pub async fn migrate_entries(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
+pub async fn migrate_entries<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
     tracing::info!("Migrating entries from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
-    let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
     for record in lmdb.tables.entries.iter(&lmdb_txn)? {
         let (path, bytes) = record?;
         let entry_path: EntryPath = path.parse()?;
         let entry = Entry::deserialize(&bytes)?;
-        create(&entry_path, &entry, &mut (&mut sql_tx).into()).await?;
+        create(&entry_path, &entry, executor).await?;
         count += 1;
     }
-    sql_tx.commit().await?;
     tracing::info!("Migrated {} entries", count);
     Ok(())
 }
@@ -131,7 +128,7 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_entries(&lmdb, &sql_db).await.unwrap();
+        migrate_entries(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
 
         // Check
         let sql_entry1 = EntryRepository::get_by_path(&entry_path1, &mut sql_db.pool().into())

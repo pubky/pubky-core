@@ -61,19 +61,17 @@ pub async fn create<'a>(
     Ok(())
 }
 
-pub async fn migrate_events(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
+pub async fn migrate_events<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
     tracing::info!("Migrating events from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
-    let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
     for record in lmdb.tables.events.iter(&lmdb_txn)? {
         let (timestamp, bytes) = record?;
         let timestamp: Timestamp = timestamp.to_string().try_into()?;
         let event = Event::deserialize(&bytes)?;
-        create(&timestamp, &event, &mut (&mut sql_tx).into()).await?;
+        create(&timestamp, &event, executor).await?;
         count += 1;
     }
-    sql_tx.commit().await?;
     tracing::info!("Migrated {} events", count);
     Ok(())
 }
@@ -148,7 +146,7 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_events(&lmdb, &sql_db).await.unwrap();
+        migrate_events(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
 
         // Check
         let events: Vec<crate::persistence::sql::event::EventEntity> =

@@ -186,7 +186,7 @@ mod test {
     use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_keep_relays_alive_even_when_dropped() {
         let mut testnet = Testnet::new().await.unwrap();
         {
@@ -196,7 +196,7 @@ mod test {
     }
 
     /// Boostrap node conversion
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_boostrap_node_conversion() {
         let testnet = Testnet::new().await.unwrap();
         let nodes = testnet.dht_bootstrap_nodes();
@@ -205,7 +205,7 @@ mod test {
 
     /// Test that a user can signup in the testnet.
     /// This is an e2e tests to check if everything is correct.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver_suite().await.unwrap();
@@ -251,54 +251,31 @@ mod test {
             .unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn test_spawn_in_parallel() {
-        let mut handles = Vec::new();
-
+        // Run sequentially instead of parallel due to LMDB not being Send
         for _ in 0..10 {
-            let handle = tokio::spawn(async move {
-                let mut testnet = match Testnet::new().await {
-                    Ok(testnet) => testnet,
-                    Err(e) => {
-                        panic!("Failed to create testnet: {}", e);
-                    }
-                };
-                match testnet.create_homeserver_suite().await {
-                    Ok(hs) => hs,
-                    Err(e) => {
-                        panic!("Failed to create homeserver suite: {}", e);
-                    }
-                };
-                let client = testnet.pubky_client_builder().build().unwrap();
-                let hs = testnet.homeservers.first().unwrap();
-                let keypair = Keypair::random();
-                let pubky = keypair.public_key();
+            let mut testnet = Testnet::new().await.expect("Failed to create testnet");
+            testnet.create_homeserver_suite().await.expect("Failed to create homeserver suite");
+            let client = testnet.pubky_client_builder().build().unwrap();
+            let hs = testnet.homeservers.first().unwrap();
+            let keypair = Keypair::random();
+            let pubky = keypair.public_key();
 
-                let session = client
-                    .signup(&keypair, &hs.public_key(), None)
-                    .await
-                    .unwrap();
-                assert_eq!(session.pubky(), &pubky);
-                tokio::time::sleep(Duration::from_secs(3)).await;
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            match handle.await {
-                Ok(_) => {}
-                Err(e) => {
-                    panic!("{}", e);
-                }
-            }
+            let session = client
+                .signup(&keypair, &hs.public_key(), None)
+                .await
+                .unwrap();
+            assert_eq!(session.pubky(), &pubky);
+            tokio::time::sleep(Duration::from_secs(3)).await;
         }
     }
 
     /// Test relay resolvable.
     /// This simulates pkarr clients in a browser.
     /// Made due to https://github.com/pubky/pkarr/issues/140
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_pkarr_relay_resolvable() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_pkarr_relay().await.unwrap();

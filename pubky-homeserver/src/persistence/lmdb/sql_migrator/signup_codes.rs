@@ -30,18 +30,16 @@ use crate::persistence::{lmdb::{tables::signup_tokens::SignupToken, LmDB}, sql::
     }
 
 
-pub async fn migrate_signup_codes(lmdb: &LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
+pub async fn migrate_signup_codes<'a>(lmdb: LmDB, executor: &mut UnifiedExecutor<'a>) -> anyhow::Result<()> {
     tracing::info!("Migrating signup codes from LMDB to SQL");
     let lmdb_txn = lmdb.env.read_txn()?;
-    let mut sql_tx = sql_db.pool().begin().await?;
     let mut count = 0;
     for record in lmdb.tables.signup_tokens.iter(&lmdb_txn)? {
             let (_, bytes) = record?;
             let token = SignupToken::deserialize(&bytes);
-            create(&token,  &mut(&mut sql_tx).into()).await?;
+            create(&token,  executor).await?;
         count += 1;
     }
-    sql_tx.commit().await?;
     tracing::info!("Migrated {} signup codes", count);
     Ok(())
 }
@@ -80,7 +78,7 @@ mod tests {
         wtxn.commit().unwrap();
 
         // Migrate
-        migrate_signup_codes(&lmdb, &sql_db).await.unwrap();
+        migrate_signup_codes(lmdb.clone(), &mut sql_db.pool().into()).await.unwrap();
 
         // Check
         let id1 = SignupCodeId::new(token1.token).unwrap();

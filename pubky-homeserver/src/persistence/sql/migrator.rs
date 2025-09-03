@@ -38,15 +38,15 @@ impl<'a> Migrator<'a> {
 
     /// Runs a specific list of migrations.
     pub async fn run_migrations(&self, migrations: Vec<Box<dyn MigrationTrait>>) -> anyhow::Result<()> {
-        self.create_migration_table().await?;
-        let already_applied_migrations = self.get_applied_migrations().await?;
+        self.create_migration_table().await.map_err(|e| e.context("Failed to create migration table"))?;
+        let already_applied_migrations = self.get_applied_migrations().await.map_err(|e| e.context("Failed to get applied migrations"))?;
         let migrations_to_run = migrations
             .into_iter()
             .filter(|m| !already_applied_migrations.contains(&m.name().to_string()))
             .collect::<Vec<_>>();
 
         for migration in migrations_to_run {
-            self.run_migration(&*migration).await?;
+            self.run_migration(&*migration).await.map_err(|e| e.context(format!("Failed to run migration {}", migration.name())))?;
         }
         Ok(())
     }
@@ -59,7 +59,7 @@ impl<'a> Migrator<'a> {
         let result: Result<(), anyhow::Error> = {
             migration.up(&mut tx).await?;
             self.mark_migration_as_done(&mut tx, migration.name())
-                .await?;
+                .await.map_err(|e| e.context(format!("Failed to mark migration as done")))?;
             Ok(())
         };
 

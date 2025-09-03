@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, PostgresQueryBuilder, Table};
-use sea_query_binder::SqlxBinder;
+
 use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
 
 use crate::persistence::{
     lmdb::tables::users::USERS_TABLE,
-    sql::{db_connection::SqlDb, entities::user::UserIden, migration::MigrationTrait},
+    sql::{entities::user::UserIden, migration::MigrationTrait},
 };
 
 const TABLE: &str = "sessions";
@@ -119,11 +119,12 @@ impl FromRow<'_, PgRow> for SessionEntity {
 mod tests {
     use pkarr::Keypair;
     use sea_query::{Query, SimpleExpr};
+    use sea_query_binder::SqlxBinder;
 
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
-            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
+            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb,
         },
     };
 

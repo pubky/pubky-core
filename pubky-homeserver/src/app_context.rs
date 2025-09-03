@@ -10,13 +10,14 @@ use crate::MockDataDir;
 use crate::{
     persistence::{
         files::{FileIoError, FileService},
-        lmdb::LmDB,
-        sql::SqlDb,
+        lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
+        sql::{Migrator, SqlDb},
     },
     ConfigToml, DataDir
 };
 use pkarr::Keypair;
 use std::{sync::Arc, time::Duration};
+
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +37,9 @@ pub enum AppContextConversionError {
     /// Failed to open SQL DB.
     #[error("Failed to open SQL DB: {0}")]
     SqlDb(sqlx::Error),
+    /// Failed to run migrations.
+    #[error("Failed to run migrations: {0}")]
+    Migrations(anyhow::Error),
     /// Failed to build storage operator.
     #[error("Failed to build storage operator: {0}")]
     Storage(FileIoError),
@@ -90,7 +94,15 @@ impl AppContext {
 
         let db_path = dir.path().join("data/lmdb");
         let db = unsafe { LmDB::open(&db_path).map_err(AppContextConversionError::LmDB)? };
+
         let sql_db = Self::connect_to_sql_db(&conf).await?;
+        Migrator::new(&sql_db).run().await.map_err(|e| AppContextConversionError::Migrations(e))?;
+
+        // TODO: Remove this after the migration is complete.
+        if is_migration_needed(&sql_db).await.map_err(|e| AppContextConversionError::Migrations(e))? {
+            migrate_lmdb_to_sql(db.clone(), &sql_db).await.map_err(|e| AppContextConversionError::Migrations(e))?;
+        }
+
         let file_service = FileService::new_from_config(&conf, dir.path(), sql_db.clone())
             .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
