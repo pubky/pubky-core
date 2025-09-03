@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
   let mock_dir = DataDirMock::new(config, None).unwrap(); 
   let app = HomeserverApp::run_with_data_dir_mock(mock_dir).await.unwrap();
 }
-
+```
 
 Run the `HomeserverCore` only without the admin server.
 
