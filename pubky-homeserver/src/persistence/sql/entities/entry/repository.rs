@@ -228,7 +228,7 @@ impl EntryRepository {
         Ok(count > 0)
     }
 
-    /// Get the id of the entry that is the cursor.
+    /// Get the id of the entry that is the cursor. This is used to guarantee backwards compatibility with the old cursor.
     /// The user passes the last entry path as cursor. Basically, the user says: Give me all the entries after this one.
     /// This is used to implement pagination.
     /// This function returns the id of the entry that is the cursor. Works for both shallow and deep lists.

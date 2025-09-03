@@ -98,11 +98,11 @@ pub async fn list(
         ));
     }
 
-    // Parse the cursor if it is present
-    let parsed_cursor = match params.cursor {
-        Some(cursor) => Some(EntryPath::from_str(&cursor).map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid cursor"))?),
-        None => None,
+    let parsed_cursor = match parse_cursor(params.cursor) {
+        Ok(cursor) => cursor,
+        Err(_) => return Err(HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid cursor"))
     };
+
 
     let entries = if params.shallow {
         EntryRepository::list_shallow(entry_path, params.limit, parsed_cursor, &mut (&mut state.sql_db.pool().into())).await?
@@ -115,6 +115,20 @@ pub async fn list(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
         .body(Body::from(pubky_urls.join("\n")))?)
+}
+
+/// Parse the cursor if it is present.
+/// If the cursor is not present, returns None.
+/// If the cursor is present and valid, returns the EntryPath.
+fn parse_cursor(cursor: Option<String>) -> anyhow::Result<Option<EntryPath>> {
+    let cursor = match cursor {
+        Some(cursor) => cursor,
+        None => return Ok(None),
+    };
+
+    let cursor = cursor.trim_start_matches("pubky://");
+    let path = EntryPath::from_str(cursor)?;
+    Ok(Some(path))
 }
 
 /// Creates the Not Modified response based on the entry data.
