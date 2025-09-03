@@ -169,13 +169,13 @@ impl ClientServer {
             Some(quota_mb * 1024 * 1024)
         };
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            db: context.db.clone(),
-            file_service: context.file_service.clone(),
-            signup_mode: context.config_toml.general.signup_mode.clone(),
-            user_quota_bytes: quota_bytes,
-        };
+        let state = AppState::new(
+            AuthVerifier::default(),
+            context.db.clone(),
+            context.file_service.clone(),
+            context.config_toml.general.signup_mode.clone(),
+            quota_bytes,
+        );
         super::create_app(state.clone(), context)
     }
 
