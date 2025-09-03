@@ -1,5 +1,6 @@
 use std::env;
 use std::io;
+use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, ExitStatus};
 
 // If the process hangs, try `cargo clean` to remove all locks.
@@ -13,6 +14,12 @@ fn main() {
 
 fn build_wasm(target: &str) -> io::Result<ExitStatus> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+
+    if Command::new("wasm-pack").arg("--version").output().is_err() {
+        println!("wasm-pack not found. Run `npm install -g wasm-pack` to install latest wasm pack");
+
+        return Err(std::io::Error::from_raw_os_error(1));
+    }
 
     let output = Command::new("wasm-pack")
         .args([
