@@ -6,7 +6,6 @@ use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
-use crate::persistence::lmdb::LmDB;
 use crate::persistence::sql::SqlDb;
 use crate::{app_context::AppContext, PersistentDataDir};
 use crate::{DataDir, SignupMode};
@@ -26,7 +25,6 @@ use std::{
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
-    pub(crate) db: LmDB,
     pub(crate) sql_db: SqlDb,
     pub(crate) file_service: FileService,
     pub(crate) signup_mode: SignupMode,
@@ -140,7 +138,6 @@ impl HomeserverCore {
         let state = AppState {
             verifier: AuthVerifier::default(),
             sql_db: context.sql_db.clone(),
-            db: context.db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
