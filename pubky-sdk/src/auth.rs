@@ -32,7 +32,7 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// 1. Create with [`PubkyAuth::new`].
 /// 2. Call [`PubkyAuth::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
 /// 3. Show the returned URL (QR/deeplink) to the signing device (e.g., Pubky Ring).
-/// 4. Await [`AuthSubscription::into_agent`] to obtain a session-bound [`PubkyAgent`].
+/// 4. Await [`AuthSubscription::wait_for_agent`] to obtain a session-bound [`PubkyAgent`].
 ///
 /// Threading:
 /// - `PubkyAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
@@ -180,7 +180,7 @@ impl PubkyAuth {
     ///
     /// Semantics:
     /// - Single-shot: delivers at most one token.
-    /// - Abortable: dropping the subscription cancels polling immediately; pending `token()`/`into_agent()` resolve with `AuthError::RequestExpired`.
+    /// - Abortable: dropping the subscription cancels polling immediately; pending `wait_for_token()`/`wait_for_agent()` resolve with `AuthError::RequestExpired`.
     /// - Transport: timeouts are retried in a simple loop; other transport errors propagate.
     ///
     /// Example:
@@ -190,7 +190,7 @@ impl PubkyAuth {
     /// let auth = PubkyAuth::new(None, &caps)?;
     /// let (sub, url) = auth.subscribe();
     /// // display `url` as QR / deeplink to the signer
-    /// let agent = sub.into_agent().await?;
+    /// let agent = sub.wait_for_agent().await?;
     /// # Ok::<(), pubky::Error>(())
     /// ```
     pub fn subscribe(self) -> (AuthSubscription, Url) {
@@ -225,7 +225,7 @@ impl PubkyAuth {
 
     /// Block (via async/await) until the signer approves, then return a session-bound [`PubkyAgent`].
     ///
-    /// This is the ergonomic, single-call variant of [`subscribe`] + [`AuthSubscription::into_agent`]
+    /// This is the ergonomic, single-call variant of [`subscribe`] + [`AuthSubscription::wait_for_agent`]
     /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
     ///
     /// **How to use**
@@ -280,7 +280,7 @@ impl PubkyAuth {
     /// ```
     pub async fn wait_for_agent(self) -> Result<PubkyAgent> {
         let (sub, _) = self.subscribe();
-        sub.into_agent().await
+        sub.wait_for_agent().await
     }
 
     /// Poll the relay once a background task is running; decrypt and verify the token.
@@ -328,7 +328,7 @@ impl PubkyAuth {
 ///
 /// Owns the background poll task; delivers exactly one `AuthToken` (or an error).
 #[derive(Debug)]
-#[must_use = "hold on to this and call token().await or into_agent().await to complete the auth flow"]
+#[must_use = "hold on to this and call token().await or wait_for_agent().await to complete the auth flow"]
 pub struct AuthSubscription {
     client: PubkyClient,
     rx: flume::Receiver<Result<AuthToken>>,
@@ -342,7 +342,7 @@ impl AuthSubscription {
     /// - `Ok(AuthToken)` on success.
     /// - `Err(AuthError::RequestExpired)` if the relay expired or the subscription was dropped.
     /// - Transport/server errors as appropriate.
-    pub async fn token(self) -> Result<AuthToken> {
+    pub async fn wait_for_token(self) -> Result<AuthToken> {
         match self.rx.recv_async().await {
             Ok(res) => res,
             Err(_) => Err(AuthError::RequestExpired.into()),
@@ -360,11 +360,11 @@ impl AuthSubscription {
     /// # use pubky::{PubkyAuth, Capabilities};
     /// let (sub, url) = PubkyAuth::new(None, &Capabilities::default())?.subscribe();
     /// // display `url` to signer ...
-    /// let agent = sub.into_agent().await?;
+    /// let agent = sub.wait_for_agent().await?;
     /// # Ok::<(), pubky::Error>(())
     /// ```
-    pub async fn into_agent(self) -> Result<PubkyAgent> {
-        PubkyAgent::new(&self.client.clone(), &self.token().await?).await
+    pub async fn wait_for_agent(self) -> Result<PubkyAgent> {
+        PubkyAgent::new(&self.client.clone(), &self.wait_for_token().await?).await
     }
 
     /// Non-blocking probe for readiness.
