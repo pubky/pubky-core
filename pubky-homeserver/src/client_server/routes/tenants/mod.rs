@@ -3,11 +3,14 @@
 //! Every route here is relative to a tenant's Pubky host,
 //! as opposed to routes relative to the Homeserver's owner.
 
-use axum::{extract::DefaultBodyLimit, routing::get, Router};
+use axum::{extract::DefaultBodyLimit, routing::any, routing::get, Router};
 
 use crate::client_server::{
     layers::authz::AuthorizationLayer, layers::pubky_host::PubkyHostLayer, AppState,
 };
+
+use crate::shared::HttpResult;
+use axum::{body::Body, extract::Request, extract::State, response::IntoResponse};
 
 pub mod read;
 pub mod session;
@@ -31,14 +34,7 @@ pub fn router(state: AppState) -> Router<AppState> {
 
 pub fn webdav_router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route(
-            "/{key}/{*path}",
-            // FIXME use state.inner_dav_handler.handle
-            get(read::get)
-                .head(read::head)
-                .put(write::put)
-                .delete(write::delete),
-        )
+        .route("/{key}/{*path}", any(dav_handler))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         // NOTE observed that admin's dav auth is managed by `routes::dav_handler.rs`
         // For now I think it is better to keep it in Layer
@@ -53,4 +49,12 @@ pub fn webdav_router(state: AppState) -> Router<AppState> {
         //   This is the way to go in the long run
         // Current PubkyAuth can be found here https://github.com/pubky/pubky-core/blob/main/docs/src/spec/auth.md
         .layer(AuthorizationLayer::new(state.clone()))
+}
+
+pub async fn dav_handler(
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> HttpResult<impl IntoResponse> {
+    let dav_response = state.inner_dav_handler.handle(req).await;
+    Ok(dav_response.into_response())
 }
