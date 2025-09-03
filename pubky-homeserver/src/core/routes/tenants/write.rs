@@ -110,7 +110,7 @@ pub async fn fail_if_size_hint_bigger_than_user_quota<'a>(
 mod tests {
     use pkarr::Keypair;
 
-    use crate::shared::webdav::WebDavPath;
+    use crate::{persistence::sql::SqlDb, shared::webdav::WebDavPath};
 
     use super::*;
 

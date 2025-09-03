@@ -236,8 +236,7 @@ mod tests {
         persistence::{
             files::opendal_test_operators::OpendalTestOperators,
             sql::{
-                event::{EventRepository, EventType},
-                user::UserRepository,
+                entry::EntryRepository, event::{EventRepository, EventType}, user::UserRepository
             },
         },
         shared::webdav::WebDavPath,
