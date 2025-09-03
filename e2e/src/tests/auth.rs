@@ -1,4 +1,4 @@
-use pubky_testnet::pubky::{Keypair, PubkyAgent, PubkyAuth, PubkySigner};
+use pubky_testnet::pubky::{global, Keypair, PubkyAgent, PubkyAuth, PubkySigner, SessionBundle};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -9,36 +9,24 @@ use std::time::Duration;
 
 use pubky_testnet::pubky::errors::{Error, RequestError};
 
-// #[tokio::test]
-// async fn basic_authn() {
-//     let testnet = EphemeralTestnet::start().await.unwrap();
-//     let homeserver = testnet.homeserver();
+#[tokio::test]
+async fn basic_authn() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let homeserver = testnet.homeserver();
 
-//     let signer = PubkySigner::random().unwrap(); // Lazy constructor uses our global testnet pubky client
+    let signer = PubkySigner::random().unwrap(); // Lazy constructor uses our global testnet pubky client
 
-//     signer.signup(&homeserver.public_key(), None).await.unwrap();
+    let user = signer
+        .signup_agent(&homeserver.public_key(), None)
+        .await
+        .unwrap();
 
-//     let session = user.session().await.unwrap().unwrap();
+    let session = user.session();
 
-//     assert!(session.capabilities().contains(&Capability::root()));
+    assert!(session.capabilities().contains(&Capability::root()));
 
-//     user.signout().await.unwrap();
-
-//     {
-//         let session = user.session().await.unwrap();
-
-//         assert!(session.is_none());
-//     }
-
-//     user.signin().await.unwrap();
-
-//     {
-//         let session = user.session().await.unwrap().unwrap();
-
-//         assert_eq!(session.pubky(), &user.pubky().unwrap());
-//         assert!(session.capabilities().contains(&Capability::root()));
-//     }
-// }
+    user.signout().await.unwrap();
+}
 
 // #[tokio::test]
 // async fn disabled_user() {
@@ -169,6 +157,53 @@ async fn authz() {
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
+}
+
+#[tokio::test]
+async fn session_bundle_persist_and_restore() {
+    use std::path::PathBuf;
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let homeserver = testnet.homeserver();
+
+    // Create user and session-bound agent
+    let signer = PubkySigner::random().unwrap();
+    let agent = signer
+        .signup_agent(&homeserver.public_key(), None)
+        .await
+        .unwrap();
+
+    // Write something
+    agent
+        .drive()
+        .put("/pub/app/bundle.txt", "hello")
+        .await
+        .unwrap();
+
+    // Export to disk
+    let path: PathBuf =
+        std::env::temp_dir().join(format!("pubky_session_{}.json", signer.public_key()));
+    agent.export().save_file(&path).unwrap();
+
+    // Drop the agent (simulate script/app restart)
+    drop(agent);
+
+    // Recreate a client (global shared is needed here in tests)
+    let client = global::global_client().unwrap();
+
+    // Load from disk and rehydrate the agent, validating the session
+    let bundle = SessionBundle::load_file(&path).unwrap();
+    let agent2 = PubkyAgent::import(&client, bundle).await.unwrap();
+
+    // Verify we have access to overwrite from the restored session
+    agent2
+        .drive()
+        .put("/pub/app/bundle.txt", "hello2")
+        .await
+        .unwrap();
+
+    // Cleanup
+    let _ = std::fs::remove_file(path);
 }
 
 // #[tokio::test]

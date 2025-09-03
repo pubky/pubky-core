@@ -25,4 +25,5 @@ pub use crate::{FilePath, ListBuilder, PubkyPath};
 pub use crate::Session;
 pub use crate::{Capabilities, Capability};
 // Secret recovery utilities
+pub use crate::SessionBundle;
 pub use crate::recovery_file;

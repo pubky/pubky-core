@@ -45,54 +45,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-// src/
-// ├─ lib.rs                  -- Crate root: declares modules, re-exports public API (PubkyClient, PubkyAgent,
-// │                             PubkyDrive, PubkyAuth, Pkdns, PubkySigner, common types). Lints & crate docs.
-// ├─ prelude.rs              -- Concentrated re-exports for quick-start imports.
-// ├─ macros.rs               -- Cross-platform logging macro(s) (`cross_debug!`) used internally.
-// ├─ errors.rs               -- Unified error types (Build/Request/Pkarr/Auth) + top-level Error/Result.
-// ├─ util.rs                 -- Small internal utilities (e.g., `check_http_status` mapping non-2xx).
-// ├─ global.rs               -- Process-wide, resettable `Arc<PubkyClient>` (lock-free loads with ArcSwap).
-// │
-// ├─ client/                 -- Stateless transport (“engine”): pkarr+DHT resolution and HTTP plumbing.
-// │  ├─ core.rs              -- `PubkyClient` + `PubkyClientBuilder`: reqwest clients, pkarr client, defaults,
-// │  │                         request timeout, user-agent, testnet toggles, max record age.
-// │  ├─ http.rs              -- Request helper supporting `pubky://…` and pkarr-TLD HTTPS; ICANN routing on native.
-// │  └─ http_targets/        -- Platform-specific glue for `cross_request` / URL transforms.
-// │     ├─ native.rs         -- Native `cross_request` (delegates to `request`); `prepare_request` no-op.
-// │     └─ wasm.rs           -- WASM `cross_request`/`prepare_request`: `pubky://` rewrite, pkarr endpoint resolution,
-// │                             domain/port mapping (incl. testnet), `pubky-host` header injection.
-// │
-// ├─ agent/                  -- Stateful identity (“driver”): per-user session atop shared `PubkyClient`.
-// │  ├─ core.rs              -- `PubkyAgent`: construct from `/session` responses, hold `Session`, expose `pubky()`,
-// │  │                         `session()`, `client()`. (Its `drive()` is implemented in `drive/core.rs`.)
-// │  └─ session.rs           -- Homeserver session helpers: `session_from_homeserver()`, `signout()`.
-// │
-// ├─ drive/                  -- Homeserver file/HTTP API (verbs + list + JSON) with agent/public modes.
-// │  ├─ core.rs              -- `PubkyDrive`: session-mode (agent-scoped) vs public-mode (user-qualified paths);
-// │  │                         URL resolution, cookie attachment (native). Also `impl PubkyAgent { fn drive(..) }`.
-// │  ├─ http.rs              -- HTTP verbs: GET/HEAD (public or session), PUT/POST/PATCH/DELETE (session required).
-// │  ├─ list.rs              -- `ListBuilder` for directory listings; returns absolute `Url`s.
-// │  ├─ path.rs              -- `FilePath`, `PubkyPath`, and `IntoPubkyPath` conversions + parsing rules & tests.
-// │  └─ json.rs              -- (feature `json`) `get_json`/`put_json` convenience helpers.
-// │
-// ├─ auth/                   -- Keyless app auth via HTTP relay (PubkyAuth).
-// │  └─ flow.rs              -- `PubkyAuth`: build flow, subscribe (background polling), `AuthSubscription`,
-// │                             token verification, `into_agent()`.
-// │
-// ├─ signer/                 -- High-level signer actor (holds keypair; can sign/publish/signup/signin).
-// │  ├─ core.rs              -- `PubkySigner`: constructors (`new`/`with_client`/`random`), accessors (`pubky`, `keypair`).
-// │  ├─ auth.rs              -- `approve_pubkyauth_request(pubkyauth://…)` to an HTTP relay channel.
-// │  └─ session.rs           -- `signup` / `signup_agent` / `signing` / `signin_and_publish`,
-// │                             pkdns republish helpers (sync or background).
-// │
-// ├─ pkdns/                  -- PKDNS/PKARR actor for resolving & publishing `_pubky` records.
-// │  └─ core.rs              -- `Pkdns`: read-only (`new`/`with_client`) and publishing-capable
-// │                             (`with_client_and_keypair`, or via `signer.pkdns()`); `get_homeserver`,
-// │                             `publish_homeserver_{force,if_stale}`, internal host selection.
-//
-// Feature flags -- `json`: enables serde + JSON helpers in `drive/json.rs`.
-
 mod agent;
 mod auth;
 mod client;
@@ -114,12 +66,15 @@ pub use drive::core::PubkyDrive;
 pub use errors::{BuildError, Error, Result};
 pub use pkdns::core::Pkdns;
 pub use signer::PubkySigner;
+
 // Export common types and constants
+pub use crate::agent::bundle::SessionBundle;
 pub use crate::drive::{
     list::ListBuilder,
     path::{FilePath, PubkyPath},
 };
 pub use client::core::DEFAULT_RELAYS;
+
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::{
