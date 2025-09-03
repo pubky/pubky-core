@@ -2,7 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use pubky_common::{auth::AuthToken, session::Session};
 
-use crate::{PubkyClient, PubkyDrive, PublicKey, Result, util::check_http_status};
+use crate::{Error, PubkyClient, PubkyDrive, PublicKey, Result, util::check_http_status};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
@@ -140,15 +140,21 @@ impl PubkyAgent {
         Ok(Some(Session::deserialize(&bytes)?))
     }
 
-    /// Sign out and invalidate this agent’s server-side session. Consumes the agent.
-    pub async fn signout(self) -> Result<()> {
-        let response = self.drive().delete("/session").await?;
-        check_http_status(response).await?;
-        Ok(())
+    /// Sign out and invalidate this agent’s server-side session.
+    ///
+    /// - **On success:** the agent is consumed (dropped).
+    /// - **On failure:** you get `(Error, Self)` back so you can retry or inspect.
+    pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
+        let resp = match self.drive().delete("/session").await {
+            Ok(r) => r,
+            Err(e) => return Err((e, self)),
+        };
+        if let Err(e) = check_http_status(resp).await {
+            return Err((e, self));
+        }
+        Ok(()) // success => `self` is consumed
     }
-}
 
-impl PubkyAgent {
     /// Create a **session-mode** drive bound to this agent’s user and session.
     ///
     /// - Relative paths (e.g. `"/pub/app/file"`) are resolved to **this** user.
