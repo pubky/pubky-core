@@ -118,7 +118,7 @@ impl PubkyAuth {
         })
     }
 
-    /// Build bound to a default process-wide shared `PubkyClient`.
+    /// Construct bound to a default process-wide shared `PubkyClient`.
     /// This is what you want to use for most of your apps.
     ///
     /// # Relay selection
@@ -157,9 +157,34 @@ impl PubkyAuth {
     /// - Generates a random `client_secret` (32 bytes) and a user-displayable `pubkyauth://` deep link.
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
-    pub fn new(relay: Option<impl Into<Url>>, caps: &Capabilities) -> Result<Self> {
+    pub fn new_with_relay(relay: impl Into<Url>, caps: &Capabilities) -> Result<Self> {
         let client = global_client()?.as_ref().clone();
-        Self::new_with_client(&client, relay, caps)
+        Self::new_with_client(&client, Some(relay), caps)
+    }
+
+    /// Construct bound to a default process-wide shared `PubkyClient`.
+    /// This is what you want to use for quick and dirty projects and examples.
+    ///
+    /// The flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted instance.
+    /// For larger or production apps, prefer running your own relay and passing
+    /// its base URL to [`new_with_relay`]
+    ///
+    /// # What is an [HTTP relay](https://httprelay.io)?
+    /// A tiny server that provides one-shot “link” channels for **producer => consumer**
+    /// delivery: your app long-polls `GET /link/<channel>`, and the signer `POST`s the
+    /// encrypted token to the same channel; the relay just forwards bytes (no keys or
+    /// Pubky logic required). See the HTTP Relay docs for the `link` method.
+    ///
+    /// # Capabilities
+    /// `caps` are embedded into the `pubkyauth://` URL so the signer can review and approve them.
+    ///
+    /// Internals:
+    /// - Generates a random `client_secret` (32 bytes) and a user-displayable `pubkyauth://` deep link.
+    /// - Derives the relay channel from `client_secret` and stores both the deep link and the
+    ///   fully-qualified channel URL for subsequent polling.
+    pub fn new(caps: &Capabilities) -> Result<Self> {
+        let client = global_client()?.as_ref().clone();
+        Self::new_with_client(&client, None::<Url>, caps)
     }
 
     /// Return the `pubkyauth://` deep link to display (QR/deeplink) to the signer.
@@ -406,9 +431,8 @@ mod tests {
     #[test]
     fn constructs_urls_and_channel() {
         let caps = Capabilities::default();
-        let relay = Url::parse("https://http-relay.example.com/link/").unwrap();
 
-        let auth = PubkyAuth::new(Some(relay.clone()), &caps).unwrap();
+        let auth = PubkyAuth::new(&caps).unwrap();
         assert!(
             auth.pubkyauth_url()
                 .as_str()

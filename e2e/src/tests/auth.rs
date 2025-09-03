@@ -109,7 +109,7 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuth::new(Some(http_relay_url), &caps).unwrap();
+    let auth = PubkyAuth::new_with_relay(http_relay_url, &caps).unwrap();
 
     // Start long-poll; this consumes the flow
     let (subscription, pubkyauth_url) = auth.subscribe();
@@ -124,7 +124,7 @@ async fn authz() {
         .unwrap();
 
     // Retrieve the session-bound agent (third party app)
-    let user = subscription.into_agent().await.unwrap();
+    let user = subscription.wait_for_agent().await.unwrap();
 
     assert_eq!(user.public_key(), signer.public_key());
 
