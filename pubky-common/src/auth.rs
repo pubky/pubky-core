@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    capabilities::{Capabilities, Capability},
+    capabilities::Capabilities,
     crypto::{Keypair, PublicKey, Signature},
     namespaces::PUBKY_AUTH,
     timestamp::Timestamp,
@@ -70,8 +70,8 @@ impl AuthToken {
     }
 
     /// Returns the capabilities in this AuthToken.
-    pub fn capabilities(&self) -> &[Capability] {
-        &self.capabilities.0
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
     }
 
     // === Public Methods ===

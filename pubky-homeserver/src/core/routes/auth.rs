@@ -12,7 +12,8 @@ use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
 use base32::{encode, Alphabet};
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
+use pubky_common::capabilities::Capabilities;
+use pubky_common::{crypto::random_bytes, session::Session};
 use std::collections::HashMap;
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
@@ -139,7 +140,7 @@ fn create_session_and_cookie(
     cookies: Cookies,
     host: &str,
     public_key: &PublicKey,
-    capabilities: &[Capability],
+    capabilities: &Capabilities,
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(public_key, &state.db, false)?;
@@ -148,7 +149,7 @@ fn create_session_and_cookie(
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
     let session = Session::new(
         public_key,
-        capabilities,
+        capabilities.clone(),
         user_agent.map(|ua| ua.to_string()),
     )
     .serialize();

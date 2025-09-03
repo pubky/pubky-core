@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{capabilities::Capability, timestamp::Timestamp};
+use crate::{capabilities::Capabilities, timestamp::Timestamp};
 
 // TODO: add IP address?
 // TODO: use https://crates.io/crates/user-agent-parser to parse the session
@@ -21,21 +21,21 @@ pub struct Session {
     /// User specified name, defaults to the user-agent.
     name: String,
     user_agent: String,
-    capabilities: Vec<Capability>,
+    capabilities: Capabilities,
 }
 
 impl Session {
     /// Create a new session.
     pub fn new(
         public_key: &PublicKey,
-        capabilities: &[Capability],
+        capabilities: Capabilities,
         user_agent: Option<String>,
     ) -> Self {
         Self {
             version: 0,
             public_key: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
-            capabilities: capabilities.to_vec(),
+            capabilities,
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }
@@ -49,7 +49,7 @@ impl Session {
     }
 
     /// Returns the capabilities this session provide on this session's pubky's resources.
-    pub fn capabilities(&self) -> &Vec<Capability> {
+    pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
 
@@ -67,7 +67,7 @@ impl Session {
     }
 
     /// Set this session's capabilities.
-    pub fn set_capabilities(&mut self, capabilities: Vec<Capability>) -> &mut Self {
+    pub fn set_capabilities(&mut self, capabilities: Capabilities) -> &mut Self {
         self.capabilities = capabilities;
 
         self
@@ -112,7 +112,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::Keypair;
+    use crate::{capabilities::Capability, crypto::Keypair};
 
     use super::*;
 
@@ -120,10 +120,11 @@ mod tests {
     fn serialize() {
         let keypair = Keypair::from_secret_key(&[0; 32]);
         let public_key = keypair.public_key();
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 
         let session = Session {
             user_agent: "foo".to_string(),
-            capabilities: vec![Capability::root()],
+            capabilities,
             created_at: 0,
             public_key,
             version: 0,

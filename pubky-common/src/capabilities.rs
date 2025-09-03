@@ -326,6 +326,11 @@ impl Capabilities {
         self.0.len()
     }
 
+    /// Returns an iterator over the slice of [Capability].
+    pub fn iter(&self) -> std::slice::Iter<'_, Capability> {
+        self.0.iter()
+    }
+
     /// Parse capabilities from the `caps` query parameter.
     ///
     /// Expects a comma-separated list of capability strings, e.g.:

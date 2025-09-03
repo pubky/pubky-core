@@ -68,7 +68,6 @@ pub use pkdns::core::Pkdns;
 pub use signer::PubkySigner;
 
 // Export common types and constants
-pub use crate::agent::bundle::SessionBundle;
 pub use crate::drive::{
     list::ListBuilder,
     path::{FilePath, PubkyPath},

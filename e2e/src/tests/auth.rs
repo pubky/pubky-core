@@ -1,4 +1,4 @@
-use pubky_testnet::pubky::{global, Keypair, PubkyAgent, PubkyAuth, PubkySigner, SessionBundle};
+use pubky_testnet::pubky::{global, Keypair, PubkyAgent, PubkyAuth, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -160,9 +160,7 @@ async fn authz() {
 }
 
 #[tokio::test]
-async fn session_bundle_persist_and_restore() {
-    use std::path::PathBuf;
-
+async fn persist_and_restore_agent() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
 
@@ -173,37 +171,33 @@ async fn session_bundle_persist_and_restore() {
         .await
         .unwrap();
 
-    // Write something
+    // Write something with the live agent
     agent
         .drive()
-        .put("/pub/app/bundle.txt", "hello")
+        .put("/pub/app/persist.txt", "hello")
         .await
         .unwrap();
 
-    // Export to disk
-    let path: PathBuf =
-        std::env::temp_dir().join(format!("pubky_session_{}.json", signer.public_key()));
-    agent.export().save_file(&path).unwrap();
-
-    // Drop the agent (simulate script/app restart)
+    // Export (pubkey, cookie) and drop the agent (simulate restart)
+    let exported = agent.export_secret();
     drop(agent);
 
-    // Recreate a client (global shared is needed here in tests)
+    // Save to disk or however you want to persist `exported`
+
+    // Rehydrate from the exported secret (validates the session)
+    // Reuse the process-wide client configured by the testnet
     let client = global::global_client().unwrap();
+    let restored = PubkyAgent::import_secret(&client, exported).await.unwrap();
 
-    // Load from disk and rehydrate the agent, validating the session
-    let bundle = SessionBundle::load_file(&path).unwrap();
-    let agent2 = PubkyAgent::import(&client, bundle).await.unwrap();
+    // Same identity?
+    assert_eq!(restored.public_key(), signer.public_key());
 
-    // Verify we have access to overwrite from the restored session
-    agent2
+    // Still authorized to write
+    restored
         .drive()
-        .put("/pub/app/bundle.txt", "hello2")
+        .put("/pub/app/persist.txt", "hello2")
         .await
         .unwrap();
-
-    // Cleanup
-    let _ = std::fs::remove_file(path);
 }
 
 // #[tokio::test]
