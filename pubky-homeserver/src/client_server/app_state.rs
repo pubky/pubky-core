@@ -30,6 +30,7 @@ impl AppState {
             .strip_prefix("/dav")
             .autoindex(true)
             .build_handler();
+
         Self {
             verifier,
             db,
