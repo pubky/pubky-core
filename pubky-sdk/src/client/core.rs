@@ -7,13 +7,13 @@ use crate::errors::BuildError;
 
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 #[must_use]
 /// Configures a [`PubkyClient`] before construction.
 ///
-/// Prefer creating it via [`PubkyClient::builder()`]. Use this builder when you
-/// want to customize timeouts, record refresh policy, user-agent, relays, or
-/// testnet behavior (WASM).
+/// Customize timeouts, user-agent, pkarr relays, and (WASM) testnet behavior.
+/// Most code obtains this via [`PubkyClient::builder()`], which simply returns
+/// `PubkyClientBuilder::default()`.
 ///
 /// # Defaults
 /// - Pkarr relays: [`DEFAULT_RELAYS`]
@@ -52,6 +52,21 @@ pub struct PubkyClientBuilder {
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
     testnet_host: Option<String>,
+}
+
+impl Default for PubkyClientBuilder {
+    fn default() -> Self {
+        let mut pk = pkarr::ClientBuilder::default();
+        pk.relays(&DEFAULT_RELAYS).expect("infallible");
+
+        Self {
+            pkarr: pk,
+            http_request_timeout: None,
+            user_agent_extra: None,
+            #[cfg(target_arch = "wasm32")]
+            testnet_host: None,
+        }
+    }
 }
 
 impl PubkyClientBuilder {
@@ -125,7 +140,7 @@ impl PubkyClientBuilder {
         self
     }
 
-    /// Build [Client]
+    /// Build [PubkyClient]
     pub fn build(&self) -> Result<PubkyClient, BuildError> {
         let pkarr = self.pkarr.build()?;
 
@@ -171,7 +186,7 @@ impl PubkyClientBuilder {
 ///
 /// `PubkyClient` is the low-level, stateless engine the higher-level actors
 /// (`PubkyAgent`, `PubkyDrive`, `Pkdns`, `PubkyAuth`) are built on. It owns:
-/// - A pkarr DHT client (for resolving `_pubky` endpoints and publishing records).
+/// - A pkarr DHT client (for resolving pkdns endpoints and publishing records).
 /// - One or more reqwest HTTP clients (platform-specific).
 ///
 /// ### What it does
@@ -183,7 +198,7 @@ impl PubkyClientBuilder {
 ///
 /// ### What it *doesn’t* do
 /// - It is **not** session/identity aware. No cookies, no per-user scoping.
-///   For authenticated per-user flows use [`PubkyAgent`] (and then `agent.drive()`).
+///   For authenticated per-user flows use [`PubkyAgent`].
 ///
 /// ### When to use
 /// - You want direct control over HTTP and PKARR resolution (power users, libs).
@@ -259,9 +274,7 @@ impl PubkyClient {
 
     /// Returns a builder to edit settings before creating [Client].
     pub fn builder() -> PubkyClientBuilder {
-        let mut builder = PubkyClientBuilder::default();
-        builder.pkarr(|pkarr| pkarr.relays(&DEFAULT_RELAYS).expect("infallible"));
-        builder
+        PubkyClientBuilder::default()
     }
 
     /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
