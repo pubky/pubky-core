@@ -24,6 +24,8 @@ impl AppState {
         signup_mode: SignupMode,
         user_quota_bytes: Option<u64>,
     ) -> Self {
+        // TODO: allow db lookup for json content as well?
+
         let webdavfs = OpendalFs::new(file_service.opendal.operator.clone());
         let inner_dav_handler = DavHandler::builder()
             .filesystem(webdavfs)
