@@ -35,7 +35,7 @@ pub async fn signup(
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify AuthToken from request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.pubky();
+    let public_key = token.public_key();
 
     // 2) Ensure the user does *not* already exist
     let txn = state.db.env.read_txn()?;
@@ -108,7 +108,7 @@ pub async fn signin(
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify the AuthToken in the request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.pubky();
+    let public_key = token.public_key();
 
     // 2) Ensure user *does* exist
     let txn = state.db.env.read_txn()?;

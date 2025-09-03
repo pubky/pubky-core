@@ -44,7 +44,7 @@ impl PubkyAgent {
     /// This POSTs `pubky://{user}/session` with the token, validates the response,
     /// and delegates construction to [`Self::new_from_response`].
     pub async fn new(client: &PubkyClient, token: &AuthToken) -> Result<PubkyAgent> {
-        let url = format!("pubky://{}/session", token.pubky());
+        let url = format!("pubky://{}/session", token.public_key());
         let response = client
             .cross_request(Method::POST, url)
             .await?
@@ -91,7 +91,7 @@ impl PubkyAgent {
             let session = Session::deserialize(&bytes)?;
 
             // 3) Find the cookie named exactly as the user's pubky.
-            let cookie_name = session.pubky().to_string();
+            let cookie_name = session.public_key().to_string();
             let cookie = raw_set_cookies
                 .iter()
                 .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
@@ -108,8 +108,8 @@ impl PubkyAgent {
     }
 
     /// Returns the agent public key
-    pub fn pubky(&self) -> PublicKey {
-        self.session.pubky().clone()
+    pub fn public_key(&self) -> PublicKey {
+        self.session.public_key().clone()
     }
 
     /// Returns the agent session
@@ -159,7 +159,7 @@ impl PubkyAgent {
     pub fn drive(&self) -> PubkyDrive {
         PubkyDrive {
             client: self.client.clone(),
-            pubky: Some(self.session.pubky().clone()),
+            public_key: Some(self.session.public_key().clone()),
             has_session: true,
             #[cfg(not(target_arch = "wasm32"))]
             cookie: Some(self.cookie.clone()),

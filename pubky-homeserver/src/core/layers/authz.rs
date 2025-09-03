@@ -149,10 +149,10 @@ fn authorize(
         }
     };
 
-    if session.pubky() != public_key {
+    if session.public_key() != public_key {
         tracing::warn!(
             "Session public key does not match pubky-host: {} != {}",
-            session.pubky(),
+            session.public_key(),
             public_key
         );
         return Err(HttpError::unauthorized_with_message(

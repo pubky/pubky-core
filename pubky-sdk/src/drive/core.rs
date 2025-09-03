@@ -57,9 +57,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct PubkyDrive {
     pub(crate) client: PubkyClient,
-    /// When `Some(pubky)`, relative paths are agent-scoped and cookies may be attached.
+    /// When `Some(public_key)`, relative paths are agent-scoped and cookies may be attached.
     /// When `None`, only absolute user-qualified paths are accepted.
-    pub(crate) pubky: Option<PublicKey>,
+    pub(crate) public_key: Option<PublicKey>,
     pub(crate) has_session: bool,
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) cookie: Option<String>,
@@ -106,7 +106,7 @@ impl PubkyDrive {
     pub fn public_with_client(client: &PubkyClient) -> PubkyDrive {
         PubkyDrive {
             client: client.clone(),
-            pubky: None,
+            public_key: None,
             has_session: false,
             #[cfg(not(target_arch = "wasm32"))]
             cookie: None,
@@ -120,7 +120,7 @@ impl PubkyDrive {
     pub(crate) fn to_url<P: IntoPubkyPath>(&self, p: P) -> Result<Url> {
         let addr: PubkyPath = p.into_pubky_path()?;
 
-        let url_str = match (&self.pubky, &addr.user) {
+        let url_str = match (&self.public_key, &addr.user) {
             // Session mode: default to this agent for agent-scoped paths
             (Some(default_user), _) => addr.to_pubky_url(Some(default_user))?,
             // Public mode + explicit user in the input => OK
@@ -158,7 +158,7 @@ impl PubkyDrive {
 #[cfg(not(target_arch = "wasm32"))]
 impl PubkyDrive {
     fn url_is_this_users_homeserver(&self, url: &Url) -> bool {
-        let Some(user) = &self.pubky else {
+        let Some(user) = &self.public_key else {
             return false;
         };
         let host = url.host_str().unwrap_or("");
@@ -180,7 +180,7 @@ impl PubkyDrive {
         if !self.url_is_this_users_homeserver(url) {
             return rb;
         }
-        let Some(user) = &self.pubky else {
+        let Some(user) = &self.public_key else {
             return rb;
         };
         let Some(secret) = self.cookie.as_ref() else {

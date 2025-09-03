@@ -65,7 +65,7 @@ impl PubkySigner {
 
     /// Public key of this signer.
     #[inline]
-    pub fn pubky(&self) -> PublicKey {
+    pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
 

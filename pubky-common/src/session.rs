@@ -16,7 +16,7 @@ use crate::{capabilities::Capability, timestamp::Timestamp};
 /// Pubky homeserver session struct.
 pub struct Session {
     version: usize,
-    pubky: PublicKey,
+    public_key: PublicKey,
     created_at: u64,
     /// User specified name, defaults to the user-agent.
     name: String,
@@ -26,10 +26,14 @@ pub struct Session {
 
 impl Session {
     /// Create a new session.
-    pub fn new(pubky: &PublicKey, capabilities: &[Capability], user_agent: Option<String>) -> Self {
+    pub fn new(
+        public_key: &PublicKey,
+        capabilities: &[Capability],
+        user_agent: Option<String>,
+    ) -> Self {
         Self {
             version: 0,
-            pubky: pubky.clone(),
+            public_key: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
             capabilities: capabilities.to_vec(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
@@ -39,9 +43,9 @@ impl Session {
 
     // === Getters ===
 
-    /// Returns the pubky of this session authorizes for.
-    pub fn pubky(&self) -> &PublicKey {
-        &self.pubky
+    /// Returns the public_key of this session authorizes for.
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
     /// Returns the capabilities this session provide on this session's pubky's resources.
@@ -115,13 +119,13 @@ mod tests {
     #[test]
     fn serialize() {
         let keypair = Keypair::from_secret_key(&[0; 32]);
-        let pubky = keypair.public_key();
+        let public_key = keypair.public_key();
 
         let session = Session {
             user_agent: "foo".to_string(),
             capabilities: vec![Capability::root()],
             created_at: 0,
-            pubky,
+            public_key,
             version: 0,
             name: "".to_string(),
         };

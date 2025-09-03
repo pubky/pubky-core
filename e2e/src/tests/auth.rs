@@ -138,13 +138,13 @@ async fn authz() {
     // Retrieve the session-bound agent (third party app)
     let user = subscription.into_agent().await.unwrap();
 
-    assert_eq!(user.pubky(), signer.pubky());
+    assert_eq!(user.public_key(), signer.public_key());
 
     // let session = user.session().await.unwrap().unwrap();
     // assert_eq!(session.capabilities(), &caps.0);
 
     // Ensure the same user pubky has been authed on the keyless app from cold keypair
-    assert_eq!(user.pubky(), signer.pubky());
+    assert_eq!(user.public_key(), signer.public_key());
 
     // Access control enforcement
     user.drive()
@@ -325,15 +325,15 @@ async fn test_signup_with_token() {
         .await
         .unwrap();
     assert!(
-        !session.pubky().to_string().is_empty(),
+        !session.public_key().to_string().is_empty(),
         "Session should contain a valid public key"
     );
 
     // 5. Finally, sign in with the same keypair and verify that a session is returned.
-    let pubky = signer.pubky();
+    let pubky = signer.public_key();
     let agent = signer.signin().await.unwrap();
     assert_eq!(
-        agent.pubky(),
+        agent.public_key(),
         pubky,
         "Signed-in agent pubky should correspond to the signer's public key"
     );

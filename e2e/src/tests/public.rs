@@ -40,7 +40,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // again same request but using a tuple
-    let tuple_path = (agent.pubky(), "/pub/foo.txt");
+    let tuple_path = (agent.public_key(), "/pub/foo.txt");
 
     agent
         .drive()
@@ -64,7 +64,7 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        agent.pubky()
+        agent.public_key()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
@@ -282,7 +282,7 @@ async fn list() {
     let server = testnet.homeserver();
 
     let signer = PubkySigner::random().unwrap();
-    let pubky = signer.pubky();
+    let pubky = signer.public_key();
 
     let agent = signer
         .signup_agent(&server.public_key(), None)
