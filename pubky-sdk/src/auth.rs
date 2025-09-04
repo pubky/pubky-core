@@ -158,8 +158,7 @@ impl PubkyPairingAuth {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new_with_relay(relay: impl Into<Url>, caps: &Capabilities) -> Result<Self> {
-        let client = global_client()?.as_ref().clone();
-        Self::new_with_client(&client, Some(relay), caps)
+        Self::new_with_client(&global_client()?, Some(relay), caps)
     }
 
     /// Construct bound to a default process-wide shared `PubkyHttpClient`.
@@ -183,8 +182,7 @@ impl PubkyPairingAuth {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new(caps: &Capabilities) -> Result<Self> {
-        let client = global_client()?.as_ref().clone();
-        Self::new_with_client(&client, None::<Url>, caps)
+        Self::new_with_client(&global_client()?, None::<Url>, caps)
     }
 
     /// Return the `pubkyauth://` deep link to display (QR/deeplink) to the signer.
@@ -446,7 +444,7 @@ mod tests {
         assert!(
             auth.relay_channel_url()
                 .as_str()
-                .starts_with("https://http-relay.example.com/")
+                .starts_with(DEFAULT_HTTP_RELAY)
         );
         // Channel id must be last segment derived from client_secret hash
         let last_seg = auth

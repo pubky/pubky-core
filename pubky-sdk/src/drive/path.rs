@@ -3,7 +3,6 @@
 //! Accepted inputs for `PubkyPath::parse`:
 //! - `<user_pubkey>/<path>`            (preferred; explicit user)
 //! - `/absolute/path`                  (agent-scoped; user supplied elsewhere, must start with `/`)
-//! - `pubky://<user_pubkey>/<path>`    (URL compliant)
 //!
 //! Note: We intentionally do **not** accept `https://_pubky.<pk>/...` here.
 
@@ -14,7 +13,7 @@ use url::Url;
 
 use crate::{Error, errors::RequestError};
 
-const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (agent scoped) or `pubky://<user>/<path>` (URL compliant)";
+const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (agent scoped) or `pubky://<user>/<path>` (legacy)";
 
 #[inline]
 fn invalid(msg: impl Into<String>) -> Error {
@@ -45,46 +44,44 @@ impl FilePath {
             return Err(invalid("path cannot be empty"));
         }
 
-        // Normalize to absolute.
+        // Normalize to absolute (keep "/" as-is).
         let input = if raw.starts_with('/') {
             raw.to_string()
         } else {
             format!("/{}", raw)
         };
-
-        // Quick check for internal empty segments (we still allow a trailing '/').
-        if input.contains("//") && !input.ends_with("//") {
-            return Err(invalid("path contains empty segment ('//')"));
+        if input == "/" {
+            return Ok(FilePath("/".to_string()));
         }
+        let wants_trailing = input.ends_with('/');
 
-        // Preserve whether user asked for a trailing slash (except for root).
-        let wants_trailing = input.len() > 1 && input.ends_with('/');
-
-        // Rebuild via URL segments for RFC-compliant encoding.
-        let mut u = Url::parse("https://example.invalid")
+        // Build via URL segments (handles percent-encoding; no dot-seg normalization here).
+        let mut u = Url::parse("https://example.invalid/")
             .map_err(|_| invalid("internal URL setup failed"))?;
         {
             let mut segs = u
                 .path_segments_mut()
-                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)
                 .map_err(|_| invalid("internal URL path handling failed"))?;
             segs.clear();
 
-            // Skip the leading empty segment from the absolute path.
-            for seg in input.trim_start_matches('/').split('/') {
+            let mut parts = input.trim_start_matches('/').split('/').peekable();
+            while let Some(seg) = parts.next() {
                 if seg.is_empty() {
-                    // allow trailing slash only
-                    continue;
+                    // Empty segment inside the path => "//" (not allowed).
+                    // Allow only the final empty segment that represents a trailing slash.
+                    if parts.peek().is_none() && wants_trailing {
+                        break; // we'll encode trailing slash below
+                    }
+                    return Err(invalid("path contains empty segment ('//')"));
                 }
                 if seg == "." || seg == ".." {
                     return Err(invalid("path cannot contain '.' or '..'"));
                 }
-                segs.push(seg); // will percent-encode as needed
+                segs.push(seg);
             }
 
             if wants_trailing {
-                // Empty segment encodes a trailing slash.
-                segs.push("");
+                segs.push(""); // encode trailing slash
             }
         }
 
@@ -121,7 +118,7 @@ impl fmt::Display for FilePath {
 }
 
 /// A parsed homeserver address.
-/// - `user: Some(..)` when the input was `pubky://<user>/...` or `<user>/...`
+/// - `user: Some(..)` when the input was `<user>/...`
 /// - `user: None`    when the input was an agent-scoped path (e.g. `/foo/bar` or `foo/bar`)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PubkyPath {

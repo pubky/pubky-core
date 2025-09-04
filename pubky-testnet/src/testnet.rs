@@ -4,7 +4,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
@@ -42,8 +42,8 @@ impl Testnet {
 
         // Set a global shared pubky client so lazily initialized actors (PubkyAgent, PubkyPairingAuth, PubkySigner)
         // work over this testnet
-        let client = Arc::new(testnet.client()?);
-        pubky::global::set_client(client);
+        let testnet_client = testnet.client()?;
+        pubky::global::set_client(testnet_client);
 
         Ok(testnet)
     }

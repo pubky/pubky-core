@@ -39,8 +39,8 @@ use crate::{
 /// ### 2) Public mode (unauthenticated)
 /// Constructed via [`PubkyDrive::public`] or [`PubkyDrive::public_with_client`]. In this mode:
 /// - **No session** is attached; requests are unauthenticated.
-/// - Paths **must include the target user** (e.g. `"alice/pub/app/file"` or
-///   `"pubky://alice/pub/app/file"`). Relative/agent-scoped paths are rejected.
+/// - Paths **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"` or
+///   `"pubky://{alice_pubkey}/pub/app/file"`). Relative/agent-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///
 /// ```no_run

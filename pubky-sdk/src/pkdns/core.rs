@@ -52,9 +52,8 @@ impl PubkySigner {
 impl Pkdns {
     /// Read-only PKDNS actor using the global shared client.
     pub fn new() -> Result<Self> {
-        let shared = global_client()?;
         Ok(Self {
-            client: shared.as_ref().clone(),
+            client: global_client()?,
             keypair: None,
             stale_after: DEFAULT_STALE_AFTER,
         })

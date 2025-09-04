@@ -8,11 +8,9 @@ use crate::Result;
 use crate::util::check_http_status;
 
 impl PubkyDrive {
-    /// Directory listing helper (homeserver-specific).
+    /// Directory listing helper.
     ///
-    /// - Accepts both absolute and relative paths; relative paths are scoped in session mode.
-    /// - Ensures directory semantics (adds trailing `/` if missing).
-    /// - Returns a list of absolute `Url`s (one per entry).
+    /// The homeserver default limit is 100. The max list limit is 1000.
     ///
     /// # Examples
     /// ```no_run
