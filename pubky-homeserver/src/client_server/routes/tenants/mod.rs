@@ -38,7 +38,7 @@ pub fn router(state: AppState) -> Router<AppState> {
 
 pub fn webdav_router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/{key}/{*path}", any(dav_handler))
+        .route("/dav/{key}/{*path}", any(dav_handler))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
     // NOTE observed that admin's dav auth is managed by `routes::dav_handler.rs`
     // For now I think it is better to keep it in Layer
@@ -58,21 +58,21 @@ pub fn webdav_router(state: AppState) -> Router<AppState> {
 
 pub async fn dav_handler(
     State(state): State<AppState>,
-    Path((key, path)): Path<(Z32Pubkey, String)>,
+    // Path((key, path)): Path<(Z32Pubkey, String)>,
     req: Request<Body>,
 ) -> HttpResult<impl IntoResponse> {
     // TODO: handle pubky (part of path) somehow
 
-    let (mut parts, body) = req.into_parts();
+    // let (mut parts, body) = req.into_parts();
 
-    let new_path = parts
-        .uri
-        .to_string()
-        .replacen(&format!("/{}", key.0.to_string()), "", 1);
-    let new_uri = new_path.parse().unwrap();
-    parts.uri = new_uri;
+    // let new_path = parts
+    //     .uri
+    //     .to_string()
+    //     .replacen(&format!("/{}", key.0.to_string()), "", 1);
+    // let new_uri = new_path.parse().unwrap();
+    // parts.uri = new_uri;
 
-    let req = Request::from_parts(parts, body);
+    // let req = Request::from_parts(parts, body);
 
     let dav_response = state.inner_dav_handler.handle(req).await;
     Ok(dav_response.into_response())
