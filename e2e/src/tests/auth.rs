@@ -178,8 +178,8 @@ async fn persist_and_restore_agent() {
         .await
         .unwrap();
 
-    // Export (pubkey, cookie) and drop the agent (simulate restart)
-    let exported = agent.export_secret();
+    // Export agent's secret and drop the agent (simulate restart)
+    let secret_token = agent.export_secret();
     drop(agent);
 
     // Save to disk or however you want to persist `exported`
@@ -187,7 +187,9 @@ async fn persist_and_restore_agent() {
     // Rehydrate from the exported secret (validates the session)
     // Reuse the process-wide client configured by the testnet
     let client = global::global_client().unwrap();
-    let restored = PubkyAgent::import_secret(&client, exported).await.unwrap();
+    let restored = PubkyAgent::import_secret(&client, &secret_token)
+        .await
+        .unwrap();
 
     // Same identity?
     assert_eq!(restored.public_key(), signer.public_key());
