@@ -1,3 +1,5 @@
+use std::i64;
+
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::sql::entry::EntryEntity;
 use crate::{
@@ -225,12 +227,12 @@ impl EntryRepository {
         Ok(count > 0)
     }
 
-    /// Get the id of the entry that is the cursor. This is used to guarantee backwards compatibility with the old cursor.
+    /// Get the id of the entry that comes after the user supplied cursor. Only for deep lists.
     /// The user passes the last entry path as cursor. Basically, the user says: Give me all the entries after this one.
     /// This is used to implement pagination.
-    /// This function returns the id of the entry that is the cursor. Works for both shallow and deep lists.
-    /// Returns 0 if the cursor is None or not found. This way, the pagination starts from the beginning.
-    async fn get_cursor_id<'a>(
+    /// This function returns the next id of the entry that is the cursor.
+    /// Returns 0 if the cursor is None. Return i64::MAX if the cursor is not found.
+    async fn get_cursor_id_deep<'a>(
         cursor: Option<EntryPath>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<i64, sqlx::Error> {
@@ -247,16 +249,58 @@ impl EntryRepository {
                 USER_TABLE,
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
-            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", path.path())))
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).gte(path.path().as_str()))
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
-            .order_by((ENTRY_TABLE, EntryIden::Id), Order::Desc)
+            .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
             .limit(1)
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
-        let row = match sqlx::query_with(&query, values).fetch_optional(con).await? {
+        let row = match sqlx::query_with(
+            &query, values).fetch_optional(con).await? {
             Some(row) => row,
+            None => return Ok(i64::MAX),
+        };
+        let cursor_id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
+        Ok(cursor_id + 1)
+    }
+
+    /// Get the id of the entry that comes after the user supplied cursor. Only for shallow lists.
+    /// The user passes the last entry path as cursor. Basically, the user says: Give me all the entries after this one.
+    /// This is used to implement pagination.
+    /// This function returns the next id of the entry that is the cursor.
+    /// Returns 0 if the cursor is None. Return i64::MAX if the cursor is not found.
+    async fn get_cursor_id_shallow<'a>(
+        cursor: Option<EntryPath>,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<i64, sqlx::Error> {
+        let path = match cursor {
+            Some(cursor) => cursor,
             None => return Ok(0),
+        };
+
+        let file_path = path.path().to_string();
+
+        let statement = Query::select()
+            .from(ENTRY_TABLE)
+            .columns([(ENTRY_TABLE, EntryIden::Id)])
+            .column((USER_TABLE, UserIden::PublicKey))
+            .left_join(
+                USER_TABLE,
+                Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
+            )
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).gte(file_path.as_str()))
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).not_like(format!("{}%", file_path)))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
+            .limit(1)
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let row = match sqlx::query_with(
+            &query, values).fetch_optional(con).await? {
+            Some(row) => row,
+            None => return Ok(i64::MAX),
         };
         let cursor_id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
         Ok(cursor_id)
@@ -278,7 +322,7 @@ impl EntryRepository {
             full_path.push('/');
         }
 
-        let cursor_id = EntryRepository::get_cursor_id(cursor, executor).await?;
+        let cursor_id = EntryRepository::get_cursor_id_shallow(cursor, executor).await?;
         // Use this regex to get the distinct paths
         // ^(?'fixed_directory'\/test\/)(?'path_segment'[^\/]*)(?'opt_slash_indicating_dir'\/?)(?'rest_of_path'.*)$
         // DISTINCT ON makes sure that the same path is only returned once
@@ -296,7 +340,7 @@ impl EntryRepository {
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
-            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor_id.into())))
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).gte(SimpleExpr::Value(cursor_id.into())))
             .to_owned();
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
@@ -338,7 +382,7 @@ impl EntryRepository {
             full_path.push('/');
         }
 
-        let cursor_id = EntryRepository::get_cursor_id(cursor, executor).await?;
+        let cursor_id = EntryRepository::get_cursor_id_deep(cursor, executor).await?;
         let mut statement = Query::select()
             .from(ENTRY_TABLE)
             .columns([(ENTRY_TABLE, EntryIden::Path)])
@@ -349,7 +393,7 @@ impl EntryRepository {
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
             .and_where(
-                Expr::col((ENTRY_TABLE, EntryIden::Id)).gt(SimpleExpr::Value(cursor_id.into())),
+                Expr::col((ENTRY_TABLE, EntryIden::Id)).gte(SimpleExpr::Value(cursor_id.into())),
             )
             .to_owned();
 
@@ -398,6 +442,121 @@ mod tests {
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_cursor_id_deep() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Test create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        // Test create entries
+        let paths = vec![
+            "/test/1.txt",
+            "/test/2.txt",
+            "/test/3.txt",
+            "/test/sub1/1/1.txt",
+            "/test/sub1/2.txt",
+            "/test/sub2/1.txt",
+            "/test/sub2/2.txt",
+        ];
+        for path in paths {
+            EntryRepository::create(
+                user.id,
+                &WebDavPath::new(path).unwrap(),
+                &pubky_common::crypto::Hash::from_bytes([0; 32]),
+                100,
+                "text/plain",
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // No cursor should return 0
+        let cursor_id = EntryRepository::get_cursor_id_deep(None, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, 0);
+
+        // Direct match
+        let cursor_id = EntryRepository::get_cursor_id_deep(Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, 2);
+
+        // Substring match
+        let cursor_id = EntryRepository::get_cursor_id_deep(Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, 5);
+
+        // No match
+        let cursor_id = EntryRepository::get_cursor_id_deep(Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/xxxx").unwrap())), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, i64::MAX);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_cursor_id_shallow() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Test create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        // Test create entries
+        let paths = vec![
+            "/test/1.txt",
+            "/test/2.txt",
+            "/test/3.txt",
+            "/test/sub1/1/1.txt",
+            "/test/sub1/2.txt",
+            "/test/sub2/1.txt",
+            "/test/sub2/2.txt",
+        ];
+        for path in paths {
+            EntryRepository::create(
+                user.id,
+                &WebDavPath::new(path).unwrap(),
+                &pubky_common::crypto::Hash::from_bytes([0; 32]),
+                100,
+                "text/plain",
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+
+        // No cursor should return 0
+        let cursor_id = EntryRepository::get_cursor_id_shallow(None, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, 0);
+
+        // Direct match
+        let cursor_id = EntryRepository::get_cursor_id_shallow(Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, 2);
+
+        // Substring match
+        let cursor_id = EntryRepository::get_cursor_id_shallow(Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, 6);
+
+        // No match
+        let cursor_id = EntryRepository::get_cursor_id_shallow(Some(EntryPath::new(user_pubkey.clone(), WebDavPath::new("/xxxx").unwrap())), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(cursor_id, i64::MAX);
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_get_entry() {
