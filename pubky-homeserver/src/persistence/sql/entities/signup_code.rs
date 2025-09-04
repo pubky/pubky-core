@@ -5,7 +5,7 @@ use pkarr::PublicKey;
 use pubky_common::crypto::random_bytes;
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use sqlx::{postgres::PgRow, Executor, FromRow, Row};
+use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::persistence::sql::UnifiedExecutor;
 

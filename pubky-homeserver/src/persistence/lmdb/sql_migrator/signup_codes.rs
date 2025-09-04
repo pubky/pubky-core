@@ -1,6 +1,6 @@
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr, Value};
 use sea_query_binder::SqlxBinder;
-use sqlx::types::chrono::NaiveDateTime;
+use sqlx::types::chrono::DateTime;
 
 use crate::persistence::{
     lmdb::{tables::signup_tokens::SignupToken, LmDB},
@@ -20,7 +20,9 @@ pub async fn create<'a>(
         Some(p) => SimpleExpr::Value(p.to_string().into()),
         None => SimpleExpr::Value(Value::String(None)),
     };
-    let created_at = NaiveDateTime::from_timestamp(lmdb_token.created_at as i64, 0);
+    let created_at =
+        DateTime::from_timestamp(lmdb_token.created_at as i64, 0).expect("Should always be valid");
+    let created_at = created_at.naive_utc();
     let statement = Query::insert()
         .into_table(SIGNUP_CODE_TABLE)
         .columns([

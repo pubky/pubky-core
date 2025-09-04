@@ -164,6 +164,7 @@ impl EntryRepository {
 
     /// Delete an entry by its path.
     /// The executor can either be db.pool() or a transaction.
+    #[cfg(test)]
     pub async fn delete_by_path<'a>(
         path: &EntryPath,
         executor: &mut UnifiedExecutor<'a>,

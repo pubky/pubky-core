@@ -16,10 +16,8 @@ pub struct Session {
     pubky: PublicKey,
     created_at: u64,
     /// Deprecated. Will always be empty.
-    #[deprecated]
     name: String,
     /// Deprecated. Will always be empty.
-    #[deprecated]
     user_agent: String,
     capabilities: Vec<Capability>,
 }
@@ -59,18 +57,6 @@ impl Session {
     /// Set this session created at timestamp.
     pub fn set_created_at(&mut self, created_at: u64) -> &mut Self {
         self.created_at = created_at;
-        self
-    }
-
-    /// Set this session user agent.
-    #[deprecated]
-    pub fn set_user_agent(&mut self, user_agent: String) -> &mut Self {
-        self.user_agent = user_agent;
-
-        if self.name.is_empty() {
-            self.name.clone_from(&self.user_agent)
-        }
-
         self
     }
 

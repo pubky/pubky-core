@@ -168,6 +168,7 @@ impl UserRepository {
 
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
+    #[cfg(test)]
     pub async fn delete<'a>(
         user_id: i32,
         executor: &mut UnifiedExecutor<'a>,

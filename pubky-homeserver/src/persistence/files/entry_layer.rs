@@ -154,7 +154,7 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
             .write_entry(&self.entry_path, &file_metadata, &mut executor)
             .await
         {
-            Ok(entry) => {
+            Ok(_) => {
                 drop(executor);
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())

@@ -24,7 +24,7 @@ pub async fn feed(
         match EventRepository::parse_cursor(cursor.as_str(), &mut state.sql_db.pool().into()).await
         {
             Ok(cursor) => cursor,
-            Err(e) => return Err(HttpError::bad_request("Invalid cursor")),
+            Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
         };
 
     let events =

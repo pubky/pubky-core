@@ -1,7 +1,7 @@
 use pubky_common::session::Session;
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use sqlx::types::chrono::NaiveDateTime;
+use sqlx::types::chrono::DateTime;
 
 use crate::persistence::{
     lmdb::LmDB,
@@ -20,7 +20,9 @@ pub async fn create<'a>(
     executor: &mut UnifiedExecutor<'a>,
 ) -> Result<(), sqlx::Error> {
     let sql_user = UserRepository::get(lmdb_session.pubky(), executor).await?;
-    let created_at = NaiveDateTime::from_timestamp(lmdb_session.created_at() as i64, 0);
+    let created_at = DateTime::from_timestamp(lmdb_session.created_at() as i64, 0)
+        .expect("Should always be valid");
+    let created_at = created_at.naive_utc();
     let statement = Query::insert()
         .into_table(SESSION_TABLE)
         .columns([

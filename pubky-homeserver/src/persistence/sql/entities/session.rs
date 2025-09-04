@@ -4,7 +4,7 @@ use pkarr::PublicKey;
 use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use sqlx::{postgres::PgRow, Executor, FromRow, Row};
+use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::persistence::sql::{
     entities::user::{UserIden, USER_TABLE},
@@ -122,6 +122,7 @@ impl SessionSecret {
         decoded.is_some() && decoded.unwrap().len() == 16
     }
 
+    #[cfg(test)]
     pub fn random() -> Self {
         let secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
         Self(secret)
