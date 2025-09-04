@@ -11,6 +11,9 @@ mod signup_mode;
 /// Opendal config for the TomlConfig.
 pub mod storage_config;
 
+/// Periodic backup taks.
+pub mod periodic_backup;
+
 mod log_level;
 
 pub use config_toml::{ConfigReadError, ConfigToml, LoggingToml};

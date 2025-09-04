@@ -1,4 +1,4 @@
-use crate::core::{extractors::PubkyHost, AppState};
+use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;
@@ -13,7 +13,7 @@ use tower::{Layer, Service};
 use tower_cookies::Cookies;
 
 /// A Tower Layer to handle authorization for write operations.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthorizationLayer {
     state: AppState,
 }
@@ -36,7 +36,7 @@ impl<S> Layer<S> for AuthorizationLayer {
 }
 
 /// Middleware that performs authorization checks for write operations.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthorizationMiddleware<S> {
     inner: S,
     state: AppState,

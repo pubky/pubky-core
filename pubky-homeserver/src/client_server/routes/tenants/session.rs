@@ -2,7 +2,7 @@ use axum::{extract::State, response::IntoResponse};
 use tower_cookies::Cookies;
 
 use crate::{
-    core::{
+    client_server::{
         err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost,
         layers::authz::session_secret_from_cookies, AppState,
     },
