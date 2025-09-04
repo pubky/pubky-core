@@ -1,4 +1,4 @@
-use pubky_testnet::pubky::{global, Keypair, PubkyAgent, PubkyAuth, PubkySigner};
+use pubky_testnet::pubky::{global, Keypair, PubkyAgent, PubkyPairingAuth, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -109,7 +109,7 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuth::new_with_relay(http_relay_url, &caps).unwrap();
+    let auth = PubkyPairingAuth::new_with_relay(http_relay_url, &caps).unwrap();
 
     // Start long-poll; this consumes the flow
     let (subscription, pubkyauth_url) = auth.subscribe();

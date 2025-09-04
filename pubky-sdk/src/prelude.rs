@@ -12,7 +12,7 @@ pub use crate::PubkyAgent;
 // Signer to use on behalf of a user on a keychain application.
 pub use crate::PubkySigner;
 // Authentication flow for apps.
-pub use crate::PubkyAuth;
+pub use crate::PubkyPairingAuth;
 // Homeserver drive storage API (http verbs + list)
 pub use crate::PubkyDrive;
 // Pkdns/Pkarr retrieval and publishing

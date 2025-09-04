@@ -32,9 +32,9 @@
 //! let resolved = Pkdns::new()?.get_homeserver(&signer.pubky()).await;
 //! println!("current homeserver: {:?}", resolved);
 //!
-//! // Keyless third-party app: start PubkyAuth and turn it into an agent
+//! // Keyless third-party app: start PubkyPairingAuth and turn it into an agent
 //! let capabilities = Capabilities::builder().write("/pub/pubky.app/").finish();
-//! let (sub, url) = PubkyAuth::new(None, &capabilities)?.subscribe();  // None for default relay.
+//! let (sub, url) = PubkyPairingAuth::new(None, &capabilities)?.subscribe();  // None for default relay.
 //! // display `url` via QR or deeplink it so the Signer can send the auth token.
 //! // signer.approve_pubkyauth_request(url);
 //! let agent = sub.into_agent().await?; // session-bound agent
@@ -60,7 +60,7 @@ pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
 pub use agent::core::PubkyAgent;
-pub use auth::PubkyAuth;
+pub use auth::PubkyPairingAuth;
 pub use client::core::{PubkyClient, PubkyClientBuilder};
 pub use drive::core::PubkyDrive;
 pub use errors::{BuildError, Error, Result};

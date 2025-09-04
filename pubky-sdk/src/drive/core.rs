@@ -21,10 +21,10 @@ use crate::{
 /// - Reads **and** writes are expected to succeed (subject to server authorization).
 ///
 /// ```no_run
-/// # use pubky::{PubkyAuth, Capabilities};
+/// # use pubky::{PubkyPairingAuth, Capabilities};
 /// # async fn example() -> pubky::Result<()> {
 /// #   let caps = Capabilities::default();
-/// #   let (sub, url) = PubkyAuth::new(None, &caps)?.subscribe();
+/// #   let (sub, url) = PubkyPairingAuth::new(None, &caps)?.subscribe();
 /// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
 /// #   let user = sub.into_agent().await?;
 ///

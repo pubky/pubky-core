@@ -40,7 +40,7 @@ impl Testnet {
             temp_dirs: vec![],
         };
 
-        // Set a global shared pubky client so lazily initialized actors (PubkyAgent, PubkyAuth, PubkySigner)
+        // Set a global shared pubky client so lazily initialized actors (PubkyAgent, PubkyPairingAuth, PubkySigner)
         // work over this testnet
         let client = Arc::new(testnet.client()?);
         pubky::global::set_client(client);

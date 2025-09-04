@@ -2,12 +2,12 @@
 //!
 //! # Why this exists
 //! Most applications want easy, zero-setup construction of `PubkyAgent` (session actor),
-//! `PubkySigner` (key holder), and `PubkyAuth` without having to plumb a
+//! `PubkySigner` (key holder), and `PubkyPairingAuth` without having to plumb a
 //! `PubkyClient` everywhere. This module provides a process-wide, lazily initialized,
 //! resettable client that those “lazy constructors” can reuse. The goals:
 //!
 //! - **Ergonomics**: one-liners like `PubkySigner:new(kp)` and
-//!   `PubkyAuth::new(..)` just work.
+//!   `PubkyPairingAuth::new(..)` just work.
 //! - **Performance**: reuse a single transport stack (connection pools, TLS state, pkarr cache).
 //! - **Safety**: resetting the global must not invalidate already-constructed agents.
 //!
