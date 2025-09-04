@@ -4,7 +4,7 @@
 pub use crate::{BuildError, Error, Keypair, PublicKey};
 
 // Transport
-pub use crate::{PubkyClient, PubkyClientBuilder};
+pub use crate::{PubkyHttpClient, PubkyHttpClientBuilder};
 
 // High level Actors
 // Agent to use on behalf of a user on apps.

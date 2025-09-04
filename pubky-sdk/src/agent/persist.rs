@@ -3,7 +3,7 @@ use pubky_common::capabilities::Capabilities;
 
 use super::core::PubkyAgent;
 use crate::{
-    PubkyClient, Result, Session,
+    PubkyHttpClient, Result, Session,
     errors::{AuthError, RequestError},
 };
 
@@ -30,7 +30,7 @@ impl PubkyAgent {
     ///
     /// Performs a `/session` roundtrip to validate and hydrate the authoritative `Session`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
-    pub async fn import_secret(client: &PubkyClient, token: &str) -> Result<Self> {
+    pub async fn import_secret(client: &PubkyHttpClient, token: &str) -> Result<Self> {
         // 1) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
         let (pk_str, cookie) = token
             .split_once(':')

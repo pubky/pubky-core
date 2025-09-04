@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{Capabilities, PubkyClient, PubkySigner, PublicKey};
+use pubky::{Capabilities, PubkyHttpClient, PubkySigner, PublicKey};
 use std::path::PathBuf;
 use url::Url;
 
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     println!("PublicKey: {}", keypair.public_key());
 
     let signer = if cli.testnet {
-        let client = PubkyClient::testnet()?;
+        let client = PubkyHttpClient::testnet()?;
         let signer = PubkySigner::with_client(&client, keypair);
 
         // For the purposes of this demo, we need to make sure

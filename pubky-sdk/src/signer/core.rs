@@ -1,33 +1,33 @@
-use crate::{BuildError, Keypair, PubkyClient, PublicKey, global::global_client};
+use crate::{BuildError, Keypair, PubkyHttpClient, PublicKey, global::global_client};
 
 /// Key holder and signer.
 #[derive(Debug, Clone)]
 pub struct PubkySigner {
-    pub(crate) client: PubkyClient,
+    pub(crate) client: PubkyHttpClient,
     pub(crate) keypair: Keypair,
 }
 
 impl PubkySigner {
-    /// Construct a Signer atop a specific transport [PubkyClient].
+    /// Construct a Signer atop a specific transport [PubkyHttpClient].
     ///
-    /// Choose this when you already manage a long-lived `PubkyClient` (connection reuse, pkarr cache).
+    /// Choose this when you already manage a long-lived `PubkyHttpClient` (connection reuse, pkarr cache).
     ///
     /// # Examples
     /// ```no_run
     /// # use std::sync::Arc;
-    /// # use pubky::{PubkyClient, PubkySigner, Keypair};
-    /// let client = Arc::new(PubkyClient::new()?);
+    /// # use pubky::{PubkyHttpClient, PubkySigner, Keypair};
+    /// let client = Arc::new(PubkyHttpClient::new()?);
     /// let user = PubkySigner::with_client(client.clone(), Keypair::random());
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
-    pub fn with_client(client: &PubkyClient, keypair: Keypair) -> Self {
+    pub fn with_client(client: &PubkyHttpClient, keypair: Keypair) -> Self {
         Self {
             client: client.clone(),
             keypair,
         }
     }
 
-    /// Construct a Signer using a lazily-initialized, process-wide shared [PubkyClient].
+    /// Construct a Signer using a lazily-initialized, process-wide shared [PubkyHttpClient].
     ///
     /// Choose this when:
     /// - You don’t need to control client construction or lifecycle.
@@ -45,7 +45,7 @@ impl PubkySigner {
         Ok(Self::with_client(&client, keypair))
     }
 
-    /// Construct a Signer with a fresh random keypair, using the process-wide shared [PubkyClient].
+    /// Construct a Signer with a fresh random keypair, using the process-wide shared [PubkyHttpClient].
     ///
     /// Purpose:
     /// - Fast ephemeral identities for e2e tests or demos.

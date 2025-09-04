@@ -132,11 +132,11 @@ impl Testnet {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
-    /// Create a [PubkyClientBuilder] and configure it to use this local test network.
-    pub fn client_builder(&self) -> pubky::PubkyClientBuilder {
+    /// Create a [PubkyHttpClientBuilder] and configure it to use this local test network.
+    pub fn client_builder(&self) -> pubky::PubkyHttpClientBuilder {
         let relays = self.dht_relay_urls();
 
-        let mut builder = pubky::PubkyClient::builder();
+        let mut builder = pubky::PubkyHttpClient::builder();
         builder.pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
@@ -156,14 +156,14 @@ impl Testnet {
         builder
     }
 
-    /// Creates a `pubky::PubkyClient` pre-configured to use this test network.
+    /// Creates a `pubky::PubkyHttpClient` pre-configured to use this test network.
     ///
     /// This is a convenience method that builds a client from `Self::client_builder`.
     ///
     /// # Panics
     ///
     /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn client(&self) -> Result<pubky::PubkyClient, pubky::BuildError> {
+    pub fn client(&self) -> Result<pubky::PubkyHttpClient, pubky::BuildError> {
         self.client_builder().build()
     }
 

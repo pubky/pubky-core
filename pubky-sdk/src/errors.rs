@@ -9,7 +9,7 @@ use thiserror::Error;
 
 // --- Build-Time Error ---
 
-/// Errors that can occur while building a [`PubkyClient`].
+/// Errors that can occur while building a [`PubkyHttpClient`].
 #[derive(Debug, Error)]
 pub enum BuildError {
     /// Failed to construct the underlying pkarr client (DHT/relay configuration).

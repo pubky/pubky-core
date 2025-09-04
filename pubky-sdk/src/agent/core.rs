@@ -2,12 +2,12 @@ use reqwest::{Method, StatusCode};
 
 use pubky_common::{auth::AuthToken, session::Session};
 
-use crate::{Error, PubkyClient, PubkyDrive, PublicKey, Result, util::check_http_status};
+use crate::{Error, PubkyDrive, PubkyHttpClient, PublicKey, Result, util::check_http_status};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
 
-/// Stateful, per-identity API driver built on a shared [`PubkyClient`].
+/// Stateful, per-identity API driver built on a shared [`PubkyHttpClient`].
 ///
 /// An `PubkyAgent` represents one user/identity. It optionally holds a `Keypair` (for
 /// self-signed flows like `signin()`/`signup()`), and always tracks the user’s `pubky`
@@ -22,13 +22,13 @@ use crate::errors::AuthError;
 ///
 /// When to use:
 /// - Use `PubkyAgent` whenever you’re acting “as a user” against a Pubky homeserver.
-/// - Use `PubkyClient` only for raw transport or unauthenticated/public operations.
+/// - Use `PubkyHttpClient` only for raw transport or unauthenticated/public operations.
 ///
 /// Concurrency:
-/// - `PubkyAgent` is cheap to clone and thread-safe; it shares the underlying `PubkyClient`.
+/// - `PubkyAgent` is cheap to clone and thread-safe; it shares the underlying `PubkyHttpClient`.
 #[derive(Clone, Debug)]
 pub struct PubkyAgent {
-    pub(crate) client: PubkyClient,
+    pub(crate) client: PubkyHttpClient,
 
     /// Known session for this agent.
     pub(crate) session: Session,
@@ -43,7 +43,7 @@ impl PubkyAgent {
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response,
     /// and delegates construction to [`Self::new_from_response`].
-    pub async fn new(client: &PubkyClient, token: &AuthToken) -> Result<PubkyAgent> {
+    pub async fn new(client: &PubkyHttpClient, token: &AuthToken) -> Result<PubkyAgent> {
         let url = format!("pubky://{}/session", token.public_key());
         let response = client
             .cross_request(Method::POST, url)
@@ -61,7 +61,7 @@ impl PubkyAgent {
     /// - Reads the `Session` body (to learn the user pubky).
     /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
     pub(crate) async fn new_from_response(
-        client: PubkyClient,
+        client: PubkyHttpClient,
         response: reqwest::Response,
     ) -> Result<PubkyAgent> {
         #[cfg(target_arch = "wasm32")]
@@ -117,10 +117,10 @@ impl PubkyAgent {
         self.session.clone()
     }
 
-    /// Returns a reference to the internal `PubkyClient`
+    /// Returns a reference to the internal `PubkyHttpClient`
     /// Raw transport handle. No per-agent cookie injection. Use `homeserver()` for
     /// authenticated, agent-scoped requests.
-    pub fn client(&self) -> &PubkyClient {
+    pub fn client(&self) -> &PubkyHttpClient {
         &self.client
     }
 

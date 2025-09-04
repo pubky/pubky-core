@@ -4,7 +4,7 @@ use url::Url;
 
 use super::path::IntoPubkyPath;
 use crate::{
-    PubkyClient, PubkyPath,
+    PubkyHttpClient, PubkyPath,
     errors::{RequestError, Result},
     global::global_client,
 };
@@ -56,7 +56,7 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct PubkyDrive {
-    pub(crate) client: PubkyClient,
+    pub(crate) client: PubkyHttpClient,
     /// When `Some(public_key)`, relative paths are agent-scoped and cookies may be attached.
     /// When `None`, only absolute user-qualified paths are accepted.
     pub(crate) public_key: Option<PublicKey>,
@@ -66,7 +66,7 @@ pub struct PubkyDrive {
 }
 
 impl PubkyDrive {
-    /// Create a **public (unauthenticated)** drive that uses the global shared [`PubkyClient`].
+    /// Create a **public (unauthenticated)** drive that uses the global shared [`PubkyHttpClient`].
     ///
     /// Use this for read-only access to any user’s public content without a session.
     /// In this mode **paths must be user-qualified** (e.g. `"alice_pubky/pub/..."`).
@@ -88,7 +88,7 @@ impl PubkyDrive {
 
     /// Create a **public (unauthenticated)** drive with an explicit client.
     ///
-    /// Choose this when you manage your own [`PubkyClient`] (e.g., for connection pooling,
+    /// Choose this when you manage your own [`PubkyHttpClient`] (e.g., for connection pooling,
     /// custom TLS/root store, or test wiring).
     ///
     /// In this mode **paths must be user-qualified** (e.g. `"alice/pub/..."`).
@@ -96,14 +96,14 @@ impl PubkyDrive {
     /// # Examples
     /// ```no_run
     /// # use std::sync::Arc;
-    /// # use pubky::{PubkyClient, PubkyDrive};
+    /// # use pubky::{PubkyHttpClient, PubkyDrive};
     /// # async fn example() -> pubky::Result<()> {
-    /// let client = PubkyClient::new()?;
+    /// let client = PubkyHttpClient::new()?;
     /// let drive = PubkyDrive::public_with_client(Arc::new(client));
     /// let urls = drive.list("alice_pubky/pub/site/").limit(10).send().await?;
     /// # Ok(()) }
     /// ```
-    pub fn public_with_client(client: &PubkyClient) -> PubkyDrive {
+    pub fn public_with_client(client: &PubkyHttpClient) -> PubkyDrive {
         PubkyDrive {
             client: client.clone(),
             public_key: None,

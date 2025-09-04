@@ -6,7 +6,7 @@ use pkarr::{
 };
 
 use crate::{
-    PubkyClient, PubkySigner,
+    PubkyHttpClient, PubkySigner,
     errors::{AuthError, Error, PkarrError, Result},
     global::global_client,
 };
@@ -27,14 +27,14 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 ///
 /// Or **with** a keypair for publishing:
 /// ```no_run
-/// # async fn example(client: std::sync::Arc<pubky::PubkyClient>, kp: pubky::Keypair) -> pubky::Result<()> {
+/// # async fn example(client: std::sync::Arc<pubky::PubkyHttpClient>, kp: pubky::Keypair) -> pubky::Result<()> {
 /// let pkdns = pubky::Pkdns::with_client_and_keypair(client, kp);
 /// pkdns.publish_homeserver_if_stale(None).await?;
 /// # Ok(()) }
 /// ```
 #[derive(Debug, Clone)]
 pub struct Pkdns {
-    client: PubkyClient,
+    client: PubkyHttpClient,
     keypair: Option<Keypair>,
     /// Maximum age before a user record should be republished.
     /// Defaults to 1 hour.
@@ -61,7 +61,7 @@ impl Pkdns {
     }
 
     /// Read-only PKDNS actor on a specific client.
-    pub fn with_client(client: &PubkyClient) -> Self {
+    pub fn with_client(client: &PubkyHttpClient) -> Self {
         Self {
             client: client.clone(),
             keypair: None,
@@ -70,7 +70,7 @@ impl Pkdns {
     }
 
     /// Publishing-capable PKDNS actor: provide a client and a keypair.
-    pub fn with_client_and_keypair(client: &PubkyClient, keypair: Keypair) -> Self {
+    pub fn with_client_and_keypair(client: &PubkyHttpClient, keypair: Keypair) -> Self {
         Self {
             client: client.clone(),
             keypair: Some(keypair),

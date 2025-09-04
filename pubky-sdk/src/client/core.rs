@@ -9,11 +9,11 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 
 #[derive(Debug, Clone)]
 #[must_use]
-/// Configures a [`PubkyClient`] before construction.
+/// Configures a [`PubkyHttpClient`] before construction.
 ///
 /// Customize timeouts, user-agent, pkarr relays, and (WASM) testnet behavior.
-/// Most code obtains this via [`PubkyClient::builder()`], which simply returns
-/// `PubkyClientBuilder::default()`.
+/// Most code obtains this via [`PubkyHttpClient::builder()`], which simply returns
+/// `PubkyHttpClientBuilder::default()`.
 ///
 /// # Defaults
 /// - Pkarr relays: [`DEFAULT_RELAYS`]
@@ -24,8 +24,8 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// # Example
 /// ```no_run
 /// use std::time::Duration;
-/// # use pubky::{PubkyClient, PubkyClientBuilder};
-/// let client = PubkyClient::builder()
+/// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
+/// let client = PubkyHttpClient::builder()
 ///     .request_timeout(Duration::from_secs(10))
 ///     .user_agent_extra("myapp/1.2.3")
 ///     .build()?;
@@ -34,15 +34,15 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 ///
 /// You can keep the default Pkarr relays or override them via the builder:
 /// ```
-/// # use pubky::{PubkyClient, PubkyClientBuilder};
+/// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
 /// # fn main() -> Result<(), pubky::BuildError> {
 /// // Start from defaults; you can also supply your own entirely.
-/// let mut b = PubkyClient::builder();
+/// let mut b = PubkyHttpClient::builder();
 /// b.pkarr(|p| p.relays(&["https://pkarr.example.net/"]).expect("infallible"));
 /// let _client = b.build()?;
 /// # Ok(()) }
 /// ```
-pub struct PubkyClientBuilder {
+pub struct PubkyHttpClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
 
@@ -54,7 +54,7 @@ pub struct PubkyClientBuilder {
     testnet_host: Option<String>,
 }
 
-impl Default for PubkyClientBuilder {
+impl Default for PubkyHttpClientBuilder {
     fn default() -> Self {
         let mut pk = pkarr::ClientBuilder::default();
         pk.relays(&DEFAULT_RELAYS).expect("infallible");
@@ -69,7 +69,7 @@ impl Default for PubkyClientBuilder {
     }
 }
 
-impl PubkyClientBuilder {
+impl PubkyHttpClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     /// Creates a client connected to a local test network using `localhost`.
     /// To use a custom host, use `testnet_with_host`.
@@ -140,8 +140,8 @@ impl PubkyClientBuilder {
         self
     }
 
-    /// Build [PubkyClient]
-    pub fn build(&self) -> Result<PubkyClient, BuildError> {
+    /// Build [PubkyHttpClient]
+    pub fn build(&self) -> Result<PubkyHttpClient, BuildError> {
         let pkarr = self.pkarr.build()?;
 
         // Compose user agent with optional extra part.
@@ -168,7 +168,7 @@ impl PubkyClientBuilder {
 
             icann_http_builder = icann_http_builder.timeout(timeout);
         }
-        Ok(PubkyClient {
+        Ok(PubkyHttpClient {
             pkarr,
             http: http_builder.build()?,
 
@@ -184,7 +184,7 @@ impl PubkyClientBuilder {
 /// Transport client for Pubky homeserver APIs and generic HTTP, with PKARR-aware
 /// URL handling.
 ///
-/// `PubkyClient` is the low-level, stateless engine the higher-level actors
+/// `PubkyHttpClient` is the low-level, stateless engine the higher-level actors
 /// (`PubkyAgent`, `PubkyDrive`, `Pkdns`, `PubkyPairingAuth`) are built on. It owns:
 /// - A pkarr DHT client (for resolving pkdns endpoints and publishing records).
 /// - One or more reqwest HTTP clients (platform-specific).
@@ -205,12 +205,12 @@ impl PubkyClientBuilder {
 /// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
 ///
 /// For most apps, prefer the higher-level actors and let them reuse the default shared
-/// `Arc<PubkyClient>` under the hood.
+/// `Arc<PubkyHttpClient>` under the hood.
 ///
 /// ### Construction
-/// Use [`PubkyClient::builder()`] to tweak timeouts, relays, or
-/// user-agent; or pick sensible defaults via [`PubkyClient::new()`]. A
-/// [`PubkyClient::testnet()`] helper configures a local test network.
+/// Use [`PubkyHttpClient::builder()`] to tweak timeouts, relays, or
+/// user-agent; or pick sensible defaults via [`PubkyHttpClient::new()`]. A
+/// [`PubkyHttpClient::testnet()`] helper configures a local test network.
 ///
 /// ### Platform notes
 /// - **Native:** standard TLS; ICANN domains are routed via an internal
@@ -221,17 +221,17 @@ impl PubkyClientBuilder {
 /// ### Examples
 /// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
 /// ```no_run
-/// # use pubky::PubkyClient;
-/// let client = PubkyClient::new()?;
+/// # use pubky::PubkyHttpClient;
+/// let client = PubkyHttpClient::new()?;
 /// # Ok::<_, pubky::BuildError>(())
 /// ```
 ///
 /// Fetching a standard ICANN URL (native) or any URL (WASM/native) with `cross_request`:
 /// ```no_run
-/// # use pubky::{PubkyClient, Result};
+/// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run() -> Result<()> {
-/// let client = PubkyClient::new()?;
+/// let client = PubkyHttpClient::new()?;
 /// let resp = client.cross_request(Method::GET, "https://example.com").await?
 ///     .send().await?;
 /// assert!(resp.status().is_success());
@@ -240,10 +240,10 @@ impl PubkyClientBuilder {
 ///
 /// Resolving and fetching a `pubky://` resource directly:
 /// ```no_run
-/// # use pubky::{PubkyClient, Result};
+/// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run(user: &str) -> Result<()> {
-/// let client = PubkyClient::new()?;
+/// let client = PubkyHttpClient::new()?;
 /// let url = format!("pubky://{}/pub/app/info.json", user);
 /// let resp = client.cross_request(Method::GET, &url).await?
 ///     .send().await?;
@@ -254,7 +254,7 @@ impl PubkyClientBuilder {
 /// > Tip: For authenticated reads/writes, prefer `agent.drive().get(...)`, which
 /// > automatically scopes paths and attaches the right session cookie.
 #[derive(Clone, Debug)]
-pub struct PubkyClient {
+pub struct PubkyHttpClient {
     pub(crate) http: reqwest::Client,
     pub(crate) pkarr: pkarr::Client,
 
@@ -266,20 +266,20 @@ pub struct PubkyClient {
     pub(crate) testnet_host: Option<String>,
 }
 
-impl PubkyClient {
+impl PubkyHttpClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
-    pub fn new() -> Result<PubkyClient, BuildError> {
+    pub fn new() -> Result<PubkyHttpClient, BuildError> {
         Self::builder().build()
     }
 
     /// Returns a builder to edit settings before creating [Client].
-    pub fn builder() -> PubkyClientBuilder {
-        PubkyClientBuilder::default()
+    pub fn builder() -> PubkyHttpClientBuilder {
+        PubkyHttpClientBuilder::default()
     }
 
     /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
     /// You need an instance of `pubky-testnet` running on `localhost`
-    pub fn testnet() -> Result<PubkyClient, BuildError> {
+    pub fn testnet() -> Result<PubkyHttpClient, BuildError> {
         let mut builder = Self::builder();
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -307,7 +307,7 @@ mod test {
 
     #[tokio::test]
     async fn test_fetch() {
-        let client = PubkyClient::new().unwrap();
+        let client = PubkyHttpClient::new().unwrap();
         let response = client
             .request(Method::GET, "https://example.com/")
             .send()

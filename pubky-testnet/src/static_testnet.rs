@@ -67,12 +67,12 @@ impl StaticTestnet {
     }
 
     /// Create a new pubky client builder.
-    pub fn client_builder(&self) -> pubky::PubkyClientBuilder {
+    pub fn client_builder(&self) -> pubky::PubkyHttpClientBuilder {
         self.testnet.client_builder()
     }
 
-    /// Creates a `pubky::PubkyClient` pre-configured to use this test network.
-    pub fn client(&self) -> Result<pubky::PubkyClient, pubky::BuildError> {
+    /// Creates a `pubky::PubkyHttpClient` pre-configured to use this test network.
+    pub fn client(&self) -> Result<pubky::PubkyHttpClient, pubky::BuildError> {
         self.testnet.client()
     }
 

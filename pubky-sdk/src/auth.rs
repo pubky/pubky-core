@@ -7,7 +7,7 @@ use url::Url;
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 
 use crate::{
-    Capabilities, PubkyAgent, PubkyClient, cross_debug,
+    Capabilities, PubkyAgent, PubkyHttpClient, cross_debug,
     errors::{AuthError, Result},
     global::global_client,
     util::check_http_status,
@@ -38,14 +38,14 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// - `PubkyPairingAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
 #[derive(Debug)]
 pub struct PubkyPairingAuth {
-    client: PubkyClient,
+    client: PubkyHttpClient,
     client_secret: [u8; 32],
     pubkyauth_url: Url,
     relay_channel_url: Url,
 }
 
 impl PubkyPairingAuth {
-    /// Build an auth flow bound to a specific `PubkyClient`.
+    /// Build an auth flow bound to a specific `PubkyHttpClient`.
     ///
     /// # Relay selection
     /// - If `relay` is `Some`, that URL is used as the relay base (trailing slash optional).
@@ -84,7 +84,7 @@ impl PubkyPairingAuth {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new_with_client(
-        client: &PubkyClient,
+        client: &PubkyHttpClient,
         relay: Option<impl Into<Url>>,
         caps: &Capabilities,
     ) -> Result<Self> {
@@ -118,7 +118,7 @@ impl PubkyPairingAuth {
         })
     }
 
-    /// Construct bound to a default process-wide shared `PubkyClient`.
+    /// Construct bound to a default process-wide shared `PubkyHttpClient`.
     /// This is what you want to use for most of your apps.
     ///
     /// # Relay selection
@@ -162,7 +162,7 @@ impl PubkyPairingAuth {
         Self::new_with_client(&client, Some(relay), caps)
     }
 
-    /// Construct bound to a default process-wide shared `PubkyClient`.
+    /// Construct bound to a default process-wide shared `PubkyHttpClient`.
     /// This is what you want to use for quick and dirty projects and examples.
     ///
     /// The flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted instance.
@@ -315,7 +315,7 @@ impl PubkyPairingAuth {
     /// - Non-2xx => mapped via [`check_http_status`].
     /// - Transport timeout => retry loop; other transport errors propagate.
     async fn poll_for_token(
-        client: &PubkyClient,
+        client: &PubkyHttpClient,
         relay_channel_url: Url,
         client_secret: [u8; 32],
     ) -> Result<AuthToken> {
@@ -355,7 +355,7 @@ impl PubkyPairingAuth {
 #[derive(Debug)]
 #[must_use = "hold on to this and call token().await or wait_for_agent().await to complete the auth flow"]
 pub struct AuthSubscription {
-    client: PubkyClient,
+    client: PubkyHttpClient,
     rx: flume::Receiver<Result<AuthToken>>,
     abort: AbortHandle,
 }

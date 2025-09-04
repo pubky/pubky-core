@@ -61,7 +61,7 @@ pub mod prelude;
 // --- PUBLIC API EXPORTS ---
 pub use agent::core::PubkyAgent;
 pub use auth::PubkyPairingAuth;
-pub use client::core::{PubkyClient, PubkyClientBuilder};
+pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 pub use drive::core::PubkyDrive;
 pub use errors::{BuildError, Error, Result};
 pub use pkdns::core::Pkdns;
