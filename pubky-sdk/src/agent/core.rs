@@ -124,8 +124,15 @@ impl PubkyAgent {
         &self.client
     }
 
-    /// Retrieve session for current pubky from homeserver.
-    pub async fn session_from_homeserver(&self) -> Result<Option<Session>> {
+    /// Round-trip the current session with the homeserver to verify it’s still valid.
+    ///
+    /// Returns:
+    /// - `Ok(Some(session))` if the server recognizes and returns the session (still valid).
+    /// - `Ok(None)` if the session no longer exists (expired/invalidated).
+    /// - `Err(_)` for transport or server errors unrelated to validity.
+    ///
+    /// This does *not* mutate the agent; it’s a sanity/validity check.
+    pub async fn revalidate_session(&self) -> Result<Option<Session>> {
         let response = self
             .drive()
             .request(Method::GET, "/session")

@@ -52,7 +52,7 @@ impl PubkyAgent {
 
         // 3) Validate cookie and fetch authoritative Session
         let session = agent
-            .session_from_homeserver()
+            .revalidate_session()
             .await?
             .ok_or(AuthError::RequestExpired)?;
         agent.session = session;
