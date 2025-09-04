@@ -230,17 +230,17 @@ impl EntryRepository {
     /// List shallow files + folders.
     /// Path is the path to the folder.
     /// Limit is the maximum number of entries to return.
-    /// Cursor is the id of the entry to start from. Set it to None to start from the beginning.
+    /// Cursor is path of the entry to start from. Set it to None to start from the beginning.
     pub async fn list_shallow<'a>(
         path: &EntryPath,
         limit: Option<u16>,
         cursor: Option<EntryPath>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EntryPath>, sqlx::Error> {
-        let mut full_path = path.path().to_string();
-        if !full_path.ends_with("/") {
+        let mut dir_path = path.path().to_string();
+        if !dir_path.ends_with("/") {
             // Make sure the path is a folder
-            full_path.push('/');
+            dir_path.push('/');
         }
         // Use this regex to get the distinct paths
         // ^(?'fixed_directory'\/test\/)(?'path_segment'[^\/]*)(?'opt_slash_indicating_dir'\/?)(?'rest_of_path'.*)$
@@ -249,13 +249,13 @@ impl EntryRepository {
             .from(ENTRY_TABLE)
             .expr(Expr::cust_with_values(
                 "DISTINCT ON (regpath) regexp_replace(entries.path, '^'||$1||'([^/]*)(\\/?)(.*)?$', $1||'\\1'||'\\2') as regpath",
-                vec![sea_query::Value::from(full_path.clone())],
+                vec![sea_query::Value::from(dir_path.clone())],
             ))
             .left_join(
                 USER_TABLE,
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
-            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", dir_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
             .to_owned();
 
@@ -266,9 +266,9 @@ impl EntryRepository {
             .from_subquery(inner_statement, Alias::new("t"))
             .to_owned();
 
-        if let Some(cursor) = cursor {
+        if let Some(cursor_entry_path) = cursor {
             outer_statement = outer_statement
-                .and_where(Expr::col("regpath").gt(cursor.path().as_str()))
+                .and_where(Expr::col("regpath").gt(cursor_entry_path.path().as_str()))
                 .to_owned();
         }
 
@@ -553,7 +553,9 @@ mod tests {
         // Test list shallow with limit. Pull all entries.
         let mut set: HashSet<EntryPath> = HashSet::new();
         let mut last_cursor: Option<EntryPath> = None;
+        let mut count = 0;
         loop {
+            count += 1;
             let new_entries = EntryRepository::list_shallow(
                 &entry_path,
                 Some(2),
@@ -569,6 +571,9 @@ mod tests {
             }
             for entry in new_entries {
                 set.insert(entry);
+            }
+            if count > 10 {
+                panic!("Too many loops to pull all entries");
             }
         }
         assert_eq!(set.len(), 6);
