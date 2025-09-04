@@ -1,4 +1,5 @@
 //! Internal database in [super::HomeserverCore]
+//! TODO: Remove this module after the migration is complete.
 mod db;
 mod migrations;
 mod sql_migrator;

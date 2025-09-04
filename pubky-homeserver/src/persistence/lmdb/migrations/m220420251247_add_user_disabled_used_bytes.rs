@@ -15,7 +15,7 @@ struct OldUser {
 impl BytesEncode<'_> for OldUser {
     type EItem = Self;
 
-    fn bytes_encode(user: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
+    fn bytes_encode(user: &Self::EItem) -> Result<Cow<'_, [u8]>, BoxedError> {
         let vec = to_allocvec(user).unwrap();
 
         Ok(Cow::Owned(vec))
@@ -42,7 +42,7 @@ struct NewUser {
 impl BytesEncode<'_> for NewUser {
     type EItem = Self;
 
-    fn bytes_encode(user: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
+    fn bytes_encode(user: &Self::EItem) -> Result<Cow<'_, [u8]>, BoxedError> {
         let vec = to_allocvec(user)?;
 
         Ok(Cow::Owned(vec))
