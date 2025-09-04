@@ -37,6 +37,7 @@ impl<'a> ListBuilder<'a> {
     }
 
     /// Set the `reverse` option.
+    #[deprecated]
     pub fn reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
         self
