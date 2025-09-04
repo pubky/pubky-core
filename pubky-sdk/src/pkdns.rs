@@ -135,7 +135,7 @@ impl Pkdns {
         &self,
         host_override: Option<&PublicKey>,
     ) -> Result<()> {
-        self.publish_homeserver(host_override, PublishMode::IfOlderThan)
+        self.publish_homeserver(host_override, PublishMode::IfStale)
             .await
     }
 
@@ -162,8 +162,8 @@ impl Pkdns {
             None => return Ok(()), // nothing to do
         };
 
-        // 3) Age check (for IfOlderThan).
-        if matches!(mode, PublishMode::IfOlderThan) {
+        // 3) Age check (for IfStale).
+        if matches!(mode, PublishMode::IfStale) {
             if let Some(ref record) = existing {
                 let elapsed = Timestamp::now() - record.timestamp();
                 let age = Duration::from_micros(elapsed.as_u64());
@@ -230,7 +230,7 @@ impl Pkdns {
 #[derive(Debug, Clone, Copy)]
 enum PublishMode {
     Force,
-    IfOlderThan,
+    IfStale,
 }
 
 /// Pick a host to publish: explicit override or the one found in the DHT packet.
