@@ -72,7 +72,7 @@ pub use crate::drive::{
     list::ListBuilder,
     path::{FilePath, PubkyPath},
 };
-pub use client::core::DEFAULT_RELAYS;
+pub use pkarr::DEFAULT_RELAYS;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};

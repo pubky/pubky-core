@@ -1,8 +1,6 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
-pub use pkarr::DEFAULT_RELAYS;
-
 use crate::errors::BuildError;
 
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
@@ -42,6 +40,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// let _client = b.build()?;
 /// # Ok(()) }
 /// ```
+#[derive(Default)]
 pub struct PubkyHttpClientBuilder {
     pkarr: pkarr::ClientBuilder,
     http_request_timeout: Option<Duration>,
@@ -52,21 +51,6 @@ pub struct PubkyHttpClientBuilder {
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
     testnet_host: Option<String>,
-}
-
-impl Default for PubkyHttpClientBuilder {
-    fn default() -> Self {
-        let mut pk = pkarr::ClientBuilder::default();
-        pk.relays(&DEFAULT_RELAYS).expect("infallible");
-
-        Self {
-            pkarr: pk,
-            http_request_timeout: None,
-            user_agent_extra: None,
-            #[cfg(target_arch = "wasm32")]
-            testnet_host: None,
-        }
-    }
 }
 
 impl PubkyHttpClientBuilder {
@@ -205,7 +189,7 @@ impl PubkyHttpClientBuilder {
 /// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
 ///
 /// For most apps, prefer the higher-level actors and let them reuse the default shared
-/// `Arc<PubkyHttpClient>` under the hood.
+/// [`GLOBAL_CLIENT`] under the hood.
 ///
 /// ### Construction
 /// Use [`PubkyHttpClient::builder()`] to tweak timeouts, relays, or
@@ -213,10 +197,16 @@ impl PubkyHttpClientBuilder {
 /// [`PubkyHttpClient::testnet()`] helper configures a local test network.
 ///
 /// ### Platform notes
-/// - **Native:** standard TLS; ICANN domains are routed via an internal
-///   `icann_http` client, while pkarr/public-key hosts use the pkarr-backed client.
-/// - **WASM:** `cross_request(..)` resolves endpoints, rewrites hosts/ports
-///   (including localhost/testnet mapping), and may add a `pubky-host` header.
+/// - **Native:**
+///   - ICANN domains use standard X.509 TLS via the `icann_http` client.
+///   - Pubky/PKDNS hosts (public-key hostnames / `pubky://…`) use **PubkyTLS**
+///     (TLS with RFC 7250 Raw Public Keys), verifying the connection against the
+///     target public key—no CA chain involved.
+/// - **WASM:**
+///   - All requests use the browser’s standard X.509 TLS stack.
+///   - For Pubky/PKDNS hosts, `cross_request(..)` resolves the endpoint via PKARR,
+///     rewrites the URL (including testnet/localhost mapping), and may add a
+///     `pubky-host` header to convey the intended public-key host.
 ///
 /// ### Examples
 /// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
