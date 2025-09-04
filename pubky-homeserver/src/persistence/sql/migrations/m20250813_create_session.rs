@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, PostgresQueryBuilder, Table};
 
-use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
+use sqlx::Transaction;
 
 use crate::persistence::{
     lmdb::tables::users::USERS_TABLE,
@@ -84,39 +84,12 @@ enum SessionIden {
     CreatedAt,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct SessionEntity {
-    pub id: i32,
-    pub secret: String,
-    pub user: i32,
-    pub capabilities: Vec<String>,
-    pub created_at: sqlx::types::chrono::NaiveDateTime,
-}
-
-impl FromRow<'_, PgRow> for SessionEntity {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id: i32 = row.try_get(SessionIden::Id.to_string().as_str())?;
-        let secret: String = row.try_get(SessionIden::Secret.to_string().as_str())?;
-        let user: i32 = row.try_get(SessionIden::User.to_string().as_str())?;
-        let capabilities: Vec<String> =
-            row.try_get(SessionIden::Capabilities.to_string().as_str())?;
-        let created_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
-        Ok(SessionEntity {
-            id,
-            secret,
-            user,
-            capabilities,
-            created_at,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
+    use sqlx::{postgres::PgRow, FromRow, Row};
 
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
@@ -127,6 +100,34 @@ mod tests {
     };
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct SessionEntity {
+        pub id: i32,
+        pub secret: String,
+        pub user: i32,
+        pub capabilities: Vec<String>,
+        pub created_at: sqlx::types::chrono::NaiveDateTime,
+    }
+
+    impl FromRow<'_, PgRow> for SessionEntity {
+        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+            let id: i32 = row.try_get(SessionIden::Id.to_string().as_str())?;
+            let secret: String = row.try_get(SessionIden::Secret.to_string().as_str())?;
+            let user: i32 = row.try_get(SessionIden::User.to_string().as_str())?;
+            let capabilities: Vec<String> =
+                row.try_get(SessionIden::Capabilities.to_string().as_str())?;
+            let created_at: sqlx::types::chrono::NaiveDateTime =
+                row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
+            Ok(SessionEntity {
+                id,
+                secret,
+                user,
+                capabilities,
+                created_at,
+            })
+        }
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_migration() {

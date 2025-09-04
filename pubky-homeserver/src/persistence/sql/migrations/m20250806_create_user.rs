@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
-use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
+use sqlx::{Transaction};
 
 use crate::persistence::sql::migration::MigrationTrait;
 
@@ -74,45 +73,48 @@ enum User {
     UsedBytes,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct UserEntity {
-    pub id: u32,
-    pub public_key: PublicKey,
-    pub created_at: sqlx::types::chrono::NaiveDateTime,
-    pub disabled: bool,
-    pub used_bytes: u64,
-}
-
-impl FromRow<'_, PgRow> for UserEntity {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id: i32 = row.try_get(User::Id.to_string().as_str())?;
-        let raw_pubkey: String = row.try_get(User::PublicKey.to_string().as_str())?;
-        let public_key = PublicKey::try_from(raw_pubkey.as_str())
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        let disabled: bool = row.try_get(User::Disabled.to_string().as_str())?;
-        let raw_used_bytes: i64 = row.try_get(User::UsedBytes.to_string().as_str())?;
-        let used_bytes = raw_used_bytes as u64;
-        let created_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(User::CreatedAt.to_string().as_str())?;
-        Ok(UserEntity {
-            id: id as u32,
-            public_key,
-            created_at,
-            disabled,
-            used_bytes,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
+    use pkarr::PublicKey;
+    use sea_query::{ PostgresQueryBuilder};
+    use sqlx::{postgres::PgRow, FromRow, Row};
     use crate::persistence::sql::{migrator::Migrator, SqlDb};
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct UserEntity {
+        pub id: u32,
+        pub public_key: PublicKey,
+        pub created_at: sqlx::types::chrono::NaiveDateTime,
+        pub disabled: bool,
+        pub used_bytes: u64,
+    }
+
+    impl FromRow<'_, PgRow> for UserEntity {
+        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+            let id: i32 = row.try_get(User::Id.to_string().as_str())?;
+            let raw_pubkey: String = row.try_get(User::PublicKey.to_string().as_str())?;
+            let public_key = PublicKey::try_from(raw_pubkey.as_str())
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+            let disabled: bool = row.try_get(User::Disabled.to_string().as_str())?;
+            let raw_used_bytes: i64 = row.try_get(User::UsedBytes.to_string().as_str())?;
+            let used_bytes = raw_used_bytes as u64;
+            let created_at: sqlx::types::chrono::NaiveDateTime =
+                row.try_get(User::CreatedAt.to_string().as_str())?;
+            Ok(UserEntity {
+                id: id as u32,
+                public_key,
+                created_at,
+                disabled,
+                used_bytes,
+            })
+        }
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_user_migration() {

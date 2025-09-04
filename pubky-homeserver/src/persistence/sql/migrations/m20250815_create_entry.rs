@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sea_query::{
     ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Index, PostgresQueryBuilder, Table,
 };
-use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
+use sqlx::{Transaction};
 
 use crate::persistence::{
     lmdb::tables::users::USERS_TABLE,
@@ -96,43 +96,6 @@ enum EntryIden {
     CreatedAt,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct EntryEntity {
-    pub id: i64,
-    pub user_id: i32,
-    pub path: String,
-    pub content_hash: Vec<u8>,
-    pub content_length: i64,
-    pub content_type: String,
-    pub modified_at: sqlx::types::chrono::NaiveDateTime,
-    pub created_at: sqlx::types::chrono::NaiveDateTime,
-}
-
-impl FromRow<'_, PgRow> for EntryEntity {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
-        let user_id: i32 = row.try_get(EntryIden::User.to_string().as_str())?;
-        let path: String = row.try_get(EntryIden::Path.to_string().as_str())?;
-        let content_hash: Vec<u8> = row.try_get(EntryIden::ContentHash.to_string().as_str())?;
-        let content_length: i64 = row.try_get(EntryIden::ContentLength.to_string().as_str())?;
-        let content_type: String = row.try_get(EntryIden::ContentType.to_string().as_str())?;
-        let modified_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(EntryIden::ModifiedAt.to_string().as_str())?;
-        let created_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(EntryIden::CreatedAt.to_string().as_str())?;
-        Ok(EntryEntity {
-            id,
-            user_id,
-            path,
-            content_hash,
-            content_length,
-            content_type,
-            modified_at,
-            created_at,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
@@ -146,8 +109,45 @@ mod tests {
             SqlDb,
         },
     };
-
+    use sqlx::{postgres::PgRow, FromRow, Row};
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct EntryEntity {
+        pub id: i64,
+        pub user_id: i32,
+        pub path: String,
+        pub content_hash: Vec<u8>,
+        pub content_length: i64,
+        pub content_type: String,
+        pub modified_at: sqlx::types::chrono::NaiveDateTime,
+        pub created_at: sqlx::types::chrono::NaiveDateTime,
+    }
+
+    impl FromRow<'_, PgRow> for EntryEntity {
+        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+            let id: i64 = row.try_get(EntryIden::Id.to_string().as_str())?;
+            let user_id: i32 = row.try_get(EntryIden::User.to_string().as_str())?;
+            let path: String = row.try_get(EntryIden::Path.to_string().as_str())?;
+            let content_hash: Vec<u8> = row.try_get(EntryIden::ContentHash.to_string().as_str())?;
+            let content_length: i64 = row.try_get(EntryIden::ContentLength.to_string().as_str())?;
+            let content_type: String = row.try_get(EntryIden::ContentType.to_string().as_str())?;
+            let modified_at: sqlx::types::chrono::NaiveDateTime =
+                row.try_get(EntryIden::ModifiedAt.to_string().as_str())?;
+            let created_at: sqlx::types::chrono::NaiveDateTime =
+                row.try_get(EntryIden::CreatedAt.to_string().as_str())?;
+            Ok(EntryEntity {
+                id,
+                user_id,
+                path,
+                content_hash,
+                content_length,
+                content_type,
+                modified_at,
+                created_at,
+            })
+        }
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_entry_migration() {

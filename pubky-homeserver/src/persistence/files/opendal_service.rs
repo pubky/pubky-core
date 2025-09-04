@@ -271,7 +271,7 @@ mod tests {
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pkarr::Keypair::random().public_key();
-        UserRepository::create(&pubky, (&mut context.sql_db.pool().into()))
+        UserRepository::create(&pubky, &mut context.sql_db.pool().into())
             .await
             .unwrap();
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());

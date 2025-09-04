@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use pkarr::PublicKey;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
-use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
+use sqlx::{Transaction};
 
 use crate::persistence::sql::migration::MigrationTrait;
 
@@ -49,42 +48,45 @@ enum SignupCodeIden {
     UsedBy,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct SignupCodeEntity {
-    pub id: String,
-    pub created_at: sqlx::types::chrono::NaiveDateTime,
-    pub used_by: Option<PublicKey>,
-}
-
-impl FromRow<'_, PgRow> for SignupCodeEntity {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let token: String = row.try_get(SignupCodeIden::Id.to_string().as_str())?;
-        let created_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(SignupCodeIden::CreatedAt.to_string().as_str())?;
-        let used_by_raw: Option<String> =
-            row.try_get(SignupCodeIden::UsedBy.to_string().as_str())?;
-        let used_by = used_by_raw
-            .map(|s| PublicKey::try_from(s.as_str()).map_err(|e| sqlx::Error::Decode(Box::new(e))))
-            .transpose()?;
-        Ok(SignupCodeEntity {
-            id: token,
-            created_at,
-            used_by,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pkarr::{Keypair, PublicKey};
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
+    use sqlx::{postgres::PgRow, FromRow, Row};
 
     use crate::persistence::sql::{
         migrations::M20250806CreateUserMigration, migrator::Migrator, SqlDb,
     };
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct SignupCodeEntity {
+        pub id: String,
+        pub created_at: sqlx::types::chrono::NaiveDateTime,
+        pub used_by: Option<PublicKey>,
+    }
+
+    impl FromRow<'_, PgRow> for SignupCodeEntity {
+        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+            let token: String = row.try_get(SignupCodeIden::Id.to_string().as_str())?;
+            let created_at: sqlx::types::chrono::NaiveDateTime =
+                row.try_get(SignupCodeIden::CreatedAt.to_string().as_str())?;
+            let used_by_raw: Option<String> =
+                row.try_get(SignupCodeIden::UsedBy.to_string().as_str())?;
+            let used_by = used_by_raw
+                .map(|s| {
+                    PublicKey::try_from(s.as_str()).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+                })
+                .transpose()?;
+            Ok(SignupCodeEntity {
+                id: token,
+                created_at,
+                used_by,
+            })
+        }
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_code_migration() {

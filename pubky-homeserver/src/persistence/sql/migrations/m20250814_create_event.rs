@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, PostgresQueryBuilder, Table};
-use sqlx::{postgres::PgRow, FromRow, Row, Transaction};
+use sqlx::Transaction;
 
 use crate::persistence::{
     lmdb::tables::users::USERS_TABLE,
@@ -64,33 +64,6 @@ enum EventIden {
     CreatedAt,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct EventEntity {
-    pub id: i64,
-    pub event_type: String,
-    pub user_id: i32,
-    pub path: String,
-    pub created_at: sqlx::types::chrono::NaiveDateTime,
-}
-
-impl FromRow<'_, PgRow> for EventEntity {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id: i64 = row.try_get(EventIden::Id.to_string().as_str())?;
-        let event_type: String = row.try_get(EventIden::Type.to_string().as_str())?;
-        let user_id: i32 = row.try_get(EventIden::User.to_string().as_str())?;
-        let path: String = row.try_get(EventIden::Path.to_string().as_str())?;
-        let created_at: sqlx::types::chrono::NaiveDateTime =
-            row.try_get(EventIden::CreatedAt.to_string().as_str())?;
-        Ok(EventEntity {
-            id,
-            event_type,
-            user_id,
-            path,
-            created_at,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
@@ -104,8 +77,36 @@ mod tests {
             SqlDb,
         },
     };
+    use sqlx::{postgres::PgRow, FromRow, Row};
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct EventEntity {
+        pub id: i64,
+        pub event_type: String,
+        pub user_id: i32,
+        pub path: String,
+        pub created_at: sqlx::types::chrono::NaiveDateTime,
+    }
+
+    impl FromRow<'_, PgRow> for EventEntity {
+        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+            let id: i64 = row.try_get(EventIden::Id.to_string().as_str())?;
+            let event_type: String = row.try_get(EventIden::Type.to_string().as_str())?;
+            let user_id: i32 = row.try_get(EventIden::User.to_string().as_str())?;
+            let path: String = row.try_get(EventIden::Path.to_string().as_str())?;
+            let created_at: sqlx::types::chrono::NaiveDateTime =
+                row.try_get(EventIden::CreatedAt.to_string().as_str())?;
+            Ok(EventEntity {
+                id,
+                event_type,
+                user_id,
+                path,
+                created_at,
+            })
+        }
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_event_migration() {
