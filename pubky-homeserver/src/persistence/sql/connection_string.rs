@@ -10,7 +10,7 @@ impl ConnectionString {
     pub fn new(con_string: &str) -> anyhow::Result<Self> {
         let con = Self(url::Url::parse(con_string)?);
         if !con.is_postgres() {
-            anyhow::bail!("Only postgres is supported");
+            anyhow::bail!("Only postgres database urls are supported");
         }
         Ok(con)
     }

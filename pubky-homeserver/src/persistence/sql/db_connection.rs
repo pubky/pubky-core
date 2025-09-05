@@ -29,7 +29,7 @@ impl std::fmt::Debug for SqlDb {
 }
 
 impl SqlDb {
-    pub async fn new(con_string: &ConnectionString) -> Result<Self, sqlx::Error> {
+    pub async fn connect(con_string: &ConnectionString) -> Result<Self, sqlx::Error> {
         let pool: PgPool = PgPool::connect(con_string.as_str()).await?;
 
         Ok(Self {
@@ -77,14 +77,14 @@ impl SqlDb {
     pub async fn test_postgres_db(con_string: &ConnectionString) -> anyhow::Result<Self> {
         use uuid::Uuid;
 
-        let neutral_con = Self::new(con_string).await?;
+        let neutral_con = Self::connect(con_string).await?;
         let db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());
         let query = format!("CREATE DATABASE {}", db_name);
 
         sqlx::query(&query).execute(neutral_con.pool()).await?;
         let mut con_string = con_string.clone();
         con_string.set_database_name(&db_name);
-        let mut con = Self::new(&con_string).await?;
+        let mut con = Self::connect(&con_string).await?;
         con.drop_pg_db_after_test = Some(Arc::new(AsyncDropper::new(DropPgDbAfterTest {
             db_name,
             pool: Some(neutral_con.pool().clone()),

@@ -174,16 +174,16 @@ impl AppContext {
         {
             // If we are in a test environment and it's a test db connection string,
             // we use an empheral test db.
-            if config_toml.general.db_url.is_test_db() {
+            if config_toml.general.database_url.is_test_db() {
                 return Ok(SqlDb::test().await);
             } else {
-                return SqlDb::new(&config_toml.general.db_url)
+                return SqlDb::connect(&config_toml.general.database_url)
                     .await
                     .map_err(AppContextConversionError::SqlDb);
             }
         }
         // If we are not in a test environment, we use the normal db connection.
-        SqlDb::new(&config_toml.general.db_url)
+        SqlDb::connect(&config_toml.general.database_url)
             .await
             .map_err(AppContextConversionError::SqlDb)
     }
