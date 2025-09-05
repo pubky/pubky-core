@@ -14,7 +14,7 @@ pubky = "0.x"            # this crate
 # pubky-testnet = "0.x"
 ```
 
-## Quick start (native & WASM)
+## Quick start
 
 ```rust no_run
 use pubky::prelude::*; // pulls in the common types
@@ -59,15 +59,15 @@ let app_agent = sub.wait_for_agent().await?;
 
 Transport:
 
-- **`PubkyHttpClient`** stateless transport: PKARR-aware HTTP with `cross_request` and sane defaults.
+- **`PubkyHttpClient`** stateless transport: PKARR-aware HTTP with sane defaults.
 
 High level actors:
 
-- **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing-approval.
+- **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
 - **`PubkyAgent`** session-bound identity (holds a `Session` & cookie). Use `agent.drive()` for reads/writes.
 - **`PubkyPairingAuth`** pairing auth flow for keyless apps via an HTTP relay.
-- **`PubkyDrive`** simple file-like API: `get/put/post/patch/delete`, plus `exists()` and `stats()`.
-- **`Pkdns`** resolve/publish `_pubky` records (read-only via `Pkdns::new()`, publishing when created from a signer).
+- **`PubkyDrive`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
+- **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
 
 ## Pairing auth (keyless apps)
 

@@ -14,7 +14,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// `PubkyHttpClientBuilder::default()`.
 ///
 /// # Defaults
-/// - Pkarr relays: [`DEFAULT_RELAYS`]
+/// - Pkarr relays: [`crate::DEFAULT_RELAYS`]
 /// - HTTP request timeout: reqwest default (no global timeout) unless set via
 ///   [`Self::request_timeout`]
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
@@ -182,14 +182,14 @@ impl PubkyHttpClientBuilder {
 ///
 /// ### What it *doesn’t* do
 /// - It is **not** session/identity aware. No cookies, no per-user scoping.
-///   For authenticated per-user flows use [`PubkyAgent`].
+///   For authenticated per-user flows use [`crate::PubkyAgent`].
 ///
 /// ### When to use
 /// - You want direct control over HTTP and PKARR resolution (power users, libs).
 /// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
 ///
 /// For most apps, prefer the higher-level actors and let them reuse the default shared
-/// [`GLOBAL_CLIENT`] under the hood.
+/// [`crate::global::global_client`] under the hood.
 ///
 /// ### Construction
 /// Use [`PubkyHttpClient::builder()`] to tweak timeouts, relays, or
@@ -262,7 +262,7 @@ impl PubkyHttpClient {
         Self::builder().build()
     }
 
-    /// Returns a builder to edit settings before creating [Client].
+    /// Returns a builder to edit settings before creating [`PubkyHttpClient`].
     pub fn builder() -> PubkyHttpClientBuilder {
         PubkyHttpClientBuilder::default()
     }

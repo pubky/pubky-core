@@ -1,46 +1,4 @@
-//! #![doc = include_str!("../README.md")]
-//! **Pubky SDK** a small, ergonomic library for building Pubky applications.
-//!
-//! # Quick start
-//! ```no_run
-//! use pubky::prelude::*;
-//!
-//! # async fn run() -> pubky::Result<()> {
-//! // Create a signer (holds your keypair). You can also persist/import your own keys.
-//! let signer = PubkySigner::new(Keypair::random())?;
-//!
-//! // Sign up on a homeserver (identified by its public key)
-//! let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
-//! let agent = signer.signup_agent(&homeserver, None).await?;
-//!
-//! // Read/write using the drive API (session-scoped)
-//! agent.drive().put("/pub/app/hello.txt", "hello").await?;
-//! let body = agent.drive().get("/pub/app/hello.txt").await?.bytes().await?;
-//! assert_eq!(&body, b"hello");
-//!
-//! // Unauthenticated read (public): user-qualified path, no session required
-//! let public_drive = PubkyDrive::public()?;
-//! let txt = public_drive
-//!     .get(format!("{}/pub/app/hello.txt", signer.pubky()))
-//!     .await?
-//!     .text()
-//!     .await?;
-//! assert_eq!(txt, "hello");
-//!
-//! // Publish or resolve your homeserver PKDNS record
-//! signer.pkdns().publish_homeserver_if_stale(None).await?; // Pkdns attached to a signer can sign new records.
-//! let resolved = Pkdns::new()?.get_homeserver(&signer.pubky()).await; // Stand-alone Pkdns not-attached to a signer can only resolve records.
-//! println!("current homeserver: {:?}", resolved);
-//!
-//! // Keyless third-party app: start PubkyPairingAuth and turn it into an agent
-//! let capabilities = Capabilities::builder().write("/pub/pubky.app/").finish();
-//! let (sub, url) = PubkyPairingAuth::new(None, &capabilities)?.subscribe();  // None for default relay.
-//! // display `url` via QR or deeplink it so the Signer can send the auth token.
-//! // signer.approve_pubkyauth_request(url);
-//! let agent = sub.wait_for_agent().await?; // session-bound agent
-//! # Ok(()) }
-//! ```
-
+#![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
@@ -72,7 +30,10 @@ pub use crate::drive::{
     list::ListBuilder,
     path::{FilePath, PubkyPath},
 };
+pub use auth::AuthSubscription;
+pub use auth::DEFAULT_HTTP_RELAY;
 pub use pkarr::DEFAULT_RELAYS;
+pub use pkdns::DEFAULT_STALE_AFTER;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};

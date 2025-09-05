@@ -1,7 +1,7 @@
 //! Unified error types for the `pubky` crate.
 //!
 //! This module centralizes all failures that can occur while using the SDK and
-//! provides a single top-level [`Error`] enum plus the convenient [`Result`] alias.
+//! provides a single top-level [`enum@Error`] enum plus the convenient [`Result`] alias.
 //! Errors from lower layers (`reqwest`, `pkarr`, `pubky_common`, URL parsing) are
 //! mapped into structured variants so callers can handle them precisely.
 
@@ -9,7 +9,7 @@ use thiserror::Error;
 
 // --- Build-Time Error ---
 
-/// Errors that can occur while building a [`PubkyHttpClient`].
+/// Errors that can occur while building a [`crate::PubkyHttpClient`].
 #[derive(Debug, Error)]
 pub enum BuildError {
     /// Failed to construct the underlying pkarr client (DHT/relay configuration).

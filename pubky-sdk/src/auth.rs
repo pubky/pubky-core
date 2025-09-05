@@ -166,7 +166,7 @@ impl PubkyPairingAuth {
     ///
     /// The flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted instance.
     /// For larger or production apps, prefer running your own relay and passing
-    /// its base URL to [`new_with_relay`]
+    /// its base URL to [`Self::new_with_relay`]
     ///
     /// # What is an [HTTP relay](https://httprelay.io)?
     /// A tiny server that provides one-shot “link” channels for **producer => consumer**
@@ -248,7 +248,7 @@ impl PubkyPairingAuth {
 
     /// Block (via async/await) until the signer approves, then return a session-bound [`PubkyAgent`].
     ///
-    /// This is the ergonomic, single-call variant of [`subscribe`] + [`AuthSubscription::wait_for_agent`]
+    /// This is the ergonomic, single-call variant of [`Self::subscribe`] + [`AuthSubscription::wait_for_agent`]
     /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
     ///
     /// **How to use**
@@ -262,11 +262,11 @@ impl PubkyPairingAuth {
     /// `wait_for_agent().await` **immediately after** displaying it. Any delay (e.g., extra I/O, sleeps,
     /// user prompts) can allow a signer to approve before polling begins, increasing the chance of
     /// missing the approval. If you cannot guarantee back-to-back calls, prefer
-    /// [`subscribe`](Self::subscribe), which starts polling before you show the URL.
+    /// [`Self::subscribe`], which starts polling before you show the URL.
     ///
     /// **When to prefer this**
     /// - One-shot flows where blocking the current task is fine.
-    /// - For non-blocking UIs or multiple concurrent auth flows, use [`subscribe`] and hold the
+    /// - For non-blocking UIs or multiple concurrent auth flows, use [`Self::subscribe`] and hold the
     ///   returned [`AuthSubscription`] instead.
     ///
     /// **Errors**
@@ -374,9 +374,10 @@ impl AuthSubscription {
 
     /// Await the token and sign in to obtain a session-bound [`PubkyAgent`].
     ///
-    /// Steps:
-    /// - Wait for `AuthToken` via [`AuthSubscription::token`].
+    /// Steps it does internally:
+    /// - Blocks and wait for `AuthToken` via [`AuthSubscription::wait_for_token`].
     /// - POST `pubky://<user>/session` with the token; capture cookie (native) and set pubky.
+    /// - Returns the session-bounded [`PubkyAgent`] ready to use.
     ///
     /// Example:
     /// ```no_run

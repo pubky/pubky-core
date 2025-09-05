@@ -18,6 +18,13 @@ use crate::{
     global::global_client,
 };
 
+/// Default staleness window for homeserver `_pubky` Pkarr records (1 hour).
+///
+/// Used by [`crate::Pkdns::publish_homeserver_if_stale`] to decide when a record
+/// should be republished. Republish too often and you add DHT churn; too rarely
+/// and lookups may not be able to find the user's homeserver.
+///
+/// You can override this per instance via [`crate::Pkdns::set_stale_after`] (mutable setter).
 pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 
 /// PKDNS actor: resolve & publish `_pubky` PKARR records.

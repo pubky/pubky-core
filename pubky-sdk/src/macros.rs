@@ -1,7 +1,7 @@
 /// Cross-platform `debug!` logging macro.
 ///
 /// On native (non-WASM) builds it forwards to [`tracing::debug!`].  
-/// In WASM builds (e.g. browsers) it forwards to [`log::debug!`].  
+/// In WASM builds (e.g. browsers) it forwards to `log::debug!`.  
 /// In tests it prints to `stdout`.
 ///
 /// Useful when writing code that runs on both native and WASM without
