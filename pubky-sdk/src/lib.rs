@@ -27,9 +27,9 @@
 //!     .await?;
 //! assert_eq!(txt, "hello");
 //!
-//! // Publish or resolve your homeserver `_pubky` (PkDNS/PKARR) record
-//! signer.pkdns().publish_homeserver_if_stale(None).await?;
-//! let resolved = Pkdns::new()?.get_homeserver(&signer.pubky()).await;
+//! // Publish or resolve your homeserver PKDNS record
+//! signer.pkdns().publish_homeserver_if_stale(None).await?; // Pkdns attached to a signer can sign new records.
+//! let resolved = Pkdns::new()?.get_homeserver(&signer.pubky()).await; // Stand-alone Pkdns not-attached to a signer can only resolve records.
 //! println!("current homeserver: {:?}", resolved);
 //!
 //! // Keyless third-party app: start PubkyPairingAuth and turn it into an agent
@@ -37,7 +37,7 @@
 //! let (sub, url) = PubkyPairingAuth::new(None, &capabilities)?.subscribe();  // None for default relay.
 //! // display `url` via QR or deeplink it so the Signer can send the auth token.
 //! // signer.approve_pubkyauth_request(url);
-//! let agent = sub.into_agent().await?; // session-bound agent
+//! let agent = sub.wait_for_agent().await?; // session-bound agent
 //! # Ok(()) }
 //! ```
 

@@ -294,7 +294,7 @@ async fn authz_timeout_reconnect() {
 }
 
 #[tokio::test]
-async fn test_signup_with_token() {
+async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
     let signer = PubkySigner::random().unwrap();
@@ -435,7 +435,7 @@ async fn conditional_publish_skips_when_fresh() {
 }
 
 #[tokio::test]
-async fn test_republish_homeserver() {
+async fn republish_homeserver() {
     use std::time::Duration;
 
     // Setup testnet + a homeserver.
