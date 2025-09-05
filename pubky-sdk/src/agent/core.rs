@@ -41,8 +41,8 @@ pub struct PubkyAgent {
 impl PubkyAgent {
     /// Establish a session from a signed [`AuthToken`].
     ///
-    /// This POSTs `pubky://{user}/session` with the token, validates the response,
-    /// and delegates construction to [`Self::new_from_response`].
+    /// This POSTs `pubky://{user}/session` with the token, validates the response
+    /// and constructs a new session-bound [`PubkyAgent`]
     pub async fn new(client: &PubkyHttpClient, token: &AuthToken) -> Result<PubkyAgent> {
         let url = format!("pubky://{}/session", token.public_key());
         let response = client
