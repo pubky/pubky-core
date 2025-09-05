@@ -16,11 +16,16 @@ path = "./authz/authenticator.rs"
 name = "request"
 path = "./request/main.rs"
 
+[[bin]]
+name = "testnet"
+path = "./testnet/main.rs"
+
 [dependencies]
 anyhow = "1.0.98"
 base64 = "0.22.1"
 clap = { version = "4.5.42", features = ["derive"] }
 pubky = { path = "../pubky-sdk", version = "0.6.0-rc.1" }
+pubky-testnet = { path = "../pubky-testnet", version = "0.6.0-rc.1" }
 pubky-common = { path = "../pubky-common", version = "0.6.0-rc.1" }
 reqwest = "0.12.22"
 rpassword = "7.4.0"

@@ -1080,6 +1080,7 @@ dependencies = [
  "clap",
  "pubky",
  "pubky-common",
+ "pubky-testnet",
  "reqwest",
  "rpassword",
  "tokio",
