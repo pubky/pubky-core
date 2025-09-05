@@ -204,22 +204,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "authn"
-version = "0.5.1"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "clap",
- "pubky",
- "pubky-common",
- "reqwest",
- "rpassword",
- "tokio",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "auto-future"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1085,6 +1069,22 @@ checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "examples"
+version = "0.6.0-rc.1"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
+ "pubky",
+ "pubky-common",
+ "reqwest",
+ "rpassword",
+ "tokio",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -2844,7 +2844,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.5.4"
+version = "0.6.0-rc.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2872,7 +2872,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.5.4"
+version = "0.6.0-rc.1"
 dependencies = [
  "argon2",
  "base32",
@@ -2893,7 +2893,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.5.4"
+version = "0.6.0-rc.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2945,7 +2945,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.5.4"
+version = "0.6.0-rc.1"
 dependencies = [
  "anyhow",
  "clap",
