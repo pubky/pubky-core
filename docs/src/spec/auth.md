@@ -31,21 +31,21 @@ sequenceDiagram
     3rd Party App ->>+HTTP Relay: Subscribe
     note over 3rd Party App ,HTTP Relay: `channel_id=hash(client_secret)`
     3rd Party App -->>3rd Party App : Compose PubkyAuth URL
-    note over 3rd Party App ,3rd Party App: `pubkyauth:///?relay=<HTTP Base URL>&caps=<capabilities>&secret=<base64url(client_secret)>`
+    note over 3rd Party App ,3rd Party App: `pubkyauth:///<br/>?relay=<HTTP Base URL><br/>&caps=<capabilities><br/>&secret=<base64url(client_secret)>`
     3rd Party App ->>Authenticator: Display QR code
     note over 3rd Party App ,Authenticator: PubkyAuth URL
     Authenticator-->>User: Display consent form
-    note over Authenticator ,User: Showing capabilities </br> (dzdidi: it should probably also show some verifiable 3rd app id to prevent spoofing)
+    note over Authenticator ,User: Showing capabilities <br/> (dzdidi: it should probably also show some verifiable 3rd app id to prevent spoofing)
     User -->>Authenticator: Confirm consent
-    Authenticator-->>Authenticator: Sign AuthToken & encrypt with client secret
-    Authenticator->>HTTP Relay: Send encrypted AuthToken
-    note over Authenticator ,HTTP Relay: channel Id = hash(client secret)
-    HTTP Relay->>3rd Party App : Forward Encrypted AuthToken
+    Authenticator-->>Authenticator: Sign `AuthToken` and encrypt with `client_secret`
+    Authenticator->>HTTP Relay: Send encrypted `AuthToken`
+    note over Authenticator ,HTTP Relay: `channel_id = hash(client_secret)`
+    HTTP Relay->>3rd Party App : Forward encrypted `AuthToken`
     HTTP Relay->>-Authenticator: Ok
-    3rd Party App -->>3rd Party App : Decrypt AuthToken & Resolve user's homeserver
-    3rd Party App ->>+Homeserver: Send AuthToken
-    Homeserver-->>Homeserver: Verify AuthToken
-    Homeserver->>-3rd Party App : Return SessionId
+    3rd Party App -->>3rd Party App : Decrypt `AuthToken`, extract users pubky and resolve user's homeserver
+    3rd Party App ->>+Homeserver: Send `AuthToken`
+    Homeserver-->>Homeserver: Verify `AuthToken`
+    Homeserver->>-3rd Party App : Return `session_id`
     3rd Party App ->>+Homeserver: Request resources
     Homeserver-->>Homeserver: Check Session capabilities
     Homeserver ->>-3rd Party App: Ok
