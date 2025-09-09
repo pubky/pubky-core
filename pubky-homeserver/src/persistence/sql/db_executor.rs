@@ -73,7 +73,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_executor_holder_from_pool() {
         let db = SqlDb::test().await;
         let mut holder = UnifiedExecutor::from_pool(db.pool());
@@ -89,7 +90,8 @@ mod tests {
             .expect("Should be able to get connection");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_executor_holder_from_tx() {
         let db = SqlDb::test().await;
         let mut tx = db

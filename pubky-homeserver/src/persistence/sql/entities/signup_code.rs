@@ -224,7 +224,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_get_signup_code() {
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
@@ -244,7 +245,8 @@ mod tests {
         assert_eq!(code.used_by, None);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_mark_as_used() {
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
@@ -264,7 +266,8 @@ mod tests {
         assert_eq!(updated_code.used_by, Some(user_pubkey));
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_get_overview() {
         let db = SqlDb::test().await;
 

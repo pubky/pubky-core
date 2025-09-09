@@ -37,7 +37,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_migrate() {
         let lmdb = LmDB::test();
         let sql_db = SqlDb::test().await;

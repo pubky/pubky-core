@@ -241,7 +241,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_get_user() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -265,7 +266,8 @@ mod tests {
         assert_eq!(user.id, created_user.id);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_user_twice() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -283,7 +285,8 @@ mod tests {
             .expect_err("Should fail to create user twice");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_update_user() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -305,7 +308,8 @@ mod tests {
         assert_eq!(updated_user.used_bytes, 10);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_delete_user() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -333,7 +337,8 @@ mod tests {
             .expect_err("User should be deleted");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_get_overview() {
         let db = SqlDb::test().await;
 

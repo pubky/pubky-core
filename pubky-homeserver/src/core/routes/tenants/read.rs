@@ -252,7 +252,8 @@ mod tests {
         Ok((context, router, server, public_key, cookie))
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn if_last_modified() {
         let (_context, _router, server, public_key, cookie) = create_environment().await.unwrap();
 
@@ -284,7 +285,8 @@ mod tests {
         response.assert_status(StatusCode::NOT_MODIFIED);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn if_none_match() {
         let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
@@ -316,7 +318,8 @@ mod tests {
         response.assert_status(StatusCode::NOT_MODIFIED);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_content_with_magic_bytes() {
         let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
@@ -338,7 +341,8 @@ mod tests {
         response.assert_header(header::CONTENT_TYPE, "image/png");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_content_by_extension() {
         let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 

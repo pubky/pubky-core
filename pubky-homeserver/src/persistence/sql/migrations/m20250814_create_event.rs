@@ -108,7 +108,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_event_migration() {
         let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);

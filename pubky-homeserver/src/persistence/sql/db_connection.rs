@@ -1,12 +1,5 @@
-#[cfg(any(test, feature = "testing"))]
+use pubky_test_utils::register_db_to_drop;
 use std::sync::Arc;
-
-#[cfg(any(test, feature = "testing"))]
-use async_dropper::AsyncDrop;
-#[cfg(any(test, feature = "testing"))]
-use async_dropper::AsyncDropper;
-#[cfg(any(test, feature = "testing"))]
-use async_trait::async_trait;
 
 use sqlx::postgres::PgPool;
 
@@ -16,10 +9,9 @@ use crate::persistence::sql::connection_string::ConnectionString;
 pub struct SqlDb {
     /// Connection pool to the database
     pool: PgPool,
-
     /// Test helper for postgres to drop the test database after the test
     #[cfg(any(test, feature = "testing"))]
-    drop_pg_db_after_test: Option<Arc<AsyncDropper<DropPgDbAfterTest>>>,
+    db_dropper: Option<Arc<TestDbDropper>>,
 }
 
 impl std::fmt::Debug for SqlDb {
@@ -35,7 +27,7 @@ impl SqlDb {
         Ok(Self {
             pool,
             #[cfg(any(test, feature = "testing"))]
-            drop_pg_db_after_test: None,
+            db_dropper: None,
         })
     }
 
@@ -45,27 +37,29 @@ impl SqlDb {
     }
 }
 
-/// Helper struct to drop the postgres test database after the db connection is dropped
-/// Important: This requires the tokio::test(flavor = "multi_thread") attribute,
-/// Otherwise the test will panic when the db connection is dropped
+/// Helper struct to drop the postgres test database after the db connection is dropped.
 #[cfg(any(test, feature = "testing"))]
-#[derive(Default, Debug)]
-struct DropPgDbAfterTest {
+struct TestDbDropper {
     db_name: String,
-    pool: Option<PgPool>,
+    connection_string: String,
 }
+
 #[cfg(any(test, feature = "testing"))]
-#[async_trait]
-impl AsyncDrop for DropPgDbAfterTest {
-    async fn async_drop(&mut self) {
-        let pool = match &self.pool {
-            Some(pool) => pool,
-            None => return,
-        };
-        let query = format!("DROP DATABASE {}", self.db_name);
-        if let Err(e) = sqlx::query(&query).execute(pool).await {
-            println!("Failed to drop test database {}: {}", query, e);
+impl TestDbDropper {
+    pub fn new(db_name: String, connection_string: String) -> Self {
+        Self {
+            db_name,
+            connection_string: connection_string,
         }
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Drop for TestDbDropper {
+    fn drop(&mut self) {
+        // Drop the database after the test.
+        // This works in combination with the pubky_test macro.
+        let _ = register_db_to_drop(self.db_name.clone(), self.connection_string.clone());
     }
 }
 
@@ -85,10 +79,10 @@ impl SqlDb {
         let mut con_string = con_string.clone();
         con_string.set_database_name(&db_name);
         let mut con = Self::connect(&con_string).await?;
-        con.drop_pg_db_after_test = Some(Arc::new(AsyncDropper::new(DropPgDbAfterTest {
+        con.db_dropper = Some(Arc::new(TestDbDropper::new(
             db_name,
-            pool: Some(neutral_con.pool().clone()),
-        })));
+            DEFAULT_TEST_CONNECTION_STRING.to_string(),
+        )));
         Ok(con)
     }
 
@@ -124,10 +118,11 @@ impl SqlDb {
 mod tests {
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_pg_db_available() {
         let _db = SqlDb::test_postgres_db(&SqlDb::con_string_from_pg_test_env_var())
-            .await
-            .unwrap();
+                .await
+                .unwrap();
     }
 }

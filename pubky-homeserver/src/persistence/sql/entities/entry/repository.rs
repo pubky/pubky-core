@@ -372,7 +372,8 @@ mod tests {
     use pkarr::Keypair;
     use std::collections::HashSet;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_get_entry() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -423,7 +424,8 @@ mod tests {
             .expect_err("Entry should be deleted");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_list_shallow() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -579,7 +581,8 @@ mod tests {
         assert_eq!(set.len(), 6);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_list_deep() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -727,7 +730,8 @@ mod tests {
         assert_eq!(set.len(), 7);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_contains_directory() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();

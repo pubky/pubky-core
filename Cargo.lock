@@ -3097,6 +3097,7 @@ dependencies = [
  "pkarr-republisher",
  "postcard",
  "pubky-common",
+ "pubky_test_utils",
  "reqwest",
  "sea-query",
  "sea-query-binder",
@@ -3172,6 +3173,32 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "pubky_test_utils"
+version = "0.1.0"
+dependencies = [
+ "pubky_test_utils_drop_db_helper",
+ "pubky_test_utils_macro",
+]
+
+[[package]]
+name = "pubky_test_utils_drop_db_helper"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+]
+
+[[package]]
+name = "pubky_test_utils_macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "pubky_test_utils_drop_db_helper",
+ "quote",
+ "syn 2.0.104",
+ "tokio",
 ]
 
 [[package]]

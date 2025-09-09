@@ -114,7 +114,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_if_size_hint_all_good() {
         let db = SqlDb::test().await;
         let pubkey = Keypair::random().public_key();
@@ -134,7 +135,8 @@ mod tests {
         .expect("should not fail");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_if_size_hint_bigger_than_quota() {
         let db = SqlDb::test().await;
         let pubkey = Keypair::random().public_key();

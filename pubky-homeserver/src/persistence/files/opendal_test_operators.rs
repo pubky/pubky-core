@@ -212,7 +212,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_operator_test_providers() {
         let providers = OpendalTestOperators::new();
         let operators = providers.operators();
@@ -233,7 +234,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_gcs_cleanup() {
         let test_root_dir = {
             let operators = OpendalTestOperators::new();

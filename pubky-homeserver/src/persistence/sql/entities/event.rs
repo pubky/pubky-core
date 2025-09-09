@@ -229,7 +229,8 @@ mod tests {
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
     use std::ops::Add;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_list_event() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -265,7 +266,8 @@ mod tests {
         assert_eq!(events[0].event_type, EventType::Put);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_transform_legacy_cursor() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();

@@ -391,7 +391,8 @@ mod tests {
         Ok(user.used_bytes)
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_ensure_valid_path() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
@@ -417,7 +418,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_quota_updated_write_delete() {
         let db = SqlDb::test().await;
         let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
@@ -469,7 +471,8 @@ mod tests {
         assert_eq!(user_usage, 0);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_quota_rechead() {
         let db = SqlDb::test().await;
         let layer = UserQuotaLayer::new(db.clone(), 20 + FILE_METADATA_SIZE);

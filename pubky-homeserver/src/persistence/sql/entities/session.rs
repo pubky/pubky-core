@@ -221,7 +221,8 @@ mod tests {
         let _ = SessionSecret::from_str("6HHZ06GHB964CZMDAA0WCNV2C8").unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_get_session() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();

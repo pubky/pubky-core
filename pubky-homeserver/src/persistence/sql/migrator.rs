@@ -163,7 +163,8 @@ impl<'a> Migrator<'a> {
 mod tests {
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_create_table() {
         let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
@@ -178,7 +179,8 @@ mod tests {
         assert_eq!(applied_migrations, vec!["test_migration"]);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_run_successful() {
         struct TestMigration;
         #[async_trait::async_trait]
@@ -225,7 +227,8 @@ mod tests {
         .expect("Table should exist");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_run_failed_rollback() {
         struct TestMigration;
         #[async_trait::async_trait]
@@ -273,7 +276,8 @@ mod tests {
         assert!(result.is_err(), "Table should not exist");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_run_migration_twice() {
         struct TestMigration;
         #[async_trait::async_trait]

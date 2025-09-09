@@ -163,7 +163,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_resolve_https_endpoint_with_pkarr_client() {
         let context = AppContext::test().await;
         let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
@@ -185,7 +186,8 @@ mod tests {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_endpoints() {
         let mut context = AppContext::test().await;
         context.keypair = pkarr::Keypair::random();

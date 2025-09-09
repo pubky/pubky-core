@@ -76,7 +76,8 @@ mod tests {
     use axum::Router;
     use pkarr::Keypair;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_disable_enable_user() {
         let context = AppContext::test().await;
         let pubkey = Keypair::random().public_key();
