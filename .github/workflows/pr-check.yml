@@ -112,6 +112,23 @@ jobs:
           fi
 
   wasm-test:
+    services:
+      postgres:
+        image: postgres:16-alpine          # official image
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: postgres
+        ports: ['5433:5432']                # optional – makes it reachable on localhost
+        options: >-                         # give the container a health check
+          --health-cmd="pg_isready -U test_user"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      # Your code can read these, or just use the defaults above
+      TEST_PG_CONNECTION_STRING: postgres://test_user:test_pass@localhost:5433/postgres
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
