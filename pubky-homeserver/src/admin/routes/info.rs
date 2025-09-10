@@ -25,8 +25,8 @@ pub async fn info(State(state): State<AppState>) -> HttpResult<(StatusCode, Json
         num_users: user_overview.count,
         num_disabled_users: user_overview.disabled_count,
         total_disk_used_mb: user_overview.total_used_mb,
-        num_signup_codes: signup_code_overview.num_signup_codes as u64,
-        num_unused_signup_codes: signup_code_overview.num_unused_signup_codes as u64,
+        num_signup_codes: signup_code_overview.num_signup_codes,
+        num_unused_signup_codes: signup_code_overview.num_unused_signup_codes,
     };
 
     Ok((StatusCode::OK, Json(body)))
