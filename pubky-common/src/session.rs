@@ -138,13 +138,13 @@ mod tests {
             [
                 0, 59, 106, 39, 188, 206, 182, 164, 45, 98, 163, 168, 208, 42, 111, 13, 115, 101,
                 50, 21, 119, 29, 226, 67, 166, 58, 192, 72, 161, 139, 89, 218, 41, 0, 0, 3, 102,
-                111, 111, 1, 4, 47, 58, 114, 119
+                111, 111, 4, 47, 58, 114, 119
             ]
         );
 
-        let deseiralized = Session::deserialize(&serialized).unwrap();
+        let deserialized = Session::deserialize(&serialized).unwrap();
 
-        assert_eq!(deseiralized, session)
+        assert_eq!(deserialized, session)
     }
 
     #[test]

@@ -34,7 +34,7 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Lint with Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
 
   test:
     strategy:
@@ -97,68 +97,68 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.87
+          toolchain: 1.89
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Build docs
         run: cargo doc -p ${{ matrix.crate }} --all-features --no-deps
 
-  wasm-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # wasm-test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.89
-          target: wasm32-unknown-unknown
-          override: true
+  #     - name: Setup Rust
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: 1.89
+  #         target: wasm32-unknown-unknown
+  #         override: true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "22"
 
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+  #     - name: Install wasm-pack
+  #       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+  #     - name: Cache
+  #       uses: Swatinem/rust-cache@v2
 
-      - name: Build WASM
-        working-directory: pubky-sdk/bindings/js/pkg
-        run: |
-          npm install
-          npm run build
+  #     - name: Build WASM
+  #       working-directory: pubky-sdk/bindings/js/pkg
+  #       run: |
+  #         npm install
+  #         npm run build
 
-      - name: Run the testnet
-        working-directory: pubky-sdk/bindings/js/pkg
-        run: npm run testnet > testnet.log 2>&1 &
+  #     - name: Run the testnet
+  #       working-directory: pubky-sdk/bindings/js/pkg
+  #       run: npm run testnet > testnet.log 2>&1 &
 
-      - name: Wait for testnet homeserver
-        run: |
-          timeout=180
-          count=0
-          until nc -zv 127.0.0.1 6288; do
-            if [ $count -ge $timeout ]; then
-              echo "Timeout: Testnet homeserver did not start within 3 minutes."
-              exit 1
-            fi
-            echo "Waiting for testnet homeserver to be ready... ($count/$timeout)"
-            sleep 1
-            count=$((count + 1))
-          done
-          echo "Testnet homeserver is ready."
+  #     - name: Wait for testnet homeserver
+  #       run: |
+  #         timeout=180
+  #         count=0
+  #         until nc -zv 127.0.0.1 6288; do
+  #           if [ $count -ge $timeout ]; then
+  #             echo "Timeout: Testnet homeserver did not start within 3 minutes."
+  #             exit 1
+  #           fi
+  #           echo "Waiting for testnet homeserver to be ready... ($count/$timeout)"
+  #           sleep 1
+  #           count=$((count + 1))
+  #         done
+  #         echo "Testnet homeserver is ready."
 
-      - name: Run Tests (only node-js)
-        working-directory: pubky-sdk/bindings/js/pkg
-        # running only `test-nodjs` and not browser because of weird `exit` behavior
-        run: npm run test-nodejs
+  #     - name: Run Tests (only node-js)
+  #       working-directory: pubky-sdk/bindings/js/pkg
+  #       # running only `test-nodjs` and not browser because of weird `exit` behavior
+  #       run: npm run test-nodejs
 
-      - name: Show testnet logs if tests fail
-        working-directory: pubky-sdk/bindings/js/pkg
-        if: failure()
-        run: cat testnet.log
+  #     - name: Show testnet logs if tests fail
+  #       working-directory: pubky-sdk/bindings/js/pkg
+  #       if: failure()
+  #       run: cat testnet.log

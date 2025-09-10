@@ -170,13 +170,13 @@ impl Pkdns {
         };
 
         // 3) Age check (for IfStale).
-        if matches!(mode, PublishMode::IfStale) {
-            if let Some(ref record) = existing {
-                let elapsed = Timestamp::now() - record.timestamp();
-                let age = Duration::from_micros(elapsed.as_u64());
-                if age <= self.stale_after {
-                    return Ok(());
-                }
+        if matches!(mode, PublishMode::IfStale)
+            && let Some(ref record) = existing
+        {
+            let elapsed = Timestamp::now() - record.timestamp();
+            let age = Duration::from_micros(elapsed.as_u64());
+            if age <= self.stale_after {
+                return Ok(());
             }
         }
 
@@ -188,10 +188,11 @@ impl Pkdns {
             {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    if let Error::Pkarr(pk) = &e {
-                        if pk.is_retryable() && attempt < 3 {
-                            continue;
-                        }
+                    if let Error::Pkarr(pk) = &e
+                        && pk.is_retryable()
+                        && attempt < 3
+                    {
+                        continue;
                     }
                     return Err(e);
                 }
