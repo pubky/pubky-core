@@ -2834,7 +2834,6 @@ dependencies = [
  "base64",
  "bytes",
  "cookie",
- "cookie_store",
  "flume",
  "futures-lite",
  "futures-util",

@@ -440,7 +440,7 @@ async fn republish_homeserver() {
 
     // Setup testnet + a homeserver.
     let mut testnet = Testnet::new().await.unwrap();
-    let max_record_age = Duration::from_secs(1);
+    let max_record_age = Duration::from_secs(5);
     let server = testnet.create_homeserver().await.unwrap();
 
     // Pubky client for reading pkarr records.
