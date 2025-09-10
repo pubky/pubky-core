@@ -170,21 +170,25 @@ impl AppContext {
     async fn connect_to_sql_db(
         config_toml: &ConfigToml,
     ) -> Result<SqlDb, AppContextConversionError> {
-        if cfg!(any(test, feature = "testing")) {
+        #[cfg(any(test, feature = "testing"))]
+        {
             // If we are in a test environment and it's a test db connection string,
             // we use an empheral test db.
-            if config_toml.general.database_url.is_test_db() {
+            return if config_toml.general.database_url.is_test_db() {
                 Ok(SqlDb::test().await)
             } else {
                 SqlDb::connect(&config_toml.general.database_url)
                     .await
                     .map_err(AppContextConversionError::SqlDb)
-            }
-        } else {
+            };
+        }
+
+        #[cfg(not(any(test, feature = "testing")))]
+        {
             // If we are not in a test environment, we use the normal db connection.
-            SqlDb::connect(&config_toml.general.database_url)
+            return SqlDb::connect(&config_toml.general.database_url)
                 .await
-                .map_err(AppContextConversionError::SqlDb)
+                .map_err(AppContextConversionError::SqlDb);
         }
     }
 }

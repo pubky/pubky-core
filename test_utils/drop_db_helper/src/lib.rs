@@ -54,6 +54,8 @@ pub async fn drop_test_databases() {
         match db.drop().await {
             Ok(_) => {}
             Err(e) => {
+                // Readd the database to the list to be dropped.
+                // let _ = register_db_to_drop(db.db_name.clone(), db.connection_string.clone());
                 eprintln!(
                     "pubky_test_utils: Failed to drop test database {}: {}",
                     db.db_name, e
