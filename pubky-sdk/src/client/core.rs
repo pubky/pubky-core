@@ -193,7 +193,7 @@ impl PubkyHttpClientBuilder {
 /// - Understands `pubky://<user>/<path>` and rewrites it to the correct HTTPS
 ///   form for requests.
 /// - Detects pkarr public-key hosts and resolves them to concrete endpoints.
-/// - Internally, uses a unified `cross_request(..)` that works the same on native and
+/// - Internally, uses a unified `cross_request(..)` that works the same on native rust and
 ///   WASM (WASM performs endpoint resolution & header injection; native is a thin wrapper).
 ///
 /// ### What it *doesn’t* do
@@ -213,7 +213,7 @@ impl PubkyHttpClientBuilder {
 /// [`PubkyHttpClient::testnet()`] helper configures a local test network.
 ///
 /// ### Platform notes
-/// - **Native:**
+/// - **Native (rust, not WASM target):**
 ///   - ICANN domains use standard X.509 TLS via the `icann_http` client.
 ///   - Pubky/PKDNS hosts (public-key hostnames / `pubky://…`) use **PubkyTLS**
 ///     (TLS with RFC 7250 Raw Public Keys), verifying the connection against the

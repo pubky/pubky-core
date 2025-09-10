@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl PubkyAgent {
-    /// Export the minimum needed to restore this agent later (native only).
+    /// Export the minimum data needed to restore this agent later.
     /// Returns a single compact secret token `<pubkey>:<cookie_secret>`
     ///
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
@@ -22,11 +22,10 @@ impl PubkyAgent {
         format!("{public_key}:{cookie}")
     }
 
-    /// Rehydrate an agent from a compact secret token `<pubkey>:<cookie_secret>` (native only).
+    /// Rehydrate an agent from a compact secret token `<pubkey>:<cookie_secret>`.
     ///
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
-    /// from a signer on a script restart. For example you could read this secret from an `.env`
-    /// file
+    /// from a signer on a script restart.
     ///
     /// Performs a `/session` roundtrip to validate and hydrate the authoritative `Session`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
