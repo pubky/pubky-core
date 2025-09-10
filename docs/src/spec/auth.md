@@ -37,12 +37,16 @@ sequenceDiagram
     Authenticator-->>User: Display consent form
     note over Authenticator ,User: Showing capabilities <br/> (dzdidi: it should probably also show some verifiable 3rd app id to prevent spoofing)
     User -->>Authenticator: Confirm consent
+    note over User ,Authenticator: Assemble `AuthToken`
     Authenticator-->>Authenticator: Sign `AuthToken` and encrypt with `client_secret`
     Authenticator->>HTTP Relay: Send encrypted `AuthToken`
     note over Authenticator ,HTTP Relay: `channel_id = hash(client_secret)`
-    HTTP Relay->>3rd Party App : Forward encrypted `AuthToken`
+    HTTP Relay->>3rd Party App : Send `AuthToken` via subscription
+    note over HTTP Relay ,3rd Party App: `channel_id = hash(client_secret)`
     HTTP Relay->>-Authenticator: Ok
-    3rd Party App -->>3rd Party App : Decrypt `AuthToken`, extract users pubky and resolve user's homeserver
+    note over HTTP Relay ,Authenticator: Confirm forward
+    3rd Party App -->>3rd Party App : Decrypt `AuthToken`
+    note over  3rd Party App ,3rd Party App : extract users pubky and resolve user's homeserver
     3rd Party App ->>+Homeserver: Send `AuthToken`
     Homeserver-->>Homeserver: Verify `AuthToken`
     Homeserver->>-3rd Party App : Return `session_id`
