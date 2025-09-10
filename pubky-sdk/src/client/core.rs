@@ -100,6 +100,22 @@ impl PubkyHttpClientBuilder {
     }
 
     /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
+    ///
+    /// Use this to influence PKARR resolution inputs (relays, bootstrap nodes,
+    /// timeouts, etc.) *before* building the client. There are no per-request
+    /// resolution knobs; configuration is done up front.
+    ///
+    /// # Example
+    /// ```
+    /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
+    /// let client = PubkyHttpClient::builder()
+    ///     .pkarr(|p| p
+    ///         .relays(&["https://pkarr.example.net/"]).expect("infallible")
+    ///         .bootstrap(&["dht.node.example:6881"])
+    ///     )
+    ///     .build()?;
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
     pub fn pkarr<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut pkarr::ClientBuilder) -> &mut pkarr::ClientBuilder,

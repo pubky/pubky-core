@@ -92,7 +92,7 @@ impl Testnet {
 
     /// Run a new Pkarr relay.
     ///
-    /// You can access the list of relays at [Self::relays].
+    /// You can access the list of relays at [Self::pkarr_relays].
     pub async fn create_pkarr_relay(&mut self) -> Result<Url> {
         let dir = tempfile::tempdir()?;
         let mut builder = pkarr_relay::Relay::builder();
@@ -132,7 +132,7 @@ impl Testnet {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
-    /// Create a [PubkyHttpClientBuilder] and configure it to use this local test network.
+    /// Create a [pubky::PubkyHttpClientBuilder] and configure it to use this local test network.
     pub fn client_builder(&self) -> pubky::PubkyHttpClientBuilder {
         let relays = self.dht_relay_urls();
 
