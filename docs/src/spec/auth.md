@@ -19,7 +19,7 @@ resources on the user's [Homeserver](../concepts/homeserver.md).
 ```mermaid
 sequenceDiagram
     participant User
-    participant Authenticator App
+    participant Authenticator
     participant 3rd Party App 
     participant HTTP Relay
     participant Homeserver
