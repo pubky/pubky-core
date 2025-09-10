@@ -12,10 +12,9 @@ resources on the user's [Homeserver](../concepts/homeserver.md).
 6. **3rd Party App**: an application trying to get authorized access to resources belonging to the **Pubky**.
 5. **Homeserver**: the public key (pubky) identified storage of resources the belong to **Pubky**.
 7. **Capabilities**: a list of strings specifying scopes and the actions that can be performed on them.
-8. **HTTP relay**: an independent HTTP relay (or the backend of the 3rd Party App) used for communication between **3rd Party App** and **Authenticator** forwarding the AuthToken to the frontend.  
+8. **HTTP relay**: an independent HTTP relay (or the backend of the 3rd Party App) used for communication between **3rd Party App** and **Authenticator** . Since neither **Authenticator** nor **3rd Party App** are not extrernally reachabled.
 
 ## Flow
-
 ```mermaid
 sequenceDiagram
     participant User
@@ -128,7 +127,9 @@ That is why we need to encrypt the `AuthToken` with a key that the relay doesn't
 ### No delegation
 In version zero, the `pubky`/`User` IS the `issuer`, meaning that the `AuthToken` is signed by the same key of the `pubky`. This is to simplify the spec, until we have a reason to keep the `issuer` keys even more secure than being in a mobile app used rarely to authenticate a browser session once in a while.
 
-Having an `issuer` that isn't exactly the `pubky` means the `issuer` themselves need a certificate of delegation signed by the `pubky`. The problem with that, is that you can either lookup that certificate on the Homeserver (making the verification process async and possibly taking too long to timeout) or do what most TLS apps do right now, and send the certificates chain with the token, ~but then you have to deal with the eternal problem of revocation~, which basically also forces you to go lookup somewhere making the the verification process async and possibly taking too long to timeout.
+Having an `issuer` that isn't exactly the `pubky` means the `issuer` themselves need a certificate of delegation signed by the `pubky`. This can be done in following ways:
+-  Lookup that certificate on the Homeserver. Which may make the verification process possibly taking too long to timeout
+- Send the certificates chain with the token. Which brings on the problem of revocation..
 
 ### Expiration is out of scope
 While the token itself can only be used for very brief period, it is immediately exchanged for another authentication mechanism (usually a session ID) and deciding the expiration date of that authentication, if any, is out of the scope of this spec.
