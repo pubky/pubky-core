@@ -1118,6 +1118,7 @@ dependencies = [
  "pkarr",
  "pubky-common",
  "pubky-testnet",
+ "rand 0.9.2",
  "reqwest",
  "tokio",
  "tracing-subscriber",

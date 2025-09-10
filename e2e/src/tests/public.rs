@@ -2,6 +2,8 @@ use bytes::Bytes;
 use pkarr::Keypair;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use reqwest::{Method, StatusCode};
+use rand::seq::SliceRandom;
+use rand::rng;
 
 #[tokio::test]
 #[pubky_testnet::test]
@@ -221,7 +223,7 @@ async fn list_deep() {
 
     let pubky = keypair.public_key();
     // Write files to the server
-    let urls = vec![
+    let mut urls = vec![
         format!("pubky://{pubky}/pub/a.wrong/a.txt"),
         format!("pubky://{pubky}/pub/example.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/b.txt"),
@@ -231,6 +233,7 @@ async fn list_deep() {
         format!("pubky://{pubky}/pub/example.com/d.txt"),
         format!("pubky://{pubky}/pub/z.wrong/a.txt"),
     ];
+    urls.shuffle(&mut rng()); // Shuffle randomly to test the order of the list
     for url in urls {
         client.put(url).body(vec![0]).send().await.unwrap();
     }
@@ -326,7 +329,7 @@ async fn list_shallow() {
     let pubky = keypair.public_key();
 
     // Write files to the server
-    let urls = vec![
+    let mut urls = vec![
         format!("pubky://{pubky}/pub/a.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/b.txt"),
@@ -338,6 +341,7 @@ async fn list_shallow() {
         format!("pubky://{pubky}/pub/file2"),
         format!("pubky://{pubky}/pub/z.com/a.txt"),
     ];
+    urls.shuffle(&mut rng()); // Shuffle randomly to test the order of the list
     for url in urls {
         client.put(url).body(vec![0]).send().await.unwrap();
     }
@@ -465,7 +469,7 @@ async fn list_events() {
 
     let pubky = keypair.public_key();
 
-    let urls = vec![
+    let mut urls = vec![
         format!("pubky://{pubky}/pub/a.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/b.txt"),
@@ -477,7 +481,6 @@ async fn list_events() {
         format!("pubky://{pubky}/pub/file2"),
         format!("pubky://{pubky}/pub/z.com/a.txt"),
     ];
-
     for url in urls {
         client.put(&url).body(vec![0]).send().await.unwrap();
         client.delete(url).send().await.unwrap();
