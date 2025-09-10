@@ -242,7 +242,7 @@ async fn authz_timeout_reconnect() {
         .finish();
 
     let client = testnet
-        .pubky_client_builder()
+        .client_builder()
         .request_timeout(Duration::from_millis(1_000))
         .build()
         .unwrap();
@@ -359,7 +359,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
-    let client = testnet.pubky_client().unwrap();
+    let client = testnet.client().unwrap();
 
     // Sign up a brand-new user (initial publish happens on signup)
     let signer = PubkySigner::random().unwrap();
@@ -404,7 +404,7 @@ async fn conditional_publish_skips_when_fresh() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
-    let client = testnet.pubky_client().unwrap();
+    let client = testnet.client().unwrap();
 
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key().clone();

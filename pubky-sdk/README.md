@@ -50,7 +50,7 @@ let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
 let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
 // show `url` (QR/deeplink); on the signing device call:
 // signer.approve_pubkyauth_request(&url).await?;
-let app_agent = sub.wait_for_agent().await?;
+let app_agent = sub.wait_for_approval().await?;
 
 # Ok(()) }
 ```
@@ -81,7 +81,7 @@ let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
 // show `url` to the user (QR or deeplink). On the signer device:
 /// signer.approve_pubkyauth_request(&url).await?;
 
-let agent = sub.wait_for_agent().await?; // background long-polling started by `subscribe`
+let agent = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
 # Ok(()) }
 ```
 
@@ -185,7 +185,7 @@ restored.revalidate_session().await?;
 
 ## Design notes
 
-- **Blocking vs managed pairing:** prefer `subscribe()/wait_for_agent()` (starts polling immediately when you get the URL) to avoid missing approvals. If you manually fetch the URL before polling, you can race the signer and miss the one-shot response.
+- **Blocking vs managed pairing:** prefer `subscribe()/wait_for_approval()` (starts polling immediately when you get the URL) to avoid missing approvals. If you manually fetch the URL before polling, you can race the signer and miss the one-shot response.
 - **Stateless client, stateful agent:** `PubkyHttpClient` never holds identity; `PubkyAgent` does.
 
 ## Example code
