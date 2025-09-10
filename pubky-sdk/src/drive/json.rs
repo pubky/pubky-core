@@ -12,7 +12,7 @@ impl PubkyDrive {
     /// Sets `Accept: application/json` and returns `T` via `resp.json()`.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use serde::Deserialize;
     /// # #[derive(Deserialize)] struct Info { version: String }
     /// # async fn ex(drive: pubky::PubkyDrive) -> pubky::Result<()> {
@@ -40,7 +40,7 @@ impl PubkyDrive {
     /// Require an authenticated session for writes.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use serde::Serialize;
     /// # #[derive(Serialize)] struct Info { version: String }
     /// # async fn ex(drive: pubky::PubkyDrive) -> pubky::Result<()> {

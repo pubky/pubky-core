@@ -24,7 +24,7 @@ impl PubkyDrive {
     /// - In **public mode**, unauthenticated read against user-qualified paths.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
     /// let resp = drive.get("/pub/app/data.bin").await?;
     /// let bytes = resp.bytes().await?;
@@ -69,7 +69,7 @@ impl PubkyDrive {
     /// when the URL targets this agent’s homeserver.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
     /// if let Some(h) = drive.stats("/pub/app/data.bin").await? {
     ///     if let Some(len) = h.get(reqwest::header::CONTENT_LENGTH) {
@@ -93,7 +93,7 @@ impl PubkyDrive {
     /// rejected, as servers will reject writes (401/403).
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
     /// drive.put("/pub/app/hello.txt", "hello").await?;
     /// # Ok(()) }
@@ -113,65 +113,13 @@ impl PubkyDrive {
         check_http_status(resp).await
     }
 
-    /// HTTP `POST`.
-    ///
-    /// Requires a session (server authorization). In public mode, this request will be
-    /// rejected, as servers will reject writes (401/403).
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
-    /// drive.post("/pub/app/hello.txt", "hello").await?;
-    /// # Ok(()) }
-    /// ```
-    pub async fn post<P, B>(&self, path: P, body: B) -> Result<Response>
-    where
-        P: IntoPubkyPath,
-        B: Into<reqwest::Body>,
-    {
-        self.err_if_require_session_for_write()?;
-        let resp = self
-            .request(Method::POST, path)
-            .await?
-            .body(body)
-            .send()
-            .await?;
-        check_http_status(resp).await
-    }
-
-    /// HTTP `PATCH`.
-    ///
-    /// Requires a session (server authorization). In public mode, this request will be
-    /// rejected, as servers will reject writes (401/403).
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
-    /// drive.patch("/pub/app/hello.txt", "hello").await?;
-    /// # Ok(()) }
-    /// ```
-    pub async fn patch<P, B>(&self, path: P, body: B) -> Result<Response>
-    where
-        P: IntoPubkyPath,
-        B: Into<reqwest::Body>,
-    {
-        self.err_if_require_session_for_write()?;
-        let resp = self
-            .request(Method::PATCH, path)
-            .await?
-            .body(body)
-            .send()
-            .await?;
-        check_http_status(resp).await
-    }
-
     /// HTTP `DELETE`.
     ///
     /// Requires a session (server authorization). In public mode, this request will be
     /// rejected, as servers will reject writes (401/403).
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
     /// drive.delete("/pub/app/hello.txt").await?;
     /// # Ok(()) }

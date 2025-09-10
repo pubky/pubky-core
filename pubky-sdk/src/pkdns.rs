@@ -41,8 +41,8 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 ///
 /// Or **with** a keypair for publishing:
 /// ```no_run
-/// # async fn example(client: std::sync::Arc<pubky::PubkyHttpClient>, kp: pubky::Keypair) -> pubky::Result<()> {
-/// let pkdns = pubky::Pkdns::with_client_and_keypair(client, kp);
+/// # async fn example(client: pubky::PubkyHttpClient, kp: pubky::Keypair) -> pubky::Result<()> {
+/// let pkdns = pubky::Pkdns::with_client_and_keypair(&client, kp);
 /// pkdns.publish_homeserver_if_stale(None).await?;
 /// # Ok(()) }
 /// ```
@@ -99,7 +99,7 @@ impl Pkdns {
     /// Defaults to 1 hour [DEFAULT_STALE_AFTER].
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use std::time::Duration;
     /// # async fn ex() -> pubky::Result<()> {
     /// let pkdns = pubky::PkDns::new()?

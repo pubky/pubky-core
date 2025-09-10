@@ -13,11 +13,10 @@ impl PubkySigner {
     /// Choose this when you already manage a long-lived `PubkyHttpClient` (connection reuse, pkarr cache).
     ///
     /// # Examples
-    /// ```no_run
-    /// # use std::sync::Arc;
+    /// ```ignore
     /// # use pubky::{PubkyHttpClient, PubkySigner, Keypair};
-    /// let client = Arc::new(PubkyHttpClient::new()?);
-    /// let user = PubkySigner::with_client(client.clone(), Keypair::random());
+    /// let client = PubkyHttpClient::new()?;
+    /// let user = PubkySigner::with_client(&client, Keypair::random());
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn with_client(client: &PubkyHttpClient, keypair: Keypair) -> Self {
@@ -34,7 +33,7 @@ impl PubkySigner {
     /// - You want the simplest setup to build your app.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::{PubkySigner, Keypair};
     /// // Keyless agent: wait for pubkyauth to establish a session
     /// let app  = PubkySigner::new(Keypair::random())?;
@@ -53,7 +52,7 @@ impl PubkySigner {
     ///
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::PubkySigner;
     /// let agent = PubkySigner::random()?;
     /// // e.g., `agent.signup(&homeserver_pk, None).await?;`

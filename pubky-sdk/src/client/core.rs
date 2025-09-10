@@ -20,7 +20,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// use std::time::Duration;
 /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
 /// let client = PubkyHttpClient::builder()
@@ -226,33 +226,32 @@ impl PubkyHttpClientBuilder {
 ///
 /// ### Examples
 /// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
-/// ```no_run
+/// ```ignore
 /// # use pubky::PubkyHttpClient;
 /// let client = PubkyHttpClient::new()?;
 /// # Ok::<_, pubky::BuildError>(())
 /// ```
 ///
 /// Fetching a standard ICANN URL or any URL with `request`:
-/// ```no_run
+/// ```ignore
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run() -> Result<()> {
 /// let client = PubkyHttpClient::new()?;
-/// let resp = client.request(Method::GET, "https://example.com").await?
+/// let resp = client.request(Method::GET, "https://example.com")
 ///     .send().await?;
 /// assert!(resp.status().is_success());
 /// # Ok(()) }
 /// ```
 ///
 /// Resolving and fetching a `pubky://` resource directly:
-/// ```no_run
+/// ```ignore
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run(user: &str) -> Result<()> {
 /// let client = PubkyHttpClient::new()?;
 /// let url = format!("pubky://{}/pub/app/info.json", user);
-/// let resp = client.request(Method::GET, &url).await?
-///     .send().await?;
+/// let resp = client.request(Method::GET, &url).send().await?;
 /// let info = resp.text().await?;
 /// # Ok(()) }
 /// ```

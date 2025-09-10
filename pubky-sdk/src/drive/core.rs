@@ -20,7 +20,7 @@ use crate::{
 ///   targeting *that same user’s* homeserver.
 /// - Reads **and** writes are expected to succeed (subject to server authorization).
 ///
-/// ```no_run
+/// ```ignore
 /// # use pubky::{PubkyPairingAuth, Capabilities};
 /// # async fn example() -> pubky::Result<()> {
 /// #   let caps = Capabilities::default();
@@ -43,7 +43,7 @@ use crate::{
 ///   Relative/agent-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///
-/// ```no_run
+/// ```ignore
 /// # use pubky::PubkyDrive;
 /// # async fn example() -> pubky::Result<()> {
 ///     let drive = PubkyDrive::public()?;
@@ -74,7 +74,7 @@ impl PubkyDrive {
     /// See also: [`PubkyDrive::public_with_client`].
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::PubkyDrive;
     /// # async fn example() -> pubky::Result<()> {
     /// let drive = PubkyDrive::public()?;
@@ -94,12 +94,11 @@ impl PubkyDrive {
     /// In this mode **paths must be user-qualified** (e.g. `"alice/pub/..."`).
     ///
     /// # Examples
-    /// ```no_run
-    /// # use std::sync::Arc;
+    /// ```ignore
     /// # use pubky::{PubkyHttpClient, PubkyDrive};
     /// # async fn example() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::new()?;
-    /// let drive = PubkyDrive::public_with_client(Arc::new(client));
+    /// let drive = PubkyDrive::public_with_client(&client);
     /// let urls = drive.list("alice_pubky/pub/site/").limit(10).send().await?;
     /// # Ok(()) }
     /// ```

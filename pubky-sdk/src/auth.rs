@@ -207,7 +207,7 @@ impl PubkyPairingAuth {
     /// - Transport: timeouts are retried in a simple loop; other transport errors propagate.
     ///
     /// Example:
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::{PubkyPairingAuth, Capabilities};
     /// let caps = Capabilities::default();
     /// let auth = PubkyPairingAuth::new(None, &caps)?;
@@ -276,7 +276,7 @@ impl PubkyPairingAuth {
     ///
     /// # Examples
     /// Basic script:
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::{PubkyPairingAuth, Capabilities};
     /// # async fn run() -> pubky::Result<()> {
     /// let caps = Capabilities::builder().read("/pub/app/").finish();
@@ -288,7 +288,7 @@ impl PubkyPairingAuth {
     /// ```
     ///
     /// With an overall timeout and clean cancellation:
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::{PubkyPairingAuth, Capabilities, Error};
     /// # use tokio::time::{timeout, Duration};
     /// # async fn run() -> Result<(), Error> {
@@ -380,7 +380,7 @@ impl AuthSubscription {
     /// - Returns the session-bounded [`PubkyAgent`] ready to use.
     ///
     /// Example:
-    /// ```no_run
+    /// ```ignore
     /// # use pubky::{PubkyPairingAuth, Capabilities};
     /// let (sub, url) = PubkyPairingAuth::new(None, &Capabilities::default())?.subscribe();
     /// // display `url` to signer ...

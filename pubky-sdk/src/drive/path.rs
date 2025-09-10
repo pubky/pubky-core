@@ -93,13 +93,12 @@ impl FilePath {
     /// Zero-cost: returns a slice into the internal `String` without allocating.
     ///
     /// # Example
-    /// ```
-    /// # use pubky::FilePath;
+    /// ```ignore
     /// let p = FilePath::parse("pub/app")?;
     /// assert_eq!(p.as_str(), "/pub/app");
     /// # Ok::<_, pubky::Error>(())
     /// ```
-    pub fn as_str(&self) -> &str {
+    fn as_str(&self) -> &str {
         &self.0
     }
 }

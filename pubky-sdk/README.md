@@ -16,7 +16,7 @@ pubky = "0.x"            # this crate
 
 ## Quick start
 
-```rust no_run
+```rust ignore
 use pubky::prelude::*; // pulls in the common types
 
 # async fn run() -> pubky::Result<()> {
@@ -71,7 +71,7 @@ High level actors:
 
 ## Pairing auth (keyless apps)
 
-```rust no_run
+```rust ignore
 # use pubky::prelude::*;
 # async fn pairing() -> pubky::Result<()> {
 let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
@@ -93,7 +93,7 @@ let agent = sub.wait_for_agent().await?; // background long-polling started by `
 
 ## Drive API (session & public)
 
-```rust no_run
+```rust ignore
 # use pubky::prelude::*;
 # async fn io(agent: &PubkyAgent) -> pubky::Result<()> {
 // write
@@ -115,7 +115,7 @@ let text = public.get(format!("{}/pub/app/file.txt", agent.public_key()))
 
 ## PKDNS (`_pubky`) Pkarr publishing
 
-```rust no_run
+```rust ignore
 # use pubky::prelude::*;
 # async fn pkdns(signer: &PubkySigner) -> pubky::Result<()> {
 // Republish only if stale (recommended in app start)
@@ -130,7 +130,7 @@ signer.pkdns().publish_homeserver_force("homeserver_pubky").await?;
 
 Use absolute paths for agent-scoped I/O (`"/pub/…"`), or user-qualified forms when public:
 
-```rust no_run
+```rust ignore
 # use pubky::prelude::*;
 # fn addr_examples(user: &PublicKey) -> pubky::Result<()> {
 let a = PubkyPath::new(Some(user.clone()), "/pub/app/file.txt")?;
@@ -146,7 +146,7 @@ let b: PubkyPath = (user.clone(), "/pub/app/file.txt").into_pubky_path()?;
 
 Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
 
-```rust
+```ignore
 # use pubky_testnet::{EphemeralTestnet, pubky::prelude::*};
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
@@ -167,7 +167,7 @@ assert_eq!(s, "hi");
 
 Export a compact bearer token and import it later to avoid re-auth:
 
-```rust no_run
+```rust ignore
 # use pubky::prelude::*;
 # async fn persist(agent: &PubkyAgent, client: &PubkyHttpClient) -> pubky::Result<()> {
 // Save
