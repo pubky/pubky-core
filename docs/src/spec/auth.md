@@ -49,6 +49,7 @@ sequenceDiagram
     note over  3rd Party App ,3rd Party App : extract users pubky and resolve user's homeserver
     3rd Party App ->>+Homeserver: Send `AuthToken`
     Homeserver-->>Homeserver: Verify `AuthToken`
+    note over  Homeserver ,Homeserver : Verify timestamp and signature. <br/> Associate capabilities with session
     Homeserver->>-3rd Party App : Return `session_id`
     3rd Party App ->>+Homeserver: Request resources
     Homeserver-->>Homeserver: Check Session capabilities
