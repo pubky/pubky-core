@@ -7,7 +7,7 @@ use crate::{
     },
     shared::webdav::{EntryPath, WebDavPath},
 };
-use sea_query::{Alias, Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Alias, Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Row};
 
@@ -319,6 +319,7 @@ impl EntryRepository {
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
             .to_owned();
 
         if let Some(cursor) = cursor {
