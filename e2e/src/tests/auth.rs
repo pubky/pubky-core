@@ -494,7 +494,7 @@ async fn test_republish_homeserver() {
         .max_record_age(max_record_age)
         .build()
         .unwrap();
-    let server = testnet.create_homeserver_suite().await.unwrap();
+    let server = testnet.create_homeserver().await.unwrap();
     let keypair = Keypair::random();
 
     // Signup publishes a new record.

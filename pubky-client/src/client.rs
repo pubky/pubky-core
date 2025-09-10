@@ -1,13 +1,16 @@
 use std::fmt::Debug;
 
+use crate::errors::BuildError;
+
 #[cfg(not(target_arch = "wasm32"))]
 use super::internal::cookies::CookieJar;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 use std::time::Duration;
 
-static DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
-static DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
+const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
+const DEFAULT_RELAYS: &[&str] = &["https://pkarr.pubky.org/", "https://pkarr.pubky.app/"];
+const DEFAULT_MAX_RECORD_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder {
@@ -127,16 +130,14 @@ impl ClientBuilder {
         // Maximum age before a homeserver record should be republished.
         // Default is 1 hour. It's an arbitrary decision based only anecdotal evidence for DHT eviction.
         // See https://github.com/pubky/pkarr-churn/blob/main/results-node_decay.md for latest date of record churn
-        let max_record_age = self.max_record_age.unwrap_or(Duration::from_secs(60 * 60));
+        let max_record_age = self.max_record_age.unwrap_or(DEFAULT_MAX_RECORD_AGE);
 
         Ok(Client {
             pkarr,
-            http: http_builder.build().expect("config expected to not error"),
+            http: http_builder.build()?,
 
             #[cfg(not(target_arch = "wasm32"))]
-            icann_http: icann_http_builder
-                .build()
-                .expect("config expected to not error"),
+            icann_http: icann_http_builder.build()?,
             #[cfg(not(target_arch = "wasm32"))]
             cookie_store,
 
@@ -146,13 +147,6 @@ impl ClientBuilder {
             testnet_host: self.testnet_host.clone(),
         })
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum BuildError {
-    #[error(transparent)]
-    /// Error building Pkarr client.
-    PkarrBuildError(#[from] pkarr::errors::BuildError),
 }
 
 /// A client for Pubky homeserver API, as well as generic HTTP requests to Pubky urls.
@@ -179,6 +173,16 @@ impl Client {
     /// Creates a client configured for public mainline DHT and pkarr relays.
     pub fn new() -> Result<Client, BuildError> {
         Self::builder().build()
+    }
+
+    /// Returns Pubky Client’s default pkarr relays.
+    pub fn default_relays() -> &'static [&'static str] {
+        DEFAULT_RELAYS
+    }
+
+    /// Returns the current max record age threshold.
+    pub fn max_record_age(&self) -> Duration {
+        self.max_record_age
     }
 
     /// Returns a builder to edit settings before creating [Client].
@@ -217,7 +221,7 @@ mod test {
     #[tokio::test]
     async fn test_fetch() {
         let client = Client::new().unwrap();
-        let response = client.get("https://google.com/").send().await.unwrap();
+        let response = client.get("https://example.com/").send().await.unwrap();
         assert_eq!(response.status(), 200);
     }
 }

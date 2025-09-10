@@ -11,11 +11,11 @@ keywords = ["httprelay", "http", "relay"]
 categories = ["web-programming"]
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 axum = "0.8.1"
 axum-server = "0.7.2"
 futures-util = "0.3.31"
-tokio = { version = "1.45.1", features = ["full"] }
+tokio = { version = "1.47.1", features = ["full"] }
 tracing = "0.1.41"
 url = "2.5.4"
 tower-http = { version = "0.6.6", features = ["cors", "trace"] }

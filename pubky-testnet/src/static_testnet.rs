@@ -66,6 +66,13 @@ impl StaticTestnet {
         Ok(testnet)
     }
 
+    /// Create an additional homeserver with a random keypair
+    pub async fn create_random_homeserver(
+        &mut self,
+    ) -> anyhow::Result<&pubky_homeserver::HomeserverSuite> {
+        self.testnet.create_random_homeserver().await
+    }
+
     /// Create a new pubky client builder.
     pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
         self.testnet.pubky_client_builder()
