@@ -81,7 +81,7 @@ impl SqlDb {
         let mut con = Self::connect(&con_string).await?;
         con.db_dropper = Some(std::sync::Arc::new(TestDbDropper::new(
             db_name,
-            DEFAULT_TEST_CONNECTION_STRING.to_string(),
+            con_string.to_string(),
         )));
         Ok(con)
     }
