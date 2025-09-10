@@ -157,7 +157,7 @@ impl PubkyDrive {
 // ---- Cookie attachment (native only) ----
 #[cfg(not(target_arch = "wasm32"))]
 impl PubkyDrive {
-    fn url_is_this_users_homeserver(&self, url: &Url) -> bool {
+    fn is_this_users_homeserver(&self, url: &Url) -> bool {
         let Some(user) = &self.public_key else {
             return false;
         };
@@ -177,7 +177,7 @@ impl PubkyDrive {
         if !self.has_session {
             return rb;
         }
-        if !self.url_is_this_users_homeserver(url) {
+        if !self.is_this_users_homeserver(url) {
             return rb;
         }
         let Some(user) = &self.public_key else {

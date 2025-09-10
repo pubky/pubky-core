@@ -123,7 +123,7 @@ async fn authz() {
         .unwrap();
 
     // Retrieve the session-bound agent (third party app)
-    let user = subscription.wait_for_agent().await.unwrap();
+    let user = subscription.wait_for_approval().await.unwrap();
 
     assert_eq!(user.public_key(), signer.public_key());
 
@@ -264,7 +264,7 @@ async fn authz_timeout_reconnect() {
     });
 
     // The long-poll should survive timeouts and eventually yield an agent
-    let agent = subscription.wait_for_agent().await.unwrap();
+    let agent = subscription.wait_for_approval().await.unwrap();
     assert_eq!(agent.public_key(), signer_pubky);
 
     // Access control enforcement (write inside scope OK, others forbidden)

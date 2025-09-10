@@ -26,10 +26,7 @@ pub use pkdns::Pkdns;
 pub use signer::PubkySigner;
 
 // Export common types and constants
-pub use crate::drive::{
-    list::ListBuilder,
-    path::{FilePath, PubkyPath},
-};
+pub use crate::drive::{list::ListBuilder, path::PubkyPath};
 pub use auth::AuthSubscription;
 pub use auth::DEFAULT_HTTP_RELAY;
 pub use pkarr::DEFAULT_RELAYS;

@@ -32,7 +32,7 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// 1. Create with [`PubkyPairingAuth::new`].
 /// 2. Call [`PubkyPairingAuth::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
 /// 3. Show the returned URL (QR/deeplink) to the signing device (e.g., Pubky Ring).
-/// 4. Await [`AuthSubscription::wait_for_agent`] to obtain a session-bound [`PubkyAgent`].
+/// 4. Await [`AuthSubscription::wait_for_approval`] to obtain a session-bound [`PubkyAgent`].
 ///
 /// Threading:
 /// - `PubkyPairingAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
@@ -187,10 +187,10 @@ impl PubkyPairingAuth {
 
     /// Return the `pubkyauth://` deep link to display (QR/deeplink) to the signer.
     ///
-    /// ⚠️ **Ordering matters if you use [`wait_for_agent`](Self::wait_for_agent).**
-    /// `wait_for_agent()` starts polling only when it is called. If you plan to use it,
+    /// ⚠️ **Ordering matters if you use [`wait_for_approval`](Self::wait_for_approval).**
+    /// `wait_for_approval()` starts polling only when it is called. If you plan to use it,
     /// call `pubkyauth_url()` to display the link and then **immediately** await
-    /// `wait_for_agent().await` so approvals aren’t missed during the gap.
+    /// `wait_for_approval().await` so approvals aren’t missed during the gap.
     ///
     /// If you want “can’t-miss” semantics without thinking about ordering, use
     /// [`subscribe`](Self::subscribe), which starts polling first and returns both the
@@ -203,7 +203,7 @@ impl PubkyPairingAuth {
     ///
     /// Semantics:
     /// - Single-shot: delivers at most one token.
-    /// - Abortable: dropping the subscription cancels polling immediately; pending `wait_for_token()`/`wait_for_agent()` resolve with `AuthError::RequestExpired`.
+    /// - Abortable: dropping the subscription cancels polling immediately; pending `wait_for_token()`/`wait_for_approval()` resolve with `AuthError::RequestExpired`.
     /// - Transport: timeouts are retried in a simple loop; other transport errors propagate.
     ///
     /// Example:
@@ -213,7 +213,7 @@ impl PubkyPairingAuth {
     /// let auth = PubkyPairingAuth::new(None, &caps)?;
     /// let (sub, url) = auth.subscribe();
     /// // display `url` as QR / deeplink to the signer
-    /// let agent = sub.wait_for_agent().await?;
+    /// let agent = sub.wait_for_approval().await?;
     /// # Ok::<(), pubky::Error>(())
     /// ```
     pub fn subscribe(self) -> (AuthSubscription, Url) {
@@ -248,18 +248,18 @@ impl PubkyPairingAuth {
 
     /// Block (via async/await) until the signer approves, then return a session-bound [`PubkyAgent`].
     ///
-    /// This is the ergonomic, single-call variant of [`Self::subscribe`] + [`AuthSubscription::wait_for_agent`]
+    /// This is the ergonomic, single-call variant of [`Self::subscribe`] + [`AuthSubscription::wait_for_approval`]
     /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
     ///
     /// **How to use**
     /// 1. Build a [`PubkyPairingAuth`], read [`pubkyauth_url`](Self::pubkyauth_url), and display it (QR/deeplink).
-    /// 2. Call `wait_for_agent()`. Internally we start a lightweight polling task and await its result.
+    /// 2. Call `wait_for_approval()`. Internally we start a lightweight polling task and await its result.
     /// 3. On success you get a ready-to-use [`PubkyAgent`] with a valid server session.
     ///
     ///
-    /// ⚠️ **Important:** `wait_for_agent()` starts polling **when you call it**. If you use
+    /// ⚠️ **Important:** `wait_for_approval()` starts polling **when you call it**. If you use
     /// [`pubkyauth_url`](Self::pubkyauth_url) to display the link, you **must** call
-    /// `wait_for_agent().await` **immediately after** displaying it. Any delay (e.g., extra I/O, sleeps,
+    /// `wait_for_approval().await` **immediately after** displaying it. Any delay (e.g., extra I/O, sleeps,
     /// user prompts) can allow a signer to approve before polling begins, increasing the chance of
     /// missing the approval. If you cannot guarantee back-to-back calls, prefer
     /// [`Self::subscribe`], which starts polling before you show the URL.
@@ -282,7 +282,7 @@ impl PubkyPairingAuth {
     /// let caps = Capabilities::builder().read("/pub/app/").finish();
     /// let auth = PubkyPairingAuth::new(None, &caps)?;
     /// println!("Scan to sign in: {}", auth.pubkyauth_url());
-    /// let agent = auth.wait_for_agent().await?; // must be awaited right when displaying the pubky_auth!
+    /// let agent = auth.wait_for_approval().await?; // must be awaited right when displaying the pubky_auth!
     /// println!("Signed in as {}", agent.pubky());
     /// # Ok(()) }
     /// ```
@@ -294,16 +294,16 @@ impl PubkyPairingAuth {
     /// # async fn run() -> Result<(), Error> {
     /// let auth = PubkyPairingAuth::new(None, &Capabilities::default())?;
     /// eprintln!("Open: {}", auth.pubkyauth_url());
-    /// match timeout(Duration::from_secs(120), auth.wait_for_agent()).await {
+    /// match timeout(Duration::from_secs(120), auth.wait_for_approval()).await {
     ///     Ok(Ok(agent)) => eprintln!("Welcome {}", agent.public_key()),
     ///     Ok(Err(e))    => return Err(e),
     ///     Err(_)        => eprintln!("Auth timed out; please try again."),
     /// }
     /// # Ok(()) }
     /// ```
-    pub async fn wait_for_agent(self) -> Result<PubkyAgent> {
+    pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
         let (sub, _) = self.subscribe();
-        sub.wait_for_agent().await
+        sub.wait_for_approval().await
     }
 
     /// Poll the relay once a background task is running; decrypt and verify the token.
@@ -351,7 +351,7 @@ impl PubkyPairingAuth {
 ///
 /// Owns the background poll task; delivers exactly one `AuthToken` (or an error).
 #[derive(Debug)]
-#[must_use = "hold on to this and call token().await or wait_for_agent().await to complete the auth flow"]
+#[must_use = "hold on to this and call token().await or wait_for_approval().await to complete the auth flow"]
 pub struct AuthSubscription {
     client: PubkyHttpClient,
     rx: flume::Receiver<Result<AuthToken>>,
@@ -384,10 +384,10 @@ impl AuthSubscription {
     /// # use pubky::{PubkyPairingAuth, Capabilities};
     /// let (sub, url) = PubkyPairingAuth::new(None, &Capabilities::default())?.subscribe();
     /// // display `url` to signer ...
-    /// let agent = sub.wait_for_agent().await?;
+    /// let agent = sub.wait_for_approval().await?;
     /// # Ok::<(), pubky::Error>(())
     /// ```
-    pub async fn wait_for_agent(self) -> Result<PubkyAgent> {
+    pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
         PubkyAgent::new(&self.client.clone(), &self.wait_for_token().await?).await
     }
 

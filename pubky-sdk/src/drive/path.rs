@@ -25,7 +25,7 @@ fn invalid(msg: impl Into<String>) -> Error {
 
 /// Absolute homeserver path (always starts with `/`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FilePath(String);
+struct FilePath(String);
 
 impl FilePath {
     /// Parse, validate, and normalize to an absolute HTTP-safe path.
@@ -38,7 +38,7 @@ impl FilePath {
     ///
     /// Note: Provide *raw* human-readable segments (e.g. `"pub/My File.txt"`). Any literal `%`
     /// will be encoded; pre-encoded sequences are **not** interpreted specially.
-    pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
+    fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
         let raw = s.as_ref();
         if raw.is_empty() {
             return Err(invalid("path cannot be empty"));
@@ -136,7 +136,7 @@ impl PubkyPath {
     }
 
     /// `pubky://<user>/<path>` requires a user; provide `default` to fill if missing.
-    pub fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
+    pub(crate) fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
         let user = match (&self.user, default) {
             (Some(u), _) => u,
             (None, Some(d)) => d,
