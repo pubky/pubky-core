@@ -256,31 +256,6 @@ mod test {
             .unwrap();
     }
 
-    #[tokio::test]
-    #[crate::test]
-    #[ignore]
-    async fn test_spawn_in_parallel() {
-        // Run sequentially instead of parallel due to LMDB not being Send
-        for _ in 0..10 {
-            let mut testnet = Testnet::new().await.expect("Failed to create testnet");
-            testnet
-                .create_homeserver_suite()
-                .await
-                .expect("Failed to create homeserver suite");
-            let client = testnet.pubky_client_builder().build().unwrap();
-            let hs = testnet.homeservers.first().unwrap();
-            let keypair = Keypair::random();
-            let pubky = keypair.public_key();
-
-            let session = client
-                .signup(&keypair, &hs.public_key(), None)
-                .await
-                .unwrap();
-            assert_eq!(session.pubky(), &pubky);
-            tokio::time::sleep(Duration::from_secs(3)).await;
-        }
-    }
-
     /// Test relay resolvable.
     /// This simulates pkarr clients in a browser.
     /// Made due to https://github.com/pubky/pkarr/issues/140

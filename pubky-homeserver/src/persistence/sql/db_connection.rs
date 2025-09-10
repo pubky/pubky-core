@@ -46,7 +46,7 @@ impl TestDbDropper {
     pub fn new(db_name: String, connection_string: String) -> Self {
         Self {
             db_name,
-            connection_string: connection_string,
+            connection_string,
         }
     }
 }
