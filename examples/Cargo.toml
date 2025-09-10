@@ -21,14 +21,14 @@ name = "testnet"
 path = "./testnet/main.rs"
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 base64 = "0.22.1"
-clap = { version = "4.5.42", features = ["derive"] }
+clap = { version = "4.5.46", features = ["derive"] }
 pubky = { path = "../pubky-sdk", version = "0.6.0-rc.1" }
 pubky-testnet = { path = "../pubky-testnet", version = "0.6.0-rc.1" }
 pubky-common = { path = "../pubky-common", version = "0.6.0-rc.1" }
-reqwest = "0.12.22"
+reqwest = "0.12.23"
 rpassword = "7.4.0"
-tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 url = "2.5.4"

@@ -36,7 +36,7 @@ impl Default for User {
 impl BytesEncode<'_> for User {
     type EItem = Self;
 
-    fn bytes_encode(user: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
+    fn bytes_encode(user: &Self::EItem) -> Result<Cow<'_, [u8]>, BoxedError> {
         let vec = to_allocvec(user).unwrap();
 
         Ok(Cow::Owned(vec))
@@ -58,7 +58,7 @@ pub struct PublicKeyCodec {}
 impl BytesEncode<'_> for PublicKeyCodec {
     type EItem = PublicKey;
 
-    fn bytes_encode(pubky: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
+    fn bytes_encode(pubky: &Self::EItem) -> Result<Cow<'_, [u8]>, BoxedError> {
         Ok(Cow::Borrowed(pubky.as_bytes()))
     }
 }
