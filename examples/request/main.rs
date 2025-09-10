@@ -4,7 +4,7 @@ use reqwest::Method;
 use std::env;
 use url::Url;
 
-use pubky::{PubkyHttpClient, PubkyDrive};
+use pubky::{PubkyDrive, PubkyHttpClient};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
