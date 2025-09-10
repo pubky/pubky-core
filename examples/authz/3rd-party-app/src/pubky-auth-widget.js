@@ -7,7 +7,7 @@ const TESTNET_HTTP_RELAY = "http://localhost:15412/link"
 
 /**
  */
-export class PubkyAuthWidget extends LitElement {
+export class PubkyPairingAuthWidget extends LitElement {
 
   static get properties() {
     return {
@@ -400,4 +400,4 @@ export class PubkyAuthWidget extends LitElement {
   }
 }
 
-window.customElements.define('pubky-auth-widget', PubkyAuthWidget)
+window.customElements.define('pubky-auth-widget', PubkyPairingAuthWidget)

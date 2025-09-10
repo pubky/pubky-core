@@ -1,11 +1,10 @@
-use std::env;
-
 use anyhow::Result;
 use clap::Parser;
 use reqwest::Method;
+use std::env;
 use url::Url;
 
-use pubky::Client;
+use pubky::{PubkyDrive, PubkyHttpClient};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -27,14 +26,15 @@ async fn main() -> Result<()> {
         .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
         .init();
 
-    let client = if args.testnet {
-        Client::testnet()?
+    // For a basic GET request to any homeserver no session or key material is needed.
+    let drive = if args.testnet {
+        PubkyDrive::public_with_client(&PubkyHttpClient::testnet()?)
     } else {
-        Client::new()?
+        PubkyDrive::public()?
     };
 
     // Build the request
-    let response = client.get(args.url).send().await?;
+    let response = drive.get(args.url.as_str()).await?;
 
     println!("< Response:");
     println!("< {:?} {}", response.version(), response.status());

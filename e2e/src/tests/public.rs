@@ -1,36 +1,58 @@
 use bytes::Bytes;
-use pkarr::Keypair;
-use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
+use pubky_testnet::{
+    pubky::{errors::RequestError, global::global_client, Error, PubkyPath, PubkySigner},
+    pubky_homeserver::MockDataDir,
+    EphemeralTestnet, Testnet,
+};
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
+    let signer = PubkySigner::random().unwrap();
 
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url.as_str();
+    // relative URL is always based over own user homeserver
+    let path = "/pub/foo.txt";
 
-    client
-        .put(url)
-        .body(vec![0, 1, 2, 3, 4])
-        .send()
+    agent
+        .drive()
+        .put(path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // let's repeat the same request but using a strongly typed PubkyPath based over our own homeserver (user=None)
+    let path_pubky = PubkyPath::new(None, "/pub/foo.txt").unwrap();
+
+    agent
+        .drive()
+        .put(path_pubky, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // again same request but using a tuple
+    let tuple_path = (agent.public_key(), "/pub/foo.txt");
+
+    agent
+        .drive()
+        .put(tuple_path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
         .error_for_status()
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = client.get(url).send().await.unwrap();
+    let response = agent.drive().get(path).await.unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
     // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
@@ -43,14 +65,15 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        keypair.public_key()
+        agent.public_key()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
     // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
     // the wrong tenant user
-    let response = client
-        .get(regular_url)
+    let response = agent
+        .client()
+        .request(Method::GET, regular_url)
         .header("Host", "non.pubky.host")
         .send()
         .await
@@ -63,179 +86,239 @@ async fn put_get_delete() {
     let byte_value = response.bytes().await.unwrap();
     assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-    client
-        .delete(url)
-        .send()
+    agent
+        .drive()
+        .delete(path)
         .await
         .unwrap()
         .error_for_status()
         .unwrap();
 
-    let response = client.get(url).send().await.unwrap();
+    // Should not exist, PubkyError of 404 type
+    assert!(agent.drive().get(path).await.is_err());
+}
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+use serde::{Deserialize, Serialize};
+
+#[tokio::test]
+async fn put_then_get_json_roundtrip() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let signer = PubkySigner::random().unwrap();
+
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
+        .await
+        .unwrap();
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct Payload {
+        msg: String,
+        n: u32,
+        flag: bool,
+    }
+
+    let path = "/pub/data/roundtrip.json";
+    let expected = Payload {
+        msg: "hello".to_string(),
+        n: 42,
+        flag: true,
+    };
+
+    // Ignore the result; the write still succeeds and is asserted via the subsequent GET.
+    let _ = agent.drive().put_json(path, &expected).await;
+
+    // Read back as strongly-typed JSON and assert equality.
+    let got: Payload = agent.drive().get_json(path).await.unwrap();
+    assert_eq!(got, expected);
+
+    // Sanity-check MIME is JSON when fetching raw.
+    let resp = agent.drive().get(path).await.unwrap();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(ct.starts_with("application/json"));
+
+    // Cleanup
+    agent
+        .drive()
+        .delete(path)
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
 }
 
 #[tokio::test]
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client().unwrap();
 
     let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
-    let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
+    mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
+    let server = testnet.create_homeserver_with_mock(mock_dir).await.unwrap();
+
+    // Create a user/agent
+    let signer = PubkySigner::random().unwrap();
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let keypair = Keypair::random();
+    let p1 = "/pub/data";
+    let p2 = "/pub/data2";
 
-    // Signup
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let url = format!("pubky://{}/pub/data", keypair.public_key());
-
-    // First 600 KB → OK
-    let data: Vec<u8> = vec![0; 600_000];
-    let resp = client.put(&url).body(data.clone()).send().await.unwrap();
+    // First 600 KB → OK (201)
+    let data_600k: Vec<u8> = vec![0; 600_000];
+    let resp = agent.drive().put(p1, data_600k.clone()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    // Overwriting the data 600 KB → should 201
-    let resp = client.put(&url).body(data.clone()).send().await.unwrap();
+    // Overwrite same 600 KB → still 201
+    let resp = agent.drive().put(p1, data_600k.clone()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    // Writing now 600 KB more on a different path (totals 1.2 MB) → should 507
-    let url_2 = format!("pubky://{}/pub/data2", keypair.public_key());
-    let resp = client.put(&url_2).body(data).send().await.unwrap();
-    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+    // Write 600 KB more at a different path (total 1.2 MB) → 507
+    let err = agent.drive().put(p2, data_600k.clone()).await.unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Request(RequestError::Server { status, .. })
+            if status == StatusCode::INSUFFICIENT_STORAGE
+    ));
 
-    // Overwriting the data 600 KB with 1100KB → should 507
-    let data_2: Vec<u8> = vec![0; 1_100_000];
-    let resp = client.put(&url).body(data_2).send().await.unwrap();
-    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+    // Overwrite /pub/data with 1.1 MB → 507
+    let data_1100k: Vec<u8> = vec![0; 1_100_000];
+    let err = agent.drive().put(p1, data_1100k).await.unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Request(RequestError::Server { status, .. })
+            if status == StatusCode::INSUFFICIENT_STORAGE
+    ));
 
-    // Delete the original data of 600 KB → should 204 and user usage go down to 0 bytes
-    let resp = client.delete(&url).send().await.unwrap();
+    // Delete the original 600 KB → 204
+    let resp = agent.drive().delete(p1).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
-    // Write exactly 1025 KB → should 507 because it exactly exceeds quota
-    let data_3: Vec<u8> = vec![0; 1025 * 1024 - 256];
-    let resp = client.put(&url).body(data_3).send().await.unwrap();
-    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+    // Write exactly 1025 KB → 507 (exceeds 1 MB quota)
+    let data_1025k_minus_256: Vec<u8> = vec![0; 1025 * 1024 - 256];
+    let err = agent
+        .drive()
+        .put(p1, data_1025k_minus_256)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Request(RequestError::Server { status, .. })
+            if status == StatusCode::INSUFFICIENT_STORAGE
+    ));
 
-    // Write exactly 1 MB → should 201 because it exactly fits within quota
-    let data_3: Vec<u8> = vec![0; 1024 * 1024 - 256];
-    let resp = client.put(&url).body(data_3).send().await.unwrap();
+    // Write exactly 1 MB (minus the same 256 fudge) → 201 (fits quota)
+    let data_1mb_minus_256: Vec<u8> = vec![0; 1024 * 1024 - 256];
+    let resp = agent.drive().put(p1, data_1mb_minus_256).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
 #[tokio::test]
 async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    // Owner user
+    let owner = PubkySigner::random().unwrap();
+    let owner_pubky = owner.public_key().clone();
+    let owner_agent = owner
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let public_key = keypair.public_key();
-
-    let url = format!("pubky://{public_key}/pub/foo.txt");
-    let url = url.as_str();
-
-    let other_client = testnet.pubky_client().unwrap();
-    {
-        let other = Keypair::random();
-
-        // TODO: remove extra client after switching to subdomains.
-        other_client
-            .signup(&other, &server.public_key(), None)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            other_client
-                .put(url)
-                .body(vec![0, 1, 2, 3, 4])
-                .send()
-                .await
-                .unwrap()
-                .status(),
-            StatusCode::UNAUTHORIZED
-        );
-    }
-
-    client
-        .put(url)
-        .body(vec![0, 1, 2, 3, 4])
-        .send()
+    // Other user (will attempt unauthorized ops)
+    let other = PubkySigner::random().unwrap();
+    let other_agent = other
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    {
-        let other = Keypair::random();
+    let rel_path = "/pub/foo.txt";
 
-        // TODO: remove extra client after switching to subdomains.
-        other_client
-            .signup(&other, &server.public_key(), None)
-            .await
-            .unwrap();
+    // Other tries to write to owner's namespace → 401 Unauthorized
+    let err = other_agent
+        .drive()
+        .put((owner_pubky.clone(), rel_path), vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Request(RequestError::Server { status, .. })
+            if status == StatusCode::UNAUTHORIZED
+    ));
 
-        assert_eq!(
-            other_client.delete(url).send().await.unwrap().status(),
-            StatusCode::UNAUTHORIZED
-        );
-    }
+    // Owner writes successfully
+    let resp = owner_agent
+        .drive()
+        .put(rel_path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
 
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
+    // Other tries to delete owner's file → 401 Unauthorized
+    let err = other_agent
+        .drive()
+        .delete((owner_pubky.clone(), rel_path))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Request(RequestError::Server { status, .. })
+            if status == StatusCode::UNAUTHORIZED
+    ));
 
-    assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
+    // Owner can read contents
+    let body = owner_agent
+        .drive()
+        .get(rel_path)
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(body, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 }
 
 #[tokio::test]
 async fn list() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
+    let signer = PubkySigner::random().unwrap();
+    let pubky = signer.public_key();
 
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let pubky = keypair.public_key();
-
-    let urls = vec![
-        format!("pubky://{pubky}/pub/a.wrong/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/b.txt"),
-        format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-        format!("pubky://{pubky}/pub/example.wrong/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/c.txt"),
-        format!("pubky://{pubky}/pub/example.com/d.txt"),
-        format!("pubky://{pubky}/pub/z.wrong/a.txt"),
+    let paths = vec![
+        "/pub/a.wrong/a.txt",
+        "/pub/example.com/a.txt",
+        "/pub/example.com/b.txt",
+        "/pub/example.com/cc-nested/z.txt",
+        "/pub/example.wrong/a.txt",
+        "/pub/example.com/c.txt",
+        "/pub/example.com/d.txt",
+        "/pub/z.wrong/a.txt",
     ];
 
-    for url in urls {
-        client.put(url).body(vec![0]).send().await.unwrap();
+    for path in paths {
+        agent.drive().put(path, vec![0]).await.unwrap();
     }
 
-    let url = format!("pubky://{pubky}/pub/example.com/extra");
+    let path = "/pub/example.com/extra";
 
     {
-        let list = client.list(&url).unwrap().send().await.unwrap();
+        let list = agent.drive().list(path).unwrap().send().await.unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -251,7 +334,15 @@ async fn list() {
     }
 
     {
-        let list = client.list(&url).unwrap().limit(2).send().await.unwrap();
+        let list = agent
+            .drive()
+            .list(path)
+            .unwrap()
+            .limit(2)
+            .send()
+            .await
+            .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -264,14 +355,16 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .limit(2)
             .cursor("a.txt")
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -284,14 +377,16 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .limit(2)
             .cursor("cc-nested/")
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -304,14 +399,16 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .limit(2)
             .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -324,14 +421,16 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .limit(2)
             .cursor("/a.txt")
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -344,13 +443,15 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .reverse(true)
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -366,14 +467,16 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .reverse(true)
             .limit(2)
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -386,8 +489,9 @@ async fn list() {
     }
 
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .reverse(true)
             .limit(2)
@@ -395,6 +499,7 @@ async fn list() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -410,54 +515,54 @@ async fn list() {
 #[tokio::test]
 async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    // Create a user/agent
+    let signer = PubkySigner::random().unwrap();
+    let pubky = signer.public_key();
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let pubky = keypair.public_key();
-
-    let urls = vec![
-        format!("pubky://{pubky}/pub/a.com/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/b.txt"),
-        format!("pubky://{pubky}/pub/example.com/c.txt"),
-        format!("pubky://{pubky}/pub/example.com/d.txt"),
-        format!("pubky://{pubky}/pub/example.con/d.txt"),
-        format!("pubky://{pubky}/pub/example.con"),
-        format!("pubky://{pubky}/pub/file"),
-        format!("pubky://{pubky}/pub/file2"),
-        format!("pubky://{pubky}/pub/z.com/a.txt"),
+    // Seed data: first-level dirs/files under /pub plus nested content.
+    let paths = vec![
+        "/pub/a.com/a.txt",
+        "/pub/example.com/a.txt",
+        "/pub/example.com/b.txt",
+        "/pub/example.com/c.txt",
+        "/pub/example.com/d.txt",
+        "/pub/example.xyz/d.txt",
+        "/pub/example.xyz", // a file at top-level named "example.xyz"
+        "/pub/file",
+        "/pub/file2",
+        "/pub/z.com/a.txt",
     ];
-
-    for url in urls {
-        client.put(url).body(vec![0]).send().await.unwrap();
+    for p in paths {
+        agent.drive().put(p, vec![0]).await.unwrap();
     }
 
-    let url = format!("pubky://{pubky}/pub/");
+    let path = "/pub/";
 
+    // shallow (no limit, no cursor)
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .shallow(true)
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
                 format!("pubky://{pubky}/pub/a.com/"),
                 format!("pubky://{pubky}/pub/example.com/"),
-                format!("pubky://{pubky}/pub/example.con"),
-                format!("pubky://{pubky}/pub/example.con/"),
+                format!("pubky://{pubky}/pub/example.xyz"),
+                format!("pubky://{pubky}/pub/example.xyz/"),
                 format!("pubky://{pubky}/pub/file"),
                 format!("pubky://{pubky}/pub/file2"),
                 format!("pubky://{pubky}/pub/z.com/"),
@@ -466,15 +571,18 @@ async fn list_shallow() {
         );
     }
 
+    // shallow + limit(2)
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .shallow(true)
             .limit(2)
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -486,9 +594,11 @@ async fn list_shallow() {
         );
     }
 
+    // shallow + limit(2) + file cursor
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .shallow(true)
             .limit(2)
@@ -496,20 +606,23 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
                 format!("pubky://{pubky}/pub/example.com/"),
-                format!("pubky://{pubky}/pub/example.con"),
+                format!("pubky://{pubky}/pub/example.xyz"),
             ],
             "normal list shallow with limit and a file cursor"
         );
     }
 
+    // shallow + limit(3) + directory cursor
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .shallow(true)
             .limit(3)
@@ -517,27 +630,31 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky://{pubky}/pub/example.con"),
-                format!("pubky://{pubky}/pub/example.con/"),
+                format!("pubky://{pubky}/pub/example.xyz"),
+                format!("pubky://{pubky}/pub/example.xyz/"),
                 format!("pubky://{pubky}/pub/file"),
             ],
             "normal list shallow with limit and a directory cursor"
         );
     }
 
+    // shallow + reverse
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .reverse(true)
             .shallow(true)
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -545,8 +662,8 @@ async fn list_shallow() {
                 format!("pubky://{pubky}/pub/z.com/"),
                 format!("pubky://{pubky}/pub/file2"),
                 format!("pubky://{pubky}/pub/file"),
-                format!("pubky://{pubky}/pub/example.con/"),
-                format!("pubky://{pubky}/pub/example.con"),
+                format!("pubky://{pubky}/pub/example.xyz/"),
+                format!("pubky://{pubky}/pub/example.xyz"),
                 format!("pubky://{pubky}/pub/example.com/"),
                 format!("pubky://{pubky}/pub/a.com/"),
             ],
@@ -554,9 +671,11 @@ async fn list_shallow() {
         );
     }
 
+    // shallow + reverse + limit(2)
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .reverse(true)
             .shallow(true)
@@ -564,6 +683,7 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
@@ -575,9 +695,11 @@ async fn list_shallow() {
         );
     }
 
+    // shallow + reverse + limit(2) + file cursor
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .shallow(true)
             .reverse(true)
@@ -586,33 +708,37 @@ async fn list_shallow() {
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
                 format!("pubky://{pubky}/pub/file"),
-                format!("pubky://{pubky}/pub/example.con/"),
+                format!("pubky://{pubky}/pub/example.xyz/"),
             ],
             "reverse list shallow with limit and a file cursor"
         );
     }
 
+    // shallow + reverse + limit(2) + directory cursor
     {
-        let list = client
-            .list(&url)
+        let list = agent
+            .drive()
+            .list(path)
             .unwrap()
             .shallow(true)
             .reverse(true)
             .limit(2)
-            .cursor("example.con/")
+            .cursor("example.xyz/")
             .send()
             .await
             .unwrap();
+        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky://{pubky}/pub/example.con"),
+                format!("pubky://{pubky}/pub/example.xyz"),
                 format!("pubky://{pubky}/pub/example.com/"),
             ],
             "reverse list shallow with limit and a directory cursor"
@@ -623,54 +749,51 @@ async fn list_shallow() {
 #[tokio::test]
 async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    // Create a user/agent
+    let signer = PubkySigner::random().unwrap();
+    let pubky = signer.public_key();
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let pubky = keypair.public_key();
-
-    let urls = vec![
-        format!("pubky://{pubky}/pub/a.com/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/a.txt"),
-        format!("pubky://{pubky}/pub/example.com/b.txt"),
-        format!("pubky://{pubky}/pub/example.com/c.txt"),
-        format!("pubky://{pubky}/pub/example.com/d.txt"),
-        format!("pubky://{pubky}/pub/example.con/d.txt"),
-        format!("pubky://{pubky}/pub/example.con"),
-        format!("pubky://{pubky}/pub/file"),
-        format!("pubky://{pubky}/pub/file2"),
-        format!("pubky://{pubky}/pub/z.com/a.txt"),
+    // Write + delete a bunch of files to populate the event feed
+    let paths = vec![
+        "/pub/a.com/a.txt",
+        "/pub/example.com/a.txt",
+        "/pub/example.com/b.txt",
+        "/pub/example.com/c.txt",
+        "/pub/example.com/d.txt",
+        "/pub/example.xyz/d.txt",
+        "/pub/example.xyz", // file (not dir)
+        "/pub/file",
+        "/pub/file2",
+        "/pub/z.com/a.txt",
     ];
-
-    for url in urls {
-        client.put(&url).body(vec![0]).send().await.unwrap();
-        client.delete(url).send().await.unwrap();
+    for p in &paths {
+        agent.drive().put(p.to_string(), vec![0]).await.unwrap();
+        agent.drive().delete(p.to_string()).await.unwrap();
     }
 
+    // Feed is exposed under the public-key host
     let feed_url = format!("https://{}/events/", server.public_key());
 
-    let client = testnet.pubky_client().unwrap();
-
-    let cursor;
-
-    {
-        let response = client
+    // Page 1
+    let cursor: String = {
+        let resp = agent
+            .client()
             .request(Method::GET, format!("{feed_url}?limit=10"))
             .send()
             .await
             .unwrap();
 
-        let text = response.text().await.unwrap();
+        let text = resp.text().await.unwrap();
         let lines = text.split('\n').collect::<Vec<_>>();
 
-        cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
+        // last line is "cursor: <id>"
+        let cursor = lines.last().unwrap().split(' ').last().unwrap().to_string();
 
         assert_eq!(
             lines,
@@ -685,147 +808,133 @@ async fn list_events() {
                 format!("DEL pubky://{pubky}/pub/example.com/c.txt"),
                 format!("PUT pubky://{pubky}/pub/example.com/d.txt"),
                 format!("DEL pubky://{pubky}/pub/example.com/d.txt"),
-                format!("cursor: {cursor}",)
+                format!("cursor: {cursor}"),
             ]
         );
-    }
 
+        cursor
+    };
+
+    // Page 2 (using cursor)
     {
-        let response = client
+        let resp = agent
+            .client()
             .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
             .send()
             .await
             .unwrap();
 
-        let text = response.text().await.unwrap();
+        let text = resp.text().await.unwrap();
         let lines = text.split('\n').collect::<Vec<_>>();
 
         assert_eq!(
             lines,
             vec![
-                format!("PUT pubky://{pubky}/pub/example.con/d.txt"),
-                format!("DEL pubky://{pubky}/pub/example.con/d.txt"),
-                format!("PUT pubky://{pubky}/pub/example.con"),
-                format!("DEL pubky://{pubky}/pub/example.con"),
+                format!("PUT pubky://{pubky}/pub/example.xyz/d.txt"),
+                format!("DEL pubky://{pubky}/pub/example.xyz/d.txt"),
+                format!("PUT pubky://{pubky}/pub/example.xyz"),
+                format!("DEL pubky://{pubky}/pub/example.xyz"),
                 format!("PUT pubky://{pubky}/pub/file"),
                 format!("DEL pubky://{pubky}/pub/file"),
                 format!("PUT pubky://{pubky}/pub/file2"),
                 format!("DEL pubky://{pubky}/pub/file2"),
                 format!("PUT pubky://{pubky}/pub/z.com/a.txt"),
                 format!("DEL pubky://{pubky}/pub/z.com/a.txt"),
-                lines.last().unwrap().to_string()
+                lines.last().unwrap().to_string(),
             ]
-        )
+        );
     }
 }
 
 #[tokio::test]
 async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
+    let client = global_client().unwrap();
 
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    // User + agent
+    let signer = PubkySigner::random().unwrap();
+    let pubky = signer.public_key();
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let pubky = keypair.public_key();
-
+    // Write one file
     let url = format!("pubky://{pubky}/pub/a.com/a.txt");
+    agent
+        .drive()
+        .put("/pub/a.com/a.txt", vec![0])
+        .await
+        .unwrap();
 
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
+    // Events page 1
     let feed_url = format!("https://{}/events/", server.public_key());
-
-    let client = testnet.pubky_client().unwrap();
-
     {
-        let response = client
+        let resp = client
             .request(Method::GET, format!("{feed_url}?limit=10"))
             .send()
             .await
             .unwrap();
 
-        let text = response.text().await.unwrap();
+        let text = resp.text().await.unwrap();
         let lines = text.split('\n').collect::<Vec<_>>();
-
-        let cursor = lines.last().unwrap().split(" ").last().unwrap().to_string();
+        let cursor = lines.last().unwrap().split(' ').last().unwrap().to_string();
 
         assert_eq!(
             lines,
-            vec![
-                format!("PUT pubky://{pubky}/pub/a.com/a.txt"),
-                format!("cursor: {cursor}",)
-            ]
+            vec![format!("PUT {url}"), format!("cursor: {cursor}")]
         );
     }
 
-    let response = client.get(url).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = response.bytes().await.unwrap();
-
+    // Now the file should be fetchable
+    let resp = client.request(Method::GET, url).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.bytes().await.unwrap();
     assert_eq!(body.as_ref(), &[0]);
 }
 
 #[tokio::test]
 async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let homeserver = testnet.homeserver_suite();
+    let homeserver = testnet.homeserver();
+    let client = global_client().unwrap();
 
-    let client = testnet.pubky_client().unwrap();
+    // Two independent users
+    let u1 = PubkySigner::random().unwrap();
+    let u2 = PubkySigner::random().unwrap();
 
-    let homeserver_pubky = homeserver.public_key();
-
-    let user_1 = Keypair::random();
-    let user_2 = Keypair::random();
-
-    client
-        .signup(&user_1, &homeserver_pubky, None)
+    let a1 = u1
+        .signup_agent(&homeserver.public_key(), None)
         .await
         .unwrap();
-    client
-        .signup(&user_2, &homeserver_pubky, None)
+    let a2 = u2
+        .signup_agent(&homeserver.public_key(), None)
         .await
         .unwrap();
 
-    let user_1_id = user_1.public_key();
-    let user_2_id = user_2.public_key();
+    let user_1_id = u1.public_key();
+    let user_2_id = u2.public_key();
 
-    let url_1 = format!("pubky://{user_1_id}/pub/pubky.app/file/file_1");
-    let url_2 = format!("pubky://{user_2_id}/pub/pubky.app/file/file_1");
+    let p1 = "/pub/pubky.app/file/file_1";
+    let p2 = "/pub/pubky.app/file/file_1";
 
     let file = vec![1];
-    client.put(&url_1).body(file.clone()).send().await.unwrap();
-    client.put(&url_2).body(file.clone()).send().await.unwrap();
 
-    // Delete file 1
-    client
-        .delete(url_1)
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
+    // Both write identical content to their own paths
+    a1.drive().put(p1, file.clone()).await.unwrap();
+    a2.drive().put(p2, file.clone()).await.unwrap();
 
-    let blob = client
-        .get(url_2)
-        .send()
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap();
+    // Delete user 1's file
+    a1.drive().delete(p1).await.unwrap();
 
+    // User 2's file must still exist and match
+    let blob = a2.drive().get(p2).await.unwrap().bytes().await.unwrap();
     assert_eq!(blob, file);
 
+    // Event feed should show PUT u1, PUT u2, DEL u1 (order preserved)
     let feed_url = format!("https://{}/events/", homeserver.public_key());
-
-    let response = client
+    let resp = client
         .request(Method::GET, feed_url)
         .send()
         .await
@@ -833,49 +942,52 @@ async fn dont_delete_shared_blobs() {
         .error_for_status()
         .unwrap();
 
-    let text = response.text().await.unwrap();
+    let text = resp.text().await.unwrap();
     let lines = text.split('\n').collect::<Vec<_>>();
 
     assert_eq!(
         lines,
         vec![
-            format!("PUT pubky://{user_1_id}/pub/pubky.app/file/file_1",),
-            format!("PUT pubky://{user_2_id}/pub/pubky.app/file/file_1",),
-            format!("DEL pubky://{user_1_id}/pub/pubky.app/file/file_1",),
-            lines.last().unwrap().to_string()
+            format!("PUT pubky://{user_1_id}/pub/pubky.app/file/file_1"),
+            format!("PUT pubky://{user_2_id}/pub/pubky.app/file/file_1"),
+            format!("DEL pubky://{user_1_id}/pub/pubky.app/file/file_1"),
+            lines.last().unwrap().to_string(),
         ]
     );
 }
 
 #[tokio::test]
 async fn stream() {
-    // TODO: test better streaming API
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
+    let signer = PubkySigner::random().unwrap();
+    let agent = signer
+        .signup_agent(&server.public_key(), None)
         .await
         .unwrap();
 
-    let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url.as_str();
+    let path = "/pub/foo.txt";
+    let bytes = Bytes::from(vec![0; 1024 * 1024]); // 1 MiB
 
-    let bytes = Bytes::from(vec![0; 1024 * 1024]);
+    // Upload large body
+    agent.drive().put(path, bytes.clone()).await.unwrap();
 
-    client.put(url).body(bytes.clone()).send().await.unwrap();
+    // Read back and compare
+    let got = agent
+        .drive()
+        .get(path)
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(got, bytes);
 
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
-
-    assert_eq!(response, bytes);
-
-    client.delete(url).send().await.unwrap();
-
-    let response = client.get(url).send().await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    // Delete and verify 404 on subsequent GET
+    agent.drive().delete(path).await.unwrap();
+    let err = agent.drive().get(path).await.unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::NOT_FOUND)
+    );
 }
