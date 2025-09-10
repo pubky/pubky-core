@@ -193,7 +193,7 @@ impl PubkyHttpClientBuilder {
 /// - Understands `pubky://<user>/<path>` and rewrites it to the correct HTTPS
 ///   form for requests.
 /// - Detects pkarr public-key hosts and resolves them to concrete endpoints.
-/// - Exposes a unified `cross_request(..)` that works the same on native and
+/// - Internally, uses a unified `cross_request(..)` that works the same on native and
 ///   WASM (WASM performs endpoint resolution & header injection; native is a thin wrapper).
 ///
 /// ### What it *doesn’t* do
@@ -201,7 +201,7 @@ impl PubkyHttpClientBuilder {
 ///   For authenticated per-user flows use [`crate::PubkyAgent`].
 ///
 /// ### When to use
-/// - You want direct control over HTTP and PKARR resolution (power users, libs).
+/// - You want direct control over the PubkyHttpClient (power users, libs).
 /// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
 ///
 /// For most apps, prefer the higher-level actors and let them reuse the default shared
@@ -220,9 +220,9 @@ impl PubkyHttpClientBuilder {
 ///     target public key—no CA chain involved.
 /// - **WASM:**
 ///   - All requests use the browser’s standard X.509 TLS stack.
-///   - For Pubky/PKDNS hosts, `cross_request(..)` resolves the endpoint via PKARR,
-///     rewrites the URL (including testnet/localhost mapping), and may add a
-///     `pubky-host` header to convey the intended public-key host.
+///   - For Pubky/PKDNS hosts, private method `cross_request(..)` resolves the
+///     endpoint via PKARR, rewrites the URL (including testnet/localhost mapping),
+///     and may add a `pubky-host` header to convey the intended public-key host.
 ///
 /// ### Examples
 /// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
@@ -232,13 +232,13 @@ impl PubkyHttpClientBuilder {
 /// # Ok::<_, pubky::BuildError>(())
 /// ```
 ///
-/// Fetching a standard ICANN URL (native) or any URL (WASM/native) with `cross_request`:
+/// Fetching a standard ICANN URL or any URL with `request`:
 /// ```no_run
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run() -> Result<()> {
 /// let client = PubkyHttpClient::new()?;
-/// let resp = client.cross_request(Method::GET, "https://example.com").await?
+/// let resp = client.request(Method::GET, "https://example.com").await?
 ///     .send().await?;
 /// assert!(resp.status().is_success());
 /// # Ok(()) }
@@ -251,7 +251,7 @@ impl PubkyHttpClientBuilder {
 /// # async fn run(user: &str) -> Result<()> {
 /// let client = PubkyHttpClient::new()?;
 /// let url = format!("pubky://{}/pub/app/info.json", user);
-/// let resp = client.cross_request(Method::GET, &url).await?
+/// let resp = client.request(Method::GET, &url).await?
 ///     .send().await?;
 /// let info = resp.text().await?;
 /// # Ok(()) }
@@ -279,6 +279,8 @@ impl PubkyHttpClient {
     }
 
     /// Returns a builder to edit settings before creating [`PubkyHttpClient`].
+    /// Prefer this when you need to control PKARR/DHT inputs (relays, bootstrap);
+    /// resolution itself remains automatic during requests.
     pub fn builder() -> PubkyHttpClientBuilder {
         PubkyHttpClientBuilder::default()
     }
