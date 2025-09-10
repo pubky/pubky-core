@@ -12,7 +12,8 @@ use pubky_testnet::{
 use reqwest::{Method, StatusCode, Url};
 use tokio::time::Instant;
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_signin_get_session() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client().unwrap();
@@ -61,7 +62,8 @@ async fn test_limit_signin_get_session() {
         .expect_err("Should be rate limited"); // Second signin should be rate limited
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_signin_get_session_whitelist() {
     let keypair = Keypair::random();
     let mut testnet = Testnet::new().await.unwrap();
@@ -117,7 +119,8 @@ async fn test_limit_signin_get_session_whitelist() {
         .expect_err("Should be rate limited because not on whitelist");
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_events() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client().unwrap();
@@ -146,7 +149,8 @@ async fn test_limit_events() {
     assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client().unwrap();
@@ -193,7 +197,8 @@ async fn test_limit_upload() {
 /// 3kb files are used to make the writes/reads take ~2.5s each.
 /// Concurrently writing/reading 10 files, the total time taken should be ~3s.
 /// If the concurrent writes/reads are not properly handled, the total time taken will be closer to ~25s.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_concurrent_write_read() {
     // Setup the testnet
     let mut testnet = Testnet::new().await.unwrap();

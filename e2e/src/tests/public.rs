@@ -3,7 +3,8 @@ use pkarr::Keypair;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use reqwest::{Method, StatusCode};
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -76,7 +77,8 @@ async fn put_get_delete() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
@@ -133,7 +135,8 @@ async fn put_quota_applied() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -201,7 +204,8 @@ async fn unauthorized_put_delete() {
     assert_eq!(response, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn list_deep() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -304,7 +308,8 @@ async fn list_deep() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -405,18 +410,17 @@ async fn list_shallow() {
     );
     // Do the same again but without the pubky:// prefix
     let list2 = client
-    .list(&url)
-    .unwrap()
-    .shallow(true)
-    .limit(2)
-    .cursor(format!("{pubky}/pub/example.com/a.txt").as_str())
-    .send()
-    .await
-    .unwrap();
+        .list(&url)
+        .unwrap()
+        .shallow(true)
+        .limit(2)
+        .cursor(format!("{pubky}/pub/example.com/a.txt").as_str())
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(
-        list2,
-        list1,
+        list2, list1,
         "normal list shallow with limit and a file cursor without the pubky:// prefix"
     );
 
@@ -442,10 +446,10 @@ async fn list_shallow() {
             "normal list shallow with limit and a directory cursor"
         );
     }
-
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -544,7 +548,8 @@ async fn list_events() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -597,7 +602,8 @@ async fn read_after_event() {
     assert_eq!(body.as_ref(), &[0]);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver_suite();
@@ -672,7 +678,8 @@ async fn dont_delete_shared_blobs() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn stream() {
     // TODO: test better streaming API
     let testnet = EphemeralTestnet::start().await.unwrap();

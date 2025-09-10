@@ -1,5 +1,5 @@
 use sqlx::PgPool;
-use std::{sync::{Arc, Mutex, OnceLock}};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Global list of databases to drop.
 static GLOBAL_DBS_TO_DROP: OnceLock<Arc<Mutex<Vec<DbToDrop>>>> = OnceLock::new();
@@ -29,9 +29,15 @@ impl DbToDrop {
 /// May panic if the mutex is poisoned.
 /// `connection_string` is the connection string usually to the `postgres` database.
 /// It can't be the same database as the one to drop otherwise the drop will fail.
-pub fn register_db_to_drop(db_name: String, connection_string: String) -> Result<(), std::sync::PoisonError<std::sync::MutexGuard<'static, Vec<DbToDrop>>>> {
+pub fn register_db_to_drop(
+    db_name: String,
+    connection_string: String,
+) -> Result<(), std::sync::PoisonError<std::sync::MutexGuard<'static, Vec<DbToDrop>>>> {
     let mut vec = get_vec().lock()?;
-    vec.push(DbToDrop { db_name, connection_string });
+    vec.push(DbToDrop {
+        db_name,
+        connection_string,
+    });
     Ok(())
 }
 
@@ -42,13 +48,16 @@ fn get_db_to_drop() -> Option<DbToDrop> {
 
 /// Drops all registered databases
 /// And cleans them.
-pub async fn drop_dbs() {
+pub async fn drop_test_databases() {
     // Drop all databases that are registered to be dropped.
     while let Some(db) = get_db_to_drop() {
         match db.drop().await {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("pubky_test_utils: Failed to drop test database {}: {}", db.db_name, e);
+                eprintln!(
+                    "pubky_test_utils: Failed to drop test database {}: {}",
+                    db.db_name, e
+                );
             }
         }
     }

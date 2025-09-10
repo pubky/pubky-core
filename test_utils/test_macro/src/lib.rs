@@ -1,12 +1,11 @@
 use proc_macro::TokenStream;
+use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
-use proc_macro_crate::{crate_name, FoundCrate};
-
 
 /// A macro that wraps a test function and makes sure the postgres test
 /// database(s) are dropped after the test completes/panics.
-/// 
+///
 /// Usage:
 /// ```no_run
 /// #[tokio::test]
@@ -15,7 +14,7 @@ use proc_macro_crate::{crate_name, FoundCrate};
 ///     // test code
 /// }
 /// ```
-/// 
+///
 /// Important: The test function must be async and `#[tokio::test]` must be present above the macro.
 #[proc_macro_attribute]
 pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -30,7 +29,11 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
     /// If one of them is not found, we try the next one.
     /// If all of them are not found, we panic.
     fn get_crate_name() -> FoundCrate {
-        let lib_names = vec!["pubky_test_utils", "pubky-testnet", "pubky_test_utils_macro"];
+        let lib_names = [
+            "pubky_test_utils",
+            "pubky-testnet",
+            "pubky_test_utils_macro",
+        ];
         for lib_name in lib_names.iter() {
             match crate_name(lib_name) {
                 Ok(found) => return found,
@@ -39,7 +42,10 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             };
         }
-        panic!("Failed to get crate name. Tested crates: {}", lib_names.join(", ").as_str());
+        panic!(
+            "Failed to get crate name. Tested crates: {}",
+            lib_names.join(", ").as_str()
+        );
     }
 
     // Get the crate name
@@ -51,7 +57,7 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
             quote!(::#ident)
         }
     };
-    
+
     // Check if the function is async
     let is_async = input_fn.sig.asyncness.is_some();
 
@@ -66,25 +72,25 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 std::panic::set_hook(Box::new(move |panic_info| {
                 // Execute cleanup in a blocking way since we're in a panic handler
                 if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                    rt.block_on(#my_crate::drop_dbs());
+                    rt.block_on(#my_crate::drop_test_databases());
                 } else {
                     // Fallback: create a new runtime if we're not in a tokio context
                     if let Ok(rt) = tokio::runtime::Runtime::new() {
-                        rt.block_on(#my_crate::drop_dbs());
+                        rt.block_on(#my_crate::drop_test_databases());
                     }
                 }
                     // Call the original panic hook
                     original_hook(panic_info);
                 }));
-                
+
                 // Execute the test body
                 #fn_block
-                
+
                 // Restore the original panic hook
                 std::panic::set_hook(original_hook);
-                
-                // Always execute drop_dbs() after the test completes normally
-                #my_crate::drop_dbs().await;
+
+                // Always execute drop_test_databases() after the test completes normally
+                #my_crate::drop_test_databases().await;
             }
         }
     } else {
@@ -96,17 +102,17 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 let result = std::panic::catch_unwind(|| {
                     #fn_block
                 });
-                
+
                 // Always execute drop_dbs() after the test, regardless of outcome
                 // Use tokio::runtime to handle the async call in sync context
                 if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                    rt.block_on(#my_crate::drop_dbs());
+                    rt.block_on(#my_crate::drop_test_databases());
                 } else {
                     // Fallback: create a new runtime if we're not in a tokio context
                     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-                    rt.block_on(#my_crate::drop_dbs());
+                    rt.block_on(#my_crate::drop_test_databases());
                 }
-                
+
                 // Re-panic if the test panicked
                 if let Err(panic) = result {
                     std::panic::resume_unwind(panic);

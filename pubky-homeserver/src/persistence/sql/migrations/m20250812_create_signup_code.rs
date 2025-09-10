@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
-use sqlx::{Transaction};
+use sqlx::Transaction;
 
 use crate::persistence::sql::migration::MigrationTrait;
 

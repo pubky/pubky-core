@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use sea_query::{ColumnDef, Expr, Iden, PostgresQueryBuilder, Table};
-use sqlx::{Transaction};
+use sqlx::Transaction;
 
 use crate::persistence::sql::migration::MigrationTrait;
 
@@ -79,10 +79,10 @@ mod tests {
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
-    use pkarr::PublicKey;
-    use sea_query::{ PostgresQueryBuilder};
-    use sqlx::{postgres::PgRow, FromRow, Row};
     use crate::persistence::sql::{migrator::Migrator, SqlDb};
+    use pkarr::PublicKey;
+    use sea_query::PostgresQueryBuilder;
+    use sqlx::{postgres::PgRow, FromRow, Row};
 
     use super::*;
 

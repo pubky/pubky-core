@@ -1,6 +1,3 @@
-use pubky_test_utils::register_db_to_drop;
-use std::sync::Arc;
-
 use sqlx::postgres::PgPool;
 
 use crate::persistence::sql::connection_string::ConnectionString;
@@ -11,7 +8,7 @@ pub struct SqlDb {
     pool: PgPool,
     /// Test helper for postgres to drop the test database after the test
     #[cfg(any(test, feature = "testing"))]
-    db_dropper: Option<Arc<TestDbDropper>>,
+    db_dropper: Option<std::sync::Arc<TestDbDropper>>,
 }
 
 impl std::fmt::Debug for SqlDb {
@@ -59,7 +56,10 @@ impl Drop for TestDbDropper {
     fn drop(&mut self) {
         // Drop the database after the test.
         // This works in combination with the pubky_test macro.
-        let _ = register_db_to_drop(self.db_name.clone(), self.connection_string.clone());
+        let _ = pubky_test_utils::register_db_to_drop(
+            self.db_name.clone(),
+            self.connection_string.clone(),
+        );
     }
 }
 
@@ -79,7 +79,7 @@ impl SqlDb {
         let mut con_string = con_string.clone();
         con_string.set_database_name(&db_name);
         let mut con = Self::connect(&con_string).await?;
-        con.db_dropper = Some(Arc::new(TestDbDropper::new(
+        con.db_dropper = Some(std::sync::Arc::new(TestDbDropper::new(
             db_name,
             DEFAULT_TEST_CONNECTION_STRING.to_string(),
         )));
@@ -122,7 +122,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_pg_db_available() {
         let _db = SqlDb::test_postgres_db(&SqlDb::con_string_from_pg_test_env_var())
-                .await
-                .unwrap();
+            .await
+            .unwrap();
     }
 }

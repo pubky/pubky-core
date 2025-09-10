@@ -1,7 +1,8 @@
 use pubky_testnet::EphemeralTestnet;
 use reqwest::Method;
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn http_get_pubky() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -17,7 +18,8 @@ async fn http_get_pubky() {
     assert_eq!(response.status(), 200)
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn http_get_icann() {
     let testnet = EphemeralTestnet::start().await.unwrap();
 

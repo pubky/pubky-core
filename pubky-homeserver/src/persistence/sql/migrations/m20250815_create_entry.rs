@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sea_query::{
     ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, Index, PostgresQueryBuilder, Table,
 };
-use sqlx::{Transaction};
+use sqlx::Transaction;
 
 use crate::persistence::{
     lmdb::tables::users::USERS_TABLE,
@@ -102,6 +102,7 @@ mod tests {
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
+    use super::*;
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
@@ -110,7 +111,6 @@ mod tests {
         },
     };
     use sqlx::{postgres::PgRow, FromRow, Row};
-    use super::*;
 
     #[derive(Debug, PartialEq, Eq, Clone)]
     struct EntryEntity {

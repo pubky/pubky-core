@@ -4,14 +4,13 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::{str::FromStr, time::Duration};
-
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::Keypair;
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
 };
+use std::{str::FromStr, time::Duration};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -186,7 +185,8 @@ mod test {
     use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[crate::test]
     async fn test_keep_relays_alive_even_when_dropped() {
         let mut testnet = Testnet::new().await.unwrap();
         {
@@ -196,7 +196,8 @@ mod test {
     }
 
     /// Boostrap node conversion
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[crate::test]
     async fn test_boostrap_node_conversion() {
         let testnet = Testnet::new().await.unwrap();
         let nodes = testnet.dht_bootstrap_nodes();
@@ -205,7 +206,8 @@ mod test {
 
     /// Test that a user can signup in the testnet.
     /// This is an e2e tests to check if everything is correct.
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[crate::test]
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver_suite().await.unwrap();
@@ -251,13 +253,17 @@ mod test {
             .unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[crate::test]
     #[ignore]
     async fn test_spawn_in_parallel() {
         // Run sequentially instead of parallel due to LMDB not being Send
         for _ in 0..10 {
             let mut testnet = Testnet::new().await.expect("Failed to create testnet");
-            testnet.create_homeserver_suite().await.expect("Failed to create homeserver suite");
+            testnet
+                .create_homeserver_suite()
+                .await
+                .expect("Failed to create homeserver suite");
             let client = testnet.pubky_client_builder().build().unwrap();
             let hs = testnet.homeservers.first().unwrap();
             let keypair = Keypair::random();
@@ -275,7 +281,8 @@ mod test {
     /// Test relay resolvable.
     /// This simulates pkarr clients in a browser.
     /// Made due to https://github.com/pubky/pkarr/issues/140
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
+    #[crate::test]
     async fn test_pkarr_relay_resolvable() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_pkarr_relay().await.unwrap();

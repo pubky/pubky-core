@@ -52,7 +52,8 @@ async fn basic_authn() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -119,7 +120,8 @@ async fn disabled_user() {
         .expect("Signin should succeed");
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -193,7 +195,8 @@ async fn authz() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -232,7 +235,8 @@ async fn multiple_users() {
     assert!(session.capabilities().contains(&Capability::root()));
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -313,7 +317,8 @@ async fn authz_timeout_reconnect() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
@@ -376,7 +381,8 @@ async fn test_signup_with_token() {
 // the record is not republished on signin (its timestamp remains unchanged)
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_republish_on_signin_old_enough() {
     // Setup the testnet and run a homeserver.
     let testnet = EphemeralTestnet::start().await.unwrap();
@@ -429,7 +435,8 @@ async fn test_republish_on_signin_old_enough() {
 // the record is not republished on signin (its timestamp remains unchanged)
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_republish_on_signin_not_old_enough() {
     // Setup the testnet and run a homeserver.
     let testnet = EphemeralTestnet::start().await.unwrap();
@@ -474,7 +481,8 @@ async fn test_republish_on_signin_not_old_enough() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn test_republish_homeserver() {
     // Setup the testnet and run a homeserver.
     let mut testnet = Testnet::new().await.unwrap();

@@ -1,5 +1,3 @@
-use std::i64;
-
 use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use crate::persistence::sql::entry::EntryEntity;
 use crate::{
@@ -9,7 +7,7 @@ use crate::{
     },
     shared::webdav::{EntryPath, WebDavPath},
 };
-use sea_query::{Alias, Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Alias, Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, Row};
 
