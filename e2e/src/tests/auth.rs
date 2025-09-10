@@ -7,7 +7,8 @@ use pubky_testnet::{
 use reqwest::StatusCode;
 use std::time::Duration;
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
+#[pubky_testnet::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();

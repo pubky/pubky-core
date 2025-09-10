@@ -1,10 +1,22 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
+use proc_macro_crate::{crate_name, FoundCrate};
 
 
-/// A macro that wraps a test function and executes drop_dbs() at the end,
-/// regardless of whether the test panics or succeeds.
+/// A macro that wraps a test function and makes sure the postgres test
+/// database(s) are dropped after the test completes/panics.
+/// 
+/// Usage:
+/// ```no_run
+/// #[tokio::test]
+/// #[pubky_testnet::test]
+/// async fn test_function() {
+///     // test code
+/// }
+/// ```
+/// 
+/// Important: The test function must be async and `#[tokio::test]` must be present above the macro.
 #[proc_macro_attribute]
 pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
@@ -12,6 +24,33 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_vis = &input_fn.vis;
     let fn_attrs = &input_fn.attrs;
     let fn_sig = &input_fn.sig;
+
+    /// Because this macro can be used in any crate, we need to get the crate name dynamically.
+    /// We support 3 crates: pubky_test_utils, pubky-testnet, pubky_test_utils_macro.
+    /// If one of them is not found, we try the next one.
+    /// If all of them are not found, we panic.
+    fn get_crate_name() -> FoundCrate {
+        let lib_names = vec!["pubky_test_utils", "pubky-testnet", "pubky_test_utils_macro"];
+        for lib_name in lib_names.iter() {
+            match crate_name(lib_name) {
+                Ok(found) => return found,
+                Err(_e) => {
+                    continue;
+                }
+            };
+        }
+        panic!("Failed to get crate name. Tested crates: {}", lib_names.join(", ").as_str());
+    }
+
+    // Get the crate name
+    let found = get_crate_name();
+    let my_crate = match found {
+        FoundCrate::Itself => quote!(crate),
+        FoundCrate::Name(name) => {
+            let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
+            quote!(::#ident)
+        }
+    };
     
     // Check if the function is async
     let is_async = input_fn.sig.asyncness.is_some();
@@ -27,11 +66,11 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 std::panic::set_hook(Box::new(move |panic_info| {
                 // Execute cleanup in a blocking way since we're in a panic handler
                 if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                    rt.block_on(pubky_test_utils::drop_dbs());
+                    rt.block_on(#my_crate::drop_dbs());
                 } else {
                     // Fallback: create a new runtime if we're not in a tokio context
                     if let Ok(rt) = tokio::runtime::Runtime::new() {
-                        rt.block_on(pubky_test_utils::drop_dbs());
+                        rt.block_on(#my_crate::drop_dbs());
                     }
                 }
                     // Call the original panic hook
@@ -45,7 +84,7 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 std::panic::set_hook(original_hook);
                 
                 // Always execute drop_dbs() after the test completes normally
-                pubky_test_utils::drop_dbs().await;
+                #my_crate::drop_dbs().await;
             }
         }
     } else {
@@ -61,11 +100,11 @@ pub fn pubky_testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 // Always execute drop_dbs() after the test, regardless of outcome
                 // Use tokio::runtime to handle the async call in sync context
                 if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                    rt.block_on(pubky_test_utils::drop_dbs());
+                    rt.block_on(#my_crate::drop_dbs());
                 } else {
                     // Fallback: create a new runtime if we're not in a tokio context
                     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-                    rt.block_on(pubky_test_utils::drop_dbs());
+                    rt.block_on(#my_crate::drop_dbs());
                 }
                 
                 // Re-panic if the test panicked

@@ -2981,6 +2981,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-crate"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edce586971a4dfaa28950c6f18ed55e0406c1ab88bbce2c6f6293a7aaba73d35"
+dependencies = [
+ "toml_edit",
+]
+
+[[package]]
 name = "proc-macro-error-attr2"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3133,6 +3142,7 @@ dependencies = [
  "pubky",
  "pubky-common",
  "pubky-homeserver",
+ "pubky_test_utils",
  "tempfile",
  "tokio",
  "tracing",
@@ -3194,6 +3204,7 @@ dependencies = [
 name = "pubky_test_utils_macro"
 version = "0.1.0"
 dependencies = [
+ "proc-macro-crate",
  "proc-macro2",
  "pubky_test_utils_drop_db_helper",
  "quote",
