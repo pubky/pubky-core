@@ -76,9 +76,9 @@ impl SqlDb {
         let query = format!("CREATE DATABASE {}", db_name);
 
         sqlx::query(&query).execute(neutral_con.pool()).await?;
-        let mut con_string = con_string.clone();
-        con_string.set_database_name(&db_name);
-        let mut con = Self::connect(&con_string).await?;
+        let mut test_db_con_string = con_string.clone();
+        test_db_con_string.set_database_name(&db_name);
+        let mut con = Self::connect(&test_db_con_string).await?;
         con.db_dropper = Some(std::sync::Arc::new(TestDbDropper::new(
             db_name,
             con_string.to_string(),
