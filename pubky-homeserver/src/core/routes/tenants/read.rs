@@ -120,6 +120,7 @@ pub async fn list(
             entry_path,
             params.limit,
             parsed_cursor,
+            params.reverse,
             &mut state.sql_db.pool().into(),
         )
         .await?
@@ -128,6 +129,7 @@ pub async fn list(
             entry_path,
             params.limit,
             parsed_cursor,
+            params.reverse,
             &mut state.sql_db.pool().into(),
         )
         .await?

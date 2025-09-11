@@ -233,6 +233,7 @@ impl EntryRepository {
         path: &EntryPath,
         limit: Option<u16>,
         cursor: Option<EntryPath>,
+        reverse: bool,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EntryPath>, sqlx::Error> {
         let mut dir_path = path.path().to_string();
@@ -264,10 +265,22 @@ impl EntryRepository {
             .from_subquery(inner_statement, Alias::new("t"))
             .to_owned();
 
+        if reverse {
+            outer_statement = outer_statement.order_by("regpath", Order::Desc).to_owned();
+        } else {
+            outer_statement = outer_statement.order_by("regpath", Order::Asc).to_owned();
+        }
+
         if let Some(cursor_entry_path) = cursor {
-            outer_statement = outer_statement
-                .and_where(Expr::col("regpath").gt(cursor_entry_path.path().as_str()))
-                .to_owned();
+            if reverse {
+                outer_statement = outer_statement
+                    .and_where(Expr::col("regpath").lt(cursor_entry_path.path().as_str()))
+                    .to_owned();
+            } else {
+                outer_statement = outer_statement
+                    .and_where(Expr::col("regpath").gt(cursor_entry_path.path().as_str()))
+                    .to_owned();
+            }
         }
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
@@ -301,6 +314,7 @@ impl EntryRepository {
         path: &EntryPath,
         limit: Option<u16>,
         cursor: Option<EntryPath>,
+        reverse: bool,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EntryPath>, sqlx::Error> {
         let mut full_path = path.path().to_string();
@@ -319,13 +333,28 @@ impl EntryRepository {
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
-            .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
             .to_owned();
 
-        if let Some(cursor) = cursor {
+        if reverse {
             statement = statement
-                .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).gt(cursor.path().as_str()))
+                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Desc)
                 .to_owned();
+        } else {
+            statement = statement
+                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
+                .to_owned();
+        }
+
+        if let Some(cursor) = cursor {
+            if reverse {
+                statement = statement
+                    .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).lt(cursor.path().as_str()))
+                    .to_owned();
+            } else {
+                statement = statement
+                    .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).gt(cursor.path().as_str()))
+                    .to_owned();
+            }
         }
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
@@ -459,9 +488,10 @@ mod tests {
 
         // Test list shallow basic
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
-        let entries = EntryRepository::list_shallow(&entry_path, None, None, &mut db.pool().into())
-            .await
-            .unwrap();
+        let entries =
+            EntryRepository::list_shallow(&entry_path, None, None, false, &mut db.pool().into())
+                .await
+                .unwrap();
         assert_eq!(entries.len(), 6);
         assert_eq!(
             entries[0],
@@ -490,7 +520,7 @@ mod tests {
 
         // Test list shallow with limit
         let entries =
-            EntryRepository::list_shallow(&entry_path, Some(2), None, &mut db.pool().into())
+            EntryRepository::list_shallow(&entry_path, Some(2), None, false, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
@@ -511,6 +541,7 @@ mod tests {
                 user_pubkey.clone(),
                 WebDavPath::new("/test/3.txt").unwrap(),
             )),
+            false,
             &mut db.pool().into(),
         )
         .await
@@ -537,6 +568,7 @@ mod tests {
                 user_pubkey.clone(),
                 WebDavPath::new("/test/3.txt").unwrap(),
             )),
+            false,
             &mut db.pool().into(),
         )
         .await
@@ -561,6 +593,7 @@ mod tests {
                 &entry_path,
                 Some(2),
                 last_cursor,
+                false,
                 &mut db.pool().into(),
             )
             .await
@@ -578,6 +611,127 @@ mod tests {
             }
         }
         assert_eq!(set.len(), 6);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_shallow_reverse() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Test create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        // Test create entries
+        let paths = vec![
+            "/test/1.txt",
+            "/test/2.txt",
+            "/test/3.txt",
+            "/test/sub1",
+            "/test/sub1/1/1.txt",
+            "/test/sub1/2.txt",
+            "/test/sub2/1.txt",
+            "/test/sub2/2.txt",
+        ];
+        for path in paths {
+            EntryRepository::create(
+                user.id,
+                &WebDavPath::new(path).unwrap(),
+                &pubky_common::crypto::Hash::from_bytes([0; 32]),
+                100,
+                "text/plain",
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Regular order aka reverse false
+        let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
+        let entries =
+            EntryRepository::list_shallow(&entry_path, None, None, false, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            entries[0],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
+        );
+        assert_eq!(
+            entries[1],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
+        );
+        assert_eq!(
+            entries[2],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())
+        );
+        assert_eq!(
+            entries[3],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
+        );
+        assert_eq!(
+            entries[4],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())
+        );
+        assert_eq!(
+            entries[5],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/").unwrap())
+        );
+
+        // Reverse order aka reverse true
+        let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
+        let entries =
+            EntryRepository::list_shallow(&entry_path, None, None, true, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            entries[5],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
+        );
+        assert_eq!(
+            entries[4],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
+        );
+        assert_eq!(
+            entries[3],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())
+        );
+        assert_eq!(
+            entries[2],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1").unwrap())
+        );
+        assert_eq!(
+            entries[1],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub1/").unwrap())
+        );
+        assert_eq!(
+            entries[0],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/sub2/").unwrap())
+        );
+
+        // Reverse order aka reverse true with cursor
+        let cursor = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap());
+        let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
+        let entries = EntryRepository::list_shallow(
+            &entry_path,
+            None,
+            Some(cursor),
+            true,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[1],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
+        );
+        assert_eq!(
+            entries[0],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
+        );
     }
 
     #[tokio::test]
@@ -615,14 +769,15 @@ mod tests {
 
         // Test basic
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
-        let entries = EntryRepository::list_deep(&entry_path, None, None, &mut db.pool().into())
-            .await
-            .unwrap();
+        let entries =
+            EntryRepository::list_deep(&entry_path, None, None, false, &mut db.pool().into())
+                .await
+                .unwrap();
         assert_eq!(entries.len(), 7);
 
         // Test with limit
         let entries =
-            EntryRepository::list_shallow(&entry_path, Some(2), None, &mut db.pool().into())
+            EntryRepository::list_shallow(&entry_path, Some(2), None, false, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(entries.len(), 2);
@@ -643,6 +798,7 @@ mod tests {
                 user_pubkey.clone(),
                 WebDavPath::new("/test/3.txt").unwrap(),
             )),
+            false,
             &mut db.pool().into(),
         )
         .await
@@ -685,6 +841,7 @@ mod tests {
                 user_pubkey.clone(),
                 WebDavPath::new("/test/3.txt").unwrap(),
             )),
+            false,
             &mut db.pool().into(),
         )
         .await
@@ -713,6 +870,7 @@ mod tests {
                 &entry_path,
                 Some(2),
                 last_cursor.clone(),
+                false,
                 &mut db.pool().into(),
             )
             .await
@@ -727,6 +885,105 @@ mod tests {
             }
         }
         assert_eq!(set.len(), 7);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_deep_reverse() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Test create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        // Test create entries
+        let paths = vec![
+            "/test/1.txt",
+            "/test/2.txt",
+            "/test/3.txt",
+            "/test/sub1/1/1.txt",
+            "/test/sub1/2.txt",
+            "/test/sub2/1.txt",
+            "/test/sub2/2.txt",
+        ];
+        for path in paths {
+            EntryRepository::create(
+                user.id,
+                &WebDavPath::new(path).unwrap(),
+                &pubky_common::crypto::Hash::from_bytes([0; 32]),
+                100,
+                "text/plain",
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Reverse order aka reverse true
+        let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
+        let entries =
+            EntryRepository::list_deep(&entry_path, None, None, true, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(entries.len(), 7);
+        assert_eq!(
+            entries[0],
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub2/2.txt").unwrap()
+            )
+        );
+        assert_eq!(
+            entries[1],
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub2/1.txt").unwrap()
+            )
+        );
+        assert_eq!(
+            entries[2],
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub1/2.txt").unwrap()
+            )
+        );
+        assert_eq!(
+            entries[3],
+            EntryPath::new(
+                user_pubkey.clone(),
+                WebDavPath::new("/test/sub1/1/1.txt").unwrap()
+            )
+        );
+        assert_eq!(
+            entries[4],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap())
+        );
+        assert_eq!(
+            entries[5],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
+        );
+        assert_eq!(
+            entries[6],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
+        );
+
+        // Reverse order aka reverse true with cursor
+        let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
+        let cursor = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap());
+        let entries =
+            EntryRepository::list_deep(&entry_path, None, Some(cursor), true, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/2.txt").unwrap())
+        );
+        assert_eq!(
+            entries[1],
+            EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/1.txt").unwrap())
+        );
     }
 
     #[tokio::test]
