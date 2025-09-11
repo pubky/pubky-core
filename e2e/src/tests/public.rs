@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use pkarr::Keypair;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
-use reqwest::{Method, StatusCode};
-use rand::seq::SliceRandom;
 use rand::rng;
+use rand::seq::SliceRandom;
+use reqwest::{Method, StatusCode};
 
 #[tokio::test]
 #[pubky_testnet::test]

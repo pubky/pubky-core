@@ -971,10 +971,15 @@ mod tests {
         // Reverse order aka reverse true with cursor
         let entry_path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/").unwrap());
         let cursor = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test/3.txt").unwrap());
-        let entries =
-            EntryRepository::list_deep(&entry_path, None, Some(cursor), true, &mut db.pool().into())
-                .await
-                .unwrap();
+        let entries = EntryRepository::list_deep(
+            &entry_path,
+            None,
+            Some(cursor),
+            true,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(
             entries[0],

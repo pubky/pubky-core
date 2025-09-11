@@ -1,7 +1,11 @@
 use std::{collections::HashMap, fmt::Display};
 
 use axum::{
-    body::Body, extract::{FromRequestParts, Query}, http::{request::Parts, StatusCode}, response::{IntoResponse, Response}, RequestPartsExt
+    body::Body,
+    extract::{FromRequestParts, Query},
+    http::{request::Parts, StatusCode},
+    response::{IntoResponse, Response},
+    RequestPartsExt,
 };
 
 use pkarr::PublicKey;
@@ -71,7 +75,7 @@ impl ListQueryParams {
 
 /// Parse a boolean value from a string.
 /// Returns an error if the value is not a valid boolean.
-fn parse_bool(value: &str) -> Result<bool, Response> {
+fn parse_bool(value: &str) -> Result<bool, Box<Response>> {
     match value.to_lowercase().as_str() {
         "true" => Ok(true),
         "yes" => Ok(true),
@@ -80,7 +84,12 @@ fn parse_bool(value: &str) -> Result<bool, Response> {
         "false" => Ok(false),
         "no" => Ok(false),
         "0" => Ok(false),
-        _ => Err(Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Invalid boolean parameter")).unwrap()),
+        _ => Err(Box::new(
+            Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("Invalid boolean parameter"))
+                .unwrap(),
+        )),
     }
 }
 
@@ -95,13 +104,13 @@ where
             parts.extract().await.map_err(IntoResponse::into_response)?;
 
         let reverse = if let Some(reverse) = params.get("reverse") {
-            parse_bool(reverse)?
+            parse_bool(reverse).map_err(|e| *e)?
         } else {
             false
         };
 
         let shallow = if let Some(shallow) = params.get("shallow") {
-            parse_bool(shallow)?
+            parse_bool(shallow).map_err(|e| *e)?
         } else {
             false
         };
