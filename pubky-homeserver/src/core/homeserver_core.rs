@@ -6,9 +6,7 @@ use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
-use crate::persistence::lmdb::LmDB;
-#[cfg(any(test, feature = "testing"))]
-use crate::MockDataDir;
+use crate::persistence::sql::SqlDb;
 use crate::{app_context::AppContext, PersistentDataDir};
 use crate::{DataDir, SignupMode};
 use anyhow::Result;
@@ -27,7 +25,7 @@ use std::{
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) verifier: AuthVerifier,
-    pub(crate) db: LmDB,
+    pub(crate) sql_db: SqlDb,
     pub(crate) file_service: FileService,
     pub(crate) signup_mode: SignupMode,
     /// If `Some(bytes)` the quota is enforced, else unlimited.
@@ -77,29 +75,16 @@ impl HomeserverCore {
         dir_path: PathBuf,
     ) -> std::result::Result<Self, HomeserverBuildError> {
         let data_dir = PersistentDataDir::new(dir_path);
-        Self::from_persistent_data_dir(data_dir).await
-    }
-
-    /// Create a Homeserver from a data directory.
-    pub async fn from_persistent_data_dir(
-        data_dir: PersistentDataDir,
-    ) -> std::result::Result<Self, HomeserverBuildError> {
-        Self::from_data_dir(Arc::new(data_dir)).await
-    }
-
-    /// Create a Homeserver from a mock data directory.
-    #[cfg(any(test, feature = "testing"))]
-    pub async fn from_mock_data_dir(
-        mock_dir: MockDataDir,
-    ) -> std::result::Result<Self, HomeserverBuildError> {
-        Self::from_data_dir(Arc::new(mock_dir)).await
+        Self::from_data_dir(data_dir).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub(crate) async fn from_data_dir(
-        dir: Arc<dyn DataDir>,
+    pub(crate) async fn from_data_dir<D: DataDir + 'static>(
+        dir: D,
     ) -> std::result::Result<Self, HomeserverBuildError> {
-        let context = AppContext::try_from(dir).map_err(HomeserverBuildError::AppContext)?;
+        let context = AppContext::read_from(dir)
+            .await
+            .map_err(HomeserverBuildError::AppContext)?;
         Self::new(context).await
     }
 
@@ -152,7 +137,7 @@ impl HomeserverCore {
 
         let state = AppState {
             verifier: AuthVerifier::default(),
-            db: context.db.clone(),
+            sql_db: context.sql_db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,

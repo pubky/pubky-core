@@ -35,20 +35,20 @@ impl HomeserverSuite {
     /// Run the homeserver with configurations from a data directory.
     pub async fn start_with_persistent_data_dir_path(dir_path: PathBuf) -> Result<Self> {
         let data_dir = PersistentDataDir::new(dir_path);
-        let context = AppContext::try_from(data_dir)?;
+        let context = AppContext::read_from(data_dir).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory.
     pub async fn start_with_persistent_data_dir(dir: PersistentDataDir) -> Result<Self> {
-        let context = AppContext::try_from(dir)?;
+        let context = AppContext::read_from(dir).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory mock.
     #[cfg(any(test, feature = "testing"))]
     pub async fn start_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
-        let context = AppContext::try_from(dir)?;
+        let context = AppContext::read_from(dir).await?;
         Self::start(context).await
     }
 

@@ -1,7 +1,4 @@
-use pubky_common::{
-    crypto::{Hash, Hasher},
-    timestamp::Timestamp,
-};
+use pubky_common::crypto::{Hash, Hasher};
 
 /// Fallback content type if no content type is detected.
 const DEFAULT_CONTENT_TYPE: &str = "application/octet-stream";
@@ -11,7 +8,6 @@ const DEFAULT_CONTENT_TYPE: &str = "application/octet-stream";
 pub struct FileMetadata {
     pub hash: Hash,
     pub length: usize,
-    pub modified_at: Timestamp,
     pub content_type: String,
 }
 
@@ -63,7 +59,6 @@ impl FileMetadataBuilder {
         FileMetadata {
             hash: self.hasher.finalize(),
             length: self.length,
-            modified_at: Timestamp::now(),
             content_type: self.derived_content_type(),
         }
     }
