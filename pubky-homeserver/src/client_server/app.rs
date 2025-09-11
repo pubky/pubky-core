@@ -47,17 +47,10 @@ fn base() -> Router<AppState> {
     // TODO: maybe add to a separate router (drive router?).
 }
 
-/// Dav path example:
-/// https://qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/dav/qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/pub/test.txt
-/// via https://github.com/pubky/pubky-core/pull/145#discussion_r2149297326
-fn webdav(state: AppState) -> Router<AppState> {
-    tenants::webdav_router(state.clone())
-}
-
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
-        .merge(webdav(state.clone()))
+        .merge(tenants::webdav_router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))

@@ -185,3 +185,85 @@ pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) ->
         .get(&public_key.to_string())
         .map(|c| c.value().to_string())
 }
+
+#[derive(Clone)]
+pub struct WebDAVAuthorizationLayer {
+    state: AppState,
+}
+
+impl WebDAVAuthorizationLayer {
+    pub fn new(state: AppState) -> Self {
+        Self { state }
+    }
+}
+impl<S> Layer<S> for WebDAVAuthorizationLayer {
+    type Service = WebDAVAuthorizationMiddleware<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        WebDAVAuthorizationMiddleware {
+            inner,
+            state: self.state.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct WebDAVAuthorizationMiddleware<S> {
+    inner: S,
+    state: AppState,
+}
+
+impl<S> Service<Request<Body>> for WebDAVAuthorizationMiddleware<S>
+where
+    S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
+        + Send
+        + 'static
+        + Clone,
+    S::Future: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(|_| unreachable!()) // `Infallible` conversion
+    }
+
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        let state = self.state.clone();
+        let mut inner = self.inner.clone();
+
+        Box::pin(async move {
+            // TODO (dzdidi): extract whatever auth method will be there
+            let path = req.uri().path();
+
+            // let pubky = match req.extensions().get::<PubkyHost>() {
+            //     Some(pk) => pk,
+            //     None => {
+            //         tracing::warn!("Pubky Host is missing in request. Authorization failed.");
+            //         return Ok(HttpError::new_with_message(
+            //             StatusCode::NOT_FOUND,
+            //             "Pubky Host is missing",
+            //         )
+            //         .into_response());
+            //     }
+            // };
+
+            // let cookies = match req.extensions().get::<Cookies>() {
+            //     Some(cookies) => cookies,
+            //     None => {
+            //         tracing::warn!("No cookies found in request. Unauthorized.");
+            //         return Ok(HttpError::unauthorized().into_response());
+            //     }
+            // };
+
+            // // Authorize the request
+            // if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
+            //     return Ok(e.into_response());
+            // }
+
+            // If authorized, proceed to the inner service
+            inner.call(req).await.map_err(|_| unreachable!())
+        })
+    }
+}

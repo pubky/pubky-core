@@ -6,7 +6,8 @@
 use axum::{extract::DefaultBodyLimit, routing::any, routing::get, Router};
 
 use crate::client_server::{
-    layers::authz::AuthorizationLayer, layers::pubky_host::PubkyHostLayer, AppState,
+    layers::authz::AuthorizationLayer, layers::authz::WebDAVAuthorizationLayer,
+    layers::pubky_host::PubkyHostLayer, AppState,
 };
 
 use crate::shared::{HttpResult, Z32Pubkey};
@@ -36,10 +37,14 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(PubkyHostLayer)
 }
 
+/// Dav path example:
+/// https://qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/dav/qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/pub/test.txt
+/// via https://github.com/pubky/pubky-core/pull/145#discussion_r2149297326
 pub fn webdav_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/dav/{key}/{*path}", any(dav_handler))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        .layer(WebDAVAuthorizationLayer::new(state.clone()))
     // NOTE observed that admin's dav auth is managed by `routes::dav_handler.rs`
     // For now I think it is better to keep it in Layer
     // TODO: layers for webdav supported auth:
