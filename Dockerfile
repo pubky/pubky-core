@@ -30,13 +30,14 @@ RUN HOSTARCH=$(uname -m) && \
     fi
 
 # Set cross-compiler environment variables conditionally
-# For ARM64 target
 ENV CC_aarch64_unknown_linux_musl="aarch64-linux-musl-gcc"
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="aarch64-linux-musl-gcc"
 
-# For x86_64 target  
-ENV CC_x86_64_unknown_linux_musl="x86_64-linux-musl-gcc"
-ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="x86_64-linux-musl-gcc"
+# Create environment setup script for x86_64 variables (only when host is ARM)
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+        echo 'export CC_x86_64_unknown_linux_musl="x86_64-linux-musl-gcc"' > /tmp/x86-env.sh && \
+        echo 'export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="x86_64-linux-musl-gcc"' >> /tmp/x86-env.sh; \
+    fi
 
 # Set PATH to include both cross-compiler directories (non-existent paths are ignored)
 ENV PATH="/usr/local/aarch64-linux-musl-cross/bin:/usr/local/x86_64-linux-musl-cross/bin:$PATH"
@@ -62,7 +63,7 @@ COPY . .
 ARG BUILD_TARGET=testnet
 
 # Build the project in release mode for the MUSL target
-RUN cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
+RUN if [ -f /tmp/x86-env.sh ]; then . /tmp/x86-env.sh; fi && cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
 RUN if [ "$TARGETARCH" = "aarch64" ]; then \
