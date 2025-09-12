@@ -42,7 +42,7 @@ use crate::{
 ///   Relative/agent-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///
-/// ```ignore
+/// ```no_run
 /// # use pubky::PubkyDrive;
 /// # async fn example() -> pubky::Result<()> {
 ///     let drive = PubkyDrive::public()?;
@@ -73,7 +73,7 @@ impl PubkyDrive {
     /// See also: [`PubkyDrive::public_with_client`].
     ///
     /// # Examples
-    /// ```ignore
+    /// ```no_run
     /// # use pubky::PubkyDrive;
     /// # async fn example() -> pubky::Result<()> {
     /// let drive = PubkyDrive::public()?;
@@ -93,12 +93,12 @@ impl PubkyDrive {
     /// In this mode **paths must be user-qualified** (e.g. `"alice/pub/..."`).
     ///
     /// # Examples
-    /// ```ignore
+    /// ```no_run
     /// # use pubky::{PubkyHttpClient, PubkyDrive};
     /// # async fn example() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::new()?;
     /// let drive = PubkyDrive::public_with_client(&client);
-    /// let urls = drive.list("alice_pubky/pub/site/").limit(10).send().await?;
+    /// let urls = drive.list("alice_pubky/pub/site/")?.limit(10).send().await?;
     /// # Ok(()) }
     /// ```
     pub fn public_with_client(client: &PubkyHttpClient) -> PubkyDrive {

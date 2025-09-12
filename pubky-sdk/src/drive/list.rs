@@ -13,9 +13,9 @@ impl PubkyDrive {
     /// The homeserver default limit is 100. The max list limit is 1000.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```no_run
     /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
-    /// let urls = drive.list("/pub/app/").limit(100).shallow(true).send().await?;
+    /// let urls = drive.list("/pub/app/")?.limit(100).shallow(true).send().await?;
     /// for u in urls { println!("{u}"); }
     /// # Ok(()) }
     /// ```

@@ -24,8 +24,10 @@ impl PubkyDrive {
     /// - In **public mode**, unauthenticated read against user-qualified paths.
     ///
     /// # Examples
-    /// ```ignore
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
+    /// ```no_run
+    /// # use pubky::PubkyDrive;
+    /// # async fn example() -> pubky::Result<()> {
+    /// let drive = PubkyDrive::public()?;
     /// let resp = drive.get("/pub/app/data.bin").await?;
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
@@ -69,8 +71,10 @@ impl PubkyDrive {
     /// when the URL targets this agent’s homeserver.
     ///
     /// # Example
-    /// ```ignore
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
+    /// ```no_run
+    /// # use pubky::PubkyDrive;
+    /// # async fn example() -> pubky::Result<()> {
+    /// let drive = PubkyDrive::public()?;
     /// if let Some(h) = drive.stats("/pub/app/data.bin").await? {
     ///     if let Some(len) = h.get(reqwest::header::CONTENT_LENGTH) {
     ///         println!("size: {}", len.to_str().unwrap_or("?"));
@@ -93,9 +97,9 @@ impl PubkyDrive {
     /// rejected, as servers will reject writes (401/403).
     ///
     /// # Examples
-    /// ```ignore
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
-    /// drive.put("/pub/app/hello.txt", "hello").await?;
+    /// ```no_run
+    /// # async fn example(agent: pubky::PubkyAgent) -> pubky::Result<()> {
+    /// agent.drive().put("/pub/app/hello.txt", "hello").await?;
     /// # Ok(()) }
     /// ```
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
@@ -119,9 +123,9 @@ impl PubkyDrive {
     /// rejected, as servers will reject writes (401/403).
     ///
     /// # Examples
-    /// ```ignore
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
-    /// drive.delete("/pub/app/hello.txt").await?;
+    /// ```no_run
+    /// # async fn example(agent: pubky::PubkyAgent) -> pubky::Result<()> {
+    /// agent.drive().delete("/pub/app/hello.txt").await?;
     /// # Ok(()) }
     /// ```
     pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {

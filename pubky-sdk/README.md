@@ -178,7 +178,7 @@ assert_eq!(s, "hi");
 
 Export a compact bearer token and import it later to avoid re-auth:
 
-```rust ignore
+```rust no_run
 # use pubky::prelude::*;
 # async fn persist(agent: &PubkyAgent, client: &PubkyHttpClient) -> pubky::Result<()> {
 // Save

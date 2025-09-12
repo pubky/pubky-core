@@ -245,7 +245,7 @@ impl PubkyHttpClientBuilder {
 /// ```
 ///
 /// Resolving and fetching a `pubky://` resource directly:
-/// ```ignore
+/// ```no_run
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run() -> Result<()> {
