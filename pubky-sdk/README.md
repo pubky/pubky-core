@@ -16,7 +16,7 @@ pubky = "0.x"            # this crate
 
 ## Quick start
 
-```rust ignore
+```rust no_run
 use pubky::prelude::*; // pulls in the common types
 
 # async fn run() -> pubky::Result<()> {
@@ -25,13 +25,13 @@ use pubky::prelude::*; // pulls in the common types
 let signer = PubkySigner::new(Keypair::random())?;
 
 // 1) Sign up on a homeserver (identified by its public key)
-let homeserver = PublicKey::try_from("o4dksf...uyy")?;
-let agent = signer.signup_agent(&homeserver, None).await?;
+let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
+let agent = signer.signup(&homeserver, None).await?;
 
 // 2) Session-scoped drive I/O
 agent.drive().put("/pub/app/hello.txt", "hello").await?;
-let body = agent.drive().get("/pub/app/hello.txt").await?.bytes().await?;
-assert_eq!(&body, b"hello");
+let body = agent.drive().get("/pub/app/hello.txt").await?.text().await?;
+assert_eq!(&body, "hello");
 
 // 3) Public (unauthenticated) read by user-qualified path
 let txt = PubkyDrive::public()?
@@ -45,7 +45,7 @@ signer.pkdns().publish_homeserver_if_stale(None).await?;
 let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
-// 5) Keyless third-party app: pairing auth → agent
+// 5) Keyless third-party app: pairing auth -> agent
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
 let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
 // show `url` (QR/deeplink); on the signing device call:
