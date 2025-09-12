@@ -65,6 +65,7 @@ where
         Box::pin(async move {
             let path = req.uri().path();
 
+            // TODO: dzdidi - look up in auth headers too
             let pubky = match req.extensions().get::<PubkyHost>() {
                 Some(pk) => pk,
                 None => {
