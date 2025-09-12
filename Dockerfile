@@ -18,14 +18,13 @@ RUN apk add --no-cache \
 
 # Install cross-compiler toolchain only for ARM (Apple Silicon)
 RUN if [ "$TARGETARCH" = "aarch64" ]; then \
-        wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local && \
-        echo "/usr/local/aarch64-linux-musl-cross/bin" > /tmp/musl_cross_path; \
-    else \
-        echo "" > /tmp/musl_cross_path; \
+        wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
     fi
-
-# Set PATH only if we installed the cross compiler (will be empty string for x86)
-ENV PATH="$(cat /tmp/musl_cross_path):$PATH"
+        
+# Set PATH of cross compiler for all targets - safe since aarch64-linux-musl-cross/bin only exists when TARGETARCH=aarch64, and non-existent PATH entries are ignored on other architectures
+ENV CC_aarch64_unknown_linux_musl="aarch64-linux-musl-gcc"
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="aarch64-linux-musl-gcc"
+ENV PATH="/usr/local/aarch64-linux-musl-cross/bin:$PATH"
 
 # Set environment variables for static linking with OpenSSL
 ENV OPENSSL_STATIC=yes
@@ -51,7 +50,11 @@ ARG BUILD_TARGET=testnet
 RUN cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
-RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-$BUILD_TARGET
+RUN if [ "$TARGETARCH" = "aarch64" ]; then \
+        aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+    else \
+        strip target/x86_64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+    fi
 
 # ========================
 # Runtime Stage
