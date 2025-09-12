@@ -2,7 +2,7 @@ use pkarr::PublicKey;
 use reqwest::{Method, RequestBuilder};
 use url::Url;
 
-use super::path::IntoPubkyResource;
+use super::resource::IntoPubkyResource;
 use crate::{
     PubkyHttpClient, PubkyResource,
     errors::{RequestError, Result},
@@ -116,7 +116,7 @@ impl PubkyDrive {
     /// - **Session mode:** relative paths are scoped to this drive’s user.
     /// - **Public mode:** the path must include the target user; relative/agent-scoped paths error.
     pub(crate) fn to_url<P: IntoPubkyResource>(&self, p: P) -> Result<Url> {
-        let addr: PubkyResource = p.into_pubky_path()?;
+        let addr: PubkyResource = p.into_pubky_resource()?;
 
         let url_str = match (&self.public_key, &addr.user) {
             // Session mode: default to this agent for agent-scoped paths

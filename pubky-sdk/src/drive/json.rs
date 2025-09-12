@@ -1,7 +1,7 @@
 use reqwest::Response;
 
 use super::core::PubkyDrive;
-use super::path::IntoPubkyResource;
+use super::resource::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;

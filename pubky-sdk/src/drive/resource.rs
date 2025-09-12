@@ -187,41 +187,53 @@ impl fmt::Display for PubkyResource {
 // --- Conversions ---
 /// Minimal, ergonomic conversions accepted by high-level APIs.
 ///
-/// Keep the typed `PublicKey` tuple forms (safe & explicit), plus common string forms.
-/// We intentionally **do not** accept `(&str, P)` to avoid “stringly-typed pubky” misuse.
+/// Use this trait to normalize user input into a validated [`PubkyResource`]
+/// without having to call `FromStr` manually. Implementations exist for:
+/// - `&str` and `String` (parsed forms described above)
+/// - `(PublicKey, P: AsRef<str>)` and `(&PublicKey, P: AsRef<str>)`
+///   to pair an explicit user with a relative path
 pub trait IntoPubkyResource {
-    fn into_pubky_path(self) -> Result<PubkyResource, Error>;
+    /// Convert `self` into a validated [`PubkyResource`].
+    ///
+    /// Normalizes to an absolute, percent-encoded homeserver path and, if present,
+    /// binds the explicit user. Errors with [`Error::Request`] (validation) when the
+    /// input is malformed (e.g., contains `//`, `.` / `..`, or a bad public key).
+    ///
+    /// Examples (pseudo):
+    /// - `"/pub/app/file".into_pubky_resource()` ⇒ agent-scoped resource
+    /// - `(user_pk, "pub/app/file").into_pubky_resource()` ⇒ explicit user + relative path
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error>;
 }
 
 impl IntoPubkyResource for PubkyResource {
     #[inline]
-    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         Ok(self)
     }
 }
 impl IntoPubkyResource for &PubkyResource {
     #[inline]
-    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         Ok(self.clone())
     }
 }
 impl IntoPubkyResource for &str {
-    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         PubkyResource::from_str(self)
     }
 }
 impl IntoPubkyResource for String {
-    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         PubkyResource::from_str(&self)
     }
 }
 impl<P: AsRef<str>> IntoPubkyResource for (PublicKey, P) {
-    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         PubkyResource::new(Some(self.0), self.1.as_ref())
     }
 }
 impl<P: AsRef<str>> IntoPubkyResource for (&PublicKey, P) {
-    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         PubkyResource::new(Some(self.0.clone()), self.1.as_ref())
     }
 }

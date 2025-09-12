@@ -24,28 +24,28 @@ use pubky::prelude::*; // pulls in the common types
 // 1) Create a new random key user bound to a Signer
 let signer = PubkySigner::new(Keypair::random())?;
 
-// 1) Sign up on a homeserver (identified by its public key)
+// 2) Sign up on a homeserver (identified by its public key)
 let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
 let agent = signer.signup(&homeserver, None).await?;
 
-// 2) Session-scoped drive I/O
+// 3) Session-scoped drive I/O
 agent.drive().put("/pub/app/hello.txt", "hello").await?;
 let body = agent.drive().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
 
-// 3) Public (unauthenticated) read by user-qualified path
+// 4) Public (unauthenticated) read by user-qualified path
 let txt = PubkyDrive::public()?
   .get(format!("{}/pub/app/hello.txt", agent.public_key()))
   .await?
   .text().await?;
 assert_eq!(txt, "hello");
 
-// 4) Publish / resolve your PKDNS (_pubky) record
+// 5) Publish / resolve your PKDNS (_pubky) record
 signer.pkdns().publish_homeserver_if_stale(None).await?;
 let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
-// 5) Keyless third-party app: pairing auth -> agent
+// 6) Keyless third-party app: pairing auth -> agent
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
 let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
 // show `url` (QR/deeplink); on the signing device call:
@@ -69,31 +69,13 @@ High level actors:
 - **`PubkyDrive`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
 
-## Pairing auth (keyless apps)
+## Examples
 
-```rust ignore
-# use pubky::prelude::*;
-# async fn pairing() -> pubky::Result<()> {
-let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
+### Drive API (session & public)
 
-// Easiest: use the default relay (see “Relay” notes below)
-let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
-// show `url` to the user (QR or deeplink). On the signer device:
-/// signer.approve_pubkyauth_request(&url).await?;
+Use a `PubkyAgent` to access a Homeserver's public data.
 
-let agent = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
-# Ok(()) }
-```
-
-### Relay & reliability
-
-- If you don’t pass a relay, we default to a Synonym-hosted instance. If that relay is down, logins won’t complete.
-- For production and bigger apps, run your **own relay** (MIT, dockerable): [https://httprelay.io](https://httprelay.io)
-  Derive the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`.
-
-## Drive API (session & public)
-
-```rust ignore
+```rust no_run
 # use pubky::prelude::*;
 # async fn io(agent: &PubkyAgent) -> pubky::Result<()> {
 // write
@@ -106,37 +88,66 @@ let bytes = agent.drive().get("/pub/app/file.txt").await?.bytes().await?;
 let meta = agent.drive().stats("/pub/app/file.txt").await?;
 let ok = agent.drive().exists("/pub/app/missing.txt").await?; // false
 
-// public read by user-qualified path (no session)
+// public read by user-qualified resource (no session)
 let public = PubkyDrive::public()?;
 let text = public.get(format!("{}/pub/app/file.txt", agent.public_key()))
     .await?.text().await?;
 # Ok(()) }
 ```
 
-## PKDNS (`_pubky`) Pkarr publishing
+### Paths & addressing
 
-```rust ignore
+Use absolute paths for agent-scoped I/O (`"/pub/…"`), or user-qualified forms when public:
+
+```rust no_run
+# use pubky::prelude::*;
+# fn addr_examples(user_pubky: PublicKey) -> pubky::Result<()> {
+let a = PubkyResource::new(Some(user_pubky), "/pub/app/file.txt")?;
+let b: PubkyResource = "{user_public_key}/pub/app/file.txt".into_pubky_resource()?;
+# Ok(()) }
+```
+
+### PKDNS (`_pubky`) Pkarr publishing
+
+Publish and retrieve pkarr record.
+
+```rust no_run
 # use pubky::prelude::*;
 # async fn pkdns(signer: &PubkySigner) -> pubky::Result<()> {
 // Republish only if stale (recommended in app start)
 signer.pkdns().publish_homeserver_if_stale(None).await?;
 
 // Force a homeserver record publish (e.g., migration)
-signer.pkdns().publish_homeserver_force("homeserver_pubky").await?;
+let homeserver = PublicKey::try_from("homeserver_pubky").unwrap();
+signer.pkdns().publish_homeserver_force(Some(&homeserver)).await?;
 # Ok(()) }
 ```
 
-## Paths & addressing
+### Pairing auth (keyless apps)
 
-Use absolute paths for agent-scoped I/O (`"/pub/…"`), or user-qualified forms when public:
+Request auth url and await approval.
 
-```rust ignore
+```rust
 # use pubky::prelude::*;
-# fn addr_examples(user: &PublicKey) -> pubky::Result<()> {
-let a = PubkyResource::new(Some(user.clone()), "/pub/app/file.txt")?;
-let b: PubkyResource = (user.clone(), "/pub/app/file.txt").into_pubky_path()?;
+# async fn pairing() -> pubky::Result<()> {
+// Read/Write capabilities for acme.app route
+let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
+
+// Easiest: use the default relay (see “Relay” notes below)
+let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
+// show `url` to the user (QR or deeplink). On the signer device:
+// signer.approve_pubkyauth_request(&url).await?;
+# PubkySigner::random()?.approve_pubkyauth_request(&url).await?;
+
+let agent = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
 # Ok(()) }
 ```
+
+#### Relay & reliability
+
+- If you don’t pass a relay, we default to a Synonym-hosted instance. If that relay is down, logins won’t complete.
+- For production and bigger apps, run your **own relay** (MIT, dockerable): [https://httprelay.io](https://httprelay.io)
+  Derive the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`. See `PubkyPairingAuth::new_with_client` docs for further info.
 
 ## Features
 
@@ -146,7 +157,7 @@ let b: PubkyResource = (user.clone(), "/pub/app/file.txt").into_pubky_path()?;
 
 Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
 
-```
+```rust
 # use pubky_testnet::{EphemeralTestnet, pubky::prelude::*};
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
@@ -167,15 +178,15 @@ assert_eq!(s, "hi");
 
 Export a compact bearer token and import it later to avoid re-auth:
 
-```rust no_run
+```rust ignore
 # use pubky::prelude::*;
 # async fn persist(agent: &PubkyAgent, client: &PubkyHttpClient) -> pubky::Result<()> {
 // Save
-let secret = agent.export_secret();               // "<pubkey>:<cookie_secret>"
+let token = agent.export_secret();               // "<pubkey>:<cookie_secret>"
 // store `token` securely (env, keychain, vault). DO NOT log it.
 
 // Restore
-let restored = PubkyAgent::import_secret(client, &secret).await?;
+let restored = PubkyAgent::import_secret(client, &token).await?;
 // Optional sanity check:
 restored.revalidate_session().await?;
 # Ok(()) }
@@ -194,7 +205,7 @@ Check more [examples](https://github.com/pubky/pubky-core/tree/main/examples) us
 
 ## JS bindings
 
-Find a wrapper of this crate using `wasm_bindgen` in `pubky-sdk/bindings/js`
+Find a wrapper of this crate using `wasm_bindgen` in `pubky-sdk/bindings/js`.
 
 ---
 
