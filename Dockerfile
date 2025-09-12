@@ -16,16 +16,30 @@ RUN apk add --no-cache \
     build-base \
     curl
 
-# Install cross-compiler toolchain only for ARM (Apple Silicon)
-RUN if [ "$TARGETARCH" = "aarch64" ]; then \
-        wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local && \
-        echo "/usr/local/aarch64-linux-musl-cross/bin" > /tmp/musl_cross_path; \
-    else \
-        echo "" > /tmp/musl_cross_path; \
+# Detect host architecture and install cross-compiler when needed
+RUN HOSTARCH=$(uname -m) && \
+    echo "Host architecture: $HOSTARCH" && \
+    echo "Target architecture: $TARGETARCH" && \
+    if [ "$TARGETARCH" = "aarch64" ]; then \
+        echo "Installing ARM64 cross-compiler only for target aarch64" && \
+        wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
+    elif [ "$TARGETARCH" = "x86_64" ] && [ "$HOSTARCH" = "aarch64" ]; then \
+        echo "Installing x86_64 and ARM64 cross-compilers for ARM host targeting x86_64" && \
+        wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
+        wget -qO- https://musl.cc/x86_64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
     fi
 
-# Set PATH only if we installed the cross compiler (will be empty string for x86)
-ENV PATH="$(cat /tmp/musl_cross_path):$PATH"
+# Set cross-compiler environment variables conditionally
+# For ARM64 target
+ENV CC_aarch64_unknown_linux_musl="aarch64-linux-musl-gcc"
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="aarch64-linux-musl-gcc"
+
+# For x86_64 target  
+ENV CC_x86_64_unknown_linux_musl="x86_64-linux-musl-gcc"
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="x86_64-linux-musl-gcc"
+
+# Set PATH to include both cross-compiler directories (non-existent paths are ignored)
+ENV PATH="/usr/local/aarch64-linux-musl-cross/bin:/usr/local/x86_64-linux-musl-cross/bin:$PATH"
 
 # Set environment variables for static linking with OpenSSL
 ENV OPENSSL_STATIC=yes
@@ -51,7 +65,11 @@ ARG BUILD_TARGET=testnet
 RUN cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
-RUN strip target/$TARGETARCH-unknown-linux-musl/release/pubky-$BUILD_TARGET
+RUN if [ "$TARGETARCH" = "aarch64" ]; then \
+        aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+    elif [ "$TARGETARCH" = "x86_64" ]; then \
+        x86_64-linux-musl-strip target/x86_64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+    fi
 
 # ========================
 # Runtime Stage
