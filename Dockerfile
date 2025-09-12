@@ -21,22 +21,22 @@ RUN HOSTARCH=$(uname -m) && \
     echo "Host architecture: $HOSTARCH" && \
     echo "Target architecture: $TARGETARCH" && \
     if [ "$TARGETARCH" = "aarch64" ]; then \
-        echo "Installing ARM64 cross-compiler only for target aarch64" && \
+        echo "Installing ARM64 cross-compiler" && \
         wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
     elif [ "$TARGETARCH" = "x86_64" ] && [ "$HOSTARCH" = "aarch64" ]; then \
-        echo "Installing x86_64 and ARM64 cross-compilers for ARM host targeting x86_64" && \
+        echo "Installing x86_64 and ARM64 cross-compilers for ARM host" && \
         wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
         wget -qO- https://musl.cc/x86_64-linux-musl-cross.tgz | tar -xz -C /usr/local; \
     fi
 
-# Set cross-compiler environment variables conditionally
+# Set cross-compiler environment variables:
+# Always set ARM64 variables - safe since unused when targeting x86_64.
 ENV CC_aarch64_unknown_linux_musl="aarch64-linux-musl-gcc"
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="aarch64-linux-musl-gcc"
-
-# Create environment setup script for x86_64 variables (only when host is ARM)
+# Create environment setup script for x86_64 variables - only when host is ARM so we don't override the native compiler on x86 hosts.
 RUN if [ "$(uname -m)" = "aarch64" ]; then \
-        echo 'export CC_x86_64_unknown_linux_musl="x86_64-linux-musl-gcc"' > /tmp/x86-env.sh && \
-        echo 'export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="x86_64-linux-musl-gcc"' >> /tmp/x86-env.sh; \
+        echo 'export CC_x86_64_unknown_linux_musl="x86_64-linux-musl-gcc"' > /tmp/cc_x86_64-env.sh && \
+        echo 'export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="x86_64-linux-musl-gcc"' >> /tmp/cc_x86_64-env.sh; \
     fi
 
 # Set PATH to include both cross-compiler directories (non-existent paths are ignored)
@@ -63,13 +63,22 @@ COPY . .
 ARG BUILD_TARGET=testnet
 
 # Build the project in release mode for the MUSL target
-RUN if [ -f /tmp/x86-env.sh ]; then . /tmp/x86-env.sh; fi && cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
+# Only apply environment setup script only when host is ARM so we don't override the native compiler on x86 hosts
+RUN if [ -f /tmp/cc_x86_64-env.sh ]; then . /tmp/cc_x86_64-env.sh; fi && cargo build --release --bin pubky-$BUILD_TARGET --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
-RUN if [ "$TARGETARCH" = "aarch64" ]; then \
-        aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
-    elif [ "$TARGETARCH" = "x86_64" ]; then \
-        x86_64-linux-musl-strip target/x86_64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+        if [ "$TARGETARCH" = "aarch64" ]; then \
+            aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+        else \
+            x86_64-linux-musl-strip target/x86_64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+        fi \
+    elif [ "$(uname -m)" = "x86_64" ]; then \
+        if [ "$TARGETARCH" = "x86_64" ]; then \
+            strip target/x86_64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+        else \
+            aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/pubky-$BUILD_TARGET; \
+        fi \
     fi
 
 # ========================
