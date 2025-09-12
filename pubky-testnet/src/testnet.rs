@@ -226,8 +226,8 @@ mod test {
 
         let signer = PubkySigner::random().unwrap();
 
-        let session = signer.signup(&hs.public_key(), None).await.unwrap();
-        assert_eq!(session.public_key(), &signer.public_key());
+        let agent = signer.signup(&hs.public_key(), None).await.unwrap();
+        assert_eq!(agent.public_key(), signer.public_key());
     }
 
     #[tokio::test]
@@ -279,9 +279,9 @@ mod test {
 
                 let signer = PubkySigner::random().unwrap();
 
-                let session = signer.signup(&hs.public_key(), None).await.unwrap();
+                let agent = signer.signup(&hs.public_key(), None).await.unwrap();
 
-                assert_eq!(session.public_key(), &signer.public_key());
+                assert_eq!(agent.public_key(), signer.public_key());
                 tokio::time::sleep(Duration::from_secs(3)).await;
             });
             handles.push(handle);
