@@ -255,7 +255,7 @@ mod tests {
             let operator = operator.layer(layer);
 
             let pubkey = pkarr::Keypair::random().public_key();
-            UserRepository::create(&pubkey, (&mut db.pool().into()))
+            UserRepository::create(&pubkey, &mut db.pool().into())
                 .await
                 .unwrap();
             let path = WebDavPath::new("/test.txt").unwrap();
@@ -304,7 +304,7 @@ mod tests {
                 .expect("Should succeed");
 
             // Make sure the entry is deleted from the database correctly
-            let entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+            let _entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
                 .await
                 .expect_err("Entry should not exist");
             let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())

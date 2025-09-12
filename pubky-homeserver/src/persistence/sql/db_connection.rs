@@ -68,38 +68,63 @@ const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres
 
 #[cfg(any(test, feature = "testing"))]
 impl SqlDb {
-    pub async fn test_postgres_db(con_string: &ConnectionString) -> anyhow::Result<Self> {
+    /// Creates a new test database with the name `pubky_test_{uuid}`.
+    /// The provided `admin_con_string` is used to create the test database. The database name defined by the admin connection string
+    /// is only used to create the actual test database.
+    /// If no connection string is passed, the connection string is read from the TEST_PG_CONNECTION_STRING environment variable.
+    /// If the environment variable is not set, the default test connection string is used.
+    pub async fn test_postgres_db(admin_con_string: Option<ConnectionString>) -> anyhow::Result<Self> {
         use uuid::Uuid;
+        let admin_con_string = Self::derive_connection_string(admin_con_string);
 
-        let neutral_con = Self::connect(con_string).await?;
-        let db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());
-        let query = format!("CREATE DATABASE {}", db_name);
+        // Connect to admin database to create the test database.
+        let admin_con = Self::connect(&admin_con_string).await?;
+        let test_db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());
+        let query = format!("CREATE DATABASE {}", test_db_name);
+        sqlx::query(&query).execute(admin_con.pool()).await?;
+        drop(admin_con);
 
-        sqlx::query(&query).execute(neutral_con.pool()).await?;
-        let mut test_db_con_string = con_string.clone();
-        test_db_con_string.set_database_name(&db_name);
+        // Connect to the test database.
+        let mut test_db_con_string = admin_con_string.clone();
+        test_db_con_string.set_database_name(&test_db_name);
         let mut con = Self::connect(&test_db_con_string).await?;
         con.db_dropper = Some(std::sync::Arc::new(TestDbDropper::new(
-            db_name,
-            con_string.to_string(),
+            test_db_name,
+            admin_con_string.to_string(),
         )));
         Ok(con)
     }
 
-    pub fn con_string_from_pg_test_env_var() -> ConnectionString {
-        match std::env::var("TEST_PG_CONNECTION_STRING") {
-            Ok(raw_con_string) => ConnectionString::new(&raw_con_string).unwrap(),
-            Err(_) => ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING).unwrap(),
+    /// Derives the admin connection string to use for the test database creation.
+    /// If the user passed a connection string, use it.
+    /// If the user passed a connection string as a env variable, use it.
+    /// If no connection string is passed, use the default test connection string.
+    pub fn derive_connection_string(admin_con_string: Option<ConnectionString>) -> ConnectionString {
+        if let Some(con_string) = admin_con_string {
+            // If the user passed a connection string, use it.
+            return con_string.clone();
         }
+        if let Ok(raw_con_string) = std::env::var("TEST_PG_CONNECTION_STRING") {
+            // If the user passed a connection string as a env variable, use it.
+            match ConnectionString::new(&raw_con_string) {
+                Ok(con_string) => return con_string,
+                Err(e) => {
+                    tracing::warn!("Invalid database connection string in TEST_PG_CONNECTION_STRING environment variable: {}. Fallback to default test connection string. Error: {e}", raw_con_string);
+                }
+            }
+        }
+
+        // If no connection string is passed, use the default test connection string.
+        ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING).expect("Default test connection string is valid")
     }
 
     /// Create a test database without running migrations
     /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
     /// If the DB_CONNECTION_STRING environment variable is set, the test database is created on the existing database
     pub async fn test_without_migrations() -> Self {
-        Self::test_postgres_db(&Self::con_string_from_pg_test_env_var())
+        Self::test_postgres_db(None)
             .await
-            .unwrap()
+            .expect("Failed to create test database")
     }
 
     /// Create a test database and run migrations
@@ -121,7 +146,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_pg_db_available() {
-        let _db = SqlDb::test_postgres_db(&SqlDb::con_string_from_pg_test_env_var())
+        let _db = SqlDb::test_postgres_db(None)
             .await
             .unwrap();
     }

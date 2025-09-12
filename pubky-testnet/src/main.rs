@@ -49,6 +49,9 @@ async fn main() -> Result<()> {
     );
 
     tokio::signal::ctrl_c().await?;
+    
+    println!("Dropping test databases");
+    pubky_testnet::drop_test_databases().await;
 
     Ok(())
 }

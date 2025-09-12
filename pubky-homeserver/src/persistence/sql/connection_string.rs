@@ -40,15 +40,13 @@ impl ConnectionString {
     /// Returns a connection string for a test database.
     /// This is a postgres database that is not real.
     /// It is used as an indicator for a empheral test database.
-    pub fn test_db() -> Self {
-        Self::new("postgres://test_pubky_hs_test:5432/test").unwrap()
+    pub fn default_test_db() -> Self {
+        Self::new("postgres://localhost:5432/postgres?pubky-test=true").unwrap()
     }
 
     /// Returns true if the connection string is for a test database.
     pub fn is_test_db(&self) -> bool {
-        let host = self.0.host().unwrap();
-        let host_str = host.to_string();
-        host_str.contains("test_pubky_hs_test")
+        self.0.query_pairs().any(|(key, value)| key == "pubky-test" && value == "true")
     }
 }
 
