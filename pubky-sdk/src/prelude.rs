@@ -20,7 +20,7 @@ pub use crate::Pkdns;
 
 // Helpers
 // Homeserver Paths / URLs
-pub use crate::{ListBuilder, PubkyPath};
+pub use crate::{ListBuilder, PubkyResource};
 // Session and  capabilities for auth flows
 pub use crate::Session;
 pub use crate::{Capabilities, Capability};

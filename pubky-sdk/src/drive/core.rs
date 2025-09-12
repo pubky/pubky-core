@@ -2,9 +2,9 @@ use pkarr::PublicKey;
 use reqwest::{Method, RequestBuilder};
 use url::Url;
 
-use super::path::IntoPubkyPath;
+use super::path::IntoPubkyResource;
 use crate::{
-    PubkyHttpClient, PubkyPath,
+    PubkyHttpClient, PubkyResource,
     errors::{RequestError, Result},
     global::global_client,
 };
@@ -115,8 +115,8 @@ impl PubkyDrive {
     ///
     /// - **Session mode:** relative paths are scoped to this drive’s user.
     /// - **Public mode:** the path must include the target user; relative/agent-scoped paths error.
-    pub(crate) fn to_url<P: IntoPubkyPath>(&self, p: P) -> Result<Url> {
-        let addr: PubkyPath = p.into_pubky_path()?;
+    pub(crate) fn to_url<P: IntoPubkyResource>(&self, p: P) -> Result<Url> {
+        let addr: PubkyResource = p.into_pubky_path()?;
 
         let url_str = match (&self.public_key, &addr.user) {
             // Session mode: default to this agent for agent-scoped paths
@@ -139,7 +139,7 @@ impl PubkyDrive {
     ///
     /// On native targets, the session cookie is attached **only** when the URL points to the
     /// same user bound to this drive (i.e., cookies never leak across users).
-    pub(crate) async fn request<P: IntoPubkyPath>(
+    pub(crate) async fn request<P: IntoPubkyResource>(
         &self,
         method: Method,
         path: P,

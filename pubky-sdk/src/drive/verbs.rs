@@ -2,7 +2,7 @@ use reqwest::header::HeaderMap;
 use reqwest::{Method, Response, StatusCode};
 
 use super::core::PubkyDrive;
-use super::path::IntoPubkyPath;
+use super::path::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;
@@ -30,7 +30,7 @@ impl PubkyDrive {
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
     /// ```
-    pub async fn get<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {
+    pub async fn get<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {
         let resp = self.request(Method::GET, path).await?.send().await?;
         check_http_status(resp).await
     }
@@ -44,7 +44,7 @@ impl PubkyDrive {
     ///
     /// Works in public or session mode. In session mode, attaches the agent’s cookie
     /// when the URL targets this agent’s homeserver.
-    pub async fn exists<P: IntoPubkyPath>(&self, path: P) -> Result<bool> {
+    pub async fn exists<P: IntoPubkyResource>(&self, path: P) -> Result<bool> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         match resp.status() {
             s if s.is_success() => Ok(true),
@@ -78,7 +78,7 @@ impl PubkyDrive {
     /// }
     /// # Ok(()) }
     /// ```
-    pub async fn stats<P: IntoPubkyPath>(&self, path: P) -> Result<Option<HeaderMap>> {
+    pub async fn stats<P: IntoPubkyResource>(&self, path: P) -> Result<Option<HeaderMap>> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
             return Ok(None);
@@ -100,7 +100,7 @@ impl PubkyDrive {
     /// ```
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
     where
-        P: IntoPubkyPath,
+        P: IntoPubkyResource,
         B: Into<reqwest::Body>,
     {
         self.err_if_require_session_for_write()?;
@@ -124,7 +124,7 @@ impl PubkyDrive {
     /// drive.delete("/pub/app/hello.txt").await?;
     /// # Ok(()) }
     /// ```
-    pub async fn delete<P: IntoPubkyPath>(&self, path: P) -> Result<Response> {
+    pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {
         self.err_if_require_session_for_write()?;
         let resp = self.request(Method::DELETE, path).await?.send().await?;
         check_http_status(resp).await

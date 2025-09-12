@@ -1,6 +1,6 @@
 //! Typed addressing for files on a Pubky homeserver.
 //!
-//! Accepted inputs for `PubkyPath::parse`:
+//! Accepted inputs for `PubkyResource::parse`:
 //! - `<user_pubkey>/<path>`            (preferred; explicit user)
 //! - `/absolute/path`                  (agent-scoped; user supplied elsewhere, must start with `/`)
 //!
@@ -113,12 +113,12 @@ impl fmt::Display for FilePath {
 /// - `user: Some(..)` when the input was `<user>/...`
 /// - `user: None`    when the input was an agent-scoped path (e.g. `/foo/bar` or `foo/bar`)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PubkyPath {
+pub struct PubkyResource {
     pub(crate) user: Option<PublicKey>,
     path: FilePath,
 }
 
-impl PubkyPath {
+impl PubkyResource {
     /// Construct from optional `PublicKey` and any string-y path.
     pub fn new<S: AsRef<str>>(user: Option<PublicKey>, path: S) -> Result<Self, Error> {
         Ok(Self {
@@ -139,7 +139,7 @@ impl PubkyPath {
     }
 }
 
-impl FromStr for PubkyPath {
+impl FromStr for PubkyResource {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -151,13 +151,13 @@ impl FromStr for PubkyPath {
 
             let user = PublicKey::try_from(user_str)
                 .map_err(|_| invalid(format!("invalid user public key: {user_str}")))?;
-            return PubkyPath::new(Some(user), path);
+            return PubkyResource::new(Some(user), path);
         }
 
         // 2) `<user>/<path>`?
         if let Some((user_id, path)) = s.split_once('/') {
             if let Ok(user) = PublicKey::try_from(user_id) {
-                return PubkyPath::new(Some(user), path);
+                return PubkyResource::new(Some(user), path);
             } else if !s.starts_with('/') {
                 return Err(invalid(EXPECTED_FORMS));
             }
@@ -165,14 +165,14 @@ impl FromStr for PubkyPath {
 
         // 3) Agent-scoped path: must start with '/'
         if s.starts_with('/') {
-            return PubkyPath::new(None, s);
+            return PubkyResource::new(None, s);
         }
 
         Err(invalid(EXPECTED_FORMS))
     }
 }
 
-impl fmt::Display for PubkyPath {
+impl fmt::Display for PubkyResource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.user {
             Some(u) => {
@@ -189,40 +189,40 @@ impl fmt::Display for PubkyPath {
 ///
 /// Keep the typed `PublicKey` tuple forms (safe & explicit), plus common string forms.
 /// We intentionally **do not** accept `(&str, P)` to avoid “stringly-typed pubky” misuse.
-pub trait IntoPubkyPath {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error>;
+pub trait IntoPubkyResource {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error>;
 }
 
-impl IntoPubkyPath for PubkyPath {
+impl IntoPubkyResource for PubkyResource {
     #[inline]
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
         Ok(self)
     }
 }
-impl IntoPubkyPath for &PubkyPath {
+impl IntoPubkyResource for &PubkyResource {
     #[inline]
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
         Ok(self.clone())
     }
 }
-impl IntoPubkyPath for &str {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::from_str(self)
+impl IntoPubkyResource for &str {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+        PubkyResource::from_str(self)
     }
 }
-impl IntoPubkyPath for String {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::from_str(&self)
+impl IntoPubkyResource for String {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+        PubkyResource::from_str(&self)
     }
 }
-impl<P: AsRef<str>> IntoPubkyPath for (PublicKey, P) {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::new(Some(self.0), self.1.as_ref())
+impl<P: AsRef<str>> IntoPubkyResource for (PublicKey, P) {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+        PubkyResource::new(Some(self.0), self.1.as_ref())
     }
 }
-impl<P: AsRef<str>> IntoPubkyPath for (&PublicKey, P) {
-    fn into_pubky_path(self) -> Result<PubkyPath, Error> {
-        PubkyPath::new(Some(self.0.clone()), self.1.as_ref())
+impl<P: AsRef<str>> IntoPubkyResource for (&PublicKey, P) {
+    fn into_pubky_path(self) -> Result<PubkyResource, Error> {
+        PubkyResource::new(Some(self.0.clone()), self.1.as_ref())
     }
 }
 
@@ -256,8 +256,8 @@ mod tests {
         let s1 = format!("pubky://{}/pub/app/file", user);
         let s2 = format!("{}/pub/app/file", user);
 
-        let p1 = PubkyPath::from_str(&s1).unwrap();
-        let p2 = PubkyPath::from_str(&s2).unwrap();
+        let p1 = PubkyResource::from_str(&s1).unwrap();
+        let p2 = PubkyResource::from_str(&s2).unwrap();
 
         assert_eq!(p1.user, Some(user.clone()));
         assert_eq!(p2.user, Some(user.clone()));
@@ -273,13 +273,13 @@ mod tests {
     #[test]
     fn parse_agent_scoped_paths() {
         // Absolute, agent-scoped path is OK
-        let p_abs = PubkyPath::from_str("/pub/app/file").unwrap();
+        let p_abs = PubkyResource::from_str("/pub/app/file").unwrap();
         assert!(p_abs.user.is_none());
         assert_eq!(p_abs.path.as_str(), "/pub/app/file");
 
         // Relative agent-scoped (no leading slash) is rejected
         assert!(matches!(
-            PubkyPath::from_str("pub/app/file"),
+            PubkyResource::from_str("pub/app/file"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
@@ -297,14 +297,14 @@ mod tests {
 
         // Invalid user key in `<user>/<path>`
         assert!(matches!(
-            PubkyPath::from_str("not-a-key/pub/app"),
+            PubkyResource::from_str("not-a-key/pub/app"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
         // Double-slash inside path
         let s_bad = format!("{}/pub//app", user);
         assert!(matches!(
-            PubkyPath::from_str(&s_bad),
+            PubkyResource::from_str(&s_bad),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
     }

@@ -1,7 +1,7 @@
 use reqwest::Response;
 
 use super::core::PubkyDrive;
-use super::path::IntoPubkyPath;
+use super::path::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;
@@ -21,7 +21,7 @@ impl PubkyDrive {
     /// ```
     pub async fn get_json<P, T>(&self, path: P) -> Result<T>
     where
-        P: IntoPubkyPath,
+        P: IntoPubkyResource,
         T: serde::de::DeserializeOwned,
     {
         let resp = self
@@ -50,7 +50,7 @@ impl PubkyDrive {
     /// ```
     pub async fn put_json<P, B>(&self, path: P, body: &B) -> Result<Response>
     where
-        P: IntoPubkyPath,
+        P: IntoPubkyResource,
         B: serde::Serialize + ?Sized,
     {
         let resp = self

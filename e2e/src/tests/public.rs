@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, global::global_client, Error, PubkyPath, PubkySigner},
+    pubky::{errors::RequestError, global::global_client, Error, PubkyResource, PubkySigner},
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
@@ -26,8 +26,8 @@ async fn put_get_delete() {
         .error_for_status()
         .unwrap();
 
-    // let's repeat the same request but using a strongly typed PubkyPath based over our own homeserver (user=None)
-    let path_pubky = PubkyPath::new(None, "/pub/foo.txt").unwrap();
+    // let's repeat the same request but using a strongly typed PubkyResource based over our own homeserver (user=None)
+    let path_pubky = PubkyResource::new(None, "/pub/foo.txt").unwrap();
 
     agent
         .drive()

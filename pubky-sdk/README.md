@@ -133,8 +133,8 @@ Use absolute paths for agent-scoped I/O (`"/pub/…"`), or user-qualified forms 
 ```rust ignore
 # use pubky::prelude::*;
 # fn addr_examples(user: &PublicKey) -> pubky::Result<()> {
-let a = PubkyPath::new(Some(user.clone()), "/pub/app/file.txt")?;
-let b: PubkyPath = (user.clone(), "/pub/app/file.txt").into_pubky_path()?;
+let a = PubkyResource::new(Some(user.clone()), "/pub/app/file.txt")?;
+let b: PubkyResource = (user.clone(), "/pub/app/file.txt").into_pubky_path()?;
 # Ok(()) }
 ```
 

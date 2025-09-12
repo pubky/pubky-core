@@ -2,7 +2,7 @@ use reqwest::Method;
 use url::Url;
 
 use super::core::PubkyDrive;
-use super::path::IntoPubkyPath;
+use super::path::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;
@@ -19,7 +19,7 @@ impl PubkyDrive {
     /// for u in urls { println!("{u}"); }
     /// # Ok(()) }
     /// ```
-    pub fn list<P: IntoPubkyPath>(&self, path: P) -> Result<ListBuilder<'_>> {
+    pub fn list<P: IntoPubkyResource>(&self, path: P) -> Result<ListBuilder<'_>> {
         Ok(ListBuilder {
             drive: self,
             url: self.to_url(path)?,
@@ -110,7 +110,7 @@ impl<'a> ListBuilder<'a> {
             }
         }
 
-        // Build the request without re-parsing the URL back through IntoPubkyPath
+        // Build the request without re-parsing the URL back through IntoPubkyResource
         let rb = self
             .drive
             .client
