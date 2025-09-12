@@ -1,7 +1,8 @@
 //! This module provides a webdav endpoint that gives full access to all files.
 //! It is protected by a basic auth header with the username "admin" and the password set in the config.toml file.
 //! The password is set in the config.toml file.
-use crate::{admin::app_state::AppState, shared::HttpResult};
+use super::super::app_state::AppState;
+use crate::shared::HttpResult;
 use axum::{
     body::Body,
     extract::{Request, State},

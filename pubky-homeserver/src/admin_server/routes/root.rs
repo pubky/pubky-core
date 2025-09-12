@@ -1,5 +1,5 @@
 use axum::response::IntoResponse;
 
 pub async fn handler() -> Result<impl IntoResponse, String> {
-    Ok("Pubky Homeserver".to_string())
+    Ok("Homeserver - Admin Endpoint")
 }

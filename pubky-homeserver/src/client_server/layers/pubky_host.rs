@@ -1,4 +1,4 @@
-use crate::core::extractors::PubkyHost;
+use crate::client_server::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;
@@ -78,5 +78,5 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
             })
         });
     }
-    pubky
+    // TODO (dzdidi): extract pubky from path for webdav
 }

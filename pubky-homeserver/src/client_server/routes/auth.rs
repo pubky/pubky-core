@@ -1,8 +1,8 @@
-use crate::core::err_if_user_is_invalid::err_if_user_is_invalid;
+use crate::client_server::err_if_user_is_invalid::err_if_user_is_invalid;
 use crate::persistence::lmdb::tables::signup_tokens::SignupTokenError;
 use crate::persistence::lmdb::tables::users::User;
 use crate::shared::{HttpError, HttpResult};
-use crate::{core::AppState, SignupMode};
+use crate::{client_server::AppState, SignupMode};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
