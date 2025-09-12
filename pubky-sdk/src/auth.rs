@@ -207,14 +207,15 @@ impl PubkyPairingAuth {
     /// - Transport: timeouts are retried in a simple loop; other transport errors propagate.
     ///
     /// Example:
-    /// ```ignore
+    /// ```
     /// # use pubky::{PubkyPairingAuth, Capabilities};
-    /// let caps = Capabilities::default();
-    /// let auth = PubkyPairingAuth::new(None, &caps)?;
-    /// let (sub, url) = auth.subscribe();
-    /// // display `url` as QR / deeplink to the signer
+    /// # async fn test() -> pubky::Result<()> {
+    /// let (sub, url) = PubkyPairingAuth::new(&Capabilities::default())?.subscribe();
+    /// // Display `url` as QR or deeplink to the Signer ...
+    /// # let signer = pubky::PubkySigner::random()?;
+    /// # signer.approve_pubkyauth_request(&url).await?;
     /// let agent = sub.wait_for_approval().await?;
-    /// # Ok::<(), pubky::Error>(())
+    /// # Ok::<(), pubky::Error>(())}
     /// ```
     pub fn subscribe(self) -> (AuthSubscription, Url) {
         let (tx, rx) = flume::bounded(1);
@@ -276,29 +277,14 @@ impl PubkyPairingAuth {
     ///
     /// # Examples
     /// Basic script:
-    /// ```ignore
+    /// ```no_run
     /// # use pubky::{PubkyPairingAuth, Capabilities};
     /// # async fn run() -> pubky::Result<()> {
     /// let caps = Capabilities::builder().read("/pub/app/").finish();
-    /// let auth = PubkyPairingAuth::new(None, &caps)?;
+    /// let auth = PubkyPairingAuth::new(&caps)?;
     /// println!("Scan to sign in: {}", auth.pubkyauth_url());
     /// let agent = auth.wait_for_approval().await?; // must be awaited right when displaying the pubky_auth!
-    /// println!("Signed in as {}", agent.pubky());
-    /// # Ok(()) }
-    /// ```
-    ///
-    /// With an overall timeout and clean cancellation:
-    /// ```ignore
-    /// # use pubky::{PubkyPairingAuth, Capabilities, Error};
-    /// # use tokio::time::{timeout, Duration};
-    /// # async fn run() -> Result<(), Error> {
-    /// let auth = PubkyPairingAuth::new(None, &Capabilities::default())?;
-    /// eprintln!("Open: {}", auth.pubkyauth_url());
-    /// match timeout(Duration::from_secs(120), auth.wait_for_approval()).await {
-    ///     Ok(Ok(agent)) => eprintln!("Welcome {}", agent.public_key()),
-    ///     Ok(Err(e))    => return Err(e),
-    ///     Err(_)        => eprintln!("Auth timed out; please try again."),
-    /// }
+    /// println!("Signed in as {}", agent.public_key());
     /// # Ok(()) }
     /// ```
     pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
@@ -380,12 +366,15 @@ impl AuthSubscription {
     /// - Returns the session-bounded [`PubkyAgent`] ready to use.
     ///
     /// Example:
-    /// ```ignore
+    /// ```
     /// # use pubky::{PubkyPairingAuth, Capabilities};
-    /// let (sub, url) = PubkyPairingAuth::new(None, &Capabilities::default())?.subscribe();
+    /// # async fn test() -> pubky::Result<()> {
+    /// let (sub, url) = PubkyPairingAuth::new(&Capabilities::default())?.subscribe();
     /// // display `url` to signer ...
+    /// # let signer = pubky::PubkySigner::random()?;
+    /// # signer.approve_pubkyauth_request(&url).await?;
     /// let agent = sub.wait_for_approval().await?;
-    /// # Ok::<(), pubky::Error>(())
+    /// # Ok::<(), pubky::Error>(())}
     /// ```
     pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
         PubkyAgent::new(&self.client.clone(), &self.wait_for_token().await?).await

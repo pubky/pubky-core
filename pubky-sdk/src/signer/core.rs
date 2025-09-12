@@ -33,10 +33,10 @@ impl PubkySigner {
     /// - You want the simplest setup to build your app.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// # use pubky::{PubkySigner, Keypair};
-    /// // Keyless agent: wait for pubkyauth to establish a session
-    /// let app  = PubkySigner::new(Keypair::random())?;
+    /// let keypair = Keypair::random();
+    /// let app  = PubkySigner::new(keypair)?;
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {

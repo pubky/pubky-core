@@ -61,6 +61,7 @@ anyhow = "1.0.95"
 futures-lite = "2.6.0"
 tracing-subscriber = "0.3.19"
 mainline = { version = "5.4.0" }
+pubky-testnet = { version = "0.6.0-rc.2", path = "../pubky-testnet" } # used in docstring tests
 
 [package.metadata.docs.rs]
 all-features = true

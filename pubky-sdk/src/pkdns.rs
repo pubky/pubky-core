@@ -99,11 +99,11 @@ impl Pkdns {
     /// Defaults to 1 hour [DEFAULT_STALE_AFTER].
     ///
     /// # Examples
-    /// ```ignore
+    /// ```no_run
     /// # use std::time::Duration;
-    /// # async fn ex() -> pubky::Result<()> {
-    /// let pkdns = pubky::PkDns::new()?
-    ///     .stale_after(Duration::from_secs(30 * 60)); // 30 minutes
+    /// # async fn ex(signer: pubky::PubkySigner) -> pubky::Result<()> {
+    /// let pkdns = signer.pkdns()
+    ///     .set_stale_after(Duration::from_secs(30 * 60)); // 30 minutes
     ///
     /// // Will re-publish same homeserver only if the existing record is older than 30 minutes.
     /// pkdns.publish_homeserver_if_stale(None).await?;

@@ -20,7 +20,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
 ///
 /// # Example
-/// ```ignore
+/// ```
 /// use std::time::Duration;
 /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
 /// let client = PubkyHttpClient::builder()
@@ -226,14 +226,14 @@ impl PubkyHttpClientBuilder {
 ///
 /// ### Examples
 /// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
-/// ```ignore
+/// ```
 /// # use pubky::PubkyHttpClient;
 /// let client = PubkyHttpClient::new()?;
 /// # Ok::<_, pubky::BuildError>(())
 /// ```
 ///
 /// Fetching a standard ICANN URL or any URL with `request`:
-/// ```ignore
+/// ```
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run() -> Result<()> {
@@ -248,9 +248,11 @@ impl PubkyHttpClientBuilder {
 /// ```ignore
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
-/// # async fn run(user: &str) -> Result<()> {
+/// # async fn run() -> Result<()> {
 /// let client = PubkyHttpClient::new()?;
-/// let url = format!("pubky://{}/pub/app/info.json", user);
+/// // Pubky App profile of user Pubky https://pubky.app/profile/ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y
+/// let user = "ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y";
+/// let url = format!("pubky://{user}/pub/pubky.app/profile.json");
 /// let resp = client.request(Method::GET, &url).send().await?;
 /// let info = resp.text().await?;
 /// # Ok(()) }

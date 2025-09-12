@@ -20,18 +20,17 @@ use crate::{
 ///   targeting *that same user’s* homeserver.
 /// - Reads **and** writes are expected to succeed (subject to server authorization).
 ///
-/// ```ignore
+/// ```no_run
 /// # use pubky::{PubkyPairingAuth, Capabilities};
 /// # async fn example() -> pubky::Result<()> {
 /// #   let caps = Capabilities::default();
-/// #   let (sub, url) = PubkyPairingAuth::new(None, &caps)?.subscribe();
+/// #   let (sub, _url) = PubkyPairingAuth::new(&caps)?.subscribe();
 /// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
-/// #   let user = sub.into_agent().await?;
-///
+/// #   let user = sub.wait_for_approval().await?;
 ///     // Relative paths are resolved against the agent’s user.
 ///     user.drive().put("/pub/app/hello.txt", "hello").await?;
-///     let body = user.drive().get("/pub/app/hello.txt").await?.bytes().await?;
-///     assert_eq!(&body, b"hello");
+///     let body = user.drive().get("/pub/app/hello.txt").await?.text().await?;
+///     assert_eq!(body, "hello");
 /// #   Ok(())
 /// # }
 /// ```
@@ -47,7 +46,7 @@ use crate::{
 /// # use pubky::PubkyDrive;
 /// # async fn example() -> pubky::Result<()> {
 ///     let drive = PubkyDrive::public()?;
-///     // Fully-qualified path: user + path
+///     // Fully-qualified pubky Resource: user + path
 ///     let resp = drive.get("alice_pubky/pub/site/index.html").await?;
 ///     let html = resp.text().await?;
 ///     println!("{html}");

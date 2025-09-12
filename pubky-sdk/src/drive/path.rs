@@ -91,13 +91,6 @@ impl FilePath {
     /// Borrow this normalized absolute path as `&str`.
     ///
     /// Zero-cost: returns a slice into the internal `String` without allocating.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let p = FilePath::parse("pub/app")?;
-    /// assert_eq!(p.as_str(), "/pub/app");
-    /// # Ok::<_, pubky::Error>(())
-    /// ```
     fn as_str(&self) -> &str {
         &self.0
     }

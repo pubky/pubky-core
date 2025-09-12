@@ -146,15 +146,15 @@ let b: PubkyPath = (user.clone(), "/pub/app/file.txt").into_pubky_path()?;
 
 Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
 
-```ignore
+```
 # use pubky_testnet::{EphemeralTestnet, pubky::prelude::*};
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
-let testnet = EphemeralTestnet::start().await?;
+let testnet = EphemeralTestnet::start().await.unwrap();
 let homeserver  = testnet.homeserver();
 
 let signer = PubkySigner::random()?;
-let agent  = signer.signup_agent(&homeserver.public_key(), None).await?;
+let agent  = signer.signup(&homeserver.public_key(), None).await?;
 
 agent.drive().put("/pub/app/hello.txt", "hi").await?;
 let s = agent.drive().get("/pub/app/hello.txt").await?.text().await?;
@@ -167,15 +167,15 @@ assert_eq!(s, "hi");
 
 Export a compact bearer token and import it later to avoid re-auth:
 
-```rust ignore
+```rust no_run
 # use pubky::prelude::*;
 # async fn persist(agent: &PubkyAgent, client: &PubkyHttpClient) -> pubky::Result<()> {
 // Save
-let token = agent.export_secret();               // "<pubkey>:<cookie_secret>"
+let secret = agent.export_secret();               // "<pubkey>:<cookie_secret>"
 // store `token` securely (env, keychain, vault). DO NOT log it.
 
 // Restore
-let restored = PubkyAgent::import_secret(client, &token).await?;
+let restored = PubkyAgent::import_secret(client, &secret).await?;
 // Optional sanity check:
 restored.revalidate_session().await?;
 # Ok(()) }

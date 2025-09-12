@@ -2841,6 +2841,7 @@ dependencies = [
  "mainline",
  "pkarr",
  "pubky-common",
+ "pubky-testnet",
  "reqwest",
  "serde",
  "serde_json",
