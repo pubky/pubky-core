@@ -170,10 +170,7 @@ async fn limit_upload() {
 
     // User + session-bound agent
     let signer = PubkySigner::random().unwrap();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Upload ~3 KB; at 1 KB/s it should take > 2s total
     let path = "/pub/test.txt";
@@ -223,10 +220,7 @@ async fn test_concurrent_write_read() {
     let mut agents: Vec<PubkyAgent> = Vec::with_capacity(user_count);
     for _ in 0..user_count {
         let signer = PubkySigner::random().unwrap();
-        let agent = signer
-            .signup_agent(&server.public_key(), None)
-            .await
-            .unwrap();
+        let agent = signer.signup(&server.public_key(), None).await.unwrap();
         agents.push(agent);
     }
 

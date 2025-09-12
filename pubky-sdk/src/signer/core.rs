@@ -13,10 +13,10 @@ impl PubkySigner {
     /// Choose this when you already manage a long-lived `PubkyHttpClient` (connection reuse, pkarr cache).
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// # use pubky::{PubkyHttpClient, PubkySigner, Keypair};
     /// let client = PubkyHttpClient::new()?;
-    /// let user = PubkySigner::with_client(&client, Keypair::random());
+    /// let signer = PubkySigner::with_client(&client, Keypair::random());
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn with_client(client: &PubkyHttpClient, keypair: Keypair) -> Self {
@@ -52,10 +52,10 @@ impl PubkySigner {
     ///
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// # use pubky::PubkySigner;
-    /// let agent = PubkySigner::random()?;
-    /// // e.g., `agent.signup(&homeserver_pk, None).await?;`
+    /// let signer = PubkySigner::random()?;
+    /// // e.g., `signer.signup(&homeserver_pk, None).await?;`
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn random() -> std::result::Result<Self, BuildError> {

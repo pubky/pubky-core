@@ -8,7 +8,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create a random signer and sign up
     let signer = PubkySigner::random()?;
-    let agent = signer.signup_agent(&homeserver.public_key(), None).await?;
+    let agent = signer.signup(&homeserver.public_key(), None).await?;
 
     // Write a file
     agent.drive().put("/pub/app/hello.txt", "hi").await?;

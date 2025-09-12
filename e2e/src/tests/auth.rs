@@ -17,10 +17,7 @@ async fn basic_authn() {
 
     let signer = PubkySigner::random().unwrap(); // Lazy constructor uses our global testnet pubky client
 
-    let user = signer
-        .signup_agent(&homeserver.public_key(), None)
-        .await
-        .unwrap();
+    let user = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
     let session = user.session();
 
@@ -37,10 +34,7 @@ async fn disabled_user() {
     // Create a brand-new user and session-bound agent
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key().clone();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Create a test file to ensure the user can write to their account
     let file_path = "/pub/pubky.app/foo";
@@ -165,10 +159,7 @@ async fn persist_and_restore_agent() {
 
     // Create user and session-bound agent
     let signer = PubkySigner::random().unwrap();
-    let agent = signer
-        .signup_agent(&homeserver.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
     // Write something with the live agent
     agent
@@ -210,11 +201,8 @@ async fn multiple_users() {
     let alice = PubkySigner::random().unwrap();
     let bob = PubkySigner::random().unwrap();
 
-    let alice_agent = alice
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
-    let bob_agent = bob.signup_agent(&server.public_key(), None).await.unwrap();
+    let alice_agent = alice.signup(&server.public_key(), None).await.unwrap();
+    let bob_agent = bob.signup(&server.public_key(), None).await.unwrap();
 
     // Each session is bound to its own pubkey and has root caps
     let a_sess = alice_agent.session();

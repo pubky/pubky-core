@@ -13,10 +13,7 @@ async fn put_get_delete() {
 
     let signer = PubkySigner::random().unwrap();
 
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
@@ -106,10 +103,7 @@ async fn put_then_get_json_roundtrip() {
     let server = testnet.homeserver();
     let signer = PubkySigner::random().unwrap();
 
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
@@ -163,10 +157,7 @@ async fn put_quota_applied() {
 
     // Create a user/agent
     let signer = PubkySigner::random().unwrap();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     let p1 = "/pub/data";
     let p2 = "/pub/data2";
@@ -228,17 +219,11 @@ async fn unauthorized_put_delete() {
     // Owner user
     let owner = PubkySigner::random().unwrap();
     let owner_pubky = owner.public_key().clone();
-    let owner_agent = owner
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let owner_agent = owner.signup(&server.public_key(), None).await.unwrap();
 
     // Other user (will attempt unauthorized ops)
     let other = PubkySigner::random().unwrap();
-    let other_agent = other
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let other_agent = other.signup(&server.public_key(), None).await.unwrap();
 
     let rel_path = "/pub/foo.txt";
 
@@ -294,10 +279,7 @@ async fn list() {
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
 
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     let paths = vec![
         "/pub/a.wrong/a.txt",
@@ -520,10 +502,7 @@ async fn list_shallow() {
     // Create a user/agent
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Seed data: first-level dirs/files under /pub plus nested content.
     let paths = vec![
@@ -754,10 +733,7 @@ async fn list_events() {
     // Create a user/agent
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write + delete a bunch of files to populate the event feed
     let paths = vec![
@@ -855,10 +831,7 @@ async fn read_after_event() {
     // User + agent
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write one file
     let url = format!("pubky://{pubky}/pub/a.com/a.txt");
@@ -904,14 +877,8 @@ async fn dont_delete_shared_blobs() {
     let u1 = PubkySigner::random().unwrap();
     let u2 = PubkySigner::random().unwrap();
 
-    let a1 = u1
-        .signup_agent(&homeserver.public_key(), None)
-        .await
-        .unwrap();
-    let a2 = u2
-        .signup_agent(&homeserver.public_key(), None)
-        .await
-        .unwrap();
+    let a1 = u1.signup(&homeserver.public_key(), None).await.unwrap();
+    let a2 = u2.signup(&homeserver.public_key(), None).await.unwrap();
 
     let user_1_id = u1.public_key();
     let user_2_id = u2.public_key();
@@ -962,10 +929,7 @@ async fn stream() {
     let server = testnet.homeserver();
 
     let signer = PubkySigner::random().unwrap();
-    let agent = signer
-        .signup_agent(&server.public_key(), None)
-        .await
-        .unwrap();
+    let agent = signer.signup(&server.public_key(), None).await.unwrap();
 
     let path = "/pub/foo.txt";
     let bytes = Bytes::from(vec![0; 1024 * 1024]); // 1 MiB
