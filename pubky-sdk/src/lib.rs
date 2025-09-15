@@ -37,5 +37,4 @@ pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::{
     capabilities::{Capabilities, Capability},
     recovery_file,
-    session::Session,
 };

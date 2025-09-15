@@ -1,9 +1,9 @@
 use pkarr::PublicKey;
-use pubky_common::capabilities::Capabilities;
+use pubky_common::{capabilities::Capabilities, session::Session};
 
 use super::core::PubkyAgent;
 use crate::{
-    PubkyHttpClient, Result, Session,
+    PubkyHttpClient, Result,
     errors::{AuthError, RequestError},
 };
 

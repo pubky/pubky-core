@@ -3,7 +3,7 @@ use reqwest::{Method, StatusCode};
 use pubky_common::{auth::AuthToken, session::Session};
 
 use crate::{
-    Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, global::global_client,
+    Capabilities, Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, global::global_client,
     util::check_http_status,
 };
 
@@ -125,6 +125,11 @@ impl PubkyAgent {
     /// Returns the agent public key
     pub fn public_key(&self) -> PublicKey {
         self.session.public_key().clone()
+    }
+
+    /// Returns the agent capabilities key
+    pub fn capabilities(&self) -> Capabilities {
+        self.session.capabilities().clone()
     }
 
     /// Returns the agent session
