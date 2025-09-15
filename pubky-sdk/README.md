@@ -188,7 +188,7 @@ let token = session.export_secret();               // "<pubkey>:<cookie_secret>"
 // Restore
 let restored = PubkySession::import_secret(client, &token).await?;
 // Optional sanity check:
-restored.revalidate_session().await?;
+restored.revalidate().await?;
 # Ok(()) }
 ```
 

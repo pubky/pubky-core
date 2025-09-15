@@ -83,8 +83,8 @@ impl PubkySession {
         {
             // WASM: cookies are browser-managed; just parse the session body.
             let bytes = response.bytes().await?;
-            let session = SessionInfo::deserialize(&bytes)?;
-            return Ok(PubkySession { client, session });
+            let info = SessionInfo::deserialize(&bytes)?;
+            return Ok(PubkySession { client, info });
         }
 
         #[cfg(not(target_arch = "wasm32"))]
