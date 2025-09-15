@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use pubky_testnet::pubky::PubkySession;
-use pubky_testnet::pubky::{errors::RequestError, global::global_client, Error, PubkySigner};
+use pubky_testnet::pubky::{errors::RequestError, global_client, Error, PubkySigner};
 use pubky_testnet::{
     pubky_homeserver::{
         quota_config::{GlobPattern, LimitKey, LimitKeyType, PathLimit},

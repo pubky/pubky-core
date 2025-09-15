@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use reqwest::{IntoUrl, Method};
+use reqwest::Method;
 use std::collections::HashMap;
 use url::Url;
 
@@ -27,8 +27,8 @@ impl PubkySigner {
     /// Requirements:
     /// - `pubkyauth:///?caps=…&secret=<b64url>&relay=<relay_base>`
     /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
-    pub async fn approve_auth_request<T: IntoUrl>(&self, pubkyauth_url: &T) -> Result<()> {
-        let pubkyauth_url = Url::parse(pubkyauth_url.as_str())?;
+    pub async fn approve_auth_request(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
+        let pubkyauth_url = Url::parse(pubkyauth_url.as_ref())?;
 
         // 1) Extract query params
         let query_params: HashMap<String, String> =

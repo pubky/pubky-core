@@ -39,28 +39,28 @@
 //! # Examples
 //! Fetch the default client (lazily created):
 //! ```
-//! # use pubky::{global, PubkyHttpClient};
-//! let client = global::global_client()?;
+//! # use pubky::{global_client, PubkyHttpClient};
+//! let client = global_client()?;
 //! // Subsequent calls return cheap clones of the same underlying configuration:
-//! let same_again = global::global_client()?;
+//! let same_again = global_client()?;
 //! # Ok::<(), pubky::BuildError>(())
 //! ```
 //!
 //! Override globally:
 //! ```
-//! # use pubky::{global, PubkyHttpClient};
+//! # use pubky::{global_client, set_global_client, PubkyHttpClient};
 //! let custom = PubkyHttpClient::builder().build()?;
-//! global::set_client(custom);
+//! set_global_client(custom);
 //! // New calls now clone the custom client:
-//! let now_custom = global::global_client()?;
+//! let now_custom = global_client()?;
 //! # Ok::<(), pubky::BuildError>(())
 //! ```
 //!
 //! Reset to “no client”; next call re-initializes lazily:
 //! ```
-//! # use pubky::global;
-//! global::drop_client();
-//! let fresh = global::global_client()?; // constructed on demand
+//! # use pubky::drop_global_client;
+//! drop_global_client();
+//! let fresh = pubky::global_client()?; // constructed on demand
 //! # Ok::<(), pubky::BuildError>(())
 //! ```
 
@@ -105,13 +105,13 @@ pub fn global_client() -> Result<PubkyHttpClient, BuildError> {
 ///
 /// Publishes `new_client` atomically. Existing handles continue to use the
 /// previous client until they are dropped.
-pub fn set_client(new_client: PubkyHttpClient) {
+pub fn set_global_client(new_client: PubkyHttpClient) {
     slot().store(Some(Arc::new(new_client)));
 }
 /// Clear the global default client.
 ///
 /// After this call, the next `global_client()` will lazily construct a fresh client.
 /// Existing `Arc<PubkyHttpClient>` handles remain valid.
-pub fn drop_client() {
+pub fn drop_global_client() {
     slot().store(None);
 }

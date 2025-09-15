@@ -43,7 +43,7 @@ impl Testnet {
         // Set a global shared pubky client so lazily initialized actors (PubkySession, PubkyAuthRequest, PubkySigner)
         // work over this testnet
         let testnet_client = testnet.client()?;
-        pubky::global::set_client(testnet_client);
+        pubky::set_global_client(testnet_client);
 
         Ok(testnet)
     }

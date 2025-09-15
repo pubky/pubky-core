@@ -1,9 +1,6 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{
-        errors::RequestError, global::global_client, Error, PubkyResource, PubkySigner,
-        PubkyStorage,
-    },
+    pubky::{errors::RequestError, global_client, Error, PubkyResource, PubkySigner, PubkyStorage},
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };

@@ -1,5 +1,5 @@
-use pubky_testnet::pubky::global::global_client;
-use pubky_testnet::pubky::{global, PubkyAuthRequest, PubkySession, PubkySigner};
+use pubky_testnet::pubky::global_client;
+use pubky_testnet::pubky::{PubkyAuthRequest, PubkySession, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -173,7 +173,7 @@ async fn persist_and_restore_session_info() {
 
     // Rehydrate from the exported secret (validates the session)
     // Reuse the process-wide client configured by the testnet
-    let client = global::global_client().unwrap();
+    let client = global_client().unwrap();
     let restored = PubkySession::import_secret(&client, &secret_token)
         .await
         .unwrap();

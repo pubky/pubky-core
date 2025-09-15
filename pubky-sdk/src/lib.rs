@@ -6,7 +6,7 @@
 mod auth;
 mod client;
 pub mod errors;
-pub mod global;
+mod global;
 mod macros;
 mod pkdns;
 mod session;
@@ -17,13 +17,18 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
-pub use auth::PubkyAuthRequest;
+// Transport
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
-pub use errors::{BuildError, Error, Result};
+// High level actors
+pub use auth::PubkyAuthRequest;
 pub use pkdns::Pkdns;
 pub use session::core::PubkySession;
 pub use signer::PubkySigner;
 pub use storage::core::PubkyStorage;
+
+// Error and global client
+pub use errors::{BuildError, Error, Result};
+pub use global::{drop_global_client, global_client, set_global_client};
 
 // Export common types and constants
 pub use crate::storage::{list::ListBuilder, resource::IntoPubkyResource, resource::PubkyResource};
