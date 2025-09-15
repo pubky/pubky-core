@@ -469,7 +469,7 @@ async fn list_events() {
 
     let pubky = keypair.public_key();
 
-    let mut urls = vec![
+    let urls = vec![
         format!("pubky://{pubky}/pub/a.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/b.txt"),
