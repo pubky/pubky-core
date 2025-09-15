@@ -1,5 +1,6 @@
 use crate::Testnet;
 use http_relay::HttpRelay;
+use pubky_homeserver::ConnectionString;
 
 /// A simple testnet with random ports assigned for all components.
 ///
@@ -14,9 +15,25 @@ pub struct EphemeralTestnet {
 
 impl EphemeralTestnet {
     /// Run a new simple testnet.
-    pub async fn start() -> anyhow::Result<Self> {
+    pub async fn start(
+    ) -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new().await?,
+        };
+
+        me.testnet.create_http_relay().await?;
+        me.testnet.create_homeserver().await?;
+
+        Ok(me)
+    }
+
+    /// Run a new simple testnet.
+    /// Pass a custom postgres connection string to use for the homeserver.
+    pub async fn start_with_custom_postgres(
+        postgres_connection_string: ConnectionString,
+    ) -> anyhow::Result<Self> {
+        let mut me = Self {
+            testnet: Testnet::new_with_custom_postgres(postgres_connection_string).await?,
         };
 
         me.testnet.create_http_relay().await?;
@@ -29,6 +46,18 @@ impl EphemeralTestnet {
     pub async fn start_minimal() -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new().await?,
+        };
+        me.testnet.create_http_relay().await?;
+        Ok(me)
+    }
+
+    /// Run a new simple testnet network with a minimal setup.
+    /// Pass a custom postgres connection string to use for the homeserver.
+    pub async fn start_minimal_with_custom_postgres(
+        postgres_connection_string: ConnectionString,
+    ) -> anyhow::Result<Self> {
+        let mut me = Self {
+            testnet: Testnet::new_with_custom_postgres(postgres_connection_string).await?,
         };
         me.testnet.create_http_relay().await?;
         Ok(me)

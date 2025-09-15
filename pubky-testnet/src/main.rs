@@ -49,8 +49,9 @@ async fn main() -> Result<()> {
     );
 
     tokio::signal::ctrl_c().await?;
-    
-    println!("Dropping test databases");
+    drop(testnet); // Drop the testnet to trigger the drop of the homeserver and all databases.
+
+    // Cleanup all empheral test databases. Test database are only registered for the drop after the testnet is dropped.
     pubky_testnet::drop_test_databases().await;
 
     Ok(())

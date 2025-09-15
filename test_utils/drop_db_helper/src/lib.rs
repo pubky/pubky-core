@@ -10,6 +10,7 @@ fn get_vec() -> &'static Arc<Mutex<Vec<DbToDrop>>> {
 }
 
 /// Helper struct to drop a database after the test.
+#[derive(Debug)]
 pub struct DbToDrop {
     pub connection_string: String,
     pub db_name: String,
@@ -46,8 +47,8 @@ fn get_db_to_drop() -> Option<DbToDrop> {
     vec.pop()
 }
 
-/// Drops all registered databases
-/// And cleans them.
+/// Drops all registered empheral test databases
+/// This must be executed AFTER the homeserver or testnet is dropped.
 pub async fn drop_test_databases() {
     // Drop all databases that are registered to be dropped.
     while let Some(db) = get_db_to_drop() {

@@ -3,7 +3,7 @@ use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
 use crate::persistence::sql::{
-    db_connection::SqlDb,
+    sql_db::SqlDb,
     migration::MigrationTrait,
     migrations::{
         M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,

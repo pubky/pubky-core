@@ -2,9 +2,25 @@
 
 A local test network for developing Pubky Core or applications depending on it.
 
-All resources are ephemeral, databases are in the operating system's temporary directories, and all servers are closed as the testnet dropped.
+All resources are ephemeral, the database is an empheral Postgres, and all servers are cleaned up as the testnet dropped.
 
 ## Usage
+
+### Postgres
+
+For the homeserver and therefore this testnet to be used, a postgres server is required. 
+By default, testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
+`?pubky_test=true` indicates that the homeserver should create an emphemeral database.
+
+If you want to change the [connection string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS) you have 2 options.
+
+- Set the `TEST_PUBKY_CONNECTION_STRING` environment variable.
+- Set the connection string in the testnet constructor.
+
+```rust
+let connection_string = ConnectionString::new("postgres://localhost:5432/my_db").unwrap();
+let testnet = Testnet::new_with_custom_postgres(connection_string).await.unwrap();
+```
 
 ### Inline testing
 
@@ -12,6 +28,7 @@ All resources are ephemeral, databases are in the operating system's temporary d
 use pubky_testnet::EphemeralTestnet;
 
 #[tokio::main]
+#[pubky_testnet::test] // Makro makes sure that the empheral Postgres databases are cleaned up.
 async fn main () {
   // Run a new testnet. This creates a test dht,
   // a homeserver, and a http relay.

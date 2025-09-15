@@ -2,6 +2,8 @@
 # The URL of the Postgres database.
 # Important: The database must be created manually.
 # Default: "postgres://localhost:5432/pubky_homeserver"
+# If compiled with the "testing" feature, ?pubky=test can be added to the database url.
+# This way, an empheral test database is created and dropped after the test.
 database_url = "postgres://localhost:5432/pubky_homeserver"
 
 # The mode for the signup. Default: "token_required" Options:
