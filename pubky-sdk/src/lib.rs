@@ -6,12 +6,12 @@
 mod agent;
 mod auth;
 mod client;
-mod drive;
 pub mod errors;
 pub mod global;
 mod macros;
 mod pkdns;
 mod signer;
+mod storage;
 mod util;
 
 pub mod prelude;
@@ -20,13 +20,13 @@ pub mod prelude;
 pub use agent::core::PubkyAgent;
 pub use auth::PubkyPairingAuth;
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
-pub use drive::core::PubkyStorage;
 pub use errors::{BuildError, Error, Result};
 pub use pkdns::Pkdns;
 pub use signer::PubkySigner;
+pub use storage::core::PubkyStorage;
 
 // Export common types and constants
-pub use crate::drive::{list::ListBuilder, resource::IntoPubkyResource, resource::PubkyResource};
+pub use crate::storage::{list::ListBuilder, resource::IntoPubkyResource, resource::PubkyResource};
 pub use auth::AuthSubscription;
 pub use auth::DEFAULT_HTTP_RELAY;
 pub use pkarr::DEFAULT_RELAYS;

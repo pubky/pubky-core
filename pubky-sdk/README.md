@@ -1,6 +1,6 @@
 # Pubky SDK (Rust)
 
-Ergonomic building blocks for Pubky apps: a tiny HTTP/PKARR client, session-bound agent, a drive API, signer helpers, and a pairing-based auth flow for keyless apps.
+Ergonomic building blocks for Pubky apps: a tiny HTTP/PKARR client, session-bound agent, a storage API, signer helpers, and a pairing-based auth flow for keyless apps.
 
 Rust implementation of [Pubky](https://github.com/pubky/pubky-core) SDK.
 
@@ -28,7 +28,7 @@ let signer = PubkySigner::new(Keypair::random())?;
 let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
 let agent = signer.signup(&homeserver, None).await?;
 
-// 3) Session-scoped drive I/O
+// 3) Session-scoped storage I/O
 agent.storage().put("/pub/app/hello.txt", "hello").await?;
 let body = agent.storage().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
@@ -151,7 +151,7 @@ let agent = sub.wait_for_approval().await?; // background long-polling started b
 
 ## Features
 
-- `json` enable `drive::json` helpers (`get_json` / `put_json`) and serde on certain types.
+- `json` enable `storage::json` helpers (`get_json` / `put_json`) and serde on certain types.
 
 ## Testing locally
 

@@ -2,7 +2,10 @@ use reqwest::{Method, StatusCode};
 
 use pubky_common::{auth::AuthToken, session::Session};
 
-use crate::{Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, util::check_http_status};
+use crate::{
+    Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, global::global_client,
+    util::check_http_status,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
@@ -39,11 +42,23 @@ pub struct PubkyAgent {
 }
 
 impl PubkyAgent {
+    /// Establish a session from a signed [`AuthToken`] using the default global client.
+    ///
+    /// This POSTs `pubky://{user}/session` with the token, validates the response
+    /// and constructs a new session-bound [`PubkyAgent`]
+    pub async fn from_token(token: &AuthToken) -> Result<PubkyAgent> {
+        let client = global_client()?;
+        Self::new_with_client(&client, token).await
+    }
+
     /// Establish a session from a signed [`AuthToken`].
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response
     /// and constructs a new session-bound [`PubkyAgent`]
-    pub async fn new(client: &PubkyHttpClient, token: &AuthToken) -> Result<PubkyAgent> {
+    pub async fn new_with_client(
+        client: &PubkyHttpClient,
+        token: &AuthToken,
+    ) -> Result<PubkyAgent> {
         let url = format!("pubky://{}/session", token.public_key());
         let response = client
             .cross_request(Method::POST, url)
@@ -162,7 +177,7 @@ impl PubkyAgent {
         Ok(()) // success => `self` is consumed
     }
 
-    /// Create a **session-mode** drive bound to this agent’s user and session.
+    /// Create a **session-mode** storage bound to this agent’s user and session.
     ///
     /// - Relative paths (e.g. `"/pub/app/file"`) are resolved to **this** user.
     /// - On native targets, requests that target this user’s homeserver automatically

@@ -377,7 +377,7 @@ impl AuthSubscription {
     /// # Ok::<(), pubky::Error>(())}
     /// ```
     pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
-        PubkyAgent::new(&self.client.clone(), &self.wait_for_token().await?).await
+        PubkyAgent::new_with_client(&self.client.clone(), &self.wait_for_token().await?).await
     }
 
     /// Non-blocking probe for readiness.
