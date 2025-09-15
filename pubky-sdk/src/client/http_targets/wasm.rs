@@ -1,6 +1,6 @@
 //! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
 
-use crate::Client;
+use crate::PubkyHttpClient;
 use crate::errors::{PkarrError, Result};
 use futures_lite::StreamExt;
 use pkarr::PublicKey;
@@ -8,8 +8,8 @@ use pkarr::extra::endpoints::Endpoint;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
-impl Client {
-    /// A wrapper around [NativeClient::request], with the same signature between native and wasm.
+impl PubkyHttpClient {
+    /// A wrapper around [PubkyHttpClient::request], with the same signature between native and wasm.
     pub(crate) async fn cross_request<T: IntoUrl>(
         &self,
         method: Method,

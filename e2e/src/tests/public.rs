@@ -53,7 +53,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = PubkyStorage::public()
+    let response = PubkyStorage::new_public()
         .unwrap()
         .get(format!("{pubky}/{path}"))
         .await
@@ -132,7 +132,7 @@ async fn put_then_get_json_roundtrip() {
     let _ = session.storage().put_json(path, &expected).await;
 
     // Read back as strongly-typed JSON and assert equality.
-    let got: Payload = PubkyStorage::public()
+    let got: Payload = PubkyStorage::new_public()
         .unwrap()
         .get_json(format!("{}/{path}", pubky))
         .await
@@ -354,7 +354,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::public()
+        let list = PubkyStorage::new_public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -398,7 +398,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::public()
+        let list = PubkyStorage::new_public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -442,7 +442,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::public()
+        let list = PubkyStorage::new_public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -466,7 +466,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::public()
+        let list = PubkyStorage::new_public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -542,7 +542,7 @@ async fn list_shallow() {
 
     // shallow (no limit, no cursor)
     {
-        let list = PubkyStorage::public()
+        let list = PubkyStorage::new_public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -878,19 +878,19 @@ async fn read_after_event() {
     }
 
     // Now the file should exist
-    PubkyStorage::public()
+    PubkyStorage::new_public()
         .unwrap()
         .exists(url.clone())
         .await
         .unwrap();
     // Provide metadata
-    PubkyStorage::public()
+    PubkyStorage::new_public()
         .unwrap()
         .stats(url.clone())
         .await
         .unwrap();
     // And be fetchable
-    let resp = PubkyStorage::public().unwrap().get(url).await.unwrap();
+    let resp = PubkyStorage::new_public().unwrap().get(url).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.bytes().await.unwrap();
     assert_eq!(body.as_ref(), &[0]);

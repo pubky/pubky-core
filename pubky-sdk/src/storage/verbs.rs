@@ -8,7 +8,7 @@ use crate::Result;
 use crate::util::check_http_status;
 
 impl PubkyStorage {
-    fn err_if_require_session_for_write(&self) -> Result<()> {
+    fn ensure_session_for_write(&self) -> Result<()> {
         if self.has_session {
             return Ok(());
         }
@@ -27,7 +27,7 @@ impl PubkyStorage {
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyStorage::public()?;
+    /// let drive = PubkyStorage::new_public()?;
     /// let resp = drive.get("/pub/app/data.bin").await?;
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
@@ -74,7 +74,7 @@ impl PubkyStorage {
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyStorage::public()?;
+    /// let drive = PubkyStorage::new_public()?;
     /// if let Some(h) = drive.stats("/pub/app/data.bin").await? {
     ///     if let Some(len) = h.get(reqwest::header::CONTENT_LENGTH) {
     ///         println!("size: {}", len.to_str().unwrap_or("?"));
@@ -107,7 +107,7 @@ impl PubkyStorage {
         P: IntoPubkyResource,
         B: Into<reqwest::Body>,
     {
-        self.err_if_require_session_for_write()?;
+        self.ensure_session_for_write()?;
         let resp = self
             .request(Method::PUT, path)
             .await?
@@ -129,7 +129,7 @@ impl PubkyStorage {
     /// # Ok(()) }
     /// ```
     pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {
-        self.err_if_require_session_for_write()?;
+        self.ensure_session_for_write()?;
         let resp = self.request(Method::DELETE, path).await?.send().await?;
         check_http_status(resp).await
     }

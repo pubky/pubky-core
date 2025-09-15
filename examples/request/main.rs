@@ -4,7 +4,7 @@ use reqwest::Method;
 use std::env;
 use url::Url;
 
-use pubky::{PubkyStorage, PubkyHttpClient};
+use pubky::{PubkyHttpClient, PubkyStorage};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     let drive = if args.testnet {
         PubkyStorage::public_with_client(&PubkyHttpClient::testnet()?)
     } else {
-        PubkyStorage::public()?
+        PubkyStorage::new_public()?
     };
 
     // Build the request

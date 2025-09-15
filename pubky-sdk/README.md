@@ -34,7 +34,7 @@ let body = session.storage().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
 
 // 4) Public (unauthenticated) read by user-qualified path
-let txt = PubkyStorage::public()?
+let txt = PubkyStorage::new_public()?
   .get(format!("{}/pub/app/hello.txt", session.public_key()))
   .await?
   .text().await?;
@@ -89,7 +89,7 @@ let meta = session.storage().stats("/pub/app/file.txt").await?;
 let ok = session.storage().exists("/pub/app/missing.txt").await?; // false
 
 // public read by user-qualified resource (no session)
-let public = PubkyStorage::public()?;
+let public = PubkyStorage::new_public()?;
 let text = public.get(format!("{}/pub/app/file.txt", session.public_key()))
     .await?.text().await?;
 # Ok(()) }

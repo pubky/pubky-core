@@ -1,11 +1,8 @@
-use pubky_common::{
-    auth::AuthToken,
-    capabilities::{Capabilities, Capability},
-};
+use pubky_common::auth::AuthToken;
 use reqwest::Method;
 use url::Url;
 
-use crate::{PubkySession, PublicKey, Result, util::check_http_status};
+use crate::{Capabilities, Capability, PubkySession, PublicKey, Result, util::check_http_status};
 
 use super::PubkySigner;
 

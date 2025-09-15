@@ -45,7 +45,7 @@ use crate::{
 /// ```no_run
 /// # use pubky::PubkyStorage;
 /// # async fn example() -> pubky::Result<()> {
-///     let drive = PubkyStorage::public()?;
+///     let drive = PubkyStorage::new_public()?;
 ///     // Fully-qualified pubky Resource: user + path
 ///     let resp = drive.get("alice_pubky/pub/site/index.html").await?;
 ///     let html = resp.text().await?;
@@ -76,11 +76,11 @@ impl PubkyStorage {
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyStorage::public()?;
+    /// let drive = PubkyStorage::new_public()?;
     /// let resp = drive.get("alice/pub/site/index.html").await?;
     /// # Ok(()) }
     /// ```
-    pub fn public() -> Result<PubkyStorage> {
+    pub fn new_public() -> Result<PubkyStorage> {
         let client = global_client()?;
         Ok(Self::public_with_client(&client))
     }

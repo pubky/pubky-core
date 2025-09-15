@@ -1,11 +1,11 @@
 use std::path::Path;
 
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capabilities, session::SessionInfo};
+use pubky_common::session::SessionInfo;
 
 use super::core::PubkySession;
 use crate::{
-    PubkyHttpClient, Result,
+    Capabilities, PubkyHttpClient, Result,
     errors::{AuthError, RequestError},
 };
 
