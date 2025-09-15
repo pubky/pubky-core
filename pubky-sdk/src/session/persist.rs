@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use pkarr::PublicKey;
 use pubky_common::{capabilities::Capabilities, session::SessionInfo};
 
@@ -57,5 +59,31 @@ impl PubkySession {
         session.info = info;
 
         Ok(session)
+    }
+
+    /// Write the session secret token to a file as plain text: `<pubkey>:<cookie_secret>`.
+    /// If the file exists, it is overwritten. On Unix, permissions are set to 600.
+    pub fn write_secret_file(&self, secret_file_path: &Path) -> std::io::Result<()> {
+        let token = self.export_secret();
+        std::fs::write(secret_file_path, token)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(secret_file_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
+    }
+
+    /// Restore a session from a secret token stored in a file.
+    /// Reads the file, trims whitespace, then calls `import_secret` to validate and hydrate.
+    pub async fn from_secret_file(
+        client: &PubkyHttpClient,
+        secret_file_path: &Path,
+    ) -> Result<Self> {
+        let token =
+            std::fs::read_to_string(secret_file_path).map_err(|e| RequestError::Validation {
+                message: format!("failed to read session secret file: {e}"),
+            })?;
+        Self::import_secret(client, token.trim()).await
     }
 }
