@@ -8,7 +8,8 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::Keypair;
 use pubky_homeserver::{
-    storage_config::StorageConfigToml, ConfigToml, ConnectionString, DomainPort, HomeserverSuite, MockDataDir
+    storage_config::StorageConfigToml, ConfigToml, ConnectionString, DomainPort, HomeserverSuite,
+    MockDataDir,
 };
 use std::{str::FromStr, time::Duration};
 use url::Url;
@@ -40,7 +41,8 @@ impl Testnet {
             http_relays: vec![],
             homeservers: vec![],
             temp_dirs: vec![],
-            postgres_connection_string: Self::extract_postgres_connection_string_from_env_variable(),
+            postgres_connection_string: Self::extract_postgres_connection_string_from_env_variable(
+            ),
         };
 
         Ok(testnet)
@@ -49,7 +51,9 @@ impl Testnet {
     /// Run a new testnet with a local DHT.
     /// Pass an optional postgres connection string to use for the homeserver.
     /// If None, the default test connection string is used.
-    pub async fn new_with_custom_postgres(postgres_connection_string: ConnectionString) -> Result<Self> {
+    pub async fn new_with_custom_postgres(
+        postgres_connection_string: ConnectionString,
+    ) -> Result<Self> {
         let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet: Testnet = Self {
             dht,
@@ -85,8 +89,7 @@ impl Testnet {
         if let Some(connection_string) = self.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
         }
-        let mock_dir =
-            MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
+        let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
         self.create_homeserver_suite_with_mock(mock_dir).await
     }
 

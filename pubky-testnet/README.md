@@ -18,8 +18,13 @@ If you want to change the [connection string](https://www.postgresql.org/docs/cu
 - Set the connection string in the testnet constructor.
 
 ```rust
-let connection_string = ConnectionString::new("postgres://localhost:5432/my_db").unwrap();
-let testnet = Testnet::new_with_custom_postgres(connection_string).await.unwrap();
+use pubky_testnet::{Testnet, pubky_homeserver::ConnectionString};
+
+#[tokio::main]
+async fn main () {
+  let connection_string = ConnectionString::new("postgres://localhost:5432/my_db").unwrap();
+  let testnet = Testnet::new_with_custom_postgres(connection_string).await.unwrap();
+}
 ```
 
 ### Inline testing

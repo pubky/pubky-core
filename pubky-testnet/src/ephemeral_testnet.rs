@@ -15,8 +15,7 @@ pub struct EphemeralTestnet {
 
 impl EphemeralTestnet {
     /// Run a new simple testnet.
-    pub async fn start(
-    ) -> anyhow::Result<Self> {
+    pub async fn start() -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new().await?,
         };
