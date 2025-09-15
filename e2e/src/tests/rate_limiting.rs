@@ -177,7 +177,7 @@ async fn limit_upload() {
     let body = vec![0u8; 3 * 1024];
 
     let start = Instant::now();
-    let resp = agent.drive().put(path, body).await.unwrap();
+    let resp = agent.storage().put(path, body).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
     assert!(
         start.elapsed() > Duration::from_secs(2),
@@ -234,7 +234,7 @@ async fn test_concurrent_write_read() {
         for agent in agents.iter().cloned() {
             let body = body.clone();
             tasks.push(tokio::spawn(async move {
-                agent.drive().put(path, body).await.unwrap();
+                agent.storage().put(path, body).await.unwrap();
             }));
         }
         for t in tasks {
@@ -255,7 +255,7 @@ async fn test_concurrent_write_read() {
         let mut tasks = Vec::with_capacity(user_count);
         for agent in agents.iter().cloned() {
             tasks.push(tokio::spawn(async move {
-                let resp = agent.drive().get(path).await.unwrap();
+                let resp = agent.storage().get(path).await.unwrap();
                 let _ = resp.bytes().await.unwrap(); // read body to apply full 3 KB download
             }));
         }

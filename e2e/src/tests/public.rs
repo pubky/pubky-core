@@ -1,7 +1,8 @@
 use bytes::Bytes;
 use pubky_testnet::{
     pubky::{
-        errors::RequestError, global::global_client, Error, PubkyDrive, PubkyResource, PubkySigner,
+        errors::RequestError, global::global_client, Error, PubkyResource, PubkySigner,
+        PubkyStorage,
     },
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
@@ -22,7 +23,7 @@ async fn put_get_delete() {
     let path = "/pub/foo.txt";
 
     agent
-        .drive()
+        .storage()
         .put(path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
@@ -33,7 +34,7 @@ async fn put_get_delete() {
     let path_pubky = PubkyResource::new(None, "/pub/foo.txt").unwrap();
 
     agent
-        .drive()
+        .storage()
         .put(path_pubky, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
@@ -44,7 +45,7 @@ async fn put_get_delete() {
     let tuple_path = (agent.public_key(), "/pub/foo.txt");
 
     agent
-        .drive()
+        .storage()
         .put(tuple_path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap()
@@ -52,7 +53,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = PubkyDrive::public()
+    let response = PubkyStorage::public()
         .unwrap()
         .get(format!("{pubky}/{path}"))
         .await
@@ -91,7 +92,7 @@ async fn put_get_delete() {
     assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
     agent
-        .drive()
+        .storage()
         .delete(path)
         .await
         .unwrap()
@@ -99,7 +100,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // Should not exist, PubkyError of 404 type
-    assert!(agent.drive().get(path).await.is_err());
+    assert!(agent.storage().get(path).await.is_err());
 }
 
 use serde::{Deserialize, Serialize};
@@ -128,10 +129,10 @@ async fn put_then_get_json_roundtrip() {
     };
 
     // Ignore the result; the write still succeeds and is asserted via the subsequent GET.
-    let _ = agent.drive().put_json(path, &expected).await;
+    let _ = agent.storage().put_json(path, &expected).await;
 
     // Read back as strongly-typed JSON and assert equality.
-    let got: Payload = PubkyDrive::public()
+    let got: Payload = PubkyStorage::public()
         .unwrap()
         .get_json(format!("{}/{path}", pubky))
         .await
@@ -139,7 +140,7 @@ async fn put_then_get_json_roundtrip() {
     assert_eq!(got, expected);
 
     // Sanity-check MIME is JSON when fetching raw.
-    let resp = agent.drive().get(path).await.unwrap();
+    let resp = agent.storage().get(path).await.unwrap();
     let ct = resp
         .headers()
         .get("content-type")
@@ -150,7 +151,7 @@ async fn put_then_get_json_roundtrip() {
 
     // Cleanup
     agent
-        .drive()
+        .storage()
         .delete(path)
         .await
         .unwrap()
@@ -176,15 +177,19 @@ async fn put_quota_applied() {
 
     // First 600 KB → OK (201)
     let data_600k: Vec<u8> = vec![0; 600_000];
-    let resp = agent.drive().put(p1, data_600k.clone()).await.unwrap();
+    let resp = agent.storage().put(p1, data_600k.clone()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Overwrite same 600 KB → still 201
-    let resp = agent.drive().put(p1, data_600k.clone()).await.unwrap();
+    let resp = agent.storage().put(p1, data_600k.clone()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Write 600 KB more at a different path (total 1.2 MB) → 507
-    let err = agent.drive().put(p2, data_600k.clone()).await.unwrap_err();
+    let err = agent
+        .storage()
+        .put(p2, data_600k.clone())
+        .await
+        .unwrap_err();
     assert!(matches!(
         err,
         Error::Request(RequestError::Server { status, .. })
@@ -193,7 +198,7 @@ async fn put_quota_applied() {
 
     // Overwrite /pub/data with 1.1 MB → 507
     let data_1100k: Vec<u8> = vec![0; 1_100_000];
-    let err = agent.drive().put(p1, data_1100k).await.unwrap_err();
+    let err = agent.storage().put(p1, data_1100k).await.unwrap_err();
     assert!(matches!(
         err,
         Error::Request(RequestError::Server { status, .. })
@@ -201,13 +206,13 @@ async fn put_quota_applied() {
     ));
 
     // Delete the original 600 KB → 204
-    let resp = agent.drive().delete(p1).await.unwrap();
+    let resp = agent.storage().delete(p1).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     // Write exactly 1025 KB → 507 (exceeds 1 MB quota)
     let data_1025k_minus_256: Vec<u8> = vec![0; 1025 * 1024 - 256];
     let err = agent
-        .drive()
+        .storage()
         .put(p1, data_1025k_minus_256)
         .await
         .unwrap_err();
@@ -219,7 +224,7 @@ async fn put_quota_applied() {
 
     // Write exactly 1 MB (minus the same 256 fudge) → 201 (fits quota)
     let data_1mb_minus_256: Vec<u8> = vec![0; 1024 * 1024 - 256];
-    let resp = agent.drive().put(p1, data_1mb_minus_256).await.unwrap();
+    let resp = agent.storage().put(p1, data_1mb_minus_256).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
@@ -241,7 +246,7 @@ async fn unauthorized_put_delete() {
 
     // Other tries to write to owner's namespace → 401 Unauthorized
     let err = other_agent
-        .drive()
+        .storage()
         .put((owner_pubky.clone(), rel_path), vec![0, 1, 2, 3, 4])
         .await
         .unwrap_err();
@@ -253,7 +258,7 @@ async fn unauthorized_put_delete() {
 
     // Owner writes successfully
     let resp = owner_agent
-        .drive()
+        .storage()
         .put(rel_path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap();
@@ -261,7 +266,7 @@ async fn unauthorized_put_delete() {
 
     // Other tries to delete owner's file → 401 Unauthorized
     let err = other_agent
-        .drive()
+        .storage()
         .delete((owner_pubky.clone(), rel_path))
         .await
         .unwrap_err();
@@ -273,7 +278,7 @@ async fn unauthorized_put_delete() {
 
     // Owner can read contents
     let body = owner_agent
-        .drive()
+        .storage()
         .get(rel_path)
         .await
         .unwrap()
@@ -305,13 +310,13 @@ async fn list() {
     ];
 
     for path in paths {
-        agent.drive().put(path, vec![0]).await.unwrap();
+        agent.storage().put(path, vec![0]).await.unwrap();
     }
 
     let path = "/pub/example.com/extra";
 
     {
-        let list = agent.drive().list(path).unwrap().send().await.unwrap();
+        let list = agent.storage().list(path).unwrap().send().await.unwrap();
         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
@@ -329,7 +334,7 @@ async fn list() {
 
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .limit(2)
@@ -349,7 +354,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyDrive::public()
+        let list = PubkyStorage::public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -372,7 +377,7 @@ async fn list() {
 
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .limit(2)
@@ -393,7 +398,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyDrive::public()
+        let list = PubkyStorage::public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -416,7 +421,7 @@ async fn list() {
 
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .limit(2)
@@ -437,7 +442,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyDrive::public()
+        let list = PubkyStorage::public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -461,7 +466,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyDrive::public()
+        let list = PubkyStorage::public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -484,7 +489,7 @@ async fn list() {
 
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .reverse(true)
@@ -530,14 +535,14 @@ async fn list_shallow() {
         "/pub/z.com/a.txt",
     ];
     for p in paths {
-        agent.drive().put(p, vec![0]).await.unwrap();
+        agent.storage().put(p, vec![0]).await.unwrap();
     }
 
     let path = "/pub/";
 
     // shallow (no limit, no cursor)
     {
-        let list = PubkyDrive::public()
+        let list = PubkyStorage::public()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -565,7 +570,7 @@ async fn list_shallow() {
     // shallow + limit(2)
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .shallow(true)
@@ -588,7 +593,7 @@ async fn list_shallow() {
     // shallow + limit(2) + file cursor
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .shallow(true)
@@ -612,7 +617,7 @@ async fn list_shallow() {
     // shallow + limit(3) + directory cursor
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .shallow(true)
@@ -637,7 +642,7 @@ async fn list_shallow() {
     // shallow + reverse
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .reverse(true)
@@ -665,7 +670,7 @@ async fn list_shallow() {
     // shallow + reverse + limit(2)
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .reverse(true)
@@ -689,7 +694,7 @@ async fn list_shallow() {
     // shallow + reverse + limit(2) + file cursor
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .shallow(true)
@@ -714,7 +719,7 @@ async fn list_shallow() {
     // shallow + reverse + limit(2) + directory cursor
     {
         let list = agent
-            .drive()
+            .storage()
             .list(path)
             .unwrap()
             .shallow(true)
@@ -761,8 +766,8 @@ async fn list_events() {
         "/pub/z.com/a.txt",
     ];
     for p in &paths {
-        agent.drive().put(p.to_string(), vec![0]).await.unwrap();
-        agent.drive().delete(p.to_string()).await.unwrap();
+        agent.storage().put(p.to_string(), vec![0]).await.unwrap();
+        agent.storage().delete(p.to_string()).await.unwrap();
     }
 
     // Feed is exposed under the public-key host
@@ -848,7 +853,7 @@ async fn read_after_event() {
     // Write one file
     let url = format!("pubky://{pubky}/pub/a.com/a.txt");
     agent
-        .drive()
+        .storage()
         .put("/pub/a.com/a.txt", vec![0])
         .await
         .unwrap();
@@ -873,19 +878,19 @@ async fn read_after_event() {
     }
 
     // Now the file should exist
-    PubkyDrive::public()
+    PubkyStorage::public()
         .unwrap()
         .exists(url.clone())
         .await
         .unwrap();
     // Provide metadata
-    PubkyDrive::public()
+    PubkyStorage::public()
         .unwrap()
         .stats(url.clone())
         .await
         .unwrap();
     // And be fetchable
-    let resp = PubkyDrive::public().unwrap().get(url).await.unwrap();
+    let resp = PubkyStorage::public().unwrap().get(url).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.bytes().await.unwrap();
     assert_eq!(body.as_ref(), &[0]);
@@ -913,14 +918,14 @@ async fn dont_delete_shared_blobs() {
     let file = vec![1];
 
     // Both write identical content to their own paths
-    a1.drive().put(p1, file.clone()).await.unwrap();
-    a2.drive().put(p2, file.clone()).await.unwrap();
+    a1.storage().put(p1, file.clone()).await.unwrap();
+    a2.storage().put(p2, file.clone()).await.unwrap();
 
     // Delete user 1's file
-    a1.drive().delete(p1).await.unwrap();
+    a1.storage().delete(p1).await.unwrap();
 
     // User 2's file must still exist and match
-    let blob = a2.drive().get(p2).await.unwrap().bytes().await.unwrap();
+    let blob = a2.storage().get(p2).await.unwrap().bytes().await.unwrap();
     assert_eq!(blob, file);
 
     // Event feed should show PUT u1, PUT u2, DEL u1 (order preserved)
@@ -959,11 +964,11 @@ async fn stream() {
     let bytes = Bytes::from(vec![0; 1024 * 1024]); // 1 MiB
 
     // Upload large body
-    agent.drive().put(path, bytes.clone()).await.unwrap();
+    agent.storage().put(path, bytes.clone()).await.unwrap();
 
     // Read back and compare
     let got = agent
-        .drive()
+        .storage()
         .get(path)
         .await
         .unwrap()
@@ -973,8 +978,8 @@ async fn stream() {
     assert_eq!(got, bytes);
 
     // Delete and verify 404 on subsequent GET
-    agent.drive().delete(path).await.unwrap();
-    let err = agent.drive().get(path).await.unwrap_err();
+    agent.storage().delete(path).await.unwrap();
+    let err = agent.storage().get(path).await.unwrap_err();
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::NOT_FOUND)
     );

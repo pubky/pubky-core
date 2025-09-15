@@ -1,20 +1,20 @@
 use reqwest::Method;
 use url::Url;
 
-use super::core::PubkyDrive;
+use super::core::PubkyStorage;
 use super::resource::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;
 
-impl PubkyDrive {
+impl PubkyStorage {
     /// Directory listing helper.
     ///
     /// The homeserver default limit is 100. The max list limit is 1000.
     ///
     /// # Examples
     /// ```no_run
-    /// # async fn example(drive: pubky::PubkyDrive) -> pubky::Result<()> {
+    /// # async fn example(drive: pubky::PubkyStorage) -> pubky::Result<()> {
     /// let urls = drive.list("/pub/app/")?.limit(100).shallow(true).send().await?;
     /// for u in urls { println!("{u}"); }
     /// # Ok(()) }
@@ -38,11 +38,11 @@ impl PubkyDrive {
 ///
 /// Returned entries are absolute `Url`s.
 ///
-/// See [`PubkyDrive::list`] for examples.
+/// See [`PubkyStorage::list`] for examples.
 #[derive(Debug)]
 #[must_use]
 pub struct ListBuilder<'a> {
-    drive: &'a PubkyDrive,
+    drive: &'a PubkyStorage,
     url: Url,
     reverse: bool,
     shallow: bool,

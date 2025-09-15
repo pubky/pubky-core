@@ -29,12 +29,12 @@ let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
 let agent = signer.signup(&homeserver, None).await?;
 
 // 3) Session-scoped drive I/O
-agent.drive().put("/pub/app/hello.txt", "hello").await?;
-let body = agent.drive().get("/pub/app/hello.txt").await?.text().await?;
+agent.storage().put("/pub/app/hello.txt", "hello").await?;
+let body = agent.storage().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
 
 // 4) Public (unauthenticated) read by user-qualified path
-let txt = PubkyDrive::public()?
+let txt = PubkyStorage::public()?
   .get(format!("{}/pub/app/hello.txt", agent.public_key()))
   .await?
   .text().await?;
@@ -64,9 +64,9 @@ Transport:
 High level actors:
 
 - **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
-- **`PubkyAgent`** session-bound identity (holds a `Session` & cookie). Use `agent.drive()` for reads/writes.
+- **`PubkyAgent`** session-bound identity (holds a `Session` & cookie). Use `agent.storage()` for reads/writes.
 - **`PubkyPairingAuth`** pairing auth flow for keyless apps via an HTTP relay.
-- **`PubkyDrive`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
+- **`PubkyStorage`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
 
 ## Examples
@@ -79,17 +79,17 @@ Use a `PubkyAgent` to access a Homeserver's public data.
 # use pubky::prelude::*;
 # async fn io(agent: &PubkyAgent) -> pubky::Result<()> {
 // write
-agent.drive().put("/pub/app/file.txt", "hi").await?;
+agent.storage().put("/pub/app/file.txt", "hi").await?;
 
 // read raw
-let bytes = agent.drive().get("/pub/app/file.txt").await?.bytes().await?;
+let bytes = agent.storage().get("/pub/app/file.txt").await?.bytes().await?;
 
 // metadata / existence
-let meta = agent.drive().stats("/pub/app/file.txt").await?;
-let ok = agent.drive().exists("/pub/app/missing.txt").await?; // false
+let meta = agent.storage().stats("/pub/app/file.txt").await?;
+let ok = agent.storage().exists("/pub/app/missing.txt").await?; // false
 
 // public read by user-qualified resource (no session)
-let public = PubkyDrive::public()?;
+let public = PubkyStorage::public()?;
 let text = public.get(format!("{}/pub/app/file.txt", agent.public_key()))
     .await?.text().await?;
 # Ok(()) }
@@ -167,8 +167,8 @@ let homeserver  = testnet.homeserver();
 let signer = PubkySigner::random()?;
 let agent  = signer.signup(&homeserver.public_key(), None).await?;
 
-agent.drive().put("/pub/app/hello.txt", "hi").await?;
-let s = agent.drive().get("/pub/app/hello.txt").await?.text().await?;
+agent.storage().put("/pub/app/hello.txt", "hi").await?;
+let s = agent.storage().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(s, "hi");
 
 # Ok(()) }

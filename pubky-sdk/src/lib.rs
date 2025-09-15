@@ -20,7 +20,7 @@ pub mod prelude;
 pub use agent::core::PubkyAgent;
 pub use auth::PubkyPairingAuth;
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
-pub use drive::core::PubkyDrive;
+pub use drive::core::PubkyStorage;
 pub use errors::{BuildError, Error, Result};
 pub use pkdns::Pkdns;
 pub use signer::PubkySigner;

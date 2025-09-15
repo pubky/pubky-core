@@ -1,12 +1,12 @@
 use reqwest::Response;
 
-use super::core::PubkyDrive;
+use super::core::PubkyStorage;
 use super::resource::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;
 
-impl PubkyDrive {
+impl PubkyStorage {
     /// GET and deserialize JSON.
     ///
     /// Sets `Accept: application/json` and returns `T` via `resp.json()`.
@@ -15,7 +15,7 @@ impl PubkyDrive {
     /// ```no_run
     /// # use serde::Deserialize;
     /// # #[derive(Deserialize)] struct Info { version: String }
-    /// # async fn ex(drive: pubky::PubkyDrive) -> pubky::Result<()> {
+    /// # async fn ex(drive: pubky::PubkyStorage) -> pubky::Result<()> {
     /// let info: Info = drive.get_json("/pub/app/info.json").await?;
     /// # Ok(()) }
     /// ```
@@ -43,7 +43,7 @@ impl PubkyDrive {
     /// ```no_run
     /// # use serde::Serialize;
     /// # #[derive(Serialize)] struct Info { version: String }
-    /// # async fn ex(drive: pubky::PubkyDrive) -> pubky::Result<()> {
+    /// # async fn ex(drive: pubky::PubkyStorage) -> pubky::Result<()> {
     /// let info = Info { version: "42".into() };
     /// drive.put_json("/pub/app/info.json", &info).await?;
     /// # Ok(()) }

@@ -4,7 +4,7 @@ use reqwest::Method;
 use std::env;
 use url::Url;
 
-use pubky::{PubkyDrive, PubkyHttpClient};
+use pubky::{PubkyStorage, PubkyHttpClient};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -28,9 +28,9 @@ async fn main() -> Result<()> {
 
     // For a basic GET request to any homeserver no session or key material is needed.
     let drive = if args.testnet {
-        PubkyDrive::public_with_client(&PubkyHttpClient::testnet()?)
+        PubkyStorage::public_with_client(&PubkyHttpClient::testnet()?)
     } else {
-        PubkyDrive::public()?
+        PubkyStorage::public()?
     };
 
     // Build the request

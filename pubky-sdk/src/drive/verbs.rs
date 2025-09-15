@@ -1,19 +1,19 @@
 use reqwest::header::HeaderMap;
 use reqwest::{Method, Response, StatusCode};
 
-use super::core::PubkyDrive;
+use super::core::PubkyStorage;
 use super::resource::IntoPubkyResource;
 
 use crate::Result;
 use crate::util::check_http_status;
 
-impl PubkyDrive {
+impl PubkyStorage {
     fn err_if_require_session_for_write(&self) -> Result<()> {
         if self.has_session {
             return Ok(());
         }
         Err(crate::errors::AuthError::Validation(
-            "write requires an authenticated session (use agent.drive())".into(),
+            "write requires an authenticated session (use agent.storage())".into(),
         )
         .into())
     }
@@ -25,9 +25,9 @@ impl PubkyDrive {
     ///
     /// # Examples
     /// ```no_run
-    /// # use pubky::PubkyDrive;
+    /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyDrive::public()?;
+    /// let drive = PubkyStorage::public()?;
     /// let resp = drive.get("/pub/app/data.bin").await?;
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
@@ -72,9 +72,9 @@ impl PubkyDrive {
     ///
     /// # Example
     /// ```no_run
-    /// # use pubky::PubkyDrive;
+    /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyDrive::public()?;
+    /// let drive = PubkyStorage::public()?;
     /// if let Some(h) = drive.stats("/pub/app/data.bin").await? {
     ///     if let Some(len) = h.get(reqwest::header::CONTENT_LENGTH) {
     ///         println!("size: {}", len.to_str().unwrap_or("?"));
@@ -99,7 +99,7 @@ impl PubkyDrive {
     /// # Examples
     /// ```no_run
     /// # async fn example(agent: pubky::PubkyAgent) -> pubky::Result<()> {
-    /// agent.drive().put("/pub/app/hello.txt", "hello").await?;
+    /// agent.storage().put("/pub/app/hello.txt", "hello").await?;
     /// # Ok(()) }
     /// ```
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
@@ -125,7 +125,7 @@ impl PubkyDrive {
     /// # Examples
     /// ```no_run
     /// # async fn example(agent: pubky::PubkyAgent) -> pubky::Result<()> {
-    /// agent.drive().delete("/pub/app/hello.txt").await?;
+    /// agent.storage().delete("/pub/app/hello.txt").await?;
     /// # Ok(()) }
     /// ```
     pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {

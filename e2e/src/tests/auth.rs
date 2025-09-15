@@ -39,13 +39,13 @@ async fn disabled_user() {
     // Create a test file to ensure the user can write to their account
     let file_path = "/pub/pubky.app/foo";
     agent
-        .drive()
+        .storage()
         .put(file_path, Vec::<u8>::new())
         .await
         .unwrap();
 
     // Make sure the user can read their own file
-    let response = agent.drive().get(file_path).await.unwrap();
+    let response = agent.storage().get(file_path).await.unwrap();
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -64,12 +64,12 @@ async fn disabled_user() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // User can still read their own file
-    let response = agent.drive().get(file_path).await.unwrap();
+    let response = agent.storage().get(file_path).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // User can no longer write
     let err = agent
-        .drive()
+        .storage()
         .put(file_path, Vec::<u8>::new())
         .await
         .unwrap_err();
@@ -128,13 +128,13 @@ async fn authz() {
     assert_eq!(user.public_key(), signer.public_key());
 
     // Access control enforcement
-    user.drive()
+    user.storage()
         .put("/pub/pubky.app/foo", Vec::<u8>::new())
         .await
         .unwrap();
 
     let err = user
-        .drive()
+        .storage()
         .put("/pub/pubky.app", Vec::<u8>::new())
         .await
         .unwrap_err();
@@ -143,7 +143,7 @@ async fn authz() {
     );
 
     let err = user
-        .drive()
+        .storage()
         .put("/pub/foo.bar/file", Vec::<u8>::new())
         .await
         .unwrap_err();
@@ -163,7 +163,7 @@ async fn persist_and_restore_agent() {
 
     // Write something with the live agent
     agent
-        .drive()
+        .storage()
         .put("/pub/app/persist.txt", "hello")
         .await
         .unwrap();
@@ -186,7 +186,7 @@ async fn persist_and_restore_agent() {
 
     // Still authorized to write
     restored
-        .drive()
+        .storage()
         .put("/pub/app/persist.txt", "hello2")
         .await
         .unwrap();
@@ -257,13 +257,13 @@ async fn authz_timeout_reconnect() {
 
     // Access control enforcement (write inside scope OK, others forbidden)
     agent
-        .drive()
+        .storage()
         .put("/pub/pubky.app/foo", Vec::<u8>::new())
         .await
         .unwrap();
 
     let err = agent
-        .drive()
+        .storage()
         .put("/pub/pubky.app", Vec::<u8>::new())
         .await
         .unwrap_err();
@@ -272,7 +272,7 @@ async fn authz_timeout_reconnect() {
     );
 
     let err = agent
-        .drive()
+        .storage()
         .put("/pub/foo.bar/file", Vec::<u8>::new())
         .await
         .unwrap_err();

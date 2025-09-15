@@ -11,11 +11,11 @@ async fn main() -> anyhow::Result<()> {
     let agent = signer.signup(&homeserver.public_key(), None).await?;
 
     // Write a file
-    agent.drive().put("/pub/app/hello.txt", "hi").await?;
+    agent.storage().put("/pub/app/hello.txt", "hi").await?;
 
     // Read it back
     let txt = agent
-        .drive()
+        .storage()
         .get("/pub/app/hello.txt")
         .await?
         .text()

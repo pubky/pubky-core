@@ -2,7 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use pubky_common::{auth::AuthToken, session::Session};
 
-use crate::{Error, PubkyDrive, PubkyHttpClient, PublicKey, Result, util::check_http_status};
+use crate::{Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, util::check_http_status};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
@@ -134,7 +134,7 @@ impl PubkyAgent {
     /// This does *not* mutate the agent; it’s a sanity/validity check.
     pub async fn revalidate_session(&self) -> Result<Option<Session>> {
         let response = self
-            .drive()
+            .storage()
             .request(Method::GET, "/session")
             .await?
             .send()
@@ -152,7 +152,7 @@ impl PubkyAgent {
     /// - **On success:** the agent is consumed (dropped).
     /// - **On failure:** you get `(Error, Self)` back so you can retry or inspect.
     pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
-        let resp = match self.drive().delete("/session").await {
+        let resp = match self.storage().delete("/session").await {
             Ok(r) => r,
             Err(e) => return Err((e, self)),
         };
@@ -168,9 +168,9 @@ impl PubkyAgent {
     /// - On native targets, requests that target this user’s homeserver automatically
     ///   carry the session cookie.
     ///
-    /// See [`PubkyDrive`] for usage examples.
-    pub fn drive(&self) -> PubkyDrive {
-        PubkyDrive {
+    /// See [`PubkyStorage`] for usage examples.
+    pub fn storage(&self) -> PubkyStorage {
+        PubkyStorage {
             client: self.client.clone(),
             public_key: Some(self.session.public_key().clone()),
             has_session: true,

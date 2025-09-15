@@ -14,7 +14,7 @@ pub use crate::PubkySigner;
 // Authentication flow for apps.
 pub use crate::PubkyPairingAuth;
 // Homeserver drive storage API (http verbs + list)
-pub use crate::PubkyDrive;
+pub use crate::PubkyStorage;
 // Pkdns/Pkarr retrieval and publishing
 pub use crate::Pkdns;
 

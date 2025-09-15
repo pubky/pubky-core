@@ -11,7 +11,7 @@ use crate::{
 
 /// High-level file/HTTP API against a Pubky homeserver.
 ///
-/// `PubkyDrive` operates in two modes:
+/// `PubkyStorage` operates in two modes:
 ///
 /// ### 1) Session mode (authenticated)
 /// Obtained from a session-bound agent via [`crate::PubkyAgent::drive`]. In this mode:
@@ -28,24 +28,24 @@ use crate::{
 /// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
 /// #   let user = sub.wait_for_approval().await?;
 ///     // Relative paths are resolved against the agent’s user.
-///     user.drive().put("/pub/app/hello.txt", "hello").await?;
-///     let body = user.drive().get("/pub/app/hello.txt").await?.text().await?;
+///     user.storage().put("/pub/app/hello.txt", "hello").await?;
+///     let body = user.storage().get("/pub/app/hello.txt").await?.text().await?;
 ///     assert_eq!(body, "hello");
 /// #   Ok(())
 /// # }
 /// ```
 ///
 /// ### 2) Public mode (unauthenticated)
-/// Constructed via [`PubkyDrive::public`] or [`PubkyDrive::public_with_client`]. In this mode:
+/// Constructed via [`PubkyStorage::public`] or [`PubkyStorage::public_with_client`]. In this mode:
 /// - **No session** is attached; requests are unauthenticated.
 /// - Paths **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"`.
 ///   Relative/agent-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///
 /// ```no_run
-/// # use pubky::PubkyDrive;
+/// # use pubky::PubkyStorage;
 /// # async fn example() -> pubky::Result<()> {
-///     let drive = PubkyDrive::public()?;
+///     let drive = PubkyStorage::public()?;
 ///     // Fully-qualified pubky Resource: user + path
 ///     let resp = drive.get("alice_pubky/pub/site/index.html").await?;
 ///     let html = resp.text().await?;
@@ -54,7 +54,7 @@ use crate::{
 /// # }
 /// ```
 #[derive(Debug, Clone)]
-pub struct PubkyDrive {
+pub struct PubkyStorage {
     pub(crate) client: PubkyHttpClient,
     /// When `Some(public_key)`, relative paths are agent-scoped and cookies may be attached.
     /// When `None`, only absolute user-qualified paths are accepted.
@@ -64,23 +64,23 @@ pub struct PubkyDrive {
     pub(crate) cookie: Option<String>,
 }
 
-impl PubkyDrive {
+impl PubkyStorage {
     /// Create a **public (unauthenticated)** drive that uses the global shared [`PubkyHttpClient`].
     ///
     /// Use this for read-only access to any user’s public content without a session.
     /// In this mode **paths must be user-qualified** (e.g. `"alice_pubky/pub/..."`).
     ///
-    /// See also: [`PubkyDrive::public_with_client`].
+    /// See also: [`PubkyStorage::public_with_client`].
     ///
     /// # Examples
     /// ```no_run
-    /// # use pubky::PubkyDrive;
+    /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyDrive::public()?;
+    /// let drive = PubkyStorage::public()?;
     /// let resp = drive.get("alice/pub/site/index.html").await?;
     /// # Ok(()) }
     /// ```
-    pub fn public() -> Result<PubkyDrive> {
+    pub fn public() -> Result<PubkyStorage> {
         let client = global_client()?;
         Ok(Self::public_with_client(&client))
     }
@@ -94,15 +94,15 @@ impl PubkyDrive {
     ///
     /// # Examples
     /// ```no_run
-    /// # use pubky::{PubkyHttpClient, PubkyDrive};
+    /// # use pubky::{PubkyHttpClient, PubkyStorage};
     /// # async fn example() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::new()?;
-    /// let drive = PubkyDrive::public_with_client(&client);
+    /// let drive = PubkyStorage::public_with_client(&client);
     /// let urls = drive.list("alice_pubky/pub/site/")?.limit(10).send().await?;
     /// # Ok(()) }
     /// ```
-    pub fn public_with_client(client: &PubkyHttpClient) -> PubkyDrive {
-        PubkyDrive {
+    pub fn public_with_client(client: &PubkyHttpClient) -> PubkyStorage {
+        PubkyStorage {
             client: client.clone(),
             public_key: None,
             has_session: false,
@@ -154,7 +154,7 @@ impl PubkyDrive {
 
 // ---- Cookie attachment (native only) ----
 #[cfg(not(target_arch = "wasm32"))]
-impl PubkyDrive {
+impl PubkyStorage {
     fn is_this_users_homeserver(&self, url: &Url) -> bool {
         let Some(user) = &self.public_key else {
             return false;

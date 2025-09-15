@@ -185,7 +185,7 @@ impl PubkyHttpClientBuilder {
 /// URL handling.
 ///
 /// `PubkyHttpClient` is the low-level, stateless engine the higher-level actors
-/// (`PubkyAgent`, `PubkyDrive`, `Pkdns`, `PubkyPairingAuth`) are built on. It owns:
+/// (`PubkyAgent`, `PubkyStorage`, `Pkdns`, `PubkyPairingAuth`) are built on. It owns:
 /// - A pkarr DHT client (for resolving pkdns endpoints and publishing records).
 /// - One or more reqwest HTTP clients (platform-specific).
 ///
@@ -258,7 +258,7 @@ impl PubkyHttpClientBuilder {
 /// # Ok(()) }
 /// ```
 ///
-/// > Tip: For authenticated reads/writes, prefer `agent.drive().get(...)`, which
+/// > Tip: For authenticated reads/writes, prefer `agent.storage().get(...)`, which
 /// > automatically scopes paths and attaches the right session cookie.
 #[derive(Clone, Debug)]
 pub struct PubkyHttpClient {
