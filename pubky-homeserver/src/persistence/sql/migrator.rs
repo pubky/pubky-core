@@ -3,13 +3,13 @@ use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
 use crate::persistence::sql::{
-    sql_db::SqlDb,
     migration::MigrationTrait,
     migrations::{
         M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,
         M20250813CreateSessionMigration, M20250814CreateEventMigration,
         M20250815CreateEntryMigration,
     },
+    sql_db::SqlDb,
 };
 
 /// The name of the migration table to keep track of which migrations have been applied.

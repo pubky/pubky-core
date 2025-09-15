@@ -82,13 +82,14 @@ const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres
 
 #[cfg(any(test, feature = "testing"))]
 impl SqlDb {
-
     /// Creates a new test database with the name `pubky_test_{uuid}`.
     /// The provided `admin_con_string` is used to create the test database. The database name defined by the admin connection string
     /// is only used to create the actual test database.
     /// If no connection string is passed, the connection string is read from the TEST_PUBKY_CONNECTION_STRING environment variable.
     /// If the environment variable is not set, the default test connection string is used.
-    async fn create_test_database(admin_con_string: ConnectionString) -> Result<ConnectionString, sqlx::Error> {
+    async fn create_test_database(
+        admin_con_string: ConnectionString,
+    ) -> Result<ConnectionString, sqlx::Error> {
         use uuid::Uuid;
         let admin_con = Self::connect_inner(&admin_con_string).await?;
         let test_db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());

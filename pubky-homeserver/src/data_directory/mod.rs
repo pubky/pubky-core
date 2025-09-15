@@ -21,4 +21,3 @@ pub use domain_port::DomainPort;
 pub use mock_data_dir::MockDataDir;
 pub use persistent_data_dir::PersistentDataDir;
 pub use signup_mode::SignupMode;
-

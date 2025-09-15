@@ -51,7 +51,9 @@ impl ConnectionString {
 
     /// Returns true if the connection string is for a test database.
     pub fn is_test_db(&self) -> bool {
-        self.0.query_pairs().any(|(key, value)| key == "pubky-test" && value == "true")
+        self.0
+            .query_pairs()
+            .any(|(key, value)| key == "pubky-test" && value == "true")
     }
 }
 

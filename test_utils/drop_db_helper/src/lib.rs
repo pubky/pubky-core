@@ -53,8 +53,7 @@ pub async fn drop_test_databases() {
     // Drop all databases that are registered to be dropped.
     while let Some(db) = get_db_to_drop() {
         match db.drop().await {
-            Ok(_) => {
-            }
+            Ok(_) => {}
             Err(e) => {
                 // Readd the database to the list to be dropped.
                 // let _ = register_db_to_drop(db.db_name.clone(), db.connection_string.clone());
