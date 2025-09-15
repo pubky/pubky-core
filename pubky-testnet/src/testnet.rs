@@ -40,7 +40,7 @@ impl Testnet {
             temp_dirs: vec![],
         };
 
-        // Set a global shared pubky client so lazily initialized actors (PubkyAgent, PubkyPairingAuth, PubkySigner)
+        // Set a global shared pubky client so lazily initialized actors (PubkySession, PubkyPairingAuth, PubkySigner)
         // work over this testnet
         let testnet_client = testnet.client()?;
         pubky::global::set_client(testnet_client);
@@ -226,8 +226,8 @@ mod test {
 
         let signer = PubkySigner::random().unwrap();
 
-        let agent = signer.signup(&hs.public_key(), None).await.unwrap();
-        assert_eq!(agent.public_key(), signer.public_key());
+        let session = signer.signup(&hs.public_key(), None).await.unwrap();
+        assert_eq!(session.public_key(), signer.public_key());
     }
 
     #[tokio::test]
@@ -279,9 +279,9 @@ mod test {
 
                 let signer = PubkySigner::random().unwrap();
 
-                let agent = signer.signup(&hs.public_key(), None).await.unwrap();
+                let session = signer.signup(&hs.public_key(), None).await.unwrap();
 
-                assert_eq!(agent.public_key(), signer.public_key());
+                assert_eq!(session.public_key(), signer.public_key());
                 tokio::time::sleep(Duration::from_secs(3)).await;
             });
             handles.push(handle);

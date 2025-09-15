@@ -185,7 +185,7 @@ impl PubkyHttpClientBuilder {
 /// URL handling.
 ///
 /// `PubkyHttpClient` is the low-level, stateless engine the higher-level actors
-/// (`PubkyAgent`, `PubkyStorage`, `Pkdns`, `PubkyPairingAuth`) are built on. It owns:
+/// (`PubkySession`, `PubkyStorage`, `Pkdns`, `PubkyPairingAuth`) are built on. It owns:
 /// - A pkarr DHT client (for resolving pkdns endpoints and publishing records).
 /// - One or more reqwest HTTP clients (platform-specific).
 ///
@@ -198,7 +198,7 @@ impl PubkyHttpClientBuilder {
 ///
 /// ### What it *doesn’t* do
 /// - It is **not** session/identity aware. No cookies, no per-user scoping.
-///   For authenticated per-user flows use [`crate::PubkyAgent`].
+///   For authenticated per-user flows use [`crate::PubkySession`].
 ///
 /// ### When to use
 /// - You want direct control over the PubkyHttpClient (power users, libs).
@@ -258,7 +258,7 @@ impl PubkyHttpClientBuilder {
 /// # Ok(()) }
 /// ```
 ///
-/// > Tip: For authenticated reads/writes, prefer `agent.storage().get(...)`, which
+/// > Tip: For authenticated reads/writes, prefer `session.storage().get(...)`, which
 /// > automatically scopes paths and attaches the right session cookie.
 #[derive(Clone, Debug)]
 pub struct PubkyHttpClient {

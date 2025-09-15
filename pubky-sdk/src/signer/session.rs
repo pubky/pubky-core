@@ -5,12 +5,12 @@ use pubky_common::{
 use reqwest::Method;
 use url::Url;
 
-use crate::{PubkyAgent, PublicKey, Result, util::check_http_status};
+use crate::{PubkySession, PublicKey, Result, util::check_http_status};
 
 use super::PubkySigner;
 
 impl PubkySigner {
-    /// Create an account on a homeserver and return a ready-to-use `PubkyAgent`.
+    /// Create an account on a homeserver and return a ready-to-use `PubkySession`.
     ///
     /// Side effects:
     /// - Publishes the `_pubky` pkarr record pointing to `homeserver` (force mode).
@@ -21,7 +21,7 @@ impl PubkySigner {
         &self,
         homeserver: &PublicKey,
         signup_token: Option<&str>,
-    ) -> Result<PubkyAgent> {
+    ) -> Result<PubkySession> {
         let mut url = Url::parse(&format!("https://{}", homeserver))?;
         url.set_path("/signup");
         if let Some(token) = signup_token {
@@ -45,33 +45,33 @@ impl PubkySigner {
         self.pkdns()
             .publish_homeserver_force(Some(homeserver))
             .await?;
-        PubkyAgent::new_from_response(self.client.clone(), response).await
+        PubkySession::new_from_response(self.client.clone(), response).await
     }
 
     // All of these methods use root capabilities
 
-    /// Sign in by locally signing a root-capability token. Returns a session-bound agent.
-    pub async fn signin(&self) -> Result<PubkyAgent> {
+    /// Sign in by locally signing a root-capability token. Returns a session-bound session.
+    pub async fn signin(&self) -> Result<PubkySession> {
         self.signin_and_ensure_record_published(false).await
     }
 
     /// Signin and publish `_pubky` if stale in sync.
-    pub async fn signin_and_publish(&self) -> Result<PubkyAgent> {
+    pub async fn signin_and_publish(&self) -> Result<PubkySession> {
         self.signin_and_ensure_record_published(true).await
     }
 
-    async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<PubkyAgent> {
+    async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<PubkySession> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
-        let agent = PubkyAgent::new_with_client(&self.client, &token).await?;
+        let session = PubkySession::new_with_client(&self.client, &token).await?;
 
         if publish_sync {
             self.pkdns().publish_homeserver_if_stale(None).await?;
         } else {
             // Fire-and-forget path: refresh in the background
-            let agent = self.clone();
+            let session = self.clone();
             let fut = async move {
-                let _ = agent.pkdns().publish_homeserver_if_stale(None).await;
+                let _ = session.pkdns().publish_homeserver_if_stale(None).await;
             };
             #[cfg(not(target_arch = "wasm32"))]
             tokio::spawn(fut);
@@ -79,6 +79,6 @@ impl PubkySigner {
             wasm_bindgen_futures::spawn_local(fut);
         };
 
-        Ok(agent)
+        Ok(session)
     }
 }

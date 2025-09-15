@@ -13,14 +13,14 @@ impl PubkyStorage {
             return Ok(());
         }
         Err(crate::errors::AuthError::Validation(
-            "write requires an authenticated session (use agent.storage())".into(),
+            "write requires an authenticated session (use session.storage())".into(),
         )
         .into())
     }
 
     /// HTTP `GET`.
     ///
-    /// - In **session mode**, attaches the agent’s cookie when targeting that user’s homeserver.
+    /// - In **session mode**, attaches the session's cookie when targeting that user’s homeserver.
     /// - In **public mode**, unauthenticated read against user-qualified paths.
     ///
     /// # Examples
@@ -44,8 +44,8 @@ impl PubkyStorage {
     /// - `Ok(false)` for 404/410
     /// - `Err(..)` for any other status or transport error
     ///
-    /// Works in public or session mode. In session mode, attaches the agent’s cookie
-    /// when the URL targets this agent’s homeserver.
+    /// Works in public or session mode. In session mode, attaches the session’s cookie
+    /// when the URL targets this session’s homeserver.
     pub async fn exists<P: IntoPubkyResource>(&self, path: P) -> Result<bool> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         match resp.status() {
@@ -67,8 +67,8 @@ impl PubkyStorage {
     /// errors. Typical headers include `content-length`, `content-type`, `etag`,
     /// and `last-modified`.
     ///
-    /// Works in public or session mode. In session mode, attaches the agent’s cookie
-    /// when the URL targets this agent’s homeserver.
+    /// Works in public or session mode. In session mode, attaches the session’s cookie
+    /// when the URL targets this session’s homeserver.
     ///
     /// # Example
     /// ```no_run
@@ -98,8 +98,8 @@ impl PubkyStorage {
     ///
     /// # Examples
     /// ```no_run
-    /// # async fn example(agent: pubky::PubkyAgent) -> pubky::Result<()> {
-    /// agent.storage().put("/pub/app/hello.txt", "hello").await?;
+    /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
+    /// session.storage().put("/pub/app/hello.txt", "hello").await?;
     /// # Ok(()) }
     /// ```
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
@@ -124,8 +124,8 @@ impl PubkyStorage {
     ///
     /// # Examples
     /// ```no_run
-    /// # async fn example(agent: pubky::PubkyAgent) -> pubky::Result<()> {
-    /// agent.storage().delete("/pub/app/hello.txt").await?;
+    /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
+    /// session.storage().delete("/pub/app/hello.txt").await?;
     /// # Ok(()) }
     /// ```
     pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {

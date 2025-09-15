@@ -8,7 +8,7 @@ pub use crate::{PubkyHttpClient, PubkyHttpClientBuilder};
 
 // High level Actors
 // Agent to use on behalf of a user on apps.
-pub use crate::PubkyAgent;
+pub use crate::PubkySession;
 // Signer to use on behalf of a user on a keychain application.
 pub use crate::PubkySigner;
 // Authentication flow for apps.

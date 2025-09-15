@@ -33,16 +33,16 @@ async fn main() -> Result<()> {
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
     let signer = PubkySigner::new(keypair)?;
-    let agent = signer
+    let session = signer
         .signup(homeserver, cli.signup_code.as_deref())
         .await?;
 
     println!("Successfully signed up. Checking session:");
 
-    let session = agent.session();
+    let session_info = session.session_info();
 
     println!("Successfully resolved current session at the homeserver.");
-    println!("{:?}", session);
+    println!("{:?}", session_info);
 
     Ok(())
 }

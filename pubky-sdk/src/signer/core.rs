@@ -68,7 +68,7 @@ impl PubkySigner {
         self.keypair.public_key()
     }
 
-    /// Borrow the agent’s keypair.
+    /// Borrow the signer's keypair.
     #[inline]
     pub fn keypair(&self) -> &Keypair {
         &self.keypair

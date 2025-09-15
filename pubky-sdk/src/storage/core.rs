@@ -4,7 +4,7 @@ use url::Url;
 
 use super::resource::IntoPubkyResource;
 use crate::{
-    PubkyAgent, PubkyHttpClient, PubkyResource,
+    PubkyHttpClient, PubkyResource, PubkySession,
     errors::{RequestError, Result},
     global::global_client,
 };
@@ -13,10 +13,10 @@ use crate::{
 ///
 /// `PubkyStorage` operates in two modes:
 ///
-/// ### 1) SessionInfo mode (authenticated)
-/// Obtained from a session-bound agent via [`crate::PubkyAgent::drive`]. In this mode:
-/// - Requests are **scoped to that agent’s user** by default (relative paths resolve to that user).
-/// - On native targets, the agent’s session cookie is **automatically attached** to requests
+/// ### 1) Session mode (authenticated)
+/// Obtained from a session via [`crate::PubkySession::storage`]. In this mode:
+/// - Requests are **scoped to that user's session** by default (relative paths resolve to that user).
+/// - On native targets, the session cookie is **automatically attached** to requests
 ///   targeting *that same user’s* homeserver.
 /// - Reads **and** writes are expected to succeed (subject to server authorization).
 ///
@@ -26,10 +26,10 @@ use crate::{
 /// #   let caps = Capabilities::default();
 /// #   let (sub, _url) = PubkyPairingAuth::new(&caps)?.subscribe();
 /// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
-/// #   let user = sub.wait_for_approval().await?;
-///     // Relative paths are resolved against the agent’s user.
-///     user.storage().put("/pub/app/hello.txt", "hello").await?;
-///     let body = user.storage().get("/pub/app/hello.txt").await?.text().await?;
+/// #   let session = sub.wait_for_approval().await?;
+///     // Relative paths are resolved against the user's session.
+///     session.storage().put("/pub/app/hello.txt", "hello").await?;
+///     let body = session.storage().get("/pub/app/hello.txt").await?.text().await?;
 ///     assert_eq!(body, "hello");
 /// #   Ok(())
 /// # }
@@ -39,7 +39,7 @@ use crate::{
 /// Constructed via [`PubkyStorage::public`] or [`PubkyStorage::public_with_client`]. In this mode:
 /// - **No session** is attached; requests are unauthenticated.
 /// - Paths **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"`.
-///   Relative/agent-scoped paths are rejected.
+///   Relative/session-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///
 /// ```no_run
@@ -56,7 +56,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct PubkyStorage {
     pub(crate) client: PubkyHttpClient,
-    /// When `Some(public_key)`, relative paths are agent-scoped and cookies may be attached.
+    /// When `Some(public_key)`, relative paths are session-scoped and cookies may be attached.
     /// When `None`, only absolute user-qualified paths are accepted.
     pub(crate) public_key: Option<PublicKey>,
     pub(crate) has_session: bool,
@@ -111,32 +111,32 @@ impl PubkyStorage {
         }
     }
 
-    /// Construct a **session-mode** PubkyStorage from an existing agent.
+    /// Construct a **session-mode** PubkyStorage from an existing session.
     ///
-    /// Equivalent to `agent.storage()`.
-    pub fn from_agent(agent: &PubkyAgent) -> PubkyStorage {
+    /// Equivalent to `session.storage()`.
+    pub fn from_session(session: &PubkySession) -> PubkyStorage {
         PubkyStorage {
-            client: agent.client.clone(),
-            public_key: Some(agent.session.public_key().clone()),
+            client: session.client.clone(),
+            public_key: Some(session.info.public_key().clone()),
             has_session: true,
             #[cfg(not(target_arch = "wasm32"))]
-            cookie: Some(agent.cookie.clone()),
+            cookie: Some(session.cookie.clone()),
         }
     }
 
     /// Resolve a path into a concrete `pubky://…` or `https://…` URL for this drive.
     ///
-    /// - **SessionInfo mode:** relative paths are scoped to this drive’s user.
-    /// - **Public mode:** the path must include the target user; relative/agent-scoped paths error.
+    /// - **Session mode:** relative paths are scoped to this drive’s user.
+    /// - **Public mode:** the path must include the target user; relative/session-scoped paths error.
     pub(crate) fn to_url<P: IntoPubkyResource>(&self, p: P) -> Result<Url> {
         let addr: PubkyResource = p.into_pubky_resource()?;
 
         let url_str = match (&self.public_key, &addr.user) {
-            // SessionInfo mode: default to this agent for agent-scoped paths
+            // Session mode: default to this user for session-scoped paths
             (Some(default_user), _) => addr.to_pubky_url(Some(default_user))?,
             // Public mode + explicit user in the input => OK
             (None, Some(_user_in_addr)) => addr.to_pubky_url(None)?,
-            // Public mode + agent-scoped path => reject (no default user available)
+            // Public mode + session-scoped path => reject (no default user available)
             (None, None) => {
                 return Err(RequestError::Validation {
                     message: "public drive requires user-qualified path: use `<user>/<path>` or `pubky://<user>/<path>`".into(),

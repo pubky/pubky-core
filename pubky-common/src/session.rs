@@ -11,14 +11,14 @@ use crate::{capabilities::Capabilities, timestamp::Timestamp};
 
 // TODO: add IP address?
 // TODO: use https://crates.io/crates/user-agent-parser to parse the session
-// and get more informations from the user-agent.
+// and get more informations from the user-session.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 /// Pubky homeserver session struct.
 pub struct SessionInfo {
     version: usize,
     public_key: PublicKey,
     created_at: u64,
-    /// User specified name, defaults to the user-agent.
+    /// User specified name, defaults to the user-session.
     name: String,
     user_agent: String,
     capabilities: Capabilities,
@@ -55,7 +55,7 @@ impl SessionInfo {
 
     // === Setters ===
 
-    /// Set this session user agent.
+    /// Set this session user session.
     pub fn set_user_agent(&mut self, user_agent: String) -> &mut Self {
         self.user_agent = user_agent;
 

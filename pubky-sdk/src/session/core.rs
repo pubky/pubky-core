@@ -12,7 +12,7 @@ use crate::errors::AuthError;
 
 /// Stateful, per-identity API driver built on a shared [`PubkyHttpClient`].
 ///
-/// An `PubkyAgent` represents one user/identity. It optionally holds a `Keypair` (for
+/// An `PubkySession` represents one user/identity. It optionally holds a `Keypair` (for
 /// self-signed flows like `signin()`/`signup()`), and always tracks the user’s `pubky`
 /// (either from the keypair or learned later via the pubkyauth flow). On native targets,
 /// each agent also owns exactly one session cookie secret; cookies never leak across agents.
@@ -24,29 +24,29 @@ use crate::errors::AuthError;
 /// - Implements identity flows: `signup`, `signin`, `signout`, `session`, and pubkyauth.
 ///
 /// When to use:
-/// - Use `PubkyAgent` whenever you’re acting “as a user” against a Pubky homeserver.
+/// - Use `PubkySession` whenever you’re acting “as a user” against a Pubky homeserver.
 /// - Use `PubkyHttpClient` only for raw transport or unauthenticated/public operations.
 ///
 /// Concurrency:
-/// - `PubkyAgent` is cheap to clone and thread-safe; it shares the underlying `PubkyHttpClient`.
+/// - `PubkySession` is cheap to clone and thread-safe; it shares the underlying `PubkyHttpClient`.
 #[derive(Clone, Debug)]
-pub struct PubkyAgent {
+pub struct PubkySession {
     pub(crate) client: PubkyHttpClient,
 
-    /// Known session for this agent.
-    pub(crate) session: SessionInfo,
+    /// Known session for this session.
+    pub(crate) info: SessionInfo,
 
     /// Native-only, single session cookie secret for `_pubky.<pubky>`. Never shared across agents.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) cookie: String,
 }
 
-impl PubkyAgent {
+impl PubkySession {
     /// Establish a session from a signed [`AuthToken`] using the default global client.
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response
-    /// and constructs a new session-bound [`PubkyAgent`]
-    pub async fn from_token(token: &AuthToken) -> Result<PubkyAgent> {
+    /// and constructs a new session-bound [`PubkySession`]
+    pub async fn from_token(token: &AuthToken) -> Result<PubkySession> {
         let client = global_client()?;
         Self::new_with_client(&client, token).await
     }
@@ -54,11 +54,11 @@ impl PubkyAgent {
     /// Establish a session from a signed [`AuthToken`].
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response
-    /// and constructs a new session-bound [`PubkyAgent`]
+    /// and constructs a new session-bound [`PubkySession`]
     pub async fn new_with_client(
         client: &PubkyHttpClient,
         token: &AuthToken,
-    ) -> Result<PubkyAgent> {
+    ) -> Result<PubkySession> {
         let url = format!("pubky://{}/session", token.public_key());
         let response = client
             .cross_request(Method::POST, url)
@@ -71,20 +71,20 @@ impl PubkyAgent {
         Self::new_from_response(client.clone(), response).await
     }
 
-    /// Construct an agent **from a successful `/session` or `/signup` response**.
+    /// Construct a session **from a successful `/session` or `/signup` response**.
     ///
     /// - Reads the `SessionInfo` body (to learn the user pubky).
     /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
     pub(crate) async fn new_from_response(
         client: PubkyHttpClient,
         response: reqwest::Response,
-    ) -> Result<PubkyAgent> {
+    ) -> Result<PubkySession> {
         #[cfg(target_arch = "wasm32")]
         {
             // WASM: cookies are browser-managed; just parse the session body.
             let bytes = response.bytes().await?;
             let session = SessionInfo::deserialize(&bytes)?;
-            return Ok(PubkyAgent { client, session });
+            return Ok(PubkySession { client, session });
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -103,10 +103,10 @@ impl PubkyAgent {
 
             // 2) Read and parse the session body (this consumes the response).
             let bytes = response.bytes().await?;
-            let session = SessionInfo::deserialize(&bytes)?;
+            let info = SessionInfo::deserialize(&bytes)?;
 
             // 3) Find the cookie named exactly as the user's pubky.
-            let cookie_name = session.public_key().to_string();
+            let cookie_name = info.public_key().to_string();
             let cookie = raw_set_cookies
                 .iter()
                 .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
@@ -114,32 +114,32 @@ impl PubkyAgent {
                 .map(|c| c.value().to_string())
                 .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
 
-            Ok(PubkyAgent {
+            Ok(PubkySession {
                 client,
-                session,
+                info,
                 cookie,
             })
         }
     }
 
-    /// Returns the agent public key
+    /// Returns the session public key
     pub fn public_key(&self) -> PublicKey {
-        self.session.public_key().clone()
+        self.info.public_key().clone()
     }
 
-    /// Returns the agent capabilities key
+    /// Returns the session capabilities key
     pub fn capabilities(&self) -> Capabilities {
-        self.session.capabilities().clone()
+        self.info.capabilities().clone()
     }
 
-    /// Returns the agent session
-    pub fn session(&self) -> SessionInfo {
-        self.session.clone()
+    /// Returns the session info
+    pub fn session_info(&self) -> SessionInfo {
+        self.info.clone()
     }
 
     /// Returns a reference to the internal `PubkyHttpClient`
-    /// Raw transport handle. No per-agent cookie injection. Use `homeserver()` for
-    /// authenticated, agent-scoped requests.
+    /// Raw transport handle. No per-session cookie injection. Use `storage()` for
+    /// authenticated, session-scoped requests.
     pub fn client(&self) -> &PubkyHttpClient {
         &self.client
     }
@@ -151,7 +151,7 @@ impl PubkyAgent {
     /// - `Ok(None)` if the session no longer exists (expired/invalidated).
     /// - `Err(_)` for transport or server errors unrelated to validity.
     ///
-    /// This does *not* mutate the agent; it’s a sanity/validity check.
+    /// This does *not* mutate the session; it’s a sanity/validity check.
     pub async fn revalidate_session(&self) -> Result<Option<SessionInfo>> {
         let response = self
             .storage()
@@ -167,9 +167,9 @@ impl PubkyAgent {
         Ok(Some(SessionInfo::deserialize(&bytes)?))
     }
 
-    /// Sign out and invalidate this agent’s server-side session.
+    /// Sign out and invalidate this session server-side.
     ///
-    /// - **On success:** the agent is consumed (dropped).
+    /// - **On success:** the session is consumed (dropped).
     /// - **On failure:** you get `(Error, Self)` back so you can retry or inspect.
     pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
         let resp = match self.storage().delete("/session").await {
@@ -182,7 +182,7 @@ impl PubkyAgent {
         Ok(()) // success => `self` is consumed
     }
 
-    /// Create a **session-mode** storage bound to this agent’s user and session.
+    /// Create a **session-mode** storage bound to this user session.
     ///
     /// - Relative paths (e.g. `"/pub/app/file"`) are resolved to **this** user.
     /// - On native targets, requests that target this user’s homeserver automatically
@@ -192,7 +192,7 @@ impl PubkyAgent {
     pub fn storage(&self) -> PubkyStorage {
         PubkyStorage {
             client: self.client.clone(),
-            public_key: Some(self.session.public_key().clone()),
+            public_key: Some(self.info.public_key().clone()),
             has_session: true,
             #[cfg(not(target_arch = "wasm32"))]
             cookie: Some(self.cookie.clone()),

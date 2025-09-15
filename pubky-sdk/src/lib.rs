@@ -3,13 +3,13 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-mod agent;
 mod auth;
 mod client;
 pub mod errors;
 pub mod global;
 mod macros;
 mod pkdns;
+mod session;
 mod signer;
 mod storage;
 mod util;
@@ -17,11 +17,11 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
-pub use agent::core::PubkyAgent;
 pub use auth::PubkyPairingAuth;
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 pub use errors::{BuildError, Error, Result};
 pub use pkdns::Pkdns;
+pub use session::core::PubkySession;
 pub use signer::PubkySigner;
 pub use storage::core::PubkyStorage;
 

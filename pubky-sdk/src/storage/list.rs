@@ -79,7 +79,7 @@ impl<'a> ListBuilder<'a> {
     ///
     /// Directory semantics are enforced: if the path didn’t end with `/`, it will be normalized.
     pub async fn send(self) -> Result<Vec<Url>> {
-        // Resolve now (absolute stays absolute, relative is based on agent’s homeserver)
+        // Resolve now (absolute stays absolute, relative is based on session’s homeserver)
         let mut url = self.url;
 
         // Ensure directory semantics using URL segments (drop last segment, keep trailing slash)
@@ -116,7 +116,7 @@ impl<'a> ListBuilder<'a> {
             .client
             .cross_request(Method::GET, url.clone())
             .await?;
-        // Attach cookie only when hitting this agent’s homeserver (native)
+        // Attach cookie only when hitting this session’s homeserver (native)
         #[cfg(not(target_arch = "wasm32"))]
         let rb = self.drive.maybe_attach_session_cookie(&url, rb);
 

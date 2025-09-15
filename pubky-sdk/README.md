@@ -26,16 +26,16 @@ let signer = PubkySigner::new(Keypair::random())?;
 
 // 2) Sign up on a homeserver (identified by its public key)
 let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
-let agent = signer.signup(&homeserver, None).await?;
+let session = signer.signup(&homeserver, None).await?;
 
 // 3) Session-scoped storage I/O
-agent.storage().put("/pub/app/hello.txt", "hello").await?;
-let body = agent.storage().get("/pub/app/hello.txt").await?.text().await?;
+session.storage().put("/pub/app/hello.txt", "hello").await?;
+let body = session.storage().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
 
 // 4) Public (unauthenticated) read by user-qualified path
 let txt = PubkyStorage::public()?
-  .get(format!("{}/pub/app/hello.txt", agent.public_key()))
+  .get(format!("{}/pub/app/hello.txt", session.public_key()))
   .await?
   .text().await?;
 assert_eq!(txt, "hello");
@@ -45,12 +45,12 @@ signer.pkdns().publish_homeserver_if_stale(None).await?;
 let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
-// 6) Keyless third-party app: pairing auth -> agent
+// 6) Keyless third-party app: pairing auth -> session
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
 let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
 // show `url` (QR/deeplink); on the signing device call:
 // signer.approve_pubkyauth_request(&url).await?;
-let app_agent = sub.wait_for_approval().await?;
+let app_session = sub.wait_for_approval().await?;
 
 # Ok(()) }
 ```
@@ -64,7 +64,7 @@ Transport:
 High level actors:
 
 - **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
-- **`PubkyAgent`** session-bound identity (holds a `SessionInfo` & cookie). Use `agent.storage()` for reads/writes.
+- **`PubkySession`** session-bound identity (holds a `SessionInfo` & cookie). Use `session.storage()` for reads/writes.
 - **`PubkyPairingAuth`** pairing auth flow for keyless apps via an HTTP relay.
 - **`PubkyStorage`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
@@ -73,31 +73,31 @@ High level actors:
 
 ### Drive API (session & public)
 
-Use a `PubkyAgent` to access a Homeserver's public data.
+Use a `PubkySession` to access a Homeserver's public data.
 
 ```rust no_run
 # use pubky::prelude::*;
-# async fn io(agent: &PubkyAgent) -> pubky::Result<()> {
+# async fn io(session: &PubkySession) -> pubky::Result<()> {
 // write
-agent.storage().put("/pub/app/file.txt", "hi").await?;
+session.storage().put("/pub/app/file.txt", "hi").await?;
 
 // read raw
-let bytes = agent.storage().get("/pub/app/file.txt").await?.bytes().await?;
+let bytes = session.storage().get("/pub/app/file.txt").await?.bytes().await?;
 
 // metadata / existence
-let meta = agent.storage().stats("/pub/app/file.txt").await?;
-let ok = agent.storage().exists("/pub/app/missing.txt").await?; // false
+let meta = session.storage().stats("/pub/app/file.txt").await?;
+let ok = session.storage().exists("/pub/app/missing.txt").await?; // false
 
 // public read by user-qualified resource (no session)
 let public = PubkyStorage::public()?;
-let text = public.get(format!("{}/pub/app/file.txt", agent.public_key()))
+let text = public.get(format!("{}/pub/app/file.txt", session.public_key()))
     .await?.text().await?;
 # Ok(()) }
 ```
 
 ### Paths & addressing
 
-Use absolute paths for agent-scoped I/O (`"/pub/…"`), or user-qualified forms when public:
+Use absolute paths for session-scoped I/O (`"/pub/…"`), or user-qualified forms when public:
 
 ```rust no_run
 # use pubky::prelude::*;
@@ -139,7 +139,7 @@ let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
 // signer.approve_pubkyauth_request(&url).await?;
 # PubkySigner::random()?.approve_pubkyauth_request(&url).await?;
 
-let agent = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
+let session = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
 # Ok(()) }
 ```
 
@@ -165,10 +165,10 @@ let testnet = EphemeralTestnet::start().await.unwrap();
 let homeserver  = testnet.homeserver();
 
 let signer = PubkySigner::random()?;
-let agent  = signer.signup(&homeserver.public_key(), None).await?;
+let session  = signer.signup(&homeserver.public_key(), None).await?;
 
-agent.storage().put("/pub/app/hello.txt", "hi").await?;
-let s = agent.storage().get("/pub/app/hello.txt").await?.text().await?;
+session.storage().put("/pub/app/hello.txt", "hi").await?;
+let s = session.storage().get("/pub/app/hello.txt").await?.text().await?;
 assert_eq!(s, "hi");
 
 # Ok(()) }
@@ -180,13 +180,13 @@ Export a compact bearer token and import it later to avoid re-auth:
 
 ```rust no_run
 # use pubky::prelude::*;
-# async fn persist(agent: &PubkyAgent, client: &PubkyHttpClient) -> pubky::Result<()> {
+# async fn persist(session: &PubkySession, client: &PubkyHttpClient) -> pubky::Result<()> {
 // Save
-let token = agent.export_secret();               // "<pubkey>:<cookie_secret>"
+let token = session.export_secret();               // "<pubkey>:<cookie_secret>"
 // store `token` securely (env, keychain, vault). DO NOT log it.
 
 // Restore
-let restored = PubkyAgent::import_secret(client, &token).await?;
+let restored = PubkySession::import_secret(client, &token).await?;
 // Optional sanity check:
 restored.revalidate_session().await?;
 # Ok(()) }
@@ -197,7 +197,7 @@ restored.revalidate_session().await?;
 ## Design notes
 
 - **Blocking vs managed pairing:** prefer `subscribe()/wait_for_approval()` (starts polling immediately when you get the URL) to avoid missing approvals. If you manually fetch the URL before polling, you can race the signer and miss the one-shot response.
-- **Stateless client, stateful agent:** `PubkyHttpClient` never holds identity; `PubkyAgent` does.
+- **Stateless client, stateful session:** `PubkyHttpClient` never holds identity; `PubkySession` does.
 
 ## Example code
 

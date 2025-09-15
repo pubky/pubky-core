@@ -2,7 +2,7 @@
 //!
 //! Accepted inputs for `PubkyResource::parse`:
 //! - `<user_pubkey>/<path>`            (preferred; explicit user)
-//! - `/absolute/path`                  (agent-scoped; user supplied elsewhere, must start with `/`)
+//! - `/absolute/path`                  (session-scoped; user supplied elsewhere, must start with `/`)
 //!
 //! Note: We intentionally do **not** accept `https://_pubky.<pk>/...` here.
 
@@ -13,7 +13,7 @@ use url::Url;
 
 use crate::{Error, errors::RequestError};
 
-const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (agent scoped) or `pubky://<user>/<path>` (legacy)";
+const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (session scoped) or `pubky://<user>/<path>` (legacy)";
 
 #[inline]
 fn invalid(msg: impl Into<String>) -> Error {
@@ -111,7 +111,7 @@ impl fmt::Display for FilePath {
 
 /// A parsed homeserver address.
 /// - `user: Some(..)` when the input was `<user>/...`
-/// - `user: None`    when the input was an agent-scoped path (e.g. `/foo/bar` or `foo/bar`)
+/// - `user: None`    when the input was an session-scoped path (e.g. `/foo/bar` or `foo/bar`)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PubkyResource {
     pub(crate) user: Option<PublicKey>,
@@ -200,7 +200,7 @@ pub trait IntoPubkyResource {
     /// input is malformed (e.g., contains `//`, `.` / `..`, or a bad public key).
     ///
     /// Examples (pseudo):
-    /// - `"/pub/app/file".into_pubky_resource()` ⇒ agent-scoped resource
+    /// - `"/pub/app/file".into_pubky_resource()` -> session-scoped resource
     /// - `(user_pk, "pub/app/file").into_pubky_resource()` ⇒ explicit user + relative path
     fn into_pubky_resource(self) -> Result<PubkyResource, Error>;
 }
@@ -283,19 +283,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_agent_scoped_paths() {
-        // Absolute, agent-scoped path is OK
+    fn parse_session_scoped_paths() {
+        // Absolute, session-scoped path is OK
         let p_abs = PubkyResource::from_str("/pub/app/file").unwrap();
         assert!(p_abs.user.is_none());
         assert_eq!(p_abs.path.as_str(), "/pub/app/file");
 
-        // Relative agent-scoped (no leading slash) is rejected
+        // Relative session-scoped (no leading slash) is rejected
         assert!(matches!(
             PubkyResource::from_str("pub/app/file"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
-        // Rendering a pubky:// URL from an agent-scoped path requires a default user
+        // Rendering a pubky:// URL from an session-scoped path requires a default user
         let kp = Keypair::random();
         let user = kp.public_key();
         let url = p_abs.to_pubky_url(Some(&user)).unwrap();

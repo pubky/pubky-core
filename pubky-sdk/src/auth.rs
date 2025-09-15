@@ -7,7 +7,7 @@ use url::Url;
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 
 use crate::{
-    Capabilities, PubkyAgent, PubkyHttpClient, cross_debug,
+    Capabilities, PubkyHttpClient, PubkySession, cross_debug,
     errors::{AuthError, Result},
     global::global_client,
     util::check_http_status,
@@ -32,7 +32,7 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// 1. Create with [`PubkyPairingAuth::new`].
 /// 2. Call [`PubkyPairingAuth::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
 /// 3. Show the returned URL (QR/deeplink) to the signing device (e.g., Pubky Ring).
-/// 4. Await [`AuthSubscription::wait_for_approval`] to obtain a session-bound [`PubkyAgent`].
+/// 4. Await [`AuthSubscription::wait_for_approval`] to obtain a session-bound [`PubkySession`].
 ///
 /// Threading:
 /// - `PubkyPairingAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
@@ -214,7 +214,7 @@ impl PubkyPairingAuth {
     /// // Display `url` as QR or deeplink to the Signer ...
     /// # let signer = pubky::PubkySigner::random()?;
     /// # signer.approve_pubkyauth_request(&url).await?;
-    /// let agent = sub.wait_for_approval().await?;
+    /// let session = sub.wait_for_approval().await?;
     /// # Ok::<(), pubky::Error>(())}
     /// ```
     pub fn subscribe(self) -> (AuthSubscription, Url) {
@@ -247,7 +247,7 @@ impl PubkyPairingAuth {
         (auth_subscription, self.pubkyauth_url)
     }
 
-    /// Block (via async/await) until the signer approves, then return a session-bound [`PubkyAgent`].
+    /// Block (via async/await) until the signer approves, then return a session-bound [`PubkySession`].
     ///
     /// This is the ergonomic, single-call variant of [`Self::subscribe`] + [`AuthSubscription::wait_for_approval`]
     /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
@@ -255,7 +255,7 @@ impl PubkyPairingAuth {
     /// **How to use**
     /// 1. Build a [`PubkyPairingAuth`], read [`pubkyauth_url`](Self::pubkyauth_url), and display it (QR/deeplink).
     /// 2. Call `wait_for_approval()`. Internally we start a lightweight polling task and await its result.
-    /// 3. On success you get a ready-to-use [`PubkyAgent`] with a valid server session.
+    /// 3. On success you get a ready-to-use [`PubkySession`] with a valid server session.
     ///
     ///
     /// ⚠️ **Important:** `wait_for_approval()` starts polling **when you call it**. If you use
@@ -283,11 +283,11 @@ impl PubkyPairingAuth {
     /// let caps = Capabilities::builder().read("/pub/app/").finish();
     /// let auth = PubkyPairingAuth::new(&caps)?;
     /// println!("Scan to sign in: {}", auth.pubkyauth_url());
-    /// let agent = auth.wait_for_approval().await?; // must be awaited right when displaying the pubky_auth!
-    /// println!("Signed in as {}", agent.public_key());
+    /// let session = auth.wait_for_approval().await?; // must be awaited right when displaying the pubky_auth!
+    /// println!("Signed in as {}", session.public_key());
     /// # Ok(()) }
     /// ```
-    pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
+    pub async fn wait_for_approval(self) -> Result<PubkySession> {
         let (sub, _) = self.subscribe();
         sub.wait_for_approval().await
     }
@@ -358,12 +358,12 @@ impl AuthSubscription {
         }
     }
 
-    /// Await the token and sign in to obtain a session-bound [`PubkyAgent`].
+    /// Await the token and sign in to obtain a session-bound [`PubkySession`].
     ///
     /// Steps it does internally:
     /// - Blocks and wait for `AuthToken` via [`AuthSubscription::wait_for_token`].
     /// - POST `pubky://<user>/session` with the token; capture cookie (native) and set pubky.
-    /// - Returns the session-bounded [`PubkyAgent`] ready to use.
+    /// - Returns the session-bounded [`PubkySession`] ready to use.
     ///
     /// Example:
     /// ```
@@ -373,11 +373,11 @@ impl AuthSubscription {
     /// // display `url` to signer ...
     /// # let signer = pubky::PubkySigner::random()?;
     /// # signer.approve_pubkyauth_request(&url).await?;
-    /// let agent = sub.wait_for_approval().await?;
+    /// let session = sub.wait_for_approval().await?;
     /// # Ok::<(), pubky::Error>(())}
     /// ```
-    pub async fn wait_for_approval(self) -> Result<PubkyAgent> {
-        PubkyAgent::new_with_client(&self.client.clone(), &self.wait_for_token().await?).await
+    pub async fn wait_for_approval(self) -> Result<PubkySession> {
+        PubkySession::new_with_client(&self.client.clone(), &self.wait_for_token().await?).await
     }
 
     /// Non-blocking probe for readiness.

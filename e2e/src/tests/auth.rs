@@ -1,5 +1,5 @@
 use pubky_testnet::pubky::global::global_client;
-use pubky_testnet::pubky::{global, PubkyAgent, PubkyPairingAuth, PubkySigner};
+use pubky_testnet::pubky::{global, PubkyPairingAuth, PubkySession, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -19,7 +19,7 @@ async fn basic_authn() {
 
     let user = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
-    let session = user.session();
+    let session = user.session_info();
 
     assert!(session.capabilities().contains(&Capability::root()));
 
@@ -31,21 +31,21 @@ async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    // Create a brand-new user and session-bound agent
+    // Create a brand-new user and session
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key().clone();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Create a test file to ensure the user can write to their account
     let file_path = "/pub/pubky.app/foo";
-    agent
+    session
         .storage()
         .put(file_path, Vec::<u8>::new())
         .await
         .unwrap();
 
     // Make sure the user can read their own file
-    let response = agent.storage().get(file_path).await.unwrap();
+    let response = session.storage().get(file_path).await.unwrap();
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -64,11 +64,11 @@ async fn disabled_user() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // User can still read their own file
-    let response = agent.storage().get(file_path).await.unwrap();
+    let response = session.storage().get(file_path).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // User can no longer write
-    let err = agent
+    let err = session
         .storage()
         .put(file_path, Vec::<u8>::new())
         .await
@@ -79,13 +79,13 @@ async fn disabled_user() {
     );
 
     // Fresh sign-in should still succeed (disabled means no writes, not no login)
-    agent.signout().await.unwrap();
+    session.signout().await.unwrap();
     // If your API has a different name, use the equivalent (e.g., `signin()` or `signin_and_publish()`).
-    let agent2 = signer
+    let session2 = signer
         .signin()
         .await
         .expect("Signin should succeed for disabled users");
-    assert_eq!(agent2.public_key(), pubky);
+    assert_eq!(session2.public_key(), pubky);
 }
 
 #[tokio::test]
@@ -121,7 +121,7 @@ async fn authz() {
 
     assert_eq!(user.public_key(), signer.public_key());
 
-    // let session = user.session().await.unwrap().unwrap();
+    // let session = user.session_info().await.unwrap().unwrap();
     // assert_eq!(session.capabilities(), &caps.0);
 
     // Ensure the same user pubky has been authed on the keyless app from cold keypair
@@ -153,31 +153,31 @@ async fn authz() {
 }
 
 #[tokio::test]
-async fn persist_and_restore_agent() {
+async fn persist_and_restore_session_info() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
 
     // Create user and session-bound agent
     let signer = PubkySigner::random().unwrap();
-    let agent = signer.signup(&homeserver.public_key(), None).await.unwrap();
+    let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
     // Write something with the live agent
-    agent
+    session
         .storage()
         .put("/pub/app/persist.txt", "hello")
         .await
         .unwrap();
 
-    // Export agent's secret and drop the agent (simulate restart)
-    let secret_token = agent.export_secret();
-    drop(agent);
+    // Export session's secret and drop the session (simulate restart)
+    let secret_token = session.export_secret();
+    drop(session);
 
     // Save to disk or however you want to persist `exported`
 
     // Rehydrate from the exported secret (validates the session)
     // Reuse the process-wide client configured by the testnet
     let client = global::global_client().unwrap();
-    let restored = PubkyAgent::import_secret(&client, &secret_token)
+    let restored = PubkySession::import_secret(&client, &secret_token)
         .await
         .unwrap();
 
@@ -201,15 +201,15 @@ async fn multiple_users() {
     let alice = PubkySigner::random().unwrap();
     let bob = PubkySigner::random().unwrap();
 
-    let alice_agent = alice.signup(&server.public_key(), None).await.unwrap();
-    let bob_agent = bob.signup(&server.public_key(), None).await.unwrap();
+    let alice_session = alice.signup(&server.public_key(), None).await.unwrap();
+    let bob_session = bob.signup(&server.public_key(), None).await.unwrap();
 
     // Each session is bound to its own pubkey and has root caps
-    let a_sess = alice_agent.session();
+    let a_sess = alice_session.session_info();
     assert_eq!(a_sess.public_key(), &alice.public_key());
     assert!(a_sess.capabilities().contains(&Capability::root()));
 
-    let b_sess = bob_agent.session();
+    let b_sess = bob_session.session_info();
     assert_eq!(b_sess.public_key(), &bob.public_key());
     assert!(b_sess.capabilities().contains(&Capability::root()));
 }
@@ -251,18 +251,18 @@ async fn authz_timeout_reconnect() {
         signer.approve_pubkyauth_request(&url_clone).await.unwrap();
     });
 
-    // The long-poll should survive timeouts and eventually yield an agent
-    let agent = subscription.wait_for_approval().await.unwrap();
-    assert_eq!(agent.public_key(), signer_pubky);
+    // The long-poll should survive timeouts and eventually yield an session
+    let session = subscription.wait_for_approval().await.unwrap();
+    assert_eq!(session.public_key(), signer_pubky);
 
     // Access control enforcement (write inside scope OK, others forbidden)
-    agent
+    session
         .storage()
         .put("/pub/pubky.app/foo", Vec::<u8>::new())
         .await
         .unwrap();
 
-    let err = agent
+    let err = session
         .storage()
         .put("/pub/pubky.app", Vec::<u8>::new())
         .await
@@ -271,7 +271,7 @@ async fn authz_timeout_reconnect() {
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 
-    let err = agent
+    let err = session
         .storage()
         .put("/pub/foo.bar/file", Vec::<u8>::new())
         .await
@@ -321,11 +321,11 @@ async fn signup_with_token() {
 
     // 5. Finally, sign in with the same keypair and verify that a session is returned.
     let pubky = signer.public_key();
-    let agent = signer.signin().await.unwrap();
+    let session = signer.signin().await.unwrap();
     assert_eq!(
-        agent.public_key(),
+        session.public_key(),
         pubky,
-        "Signed-in agent pubky should correspond to the signer's public key"
+        "Signed-in session pubky should correspond to the signer's public key"
     );
 
     // 6. Signup with the same token again and expect failure.

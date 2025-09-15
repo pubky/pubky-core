@@ -16,13 +16,13 @@ async fn put_get_delete() {
 
     let signer = PubkySigner::random().unwrap();
 
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubky = agent.public_key();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubky = session.public_key();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
 
-    agent
+    session
         .storage()
         .put(path, vec![0, 1, 2, 3, 4])
         .await
@@ -33,7 +33,7 @@ async fn put_get_delete() {
     // let's repeat the same request but using a strongly typed PubkyResource based over our own homeserver (user=None)
     let path_pubky = PubkyResource::new(None, "/pub/foo.txt").unwrap();
 
-    agent
+    session
         .storage()
         .put(path_pubky, vec![0, 1, 2, 3, 4])
         .await
@@ -42,9 +42,9 @@ async fn put_get_delete() {
         .unwrap();
 
     // again same request but using a tuple
-    let tuple_path = (agent.public_key(), "/pub/foo.txt");
+    let tuple_path = (session.public_key(), "/pub/foo.txt");
 
-    agent
+    session
         .storage()
         .put(tuple_path, vec![0, 1, 2, 3, 4])
         .await
@@ -70,13 +70,13 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        agent.public_key()
+        session.public_key()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
     // the homeserver pubky as host and this request will resolve the `/pub/foo.txt` of
     // the wrong tenant user
-    let response = agent
+    let response = session
         .client()
         .request(Method::GET, regular_url)
         .header("Host", "non.pubky.host")
@@ -91,7 +91,7 @@ async fn put_get_delete() {
     let byte_value = response.bytes().await.unwrap();
     assert_eq!(byte_value, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 
-    agent
+    session
         .storage()
         .delete(path)
         .await
@@ -100,7 +100,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // Should not exist, PubkyError of 404 type
-    assert!(agent.storage().get(path).await.is_err());
+    assert!(session.storage().get(path).await.is_err());
 }
 
 use serde::{Deserialize, Serialize};
@@ -111,8 +111,8 @@ async fn put_then_get_json_roundtrip() {
     let server = testnet.homeserver();
     let signer = PubkySigner::random().unwrap();
 
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubky = agent.public_key();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubky = session.public_key();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
@@ -129,7 +129,7 @@ async fn put_then_get_json_roundtrip() {
     };
 
     // Ignore the result; the write still succeeds and is asserted via the subsequent GET.
-    let _ = agent.storage().put_json(path, &expected).await;
+    let _ = session.storage().put_json(path, &expected).await;
 
     // Read back as strongly-typed JSON and assert equality.
     let got: Payload = PubkyStorage::public()
@@ -140,7 +140,7 @@ async fn put_then_get_json_roundtrip() {
     assert_eq!(got, expected);
 
     // Sanity-check MIME is JSON when fetching raw.
-    let resp = agent.storage().get(path).await.unwrap();
+    let resp = session.storage().get(path).await.unwrap();
     let ct = resp
         .headers()
         .get("content-type")
@@ -150,7 +150,7 @@ async fn put_then_get_json_roundtrip() {
     assert!(ct.starts_with("application/json"));
 
     // Cleanup
-    agent
+    session
         .storage()
         .delete(path)
         .await
@@ -168,24 +168,24 @@ async fn put_quota_applied() {
     mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
     let server = testnet.create_homeserver_with_mock(mock_dir).await.unwrap();
 
-    // Create a user/agent
+    // Create a user/session
     let signer = PubkySigner::random().unwrap();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     let p1 = "/pub/data";
     let p2 = "/pub/data2";
 
     // First 600 KB → OK (201)
     let data_600k: Vec<u8> = vec![0; 600_000];
-    let resp = agent.storage().put(p1, data_600k.clone()).await.unwrap();
+    let resp = session.storage().put(p1, data_600k.clone()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Overwrite same 600 KB → still 201
-    let resp = agent.storage().put(p1, data_600k.clone()).await.unwrap();
+    let resp = session.storage().put(p1, data_600k.clone()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Write 600 KB more at a different path (total 1.2 MB) → 507
-    let err = agent
+    let err = session
         .storage()
         .put(p2, data_600k.clone())
         .await
@@ -198,7 +198,7 @@ async fn put_quota_applied() {
 
     // Overwrite /pub/data with 1.1 MB → 507
     let data_1100k: Vec<u8> = vec![0; 1_100_000];
-    let err = agent.storage().put(p1, data_1100k).await.unwrap_err();
+    let err = session.storage().put(p1, data_1100k).await.unwrap_err();
     assert!(matches!(
         err,
         Error::Request(RequestError::Server { status, .. })
@@ -206,12 +206,12 @@ async fn put_quota_applied() {
     ));
 
     // Delete the original 600 KB → 204
-    let resp = agent.storage().delete(p1).await.unwrap();
+    let resp = session.storage().delete(p1).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     // Write exactly 1025 KB → 507 (exceeds 1 MB quota)
     let data_1025k_minus_256: Vec<u8> = vec![0; 1025 * 1024 - 256];
-    let err = agent
+    let err = session
         .storage()
         .put(p1, data_1025k_minus_256)
         .await
@@ -224,7 +224,7 @@ async fn put_quota_applied() {
 
     // Write exactly 1 MB (minus the same 256 fudge) → 201 (fits quota)
     let data_1mb_minus_256: Vec<u8> = vec![0; 1024 * 1024 - 256];
-    let resp = agent.storage().put(p1, data_1mb_minus_256).await.unwrap();
+    let resp = session.storage().put(p1, data_1mb_minus_256).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
@@ -236,16 +236,16 @@ async fn unauthorized_put_delete() {
     // Owner user
     let owner = PubkySigner::random().unwrap();
     let owner_pubky = owner.public_key().clone();
-    let owner_agent = owner.signup(&server.public_key(), None).await.unwrap();
+    let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
 
     // Other user (will attempt unauthorized ops)
     let other = PubkySigner::random().unwrap();
-    let other_agent = other.signup(&server.public_key(), None).await.unwrap();
+    let other_session = other.signup(&server.public_key(), None).await.unwrap();
 
     let rel_path = "/pub/foo.txt";
 
     // Other tries to write to owner's namespace → 401 Unauthorized
-    let err = other_agent
+    let err = other_session
         .storage()
         .put((owner_pubky.clone(), rel_path), vec![0, 1, 2, 3, 4])
         .await
@@ -257,7 +257,7 @@ async fn unauthorized_put_delete() {
     ));
 
     // Owner writes successfully
-    let resp = owner_agent
+    let resp = owner_session
         .storage()
         .put(rel_path, vec![0, 1, 2, 3, 4])
         .await
@@ -265,7 +265,7 @@ async fn unauthorized_put_delete() {
     assert!(resp.status().is_success());
 
     // Other tries to delete owner's file → 401 Unauthorized
-    let err = other_agent
+    let err = other_session
         .storage()
         .delete((owner_pubky.clone(), rel_path))
         .await
@@ -277,7 +277,7 @@ async fn unauthorized_put_delete() {
     ));
 
     // Owner can read contents
-    let body = owner_agent
+    let body = owner_session
         .storage()
         .get(rel_path)
         .await
@@ -296,7 +296,7 @@ async fn list() {
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
 
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     let paths = vec![
         "/pub/a.wrong/a.txt",
@@ -310,13 +310,13 @@ async fn list() {
     ];
 
     for path in paths {
-        agent.storage().put(path, vec![0]).await.unwrap();
+        session.storage().put(path, vec![0]).await.unwrap();
     }
 
     let path = "/pub/example.com/extra";
 
     {
-        let list = agent.storage().list(path).unwrap().send().await.unwrap();
+        let list = session.storage().list(path).unwrap().send().await.unwrap();
         let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
@@ -333,7 +333,7 @@ async fn list() {
     }
 
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -376,7 +376,7 @@ async fn list() {
     }
 
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -420,7 +420,7 @@ async fn list() {
     }
 
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -488,7 +488,7 @@ async fn list() {
     }
 
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -516,10 +516,10 @@ async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    // Create a user/agent
+    // Create a user/session
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Seed data: first-level dirs/files under /pub plus nested content.
     let paths = vec![
@@ -535,7 +535,7 @@ async fn list_shallow() {
         "/pub/z.com/a.txt",
     ];
     for p in paths {
-        agent.storage().put(p, vec![0]).await.unwrap();
+        session.storage().put(p, vec![0]).await.unwrap();
     }
 
     let path = "/pub/";
@@ -569,7 +569,7 @@ async fn list_shallow() {
 
     // shallow + limit(2)
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -592,7 +592,7 @@ async fn list_shallow() {
 
     // shallow + limit(2) + file cursor
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -616,7 +616,7 @@ async fn list_shallow() {
 
     // shallow + limit(3) + directory cursor
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -641,7 +641,7 @@ async fn list_shallow() {
 
     // shallow + reverse
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -669,7 +669,7 @@ async fn list_shallow() {
 
     // shallow + reverse + limit(2)
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -693,7 +693,7 @@ async fn list_shallow() {
 
     // shallow + reverse + limit(2) + file cursor
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -718,7 +718,7 @@ async fn list_shallow() {
 
     // shallow + reverse + limit(2) + directory cursor
     {
-        let list = agent
+        let list = session
             .storage()
             .list(path)
             .unwrap()
@@ -747,10 +747,10 @@ async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 
-    // Create a user/agent
+    // Create a user/session
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write + delete a bunch of files to populate the event feed
     let paths = vec![
@@ -766,8 +766,8 @@ async fn list_events() {
         "/pub/z.com/a.txt",
     ];
     for p in &paths {
-        agent.storage().put(p.to_string(), vec![0]).await.unwrap();
-        agent.storage().delete(p.to_string()).await.unwrap();
+        session.storage().put(p.to_string(), vec![0]).await.unwrap();
+        session.storage().delete(p.to_string()).await.unwrap();
     }
 
     // Feed is exposed under the public-key host
@@ -775,7 +775,7 @@ async fn list_events() {
 
     // Page 1
     let cursor: String = {
-        let resp = agent
+        let resp = session
             .client()
             .request(Method::GET, format!("{feed_url}?limit=10"))
             .send()
@@ -810,7 +810,7 @@ async fn list_events() {
 
     // Page 2 (using cursor)
     {
-        let resp = agent
+        let resp = session
             .client()
             .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
             .send()
@@ -845,14 +845,14 @@ async fn read_after_event() {
     let server = testnet.homeserver();
     let client = global_client().unwrap();
 
-    // User + agent
+    // User + session
     let signer = PubkySigner::random().unwrap();
     let pubky = signer.public_key();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write one file
     let url = format!("pubky://{pubky}/pub/a.com/a.txt");
-    agent
+    session
         .storage()
         .put("/pub/a.com/a.txt", vec![0])
         .await
@@ -958,16 +958,16 @@ async fn stream() {
     let server = testnet.homeserver();
 
     let signer = PubkySigner::random().unwrap();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     let path = "/pub/foo.txt";
     let bytes = Bytes::from(vec![0; 1024 * 1024]); // 1 MiB
 
     // Upload large body
-    agent.storage().put(path, bytes.clone()).await.unwrap();
+    session.storage().put(path, bytes.clone()).await.unwrap();
 
     // Read back and compare
-    let got = agent
+    let got = session
         .storage()
         .get(path)
         .await
@@ -978,8 +978,8 @@ async fn stream() {
     assert_eq!(got, bytes);
 
     // Delete and verify 404 on subsequent GET
-    agent.storage().delete(path).await.unwrap();
-    let err = agent.storage().get(path).await.unwrap_err();
+    session.storage().delete(path).await.unwrap();
+    let err = session.storage().get(path).await.unwrap_err();
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::NOT_FOUND)
     );

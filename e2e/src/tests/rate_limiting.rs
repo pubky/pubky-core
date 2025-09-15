@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use pubky_testnet::pubky::PubkyAgent;
+use pubky_testnet::pubky::PubkySession;
 use pubky_testnet::pubky::{errors::RequestError, global::global_client, Error, PubkySigner};
 use pubky_testnet::{
     pubky_homeserver::{
@@ -43,13 +43,13 @@ async fn limit_signin_get_session() {
     signer.signup(&server.public_key(), None).await.unwrap();
 
     // First signin should be OK
-    let agent = signer.signin().await.unwrap();
+    let session = signer.signin().await.unwrap();
 
     // First GET /session (validate/fetch) should be OK
-    agent.revalidate_session().await.unwrap();
+    session.revalidate_session().await.unwrap();
 
     // Second GET /session should be rate-limited (429)
-    let err = agent
+    let err = session
         .revalidate_session()
         .await
         .expect_err("Second /session GET should be rate limited");
@@ -97,22 +97,22 @@ async fn limit_signin_get_session_whitelist() {
         .signup(&server.public_key(), None)
         .await
         .unwrap();
-    let agent_w = whitelisted_signer.signin().await.unwrap();
+    let session_w = whitelisted_signer.signin().await.unwrap();
 
     // First GET /session OK
-    agent_w.revalidate_session().await.unwrap();
+    session_w.revalidate_session().await.unwrap();
     // Second GET /session also OK (whitelisted)
-    agent_w.revalidate_session().await.unwrap();
+    session_w.revalidate_session().await.unwrap();
 
     // --- Non-whitelisted user ---
     let other = PubkySigner::random().unwrap();
     other.signup(&server.public_key(), None).await.unwrap();
-    let agent_o = other.signin().await.unwrap();
+    let session_o = other.signin().await.unwrap();
 
     // First GET /session OK
-    agent_o.revalidate_session().await.unwrap();
+    session_o.revalidate_session().await.unwrap();
     // Second GET /session should be rate-limited (429)
-    let err = agent_o
+    let err = session_o
         .revalidate_session()
         .await
         .expect_err("Should be rate limited because not on whitelist");
@@ -168,16 +168,16 @@ async fn limit_upload() {
     let mock = MockDataDir::new(cfg, None).unwrap();
     let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
 
-    // User + session-bound agent
+    // User + session-bound session
     let signer = PubkySigner::random().unwrap();
-    let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Upload ~3 KB; at 1 KB/s it should take > 2s total
     let path = "/pub/test.txt";
     let body = vec![0u8; 3 * 1024];
 
     let start = Instant::now();
-    let resp = agent.storage().put(path, body).await.unwrap();
+    let resp = session.storage().put(path, body).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
     assert!(
         start.elapsed() > Duration::from_secs(2),
@@ -217,11 +217,11 @@ async fn test_concurrent_write_read() {
 
     // --- create 10 independent users (each has its own per-user limiter)
     let user_count = 10usize;
-    let mut agents: Vec<PubkyAgent> = Vec::with_capacity(user_count);
+    let mut sessions: Vec<PubkySession> = Vec::with_capacity(user_count);
     for _ in 0..user_count {
         let signer = PubkySigner::random().unwrap();
-        let agent = signer.signup(&server.public_key(), None).await.unwrap();
-        agents.push(agent);
+        let session = signer.signup(&server.public_key(), None).await.unwrap();
+        sessions.push(session);
     }
 
     let path = "/pub/test.txt";
@@ -231,10 +231,10 @@ async fn test_concurrent_write_read() {
     let start = Instant::now();
     {
         let mut tasks = Vec::with_capacity(user_count);
-        for agent in agents.iter().cloned() {
+        for session in sessions.iter().cloned() {
             let body = body.clone();
             tasks.push(tokio::spawn(async move {
-                agent.storage().put(path, body).await.unwrap();
+                session.storage().put(path, body).await.unwrap();
             }));
         }
         for t in tasks {
@@ -253,9 +253,9 @@ async fn test_concurrent_write_read() {
     let start = Instant::now();
     {
         let mut tasks = Vec::with_capacity(user_count);
-        for agent in agents.iter().cloned() {
+        for session in sessions.iter().cloned() {
             tasks.push(tokio::spawn(async move {
-                let resp = agent.storage().get(path).await.unwrap();
+                let resp = session.storage().get(path).await.unwrap();
                 let _ = resp.bytes().await.unwrap(); // read body to apply full 3 KB download
             }));
         }

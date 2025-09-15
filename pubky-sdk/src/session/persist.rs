@@ -1,14 +1,14 @@
 use pkarr::PublicKey;
 use pubky_common::{capabilities::Capabilities, session::SessionInfo};
 
-use super::core::PubkyAgent;
+use super::core::PubkySession;
 use crate::{
     PubkyHttpClient, Result,
     errors::{AuthError, RequestError},
 };
 
-impl PubkyAgent {
-    /// Export the minimum data needed to restore this agent later.
+impl PubkySession {
+    /// Export the minimum data needed to restore this session later.
     /// Returns a single compact secret token `<pubkey>:<cookie_secret>`
     ///
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
@@ -22,7 +22,7 @@ impl PubkyAgent {
         format!("{public_key}:{cookie}")
     }
 
-    /// Rehydrate an agent from a compact secret token `<pubkey>:<cookie_secret>`.
+    /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
     ///
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
     /// from a signer on a script restart.
@@ -41,21 +41,21 @@ impl PubkyAgent {
             message: "invalid public key".into(),
         })?;
 
-        // 2) Build minimal agent; placeholder SessionInfo will be replaced after validation.
+        // 2) Build minimal session; placeholder SessionInfo will be replaced after validation.
         let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
-        let mut agent = PubkyAgent {
+        let mut session = PubkySession {
             client: client.clone(),
-            session: placeholder,
+            info: placeholder,
             cookie: cookie.to_string(),
         };
 
         // 3) Validate cookie and fetch authoritative SessionInfo
-        let session = agent
+        let info = session
             .revalidate_session()
             .await?
             .ok_or(AuthError::RequestExpired)?;
-        agent.session = session;
+        session.info = info;
 
-        Ok(agent)
+        Ok(session)
     }
 }

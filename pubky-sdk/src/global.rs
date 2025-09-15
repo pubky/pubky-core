@@ -1,14 +1,14 @@
 //! Global, resettable `PubkyHttpClient` for lazy construction of high-level actors.
 //!
 //! # Why this exists
-//! Most applications want easy, zero-setup construction of `PubkyAgent` (session actor),
+//! Most applications want easy, zero-setup construction of `PubkySession` (session actor),
 //! `PubkySigner` (key holder), and `PubkyAuth` without passing a `PubkyHttpClient` everywhere.
 //! This module provides a process-wide, lazily initialized, resettable client that those
 //! “lazy constructors” can reuse.
 //!
 //! - **Ergonomics:** one-liners like `PubkySigner::new(kp)` and `PubkyAuth::new(..)` just work.
 //! - **Performance:** reuse a single transport stack (connection pools, TLS state, pkarr cache).
-//! - **Safety:** resetting the global must not invalidate already-constructed clients/agents.
+//! - **Safety:** resetting the global must not invalidate already-constructed clients/sessions.
 //!
 //! # Design
 //! - Backing storage is `ArcSwapOption<PubkyHttpClient>` inside a `OnceLock`.
@@ -38,7 +38,7 @@
 //!
 //! # Examples
 //! Fetch the default client (lazily created):
-//! ```no_run
+//! ```
 //! # use pubky::{global, PubkyHttpClient};
 //! let client = global::global_client()?;
 //! // Subsequent calls return cheap clones of the same underlying configuration:
@@ -47,7 +47,7 @@
 //! ```
 //!
 //! Override globally:
-//! ```no_run
+//! ```
 //! # use pubky::{global, PubkyHttpClient};
 //! let custom = PubkyHttpClient::builder().build()?;
 //! global::set_client(custom);
@@ -57,7 +57,7 @@
 //! ```
 //!
 //! Reset to “no client”; next call re-initializes lazily:
-//! ```no_run
+//! ```
 //! # use pubky::global;
 //! global::drop_client();
 //! let fresh = global::global_client()?; // constructed on demand
