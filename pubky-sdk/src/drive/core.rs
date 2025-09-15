@@ -4,7 +4,7 @@ use url::Url;
 
 use super::resource::IntoPubkyResource;
 use crate::{
-    PubkyHttpClient, PubkyResource,
+    PubkyAgent, PubkyHttpClient, PubkyResource,
     errors::{RequestError, Result},
     global::global_client,
 };
@@ -108,6 +108,19 @@ impl PubkyStorage {
             has_session: false,
             #[cfg(not(target_arch = "wasm32"))]
             cookie: None,
+        }
+    }
+
+    /// Construct a **session-mode** PubkyStorage from an existing agent.
+    ///
+    /// Equivalent to `agent.storage()`.
+    pub fn from_agent(agent: &PubkyAgent) -> PubkyStorage {
+        PubkyStorage {
+            client: agent.client.clone(),
+            public_key: Some(agent.session.public_key().clone()),
+            has_session: true,
+            #[cfg(not(target_arch = "wasm32"))]
+            cookie: Some(agent.cookie.clone()),
         }
     }
 
