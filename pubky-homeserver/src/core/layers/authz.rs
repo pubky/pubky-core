@@ -108,7 +108,7 @@ fn authorize(
         // Checking (or deleting) one's session is ok for everyone
         return Ok(());
     } else if path.starts_with("/pub/") {
-        if method == Method::GET {
+        if method == Method::GET || method == Method::HEAD {
             return Ok(());
         }
     } else {

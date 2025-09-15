@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, global::global_client, Error, PubkyResource, PubkySigner},
+    pubky::{
+        errors::RequestError, global::global_client, Error, PubkyDrive, PubkyResource, PubkySigner,
+    },
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
@@ -14,6 +16,7 @@ async fn put_get_delete() {
     let signer = PubkySigner::random().unwrap();
 
     let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubky = agent.public_key();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
@@ -49,7 +52,11 @@ async fn put_get_delete() {
         .unwrap();
 
     // Use Pubky native method to get data from homeserver
-    let response = agent.drive().get(path).await.unwrap();
+    let response = PubkyDrive::public()
+        .unwrap()
+        .get(format!("{pubky}/{path}"))
+        .await
+        .unwrap();
 
     let content_header = response.headers().get("content-type").unwrap();
     // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
@@ -104,6 +111,7 @@ async fn put_then_get_json_roundtrip() {
     let signer = PubkySigner::random().unwrap();
 
     let agent = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubky = agent.public_key();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
@@ -123,7 +131,11 @@ async fn put_then_get_json_roundtrip() {
     let _ = agent.drive().put_json(path, &expected).await;
 
     // Read back as strongly-typed JSON and assert equality.
-    let got: Payload = agent.drive().get_json(path).await.unwrap();
+    let got: Payload = PubkyDrive::public()
+        .unwrap()
+        .get_json(format!("{}/{path}", pubky))
+        .await
+        .unwrap();
     assert_eq!(got, expected);
 
     // Sanity-check MIME is JSON when fetching raw.
@@ -337,9 +349,9 @@ async fn list() {
     }
 
     {
-        let list = agent
-            .drive()
-            .list(path)
+        let list = PubkyDrive::public()
+            .unwrap()
+            .list(format!("{pubky}/{path}"))
             .unwrap()
             .limit(2)
             .cursor("a.txt")
@@ -381,9 +393,9 @@ async fn list() {
     }
 
     {
-        let list = agent
-            .drive()
-            .list(path)
+        let list = PubkyDrive::public()
+            .unwrap()
+            .list(format!("{pubky}/{path}"))
             .unwrap()
             .limit(2)
             .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
@@ -425,9 +437,9 @@ async fn list() {
     }
 
     {
-        let list = agent
-            .drive()
-            .list(path)
+        let list = PubkyDrive::public()
+            .unwrap()
+            .list(format!("{pubky}/{path}"))
             .unwrap()
             .reverse(true)
             .send()
@@ -449,9 +461,9 @@ async fn list() {
     }
 
     {
-        let list = agent
-            .drive()
-            .list(path)
+        let list = PubkyDrive::public()
+            .unwrap()
+            .list(format!("{pubky}/{path}"))
             .unwrap()
             .reverse(true)
             .limit(2)
@@ -525,9 +537,9 @@ async fn list_shallow() {
 
     // shallow (no limit, no cursor)
     {
-        let list = agent
-            .drive()
-            .list(path)
+        let list = PubkyDrive::public()
+            .unwrap()
+            .list(format!("{pubky}/{path}"))
             .unwrap()
             .shallow(true)
             .send()
@@ -860,8 +872,20 @@ async fn read_after_event() {
         );
     }
 
-    // Now the file should be fetchable
-    let resp = client.request(Method::GET, url).send().await.unwrap();
+    // Now the file should exist
+    PubkyDrive::public()
+        .unwrap()
+        .exists(url.clone())
+        .await
+        .unwrap();
+    // Provide metadata
+    PubkyDrive::public()
+        .unwrap()
+        .stats(url.clone())
+        .await
+        .unwrap();
+    // And be fetchable
+    let resp = PubkyDrive::public().unwrap().get(url).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.bytes().await.unwrap();
     assert_eq!(body.as_ref(), &[0]);
