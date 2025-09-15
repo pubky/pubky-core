@@ -1,5 +1,5 @@
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capabilities, session::Session};
+use pubky_common::{capabilities::Capabilities, session::SessionInfo};
 
 use super::core::PubkyAgent;
 use crate::{
@@ -27,7 +27,7 @@ impl PubkyAgent {
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
     /// from a signer on a script restart.
     ///
-    /// Performs a `/session` roundtrip to validate and hydrate the authoritative `Session`.
+    /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
     pub async fn import_secret(client: &PubkyHttpClient, token: &str) -> Result<Self> {
         // 1) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
@@ -41,15 +41,15 @@ impl PubkyAgent {
             message: "invalid public key".into(),
         })?;
 
-        // 2) Build minimal agent; placeholder Session will be replaced after validation.
-        let placeholder = Session::new(&public_key, Capabilities::default(), None);
+        // 2) Build minimal agent; placeholder SessionInfo will be replaced after validation.
+        let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
         let mut agent = PubkyAgent {
             client: client.clone(),
             session: placeholder,
             cookie: cookie.to_string(),
         };
 
-        // 3) Validate cookie and fetch authoritative Session
+        // 3) Validate cookie and fetch authoritative SessionInfo
         let session = agent
             .revalidate_session()
             .await?

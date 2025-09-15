@@ -14,7 +14,7 @@ use crate::{capabilities::Capabilities, timestamp::Timestamp};
 // and get more informations from the user-agent.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 /// Pubky homeserver session struct.
-pub struct Session {
+pub struct SessionInfo {
     version: usize,
     public_key: PublicKey,
     created_at: u64,
@@ -24,7 +24,7 @@ pub struct Session {
     capabilities: Capabilities,
 }
 
-impl Session {
+impl SessionInfo {
     /// Create a new session.
     pub fn new(
         public_key: &PublicKey,
@@ -77,7 +77,7 @@ impl Session {
 
     /// Serialize this session to its canonical binary representation.
     pub fn serialize(&self) -> Vec<u8> {
-        to_allocvec(self).expect("Session::serialize")
+        to_allocvec(self).expect("SessionInfo::serialize")
     }
 
     /// Deserialize this session from its canonical binary representation.
@@ -97,7 +97,7 @@ impl Session {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
-/// Error deserializing a [Session].
+/// Error deserializing a [SessionInfo].
 pub enum Error {
     #[error("Empty payload")]
     /// Empty payload
@@ -122,7 +122,7 @@ mod tests {
         let public_key = keypair.public_key();
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 
-        let session = Session {
+        let session = SessionInfo {
             user_agent: "foo".to_string(),
             capabilities,
             created_at: 0,
@@ -142,14 +142,14 @@ mod tests {
             ]
         );
 
-        let deserialized = Session::deserialize(&serialized).unwrap();
+        let deserialized = SessionInfo::deserialize(&serialized).unwrap();
 
         assert_eq!(deserialized, session)
     }
 
     #[test]
     fn deserialize() {
-        let result = Session::deserialize(&[]);
+        let result = SessionInfo::deserialize(&[]);
 
         assert_eq!(result, Err(Error::EmptyPayload));
     }

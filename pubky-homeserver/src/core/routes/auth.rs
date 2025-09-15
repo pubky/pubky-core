@@ -13,7 +13,7 @@ use base32::{encode, Alphabet};
 use bytes::Bytes;
 use pkarr::PublicKey;
 use pubky_common::capabilities::Capabilities;
-use pubky_common::{crypto::random_bytes, session::Session};
+use pubky_common::{crypto::random_bytes, session::SessionInfo};
 use std::collections::HashMap;
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
@@ -147,7 +147,7 @@ fn create_session_and_cookie(
 
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
-    let session = Session::new(
+    let session = SessionInfo::new(
         public_key,
         capabilities.clone(),
         user_agent.map(|ua| ua.to_string()),

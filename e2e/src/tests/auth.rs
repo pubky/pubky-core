@@ -316,7 +316,7 @@ async fn signup_with_token() {
         .unwrap();
     assert!(
         !session.public_key().to_string().is_empty(),
-        "Session should contain a valid public key"
+        "SessionInfo should contain a valid public key"
     );
 
     // 5. Finally, sign in with the same keypair and verify that a session is returned.

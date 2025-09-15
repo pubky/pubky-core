@@ -94,9 +94,9 @@ impl PkarrError {
 /// Errors originating from authentication flows (sessions, tokens, crypto).
 #[derive(Debug, Error)]
 pub enum AuthError {
-    /// Session (de)serialization or validation failed.
-    #[error("Session handling failed: {0}")]
-    Session(#[from] pubky_common::session::Error),
+    /// SessionInfo (de)serialization or validation failed.
+    #[error("SessionInfo handling failed: {0}")]
+    SessionInfo(#[from] pubky_common::session::Error),
 
     /// Auth token failed signature verification or was otherwise invalid.
     #[error("Token verification failed: {0}")]

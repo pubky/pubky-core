@@ -64,7 +64,7 @@ Transport:
 High level actors:
 
 - **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
-- **`PubkyAgent`** session-bound identity (holds a `Session` & cookie). Use `agent.storage()` for reads/writes.
+- **`PubkyAgent`** session-bound identity (holds a `SessionInfo` & cookie). Use `agent.storage()` for reads/writes.
 - **`PubkyPairingAuth`** pairing auth flow for keyless apps via an HTTP relay.
 - **`PubkyStorage`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).

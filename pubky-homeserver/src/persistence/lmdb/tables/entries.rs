@@ -265,7 +265,7 @@ impl Entry {
     // === Public Method ===
 
     pub fn serialize(&self) -> Vec<u8> {
-        to_allocvec(self).expect("Session::serialize")
+        to_allocvec(self).expect("SessionInfo::serialize")
     }
 
     pub fn deserialize(bytes: &[u8]) -> core::result::Result<Self, postcard::Error> {

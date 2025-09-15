@@ -1,6 +1,6 @@
 use reqwest::{Method, StatusCode};
 
-use pubky_common::{auth::AuthToken, session::Session};
+use pubky_common::{auth::AuthToken, session::SessionInfo};
 
 use crate::{
     Capabilities, Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, global::global_client,
@@ -34,7 +34,7 @@ pub struct PubkyAgent {
     pub(crate) client: PubkyHttpClient,
 
     /// Known session for this agent.
-    pub(crate) session: Session,
+    pub(crate) session: SessionInfo,
 
     /// Native-only, single session cookie secret for `_pubky.<pubky>`. Never shared across agents.
     #[cfg(not(target_arch = "wasm32"))]
@@ -73,7 +73,7 @@ impl PubkyAgent {
 
     /// Construct an agent **from a successful `/session` or `/signup` response**.
     ///
-    /// - Reads the `Session` body (to learn the user pubky).
+    /// - Reads the `SessionInfo` body (to learn the user pubky).
     /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
     pub(crate) async fn new_from_response(
         client: PubkyHttpClient,
@@ -83,7 +83,7 @@ impl PubkyAgent {
         {
             // WASM: cookies are browser-managed; just parse the session body.
             let bytes = response.bytes().await?;
-            let session = Session::deserialize(&bytes)?;
+            let session = SessionInfo::deserialize(&bytes)?;
             return Ok(PubkyAgent { client, session });
         }
 
@@ -103,7 +103,7 @@ impl PubkyAgent {
 
             // 2) Read and parse the session body (this consumes the response).
             let bytes = response.bytes().await?;
-            let session = Session::deserialize(&bytes)?;
+            let session = SessionInfo::deserialize(&bytes)?;
 
             // 3) Find the cookie named exactly as the user's pubky.
             let cookie_name = session.public_key().to_string();
@@ -133,7 +133,7 @@ impl PubkyAgent {
     }
 
     /// Returns the agent session
-    pub fn session(&self) -> Session {
+    pub fn session(&self) -> SessionInfo {
         self.session.clone()
     }
 
@@ -152,7 +152,7 @@ impl PubkyAgent {
     /// - `Err(_)` for transport or server errors unrelated to validity.
     ///
     /// This does *not* mutate the agent; it’s a sanity/validity check.
-    pub async fn revalidate_session(&self) -> Result<Option<Session>> {
+    pub async fn revalidate_session(&self) -> Result<Option<SessionInfo>> {
         let response = self
             .storage()
             .request(Method::GET, "/session")
@@ -164,7 +164,7 @@ impl PubkyAgent {
         }
         let response = check_http_status(response).await?;
         let bytes = response.bytes().await?;
-        Ok(Some(Session::deserialize(&bytes)?))
+        Ok(Some(SessionInfo::deserialize(&bytes)?))
     }
 
     /// Sign out and invalidate this agent’s server-side session.

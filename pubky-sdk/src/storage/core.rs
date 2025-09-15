@@ -13,7 +13,7 @@ use crate::{
 ///
 /// `PubkyStorage` operates in two modes:
 ///
-/// ### 1) Session mode (authenticated)
+/// ### 1) SessionInfo mode (authenticated)
 /// Obtained from a session-bound agent via [`crate::PubkyAgent::drive`]. In this mode:
 /// - Requests are **scoped to that agent’s user** by default (relative paths resolve to that user).
 /// - On native targets, the agent’s session cookie is **automatically attached** to requests
@@ -126,13 +126,13 @@ impl PubkyStorage {
 
     /// Resolve a path into a concrete `pubky://…` or `https://…` URL for this drive.
     ///
-    /// - **Session mode:** relative paths are scoped to this drive’s user.
+    /// - **SessionInfo mode:** relative paths are scoped to this drive’s user.
     /// - **Public mode:** the path must include the target user; relative/agent-scoped paths error.
     pub(crate) fn to_url<P: IntoPubkyResource>(&self, p: P) -> Result<Url> {
         let addr: PubkyResource = p.into_pubky_resource()?;
 
         let url_str = match (&self.public_key, &addr.user) {
-            // Session mode: default to this agent for agent-scoped paths
+            // SessionInfo mode: default to this agent for agent-scoped paths
             (Some(default_user), _) => addr.to_pubky_url(Some(default_user))?,
             // Public mode + explicit user in the input => OK
             (None, Some(_user_in_addr)) => addr.to_pubky_url(None)?,
