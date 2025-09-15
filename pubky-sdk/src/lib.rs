@@ -17,7 +17,7 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
-pub use auth::PubkyPairingAuth;
+pub use auth::PubkyAuthRequest;
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 pub use errors::{BuildError, Error, Result};
 pub use pkdns::Pkdns;

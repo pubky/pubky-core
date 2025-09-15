@@ -47,7 +47,7 @@ println!("current homeserver: {:?}", resolved);
 
 // 6) Keyless third-party app: pairing auth -> session
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
-let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
+let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
 // show `url` (QR/deeplink); on the signing device call:
 // signer.approve_pubkyauth_request(&url).await?;
 let app_session = sub.wait_for_approval().await?;
@@ -65,7 +65,7 @@ High level actors:
 
 - **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
 - **`PubkySession`** session-bound identity (holds a `SessionInfo` & cookie). Use `session.storage()` for reads/writes.
-- **`PubkyPairingAuth`** pairing auth flow for keyless apps via an HTTP relay.
+- **`PubkyAuthRequest`** pairing auth flow for keyless apps via an HTTP relay.
 - **`PubkyStorage`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
 
@@ -134,7 +134,7 @@ Request auth url and await approval.
 let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
 
 // Easiest: use the default relay (see “Relay” notes below)
-let (sub, url) = PubkyPairingAuth::new(&caps)?.subscribe();
+let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
 // show `url` to the user (QR or deeplink). On the signer device:
 // signer.approve_pubkyauth_request(&url).await?;
 # PubkySigner::random()?.approve_pubkyauth_request(&url).await?;
@@ -147,7 +147,7 @@ let session = sub.wait_for_approval().await?; // background long-polling started
 
 - If you don’t pass a relay, we default to a Synonym-hosted instance. If that relay is down, logins won’t complete.
 - For production and bigger apps, run your **own relay** (MIT, dockerable): [https://httprelay.io](https://httprelay.io)
-  Derive the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`. See `PubkyPairingAuth::new_with_client` docs for further info.
+  Derive the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`. See `PubkyAuthRequest::new_with_client` docs for further info.
 
 ## Features
 

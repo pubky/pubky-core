@@ -26,25 +26,25 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 
 /// Pubkyauth handshake for keyless apps.
 ///
-/// One `PubkyPairingAuth` <=> one relay channel (single-use).
+/// One `PubkyAuthRequest` <=> one relay channel (single-use).
 ///
 /// Typical usage:
-/// 1. Create with [`PubkyPairingAuth::new`].
-/// 2. Call [`PubkyPairingAuth::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
+/// 1. Create with [`PubkyAuthRequest::new`].
+/// 2. Call [`PubkyAuthRequest::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
 /// 3. Show the returned URL (QR/deeplink) to the signing device (e.g., Pubky Ring).
 /// 4. Await [`AuthSubscription::wait_for_approval`] to obtain a session-bound [`PubkySession`].
 ///
 /// Threading:
-/// - `PubkyPairingAuth` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
+/// - `PubkyAuthRequest` is cheap to construct; polling runs in a single abortable task spawned by `subscribe`.
 #[derive(Debug)]
-pub struct PubkyPairingAuth {
+pub struct PubkyAuthRequest {
     client: PubkyHttpClient,
     client_secret: [u8; 32],
     pubkyauth_url: Url,
     relay_channel_url: Url,
 }
 
-impl PubkyPairingAuth {
+impl PubkyAuthRequest {
     /// Build an auth flow bound to a specific `PubkyHttpClient`.
     ///
     /// # Relay selection
@@ -185,21 +185,21 @@ impl PubkyPairingAuth {
         Self::new_with_client(&global_client()?, None::<Url>, caps)
     }
 
-    /// Return the `pubkyauth://` deep link to display (QR/deeplink) to the signer.
+    /// Return the `pubkyauth://` url to display (QR/deeplink) to the signer.
     ///
-    /// ⚠️ **Ordering matters if you use [`wait_for_approval`](Self::wait_for_approval).**
-    /// `wait_for_approval()` starts polling only when it is called. If you plan to use it,
-    /// call `pubkyauth_url()` to display the link and then **immediately** await
+    /// ⚠️ **Ordering matters if you use [`wait_for_approval`](Self::wait_for_approval),**
+    /// it starts polling only when it is called. If you plan to use it,
+    /// call `url()` to display the link and then **immediately** await
     /// `wait_for_approval().await` so approvals aren’t missed during the gap.
     ///
     /// If you want “can’t-miss” semantics without thinking about ordering, use
     /// [`subscribe`](Self::subscribe), which starts polling first and returns both the
     /// subscription handle and this URL.
-    pub fn pubkyauth_url(&self) -> &Url {
+    pub fn url(&self) -> &Url {
         &self.pubkyauth_url
     }
 
-    /// Consume the PubkyPairingAuth, start background polling, and return `(subscription, pubkyauth_url)`.
+    /// Consume the PubkyAuthRequest, start background polling, and return `(subscription, pubkyauth_url)`.
     ///
     /// Semantics:
     /// - Single-shot: delivers at most one token.
@@ -208,9 +208,9 @@ impl PubkyPairingAuth {
     ///
     /// Example:
     /// ```
-    /// # use pubky::{PubkyPairingAuth, Capabilities};
+    /// # use pubky::{PubkyAuthRequest, Capabilities};
     /// # async fn test() -> pubky::Result<()> {
-    /// let (sub, url) = PubkyPairingAuth::new(&Capabilities::default())?.subscribe();
+    /// let (sub, url) = PubkyAuthRequest::new(&Capabilities::default())?.subscribe();
     /// // Display `url` as QR or deeplink to the Signer ...
     /// # let signer = pubky::PubkySigner::random()?;
     /// # signer.approve_pubkyauth_request(&url).await?;
@@ -253,7 +253,7 @@ impl PubkyPairingAuth {
     /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
     ///
     /// **How to use**
-    /// 1. Build a [`PubkyPairingAuth`], read [`pubkyauth_url`](Self::pubkyauth_url), and display it (QR/deeplink).
+    /// 1. Build a [`PubkyAuthRequest`], read [`pubkyauth_url`](Self::pubkyauth_url), and display it (QR/deeplink).
     /// 2. Call `wait_for_approval()`. Internally we start a lightweight polling task and await its result.
     /// 3. On success you get a ready-to-use [`PubkySession`] with a valid server session.
     ///
@@ -278,11 +278,11 @@ impl PubkyPairingAuth {
     /// # Examples
     /// Basic script:
     /// ```no_run
-    /// # use pubky::{PubkyPairingAuth, Capabilities};
+    /// # use pubky::{PubkyAuthRequest, Capabilities};
     /// # async fn run() -> pubky::Result<()> {
     /// let caps = Capabilities::builder().read("/pub/app/").finish();
-    /// let auth = PubkyPairingAuth::new(&caps)?;
-    /// println!("Scan to sign in: {}", auth.pubkyauth_url());
+    /// let auth = PubkyAuthRequest::new(&caps)?;
+    /// println!("Scan to sign in: {}", auth.url());
     /// let session = auth.wait_for_approval().await?; // must be awaited right when displaying the pubky_auth!
     /// println!("Signed in as {}", session.public_key());
     /// # Ok(()) }
@@ -333,7 +333,7 @@ impl PubkyPairingAuth {
     }
 }
 
-/// Handle returned by [`PubkyPairingAuth::subscribe`].
+/// Handle returned by [`PubkyAuthRequest::subscribe`].
 ///
 /// Owns the background poll task; delivers exactly one `AuthToken` (or an error).
 #[derive(Debug)]
@@ -367,9 +367,9 @@ impl AuthSubscription {
     ///
     /// Example:
     /// ```
-    /// # use pubky::{PubkyPairingAuth, Capabilities};
+    /// # use pubky::{PubkyAuthRequest, Capabilities};
     /// # async fn test() -> pubky::Result<()> {
-    /// let (sub, url) = PubkyPairingAuth::new(&Capabilities::default())?.subscribe();
+    /// let (sub, url) = PubkyAuthRequest::new(&Capabilities::default())?.subscribe();
     /// // display `url` to signer ...
     /// # let signer = pubky::PubkySigner::random()?;
     /// # signer.approve_pubkyauth_request(&url).await?;
@@ -399,7 +399,7 @@ impl Drop for AuthSubscription {
 }
 
 #[cfg(test)]
-impl PubkyPairingAuth {
+impl PubkyAuthRequest {
     /// Returns the derived relay channel URL, mainly for diagnostics.
     pub fn relay_channel_url(&self) -> &Url {
         &self.relay_channel_url
@@ -420,17 +420,9 @@ mod tests {
     fn constructs_urls_and_channel() {
         let caps = Capabilities::default();
 
-        let auth = PubkyPairingAuth::new(&caps).unwrap();
-        assert!(
-            auth.pubkyauth_url()
-                .as_str()
-                .starts_with("pubkyauth:///?caps=")
-        );
-        assert!(
-            auth.pubkyauth_url()
-                .query_pairs()
-                .any(|(k, _)| k == "secret")
-        );
+        let auth = PubkyAuthRequest::new(&caps).unwrap();
+        assert!(auth.url().as_str().starts_with("pubkyauth:///?caps="));
+        assert!(auth.url().query_pairs().any(|(k, _)| k == "secret"));
         assert!(
             auth.relay_channel_url()
                 .as_str()

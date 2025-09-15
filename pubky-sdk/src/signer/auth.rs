@@ -21,7 +21,7 @@ impl PubkySigner {
     /// `AuthToken` to the relay channel encoded in a `pubkyauth://` URL.
     ///
     /// Typical usage:
-    /// - App constructs `PubkyPairingAuth` and subscribe, shows QR/deeplink.
+    /// - App constructs `PubkyAuthRequest` and subscribe, shows QR/deeplink.
     /// - Signer calls `send_auth_token` with that URL.
     ///
     /// Requirements:

@@ -185,7 +185,7 @@ impl PubkyHttpClientBuilder {
 /// URL handling.
 ///
 /// `PubkyHttpClient` is the low-level, stateless engine the higher-level actors
-/// (`PubkySession`, `PubkyStorage`, `Pkdns`, `PubkyPairingAuth`) are built on. It owns:
+/// (`PubkySession`, `PubkyStorage`, `Pkdns`, `PubkyAuthRequest`) are built on. It owns:
 /// - A pkarr DHT client (for resolving pkdns endpoints and publishing records).
 /// - One or more reqwest HTTP clients (platform-specific).
 ///

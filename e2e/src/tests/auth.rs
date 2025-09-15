@@ -1,5 +1,5 @@
 use pubky_testnet::pubky::global::global_client;
-use pubky_testnet::pubky::{global, PubkyPairingAuth, PubkySession, PubkySigner};
+use pubky_testnet::pubky::{global, PubkyAuthRequest, PubkySession, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -102,7 +102,7 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyPairingAuth::new_with_relay(http_relay_url, &caps).unwrap();
+    let auth = PubkyAuthRequest::new_with_relay(http_relay_url, &caps).unwrap();
 
     // Start long-poll; this consumes the flow
     let (subscription, pubkyauth_url) = auth.subscribe();
@@ -237,7 +237,7 @@ async fn authz_timeout_reconnect() {
 
     // Start pairing auth flow using our custom client + local relay
     let pairing =
-        PubkyPairingAuth::new_with_client(&client, Some(http_relay_url), &capabilities).unwrap();
+        PubkyAuthRequest::new_with_client(&client, Some(http_relay_url), &capabilities).unwrap();
     let (subscription, url) = pairing.subscribe();
 
     // Signer side: sign up, then approve after a delay (to exercise timeout/retry)
