@@ -111,10 +111,7 @@ async fn authz() {
     // Signer authenticator
     let signer = PubkySigner::random().unwrap();
     signer.signup(&server.public_key(), None).await.unwrap();
-    signer
-        .approve_pubkyauth_request(&pubkyauth_url)
-        .await
-        .unwrap();
+    signer.approve_auth_request(&pubkyauth_url).await.unwrap();
 
     // Retrieve the session-bound agent (third party app)
     let user = subscription.wait_for_approval().await.unwrap();
@@ -248,7 +245,7 @@ async fn authz_timeout_reconnect() {
     let url_clone = url.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(1_000)).await;
-        signer.approve_pubkyauth_request(&url_clone).await.unwrap();
+        signer.approve_auth_request(&url_clone).await.unwrap();
     });
 
     // The long-poll should survive timeouts and eventually yield an session

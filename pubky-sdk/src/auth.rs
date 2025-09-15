@@ -213,7 +213,7 @@ impl PubkyAuthRequest {
     /// let (sub, url) = PubkyAuthRequest::new(&Capabilities::default())?.subscribe();
     /// // Display `url` as QR or deeplink to the Signer ...
     /// # let signer = pubky::PubkySigner::random()?;
-    /// # signer.approve_pubkyauth_request(&url).await?;
+    /// # signer.approve_auth_request(&url).await?;
     /// let session = sub.wait_for_approval().await?;
     /// # Ok::<(), pubky::Error>(())}
     /// ```
@@ -372,7 +372,7 @@ impl AuthSubscription {
     /// let (sub, url) = PubkyAuthRequest::new(&Capabilities::default())?.subscribe();
     /// // display `url` to signer ...
     /// # let signer = pubky::PubkySigner::random()?;
-    /// # signer.approve_pubkyauth_request(&url).await?;
+    /// # signer.approve_auth_request(&url).await?;
     /// let session = sub.wait_for_approval().await?;
     /// # Ok::<(), pubky::Error>(())}
     /// ```

@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
 
     println!("Sending AuthToken to the 3rd party app...");
 
-    signer.approve_pubkyauth_request(&url).await?;
+    signer.approve_auth_request(&url).await?;
 
     Ok(())
 }

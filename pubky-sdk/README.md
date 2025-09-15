@@ -49,7 +49,7 @@ println!("current homeserver: {:?}", resolved);
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
 let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
 // show `url` (QR/deeplink); on the signing device call:
-// signer.approve_pubkyauth_request(&url).await?;
+// signer.approve_auth_request(&url).await?;
 let app_session = sub.wait_for_approval().await?;
 
 # Ok(()) }
@@ -136,8 +136,8 @@ let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
 // Easiest: use the default relay (see “Relay” notes below)
 let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
 // show `url` to the user (QR or deeplink). On the signer device:
-// signer.approve_pubkyauth_request(&url).await?;
-# PubkySigner::random()?.approve_pubkyauth_request(&url).await?;
+// signer.approve_auth_request(&url).await?;
+# PubkySigner::random()?.approve_auth_request(&url).await?;
 
 let session = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
 # Ok(()) }
