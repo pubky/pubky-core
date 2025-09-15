@@ -152,7 +152,7 @@ impl PubkySession {
     /// - `Err(_)` for transport or server errors unrelated to validity.
     ///
     /// This does *not* mutate the session; it’s a sanity/validity check.
-    pub async fn revalidate_session(&self) -> Result<Option<SessionInfo>> {
+    pub async fn revalidate(&self) -> Result<Option<SessionInfo>> {
         let response = self
             .storage()
             .request(Method::GET, "/session")

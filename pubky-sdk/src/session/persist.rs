@@ -53,7 +53,7 @@ impl PubkySession {
 
         // 3) Validate cookie and fetch authoritative SessionInfo
         let info = session
-            .revalidate_session()
+            .revalidate()
             .await?
             .ok_or(AuthError::RequestExpired)?;
         session.info = info;

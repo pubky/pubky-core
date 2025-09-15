@@ -46,11 +46,11 @@ async fn limit_signin_get_session() {
     let session = signer.signin().await.unwrap();
 
     // First GET /session (validate/fetch) should be OK
-    session.revalidate_session().await.unwrap();
+    session.revalidate().await.unwrap();
 
     // Second GET /session should be rate-limited (429)
     let err = session
-        .revalidate_session()
+        .revalidate()
         .await
         .expect_err("Second /session GET should be rate limited");
     assert!(
@@ -100,9 +100,9 @@ async fn limit_signin_get_session_whitelist() {
     let session_w = whitelisted_signer.signin().await.unwrap();
 
     // First GET /session OK
-    session_w.revalidate_session().await.unwrap();
+    session_w.revalidate().await.unwrap();
     // Second GET /session also OK (whitelisted)
-    session_w.revalidate_session().await.unwrap();
+    session_w.revalidate().await.unwrap();
 
     // --- Non-whitelisted user ---
     let other = PubkySigner::random().unwrap();
@@ -110,10 +110,10 @@ async fn limit_signin_get_session_whitelist() {
     let session_o = other.signin().await.unwrap();
 
     // First GET /session OK
-    session_o.revalidate_session().await.unwrap();
+    session_o.revalidate().await.unwrap();
     // Second GET /session should be rate-limited (429)
     let err = session_o
-        .revalidate_session()
+        .revalidate()
         .await
         .expect_err("Should be rate limited because not on whitelist");
     assert!(
