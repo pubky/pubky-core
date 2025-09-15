@@ -1,10 +1,9 @@
 use pubky_common::session::Session;
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use sqlx::types::chrono::DateTime;
 
 use crate::persistence::{
-    lmdb::LmDB,
+    lmdb::{sql_migrator::users::nano_seconds_to_timestamp, LmDB},
     sql::{
         session::{SessionIden, SESSION_TABLE},
         user::UserRepository,
@@ -20,8 +19,8 @@ pub async fn create<'a>(
     executor: &mut UnifiedExecutor<'a>,
 ) -> Result<(), sqlx::Error> {
     let sql_user = UserRepository::get(lmdb_session.pubky(), executor).await?;
-    let created_at = DateTime::from_timestamp(lmdb_session.created_at() as i64, 0)
-        .expect("Should always be valid");
+    let created_at =
+        nano_seconds_to_timestamp(lmdb_session.created_at()).expect("Should always be valid");
     let created_at = created_at.naive_utc();
     let statement = Query::insert()
         .into_table(SESSION_TABLE)
@@ -103,7 +102,8 @@ mod tests {
         let created_at1 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs()
+            * 1_000_000;
         let mut session1 = Session::new(&user1_pubkey, &[Capability::root()], None);
         session1.set_created_at(created_at1);
         lmdb.tables
@@ -124,7 +124,8 @@ mod tests {
         let created_at2 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs()
+            * 1_000_000;
         let mut session2 = Session::new(&user2_pubkey, &[], None);
         session2.set_created_at(created_at2);
         lmdb.tables
@@ -153,7 +154,7 @@ mod tests {
                 .created_at
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string(),
-            DateTime::from_timestamp(created_at1 as i64, 0)
+            nano_seconds_to_timestamp(created_at1)
                 .unwrap()
                 .naive_utc()
                 .format("%Y-%m-%d %H:%M:%S")
@@ -173,7 +174,7 @@ mod tests {
                 .created_at
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string(),
-            DateTime::from_timestamp(created_at2 as i64, 0)
+            nano_seconds_to_timestamp(created_at2)
                 .unwrap()
                 .naive_utc()
                 .format("%Y-%m-%d %H:%M:%S")

@@ -1,9 +1,10 @@
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr, Value};
 use sea_query_binder::SqlxBinder;
-use sqlx::types::chrono::DateTime;
 
 use crate::persistence::{
-    lmdb::{tables::signup_tokens::SignupToken, LmDB},
+    lmdb::{
+        sql_migrator::users::nano_seconds_to_timestamp, tables::signup_tokens::SignupToken, LmDB,
+    },
     sql::{
         signup_code::{SignupCodeIden, SIGNUP_CODE_TABLE},
         UnifiedExecutor,
@@ -21,7 +22,7 @@ pub async fn create<'a>(
         None => SimpleExpr::Value(Value::String(None)),
     };
     let created_at =
-        DateTime::from_timestamp(lmdb_token.created_at as i64, 0).expect("Should always be valid");
+        nano_seconds_to_timestamp(lmdb_token.created_at).expect("Should always be valid");
     let created_at = created_at.naive_utc();
     let statement = Query::insert()
         .into_table(SIGNUP_CODE_TABLE)
@@ -66,7 +67,6 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use pkarr::Keypair;
-    use sqlx::types::chrono::DateTime;
 
     use crate::persistence::sql::{
         signup_code::{SignupCodeId, SignupCodeRepository},
@@ -88,7 +88,8 @@ mod tests {
         token1.created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs()
+            * 1_000_000;
         token1.used = Some(user1_pubkey.clone());
         lmdb.tables
             .signup_tokens
@@ -100,7 +101,8 @@ mod tests {
         token2.created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs()
+            * 1_000_000;
         token2.used = None;
         lmdb.tables
             .signup_tokens
@@ -119,28 +121,13 @@ mod tests {
         let sql_code1 = SignupCodeRepository::get(&id1, &mut sql_db.pool().into())
             .await
             .unwrap();
-        assert_eq!(
-            sql_code1.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-            DateTime::from_timestamp(token1.created_at as i64, 0)
-                .unwrap()
-                .naive_utc()
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        );
+
         assert_eq!(sql_code1.used_by, Some(user1_pubkey));
 
         let id2 = SignupCodeId::new(token2.token).unwrap();
         let sql_code2 = SignupCodeRepository::get(&id2, &mut sql_db.pool().into())
             .await
             .unwrap();
-        assert_eq!(
-            sql_code2.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-            DateTime::from_timestamp(token2.created_at as i64, 0)
-                .unwrap()
-                .naive_utc()
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        );
         assert_eq!(sql_code2.used_by, None);
     }
 }

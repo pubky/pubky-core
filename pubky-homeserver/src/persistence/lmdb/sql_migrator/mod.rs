@@ -15,8 +15,10 @@ use crate::persistence::{
         },
         LmDB,
     },
-    sql::{user::UserRepository, SqlDb},
+    sql::{Migrator, SqlDb},
 };
+
+const MIGRATION_NAME: &str = "m20250915_lmdb_to_sql_migration";
 
 /// Migrate the LMDB to the SQL database.
 /// Does everything in one transaction. If one migration fails, the entire transaction is rolled back.
@@ -27,12 +29,22 @@ pub async fn migrate_lmdb_to_sql(lmdb: LmDB, sql_db: &SqlDb) -> anyhow::Result<(
     migrate_sessions(lmdb.clone(), &mut (&mut tx).into()).await?;
     migrate_entries(lmdb.clone(), &mut (&mut tx).into()).await?;
     migrate_events(lmdb.clone(), &mut (&mut tx).into()).await?;
+
+    // Mark the migration as done.
+    let migrator = Migrator::new(sql_db);
+    migrator
+        .mark_migration_as_done(&mut tx, MIGRATION_NAME)
+        .await?;
+
     tx.commit().await?;
     Ok(())
 }
 
 /// Check if the migration is needed.
 pub async fn is_migration_needed(sql_db: &SqlDb) -> anyhow::Result<bool> {
-    let overview = UserRepository::get_overview(&mut sql_db.pool().into()).await?;
-    Ok(overview.count == 0)
+    let migrator = Migrator::new(sql_db);
+    let already_applied = migrator
+        .has_migration_already_been_applied(MIGRATION_NAME)
+        .await?;
+    Ok(!already_applied)
 }
