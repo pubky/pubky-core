@@ -2,9 +2,13 @@ use pubky_common::auth::AuthToken;
 use reqwest::Method;
 use url::Url;
 
+use super::PubkySigner;
 use crate::{Capabilities, Capability, PubkySession, PublicKey, Result, util::check_http_status};
 
-use super::PubkySigner;
+enum PublishMode {
+    Background,
+    Blocking,
+}
 
 impl PubkySigner {
     /// Create an account on a homeserver and return a ready-to-use `PubkySession`.
@@ -48,33 +52,44 @@ impl PubkySigner {
     // All of these methods use root capabilities
 
     /// Sign in by locally signing a root-capability token. Returns a session-bound session.
+    /// Publishes the homeserver record if stale in the background.
+    ///
+    /// Prefer this signin for best user experience, it returns fast.
     pub async fn signin(&self) -> Result<PubkySession> {
-        self.signin_and_ensure_record_published(false).await
+        self.signin_with_publish(PublishMode::Background).await
     }
 
-    /// Signin and publish `_pubky` if stale in sync.
-    pub async fn signin_and_publish(&self) -> Result<PubkySession> {
-        self.signin_and_ensure_record_published(true).await
+    /// Sign in by locally signing a root-capability token. Returns a session-bound session.
+    /// Publishes the homeserver record if stale in the background.
+    ///
+    /// Prefer this signin for highest guarantees of discoverability from Dht and pkarr relays,
+    /// it returns slow (~3-5 seconds).
+    pub async fn signin_blocking(&self) -> Result<PubkySession> {
+        self.signin_with_publish(PublishMode::Blocking).await
     }
 
-    async fn signin_and_ensure_record_published(&self, publish_sync: bool) -> Result<PubkySession> {
+    /// Internal helper to sign in, then optionally refresh `_pubky` record.
+    async fn signin_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
         let session = PubkySession::new_with_client(&self.client, &token).await?;
 
-        if publish_sync {
-            self.pkdns().publish_homeserver_if_stale(None).await?;
-        } else {
-            // Fire-and-forget path: refresh in the background
-            let session = self.clone();
-            let fut = async move {
-                let _ = session.pkdns().publish_homeserver_if_stale(None).await;
-            };
-            #[cfg(not(target_arch = "wasm32"))]
-            tokio::spawn(fut);
-            #[cfg(target_arch = "wasm32")]
-            wasm_bindgen_futures::spawn_local(fut);
-        };
+        match mode {
+            PublishMode::Blocking => {
+                self.pkdns().publish_homeserver_if_stale(None).await?;
+            }
+            PublishMode::Background => {
+                // Fire-and-forget path: refresh in the background
+                let signer = self.clone();
+                let fut = async move {
+                    let _ = signer.pkdns().publish_homeserver_if_stale(None).await;
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                tokio::spawn(fut);
+                #[cfg(target_arch = "wasm32")]
+                wasm_bindgen_futures::spawn_local(fut);
+            }
+        }
 
         Ok(session)
     }

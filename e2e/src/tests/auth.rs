@@ -80,7 +80,7 @@ async fn disabled_user() {
 
     // Fresh sign-in should still succeed (disabled means no writes, not no login)
     session.signout().await.unwrap();
-    // If your API has a different name, use the equivalent (e.g., `signin()` or `signin_and_publish()`).
+
     let session2 = signer
         .signin()
         .await
