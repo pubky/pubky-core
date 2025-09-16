@@ -14,14 +14,14 @@ impl PubkyStorage {
     ///
     /// # Examples
     /// ```no_run
-    /// # async fn example(drive: pubky::PubkyStorage) -> pubky::Result<()> {
-    /// let urls = drive.list("/pub/app/")?.limit(100).shallow(true).send().await?;
+    /// # async fn example(storage: pubky::PubkyStorage) -> pubky::Result<()> {
+    /// let urls = storage.list("/pub/app/")?.limit(100).shallow(true).send().await?;
     /// for u in urls { println!("{u}"); }
     /// # Ok(()) }
     /// ```
     pub fn list<P: IntoPubkyResource>(&self, path: P) -> Result<ListBuilder<'_>> {
         Ok(ListBuilder {
-            drive: self,
+            storage: self,
             url: self.to_url(path)?,
             reverse: false,
             shallow: false,
@@ -42,7 +42,7 @@ impl PubkyStorage {
 #[derive(Debug)]
 #[must_use]
 pub struct ListBuilder<'a> {
-    drive: &'a PubkyStorage,
+    storage: &'a PubkyStorage,
     url: Url,
     reverse: bool,
     shallow: bool,
@@ -112,13 +112,13 @@ impl<'a> ListBuilder<'a> {
 
         // Build the request without re-parsing the URL back through IntoPubkyResource
         let rb = self
-            .drive
+            .storage
             .client
             .cross_request(Method::GET, url.clone())
             .await?;
         // Attach cookie only when hitting this session’s homeserver (native)
         #[cfg(not(target_arch = "wasm32"))]
-        let rb = self.drive.maybe_attach_session_cookie(&url, rb);
+        let rb = self.storage.maybe_attach_session_cookie(&url, rb);
 
         let resp = rb.send().await?;
         let resp = check_http_status(resp).await?;

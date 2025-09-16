@@ -45,9 +45,9 @@ use crate::{
 /// ```no_run
 /// # use pubky::PubkyStorage;
 /// # async fn example() -> pubky::Result<()> {
-///     let drive = PubkyStorage::new_public()?;
+///     let storage = PubkyStorage::new_public()?;
 ///     // Fully-qualified pubky Resource: user + path
-///     let resp = drive.get("alice_pubky/pub/site/index.html").await?;
+///     let resp = storage.get("alice_pubky/pub/site/index.html").await?;
 ///     let html = resp.text().await?;
 ///     println!("{html}");
 /// #   Ok(())
@@ -65,7 +65,7 @@ pub struct PubkyStorage {
 }
 
 impl PubkyStorage {
-    /// Create a **public (unauthenticated)** drive that uses the global shared [`PubkyHttpClient`].
+    /// Create a **public (unauthenticated)** storage that uses the global shared [`PubkyHttpClient`].
     ///
     /// Use this for read-only access to any user’s public content without a session.
     /// In this mode **paths must be user-qualified** (e.g. `"alice_pubky/pub/..."`).
@@ -76,8 +76,8 @@ impl PubkyStorage {
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyStorage::new_public()?;
-    /// let resp = drive.get("alice/pub/site/index.html").await?;
+    /// let storage = PubkyStorage::new_public()?;
+    /// let resp = storage.get("alice/pub/site/index.html").await?;
     /// # Ok(()) }
     /// ```
     pub fn new_public() -> Result<PubkyStorage> {
@@ -85,7 +85,7 @@ impl PubkyStorage {
         Ok(Self::new_public_with_client(&client))
     }
 
-    /// Create a **public (unauthenticated)** drive with an explicit client.
+    /// Create a **public (unauthenticated)** storage with an explicit client.
     ///
     /// Choose this when you manage your own [`PubkyHttpClient`] (e.g., for connection pooling,
     /// custom TLS/root store, or test wiring).
@@ -97,8 +97,8 @@ impl PubkyStorage {
     /// # use pubky::{PubkyHttpClient, PubkyStorage};
     /// # async fn example() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::new()?;
-    /// let drive = PubkyStorage::new_public_with_client(&client);
-    /// let urls = drive.list("alice_pubky/pub/site/")?.limit(10).send().await?;
+    /// let storage = PubkyStorage::new_public_with_client(&client);
+    /// let urls = storage.list("alice_pubky/pub/site/")?.limit(10).send().await?;
     /// # Ok(()) }
     /// ```
     pub fn new_public_with_client(client: &PubkyHttpClient) -> PubkyStorage {
@@ -124,9 +124,9 @@ impl PubkyStorage {
         }
     }
 
-    /// Resolve a path into a concrete `pubky://…` or `https://…` URL for this drive.
+    /// Resolve a path into a concrete `pubky://…` or `https://…` URL for this storage.
     ///
-    /// - **Session mode:** relative paths are scoped to this drive’s user.
+    /// - **Session mode:** relative paths are scoped to this storage’s user.
     /// - **Public mode:** the path must include the target user; relative/session-scoped paths error.
     pub(crate) fn to_url<P: IntoPubkyResource>(&self, p: P) -> Result<Url> {
         let addr: PubkyResource = p.into_pubky_resource()?;
@@ -139,7 +139,7 @@ impl PubkyStorage {
             // Public mode + session-scoped path => reject (no default user available)
             (None, None) => {
                 return Err(RequestError::Validation {
-                    message: "public drive requires user-qualified path: use `<user>/<path>` or `pubky://<user>/<path>`".into(),
+                    message: "public storage requires user-qualified path: use `<user>/<path>` or `pubky://<user>/<path>`".into(),
                 }
                 .into())
             }
@@ -148,10 +148,10 @@ impl PubkyStorage {
         Ok(Url::parse(&url_str)?)
     }
 
-    /// Build a request for this drive. If `path` is relative, it targets this drive’s user (session mode).
+    /// Build a request for this storage. If `path` is relative, it targets this storage’s user (session mode).
     ///
     /// On native targets, the session cookie is attached **only** when the URL points to the
-    /// same user bound to this drive (i.e., cookies never leak across users).
+    /// same user bound to this storage (i.e., cookies never leak across users).
     pub(crate) async fn request<P: IntoPubkyResource>(
         &self,
         method: Method,

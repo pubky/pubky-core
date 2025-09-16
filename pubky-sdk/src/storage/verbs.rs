@@ -27,8 +27,8 @@ impl PubkyStorage {
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyStorage::new_public()?;
-    /// let resp = drive.get("/pub/app/data.bin").await?;
+    /// let storage = PubkyStorage::new_public()?;
+    /// let resp = storage.get("/pub/app/data.bin").await?;
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
     /// ```
@@ -74,8 +74,8 @@ impl PubkyStorage {
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
-    /// let drive = PubkyStorage::new_public()?;
-    /// if let Some(h) = drive.stats("/pub/app/data.bin").await? {
+    /// let storage = PubkyStorage::new_public()?;
+    /// if let Some(h) = storage.stats("/pub/app/data.bin").await? {
     ///     if let Some(len) = h.get(reqwest::header::CONTENT_LENGTH) {
     ///         println!("size: {}", len.to_str().unwrap_or("?"));
     ///     }

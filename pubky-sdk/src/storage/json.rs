@@ -15,8 +15,8 @@ impl PubkyStorage {
     /// ```no_run
     /// # use serde::Deserialize;
     /// # #[derive(Deserialize)] struct Info { version: String }
-    /// # async fn ex(drive: pubky::PubkyStorage) -> pubky::Result<()> {
-    /// let info: Info = drive.get_json("/pub/app/info.json").await?;
+    /// # async fn ex(storage: pubky::PubkyStorage) -> pubky::Result<()> {
+    /// let info: Info = storage.get_json("/pub/app/info.json").await?;
     /// # Ok(()) }
     /// ```
     pub async fn get_json<P, T>(&self, path: P) -> Result<T>
@@ -43,9 +43,9 @@ impl PubkyStorage {
     /// ```no_run
     /// # use serde::Serialize;
     /// # #[derive(Serialize)] struct Info { version: String }
-    /// # async fn ex(drive: pubky::PubkyStorage) -> pubky::Result<()> {
+    /// # async fn ex(storage: pubky::PubkyStorage) -> pubky::Result<()> {
     /// let info = Info { version: "42".into() };
-    /// drive.put_json("/pub/app/info.json", &info).await?;
+    /// storage.put_json("/pub/app/info.json", &info).await?;
     /// # Ok(()) }
     /// ```
     pub async fn put_json<P, B>(&self, path: P, body: &B) -> Result<Response>

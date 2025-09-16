@@ -123,7 +123,7 @@ signer.pkdns().publish_homeserver_force(Some(&homeserver)).await?;
 # Ok(()) }
 ```
 
-### Pairing auth (keyless apps)
+### Pubky QR auth (third party, keyless apps)
 
 Request auth url and await approval.
 
