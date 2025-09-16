@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
 
     // For a basic GET request to any homeserver no session or key material is needed.
     let drive = if args.testnet {
-        PubkyStorage::public_with_client(&PubkyHttpClient::testnet()?)
+        PubkyStorage::new_public_with_client(&PubkyHttpClient::testnet()?)
     } else {
         PubkyStorage::new_public()?
     };
