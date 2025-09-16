@@ -45,81 +45,7 @@ pub struct PubkyAuthRequest {
 }
 
 impl PubkyAuthRequest {
-    /// Build an auth flow bound to a specific `PubkyHttpClient`.
-    ///
-    /// # Relay selection
-    /// - If `relay` is `Some`, that URL is used as the relay base (trailing slash optional).
-    /// - If `relay` is `None`, the flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted
-    ///   instance. **If that relay is unavailable your login cannot complete.** For larger
-    ///   or production apps, prefer running your own relay and passing its base URL here.
-    ///
-    /// # What is an [HTTP relay](https://httprelay.io)?
-    /// A tiny server that provides one-shot “link” channels for **producer => consumer**
-    /// delivery: your app long-polls `GET /link/<channel>`, and the signer `POST`s the
-    /// encrypted token to the same channel; the relay just forwards bytes (no keys or
-    /// Pubky logic required). See the HTTP Relay docs for the `link` method.
-    ///
-    /// # Self-hosting a relay
-    /// HTTP Relay is open-source (MIT). You can run it from static binaries or Docker. A minimal
-    /// Docker quickstart is:
-    /// ```sh
-    /// docker run -p 8080:8080 jonasjasas/httprelay
-    /// ```
-    /// Then point this API at your instance, e.g. `Some(Url::parse("http://localhost:8080/link/")?)`.
-    /// See the project site for [downloads and options](https://httprelay.io/download/)
-    ///
-    /// # Security & channel derivation
-    /// - The per-flow channel path is `base64url(hash(client_secret))`.
-    /// - The AuthToken is **encrypted with `client_secret`**; the relay cannot decrypt it
-    ///   (it merely forwards the ciphertext).
-    ///
-    /// # Capabilities
-    /// `caps` are embedded into the `pubkyauth://` URL so the signer can review and approve them.
-    ///
-    /// # Errors
-    /// - Returns URL parse errors for an invalid `relay`.
-    ///
-    /// Internals:
-    /// - Generates a random `client_secret` (32 bytes) and a user-displayable `pubkyauth://` deep link.
-    /// - Derives the relay channel from `client_secret` and stores both the deep link and the
-    ///   fully-qualified channel URL for subsequent polling.
-    pub fn new_with_client(
-        client: &PubkyHttpClient,
-        relay: Option<impl Into<Url>>,
-        caps: &Capabilities,
-    ) -> Result<Self> {
-        // 1) Resolve relay base
-        let mut relay_url = match relay {
-            Some(r) => r.into(),
-            None => Url::parse(DEFAULT_HTTP_RELAY)?,
-        };
-
-        // 2) Generate client secret and user-displayable pubkyauth:// URL.
-        let client_secret = random_bytes::<32>();
-        let pubkyauth_url = Url::parse(&format!(
-            "pubkyauth:///?caps={caps}&secret={}&relay={relay_url}",
-            URL_SAFE_NO_PAD.encode(client_secret)
-        ))?;
-
-        // 3) Derive the relay channel URL from the client secret hash
-        let mut segments = relay_url
-            .path_segments_mut()
-            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
-        segments.pop_if_empty();
-        let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
-        segments.push(&channel_id);
-        drop(segments);
-
-        Ok(Self {
-            client: client.clone(),
-            client_secret,
-            pubkyauth_url,
-            relay_channel_url: relay_url,
-        })
-    }
-
-    /// Construct bound to a default process-wide shared `PubkyHttpClient`.
-    /// This is what you want to use for most of your apps.
+    /// Construct a Pubkyauth handshake with custom relay.
     ///
     /// # Relay selection
     /// - If `relay` is `Some`, that URL is used as the relay base (trailing slash optional).
@@ -158,11 +84,34 @@ impl PubkyAuthRequest {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new_with_relay(relay: impl Into<Url>, caps: &Capabilities) -> Result<Self> {
-        Self::new_with_client(&global_client()?, Some(relay), caps)
+        // 1) Construct relay base
+        let mut relay_url: Url = relay.into();
+
+        // 2) Generate client secret and user-displayable pubkyauth:// URL.
+        let client_secret = random_bytes::<32>();
+        let pubkyauth_url = Url::parse(&format!(
+            "pubkyauth:///?caps={caps}&secret={}&relay={relay_url}",
+            URL_SAFE_NO_PAD.encode(client_secret)
+        ))?;
+
+        // 3) Derive the relay channel URL from the client secret hash
+        let mut segments = relay_url
+            .path_segments_mut()
+            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+        segments.pop_if_empty();
+        let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
+        segments.push(&channel_id);
+        drop(segments);
+
+        Ok(Self {
+            client: global_client()?,
+            client_secret,
+            pubkyauth_url,
+            relay_channel_url: relay_url,
+        })
     }
 
-    /// Construct bound to a default process-wide shared `PubkyHttpClient`.
-    /// This is what you want to use for quick and dirty projects and examples.
+    /// Construct a Pubkyauth handshake with default relay.
     ///
     /// The flow defaults to [`DEFAULT_HTTP_RELAY`], a Synonym-hosted instance.
     /// For larger or production apps, prefer running your own relay and passing
@@ -182,7 +131,7 @@ impl PubkyAuthRequest {
     /// - Derives the relay channel from `client_secret` and stores both the deep link and the
     ///   fully-qualified channel URL for subsequent polling.
     pub fn new(caps: &Capabilities) -> Result<Self> {
-        Self::new_with_client(&global_client()?, None::<Url>, caps)
+        Self::new_with_relay(Url::parse(DEFAULT_HTTP_RELAY)?, caps)
     }
 
     /// Return the `pubkyauth://` url to display (QR/deeplink) to the signer.
@@ -240,7 +189,6 @@ impl PubkyAuthRequest {
         wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
 
         let auth_subscription = AuthSubscription {
-            client: self.client,
             rx,
             abort: abort_handle,
         };
@@ -339,7 +287,6 @@ impl PubkyAuthRequest {
 #[derive(Debug)]
 #[must_use = "hold on to this and call token().await or wait_for_approval().await to complete the auth flow"]
 pub struct AuthSubscription {
-    client: PubkyHttpClient,
     rx: flume::Receiver<Result<AuthToken>>,
     abort: AbortHandle,
 }
@@ -377,7 +324,7 @@ impl AuthSubscription {
     /// # Ok::<(), pubky::Error>(())}
     /// ```
     pub async fn wait_for_approval(self) -> Result<PubkySession> {
-        PubkySession::new_with_client(&self.client.clone(), &self.wait_for_token().await?).await
+        PubkySession::new(&self.wait_for_token().await?).await
     }
 
     /// Non-blocking probe for readiness.

@@ -8,29 +8,9 @@ pub struct PubkySigner {
 }
 
 impl PubkySigner {
-    /// Construct a Signer atop a specific transport [PubkyHttpClient].
+    /// Construct a new PubkySigner.
     ///
-    /// Choose this when you already manage a long-lived `PubkyHttpClient` (connection reuse, pkarr cache).
-    ///
-    /// # Examples
-    /// ```
-    /// # use pubky::{PubkyHttpClient, PubkySigner, Keypair};
-    /// let client = PubkyHttpClient::new()?;
-    /// let signer = PubkySigner::with_client(&client, Keypair::random());
-    /// # Ok::<_, pubky::BuildError>(())
-    /// ```
-    pub fn with_client(client: &PubkyHttpClient, keypair: Keypair) -> Self {
-        Self {
-            client: client.clone(),
-            keypair,
-        }
-    }
-
-    /// Construct a Signer using a lazily-initialized, process-wide shared [PubkyHttpClient].
-    ///
-    /// Choose this when:
-    /// - You don’t need to control client construction or lifecycle.
-    /// - You want the simplest setup to build your app.
+    /// This is your entry point to keychain managing tooling.
     ///
     /// # Examples
     /// ```
@@ -40,8 +20,10 @@ impl PubkySigner {
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
     pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
-        let client = global_client()?;
-        Ok(Self::with_client(&client, keypair))
+        Ok(Self {
+            client: global_client()?,
+            keypair,
+        })
     }
 
     /// Construct a Signer with a fresh random keypair, using the process-wide shared [PubkyHttpClient].

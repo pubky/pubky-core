@@ -27,7 +27,7 @@ use crate::{
 /// #   let (sub, _url) = PubkyAuthRequest::new(&caps)?.subscribe();
 /// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
 /// #   let session = sub.wait_for_approval().await?;
-///     // Relative paths are resolved against the user's session.
+///     // Relative resource paths are resolved against the user's session.
 ///     session.storage().put("/pub/app/hello.txt", "hello").await?;
 ///     let body = session.storage().get("/pub/app/hello.txt").await?.text().await?;
 ///     assert_eq!(body, "hello");
@@ -36,9 +36,9 @@ use crate::{
 /// ```
 ///
 /// ### 2) Public mode (unauthenticated)
-/// Constructed via [`PubkyStorage::new_public`] or [`PubkyStorage::new_public_with_client`]. In this mode:
+/// Constructed via [`PubkyStorage::new_public`]. In this mode:
 /// - **No session** is attached; requests are unauthenticated.
-/// - Paths **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"`.
+/// - Resources **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"`.
 ///   Relative/session-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///
@@ -46,7 +46,7 @@ use crate::{
 /// # use pubky::PubkyStorage;
 /// # async fn example() -> pubky::Result<()> {
 ///     let storage = PubkyStorage::new_public()?;
-///     // Fully-qualified pubky Resource: user + path
+///     // Fully-qualified pubky resource: user + path
 ///     let resp = storage.get("alice_pubky/pub/site/index.html").await?;
 ///     let html = resp.text().await?;
 ///     println!("{html}");
@@ -65,12 +65,11 @@ pub struct PubkyStorage {
 }
 
 impl PubkyStorage {
-    /// Create a **public (unauthenticated)** storage that uses the global shared [`PubkyHttpClient`].
+    /// Create a **public (unauthenticated)** storage access.
     ///
     /// Use this for read-only access to any user’s public content without a session.
-    /// In this mode **paths must be user-qualified** (e.g. `"alice_pubky/pub/..."`).
+    /// In this mode **resources must be user-qualified** (e.g. `"alice_pubky/pub/..."`).
     ///
-    /// See also: [`PubkyStorage::new_public_with_client`].
     ///
     /// # Examples
     /// ```no_run
@@ -81,34 +80,13 @@ impl PubkyStorage {
     /// # Ok(()) }
     /// ```
     pub fn new_public() -> Result<PubkyStorage> {
-        let client = global_client()?;
-        Ok(Self::new_public_with_client(&client))
-    }
-
-    /// Create a **public (unauthenticated)** storage with an explicit client.
-    ///
-    /// Choose this when you manage your own [`PubkyHttpClient`] (e.g., for connection pooling,
-    /// custom TLS/root store, or test wiring).
-    ///
-    /// In this mode **paths must be user-qualified** (e.g. `"alice/pub/..."`).
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use pubky::{PubkyHttpClient, PubkyStorage};
-    /// # async fn example() -> pubky::Result<()> {
-    /// let client = PubkyHttpClient::new()?;
-    /// let storage = PubkyStorage::new_public_with_client(&client);
-    /// let urls = storage.list("alice_pubky/pub/site/")?.limit(10).send().await?;
-    /// # Ok(()) }
-    /// ```
-    pub fn new_public_with_client(client: &PubkyHttpClient) -> PubkyStorage {
-        PubkyStorage {
-            client: client.clone(),
+        Ok(PubkyStorage {
+            client: global_client()?,
             public_key: None,
             has_session: false,
             #[cfg(not(target_arch = "wasm32"))]
             cookie: None,
-        }
+        })
     }
 
     /// Construct a **session-mode** PubkyStorage from an existing session.
@@ -124,10 +102,10 @@ impl PubkyStorage {
         }
     }
 
-    /// Resolve a path into a concrete `pubky://…` or `https://…` URL for this storage.
+    /// Resolve a resource into a concrete `pubky://…` or `https://…` URL for this storage.
     ///
     /// - **Session mode:** relative paths are scoped to this storage’s user.
-    /// - **Public mode:** the path must include the target user; relative/session-scoped paths error.
+    /// - **Public mode:** the resource must include the target user; relative/session-scoped paths error.
     pub(crate) fn to_url<P: IntoPubkyResource>(&self, p: P) -> Result<Url> {
         let addr: PubkyResource = p.into_pubky_resource()?;
 
@@ -136,7 +114,7 @@ impl PubkyStorage {
             (Some(default_user), _) => addr.to_pubky_url(Some(default_user))?,
             // Public mode + explicit user in the input => OK
             (None, Some(_user_in_addr)) => addr.to_pubky_url(None)?,
-            // Public mode + session-scoped path => reject (no default user available)
+            // Public mode + session-scoped resource => reject (no default user available)
             (None, None) => {
                 return Err(RequestError::Validation {
                     message: "public storage requires user-qualified path: use `<user>/<path>` or `pubky://<user>/<path>`".into(),
@@ -148,16 +126,16 @@ impl PubkyStorage {
         Ok(Url::parse(&url_str)?)
     }
 
-    /// Build a request for this storage. If `path` is relative, it targets this storage’s user (session mode).
+    /// Build a request for this storage. If `resource` is relative, it targets this storage’s user (session mode).
     ///
     /// On native targets, the session cookie is attached **only** when the URL points to the
     /// same user bound to this storage (i.e., cookies never leak across users).
     pub(crate) async fn request<P: IntoPubkyResource>(
         &self,
         method: Method,
-        path: P,
+        resource: P,
     ) -> Result<RequestBuilder> {
-        let url = self.to_url(path)?;
+        let url = self.to_url(resource)?;
         let rb = self.client.cross_request(method, url.clone()).await?;
         #[cfg(not(target_arch = "wasm32"))]
         let rb = self.maybe_attach_session_cookie(&url, rb);

@@ -42,23 +42,12 @@ pub struct PubkySession {
 }
 
 impl PubkySession {
-    /// Establish a session from a signed [`AuthToken`] using the default global client.
-    ///
-    /// This POSTs `pubky://{user}/session` with the token, validates the response
-    /// and constructs a new session-bound [`PubkySession`]
-    pub async fn from_token(token: &AuthToken) -> Result<PubkySession> {
-        let client = global_client()?;
-        Self::new_with_client(&client, token).await
-    }
-
     /// Establish a session from a signed [`AuthToken`].
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response
     /// and constructs a new session-bound [`PubkySession`]
-    pub async fn new_with_client(
-        client: &PubkyHttpClient,
-        token: &AuthToken,
-    ) -> Result<PubkySession> {
+    pub async fn new(token: &AuthToken) -> Result<PubkySession> {
+        let client = global_client()?;
         let url = format!("pubky://{}/session", token.public_key());
         let response = client
             .cross_request(Method::POST, url)

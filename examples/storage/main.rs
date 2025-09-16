@@ -22,15 +22,16 @@ async fn main() -> Result<()> {
         .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
         .init();
 
+    // set the global client to testnet if needed.
+    if args.testnet {
+        pubky::set_global_client(PubkyHttpClient::testnet()?);
+    }
+
     // For a basic GET request to any homeserver no session or key material is needed.
-    let drive = if args.testnet {
-        PubkyStorage::new_public_with_client(&PubkyHttpClient::testnet()?)
-    } else {
-        PubkyStorage::new_public()?
-    };
+    let storage = PubkyStorage::new_public()?;
 
     // Build the request
-    let response = drive.get(args.resource).await?;
+    let response = storage.get(args.resource).await?;
 
     println!("< Response:");
     println!("< {:?} {}", response.version(), response.status());

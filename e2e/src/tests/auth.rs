@@ -1,4 +1,4 @@
-use pubky_testnet::pubky::global_client;
+use pubky_testnet::pubky::{global_client, set_global_client};
 use pubky_testnet::pubky::{PubkyAuthRequest, PubkySession, PubkySigner};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
@@ -232,10 +232,15 @@ async fn authz_timeout_reconnect() {
         .build()
         .unwrap();
 
+    // set the global client with timeout of 1 sec
+    set_global_client(client);
+
     // Start pairing auth flow using our custom client + local relay
-    let pairing =
-        PubkyAuthRequest::new_with_client(&client, Some(http_relay_url), &capabilities).unwrap();
+    let pairing = PubkyAuthRequest::new_with_relay(http_relay_url, &capabilities).unwrap();
     let (subscription, url) = pairing.subscribe();
+
+    // set again the default testnet client
+    set_global_client(testnet.client().unwrap());
 
     // Signer side: sign up, then approve after a delay (to exercise timeout/retry)
     let signer = PubkySigner::random().unwrap();
@@ -362,7 +367,10 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 
     // Make conditional publish consider the record stale after just 1ms,
     // then wait long enough to cross a whole second (pkarr timestamps are second-resolution).
-    let pkdns = signer.pkdns().set_stale_after(Duration::from_millis(1));
+    let pkdns = signer
+        .pkdns()
+        .unwrap()
+        .set_stale_after(Duration::from_millis(1));
     tokio::time::sleep(Duration::from_millis(1200)).await;
 
     // Conditional republish should now occur
@@ -405,7 +413,10 @@ async fn conditional_publish_skips_when_fresh() {
 
     // Set a very large staleness window so the record is definitively "fresh"
     // Default is 3600 seconds, we set it again just for sanity.
-    let pkdns = signer.pkdns().set_stale_after(Duration::from_secs(3600));
+    let pkdns = signer
+        .pkdns()
+        .unwrap()
+        .set_stale_after(Duration::from_secs(3600));
     pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
     let ts2 = client
@@ -446,7 +457,7 @@ async fn republish_homeserver() {
         .as_u64();
 
     // Conditional publish with a "fresh" record should NO-OP.
-    let pkdns = signer.pkdns().set_stale_after(max_record_age);
+    let pkdns = signer.pkdns().unwrap().set_stale_after(max_record_age);
     pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
     let ts2 = client

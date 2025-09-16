@@ -1,7 +1,7 @@
 //! PKDNS (Pkarr) top-level actor: resolve & publish `_pubky` records.
 //!
-//! - **Read-only (no keys):** `Pkdns::new()` / `Pkdns::with_client(..)`
-//! - **Publish (with keys):** `Pkdns::with_client_and_keypair(..)` or `signer.pkdns()`
+//! - **Read-only (no keys):** `Pkdns::new()`
+//! - **Publish (with keys):** `Pkdns::new_with_keypair(..)` or `signer.pkdns()`
 //!
 //! Reads do not require a session or keys. Publishing requires a `Keypair`.
 
@@ -41,8 +41,8 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 ///
 /// Or **with** a keypair for publishing:
 /// ```no_run
-/// # async fn example(client: pubky::PubkyHttpClient, kp: pubky::Keypair) -> pubky::Result<()> {
-/// let pkdns = pubky::Pkdns::with_client_and_keypair(&client, kp);
+/// # async fn example(kp: pubky::Keypair) -> pubky::Result<()> {
+/// let pkdns = pubky::Pkdns::new_with_keypair(kp);
 /// pkdns.publish_homeserver_if_stale(None).await?;
 /// # Ok(()) }
 /// ```
@@ -58,13 +58,13 @@ pub struct Pkdns {
 impl PubkySigner {
     /// Get a PKDNS actor bound to this signer's client and keypair (publishing enabled).
     #[inline]
-    pub fn pkdns(&self) -> crate::Pkdns {
-        crate::Pkdns::with_client_and_keypair(&self.client, self.keypair.clone())
+    pub fn pkdns(&self) -> Result<crate::Pkdns> {
+        crate::Pkdns::new_with_keypair(self.keypair.clone())
     }
 }
 
 impl Pkdns {
-    /// Read-only PKDNS actor using the global shared client.
+    /// Construct a Read-only PKDNS actor.
     pub fn new() -> Result<Self> {
         Ok(Self {
             client: global_client()?,
@@ -73,22 +73,13 @@ impl Pkdns {
         })
     }
 
-    /// Read-only PKDNS actor on a specific client.
-    pub fn with_client(client: &PubkyHttpClient) -> Self {
-        Self {
-            client: client.clone(),
-            keypair: None,
-            stale_after: DEFAULT_STALE_AFTER,
-        }
-    }
-
-    /// Publishing-capable PKDNS actor: provide a client and a keypair.
-    pub fn with_client_and_keypair(client: &PubkyHttpClient, keypair: Keypair) -> Self {
-        Self {
-            client: client.clone(),
+    /// Construct a publishing-capable PKDNS actor.
+    pub fn new_with_keypair(keypair: Keypair) -> Result<Self> {
+        Ok(Self {
+            client: global_client()?,
             keypair: Some(keypair),
             stale_after: DEFAULT_STALE_AFTER,
-        }
+        })
     }
 
     /// Set how long an existing `_pubky` PKARR record is considered **fresh** (builder-style).
@@ -155,7 +146,7 @@ impl Pkdns {
     ) -> Result<()> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
             Error::from(AuthError::Validation(
-                "publishing `_pubky` requires a keypair (use Pkdns::with_client_and_keypair or signer.pkdns())".into(),
+                "publishing `_pubky` requires a keypair (use Pkdns::new_with_keypair or signer.pkdns())".into(),
             ))
         })?;
         let pubky = kp.public_key();

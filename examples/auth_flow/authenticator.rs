@@ -49,7 +49,8 @@ async fn main() -> Result<()> {
 
     let signer = if cli.testnet {
         let client = PubkyHttpClient::testnet()?;
-        let signer = PubkySigner::with_client(&client, keypair);
+        pubky::set_global_client(client);
+        let signer = PubkySigner::new(keypair)?;
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
