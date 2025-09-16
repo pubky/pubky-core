@@ -13,6 +13,10 @@ name = "authenticator"
 path = "./authz/authenticator.rs"
 
 [[bin]]
+name = "storage"
+path = "./storage/main.rs"
+
+[[bin]]
 name = "request"
 path = "./request/main.rs"
 

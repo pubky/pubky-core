@@ -1,21 +1,30 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
-use reqwest::Method;
+use reqwest::{
+    header::{HeaderName, HeaderValue},
+    Method,
+};
 use std::env;
 use url::Url;
 
-use pubky::{PubkyHttpClient, PubkyStorage};
+use pubky::PubkyHttpClient;
 
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(version, about = "Raw Pubky/HTTPS request tool using PubkyHttpClient")]
 struct Cli {
-    /// HTTP method to use
+    /// HTTP method to use (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
     method: Method,
-    /// Pubky or HTTPS url
+    /// Pubky or HTTPS URL (e.g. pubky://<user>/pub/app/file or https://example.com)
     url: Url,
-    /// Use testnet mode
-    #[clap(long)]
+    /// Use testnet endpoints
+    #[arg(long)]
     testnet: bool,
+    /// Repeatable header in "Name: value" form
+    #[arg(short = 'H', long = "header")]
+    header: Vec<String>,
+    /// Request body (use with POST/PUT/PATCH)
+    #[arg(short = 'd', long = "data")]
+    data: Option<String>,
 }
 
 #[tokio::main]
@@ -23,18 +32,33 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     tracing_subscriber::fmt()
-        .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
+        .with_env_filter(env::var("TRACING").unwrap_or_else(|_| "info".to_string()))
         .init();
 
-    // For a basic GET request to any homeserver no session or key material is needed.
-    let drive = if args.testnet {
-        PubkyStorage::new_public_with_client(&PubkyHttpClient::testnet()?)
+    let client = if args.testnet {
+        PubkyHttpClient::testnet()?
     } else {
-        PubkyStorage::new_public()?
+        PubkyHttpClient::new()?
     };
 
-    // Build the request
-    let response = drive.get(args.url.as_str()).await?;
+    let mut rb = client.request(args.method.clone(), args.url);
+
+    // Apply headers
+    for h in &args.header {
+        let (name, value) = h
+            .split_once(':')
+            .context("header must be in the form \"Name: value\"")?;
+        let name = HeaderName::from_bytes(name.trim().as_bytes()).context("invalid header name")?;
+        let value = HeaderValue::from_str(value.trim()).context("invalid header value")?;
+        rb = rb.header(name, value);
+    }
+
+    // Optional body
+    if let Some(body) = args.data {
+        rb = rb.body(body);
+    }
+
+    let response = rb.send().await?;
 
     println!("< Response:");
     println!("< {:?} {}", response.version(), response.status());
@@ -45,9 +69,8 @@ async fn main() -> Result<()> {
     }
 
     let bytes = response.bytes().await?;
-
     match String::from_utf8(bytes.to_vec()) {
-        Ok(string) => println!("<\n{}", string),
+        Ok(text) => println!("<\n{text}"),
         Err(_) => println!("<\n{:?}", bytes),
     }
 
