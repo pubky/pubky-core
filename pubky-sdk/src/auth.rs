@@ -253,17 +253,17 @@ impl PubkyAuthRequest {
     /// intended for scripts/CLIs or quickstarts that don’t need to juggle a background handle.
     ///
     /// **How to use**
-    /// 1. Build a [`PubkyAuthRequest`], read [`pubkyauth_url`](Self::pubkyauth_url), and display it (QR/deeplink).
+    /// 1. Build a [`PubkyAuthRequest`], read [`pubkyauth_url`](Self::url), and display it (QR/deeplink).
     /// 2. Call `wait_for_approval()`. Internally we start a lightweight polling task and await its result.
-    /// 3. On success you get a ready-to-use [`PubkySession`] with a valid server session.
+    /// 3. On success you get a ready-to-use [`PubkySession`] with a valid homeserver session.
     ///
     ///
     /// ⚠️ **Important:** `wait_for_approval()` starts polling **when you call it**. If you use
-    /// [`pubkyauth_url`](Self::pubkyauth_url) to display the link, you **must** call
-    /// `wait_for_approval().await` **immediately after** displaying it. Any delay (e.g., extra I/O, sleeps,
+    /// [`Self::url`] to display the link, you **must** call `wait_for_approval().await`
+    /// **immediately after** displaying it. Any delay (e.g., extra I/O, sleeps,
     /// user prompts) can allow a signer to approve before polling begins, increasing the chance of
     /// missing the approval. If you cannot guarantee back-to-back calls, prefer
-    /// [`Self::subscribe`], which starts polling before you show the URL.
+    /// [`Self::subscribe`], which starts polling before you receive the URL.
     ///
     /// **When to prefer this**
     /// - One-shot flows where blocking the current task is fine.

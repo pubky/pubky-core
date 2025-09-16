@@ -281,7 +281,7 @@ impl PubkyHttpClient {
     }
 
     /// Get-or-init the process-wide default client.
-    /// Convenience alias for [`pubky::global_client()`].
+    /// Convenience alias for [`crate::global_client()`].
     pub fn global() -> Result<PubkyHttpClient, crate::BuildError> {
         global_client()
     }

@@ -36,7 +36,7 @@ use crate::{
 /// ```
 ///
 /// ### 2) Public mode (unauthenticated)
-/// Constructed via [`PubkyStorage::public`] or [`PubkyStorage::public_with_client`]. In this mode:
+/// Constructed via [`PubkyStorage::new_public`] or [`PubkyStorage::new_public_with_client`]. In this mode:
 /// - **No session** is attached; requests are unauthenticated.
 /// - Paths **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"`.
 ///   Relative/session-scoped paths are rejected.
@@ -70,7 +70,7 @@ impl PubkyStorage {
     /// Use this for read-only access to any user’s public content without a session.
     /// In this mode **paths must be user-qualified** (e.g. `"alice_pubky/pub/..."`).
     ///
-    /// See also: [`PubkyStorage::public_with_client`].
+    /// See also: [`PubkyStorage::new_public_with_client`].
     ///
     /// # Examples
     /// ```no_run
@@ -82,7 +82,7 @@ impl PubkyStorage {
     /// ```
     pub fn new_public() -> Result<PubkyStorage> {
         let client = global_client()?;
-        Ok(Self::public_with_client(&client))
+        Ok(Self::new_public_with_client(&client))
     }
 
     /// Create a **public (unauthenticated)** drive with an explicit client.
@@ -97,11 +97,11 @@ impl PubkyStorage {
     /// # use pubky::{PubkyHttpClient, PubkyStorage};
     /// # async fn example() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::new()?;
-    /// let drive = PubkyStorage::public_with_client(&client);
+    /// let drive = PubkyStorage::new_public_with_client(&client);
     /// let urls = drive.list("alice_pubky/pub/site/")?.limit(10).send().await?;
     /// # Ok(()) }
     /// ```
-    pub fn public_with_client(client: &PubkyHttpClient) -> PubkyStorage {
+    pub fn new_public_with_client(client: &PubkyHttpClient) -> PubkyStorage {
         PubkyStorage {
             client: client.clone(),
             public_key: None,
