@@ -6,11 +6,11 @@ publish = false
 
 [[bin]]
 name = "signup"
-path = "./authn/signup.rs"
+path = "./signup/signup.rs"
 
 [[bin]]
 name = "authenticator"
-path = "./authz/authenticator.rs"
+path = "./auth_flow/authenticator.rs"
 
 [[bin]]
 name = "storage"

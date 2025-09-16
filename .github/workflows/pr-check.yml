@@ -104,6 +104,22 @@ jobs:
       - name: Build docs
         run: cargo doc -p ${{ matrix.crate }} --all-features --no-deps
 
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.89
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Cargo check examples
+        run: |
+          cargo check -p examples --all-features --bins
+
   # wasm-test:
   #   runs-on: ubuntu-latest
   #   steps:

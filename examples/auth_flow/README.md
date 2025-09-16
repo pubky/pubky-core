@@ -30,6 +30,6 @@ Finally run the CLI to paste the Pubky Auth in.
 cargo run --bin authenticator <RECOVERY_FILE> "<Auth_URL>" [Testnet]
 ```
 
-Where the auth url should be within qutoatino marks, and the Testnet is an option you can set to true to use the local homeserver
+Where the auth url should be within quotations marks, and the Testnet is an option you can set to true to use the local homeserver.
 
 You should see the frontend reacting by showing the success of authorization and session details.
