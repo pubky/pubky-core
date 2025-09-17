@@ -1,0 +1,67 @@
+[package]
+name = "pubky"
+description = "Pubky SDK"
+version = "0.6.0-rc.3"
+edition = "2024"
+authors = [
+    "SeverinAlexB <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+    "Nuh <nuh@nuh.dev>",
+]
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
+categories = [
+    "network-programming",
+    "cryptography",
+    "web-programming",
+    "authentication",
+]
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+json = ["dep:serde", "dep:serde_json", "reqwest/json"]
+
+[dependencies]
+pubky-common = { path = "../pubky-common", version = "0.6.0-rc.3" }
+thiserror = "2.0.11"
+url = "2.5.4"
+bytes = "^1.10.0"
+base64 = "0.22.1"
+pkarr = { workspace = true, features = ["full"] }
+cookie = "0.18.1"
+flume = { version = "0.11.1", default-features = false, features = ["async"] }
+futures-util = "0.3.31"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+arc-swap = "1.7.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12.12", default-features = false, features = [
+    "cookies",
+    "rustls-tls",
+    "json",
+] }
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "0.12.12", default-features = false, features = ["json"] }
+log = "0.4.25"
+wasm-bindgen-futures = "0.4.50"
+futures-lite = { version = "2.6.0", default-features = false }
+
+[dev-dependencies]
+anyhow = "1.0.95"
+futures-lite = "2.6.0"
+tracing-subscriber = "0.3.19"
+mainline = { version = "5.4.0" }
+pubky-testnet = { path = "../pubky-testnet" } # used in docstring tests
+
+[package.metadata.docs.rs]
+all-features = true

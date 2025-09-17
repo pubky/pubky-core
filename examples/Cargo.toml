@@ -1,27 +1,36 @@
 [package]
-name = "authn"
-version = "0.5.1"
+name = "examples"
+version = "0.6.0-rc.3"
 edition.workspace = true
 publish = false
 
 [[bin]]
 name = "signup"
-path = "./authn/signup.rs"
+path = "./signup/signup.rs"
 
 [[bin]]
 name = "authenticator"
-path = "./authz/authenticator.rs"
+path = "./auth_flow/authenticator.rs"
+
+[[bin]]
+name = "storage"
+path = "./storage/main.rs"
 
 [[bin]]
 name = "request"
 path = "./request/main.rs"
 
+[[bin]]
+name = "testnet"
+path = "./testnet/main.rs"
+
 [dependencies]
 anyhow = "1.0.99"
 base64 = "0.22.1"
 clap = { version = "4.5.46", features = ["derive"] }
-pubky = { path = "../pubky-client", version = "0.5.1" }
-pubky-common = { path = "../pubky-common", version = "0.5.1" }
+pubky = { path = "../pubky-sdk", version = "0.6.0-rc.3" }
+pubky-testnet = { path = "../pubky-testnet", version = "0.6.0-rc.3" }
+pubky-common = { path = "../pubky-common", version = "0.6.0-rc.3" }
 reqwest = "0.12.23"
 rpassword = "7.4.0"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
