@@ -202,8 +202,8 @@ pub trait IntoPubkyResource {
     /// input is malformed (e.g., contains `//`, `.` / `..`, or a bad public key).
     ///
     /// Examples (pseudo):
-    /// - `"pub/my.app/file".into_pubky_resource()` -> session-scoped resource
-    /// - `(user_pk, "pub/app/file").into_pubky_resource()` ⇒ explicit user + relative path
+    /// - `"/pub/my.app/file".into_pubky_resource()` -> session-scoped resource
+    /// - `(user_pk, "pub/my.app/file").into_pubky_resource()` ⇒ explicit user + relative path
     fn into_pubky_resource(self) -> Result<PubkyResource, Error>;
 }
 
@@ -249,13 +249,13 @@ mod tests {
     fn file_path_normalization_and_rejections() {
         // Normalize relative
         assert_eq!(
-            ResourcePath::parse("pub/app").unwrap().as_str(),
-            "pub/my.app"
+            ResourcePath::parse("pub/my.app").unwrap().as_str(),
+            "/pub/my.app"
         );
         // Keep absolute
         assert_eq!(
-            ResourcePath::parse("pub/my.app").unwrap().as_str(),
-            "pub/my.app"
+            ResourcePath::parse("/pub/my.app").unwrap().as_str(),
+            "/pub/my.app"
         );
         // Reject empty
         assert!(matches!(
@@ -273,16 +273,16 @@ mod tests {
     fn parse_explicit_user_both_forms() {
         let kp = Keypair::random();
         let user = kp.public_key();
-        let s1 = format!("pubky://{}pub/my.app/file", user);
-        let s2 = format!("{}pub/my.app/file", user);
+        let s1 = format!("pubky://{}/pub/my.app/file", user);
+        let s2 = format!("{}/pub/my.app/file", user);
 
         let p1 = PubkyResource::from_str(&s1).unwrap();
         let p2 = PubkyResource::from_str(&s2).unwrap();
 
         assert_eq!(p1.user, Some(user.clone()));
         assert_eq!(p2.user, Some(user.clone()));
-        assert_eq!(p1.path.as_str(), "pub/my.app/file");
-        assert_eq!(p2.path.as_str(), "pub/my.app/file");
+        assert_eq!(p1.path.as_str(), "/pub/my.app/file");
+        assert_eq!(p2.path.as_str(), "/pub/my.app/file");
 
         // Display: explicit user form
         assert_eq!(p1.to_string(), s2);
@@ -293,13 +293,13 @@ mod tests {
     #[test]
     fn parse_session_scoped_paths() {
         // Absolute, session-scoped path is OK
-        let p_abs = PubkyResource::from_str("pub/my.app/file").unwrap();
+        let p_abs = PubkyResource::from_str("/pub/my.app/file").unwrap();
         assert!(p_abs.user.is_none());
-        assert_eq!(p_abs.path.as_str(), "pub/my.app/file");
+        assert_eq!(p_abs.path.as_str(), "/pub/my.app/file");
 
         // Relative session-scoped (no leading slash) is rejected
         assert!(matches!(
-            PubkyResource::from_str("pub/app/file"),
+            PubkyResource::from_str("pub/my.app/file"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
@@ -307,7 +307,7 @@ mod tests {
         let kp = Keypair::random();
         let user = kp.public_key();
         let url = p_abs.to_pubky_url(Some(&user)).unwrap();
-        assert_eq!(url, format!("pubky://{}pub/my.app/file", user));
+        assert_eq!(url, format!("pubky://{}/pub/my.app/file", user));
     }
 
     #[test]
@@ -317,7 +317,7 @@ mod tests {
 
         // Invalid user key in `<user>/<path>`
         assert!(matches!(
-            PubkyResource::from_str("not-a-keypub/my.app"),
+            PubkyResource::from_str("not-a-key/pub/my.app"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
@@ -346,8 +346,8 @@ mod tests {
         assert!(ResourcePath::parse("/a/./b").is_err());
         assert!(ResourcePath::parse("/a/../b").is_err());
         assert_eq!(
-            ResourcePath::parse("pub/my.app/").unwrap().as_str(),
-            "pub/my.app/"
+            ResourcePath::parse("/pub/my.app/").unwrap().as_str(),
+            "/pub/my.app/"
         );
     }
 }

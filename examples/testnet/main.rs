@@ -11,12 +11,12 @@ async fn main() -> anyhow::Result<()> {
     let session = signer.signup(&homeserver.public_key(), None).await?;
 
     // Write a file
-    session.storage().put("/pub/app/hello.txt", "hi").await?;
+    session.storage().put("/pub/my.app/hello.txt", "hi").await?;
 
     // Read it back
     let txt = session
         .storage()
-        .get("/pub/app/hello.txt")
+        .get("/pub/my.app/hello.txt")
         .await?
         .text()
         .await?;

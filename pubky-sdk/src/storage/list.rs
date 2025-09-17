@@ -18,7 +18,7 @@ impl PubkyStorage {
     /// # Examples
     /// ```no_run
     /// # async fn example(storage: pubky::PubkyStorage) -> pubky::Result<()> {
-    /// let urls = storage.list("/pub/app/")?.limit(100).shallow(true).send().await?;
+    /// let urls = storage.list("/pub/my.app/")?.limit(100).shallow(true).send().await?;
     /// for u in urls { println!("{u}"); }
     /// # Ok(()) }
     /// ```

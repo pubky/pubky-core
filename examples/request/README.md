@@ -18,13 +18,13 @@ cargo run --bin request -- <METHOD> <URL> [--testnet] [-H "Name: value"] [-d DAT
 
 ```bash
 # Pubky read
-cargo run --bin request -- GET pubky://<user_pubky>/pub/app/info.json
+cargo run --bin request -- GET pubky://<user_pubky>/pub/my.app/info.json
 
 # HTTPS to a pkarr host (public-key hostname)
-cargo run --bin request -- GET https://<user_pubky>/pub/app/info.json
+cargo run --bin request -- GET https://<user_pubky>/pub/my.app/info.json
 
 # HTTPS to the _pubky subdomain form
-cargo run --bin request -- GET https://_pubky.<user_pubky>/pub/app/info.json
+cargo run --bin request -- GET https://_pubky.<user_pubky>/pub/my.app/info.json
 
 # JSON POST with headers
 cargo run --bin request -- \
@@ -34,7 +34,7 @@ cargo run --bin request -- \
   POST https://example.com/data.json
 
 # Use local testnet endpoints
-cargo run --bin request -- --testnet GET pubky://<user_pubky>/pub/app/hello.txt
+cargo run --bin request -- --testnet GET pubky://<user_pubky>/pub/my.app/hello.txt
 ```
 
 For example, at the time of writing, the following command returns the content of a user's social post from his pubky homeserver.
