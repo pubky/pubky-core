@@ -23,11 +23,11 @@ fn invalid(msg: impl Into<String>) -> Error {
     .into()
 }
 
-/// Absolute homeserver path (always starts with `/`).
+/// Absolute, URL-safe homeserver path (always starts with `/`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct FilePath(String);
+struct ResourcePath(String);
 
-impl FilePath {
+impl ResourcePath {
     /// Parse, validate, and normalize to an absolute HTTP-safe path.
     ///
     /// Rules:
@@ -51,14 +51,16 @@ impl FilePath {
             format!("/{}", raw)
         };
         if input == "/" {
-            return Ok(FilePath("/".to_string()));
+            return Ok(ResourcePath("/".to_string()));
         }
         let wants_trailing = input.ends_with('/');
 
         // Build via URL segments (handles percent-encoding; no dot-seg normalization here).
-        let mut u = Url::parse("https://example.invalid/")
-            .map_err(|_| invalid("internal URL setup failed"))?;
+        // Use a dummy URL base.
+        let mut u = Url::parse("dummy:///").map_err(|_| invalid("internal URL setup failed"))?;
+
         {
+            // Clear and rebuild path from validated segments.
             let mut segs = u
                 .path_segments_mut()
                 .map_err(|_| invalid("internal URL path handling failed"))?;
@@ -85,7 +87,7 @@ impl FilePath {
             }
         }
 
-        Ok(FilePath(u.path().to_string()))
+        Ok(ResourcePath(u.path().to_string()))
     }
 
     /// Borrow this normalized absolute path as `&str`.
@@ -96,14 +98,14 @@ impl FilePath {
     }
 }
 
-impl FromStr for FilePath {
+impl FromStr for ResourcePath {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
     }
 }
 
-impl fmt::Display for FilePath {
+impl fmt::Display for ResourcePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -115,7 +117,7 @@ impl fmt::Display for FilePath {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PubkyResource {
     pub(crate) user: Option<PublicKey>,
-    path: FilePath,
+    path: ResourcePath,
 }
 
 impl PubkyResource {
@@ -123,7 +125,7 @@ impl PubkyResource {
     pub fn new<S: AsRef<str>>(user: Option<PublicKey>, path: S) -> Result<Self, Error> {
         Ok(Self {
             user,
-            path: FilePath::parse(path)?,
+            path: ResourcePath::parse(path)?,
         })
     }
 
@@ -246,17 +248,20 @@ mod tests {
     #[test]
     fn file_path_normalization_and_rejections() {
         // Normalize relative
-        assert_eq!(FilePath::parse("pub/app").unwrap().as_str(), "/pub/app");
+        assert_eq!(ResourcePath::parse("pub/app").unwrap().as_str(), "/pub/app");
         // Keep absolute
-        assert_eq!(FilePath::parse("/pub/app").unwrap().as_str(), "/pub/app");
+        assert_eq!(
+            ResourcePath::parse("/pub/app").unwrap().as_str(),
+            "/pub/app"
+        );
         // Reject empty
         assert!(matches!(
-            FilePath::parse(""),
+            ResourcePath::parse(""),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
         // Reject double-slash
         assert!(matches!(
-            FilePath::parse("/pub//app"),
+            ResourcePath::parse("/pub//app"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
     }
@@ -324,19 +329,22 @@ mod tests {
     #[test]
     fn percent_encoding_and_unicode() {
         assert_eq!(
-            FilePath::parse("pub/My File.txt").unwrap().as_str(),
+            ResourcePath::parse("pub/My File.txt").unwrap().as_str(),
             "/pub/My%20File.txt"
         );
         assert_eq!(
-            FilePath::parse("/ä/β/漢").unwrap().as_str(),
+            ResourcePath::parse("/ä/β/漢").unwrap().as_str(),
             "/%C3%A4/%CE%B2/%E6%BC%A2"
         );
     }
 
     #[test]
     fn rejects_dot_segments_but_allows_trailing_slash() {
-        assert!(FilePath::parse("/a/./b").is_err());
-        assert!(FilePath::parse("/a/../b").is_err());
-        assert_eq!(FilePath::parse("/pub/app/").unwrap().as_str(), "/pub/app/");
+        assert!(ResourcePath::parse("/a/./b").is_err());
+        assert!(ResourcePath::parse("/a/../b").is_err());
+        assert_eq!(
+            ResourcePath::parse("/pub/app/").unwrap().as_str(),
+            "/pub/app/"
+        );
     }
 }
