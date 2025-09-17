@@ -2,8 +2,7 @@
 
 > Early version. Expect breaking API changes. Can still be heavily performance optimized especially by improving the `mainline` lib.
 
-To keep data on the Mainline DHT alive, it needs to be actively republished every hour. This library provides the tools to republish packets reliably
-and in a multi-threaded fashion. This allows the homeserver to republish hundrets of thousands of pkarr keys per day.
+To keep data on the Mainline DHT alive it needs to be actively republished every hour. This library provides the tools to republish packets reliably and in a multi-threaded fashion. This allows the homeserver to republish hundreds of thousands of pkarr keys per day.
 
 
 
@@ -36,12 +35,12 @@ match client.republish(public_key.clone(), None).await {
 }
 ```
 
-> **Limitation** ResilientClient requires a pkarr client that was built with the `dht` feature.
+> **Limitation** `ResilientClient` requires a pkarr client that was built with the `dht` feature.
 > Relays only are not supported.
 
 **MultiRepublisher** Multi-threaded republisher of pkarr keys.
 
-Uses the ResilientClient to publish hundrets of thousands of pkarr keys per day.
+Uses the `ResilientClient` to publish hundreds of thousands of pkarr keys per day.
 
 ```rust
 use pkarr_republisher::MultiRepublisher;
@@ -72,7 +71,7 @@ for (key, result) in results {
 
 > **Limitation** Publishing a high number of pkarr keys is CPU intense. A recent test showed a 4 Core CPU being able to publish ~600,000 keys in 24hrs.
 > Takes this into consideration.
-> Do not use pkarr relays with the MultiRepublisher. You will run into rate limits which are currently not handled.
+> Do not use pkarr relays with the `MultiRepublisher`. You will run into rate limits which are currently not handled.
 
 
 ## Examples

@@ -80,13 +80,13 @@ async fn main() -> anyhow::Result<()> {
 
 Use `cargo run -- --data-dir=~/.pubky`.
 
-### Signup Token
+## Signup Token
 
 If homeserver is set to require signup tokens, you can create a new signup token using the admin endpoint:
 
 ```rust,ignore
 let response = pubky_client
-    .get(&format!("https://127.0.0.1:6288/generate_signup_token"))
+    .get(&format!("http://127.0.0.1:6288/generate_signup_token"))
     .header("X-Admin-Password", "admin") // Use your admin password. This is testnet default pwd.
     .send()
     .await
@@ -97,7 +97,7 @@ let signup_token = response.text().await.unwrap();
 via CLI with `curl`
 
 ```bash
-curl -X GET "https://127.0.0.1:6288/generate_signup_token" \
+curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
      -H "X-Admin-Password: admin"
      # Use your admin password. This is testnet default pwd.
 ```
