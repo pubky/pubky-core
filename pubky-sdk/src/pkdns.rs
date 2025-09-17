@@ -42,7 +42,7 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 /// Or **with** a keypair for publishing:
 /// ```no_run
 /// # async fn example(kp: pubky::Keypair) -> pubky::Result<()> {
-/// let pkdns = pubky::Pkdns::new_with_keypair(kp);
+/// let pkdns = pubky::Pkdns::new_with_keypair(kp)?;
 /// pkdns.publish_homeserver_if_stale(None).await?;
 /// # Ok(()) }
 /// ```
@@ -93,7 +93,7 @@ impl Pkdns {
     /// ```no_run
     /// # use std::time::Duration;
     /// # async fn ex(signer: pubky::PubkySigner) -> pubky::Result<()> {
-    /// let pkdns = signer.pkdns()
+    /// let pkdns = signer.pkdns()?
     ///     .set_stale_after(Duration::from_secs(30 * 60)); // 30 minutes
     ///
     /// // Will re-publish same homeserver only if the existing record is older than 30 minutes.

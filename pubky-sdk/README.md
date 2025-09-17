@@ -41,7 +41,7 @@ let txt = PubkyStorage::new_public()?
 assert_eq!(txt, "hello");
 
 // 5) Publish / resolve your PKDNS (_pubky) record
-signer.pkdns().publish_homeserver_if_stale(None).await?;
+signer.pkdns()?.publish_homeserver_if_stale(None).await?;
 let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
@@ -71,7 +71,7 @@ High level actors:
 
 ## Examples
 
-### Drive API (session & public)
+### Storage API (session & public)
 
 Use a `PubkySession` to access a Homeserver's public data.
 
@@ -115,25 +115,25 @@ Publish and retrieve pkarr record.
 # use pubky::prelude::*;
 # async fn pkdns(signer: &PubkySigner) -> pubky::Result<()> {
 // Republish only if stale (recommended in app start)
-signer.pkdns().publish_homeserver_if_stale(None).await?;
+signer.pkdns()?.publish_homeserver_if_stale(None).await?;
 
 // Force a homeserver record publish (e.g., migration)
 let homeserver = PublicKey::try_from("homeserver_pubky").unwrap();
-signer.pkdns().publish_homeserver_force(Some(&homeserver)).await?;
+signer.pkdns()?.publish_homeserver_force(Some(&homeserver)).await?;
 # Ok(()) }
 ```
 
-### Pubky QR auth (third party, keyless apps)
+### Pubky QR auth for third-party and keyless apps.
 
 Request auth url and await approval.
 
 ```rust
 # use pubky::prelude::*;
-# async fn pairing() -> pubky::Result<()> {
+# async fn auth() -> pubky::Result<()> {
 // Read/Write capabilities for acme.app route
 let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
 
-// Easiest: use the default relay (see “Relay” notes below)
+// Easiest: uses the default relay (see “Relay” notes below)
 let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
 // show `url` to the user (QR or deeplink). On the signer device:
 // signer.approve_auth_request(&url).await?;
@@ -145,9 +145,9 @@ let session = sub.wait_for_approval().await?; // background long-polling started
 
 #### Relay & reliability
 
-- If you don’t pass a relay, we default to a Synonym-hosted instance. If that relay is down, logins won’t complete.
+- If you don’t pass a relay, [`PubkyAuthRequest`] defaults to a Synonym-hosted instance. If that relay is down, logins won’t complete.
 - For production and bigger apps, run your **own relay** (MIT, dockerable): [https://httprelay.io](https://httprelay.io)
-  Derive the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`. See `PubkyAuthRequest::new_with_client` docs for further info.
+  Derives the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`. See `PubkyAuthRequest::new_with_relay` docs for further info.
 
 ## Features
 
