@@ -171,20 +171,14 @@ impl PubkySession {
         Ok(()) // success => `self` is consumed
     }
 
-    /// Create a **session-mode** storage bound to this user session.
+    /// Create a **session-mode** Storage bound to this user session.
     ///
     /// - Relative paths (e.g. `"/pub/app/file"`) are resolved to **this** user.
-    /// - On native targets, requests that target this user’s homeserver automatically
-    ///   carry the session cookie.
+    /// - Requests that target this user’s homeserver automatically carry the
+    ///   session cookie.
     ///
     /// See [`PubkyStorage`] for usage examples.
     pub fn storage(&self) -> PubkyStorage {
-        PubkyStorage {
-            client: self.client.clone(),
-            public_key: Some(self.info.public_key().clone()),
-            has_session: true,
-            #[cfg(not(target_arch = "wasm32"))]
-            cookie: Some(self.cookie.clone()),
-        }
+        PubkyStorage::new_from_session(self)
     }
 }
