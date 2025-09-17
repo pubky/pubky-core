@@ -5,8 +5,9 @@ use pubky_common::session::SessionInfo;
 
 use super::core::PubkySession;
 use crate::{
-    Capabilities, PubkyHttpClient, Result,
+    Capabilities, Result,
     errors::{AuthError, RequestError},
+    global_client,
 };
 
 impl PubkySession {
@@ -31,7 +32,7 @@ impl PubkySession {
     ///
     /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
-    pub async fn import_secret(client: &PubkyHttpClient, token: &str) -> Result<Self> {
+    pub async fn import_secret(token: &str) -> Result<Self> {
         // 1) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
         let (pk_str, cookie) = token
             .split_once(':')
@@ -46,7 +47,7 @@ impl PubkySession {
         // 2) Build minimal session; placeholder SessionInfo will be replaced after validation.
         let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
         let mut session = PubkySession {
-            client: client.clone(),
+            client: global_client()?,
             info: placeholder,
             cookie: cookie.to_string(),
         };
@@ -76,14 +77,11 @@ impl PubkySession {
 
     /// Restore a session from a secret token stored in a file.
     /// Reads the file, trims whitespace, then calls `import_secret` to validate and hydrate.
-    pub async fn from_secret_file(
-        client: &PubkyHttpClient,
-        secret_file_path: &Path,
-    ) -> Result<Self> {
+    pub async fn from_secret_file(secret_file_path: &Path) -> Result<Self> {
         let token =
             std::fs::read_to_string(secret_file_path).map_err(|e| RequestError::Validation {
                 message: format!("failed to read session secret file: {e}"),
             })?;
-        Self::import_secret(client, token.trim()).await
+        Self::import_secret(token.trim()).await
     }
 }

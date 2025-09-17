@@ -310,7 +310,7 @@ async fn list() {
         session.storage().put(path, vec![0]).await.unwrap();
     }
 
-    let path = "/pub/example.com/extra";
+    let path = "/pub/example.com/";
 
     {
         let list = session.storage().list(path).unwrap().send().await.unwrap();
@@ -353,7 +353,7 @@ async fn list() {
     {
         let list = PubkyStorage::new_public()
             .unwrap()
-            .list(format!("{pubky}/{path}"))
+            .list(format!("{pubky}{path}"))
             .unwrap()
             .limit(2)
             .cursor("a.txt")
@@ -397,7 +397,7 @@ async fn list() {
     {
         let list = PubkyStorage::new_public()
             .unwrap()
-            .list(format!("{pubky}/{path}"))
+            .list(format!("{pubky}{path}"))
             .unwrap()
             .limit(2)
             .cursor(&format!("pubky://{pubky}/pub/example.com/a.txt"))
@@ -441,7 +441,7 @@ async fn list() {
     {
         let list = PubkyStorage::new_public()
             .unwrap()
-            .list(format!("{pubky}/{path}"))
+            .list(format!("{pubky}{path}"))
             .unwrap()
             .reverse(true)
             .send()
@@ -465,7 +465,7 @@ async fn list() {
     {
         let list = PubkyStorage::new_public()
             .unwrap()
-            .list(format!("{pubky}/{path}"))
+            .list(format!("{pubky}{path}"))
             .unwrap()
             .reverse(true)
             .limit(2)

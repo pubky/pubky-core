@@ -28,8 +28,8 @@ use crate::{
 /// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
 /// #   let session = sub.wait_for_approval().await?;
 ///     // Relative resource paths are resolved against the user's session.
-///     session.storage().put("/pub/app/hello.txt", "hello").await?;
-///     let body = session.storage().get("/pub/app/hello.txt").await?.text().await?;
+///     session.storage().put("pub/my.app/hello.txt", "hello").await?;
+///     let body = session.storage().get("pub/my.app/hello.txt").await?.text().await?;
 ///     assert_eq!(body, "hello");
 /// #   Ok(())
 /// # }
@@ -38,7 +38,7 @@ use crate::{
 /// ### 2) Public mode (unauthenticated)
 /// Constructed via [`PubkyStorage::new_public`]. In this mode:
 /// - **No session** is attached; requests are unauthenticated.
-/// - Resources **must include the target user** (e.g. `"{alice_pubkey}/pub/app/file"`.
+/// - Resources **must include the target user** (e.g. `"{alice_pubkey}pub/my.app/file"`.
 ///   Relative/session-scoped paths are rejected.
 /// - Use for public reads (GET/HEAD/LIST). Writes will be rejected.
 ///

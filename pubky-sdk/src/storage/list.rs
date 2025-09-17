@@ -10,7 +10,10 @@ use crate::util::check_http_status;
 impl PubkyStorage {
     /// Directory listing helper.
     ///
-    /// The homeserver default limit is 100. The max list limit is 1000.
+    /// Requirements:
+    /// - Path **must** point to a directory and **must end with `/`**.
+    /// - Passing a non-directory path (missing trailing slash) returns
+    ///   `Error::Request(RequestError::Validation)`.
     ///
     /// # Examples
     /// ```no_run
@@ -81,18 +84,6 @@ impl<'a> ListBuilder<'a> {
     pub async fn send(self) -> Result<Vec<Url>> {
         // Resolve now (absolute stays absolute, relative is based on session’s homeserver)
         let mut url = self.url;
-
-        // Ensure directory semantics using URL segments (drop last segment, keep trailing slash)
-        if !url.path().ends_with('/') {
-            {
-                let mut segs = url
-                    .path_segments_mut()
-                    .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
-                segs.pop_if_empty(); // remove possible trailing empty
-                segs.pop(); // drop last non-empty segment
-                segs.push(""); // ensure trailing slash
-            }
-        }
 
         {
             let mut q = url.query_pairs_mut();

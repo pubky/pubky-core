@@ -228,7 +228,7 @@ impl PubkyAuthRequest {
     /// ```no_run
     /// # use pubky::{PubkyAuthRequest, Capabilities};
     /// # async fn run() -> pubky::Result<()> {
-    /// let caps = Capabilities::builder().read("/pub/app/").finish();
+    /// let caps = Capabilities::builder().read("pub/my.app/").finish();
     /// let auth = PubkyAuthRequest::new(&caps)?;
     /// println!("Scan to sign in: {}", auth.url());
     /// let session = auth.wait_for_approval().await?; // must be awaited right when displaying the pubky_auth!

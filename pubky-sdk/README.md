@@ -57,17 +57,17 @@ let app_session = sub.wait_for_approval().await?;
 
 ## Concepts at a glance
 
-Transport:
-
-- **`PubkyHttpClient`** stateless transport: PKARR-aware HTTP with sane defaults.
-
 High level actors:
 
-- **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
-- **`PubkySession`** session-bound identity (holds a `SessionInfo` & cookie). Use `session.storage()` for reads/writes.
-- **`PubkyAuthRequest`** pairing auth flow for keyless apps via an HTTP relay.
+- **`PubkySession`** session-bound identity agent. This is the heart of your Pubky application. Use `session.storage()` for reads/writes to the user's homeserver storage. You can get a working session in two ways: (1) requesting auth via `PubkyAuthRequest` (keyless apps) or (2) by signin from a `PubkySigner` (keychain apps).
+- **`PubkyAuthRequest`** auth flow for authenticating keyless apps from a PubkySigner.
+- **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and auth request approval.
 - **`PubkyStorage`** simple file-like API: `get/put/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
+
+Transport:
+
+- **`PubkyHttpClient`** stateless transport: handles requests to pubky public-key hosts.
 
 ## Examples
 
@@ -147,7 +147,12 @@ signer.pkdns()?.publish_homeserver_force(Some(&homeserver)).await?;
 
 ### Pubky QR auth for third-party and keyless apps.
 
-Request auth url and await approval.
+Request auth url and await approval. Typical usage:
+
+1. Create an auth request with [`PubkyAuthRequest::new`].
+2. Call [`PubkyAuthRequest::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
+3. Show the returned URL (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756)/[Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
+4. Await [`AuthSubscription::wait_for_approval`] to obtain a session-bound [`PubkySession`].
 
 ```rust
 # use pubky::prelude::*;
@@ -166,7 +171,7 @@ let session = sub.wait_for_approval().await?; // background long-polling started
 # Ok(()) }
 ```
 
-See this fully working [Auth Flow example](https://github.com/pubky/pubky-core/tree/main/examples/auth_flow)
+See this fully working [Auth Flow Example](https://github.com/pubky/pubky-core/tree/main/examples/auth_flow)
 
 #### Relay & reliability
 
@@ -205,13 +210,13 @@ Export a compact bearer token and import it later to avoid re-auth:
 
 ```rust no_run
 # use pubky::prelude::*;
-# async fn persist(session: &PubkySession, client: &PubkyHttpClient) -> pubky::Result<()> {
+# async fn persist(session: &PubkySession) -> pubky::Result<()> {
 // Save
 let token = session.export_secret();               // "<pubkey>:<cookie_secret>"
 // store `token` securely (env, keychain, vault). DO NOT log it.
 
 // Restore
-let restored = PubkySession::import_secret(client, &token).await?;
+let restored = PubkySession::import_secret(&token).await?;
 // Optional sanity check:
 restored.revalidate().await?;
 # Ok(()) }

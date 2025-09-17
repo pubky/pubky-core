@@ -172,11 +172,7 @@ async fn persist_and_restore_session_info() {
     // Save to disk or however you want to persist `exported`
 
     // Rehydrate from the exported secret (validates the session)
-    // Reuse the process-wide client configured by the testnet
-    let client = global_client().unwrap();
-    let restored = PubkySession::import_secret(&client, &secret_token)
-        .await
-        .unwrap();
+    let restored = PubkySession::import_secret(&secret_token).await.unwrap();
 
     // Same identity?
     assert_eq!(restored.public_key(), signer.public_key());
@@ -232,7 +228,7 @@ async fn authz_timeout_reconnect() {
         .build()
         .unwrap();
 
-    // set the global client with timeout of 1 sec
+    // set custom global client with timeout of 1 sec
     set_global_client(client);
 
     // Start pairing auth flow using our custom client + local relay
