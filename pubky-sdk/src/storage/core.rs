@@ -91,7 +91,7 @@ impl PubkyStorage {
 
     /// Construct a **session-mode** PubkyStorage from an existing session.
     ///
-    /// Equivalent to `session.storage()`.
+    /// Equivalent to [`PubkySession::storage()`].
     pub fn new_from_session(session: &PubkySession) -> PubkyStorage {
         PubkyStorage {
             client: session.client.clone(),

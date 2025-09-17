@@ -29,13 +29,13 @@ let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
 let session = signer.signup(&homeserver, None).await?;
 
 // 3) Session-scoped storage I/O
-session.storage().put("/pub/app/hello.txt", "hello").await?;
-let body = session.storage().get("/pub/app/hello.txt").await?.text().await?;
+session.storage().put("/pub/my.app/hello.txt", "hello").await?;
+let body = session.storage().get("/pub/my.app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
 
 // 4) Public (unauthenticated) read by user-qualified path
 let txt = PubkyStorage::new_public()?
-  .get(format!("{}/pub/app/hello.txt", session.public_key()))
+  .get(format!("{}/pub/my.app/hello.txt", session.public_key()))
   .await?
   .text().await?;
 assert_eq!(txt, "hello");
@@ -66,46 +66,68 @@ High level actors:
 - **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and pairing auth approval.
 - **`PubkySession`** session-bound identity (holds a `SessionInfo` & cookie). Use `session.storage()` for reads/writes.
 - **`PubkyAuthRequest`** pairing auth flow for keyless apps via an HTTP relay.
-- **`PubkyStorage`** simple file-like API: `get/put/post/patch/delete`, plus `exists()`, `stats()` and `list()`.
+- **`PubkyStorage`** simple file-like API: `get/put/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
 
 ## Examples
 
 ### Storage API (session & public)
 
-Use a `PubkySession` to access a Homeserver's public data.
+Use a `PubkyStorage` to access and write data into Pubky Homeservers.
+
+## Public
+
+Use to access public data from any user without need to authenticate.
 
 ```rust no_run
 # use pubky::prelude::*;
-# async fn io(session: &PubkySession) -> pubky::Result<()> {
-// write
-session.storage().put("/pub/app/file.txt", "hi").await?;
-
-// read raw
-let bytes = session.storage().get("/pub/app/file.txt").await?.bytes().await?;
-
-// metadata / existence
-let meta = session.storage().stats("/pub/app/file.txt").await?;
-let ok = session.storage().exists("/pub/app/missing.txt").await?; // false
-
-// public read by user-qualified resource (no session)
-let public = PubkyStorage::new_public()?;
-let text = public.get(format!("{}/pub/app/file.txt", session.public_key()))
-    .await?.text().await?;
+# async fn run(user: PublicKey) -> pubky::Result<()> {
+let storage = PubkyStorage::new_public()?;
+// read someone’s public file
+let text = storage.get(format!("{}/pub/my.app/data.txt", user)).await?.text().await?;
+// writes are not allowed in public mode!
 # Ok(()) }
 ```
 
-### Paths & addressing
+[Public Storage example](https://github.com/pubky/pubky-core/tree/main/examples/storage)
+
+## Session
+
+Use to write data into your own homeserver.
+
+```rust no_run
+# use pubky::prelude::*;
+# async fn run(session: &PubkySession) -> pubky::Result<()> {
+let storage = session.storage(); // Equivalent to PubkyStorage::new_from_session(session);
+// read from your own homeserver (no need to specify user id)
+let text = storage.get("/pub/my.app/data.txt").await?.text().await?;
+// writing to your own homeserver
+storage.put("/pub/my.app/data.txt", "hi").await?;
+# Ok(()) }
+```
+
+| Property                    | Session mode (`PubkyStorage::new_from_session()`)             | Public mode (`PubkyStorage::new_public()`)            |
+| --------------------------- | ------------------------------------------------------------- | ----------------------------------------------------- |
+| Auth                        | Yes (session cookie auto-attached for this user’s homeserver) | No                                                    |
+| Path form                   | Absolute, session-scoped (e.g. `/pub/my.app/file.txt`)        | User-qualified (e.g. `<user>/pub/my.app/file.txt`)    |
+| Reads                       | Yes                                                           | Yes (public data only)                                |
+| Writes                      | Yes                                                           | No (server will reject with 401/403)                  |
+| Cookie leakage across users | Never                                                         | N/A                                                   |
+| Typical use                 | Your app acting “as the user”                                 | Fetch someone else’s public content without a session |
+
+### Resources & addressing
 
 Use absolute paths for session-scoped I/O (`"/pub/…"`), or user-qualified forms when public:
 
 ```rust no_run
 # use pubky::prelude::*;
 # fn addr_examples(user_pubky: PublicKey) -> pubky::Result<()> {
-let a = PubkyResource::new(Some(user_pubky), "/pub/app/file.txt")?;
-let b: PubkyResource = "{user_public_key}/pub/app/file.txt".into_pubky_resource()?;
+let a = PubkyResource::new(Some(user_pubky), "/pub/my.app/file.txt")?;
+let b: PubkyResource = "{user_public_key}/pub/my.app/file.txt".into_pubky_resource()?;
 # Ok(()) }
 ```
+
+**By convention, prefer to place your app data in a new public `/pub` top level folder with domain-like name. Example `/pub/mycoolnew.app/`**
 
 ### PKDNS (`_pubky`) Pkarr publishing
 
@@ -135,13 +157,16 @@ let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
 
 // Easiest: uses the default relay (see “Relay” notes below)
 let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
-// show `url` to the user (QR or deeplink). On the signer device:
+// This is the moment to send `url` to the user (QR or deeplink). On the signer device
+// for example Pubky Ring application on mobile. The signer will perform this call:
 // signer.approve_auth_request(&url).await?;
 # PubkySigner::random()?.approve_auth_request(&url).await?;
 
 let session = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
 # Ok(()) }
 ```
+
+See this fully working [Auth Flow example](https://github.com/pubky/pubky-core/tree/main/examples/auth_flow)
 
 #### Relay & reliability
 
@@ -167,8 +192,8 @@ let homeserver  = testnet.homeserver();
 let signer = PubkySigner::random()?;
 let session  = signer.signup(&homeserver.public_key(), None).await?;
 
-session.storage().put("/pub/app/hello.txt", "hi").await?;
-let s = session.storage().get("/pub/app/hello.txt").await?.text().await?;
+session.storage().put("/pub/my.app/hello.txt", "hi").await?;
+let s = session.storage().get("/pub/my.app/hello.txt").await?.text().await?;
 assert_eq!(s, "hi");
 
 # Ok(()) }
