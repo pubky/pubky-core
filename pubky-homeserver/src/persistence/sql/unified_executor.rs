@@ -2,13 +2,6 @@ use futures_util::future::BoxFuture;
 
 /// Macro to create a unified executor from a transaction.
 /// This is a shortcut for `&mut (&mut tx).into()`.
-///
-/// # Example
-/// ```no_run
-/// let mut tx = db.pool().begin().await?;
-/// let mut executor = uexecutor!(tx);
-/// ```
-///
 macro_rules! uexecutor {
     ($tx:expr) => {{
         &mut crate::persistence::sql::UnifiedExecutor::from_tx(&mut $tx)
