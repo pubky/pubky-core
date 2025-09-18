@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::key_republisher::HomeserverKeyRepublisher;
-use super::periodic_backup::PeriodicBackup;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
 use crate::persistence::files::FileService;
@@ -59,8 +58,6 @@ pub struct HomeserverCore {
     #[allow(dead_code)]
     // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
     pub(crate) key_republisher: HomeserverKeyRepublisher,
-    #[allow(dead_code)] // Keep this alive. Backup is stopped when the PeriodicBackup is dropped.
-    pub(crate) periodic_backup: PeriodicBackup,
     /// Keep context alive.
     context: AppContext,
     pub(crate) icann_http_handle: Handle,
@@ -113,12 +110,10 @@ impl HomeserverCore {
         .map_err(HomeserverBuildError::KeyRepublisher)?;
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
-        let periodic_backup = PeriodicBackup::start(&context);
 
         Ok(Self {
             user_keys_republisher,
             key_republisher,
-            periodic_backup,
             context,
             icann_http_handle,
             pubky_tls_handle,

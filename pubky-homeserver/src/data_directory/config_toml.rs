@@ -75,7 +75,6 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
-    pub lmdb_backup_interval_s: u64,
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
 }
@@ -220,7 +219,6 @@ mod tests {
         let c = ConfigToml::default();
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
         assert_eq!(c.general.user_storage_quota_mb, 0);
-        assert_eq!(c.general.lmdb_backup_interval_s, 0);
         assert_eq!(
             c.drive.icann_listen_socket,
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6286))

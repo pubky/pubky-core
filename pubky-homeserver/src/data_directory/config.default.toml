@@ -1,6 +1,5 @@
 [general]
 signup_mode = "token_required"
-lmdb_backup_interval_s = 0
 user_storage_quota_mb = 0
 database_url = "postgres://localhost:5432/pubky_homeserver"
 

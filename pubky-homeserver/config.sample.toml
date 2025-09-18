@@ -11,11 +11,6 @@ database_url = "postgres://localhost:5432/pubky_homeserver"
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
-# LMDB backup interval in seconds. 0 means disabled.
-# Periodically creates a "safe to copy" compacted backup on single
-# file under `{data_dir}/data/lmdb/backup.mdb`
-lmdb_backup_interval_s = 0
-
 # Maximum storage a single user may occupy (in MB).
 # Set it to 0 for unlimited.
 user_storage_quota_mb = 0
