@@ -1,6 +1,6 @@
 use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::shared::{HttpError, HttpResult};
-use axum::http::Method;
+use axum::http::{HeaderMap, Method};
 use axum::response::IntoResponse;
 use axum::{
     body::Body,
@@ -63,11 +63,8 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let path = req.uri().path();
-
-            // TODO: dzdidi - look up in auth headers too
-            let pubky = match req.extensions().get::<PubkyHost>() {
-                Some(pk) => pk,
+            let public_key = match req.extensions().get::<PubkyHost>() {
+                Some(pk) => pk.public_key(),
                 None => {
                     tracing::warn!("Pubky Host is missing in request. Authorization failed.");
                     return Ok(HttpError::new_with_message(
@@ -78,18 +75,13 @@ where
                 }
             };
 
-            let cookies = match req.extensions().get::<Cookies>() {
-                Some(cookies) => cookies,
-                None => {
-                    tracing::warn!("No cookies found in request. Unauthorized.");
-                    return Ok(HttpError::unauthorized().into_response());
-                }
-            };
-
+            let path = req.uri().path();
+            let headers = req.headers();
+            let cookies = req.extensions().get::<Cookies>();
             // Authorize the request
-            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
+            if let Err(e) = authorize(&state, req.method(), cookies, public_key, path, headers) {
                 return Ok(e.into_response());
-            }
+            };
 
             // If authorized, proceed to the inner service
             inner.call(req).await.map_err(|_| unreachable!())
@@ -101,9 +93,10 @@ where
 fn authorize(
     state: &AppState,
     method: &Method,
-    cookies: &Cookies,
+    cookies: Option<&Cookies>,
     public_key: &PublicKey,
     path: &str,
+    headers: &HeaderMap,
 ) -> HttpResult<()> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
@@ -123,16 +116,31 @@ fn authorize(
         ));
     }
 
-    let session_secret = match session_secret_from_cookies(cookies, public_key) {
-        Some(session_secret) => session_secret,
-        None => {
-            tracing::warn!(
-                "No session secret found in cookies for pubky-host: {}",
-                public_key
-            );
-            return Err(HttpError::unauthorized_with_message(
-                "No session secret found in cookies",
-            ));
+    let session_secret = if path.starts_with("/dav") {
+        match session_secret_from_header(headers, public_key) {
+            Some(session_secret) => session_secret,
+            None => {
+                tracing::warn!(
+                    "No session secret found in Authorization header for pubky-host: {}",
+                    public_key
+                );
+                return Err(HttpError::unauthorized_with_message(
+                    "No session secret found in Authorization header",
+                ));
+            }
+        }
+    } else {
+        match session_secret_from_cookies(cookies, public_key) {
+            Some(session_secret) => session_secret,
+            None => {
+                tracing::warn!(
+                    "No session secret found in cookies for pubky-host: {}",
+                    public_key
+                );
+                return Err(HttpError::unauthorized_with_message(
+                    "No session secret found in cookies",
+                ));
+            }
         }
     };
 
@@ -181,90 +189,35 @@ fn authorize(
     }
 }
 
-pub fn session_secret_from_cookies(cookies: &Cookies, public_key: &PublicKey) -> Option<String> {
-    cookies
-        .get(&public_key.to_string())
-        .map(|c| c.value().to_string())
-}
-
-#[derive(Clone)]
-pub struct WebDAVAuthorizationLayer {
-    state: AppState,
-}
-
-impl WebDAVAuthorizationLayer {
-    pub fn new(state: AppState) -> Self {
-        Self { state }
+pub fn session_secret_from_cookies(
+    cookies: Option<&Cookies>,
+    public_key: &PublicKey,
+) -> Option<String> {
+    match cookies {
+        Some(cookies) => cookies
+            .get(&public_key.to_string())
+            .map(|c| c.value().to_string()),
+        None => None,
     }
 }
-impl<S> Layer<S> for WebDAVAuthorizationLayer {
-    type Service = WebDAVAuthorizationMiddleware<S>;
 
-    fn layer(&self, inner: S) -> Self::Service {
-        WebDAVAuthorizationMiddleware {
-            inner,
-            state: self.state.clone(),
+fn session_secret_from_header(headers: &HeaderMap, public_key: &PublicKey) -> Option<String> {
+    if let Some(auth_header) = headers.get("Authorization") {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if auth_str.starts_with("Basic ") {
+                let user_pass = auth_str["Basic ".len()..].to_string();
+                let user_pass_trimmed = user_pass.trim();
+                let parts: Vec<&str> = user_pass_trimmed.splitn(2, ':').collect();
+                let username = parts.get(0)?;
+                let password = parts.get(1)?;
+                let username = String::from(*username);
+                let password = String::from(*password);
+
+                if username == public_key.to_string() {
+                    return Some(password);
+                }
+            }
         }
     }
-}
-
-#[derive(Clone)]
-pub struct WebDAVAuthorizationMiddleware<S> {
-    inner: S,
-    state: AppState,
-}
-
-impl<S> Service<Request<Body>> for WebDAVAuthorizationMiddleware<S>
-where
-    S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
-        + Send
-        + 'static
-        + Clone,
-    S::Future: Send + 'static,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(|_| unreachable!()) // `Infallible` conversion
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let state = self.state.clone();
-        let mut inner = self.inner.clone();
-
-        Box::pin(async move {
-            // TODO (dzdidi): extract whatever auth method will be there
-            let path = req.uri().path();
-
-            // let pubky = match req.extensions().get::<PubkyHost>() {
-            //     Some(pk) => pk,
-            //     None => {
-            //         tracing::warn!("Pubky Host is missing in request. Authorization failed.");
-            //         return Ok(HttpError::new_with_message(
-            //             StatusCode::NOT_FOUND,
-            //             "Pubky Host is missing",
-            //         )
-            //         .into_response());
-            //     }
-            // };
-
-            // let cookies = match req.extensions().get::<Cookies>() {
-            //     Some(cookies) => cookies,
-            //     None => {
-            //         tracing::warn!("No cookies found in request. Unauthorized.");
-            //         return Ok(HttpError::unauthorized().into_response());
-            //     }
-            // };
-
-            // // Authorize the request
-            // if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path) {
-            //     return Ok(e.into_response());
-            // }
-
-            // If authorized, proceed to the inner service
-            inner.call(req).await.map_err(|_| unreachable!())
-        })
-    }
+    None
 }

@@ -78,6 +78,15 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
             })
         });
     }
-    // TODO (dzdidi): extract pubky from path for webdav
+
+    if pubky.is_none() {
+        let mut split = req.uri().path().split("/");
+        println!("PATH SPLIT: {split:?}");
+        pubky = match split.next() {
+            Some("dav") => split.next().and_then(|p| PublicKey::try_from(p).ok()),
+            _ => None,
+        };
+    }
+
     pubky
 }
