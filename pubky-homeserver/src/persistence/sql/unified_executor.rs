@@ -4,7 +4,7 @@ use futures_util::future::BoxFuture;
 /// This is a shortcut for `&mut (&mut tx).into()`.
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// let mut tx = db.pool().begin().await?;
 /// let mut executor = uexecutor!(tx);
 /// ```
