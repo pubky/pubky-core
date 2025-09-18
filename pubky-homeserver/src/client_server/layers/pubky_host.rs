@@ -79,4 +79,5 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
         });
     }
     // TODO (dzdidi): extract pubky from path for webdav
+    pubky
 }
