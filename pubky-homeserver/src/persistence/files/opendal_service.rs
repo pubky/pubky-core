@@ -5,7 +5,7 @@ use crate::AppContext;
 use crate::{
     persistence::{
         files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
-        lmdb::LmDB,
+        sql::SqlDb,
     },
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
@@ -23,7 +23,7 @@ use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStr
 pub fn build_storage_operator(
     storage_config: &StorageConfigToml,
     data_directory: &Path,
-    db: &LmDB,
+    db: &SqlDb,
     user_quota_bytes: u64,
 ) -> Result<Operator, FileIoError> {
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
@@ -81,7 +81,7 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
     build_storage_operator(
         &context.config_toml.storage,
         context.data_dir.path(),
-        &context.db,
+        &context.sql_db,
         quota_bytes,
     )
 }
@@ -103,7 +103,7 @@ impl OpendalService {
     pub fn new_from_config(
         config: &StorageConfigToml,
         data_directory: &Path,
-        db: &LmDB,
+        db: &SqlDb,
         user_quota_bytes: u64,
     ) -> Result<Self, FileIoError> {
         let operator = build_storage_operator(config, data_directory, db, user_quota_bytes)?;
@@ -260,20 +260,21 @@ impl OpendalService {
 mod tests {
     use super::*;
     use crate::persistence::files::opendal_test_operators::OpendalTestOperators;
+    use crate::persistence::sql::user::UserRepository;
     use crate::shared::webdav::WebDavPath;
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_build_storage_operator_from_config_file_system() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.storage = StorageConfigToml::FileSystem;
 
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pkarr::Keypair::random().public_key();
-        context
-            .db
-            .create_user(&pubky)
-            .expect("Failed to create user");
+        UserRepository::create(&pubky, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         assert!(!service.exists(&path).await.unwrap());
     }
@@ -281,16 +282,16 @@ mod tests {
     /// Make sure that the OpendalService returns a DiskSpaceQuotaExceeded error if the user has exceeded the quota.
     /// This is important because the UserQuotaLayer will return a RateLimited error if the user has exceeded the quota.
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_quota_exceeded_error() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pkarr::Keypair::random().public_key();
-        context
-            .db
-            .create_user(&pubky)
-            .expect("Failed to create user");
+        UserRepository::create(&pubky, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         let write_result = service.write(&path, vec![42u8; 1024 * 1024]).await;
         assert!(write_result.is_err());
@@ -302,6 +303,7 @@ mod tests {
 
     /// Test the chunked reading of a file.
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_get_content_chunked() {
         let operators = OpendalTestOperators::new();
         for (_scheme, operator) in operators.operators() {
@@ -363,6 +365,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_write_content_stream() {
         let operators = OpendalTestOperators::new();
         for (_scheme, operator) in operators.operators() {

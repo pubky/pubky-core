@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use async_dropper::{AsyncDrop, AsyncDropper};
+use async_trait::async_trait;
 use opendal::Operator;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -42,17 +44,27 @@ pub struct OpendalTestOperators {
     fs_tmp_dir: Arc<TempDir>,
     pub gcs_operator: Option<Operator>,
     pub memory_operator: Operator,
+    #[allow(dead_code)]
+    /// Cleaner will remove the gcp bucket when dropped
+    gcp_cleaner: Option<Arc<AsyncDropper<OpendalGcpCleaner>>>,
 }
 
 impl OpendalTestOperators {
     /// Create a new instance of the OperatorTestProviders.
     pub fn new() -> Self {
         let (fs_operator, fs_tmp_dir) = get_fs_operator();
+        let gcs_operator = get_gcs_operator(true).expect("GCS operator should be available");
+        let gcp_cleaner = gcs_operator.as_ref().map(|operator| {
+            Arc::new(AsyncDropper::new(OpendalGcpCleaner::new(Some(
+                operator.clone(),
+            ))))
+        });
         Self {
             fs_operator,
             fs_tmp_dir: Arc::new(fs_tmp_dir),
-            gcs_operator: get_gcs_operator(true),
+            gcs_operator,
             memory_operator: get_memory_operator(),
+            gcp_cleaner,
         }
     }
 
@@ -78,28 +90,51 @@ impl OpendalTestOperators {
     }
 }
 
-impl Drop for OpendalTestOperators {
-    fn drop(&mut self) {
+/// Helper struct to clean up the GCS operator after the test.
+/// Important: This requires the tokio::test(flavor = "multi_thread") attribute,
+/// Otherwise the test will panic when the gcp cleaner is dropped
+#[derive(Default)]
+struct OpendalGcpCleaner {
+    pub gcs_operator: Option<Operator>,
+}
+
+impl OpendalGcpCleaner {
+    pub fn new(gcs_operator: Option<Operator>) -> Self {
+        Self { gcs_operator }
+    }
+}
+
+#[async_trait]
+impl AsyncDrop for OpendalGcpCleaner {
+    async fn async_drop(&mut self) {
         let gcs_operator = match &self.gcs_operator {
             Some(operator) => operator,
             None => return,
         };
-        // Delete all files in the GCS root directory that are related to the test.Z
+        // Delete all files in the GCS root directory that are related to the test.
         let test_root_dir = gcs_operator.info().root();
-        // Use spawn_blocking to ensure the task completes before the runtime shuts down
-        tokio::task::spawn_blocking(move || {
-            let base_gcs_operator =
-                get_gcs_operator(false).expect("GCS operator should be available");
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                match base_gcs_operator.remove_all(&test_root_dir).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("Error deleting GCS root directory: {}", e);
-                    }
-                }
-            });
-        });
+        let base_gcs_operator = match get_gcs_operator(false) {
+            Ok(Some(operator)) => operator,
+            Ok(None) => {
+                return;
+            }
+            Err(e) => {
+                println!(
+                    "Failed to cleanup the GCP test bucket. Directory: {}, Error: {}",
+                    test_root_dir, e
+                );
+                return;
+            }
+        };
+        match base_gcs_operator.remove_all(&test_root_dir).await {
+            Ok(_) => {}
+            Err(e) => {
+                println!(
+                    "Failed to cleanup the GCP test bucket. Directory: {}, Error: {}",
+                    test_root_dir, e
+                );
+            }
+        }
     }
 }
 
@@ -121,14 +156,14 @@ pub(crate) fn get_fs_operator() -> (Operator, TempDir) {
 ///
 /// Set `test_root_dir` to true to create a random directory that the operator
 /// lives in. This is useful to avoid conflicts with other tests.
-pub(crate) fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
+pub(crate) fn get_gcs_operator(test_root_dir: bool) -> anyhow::Result<Option<Operator>> {
     let credential_path = match std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
         Ok(path) => path,
-        Err(_) => return None,
+        Err(_) => return Ok(None),
     };
     let bucket_name = match std::env::var("GCS_BUCKET") {
         Ok(path) => path,
-        Err(_) => return None,
+        Err(_) => return Ok(None),
     };
     let mut builder = opendal::services::Gcs::default()
         .bucket(&bucket_name)
@@ -136,8 +171,8 @@ pub(crate) fn get_gcs_operator(test_root_dir: bool) -> Option<Operator> {
     if test_root_dir {
         builder = builder.root(&format!("test_{}", Uuid::new_v4()));
     }
-    let operator = opendal::Operator::new(builder).unwrap().finish();
-    Some(operator)
+    let operator = opendal::Operator::new(builder)?.finish();
+    Ok(Some(operator))
 }
 
 pub(crate) fn get_memory_operator() -> Operator {
@@ -153,6 +188,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_operator_test_providers() {
         let providers = OpendalTestOperators::new();
         let operators = providers.operators();
@@ -174,6 +210,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_gcs_cleanup() {
         let test_root_dir = {
             let operators = OpendalTestOperators::new();
@@ -189,7 +226,7 @@ mod tests {
             gcs_operator.info().root()
         };
         tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Sleep to ensure the Drop impl is executed in the background.
-        let base_gcs_operator = get_gcs_operator(false).unwrap();
+        let base_gcs_operator = get_gcs_operator(false).unwrap().unwrap();
         let exists = base_gcs_operator.exists(&test_root_dir).await.unwrap();
         assert!(!exists, "Test root directory should not exist anymore as it should have been deleted by the Drop impl");
     }

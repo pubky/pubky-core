@@ -1,6 +1,6 @@
 use super::super::app_state::AppState;
 use crate::{
-    persistence::lmdb::tables::users::UserQueryError,
+    persistence::sql::{uexecutor, user::UserRepository},
     shared::{HttpError, HttpResult, Z32Pubkey},
 };
 use axum::{
@@ -20,24 +20,21 @@ pub async fn disable_user(
     State(state): State<AppState>,
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
-    let mut tx = state.db.env.write_txn()?;
-    if let Err(e) = state.db.disable_user(&pubkey.0, &mut tx) {
-        match e {
-            UserQueryError::UserNotFound => {
-                return Err(HttpError::new_with_message(
-                    StatusCode::NOT_FOUND,
-                    "User not found",
-                ))
-            }
-            UserQueryError::DatabaseError(_) => {
-                return Err(HttpError::new_with_message(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error",
-                ))
-            }
-        };
-    }
-    tx.commit()?;
+    let mut tx = state.sql_db.pool().begin().await?;
+    let mut user = match UserRepository::get(&pubkey.0, uexecutor!(tx)).await {
+        Ok(user) => user,
+        Err(sqlx::Error::RowNotFound) => {
+            return Err(HttpError::new_with_message(
+                StatusCode::NOT_FOUND,
+                "User not found",
+            ))
+        }
+        Err(e) => return Err(e.into()),
+    };
+    user.disabled = true;
+    UserRepository::update(&user, uexecutor!(tx)).await?;
+    tx.commit().await?;
+
     Ok((StatusCode::OK, "Ok"))
 }
 
@@ -52,24 +49,21 @@ pub async fn enable_user(
     State(state): State<AppState>,
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
-    let mut tx = state.db.env.write_txn()?;
-    if let Err(e) = state.db.enable_user(&pubkey.0, &mut tx) {
-        match e {
-            UserQueryError::UserNotFound => {
-                return Err(HttpError::new_with_message(
-                    StatusCode::NOT_FOUND,
-                    "User not found",
-                ))
-            }
-            UserQueryError::DatabaseError(_) => {
-                return Err(HttpError::new_with_message(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error",
-                ))
-            }
-        };
-    }
-    tx.commit()?;
+    let mut tx = state.sql_db.pool().begin().await?;
+    let mut user = match UserRepository::get(&pubkey.0, uexecutor!(tx)).await {
+        Ok(user) => user,
+        Err(sqlx::Error::RowNotFound) => {
+            return Err(HttpError::new_with_message(
+                StatusCode::NOT_FOUND,
+                "User not found",
+            ))
+        }
+        Err(e) => return Err(e.into()),
+    };
+    user.disabled = false;
+    UserRepository::update(&user, uexecutor!(tx)).await?;
+    tx.commit().await?;
+
     Ok((StatusCode::OK, "Ok"))
 }
 
@@ -83,24 +77,25 @@ mod tests {
     use pkarr::Keypair;
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_disable_enable_user() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let pubkey = Keypair::random().public_key();
 
         // Create new user
-        let db = context.db.clone();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
 
         // Check that the tenant is enabled
-        let user = db
-            .get_user(&pubkey, &db.env.read_txn().unwrap())
-            .unwrap()
+        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into())
+            .await
             .unwrap();
         assert!(!user.disabled);
 
         // Setup server
         let app_state = AppState::new(
-            db.clone(),
+            context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
         );
@@ -117,9 +112,8 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::OK);
 
         // Check that the tenant is disabled
-        let user = db
-            .get_user(&pubkey, &db.env.read_txn().unwrap())
-            .unwrap()
+        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into())
+            .await
             .unwrap();
         assert!(user.disabled);
 
@@ -130,9 +124,8 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::OK);
 
         // Check that the tenant is enabled
-        let user = db
-            .get_user(&pubkey, &db.env.read_txn().unwrap())
-            .unwrap()
+        let user = UserRepository::get(&pubkey, &mut context.sql_db.pool().into())
+            .await
             .unwrap();
         assert!(!user.disabled);
     }

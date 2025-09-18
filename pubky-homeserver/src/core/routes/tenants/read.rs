@@ -1,8 +1,8 @@
-use crate::persistence::lmdb::tables::entries::Entry;
+use crate::core::err_if_user_is_invalid::get_user_or_http_error;
+use crate::persistence::sql::entry::{EntryEntity, EntryRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
-        err_if_user_is_invalid::err_if_user_is_invalid,
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
@@ -15,17 +15,23 @@ use axum::{
     response::IntoResponse,
 };
 use httpdate::HttpDate;
+use sqlx::types::chrono::{DateTime, Utc};
 use std::str::FromStr;
+use std::time::SystemTime;
 
 pub async fn head(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
+    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
-    let entry = state.file_service.get_info(&entry_path).await?;
+    let entry = state
+        .file_service
+        .get_info(&entry_path, &mut state.sql_db.pool().into())
+        .await?;
     let response = entry.to_response_headers().into_response();
     Ok(response)
 }
@@ -42,10 +48,13 @@ pub async fn get(
     let dav_path = path.0;
     let entry_path = EntryPath::new(public_key.clone(), dav_path.inner().clone());
     if entry_path.path().is_directory() {
-        return list(state, &entry_path, params);
+        return list(state, &entry_path, params).await;
     }
 
-    let entry = state.file_service.get_info(&entry_path).await?;
+    let entry = state
+        .file_service
+        .get_info(&entry_path, &mut state.sql_db.pool().into())
+        .await?;
 
     // Handle IF_MODIFIED_SINCE
     if let Some(condition_http_date) = headers
@@ -53,7 +62,7 @@ pub async fn get(
         .and_then(|h| h.to_str().ok())
         .and_then(|s| HttpDate::from_str(s).ok())
     {
-        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+        let entry_http_date: HttpDate = to_http_date(&entry.modified_at);
         if condition_http_date >= entry_http_date {
             return not_modified_response(&entry);
         }
@@ -64,7 +73,7 @@ pub async fn get(
         .get(header::IF_NONE_MATCH)
         .and_then(|h| h.to_str().ok())
     {
-        let current_etag = format!("\"{}\"", entry.content_hash());
+        let current_etag = format!("\"{}\"", entry.content_hash);
         if request_etag
             .trim()
             .split(',')
@@ -82,64 +91,112 @@ pub async fn get(
     Ok(response)
 }
 
-pub fn list(
+pub async fn list(
     state: AppState,
     entry_path: &EntryPath,
     params: ListQueryParams,
 ) -> HttpResult<Response<Body>> {
-    let txn = state.db.env.read_txn()?;
-
-    if !state.db.contains_directory(&txn, entry_path)? {
+    let contains_dir =
+        EntryRepository::contains_directory(entry_path, &mut state.sql_db.pool().into()).await?;
+    if !contains_dir {
         return Err(HttpError::new_with_message(
             StatusCode::NOT_FOUND,
             "Directory Not Found",
         ));
     }
 
-    // Handle listing
-    let vec = state.db.list_entries(
-        &txn,
-        entry_path,
-        params.reverse,
-        params.limit,
-        params.cursor,
-        params.shallow,
-    )?;
+    let parsed_cursor = match parse_cursor(params.cursor) {
+        Ok(cursor) => cursor,
+        Err(_) => {
+            return Err(HttpError::new_with_message(
+                StatusCode::BAD_REQUEST,
+                "Invalid cursor",
+            ))
+        }
+    };
+
+    let entries = if params.shallow {
+        EntryRepository::list_shallow(
+            entry_path,
+            params.limit,
+            parsed_cursor,
+            params.reverse,
+            &mut state.sql_db.pool().into(),
+        )
+        .await?
+    } else {
+        EntryRepository::list_deep(
+            entry_path,
+            params.limit,
+            parsed_cursor,
+            params.reverse,
+            &mut state.sql_db.pool().into(),
+        )
+        .await?
+    };
+    let pubky_urls = entries
+        .iter()
+        .map(|entry| format!("pubky://{}", entry))
+        .collect::<Vec<_>>();
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
-        .body(Body::from(vec.join("\n")))?)
+        .body(Body::from(pubky_urls.join("\n")))?)
+}
+
+/// Parse the cursor if it is present.
+/// If the cursor is not present, returns None.
+/// If the cursor is present and valid, returns the EntryPath.
+fn parse_cursor(cursor: Option<String>) -> anyhow::Result<Option<EntryPath>> {
+    let cursor = match cursor {
+        Some(cursor) => cursor,
+        None => return Ok(None),
+    };
+
+    let cursor = cursor.trim_start_matches("pubky://");
+    let path = EntryPath::from_str(cursor)?;
+    Ok(Some(path))
 }
 
 /// Creates the Not Modified response based on the entry data.
-fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
+fn not_modified_response(entry: &EntryEntity) -> HttpResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::NOT_MODIFIED)
-        .header(header::ETAG, format!("\"{}\"", entry.content_hash()))
-        .header(header::LAST_MODIFIED, entry.timestamp().format_http_date())
+        .header(header::ETAG, format!("\"{}\"", entry.content_hash))
+        .header(
+            header::LAST_MODIFIED,
+            to_http_date(&entry.modified_at).to_string().as_str(),
+        )
         .body(Body::empty())?)
 }
 
-impl Entry {
+/// Convert a `NaiveDateTime` to a `HttpDate`.
+fn to_http_date(date: &sqlx::types::chrono::NaiveDateTime) -> HttpDate {
+    let sys_datetime = SystemTime::from(DateTime::<Utc>::from_naive_utc_and_offset(*date, Utc));
+    httpdate::HttpDate::from(sys_datetime)
+}
+
+impl EntryEntity {
     pub fn to_response_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_LENGTH, self.content_length().into());
+        headers.insert(header::CONTENT_LENGTH, self.content_length.into());
         headers.insert(
             header::LAST_MODIFIED,
-            HeaderValue::from_str(&self.timestamp().format_http_date())
+            HeaderValue::from_str(to_http_date(&self.modified_at).to_string().as_str())
                 .expect("http date is valid header value"),
         );
         headers.insert(
             header::CONTENT_TYPE,
-            self.content_type()
+            self.content_type
+                .clone()
                 .try_into()
                 .or(HeaderValue::from_str(""))
                 .expect("valid header value"),
         );
         headers.insert(
             header::ETAG,
-            format!("\"{}\"", self.content_hash())
+            format!("\"{}\"", self.content_hash)
                 .try_into()
                 .expect("hex string is valid"),
         );
@@ -183,7 +240,7 @@ mod tests {
 
     pub async fn create_environment(
     ) -> anyhow::Result<(AppContext, Router, TestServer, PublicKey, String)> {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let router = HomeserverCore::create_router(&context);
         let server = axum_test::TestServer::new(router.clone()).unwrap();
 
@@ -198,6 +255,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn if_last_modified() {
         let (_context, _router, server, public_key, cookie) = create_environment().await.unwrap();
 
@@ -230,6 +288,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn if_none_match() {
         let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
@@ -262,6 +321,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_content_with_magic_bytes() {
         let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 
@@ -284,6 +344,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_content_by_extension() {
         let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
 

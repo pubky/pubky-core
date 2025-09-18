@@ -1,6 +1,6 @@
 //! Capabilities defining what scopes of resources can be accessed with what actions.
 
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +73,14 @@ impl TryFrom<String> for Capability {
 
     fn try_from(value: String) -> Result<Self, Error> {
         value.as_str().try_into()
+    }
+}
+
+impl FromStr for Capability {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Error> {
+        s.try_into()
     }
 }
 
