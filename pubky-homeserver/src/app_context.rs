@@ -54,8 +54,6 @@ pub enum AppContextConversionError {
 ///
 #[derive(Clone)]
 pub struct AppContext {
-    /// A list of all shared resources.
-    pub(crate) db: LmDB,
     /// The SQL database connection.
     pub(crate) sql_db: SqlDb,
     /// The storage operator to store files.
@@ -119,7 +117,6 @@ impl AppContext {
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
 
         Ok(Self {
-            db,
             sql_db,
             pkarr_client: pkarr_builder
                 .clone()
