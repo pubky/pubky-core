@@ -1,5 +1,23 @@
 use futures_util::future::BoxFuture;
 
+/// Macro to create a unified executor from a transaction.
+/// This is a shortcut for `&mut (&mut tx).into()`.
+///
+/// # Example
+/// ```rust
+/// let mut tx = db.pool().begin().await?;
+/// let mut executor = uexecutor!(tx);
+/// ```
+///
+macro_rules! uexecutor {
+    ($tx:expr) => {{
+        &mut crate::persistence::sql::UnifiedExecutor::from_tx(&mut $tx)
+    }};
+}
+
+// Re-export the macro so it can be imported from this module path
+pub(crate) use uexecutor;
+
 /// A unified executor that can be used to execute queries on a pool or a transaction.
 /// A sqlx Executor is onetime use only which is restricting. This wrapper allows to use the same executor multiple times.
 ///
@@ -107,6 +125,29 @@ mod tests {
                 .expect("Should be able to get connection");
         }
         let mut holder: UnifiedExecutor<'_> = (&mut tx).into();
+        let _con = holder
+            .get_con()
+            .await
+            .expect("Should be able to get connection");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_executor_holder_from_tx_macro() {
+        let db = SqlDb::test().await;
+        let mut tx = db
+            .pool()
+            .begin()
+            .await
+            .expect("Should be able to begin transaction");
+        {
+            let holder = uexecutor!(tx);
+            let _con = holder
+                .get_con()
+                .await
+                .expect("Should be able to get connection");
+        }
+        let holder = uexecutor!(tx);
         let _con = holder
             .get_con()
             .await

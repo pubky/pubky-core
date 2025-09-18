@@ -76,7 +76,6 @@ mod tests {
 
     use pkarr::Keypair;
     use pubky_common::capabilities::Capability;
-    use sqlx::types::chrono::DateTime;
 
     use crate::persistence::sql::{
         session::{SessionRepository, SessionSecret},

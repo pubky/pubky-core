@@ -1,6 +1,6 @@
 use super::super::app_state::AppState;
 use crate::{
-    persistence::sql::user::UserRepository,
+    persistence::sql::{uexecutor, user::UserRepository},
     shared::{HttpError, HttpResult, Z32Pubkey},
 };
 use axum::{
@@ -21,7 +21,7 @@ pub async fn disable_user(
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
     let mut tx = state.sql_db.pool().begin().await?;
-    let mut user = match UserRepository::get(&pubkey.0, &mut (&mut tx).into()).await {
+    let mut user = match UserRepository::get(&pubkey.0, uexecutor!(tx)).await {
         Ok(user) => user,
         Err(sqlx::Error::RowNotFound) => {
             return Err(HttpError::new_with_message(
@@ -32,7 +32,7 @@ pub async fn disable_user(
         Err(e) => return Err(e.into()),
     };
     user.disabled = true;
-    UserRepository::update(&user, &mut (&mut tx).into()).await?;
+    UserRepository::update(&user, uexecutor!(tx)).await?;
     tx.commit().await?;
 
     Ok((StatusCode::OK, "Ok"))
@@ -50,7 +50,7 @@ pub async fn enable_user(
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
     let mut tx = state.sql_db.pool().begin().await?;
-    let mut user = match UserRepository::get(&pubkey.0, &mut (&mut tx).into()).await {
+    let mut user = match UserRepository::get(&pubkey.0, uexecutor!(tx)).await {
         Ok(user) => user,
         Err(sqlx::Error::RowNotFound) => {
             return Err(HttpError::new_with_message(
@@ -61,7 +61,7 @@ pub async fn enable_user(
         Err(e) => return Err(e.into()),
     };
     user.disabled = false;
-    UserRepository::update(&user, &mut (&mut tx).into()).await?;
+    UserRepository::update(&user, uexecutor!(tx)).await?;
     tx.commit().await?;
 
     Ok((StatusCode::OK, "Ok"))

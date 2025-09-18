@@ -1,6 +1,7 @@
 use crate::core::err_if_user_is_invalid::get_user_or_http_error;
 use crate::persistence::sql::session::SessionRepository;
 use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+use crate::persistence::sql::uexecutor;
 use crate::persistence::sql::user::{UserEntity, UserRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{core::AppState, SignupMode};
@@ -38,7 +39,7 @@ pub async fn signup(
 
     let mut tx = state.sql_db.pool().begin().await?;
     // 2) Ensure the user does *not* already exist
-    match UserRepository::get(public_key, &mut (&mut tx).into()).await {
+    match UserRepository::get(public_key, uexecutor!(tx)).await {
         Ok(_) => {
             return Err(HttpError::new_with_message(
                 StatusCode::CONFLICT,
@@ -69,7 +70,7 @@ pub async fn signup(
         })?;
 
         // Validate it in the DB (marks it used)
-        let code = match SignupCodeRepository::get(&signup_code_id, &mut (&mut tx).into()).await {
+        let code = match SignupCodeRepository::get(&signup_code_id, uexecutor!(tx)).await {
             Ok(code) => code,
             Err(sqlx::Error::RowNotFound) => {
                 return Err(HttpError::new_with_message(
@@ -89,12 +90,11 @@ pub async fn signup(
             ));
         }
 
-        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, &mut (&mut tx).into())
-            .await?;
+        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
     }
 
     // 4) Create the new user record
-    let user = UserRepository::create(public_key, &mut (&mut tx).into()).await?;
+    let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
     tx.commit().await?;
 
     // 5) Create session & set cookie

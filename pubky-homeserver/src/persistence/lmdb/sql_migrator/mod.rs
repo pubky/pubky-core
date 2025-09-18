@@ -15,7 +15,7 @@ use crate::persistence::{
         },
         LmDB,
     },
-    sql::{Migrator, SqlDb},
+    sql::{uexecutor, Migrator, SqlDb},
 };
 
 const MIGRATION_NAME: &str = "m20250915_lmdb_to_sql_migration";
@@ -24,11 +24,11 @@ const MIGRATION_NAME: &str = "m20250915_lmdb_to_sql_migration";
 /// Does everything in one transaction. If one migration fails, the entire transaction is rolled back.
 pub async fn migrate_lmdb_to_sql(lmdb: LmDB, sql_db: &SqlDb) -> anyhow::Result<()> {
     let mut tx = sql_db.pool().begin().await?;
-    migrate_users(lmdb.clone(), &mut (&mut tx).into()).await?;
-    migrate_signup_codes(lmdb.clone(), &mut (&mut tx).into()).await?;
-    migrate_sessions(lmdb.clone(), &mut (&mut tx).into()).await?;
-    migrate_entries(lmdb.clone(), &mut (&mut tx).into()).await?;
-    migrate_events(lmdb.clone(), &mut (&mut tx).into()).await?;
+    migrate_users(lmdb.clone(), uexecutor!(tx)).await?;
+    migrate_signup_codes(lmdb.clone(), uexecutor!(tx)).await?;
+    migrate_sessions(lmdb.clone(), uexecutor!(tx)).await?;
+    migrate_entries(lmdb.clone(), uexecutor!(tx)).await?;
+    migrate_events(lmdb.clone(), uexecutor!(tx)).await?;
 
     // Mark the migration as done.
     let migrator = Migrator::new(sql_db);

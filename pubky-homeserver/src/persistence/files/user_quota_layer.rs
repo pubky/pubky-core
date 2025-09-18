@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
+use crate::persistence::sql::{uexecutor, user::UserRepository};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
@@ -189,7 +189,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             .begin()
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-        let mut user = UserRepository::get(self.entry_path.pubkey(), &mut (&mut tx).into())
+        let mut user = UserRepository::get(self.entry_path.pubkey(), uexecutor!(tx))
             .await
             .map_err(|e| {
                 opendal::Error::new(
@@ -217,7 +217,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         let metadata = self.inner.close().await?;
 
         user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
-        UserRepository::update(&user, &mut (&mut tx).into())
+        UserRepository::update(&user, uexecutor!(tx))
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         tx.commit()
@@ -302,7 +302,7 @@ impl<R, A: Access> DeleterWrapper<R, A> {
                 self.db.pool().begin().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
-            let mut user = match UserRepository::get(&user_pubkey, &mut (&mut tx).into()).await {
+            let mut user = match UserRepository::get(&user_pubkey, uexecutor!(tx)).await {
                 Ok(user) => user,
                 Err(sqlx::Error::RowNotFound) => {
                     // User does not exist in the database, so we don't update the quota.
@@ -324,7 +324,7 @@ impl<R, A: Access> DeleterWrapper<R, A> {
             let bytes_delta = (total_bytes + files_deleted_count * FILE_METADATA_SIZE) as i64;
 
             user.used_bytes = user.used_bytes.saturating_add_signed(-bytes_delta);
-            UserRepository::update(&user, &mut (&mut tx).into())
+            UserRepository::update(&user, uexecutor!(tx))
                 .await
                 .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
             tx.commit()
