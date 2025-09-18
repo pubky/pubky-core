@@ -5,7 +5,11 @@ use crate::persistence::sql::connection_string::ConnectionString;
 /// The SqlDb is a wrapper around the postgres connection pool.
 /// It is used to connect to the database and run queries.
 ///
-/// It is cheaply cloneable.
+/// It is cheaply cloneable. Internally,
+/// the connection pool is simply a reference-counted handle to the inner pool state.
+/// When the last remaining handle to the pool is dropped,
+/// the connections owned by the pool are immediately closed (also by dropping).
+/// See https://docs.rs/sqlx/latest/sqlx/struct.Pool.html
 #[derive(Clone)]
 pub struct SqlDb {
     /// Connection pool to the database

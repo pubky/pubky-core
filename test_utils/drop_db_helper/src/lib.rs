@@ -22,6 +22,7 @@ impl DbToDrop {
         let pool = PgPool::connect(&self.connection_string).await?;
         let query = format!("DROP DATABASE {} WITH (FORCE)", self.db_name);
         sqlx::query(&query).execute(&pool).await?;
+        let _ = pool.close().await; // Close connection properly.
         Ok(())
     }
 }
