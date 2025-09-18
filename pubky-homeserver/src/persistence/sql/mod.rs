@@ -11,4 +11,4 @@ pub use entities::*;
 pub use migrator::Migrator;
 pub use sql_db::SqlDb;
 pub(crate) use unified_executor::uexecutor;
-pub use unified_executor::UnifiedExecutor;
+pub(crate) use unified_executor::UnifiedExecutor;
