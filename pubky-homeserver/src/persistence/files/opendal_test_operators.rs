@@ -138,31 +138,6 @@ impl AsyncDrop for OpendalGcpCleaner {
     }
 }
 
-// impl Drop for OpendalTestOperators {
-//     fn drop(&mut self) {
-//         let gcs_operator = match &self.gcs_operator {
-//             Some(operator) => operator,
-//             None => return,
-//         };
-//         // Delete all files in the GCS root directory that are related to the test.Z
-//         let test_root_dir = gcs_operator.info().root();
-//         // Use spawn_blocking to ensure the task completes before the runtime shuts down
-//         tokio::task::spawn_blocking(move || {
-//             let base_gcs_operator =
-//                 get_gcs_operator(false).expect("GCS operator should be available");
-//             let rt = tokio::runtime::Runtime::new().unwrap();
-//             rt.block_on(async {
-//                 match base_gcs_operator.remove_all(&test_root_dir).await {
-//                     Ok(_) => {}
-//                     Err(e) => {
-//                         println!("Error deleting GCS root directory: {}", e);
-//                     }
-//                 }
-//             });
-//         });
-//     }
-// }
-
 /// Creates a filesystem operator.
 /// The operator will be created in a temporary directory.
 /// The directory is returned and will be deleted when TempDir is dropped.
