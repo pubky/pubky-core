@@ -24,7 +24,7 @@ pub(crate) use uexecutor;
 /// Can easily be converted from a pool or a transaction:
 /// - `db.pool().into()`
 /// - `transaction.into()`
-pub (crate) enum UnifiedExecutor<'a> {
+pub(crate) enum UnifiedExecutor<'a> {
     Pool {
         future: BoxFuture<'a, Result<sqlx::pool::PoolConnection<sqlx::Postgres>, sqlx::Error>>,
         connection: Option<sqlx::pool::PoolConnection<sqlx::Postgres>>,

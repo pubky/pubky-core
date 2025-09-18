@@ -13,7 +13,7 @@ use crate::{
     shared::{timestamp_to_sqlx_datetime, webdav::EntryPath},
 };
 
-/// Create a new signup code.
+/// Create a new entry.
 /// The executor can either be db.pool() or a transaction.
 pub async fn create<'a>(
     entry_path: &EntryPath,
