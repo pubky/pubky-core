@@ -6,6 +6,8 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use base64::engine::general_purpose::STANDARD as Base64;
+use base64::Engine;
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;
 use std::{convert::Infallible, task::Poll};
@@ -210,16 +212,14 @@ fn session_secret_from_header(headers: &HeaderMap, public_key: &PublicKey) -> Op
     if let Some(auth_header) = headers.get("Authorization") {
         if let Ok(auth_str) = auth_header.to_str() {
             if auth_str.starts_with("Basic ") {
-                let user_pass = auth_str["Basic ".len()..].to_string();
-                let user_pass_trimmed = user_pass.trim();
-                let parts: Vec<&str> = user_pass_trimmed.splitn(2, ':').collect();
-                let username = parts.get(0)?;
-                let password = parts.get(1)?;
-                let username = String::from(*username);
-                let password = String::from(*password);
+                let base64_encoded = auth_str["Basic ".len()..].to_string();
+                let decoded = Base64.decode(base64_encoded.trim()).ok()?;
 
-                if username == public_key.to_string() {
-                    return Some(password);
+                let decoded_str = String::from_utf8(decoded).ok()?;
+                let parts: Vec<&str> = decoded_str.splitn(2, ':').collect();
+
+                if *parts.get(0)? == public_key.to_string() {
+                    return Some(String::from(*parts.get(1)?));
                 }
             }
         }
