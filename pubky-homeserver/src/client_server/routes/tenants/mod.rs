@@ -23,6 +23,7 @@ pub mod write;
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/session", get(session::session).delete(session::signout))
+        .route("/dav/{key}/{*path}", any(dav_handler))
         .route(
             "/{*path}",
             get(read::get)
@@ -39,31 +40,12 @@ pub fn router(state: AppState) -> Router<AppState> {
 /// Dav path example:
 /// https://qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/dav/qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/pub/test.txt
 /// via https://github.com/pubky/pubky-core/pull/145#discussion_r2149297326
-pub fn webdav_router(state: AppState) -> Router<AppState> {
-    Router::new()
-        .route("/dav/{key}/{*path}", any(dav_handler))
-        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-        .layer(AuthorizationLayer::new(state.clone()))
-}
 
 pub async fn dav_handler(
     State(state): State<AppState>,
     // Path((key, path)): Path<(Z32Pubkey, String)>,
     req: Request<Body>,
 ) -> HttpResult<impl IntoResponse> {
-    // TODO: handle pubky (part of path) somehow
-
-    // let (mut parts, body) = req.into_parts();
-
-    // let new_path = parts
-    //     .uri
-    //     .to_string()
-    //     .replacen(&format!("/{}", key.0.to_string()), "", 1);
-    // let new_uri = new_path.parse().unwrap();
-    // parts.uri = new_uri;
-
-    // let req = Request::from_parts(parts, body);
-
     let dav_response = state.inner_dav_handler.handle(req).await;
     Ok(dav_response.into_response())
 }

@@ -105,6 +105,11 @@ fn authorize(
         if method == Method::GET {
             return Ok(());
         }
+    } else if path.starts_with("/dav/") {
+        // XXX: at least for now
+        if method == Method::GET {
+            return Ok(());
+        }
     } else {
         tracing::warn!(
             "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",

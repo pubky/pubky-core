@@ -81,7 +81,7 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
 
     if pubky.is_none() {
         let mut split = req.uri().path().split("/");
-        println!("PATH SPLIT: {split:?}");
+        split.next(); // empty string
         pubky = match split.next() {
             Some("dav") => split.next().and_then(|p| PublicKey::try_from(p).ok()),
             _ => None,
