@@ -11,18 +11,19 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-mod admin;
+mod admin_server;
 mod app_context;
+mod client_server;
 mod constants;
-mod core;
 mod data_directory;
-mod homeserver_suite;
+mod homeserver_app;
 mod persistence;
+mod republishers;
 mod shared;
 pub mod tracing;
 
-pub use admin::{AdminServer, AdminServerBuildError};
+pub use admin_server::{AdminServer, AdminServerBuildError};
 pub use app_context::{AppContext, AppContextConversionError};
-pub use core::{HomeserverBuildError, HomeserverCore};
+pub use client_server::{ClientServer, ClientServerBuildError};
 pub use data_directory::*;
-pub use homeserver_suite::{HomeserverSuite, HomeserverSuiteBuildError};
+pub use homeserver_app::{HomeserverApp, HomeserverAppBuildError};

@@ -1,4 +1,4 @@
-use crate::core::extractors::PubkyHost;
+use crate::client_server::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;
@@ -78,5 +78,15 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
             })
         });
     }
+
+    if pubky.is_none() {
+        let mut split = req.uri().path().split("/");
+        split.next(); // empty string
+        pubky = match split.next() {
+            Some("dav") => split.next().and_then(|p| PublicKey::try_from(p).ok()),
+            _ => None,
+        };
+    }
+
     pubky
 }
