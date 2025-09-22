@@ -32,7 +32,7 @@
 //!
 //! // Multiple caps builder
 //! let caps = Capabilities::builder()
-//!     .rw("/pub/my.app/")
+//!     .read_write("/pub/my.app/")
 //!     .read("/pub/foo.txt")
 //!     .finish();
 //! assert_eq!(caps.to_string(), "/pub/my.app/:rw,/pub/foo.txt:r");
@@ -99,10 +99,10 @@ impl Capability {
     ///
     /// ```
     /// use pubky_common::capabilities::Capability;
-    /// assert_eq!(Capability::rw("/").to_string(), "/:rw");
+    /// assert_eq!(Capability::read_write("/").to_string(), "/:rw");
     /// ```
     #[inline]
-    pub fn rw<S: Into<String>>(scope: S) -> Self {
+    pub fn read_write<S: Into<String>>(scope: S) -> Self {
         Self::builder(scope).read().write().finish()
     }
 
@@ -366,7 +366,7 @@ impl Capabilities {
     ///
     /// ```
     /// use pubky_common::capabilities::Capabilities;
-    /// let caps = Capabilities::builder().rw("/").finish();
+    /// let caps = Capabilities::builder().read_write("/").finish();
     /// assert_eq!(caps.to_string(), "/:rw");
     /// ```
     pub fn builder() -> CapsBuilder {
@@ -376,7 +376,7 @@ impl Capabilities {
 
 /// Fluent builder for multiple [`Capability`] entries.
 ///
-/// Build with high-level helpers (`.read()/.write()/.rw()`), or push prebuilt
+/// Build with high-level helpers (`.read()/.write()/.read_write()`), or push prebuilt
 /// capabilities with `.cap()`, or use `.capability(scope, |b| ...)` to build inline.
 #[derive(Default, Debug)]
 pub struct CapsBuilder {
@@ -426,8 +426,8 @@ impl CapsBuilder {
     }
 
     /// Add a read+write capability for `scope`.
-    pub fn rw(mut self, scope: impl Into<String>) -> Self {
-        self.caps.push(Capability::rw(scope));
+    pub fn read_write(mut self, scope: impl Into<String>) -> Self {
+        self.caps.push(Capability::read_write(scope));
         self
     }
 
@@ -571,7 +571,7 @@ mod tests {
         assert_eq!(cap1.to_string(), "/pub/my.app/:rw");
 
         // Shortcuts:
-        let cap_rw = Capability::rw("/pub/my.app/");
+        let cap_rw = Capability::read_write("/pub/my.app/");
         let cap_r = Capability::read("/pub/file.txt");
         let cap_w = Capability::write("/pub/uploads/");
 
@@ -585,7 +585,7 @@ mod tests {
         let caps = Capabilities::builder()
             .read("/pub/my.app/") // "/pub/my.app/:r"
             .write("/pub/uploads/") // "/pub/uploads/:w"
-            .rw("/pub/my.app/data/") // "/pub/my.app/data/:rw"
+            .read_write("/pub/my.app/data/") // "/pub/my.app/data/:rw"
             .finish();
 
         // String form is comma-separated, in insertion order:
@@ -597,7 +597,7 @@ mod tests {
         // Contains checks:
         assert!(caps.contains(&Capability::read("/pub/my.app/")));
         assert!(caps.contains(&Capability::write("/pub/uploads/")));
-        assert!(caps.contains(&Capability::rw("/pub/my.app/data/")));
+        assert!(caps.contains(&Capability::read_write("/pub/my.app/data/")));
         assert!(!caps.contains(&Capability::write("/nope")));
     }
 
@@ -632,7 +632,9 @@ mod tests {
         assert_eq!(cap.to_string(), "/pub/my.app:r");
 
         // CapsBuilder helpers also normalize:
-        let caps = Capabilities::builder().rw("pub/my.app/data").finish();
+        let caps = Capabilities::builder()
+            .read_write("pub/my.app/data")
+            .finish();
         assert_eq!(caps.to_string(), "/pub/my.app/data:rw");
     }
 
@@ -641,7 +643,7 @@ mod tests {
         // From a comma-separated string:
         let parsed = Capabilities::try_from("/:rw,/pub/my.app/:r").unwrap();
         let built = Capabilities::builder()
-            .rw("/") // "/:rw"
+            .read_write("/") // "/:rw"
             .read("/pub/my.app/") // "/pub/my.app/:r"
             .finish();
 
@@ -678,7 +680,7 @@ mod tests {
     #[test]
     fn serde_roundtrip_as_string() {
         let caps = Capabilities::builder()
-            .rw("/pub/my.app/")
+            .read_write("/pub/my.app/")
             .read("/pub/file.txt")
             .finish();
 

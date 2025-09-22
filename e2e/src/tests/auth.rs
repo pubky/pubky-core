@@ -99,7 +99,7 @@ async fn authz() {
 
     // Third-party app (keyless)
     let caps = Capabilities::builder()
-        .rw("/pub/pubky.app/")
+        .read_write("/pub/pubky.app/")
         .read("/pub/foo.bar/file")
         .finish();
 
@@ -218,7 +218,7 @@ async fn authz_timeout_reconnect() {
 
     // Third-party app (keyless) with a short HTTP timeout to force long-poll retries
     let capabilities = Capabilities::builder()
-        .rw("/pub/pubky.app/")
+        .read_write("/pub/pubky.app/")
         .read("/pub/foo.bar/file")
         .finish();
 
@@ -363,10 +363,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 
     // Make conditional publish consider the record stale after just 1ms,
     // then wait long enough to cross a whole second (pkarr timestamps are second-resolution).
-    let pkdns = signer
-        .pkdns()
-        .unwrap()
-        .set_stale_after(Duration::from_millis(1));
+    let pkdns = signer.pkdns().set_stale_after(Duration::from_millis(1));
     tokio::time::sleep(Duration::from_millis(1200)).await;
 
     // Conditional republish should now occur
@@ -409,10 +406,7 @@ async fn conditional_publish_skips_when_fresh() {
 
     // Set a very large staleness window so the record is definitively "fresh"
     // Default is 3600 seconds, we set it again just for sanity.
-    let pkdns = signer
-        .pkdns()
-        .unwrap()
-        .set_stale_after(Duration::from_secs(3600));
+    let pkdns = signer.pkdns().set_stale_after(Duration::from_secs(3600));
     pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
     let ts2 = client
@@ -453,7 +447,7 @@ async fn republish_homeserver() {
         .as_u64();
 
     // Conditional publish with a "fresh" record should NO-OP.
-    let pkdns = signer.pkdns().unwrap().set_stale_after(max_record_age);
+    let pkdns = signer.pkdns().set_stale_after(max_record_age);
     pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
     let ts2 = client

@@ -58,8 +58,8 @@ pub struct Pkdns {
 impl PubkySigner {
     /// Get a PKDNS actor bound to this signer's client and keypair (publishing enabled).
     #[inline]
-    pub fn pkdns(&self) -> Result<crate::Pkdns> {
-        crate::Pkdns::new_with_keypair(self.keypair.clone())
+    pub fn pkdns(&self) -> Pkdns {
+        crate::Pkdns::with_client_and_keypair(self.client.clone(), self.keypair.clone())
     }
 }
 
@@ -82,6 +82,16 @@ impl Pkdns {
         })
     }
 
+    /// Infallible constructor with client + keypair (publishing enabled).
+    /// Used internally for `signer.pkdns()`
+    fn with_client_and_keypair(client: PubkyHttpClient, keypair: Keypair) -> Self {
+        Self {
+            client,
+            keypair: Some(keypair),
+            stale_after: DEFAULT_STALE_AFTER,
+        }
+    }
+
     /// Set how long an existing `_pubky` PKARR record is considered **fresh** (builder-style).
     ///
     /// If the current record’s age is **≤ this duration**, [`Self::publish_homeserver_if_stale`]
@@ -93,7 +103,7 @@ impl Pkdns {
     /// ```no_run
     /// # use std::time::Duration;
     /// # async fn ex(signer: pubky::PubkySigner) -> pubky::Result<()> {
-    /// let pkdns = signer.pkdns()?
+    /// let pkdns = signer.pkdns()
     ///     .set_stale_after(Duration::from_secs(30 * 60)); // 30 minutes
     ///
     /// // Will re-publish same homeserver only if the existing record is older than 30 minutes.

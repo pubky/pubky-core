@@ -24,8 +24,7 @@
 //!   that accept a `PubkyHttpClient`.
 //!
 //! # When not to use
-//! - Long-lived services that manage multiple client configurations; pass an explicit
-//!   `PubkyHttpClient` to constructors instead.
+//! - Long-lived services that manage multiple client configurations and use directly the transport layer.
 //!
 //! # Concurrency and races
 //! - If multiple threads call `global_client()` concurrently before initialization, more than one
@@ -111,7 +110,7 @@ pub fn set_global_client(new_client: PubkyHttpClient) {
 /// Clear the global default client.
 ///
 /// After this call, the next `global_client()` will lazily construct a fresh client.
-/// Existing `Arc<PubkyHttpClient>` handles remain valid.
+/// Existing `PubkyHttpClient` handles remain valid.
 pub fn drop_global_client() {
     slot().store(None);
 }

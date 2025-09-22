@@ -43,7 +43,7 @@ impl PubkySigner {
         // Map non-2xx into our error type; keep body/headers intact for the caller.
         let response = check_http_status(response).await?;
 
-        self.pkdns()?
+        self.pkdns()
             .publish_homeserver_force(Some(homeserver))
             .await?;
         PubkySession::new_from_response(self.client.clone(), response).await
@@ -76,15 +76,13 @@ impl PubkySigner {
 
         match mode {
             PublishMode::Blocking => {
-                self.pkdns()?.publish_homeserver_if_stale(None).await?;
+                self.pkdns().publish_homeserver_if_stale(None).await?;
             }
             PublishMode::Background => {
                 // Fire-and-forget path: refresh in the background
                 let signer = self.clone();
                 let fut = async move {
-                    if let Ok(pkdns) = signer.pkdns() {
-                        let _ = pkdns.publish_homeserver_if_stale(None).await;
-                    }
+                    let _ = signer.pkdns().publish_homeserver_if_stale(None).await;
                 };
                 #[cfg(not(target_arch = "wasm32"))]
                 tokio::spawn(fut);
