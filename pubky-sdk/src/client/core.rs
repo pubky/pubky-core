@@ -56,19 +56,48 @@ pub struct PubkyHttpClientBuilder {
 
 impl PubkyHttpClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
-    /// Creates a client connected to a local test network using `localhost`.
-    /// To use a custom host, use `testnet_with_host`.
+    /// Configure this builder to talk to a **local Pubky testnet** on `localhost`.
+    ///
+    /// Concretely:
+    /// - **DHT bootstrap** to the local testnet node at: `"localhost:6881"`
+    /// - **PKARR relay** base URL: `"http://localhost:15411"`
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use pubky::PubkyHttpClient;
+    ///
+    /// let client = PubkyHttpClient::builder()
+    ///     .testnet()
+    ///     .build()
+    ///     .expect("testnet client");
+    /// ```
     pub fn testnet(&mut self) -> &mut Self {
         self.testnet_with_host("localhost")
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    /// Creates a client connected to a local test network with a custom homeserver
-    /// host other than `localhost`.
+    /// Configure this builder to talk to a **Pubky testnet** reachable at a custom host.
     ///
-    /// Configures:
-    /// 1. local DHT with bootstrapping nodes: `&["<host>:6881"]`
-    /// 2. Pkarr Relay: `http://<host>:<PKARR_RELAY_PORT>`
+    /// Use this when your testnet stack isn’t on `localhost` (e.g. running in Docker,
+    /// a remote VM, or LAN machine).
+    ///
+    /// Concretely (native):
+    /// - DHT bootstrap peer: `"<host>:6881"`
+    /// - PKARR relay base:   `"http://<host>:15411"`
+    ///
+    /// # Examples
+    /// ```
+    /// use pubky::PubkyHttpClient;
+    ///
+    /// let client = PubkyHttpClient::builder()
+    ///     .testnet_with_host("192.168.1.50") // or "host.docker.internal"
+    ///     .build()
+    ///     .expect("testnet client");
+    /// ```
+    ///
+    /// # Notes
+    /// - These ports come from `pubky_common::constants::testnet_ports::{ BOOTSTRAP, PKARR_RELAY }`.
+    /// - Ensure your testnet exposes them from that host (and they’re reachable from where this code runs).
     pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
         self.pkarr
             .bootstrap(&[format!(
@@ -87,6 +116,8 @@ impl PubkyHttpClientBuilder {
     }
 
     /// Sets the testnet host. This is only used for WASM builds.
+    /// TODO: remove from the API surface of native configs without triggering clippy
+    /// errors on the JS bindings package.
     pub fn testnet_host(&mut self, host: String) -> &mut Self {
         // The field itself is still conditional, so the logic is gated.
         #[cfg(target_arch = "wasm32")]
@@ -293,8 +324,40 @@ impl PubkyHttpClient {
         PubkyHttpClientBuilder::default()
     }
 
-    /// Creates a client configured to use testnet DHT and Pkarr relays running on `localhost`.
-    /// You need an instance of `pubky-testnet` running on `localhost`
+    /// Creates a [`PubkyHttpClient`] preconfigured to talk to a **locally running Pubky testnet**.
+    ///
+    /// # What this configures
+    /// On **non wasm** targets (`not(target_arch = "wasm32")`):
+    /// - **DHT bootstrap** to the local testnet node at: `"localhost:6881"`
+    /// - **PKARR relay** base URL: `"http://localhost:15411"`
+    ///
+    /// On **WASM** targets:
+    /// - Browser environments can’t dial UDP DHT; the builder is adjusted to use the
+    ///   testnet HTTP endpoints suitable for the browser (no UDP bootstrap). PKARR HTTP
+    ///   relay still points at `http://localhost:15411` unless you override it.
+    ///
+    /// # Requirements
+    /// You must have `pubky-testnet` binary running locally (it provides a homeserver, a DHT bootstrap,
+    /// and a PKARR relay on the ports above). For example:
+    /// ```sh
+    /// # From the pubky repo:
+    /// cargo run -p pubky-testnet
+    /// ```
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use pubky::PubkyHttpClient;
+    ///
+    /// # async fn run() -> pubky::Result<()> {
+    /// let client = PubkyHttpClient::testnet()?;
+    /// // Now all pubky:// and https://<pubkey>/... requests resolve via the local testnet
+    /// // DHT/PKARR, and hit the local homeserver.
+    /// # Ok(()) }
+    /// ```
+    ///
+    /// # See also
+    /// - [`PubkyHttpClientBuilder::testnet`] to tweak additional settings first.
+    /// - [`PubkyHttpClientBuilder::testnet_with_host`] to target a non-`localhost` host.
     pub fn testnet() -> Result<PubkyHttpClient, BuildError> {
         let mut builder = Self::builder();
 
