@@ -25,6 +25,9 @@ impl FromStr for WebDavPathPub {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let inner = WebDavPath::new(s)?;
+        if !inner.as_str().starts_with("/pub/") {
+            return Err(anyhow::anyhow!("Path must start with /pub/"));
+        }
         Ok(Self(inner))
     }
 }
