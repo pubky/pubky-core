@@ -33,16 +33,21 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 /// ```no_run
 /// # async fn example() -> pubky::Result<()> {
 /// let pkdns = pubky::Pkdns::new()?;
-/// if let Some(host) = pkdns.get_homeserver(&"o4dk…uyy".try_into().unwrap()).await {
+/// if let Some(host) = pkdns.get_homeserver_of(&"o4dk…uyy".try_into().unwrap()).await {
 ///     println!("homeserver: {host}");
 /// }
 /// # Ok(()) }
 /// ```
 ///
-/// Or **with** a keypair for publishing:
+/// Or **with** a keypair for publishing and self lookups:
 /// ```no_run
 /// # async fn example(kp: pubky::Keypair) -> pubky::Result<()> {
 /// let pkdns = pubky::Pkdns::new_with_keypair(kp)?;
+/// // Self-lookup (requires keypair on this Pkdns)
+/// let my_host = pkdns.get_homeserver().await?;
+/// println!("my homeserver: {my_host:?}");
+///
+/// // Publish if stale
 /// pkdns.publish_homeserver_if_stale(None).await?;
 /// # Ok(()) }
 /// ```
@@ -115,15 +120,30 @@ impl Pkdns {
         self
     }
 
-    // -------------------- Reads (no keypair needed) --------------------
+    // -------------------- Reads --------------------
 
-    /// Resolve current homeserver host for a `pubky` via Pkarr.
+    /// Resolve current homeserver host for **any** `pubky` via Pkarr (no keypair required).
     ///
     /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
     /// or `None` if the record is missing/unresolvable.
-    pub async fn get_homeserver(&self, pubky: &PublicKey) -> Option<String> {
+    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<String> {
         let packet = self.client.pkarr().resolve_most_recent(pubky).await?;
         extract_host_from_packet(&packet)
+    }
+
+    /// Convenience: resolve the homeserver for **this** user (requires keypair on `Pkdns`).
+    ///
+    /// Returns:
+    /// - `Ok(Some(host))` if resolvable,
+    /// - `Ok(None)` if no record is found,
+    /// - `Err(_)` only for transport errors.
+    pub async fn get_homeserver(&self) -> Result<Option<String>> {
+        let kp = self.keypair.as_ref().ok_or_else(|| {
+            Error::from(AuthError::Validation(
+                "get_homeserver() requires a keypair; use Pkdns::new_with_keypair() or signer.pkdns()".into(),
+            ))
+        })?;
+        Ok(self.get_homeserver_of(&kp.public_key()).await)
     }
 
     // -------------------- Publishing (requires keypair) --------------------
