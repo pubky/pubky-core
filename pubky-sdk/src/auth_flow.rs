@@ -10,7 +10,7 @@
 //!
 //! // Blocks until the signer (e.g., Pubky Ring) approves and server issues a session.
 //! let session = flow.await_approval().await?;
-//! println!("Signed in as {}", session.public_key());
+//! println!("Signed in as {}", session.info().public_key());
 //! # Ok(()) }
 //! ```
 //!
@@ -27,7 +27,7 @@
 //!
 //! loop {
 //!     if let Some(session) = flow.try_poll_once().await? {
-//!         on_logged_in(session);
+//!         // on_logged_in(session);
 //!         break;
 //!     }
 //!     tokio::time::sleep(Duration::from_millis(300)).await;

@@ -35,13 +35,13 @@ assert_eq!(&body, "hello");
 
 // 4) Public (unauthenticated) read by user-qualified path
 let txt = PubkyStorage::new_public()?
-  .get(format!("{}/pub/my.app/hello.txt", session.public_key()))
+  .get(format!("{}/pub/my.app/hello.txt", session.info().public_key()))
   .await?
   .text().await?;
 assert_eq!(txt, "hello");
 
 // 5) Publish / resolve your PKDNS (_pubky) record
-signer.pkdns()?.publish_homeserver_if_stale(None).await?;
+signer.pkdns().publish_homeserver_if_stale(None).await?;
 let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
@@ -138,11 +138,11 @@ Publish and retrieve pkarr record.
 # use pubky::prelude::*;
 # async fn pkdns(signer: &PubkySigner) -> pubky::Result<()> {
 // Republish only if stale (recommended in app start)
-signer.pkdns()?.publish_homeserver_if_stale(None).await?;
+signer.pkdns().publish_homeserver_if_stale(None).await?;
 
 // Force a homeserver record publish (e.g., migration)
 let homeserver = PublicKey::try_from("homeserver_pubky").unwrap();
-signer.pkdns()?.publish_homeserver_force(Some(&homeserver)).await?;
+signer.pkdns().publish_homeserver_force(Some(&homeserver)).await?;
 # Ok(()) }
 ```
 
@@ -160,7 +160,7 @@ Request an authorization URL and await approval.
 # use pubky::prelude::*;
 # async fn auth() -> pubky::Result<()> {
 // Read/Write capabilities for acme.app route
-let caps = Capabilities::builder().rw("pub/acme.app/").finish();
+let caps = Capabilities::builder().read_write("pub/acme.app/").finish();
 
 // Easiest: uses the default relay (see “Relay & reliability” below)
 let auth_flow = PubkyAuthFlow::start(&caps)?;
@@ -186,11 +186,14 @@ See the fully working **Auth Flow Example** in `/examples/auth_flow`.
 **Custom relay example**
 
 ```rust
+# use pubky::prelude::*;
+# async fn custom_relay() -> pubky::Result<()> {
 let auth_flow = PubkyAuthFlow::builder(
         Capabilities::builder().read("pub/acme.app/").finish()
     )
     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
     .start()?;
+# Ok(()) }
 ```
 
 ## Features

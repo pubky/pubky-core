@@ -25,7 +25,7 @@ use crate::{
 /// # async fn example() -> pubky::Result<()> {
 /// // Sign in (happy path)
 /// let caps = Capabilities::default();
-/// let flow = PubkyAuthFlow::start(&caps)?
+/// let flow = PubkyAuthFlow::start(&caps)?;
 /// println!("Scan to sign in: {}", flow.authorization_url());
 /// let session = flow.await_approval().await?; // session is now established
 ///
