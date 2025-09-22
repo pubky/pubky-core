@@ -1,11 +1,10 @@
-use pubky_testnet::pubky::{global_client, set_global_client};
-use pubky_testnet::pubky::{PubkyAuthRequest, PubkySession, PubkySigner};
+use pubky_testnet::pubky::{global_client, set_global_client, Method, PubkyHttpClient};
+use pubky_testnet::pubky::{PubkyAuthRequest, PubkySession, PubkySigner, StatusCode};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,
 };
-use reqwest::StatusCode;
 use std::time::Duration;
 
 use pubky_testnet::pubky::errors::{Error, RequestError};
@@ -54,9 +53,12 @@ async fn disabled_user() {
 
     // Disable the user via admin API
     let admin_socket = server.admin().listen_socket();
-    let admin_client = reqwest::Client::new();
+    let admin_client = PubkyHttpClient::new().unwrap();
     let resp = admin_client
-        .post(format!("http://{admin_socket}/users/{pubky}/disable"))
+        .request(
+            Method::POST,
+            format!("http://{admin_socket}/users/{pubky}/disable"),
+        )
         .header("X-Admin-Password", "admin")
         .send()
         .await
@@ -209,8 +211,6 @@ async fn multiple_users() {
 
 #[tokio::test]
 async fn authz_timeout_reconnect() {
-    use reqwest::StatusCode;
-
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
 

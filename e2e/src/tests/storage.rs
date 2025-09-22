@@ -1,10 +1,12 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, global_client, Error, PubkyResource, PubkySigner, PubkyStorage},
+    pubky::{
+        errors::RequestError, global_client, Error, Method, PubkyResource, PubkySigner,
+        PubkyStorage, StatusCode,
+    },
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
-use reqwest::{Method, StatusCode};
 
 #[tokio::test]
 async fn put_get_delete() {

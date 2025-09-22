@@ -1,5 +1,5 @@
+use pubky_testnet::pubky::Method;
 use pubky_testnet::EphemeralTestnet;
-use reqwest::Method;
 
 #[tokio::test]
 async fn http_get_pubky() {

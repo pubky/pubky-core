@@ -1,13 +1,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use reqwest::{
-    header::{HeaderName, HeaderValue},
-    Method,
-};
+use reqwest::header::{HeaderName, HeaderValue};
 use std::env;
 use url::Url;
 
-use pubky::PubkyHttpClient;
+use pubky::{Method, PubkyHttpClient};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Raw Pubky/HTTPS request tool using PubkyHttpClient")]

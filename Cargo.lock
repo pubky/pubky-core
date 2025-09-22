@@ -994,7 +994,6 @@ dependencies = [
  "pkarr",
  "pubky-common",
  "pubky-testnet",
- "reqwest",
  "serde",
  "serde_json",
  "tokio",

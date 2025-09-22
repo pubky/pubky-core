@@ -43,3 +43,4 @@ pub use pubky_common::{
     capabilities::{Capabilities, Capability},
     recovery_file,
 };
+pub use reqwest::{Method, StatusCode};

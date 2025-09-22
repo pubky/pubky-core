@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use pubky_testnet::pubky::PubkySession;
 use pubky_testnet::pubky::{errors::RequestError, global_client, Error, PubkySigner};
+use pubky_testnet::pubky::{Method, PubkySession, StatusCode};
 use pubky_testnet::{
     pubky_homeserver::{
         quota_config::{GlobPattern, LimitKey, LimitKeyType, PathLimit},
@@ -9,7 +9,6 @@ use pubky_testnet::{
     },
     Testnet,
 };
-use reqwest::{Method, StatusCode};
 
 #[tokio::test]
 async fn limit_signin_get_session() {
@@ -199,14 +198,14 @@ async fn test_concurrent_write_read() {
     cfg.drive.rate_limits = vec![
         PathLimit::new(
             GlobPattern::new("/pub/**"),
-            reqwest::Method::PUT,
+            Method::PUT,
             "1kb/s".parse().unwrap(),
             LimitKeyType::User,
             None,
         ),
         PathLimit::new(
             GlobPattern::new("/pub/**"),
-            reqwest::Method::GET,
+            Method::GET,
             "1kb/s".parse().unwrap(),
             LimitKeyType::User,
             None,

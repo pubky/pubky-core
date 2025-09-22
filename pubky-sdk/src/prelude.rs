@@ -19,6 +19,7 @@ pub use crate::PubkyStorage;
 pub use crate::Pkdns;
 
 // Helpers
+pub use crate::{Method, StatusCode};
 // Homeserver Paths / URLs
 pub use crate::{IntoPubkyResource, PubkyResource};
 // Capabilities for auth flows
