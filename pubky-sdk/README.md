@@ -45,12 +45,13 @@ signer.pkdns()?.publish_homeserver_if_stale(None).await?;
 let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
-// 6) Keyless third-party app: pairing auth -> session
+// 6) Keyless third-party app session via Auth Flow
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
-let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
+let auth_flow = PubkyAuthFlow::start(&caps)?;
+println!("Scan to sign in: {}", auth_flow.authorization_url());
 // show `url` (QR/deeplink); on the signing device call:
-// signer.approve_auth_request(&url).await?;
-let app_session = sub.wait_for_approval().await?;
+// signer.approve_auth_request(&authorization_url).await?;
+let app_session = auth_flow.await_approval().await?;
 
 # Ok(()) }
 ```
@@ -59,8 +60,8 @@ let app_session = sub.wait_for_approval().await?;
 
 High level actors:
 
-- **`PubkySession`** session-bound identity agent. This is the heart of your Pubky application. Use `session.storage()` for reads/writes to the user's homeserver storage. You can get a working session in two ways: (1) requesting auth via `PubkyAuthRequest` (keyless apps) or (2) by signin from a `PubkySigner` (keychain apps).
-- **`PubkyAuthRequest`** auth flow for authenticating keyless apps from a PubkySigner.
+- **`PubkySession`** session-bound identity agent. This is the heart of your Pubky application. Use `session.storage()` for reads/writes to the user's homeserver storage. You can get a working session in two ways: (1) requesting auth via `PubkyAuthFlow` (keyless apps) or (2) by signin from a `PubkySigner` (keychain apps).
+- **`PubkyAuthFlow`** auth flow for authenticating keyless apps from a PubkySigner.
 - **`PubkySigner`** high-level signer (keypair holder) with `signup`, `signin`, publishing, and auth request approval.
 - **`PubkyStorage`** simple file-like API: `get/put/delete`, plus `exists()`, `stats()` and `list()`.
 - **`Pkdns`** resolve/publish `_pubky` Pkarr records (read-only via `Pkdns::new()`, publishing when created from a `PubkySigner`).
@@ -145,39 +146,52 @@ signer.pkdns()?.publish_homeserver_force(Some(&homeserver)).await?;
 # Ok(()) }
 ```
 
-### Pubky QR auth for third-party and keyless apps.
+### Pubky QR auth for third-party and keyless apps
 
-Request auth url and await approval. Typical usage:
+Request an authorization URL and await approval.
 
-1. Create an auth request with [`PubkyAuthRequest::new`].
-2. Call [`PubkyAuthRequest::subscribe`] to start background polling and obtain the `pubkyauth://` URL.
-3. Show the returned URL (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756)/[Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
-4. Await [`AuthSubscription::wait_for_approval`] to obtain a session-bound [`PubkySession`].
+**Typical usage**
+
+1. Start an auth flow with `PubkyAuthFlow::start(&caps)` (or use the builder to set a custom relay).
+2. Show `authorization_url()` (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) — [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756) / [Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
+3. Await `await_approval()` to obtain a session-bound `PubkySession`.
 
 ```rust
 # use pubky::prelude::*;
 # async fn auth() -> pubky::Result<()> {
 // Read/Write capabilities for acme.app route
-let caps = Capabilities::builder().rw("/pub/acme.app/").finish();
+let caps = Capabilities::builder().rw("pub/acme.app/").finish();
 
-// Easiest: uses the default relay (see “Relay” notes below)
-let (sub, url) = PubkyAuthRequest::new(&caps)?.subscribe();
-// This is the moment to send `url` to the user (QR or deeplink). On the signer device
-// for example Pubky Ring application on mobile. The signer will perform this call:
-// signer.approve_auth_request(&url).await?;
-# PubkySigner::random()?.approve_auth_request(&url).await?;
+// Easiest: uses the default relay (see “Relay & reliability” below)
+let auth_flow = PubkyAuthFlow::start(&caps)?;
+println!("Scan to sign in: {}", auth_flow.authorization_url());
 
-let session = sub.wait_for_approval().await?; // background long-polling started by `subscribe`
+// On the signer device (e.g., Pubky Ring), the user approves this request:
+// signer.approve_auth_request(auth_flow.authorization_url()).await?;
+# PubkySigner::random()?.approve_auth_request(auth_flow.authorization_url()).await?;
+
+// Blocks until approved; returns a session ready to use
+let session = auth_flow.await_approval().await?;
 # Ok(()) }
 ```
 
-See this fully working [Auth Flow Example](https://github.com/pubky/pubky-core/tree/main/examples/auth_flow)
+See the fully working **Auth Flow Example** in `/examples/auth_flow`.
 
 #### Relay & reliability
 
-- If you don’t pass a relay, [`PubkyAuthRequest`] defaults to a Synonym-hosted instance. If that relay is down, logins won’t complete.
-- For production and bigger apps, run your **own relay** (MIT, dockerable): [https://httprelay.io](https://httprelay.io)
-  Derives the channel as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret`. See `PubkyAuthRequest::new_with_relay` docs for further info.
+- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- For production and larger apps, run **your own relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
+  The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
+
+**Custom relay example**
+
+```rust
+let auth_flow = PubkyAuthFlow::builder(
+        Capabilities::builder().read("pub/acme.app/").finish()
+    )
+    .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
+    .start()?;
+```
 
 ## Features
 

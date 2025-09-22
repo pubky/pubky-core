@@ -3,7 +3,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
-mod auth;
+mod auth_flow;
 mod client;
 pub mod errors;
 mod global;
@@ -20,7 +20,7 @@ pub mod prelude;
 // Transport
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 // High level actors
-pub use auth::PubkyAuthRequest;
+pub use auth_flow::PubkyAuthFlow;
 pub use pkdns::Pkdns;
 pub use session::core::PubkySession;
 pub use signer::PubkySigner;
@@ -32,14 +32,14 @@ pub use global::{drop_global_client, global_client, set_global_client};
 
 // Export common types and constants
 pub use crate::storage::{list::ListBuilder, resource::IntoPubkyResource, resource::PubkyResource};
-pub use auth::AuthSubscription;
-pub use auth::DEFAULT_HTTP_RELAY;
+pub use auth_flow::DEFAULT_HTTP_RELAY;
 pub use pkarr::DEFAULT_RELAYS;
 pub use pkdns::DEFAULT_STALE_AFTER;
 
 // Re-exports
 pub use pkarr::{Keypair, PublicKey};
 pub use pubky_common::{
+    auth::AuthToken,
     capabilities::{Capabilities, Capability},
     recovery_file,
 };

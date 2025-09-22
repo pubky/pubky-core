@@ -1,10 +1,10 @@
 use reqwest::{Method, StatusCode};
 
-use pubky_common::{auth::AuthToken, session::SessionInfo};
+use pubky_common::session::SessionInfo;
 
 use crate::{
-    Capabilities, Error, PubkyHttpClient, PubkyStorage, PublicKey, Result, global::global_client,
-    util::check_http_status,
+    AuthToken, Capabilities, Error, PubkyHttpClient, PubkyStorage, PublicKey, Result,
+    global::global_client, util::check_http_status,
 };
 
 #[cfg(not(target_arch = "wasm32"))]

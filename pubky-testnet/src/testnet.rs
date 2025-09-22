@@ -30,6 +30,7 @@ pub struct Testnet {
 
 impl Testnet {
     /// Run a new testnet with a local DHT.
+    /// Sets the process wide Pubky global client to use this testnet.
     pub async fn new() -> Result<Self> {
         let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet = Self {
@@ -40,7 +41,7 @@ impl Testnet {
             temp_dirs: vec![],
         };
 
-        // Set a global shared pubky client so lazily initialized actors (PubkySession, PubkyAuthRequest, PubkySigner)
+        // Set a global shared pubky client so lazily initialized actors (PubkySession, PubkyAuthFlow, PubkySigner)
         // work over this testnet
         let testnet_client = testnet.client()?;
         pubky::set_global_client(testnet_client);

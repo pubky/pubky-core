@@ -21,18 +21,22 @@ use crate::{
 /// - Reads **and** writes are expected to succeed (subject to server authorization).
 ///
 /// ```no_run
-/// # use pubky::{PubkyAuthRequest, Capabilities};
+/// # use pubky::{Capabilities, PubkyAuthFlow};
 /// # async fn example() -> pubky::Result<()> {
-/// #   let caps = Capabilities::default();
-/// #   let (sub, _url) = PubkyAuthRequest::new(&caps)?.subscribe();
-/// #   // ... a signer (e.g. Pubky Ring) posts a token for this URL ...
-/// #   let session = sub.wait_for_approval().await?;
-///     // Relative resource paths are resolved against the user's session.
-///     session.storage().put("pub/my.app/hello.txt", "hello").await?;
-///     let body = session.storage().get("pub/my.app/hello.txt").await?.text().await?;
-///     assert_eq!(body, "hello");
-/// #   Ok(())
-/// # }
+/// // Sign in (happy path)
+/// let caps = Capabilities::default();
+/// let flow = PubkyAuthFlow::start(&caps)?
+/// println!("Scan to sign in: {}", flow.authorization_url());
+/// let session = flow.await_approval().await?; // session is now established
+///
+/// // Relative resource paths are resolved against the session’s user
+/// session.storage().put("pub/my.app/hello.txt", "hello").await?;
+/// let body = session
+///     .storage()
+///     .get("pub/my.app/hello.txt").await?
+///     .text().await?;
+/// assert_eq!(body, "hello");
+/// # Ok(()) }
 /// ```
 ///
 /// ### 2) Public mode (unauthenticated)

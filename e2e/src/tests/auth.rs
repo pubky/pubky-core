@@ -1,5 +1,5 @@
 use pubky_testnet::pubky::{global_client, set_global_client, Method, PubkyHttpClient};
-use pubky_testnet::pubky::{PubkyAuthRequest, PubkySession, PubkySigner, StatusCode};
+use pubky_testnet::pubky::{PubkyAuthFlow, PubkySession, PubkySigner, StatusCode};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -104,19 +104,21 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthRequest::new_with_relay(http_relay_url, &caps).unwrap();
-
-    // Start long-poll; this consumes the flow
-    let (subscription, pubkyauth_url) = auth.subscribe();
-    // pubkyauth_url is needed by signer, display the QR or deep-link
+    let auth = PubkyAuthFlow::builder(caps)
+        .relay(http_relay_url)
+        .start()
+        .unwrap();
 
     // Signer authenticator
     let signer = PubkySigner::random().unwrap();
     signer.signup(&server.public_key(), None).await.unwrap();
-    signer.approve_auth_request(&pubkyauth_url).await.unwrap();
+    signer
+        .approve_auth_request(&auth.authorization_url())
+        .await
+        .unwrap();
 
     // Retrieve the session-bound agent (third party app)
-    let user = subscription.wait_for_approval().await.unwrap();
+    let user = auth.await_approval().await.unwrap();
 
     assert_eq!(user.public_key(), signer.public_key());
 
@@ -232,8 +234,10 @@ async fn authz_timeout_reconnect() {
     set_global_client(client);
 
     // Start pairing auth flow using our custom client + local relay
-    let pairing = PubkyAuthRequest::new_with_relay(http_relay_url, &capabilities).unwrap();
-    let (subscription, url) = pairing.subscribe();
+    let auth = PubkyAuthFlow::builder(capabilities)
+        .relay(http_relay_url)
+        .start()
+        .unwrap();
 
     // set again the default testnet client
     set_global_client(testnet.client().unwrap());
@@ -243,14 +247,14 @@ async fn authz_timeout_reconnect() {
     let signer_pubky = signer.public_key();
     signer.signup(&server.public_key(), None).await.unwrap();
 
-    let url_clone = url.clone();
+    let url_clone = auth.authorization_url().clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(1_000)).await;
         signer.approve_auth_request(&url_clone).await.unwrap();
     });
 
     // The long-poll should survive timeouts and eventually yield an session
-    let session = subscription.wait_for_approval().await.unwrap();
+    let session = auth.await_approval().await.unwrap();
     assert_eq!(session.public_key(), signer_pubky);
 
     // Access control enforcement (write inside scope OK, others forbidden)
