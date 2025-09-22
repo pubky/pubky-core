@@ -73,10 +73,11 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
 ///
-/// - Construct with [`PubkyAuthFlow::start`] (happy path) or the builder
+/// Use it like this:
+/// 1. Construct with [`PubkyAuthFlow::start`] (happy path) or the builder
 ///   [`PubkyAuthFlow::builder`] to override relay/client.
-/// - Display [`authorization_url`](Self::authorization_url) (QR/deeplink) to the signer.
-/// - Complete the flow with [`await_approval`](Self::await_approval) **or**
+/// 2. Display [`authorization_url`](Self::authorization_url) (QR/deeplink) to the signer.
+/// 3. Complete the flow with [`await_approval`](Self::await_approval) **or**
 ///   poll with [`try_poll_once`](Self::try_poll_once) / [`try_token`](Self::try_token).
 ///
 /// Background polling **starts immediately** at construction. Dropping this value cancels
