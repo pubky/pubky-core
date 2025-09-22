@@ -370,7 +370,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::files::opendal_test_operators::{
+    use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
 

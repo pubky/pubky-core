@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::AppContext;
 use crate::{
     persistence::{
-        files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
+        files::{entry::entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
         lmdb::LmDB,
     },
     shared::webdav::EntryPath,
@@ -16,7 +16,7 @@ use futures_util::{stream::StreamExt, Stream};
 use opendal::Buffer;
 use opendal::Operator;
 
-use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
+use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
 
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
@@ -259,7 +259,7 @@ impl OpendalService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persistence::files::opendal_test_operators::OpendalTestOperators;
+    use crate::persistence::files::opendal::opendal_test_operators::OpendalTestOperators;
     use crate::shared::webdav::WebDavPath;
 
     #[tokio::test]

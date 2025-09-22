@@ -13,7 +13,7 @@ use futures_util::StreamExt;
 use opendal::Buffer;
 use std::path::Path;
 
-use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
+use super::super::{FileIoError, FileStream, OpendalService, WriteStreamError};
 
 /// The file service creates an abstraction layer over the LMDB and OpenDAL services.
 /// This way, files can be managed in a unified way.

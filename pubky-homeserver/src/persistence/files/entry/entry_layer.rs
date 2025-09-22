@@ -1,4 +1,5 @@
-use crate::persistence::files::entry_service::EntryService;
+use super::entry_service::EntryService;
+
 use crate::persistence::files::FileMetadataBuilder;
 use crate::persistence::lmdb::LmDB;
 use crate::shared::webdav::EntryPath;
@@ -193,7 +194,7 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::files::opendal_test_operators::OpendalTestOperators,
+        persistence::files::opendal::opendal_test_operators::OpendalTestOperators,
         shared::webdav::WebDavPath,
     };
 
