@@ -2,7 +2,6 @@
 
 Pubky Auth is a protocol for using user's [root key](../concepts/rootkey.md) to authenticate themselves to a 3rd party app and to authorize that app to access resources on the user's [Homeserver](../concepts/homeserver.md).
 
-<<<<<<< HEAD
 ### glossary
 1. **User**: an entity owner of secret and public key and owner of assets which can be accessed on location identified by their public key.
 1. **Authenticator**: An application holding the Keypair used in authentication. Eg [Pubky Ring](https://github.com/pubky/pubky-ring).
@@ -16,7 +15,6 @@ Pubky Auth is a protocol for using user's [root key](../concepts/rootkey.md) to 
 ## Flow
 Here's how is works:
 
->>>>>>> main
 ```mermaid
 sequenceDiagram
     participant User
