@@ -20,7 +20,7 @@ impl PubkySession {
     /// Treat the returned String as a **bearer secret**. Do not log it; store it
     /// securely.
     pub fn export_secret(&self) -> String {
-        let public_key = self.public_key().to_string();
+        let public_key = self.info().public_key().to_string();
         let cookie = self.cookie.clone();
         format!("{public_key}:{cookie}")
     }

@@ -3,8 +3,8 @@ use reqwest::{Method, StatusCode};
 use pubky_common::session::SessionInfo;
 
 use crate::{
-    AuthToken, Capabilities, Error, PubkyHttpClient, PubkyStorage, PublicKey, Result,
-    global::global_client, util::check_http_status,
+    AuthToken, Error, PubkyHttpClient, PubkyStorage, Result, global::global_client,
+    util::check_http_status,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -111,19 +111,9 @@ impl PubkySession {
         }
     }
 
-    /// Returns the session public key
-    pub fn public_key(&self) -> PublicKey {
-        self.info.public_key().clone()
-    }
-
-    /// Returns the session capabilities key
-    pub fn capabilities(&self) -> Capabilities {
-        self.info.capabilities().clone()
-    }
-
     /// Returns the session info
-    pub fn session_info(&self) -> SessionInfo {
-        self.info.clone()
+    pub fn info(&self) -> &SessionInfo {
+        &self.info
     }
 
     /// Returns a reference to the internal `PubkyHttpClient`

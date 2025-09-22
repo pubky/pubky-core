@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 
     println!("Successfully signed up. Checking session:");
 
-    let session_info = session.session_info();
+    let session_info = session.info();
 
     println!("Successfully resolved current session at the homeserver.");
     println!("{:?}", session_info);

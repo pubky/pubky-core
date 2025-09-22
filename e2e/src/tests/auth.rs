@@ -18,7 +18,7 @@ async fn basic_authn() {
 
     let user = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
-    let session = user.session_info();
+    let session = user.info();
 
     assert!(session.capabilities().contains(&Capability::root()));
 
@@ -87,7 +87,7 @@ async fn disabled_user() {
         .signin()
         .await
         .expect("Signin should succeed for disabled users");
-    assert_eq!(session2.public_key(), pubky);
+    assert_eq!(session2.info().public_key(), &pubky);
 }
 
 #[tokio::test]
@@ -120,13 +120,13 @@ async fn authz() {
     // Retrieve the session-bound agent (third party app)
     let user = auth.await_approval().await.unwrap();
 
-    assert_eq!(user.public_key(), signer.public_key());
+    assert_eq!(user.info().public_key(), &signer.public_key());
 
-    // let session = user.session_info().await.unwrap().unwrap();
+    // let session = user.info().await.unwrap().unwrap();
     // assert_eq!(session.capabilities(), &caps.0);
 
     // Ensure the same user pubky has been authed on the keyless app from cold keypair
-    assert_eq!(user.public_key(), signer.public_key());
+    assert_eq!(user.info().public_key(), &signer.public_key());
 
     // Access control enforcement
     user.storage()
@@ -154,7 +154,7 @@ async fn authz() {
 }
 
 #[tokio::test]
-async fn persist_and_restore_session_info() {
+async fn persist_and_restore_info() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
 
@@ -179,7 +179,7 @@ async fn persist_and_restore_session_info() {
     let restored = PubkySession::import_secret(&secret_token).await.unwrap();
 
     // Same identity?
-    assert_eq!(restored.public_key(), signer.public_key());
+    assert_eq!(restored.info().public_key(), &signer.public_key());
 
     // Still authorized to write
     restored
@@ -202,11 +202,11 @@ async fn multiple_users() {
     let bob_session = bob.signup(&server.public_key(), None).await.unwrap();
 
     // Each session is bound to its own pubkey and has root caps
-    let a_sess = alice_session.session_info();
+    let a_sess = alice_session.info();
     assert_eq!(a_sess.public_key(), &alice.public_key());
     assert!(a_sess.capabilities().contains(&Capability::root()));
 
-    let b_sess = bob_session.session_info();
+    let b_sess = bob_session.info();
     assert_eq!(b_sess.public_key(), &bob.public_key());
     assert!(b_sess.capabilities().contains(&Capability::root()));
 }
@@ -255,7 +255,7 @@ async fn authz_timeout_reconnect() {
 
     // The long-poll should survive timeouts and eventually yield an session
     let session = auth.await_approval().await.unwrap();
-    assert_eq!(session.public_key(), signer_pubky);
+    assert_eq!(session.info().public_key(), &signer_pubky);
 
     // Access control enforcement (write inside scope OK, others forbidden)
     session
@@ -317,7 +317,7 @@ async fn signup_with_token() {
         .await
         .unwrap();
     assert!(
-        !session.public_key().to_string().is_empty(),
+        !session.info().public_key().to_string().is_empty(),
         "SessionInfo should contain a valid public key"
     );
 
@@ -325,8 +325,8 @@ async fn signup_with_token() {
     let pubky = signer.public_key();
     let session = signer.signin().await.unwrap();
     assert_eq!(
-        session.public_key(),
-        pubky,
+        session.info().public_key(),
+        &pubky,
         "Signed-in session pubky should correspond to the signer's public key"
     );
 

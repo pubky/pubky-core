@@ -16,7 +16,7 @@ async fn put_get_delete() {
     let signer = PubkySigner::random().unwrap();
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubky = session.public_key();
+    let pubky = session.info().public_key();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
@@ -41,7 +41,7 @@ async fn put_get_delete() {
         .unwrap();
 
     // again same request but using a tuple
-    let tuple_path = (session.public_key(), "/pub/foo.txt");
+    let tuple_path = (session.info().public_key(), "/pub/foo.txt");
 
     session
         .storage()
@@ -69,7 +69,7 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        session.public_key()
+        session.info().public_key()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
@@ -111,7 +111,7 @@ async fn put_then_get_json_roundtrip() {
     let signer = PubkySigner::random().unwrap();
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubky = session.public_key();
+    let pubky = session.info().public_key();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
