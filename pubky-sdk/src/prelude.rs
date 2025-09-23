@@ -20,8 +20,8 @@ pub use crate::Pkdns;
 
 // Helpers
 pub use crate::{Method, StatusCode};
-// Homeserver Paths / URLs
-pub use crate::{IntoPubkyResource, PubkyResource};
+// Homeserver Resources Paths / URLs
+pub use crate::{IntoPubkyResource, PubkyResource, ResourceStats};
 // Capabilities for auth flows
 pub use crate::{Capabilities, Capability};
 // Secret recovery utilities

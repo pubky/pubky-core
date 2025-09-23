@@ -31,7 +31,9 @@ pub use errors::{BuildError, Error, Result};
 pub use global::{drop_global_client, global_client, set_global_client};
 
 // Export common types and constants
-pub use crate::storage::{list::ListBuilder, resource::IntoPubkyResource, resource::PubkyResource};
+pub use crate::storage::{
+    list::ListBuilder, resource::IntoPubkyResource, resource::PubkyResource, stats::ResourceStats,
+};
 pub use auth_flow::DEFAULT_HTTP_RELAY;
 pub use pkarr::DEFAULT_RELAYS;
 pub use pkdns::DEFAULT_STALE_AFTER;

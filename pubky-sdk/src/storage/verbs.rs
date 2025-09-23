@@ -1,10 +1,10 @@
-use reqwest::header::HeaderMap;
 use reqwest::{Method, Response, StatusCode};
 
 use super::core::PubkyStorage;
 use super::resource::IntoPubkyResource;
 
 use crate::Result;
+use crate::storage::stats::ResourceStats;
 use crate::util::check_http_status;
 
 impl PubkyStorage {
@@ -82,13 +82,13 @@ impl PubkyStorage {
     /// }
     /// # Ok(()) }
     /// ```
-    pub async fn stats<P: IntoPubkyResource>(&self, path: P) -> Result<Option<HeaderMap>> {
+    pub async fn stats<P: IntoPubkyResource>(&self, path: P) -> Result<Option<ResourceStats>> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
             return Ok(None);
         }
         let resp = check_http_status(resp).await?;
-        Ok(Some(resp.headers().clone()))
+        Ok(Some(ResourceStats::from_headers(resp.headers())))
     }
 
     /// HTTP `PUT`.

@@ -40,6 +40,7 @@ futures-util = "0.3.31"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 arc-swap = "1.7.1"
+httpdate = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 reqwest = { version = "0.12.12", default-features = false, features = [

@@ -3,4 +3,5 @@ pub mod core;
 pub mod json;
 pub mod list;
 pub mod resource;
+pub mod stats;
 pub mod verbs;
