@@ -1,6 +1,7 @@
 name: Documentation
 
 on:
+  pull_request:
   push:
     branches: [main]
 
@@ -50,8 +51,8 @@ jobs:
         if: steps.mdbook-build-cache.outputs.cache-hit != 'true'
         run: mdbook build ./docs/mdbook/
 
-      - name: Deploy book to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/mdbook/book/
+      # - name: Deploy book to GitHub Pages
+      #   uses: peaceiris/actions-gh-pages@v3
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: ./docs/mdbook/book/
