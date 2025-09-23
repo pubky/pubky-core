@@ -229,6 +229,12 @@ impl IntoPubkyResource for String {
         PubkyResource::from_str(&self)
     }
 }
+impl IntoPubkyResource for &String {
+    #[inline]
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        PubkyResource::from_str(self.as_str())
+    }
+}
 impl<P: AsRef<str>> IntoPubkyResource for (PublicKey, P) {
     fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         PubkyResource::new(Some(self.0), self.1.as_ref())

@@ -1080,7 +1080,6 @@ dependencies = [
  "pubky-testnet",
  "reqwest",
  "rpassword",
- "serde",
  "tokio",
  "tracing-subscriber",
  "url",
