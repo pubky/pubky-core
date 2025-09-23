@@ -64,21 +64,19 @@ impl PubkyStorage {
     ///
     /// Returns the response headers for existing resources, or `Ok(None)` for
     /// 404/410. Other non-2xx statuses (and transport errors) are returned as
-    /// errors. Typical headers include `content-length`, `content-type`, `etag`,
-    /// and `last-modified`.
+    /// errors. Metadata includes `content-length`, `content-type`, `etag`,
+    /// and `last-modified`, see [`ResourceStats`].
     ///
-    /// Works in public or session mode. In session mode, attaches the session’s cookie
-    /// when the URL targets this session’s homeserver.
+    /// Works in public or session mode.
     ///
     /// # Example
     /// ```no_run
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
     /// let storage = PubkyStorage::new_public()?;
-    /// if let Some(h) = storage.stats("pub/my.app/data.bin").await? {
-    ///     if let Some(len) = h.get(reqwest::header::CONTENT_LENGTH) {
-    ///         println!("size: {}", len.to_str().unwrap_or("?"));
-    ///     }
+    /// let resource_stats = storage.stats("{public_key}/pub/my.app/data.bin").await?;
+    /// if let Some(stats) = resource_stats {
+    ///     println!("size: {}", stats.content_length);
     /// }
     /// # Ok(()) }
     /// ```

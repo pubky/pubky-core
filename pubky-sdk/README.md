@@ -42,7 +42,7 @@ assert_eq!(txt, "hello");
 
 // 5) Publish / resolve your PKDNS (_pubky) record
 signer.pkdns().publish_homeserver_if_stale(None).await?;
-let resolved = Pkdns::new()?.get_homeserver(&signer.public_key()).await;
+let resolved = Pkdns::new()?.get_homeserver_of(&signer.public_key()).await;
 println!("current homeserver: {:?}", resolved);
 
 // 6) Keyless third-party app session via Auth Flow
