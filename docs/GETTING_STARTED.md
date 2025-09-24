@@ -12,7 +12,7 @@ Extract the package and place the binary (pubky-homeserver or pubky-homeserver.e
 
 > The homeserver depends on Postgresql as its database backend. Make sure you have it installed.
 
-Executing the `pubky-homeserver` binary will create the `~/.pubky` application folder. All data related to the homeserver is stored there. A sample `config.toml` is written to app folder.
+Executing the `pubky-homeserver` binary will create the `~/.pubky` application folder. All data related to the homeserver is stored there. A sample `config.toml` will be written to application folder.
 It includes all important configuration values. 
 
 For the homeserver to start, it needs the correct `database_url` to connect to the postgres database. 
@@ -23,10 +23,16 @@ database_url = "postgres://username:password@localhost:5432/pubky_homeserver"
 ```
 
 Make sure to create the `pubky_homeserver` database in postgres so the homeserver can connect to it.
+On a local Linux installation, you create the database with this command:
+
+```bash
+sudo -u postgres psql -c 'create database pubky_homeserver;'
+```
 
 Setting the database_url is enough to run the homeserver locally:
 
 ```bash
+# Start the homeserver
 ./pubky_homeserver
 ```
 
