@@ -28,7 +28,7 @@ impl PubkyStorage {
     /// # use pubky::PubkyStorage;
     /// # async fn example() -> pubky::Result<()> {
     /// let storage = PubkyStorage::new_public()?;
-    /// let resp = storage.get("pub/my.app/data.bin").await?;
+    /// let resp = storage.get("{user_id}/pub/my.app/data.bin").await?;
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
     /// ```
@@ -97,7 +97,7 @@ impl PubkyStorage {
     /// # Examples
     /// ```no_run
     /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
-    /// session.storage().put("pub/my.app/hello.txt", "hello").await?;
+    /// session.storage().put("/pub/my.app/hello.txt", "hello").await?; // must start with leading `/`
     /// # Ok(()) }
     /// ```
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
@@ -123,7 +123,7 @@ impl PubkyStorage {
     /// # Examples
     /// ```no_run
     /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
-    /// session.storage().delete("pub/my.app/hello.txt").await?;
+    /// session.storage().delete("/pub/my.app/hello.txt").await?; // must start with leading `/`
     /// # Ok(()) }
     /// ```
     pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {
