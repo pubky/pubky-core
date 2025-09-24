@@ -76,7 +76,7 @@ impl PubkyStorage {
     /// let storage = PubkyStorage::new_public()?;
     /// let resource_stats = storage.stats("{public_key}/pub/my.app/data.bin").await?;
     /// if let Some(stats) = resource_stats {
-    ///     println!("size: {}", stats.content_length);
+    ///     println!("size: {:?}", stats.content_length);
     /// }
     /// # Ok(()) }
     /// ```
