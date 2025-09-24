@@ -129,6 +129,11 @@ impl PubkyResource {
         })
     }
 
+    /// Returns the owner user `PublicKey` of this resource if known.
+    pub fn owner(&self) -> Option<PublicKey> {
+        self.user.clone()
+    }
+
     /// `pubky://<user>/<path>` requires a user; provide `default` to fill if missing.
     pub(crate) fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
         let user = match (&self.user, default) {
