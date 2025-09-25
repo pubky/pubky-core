@@ -416,6 +416,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_throttle_upload() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/upload"),
@@ -454,6 +455,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_throttle_download() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/download"),
@@ -493,6 +495,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_limit_parallel_requests_with_ip_key() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/upload"),
@@ -526,6 +529,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_limit_parallel_requests_with_user_key() {
         let path_limit = PathLimit::new(
             GlobPattern::new("/upload"),

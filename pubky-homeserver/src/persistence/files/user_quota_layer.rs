@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::persistence::lmdb::LmDB;
+use crate::persistence::sql::SqlDb;
+use crate::persistence::sql::{uexecutor, user::UserRepository};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
@@ -16,13 +17,13 @@ pub(crate) const FILE_METADATA_SIZE: u64 = 256;
 /// It will also enforce that only paths in the form of {pubkey}/{path} are allowed.
 #[derive(Clone)]
 pub struct UserQuotaLayer {
-    pub(crate) db: LmDB,
+    pub(crate) db: SqlDb,
     /// The maximum amount of bytes that a user can store in the homeserver.
     pub(crate) user_quota_bytes: u64,
 }
 
 impl UserQuotaLayer {
-    pub fn new(db: LmDB, user_quota_bytes: u64) -> Self {
+    pub fn new(db: SqlDb, user_quota_bytes: u64) -> Self {
         Self {
             db,
             user_quota_bytes,
@@ -61,7 +62,7 @@ fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
 #[derive(Debug, Clone)]
 pub struct UserQuotaAccessor<A: Access> {
     inner: Arc<A>,
-    db: LmDB,
+    db: SqlDb,
     user_quota_bytes: u64,
 }
 
@@ -137,37 +138,10 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 }
 
-/// Update the user quota by the given amount.
-/// This is used to update the user quota when a file is written or deleted.
-/// The bytes delta is the number of bytes that were added or removed from the user quota.
-/// It can be positive or negative.
-fn update_user_quota(
-    db: &LmDB,
-    user_pubkey: &pkarr::PublicKey,
-    bytes_delta: i64,
-) -> anyhow::Result<()> {
-    let mut wtxn = db.env.write_txn()?;
-    let mut user = db
-        .tables
-        .users
-        .get(&wtxn, user_pubkey)?
-        .ok_or(anyhow::anyhow!("User not found"))?;
-    user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
-    db.tables.users.put(&mut wtxn, user_pubkey, &user)?;
-    wtxn.commit()?;
-    Ok(())
-}
-
-fn does_user_exist(db: &LmDB, user_pubkey: &pkarr::PublicKey) -> anyhow::Result<bool> {
-    let wtxn = db.env.read_txn()?;
-    let user = db.tables.users.get(&wtxn, user_pubkey)?;
-    Ok(user.is_some())
-}
-
 /// Wrapper around the writer that updates the user quota when the file is closed.
 pub struct WriterWrapper<R, A: Access> {
     inner: R,
-    db: LmDB,
+    db: SqlDb,
     bytes_count: u64,
     entry_path: EntryPath,
     inner_accessor: Arc<A>,
@@ -209,15 +183,21 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
 
     async fn close(&mut self) -> Result<opendal::Metadata> {
         // Update the user quota.
-        let current_user_bytes = self
+        let mut tx = self
             .db
-            .get_user_data_usage(self.entry_path.pubkey())
+            .pool()
+            .begin()
+            .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-        // If the user does not exist, we don't update the quota.
-        let current_user_bytes = current_user_bytes.ok_or(opendal::Error::new(
-            opendal::ErrorKind::Unexpected,
-            "User not found",
-        ))?;
+        let mut user = UserRepository::get(self.entry_path.pubkey(), uexecutor!(tx))
+            .await
+            .map_err(|e| {
+                opendal::Error::new(
+                    opendal::ErrorKind::Unexpected,
+                    format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
+                )
+            })?;
+        let current_user_bytes = user.used_bytes;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;
 
@@ -235,7 +215,13 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             ));
         }
         let metadata = self.inner.close().await?;
-        update_user_quota(&self.db, self.entry_path.pubkey(), bytes_delta)
+
+        user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
+        UserRepository::update(&user, uexecutor!(tx))
+            .await
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+        tx.commit()
+            .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         Ok(metadata)
     }
@@ -294,13 +280,13 @@ impl DeletePath {
 /// or batched (GCS does 100 paths per batch).
 pub struct DeleterWrapper<R, A: Access> {
     inner: R,
-    db: LmDB,
+    db: SqlDb,
     inner_accessor: Arc<A>,
     path_queue: Vec<DeletePath>,
 }
 
 impl<R, A: Access> DeleterWrapper<R, A> {
-    fn update_user_quota(&self, deleted_paths: Vec<DeletePath>) -> Result<()> {
+    async fn update_user_quota(&self, deleted_paths: Vec<DeletePath>) -> Result<()> {
         // Group deleted paths by user pubkey
         let mut user_paths: HashMap<pkarr::PublicKey, Vec<DeletePath>> = HashMap::new();
         for path in deleted_paths {
@@ -312,18 +298,37 @@ impl<R, A: Access> DeleterWrapper<R, A> {
 
         // TODO: Update user quota for each user
         for (user_pubkey, paths) in user_paths {
-            if !does_user_exist(&self.db, &user_pubkey)
-                .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?
-            {
-                // User does not exist in the database, so we don't update the quota.
-                // This can happen if the user was deleted before the file was deleted.
-                continue;
-            }
+            let mut tx =
+                self.db.pool().begin().await.map_err(|e| {
+                    opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
+                })?;
+            let mut user = match UserRepository::get(&user_pubkey, uexecutor!(tx)).await {
+                Ok(user) => user,
+                Err(sqlx::Error::RowNotFound) => {
+                    // User does not exist in the database, so we don't update the quota.
+                    // This can happen if the user was deleted before the file was deleted.
+                    // Shouldn't happen but we still handle it.
+                    continue;
+                }
+                Err(e) => {
+                    return Err(opendal::Error::new(
+                        opendal::ErrorKind::Unexpected,
+                        e.to_string(),
+                    ));
+                }
+            };
+
             let total_bytes: u64 = paths.iter().filter_map(|p| p.bytes_count).sum();
             let files_deleted_count =
                 paths.iter().filter(|p| p.exists.unwrap_or(false)).count() as u64;
             let bytes_delta = (total_bytes + files_deleted_count * FILE_METADATA_SIZE) as i64;
-            update_user_quota(&self.db, &user_pubkey, -bytes_delta)
+
+            user.used_bytes = user.used_bytes.saturating_add_signed(-bytes_delta);
+            UserRepository::update(&user, uexecutor!(tx))
+                .await
+                .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+            tx.commit()
+                .await
                 .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         }
 
@@ -346,7 +351,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
             .path_queue
             .drain(0..deleted_files_count)
             .collect::<Vec<_>>();
-        self.update_user_quota(deleted_paths)?;
+        self.update_user_quota(deleted_paths).await?;
         Ok(deleted_files_count)
     }
 
@@ -376,19 +381,21 @@ mod tests {
 
     use super::*;
 
-    fn get_user_data_usage(db: &LmDB, user_pubkey: &pkarr::PublicKey) -> anyhow::Result<u64> {
-        let wtxn = db.env.read_txn()?;
-        let user = db.get_user(user_pubkey, &wtxn)?.ok_or(opendal::Error::new(
-            opendal::ErrorKind::Unexpected,
-            "User not found",
-        ))?;
+    async fn get_user_data_usage(
+        db: &SqlDb,
+        user_pubkey: &pkarr::PublicKey,
+    ) -> anyhow::Result<u64> {
+        let user = UserRepository::get(user_pubkey, &mut db.pool().into())
+            .await
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         Ok(user.used_bytes)
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_ensure_valid_path() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
-            let db = LmDB::test();
+            let db = SqlDb::test().await;
             let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
             let operator = operator.layer(layer);
 
@@ -397,7 +404,9 @@ mod tests {
                 .await
                 .expect_err("Should fail because the path doesn't start with a pubkey");
             let pubkey = pkarr::Keypair::random().public_key();
-            db.create_user(&pubkey).unwrap();
+            UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
             operator
                 .write(format!("{}/test.txt", pubkey).as_str(), vec![0; 10])
                 .await
@@ -410,20 +419,23 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_quota_updated_write_delete() {
-        let db = LmDB::test();
+        let db = SqlDb::test().await;
         let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey1 = pkarr::Keypair::random().public_key();
-        db.create_user(&user_pubkey1).unwrap();
+        UserRepository::create(&user_pubkey1, &mut db.pool().into())
+            .await
+            .unwrap();
 
         // Write a file and see if the user usage is updated
         operator
             .write(format!("{}/test.txt1", user_pubkey1).as_str(), vec![0; 10])
             .await
             .unwrap();
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 10 + FILE_METADATA_SIZE);
 
         // Write the same file again but with a different size
@@ -431,7 +443,7 @@ mod tests {
             .write(format!("{}/test.txt1", user_pubkey1).as_str(), vec![0; 12])
             .await
             .unwrap();
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 12 + FILE_METADATA_SIZE);
 
         // Write a second file and see if the user usage is updated
@@ -439,7 +451,7 @@ mod tests {
             .write(format!("{}/test.txt2", user_pubkey1).as_str(), vec![0; 5])
             .await
             .unwrap();
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 17 + 2 * FILE_METADATA_SIZE);
 
         // Delete the first file and see if the user usage is updated
@@ -447,7 +459,7 @@ mod tests {
             .delete(format!("{}/test.txt1", user_pubkey1).as_str())
             .await
             .unwrap();
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 5 + FILE_METADATA_SIZE);
 
         // Delete the second file and see if the user usage is updated
@@ -455,18 +467,21 @@ mod tests {
             .delete(format!("{}/test.txt2", user_pubkey1).as_str())
             .await
             .unwrap();
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 0);
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_quota_rechead() {
-        let db = LmDB::test();
+        let db = SqlDb::test().await;
         let layer = UserQuotaLayer::new(db.clone(), 20 + FILE_METADATA_SIZE);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey1 = pkarr::Keypair::random().public_key();
-        db.create_user(&user_pubkey1).unwrap();
+        UserRepository::create(&user_pubkey1, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let file_name1 = format!("{}/test1.txt", user_pubkey1);
         // Write a file and see if the user usage is updated
@@ -478,7 +493,7 @@ mod tests {
             .read(file_name1.as_str())
             .await
             .expect_err("Should fail because the file doesn't exist");
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 0);
 
         // Write file at exactly the quota limit
@@ -490,7 +505,7 @@ mod tests {
             .read(file_name1.as_str())
             .await
             .expect("Should succeed because the file exists");
-        let user_usage = get_user_data_usage(&db, &user_pubkey1).unwrap();
+        let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 20 + FILE_METADATA_SIZE);
 
         let file_name2 = format!("{}/test2.txt", user_pubkey1);

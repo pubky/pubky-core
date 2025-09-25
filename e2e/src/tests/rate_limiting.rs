@@ -13,6 +13,7 @@ use reqwest::{Method, StatusCode, Url};
 use tokio::time::Instant;
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_signin_get_session() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client().unwrap();
@@ -62,6 +63,7 @@ async fn test_limit_signin_get_session() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_signin_get_session_whitelist() {
     let keypair = Keypair::random();
     let mut testnet = Testnet::new().await.unwrap();
@@ -118,6 +120,7 @@ async fn test_limit_signin_get_session_whitelist() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_events() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client().unwrap();
@@ -147,6 +150,7 @@ async fn test_limit_events() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
     let client = testnet.pubky_client().unwrap();
@@ -194,6 +198,7 @@ async fn test_limit_upload() {
 /// Concurrently writing/reading 10 files, the total time taken should be ~3s.
 /// If the concurrent writes/reads are not properly handled, the total time taken will be closer to ~25s.
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_concurrent_write_read() {
     // Setup the testnet
     let mut testnet = Testnet::new().await.unwrap();

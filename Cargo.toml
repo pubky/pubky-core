@@ -5,7 +5,10 @@ members = [
   "http-relay",
   "pkarr-republisher",
   "examples",
-  "e2e",
+  "e2e", 
+  "test_utils/test_macro", 
+  "test_utils/drop_db_helper", 
+  "test_utils/pubky_test",
 ]
 default-members = [
   "pubky-common",

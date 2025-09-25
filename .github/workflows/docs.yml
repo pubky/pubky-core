@@ -42,16 +42,16 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ./docs/book/
-          key: ${{ runner.os }}-mdbook-${{ hashFiles('./docs/**') }}
+          key: ${{ runner.os }}-mdbook-${{ hashFiles('./docs/mdbook/**') }}
           restore-keys: |
             ${{ runner.os }}-mdbook-
 
       - name: Build the book
         if: steps.mdbook-build-cache.outputs.cache-hit != 'true'
-        run: mdbook build ./docs/
+        run: mdbook build ./docs/mdbook/
 
       - name: Deploy book to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/book/
+          publish_dir: ./docs/mdbook/book/

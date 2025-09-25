@@ -10,3 +10,4 @@ pub use testnet::Testnet;
 pub use pubky;
 pub use pubky_common;
 pub use pubky_homeserver;
+pub use pubky_test_utils::{drop_test_databases, test};

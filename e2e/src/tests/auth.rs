@@ -8,6 +8,7 @@ use reqwest::StatusCode;
 use std::time::Duration;
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -52,6 +53,7 @@ async fn basic_authn() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -119,6 +121,7 @@ async fn disabled_user() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -193,6 +196,7 @@ async fn authz() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -232,6 +236,7 @@ async fn multiple_users() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -313,6 +318,7 @@ async fn authz_timeout_reconnect() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
@@ -376,6 +382,7 @@ async fn test_signup_with_token() {
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_republish_on_signin_old_enough() {
     // Setup the testnet and run a homeserver.
     let testnet = EphemeralTestnet::start().await.unwrap();
@@ -429,6 +436,7 @@ async fn test_republish_on_signin_old_enough() {
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_republish_on_signin_not_old_enough() {
     // Setup the testnet and run a homeserver.
     let testnet = EphemeralTestnet::start().await.unwrap();
@@ -474,6 +482,7 @@ async fn test_republish_on_signin_not_old_enough() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_republish_homeserver() {
     // Setup the testnet and run a homeserver.
     let mut testnet = Testnet::new().await.unwrap();

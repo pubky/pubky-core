@@ -1,9 +1,12 @@
 use bytes::Bytes;
 use pkarr::Keypair;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
+use rand::rng;
+use rand::seq::SliceRandom;
 use reqwest::{Method, StatusCode};
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -77,6 +80,7 @@ async fn put_get_delete() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
@@ -134,6 +138,7 @@ async fn put_quota_applied() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -202,7 +207,8 @@ async fn unauthorized_put_delete() {
 }
 
 #[tokio::test]
-async fn list() {
+#[pubky_testnet::test]
+async fn list_deep() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
 
@@ -216,8 +222,8 @@ async fn list() {
         .unwrap();
 
     let pubky = keypair.public_key();
-
-    let urls = vec![
+    // Write files to the server
+    let mut urls = vec![
         format!("pubky://{pubky}/pub/a.wrong/a.txt"),
         format!("pubky://{pubky}/pub/example.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/b.txt"),
@@ -227,13 +233,13 @@ async fn list() {
         format!("pubky://{pubky}/pub/example.com/d.txt"),
         format!("pubky://{pubky}/pub/z.wrong/a.txt"),
     ];
-
+    urls.shuffle(&mut rng()); // Shuffle randomly to test the order of the list
     for url in urls {
         client.put(url).body(vec![0]).send().await.unwrap();
     }
 
+    // List all files with no cursor, no limit
     let url = format!("pubky://{pubky}/pub/example.com/extra");
-
     {
         let list = client.list(&url).unwrap().send().await.unwrap();
 
@@ -250,9 +256,9 @@ async fn list() {
         );
     }
 
+    // List files with limit of 2
     {
         let list = client.list(&url).unwrap().limit(2).send().await.unwrap();
-
         assert_eq!(
             list,
             vec![
@@ -263,12 +269,13 @@ async fn list() {
         );
     }
 
+    // List files with limit of 2 and a file cursor
     {
         let list = client
             .list(&url)
             .unwrap()
             .limit(2)
-            .cursor("a.txt")
+            .cursor(format!("pubky://{pubky}/pub/example.com/a.txt").as_str())
             .send()
             .await
             .unwrap();
@@ -280,26 +287,6 @@ async fn list() {
                 format!("pubky://{pubky}/pub/example.com/c.txt"),
             ],
             "normal list with limit and a file cursor"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .limit(2)
-            .cursor("cc-nested/")
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{pubky}/pub/example.com/d.txt"),
-            ],
-            "normal list with limit and a directory cursor"
         );
     }
 
@@ -322,92 +309,10 @@ async fn list() {
             "normal list with limit and a full url cursor"
         );
     }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .limit(2)
-            .cursor("/a.txt")
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.com/b.txt"),
-                format!("pubky://{pubky}/pub/example.com/c.txt"),
-            ],
-            "normal list with limit and a leading / cursor"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .reverse(true)
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.com/d.txt"),
-                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{pubky}/pub/example.com/c.txt"),
-                format!("pubky://{pubky}/pub/example.com/b.txt"),
-                format!("pubky://{pubky}/pub/example.com/a.txt"),
-            ],
-            "reverse list with no limit or cursor"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .reverse(true)
-            .limit(2)
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.com/d.txt"),
-                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-            ],
-            "reverse list with limit but no cursor"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .reverse(true)
-            .limit(2)
-            .cursor("d.txt")
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{pubky}/pub/example.com/c.txt"),
-            ],
-            "reverse list with limit and cursor"
-        );
-    }
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -423,7 +328,8 @@ async fn list_shallow() {
 
     let pubky = keypair.public_key();
 
-    let urls = vec![
+    // Write files to the server
+    let mut urls = vec![
         format!("pubky://{pubky}/pub/a.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/a.txt"),
         format!("pubky://{pubky}/pub/example.com/b.txt"),
@@ -435,13 +341,13 @@ async fn list_shallow() {
         format!("pubky://{pubky}/pub/file2"),
         format!("pubky://{pubky}/pub/z.com/a.txt"),
     ];
-
+    urls.shuffle(&mut rng()); // Shuffle randomly to test the order of the list
     for url in urls {
         client.put(url).body(vec![0]).send().await.unwrap();
     }
 
+    // List all files with no cursor, no limit
     let url = format!("pubky://{pubky}/pub/");
-
     {
         let list = client
             .list(&url)
@@ -466,6 +372,7 @@ async fn list_shallow() {
         );
     }
 
+    // List files with limit of 2
     {
         let list = client
             .list(&url)
@@ -486,34 +393,49 @@ async fn list_shallow() {
         );
     }
 
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .shallow(true)
-            .limit(2)
-            .cursor("example.com/a.txt")
-            .send()
-            .await
-            .unwrap();
+    // List files with limit of 2 and a file cursor
+    let list1 = client
+        .list(&url)
+        .unwrap()
+        .shallow(true)
+        .limit(2)
+        .cursor(format!("pubky://{pubky}/pub/example.com/").as_str())
+        .send()
+        .await
+        .unwrap();
 
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.com/"),
-                format!("pubky://{pubky}/pub/example.con"),
-            ],
-            "normal list shallow with limit and a file cursor"
-        );
-    }
+    assert_eq!(
+        list1,
+        vec![
+            format!("pubky://{pubky}/pub/example.con"),
+            format!("pubky://{pubky}/pub/example.con/"),
+        ],
+        "normal list shallow with limit and a file cursor"
+    );
+    // Do the same again but without the pubky:// prefix
+    let list2 = client
+        .list(&url)
+        .unwrap()
+        .shallow(true)
+        .limit(2)
+        .cursor(format!("{pubky}/pub/example.com/a.txt").as_str())
+        .send()
+        .await
+        .unwrap();
 
+    assert_eq!(
+        list2, list1,
+        "normal list shallow with limit and a file cursor without the pubky:// prefix"
+    );
+
+    // List files with limit of 3 and a directory cursor
     {
         let list = client
             .list(&url)
             .unwrap()
             .shallow(true)
             .limit(3)
-            .cursor("example.com/")
+            .cursor(format!("pubky://{pubky}/pub/example.com/").as_str())
             .send()
             .await
             .unwrap();
@@ -528,99 +450,10 @@ async fn list_shallow() {
             "normal list shallow with limit and a directory cursor"
         );
     }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .reverse(true)
-            .shallow(true)
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/z.com/"),
-                format!("pubky://{pubky}/pub/file2"),
-                format!("pubky://{pubky}/pub/file"),
-                format!("pubky://{pubky}/pub/example.con/"),
-                format!("pubky://{pubky}/pub/example.con"),
-                format!("pubky://{pubky}/pub/example.com/"),
-                format!("pubky://{pubky}/pub/a.com/"),
-            ],
-            "reverse list shallow"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .reverse(true)
-            .shallow(true)
-            .limit(2)
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/z.com/"),
-                format!("pubky://{pubky}/pub/file2"),
-            ],
-            "reverse list shallow with limit but no cursor"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .shallow(true)
-            .reverse(true)
-            .limit(2)
-            .cursor("file2")
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/file"),
-                format!("pubky://{pubky}/pub/example.con/"),
-            ],
-            "reverse list shallow with limit and a file cursor"
-        );
-    }
-
-    {
-        let list = client
-            .list(&url)
-            .unwrap()
-            .shallow(true)
-            .reverse(true)
-            .limit(2)
-            .cursor("example.con/")
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky://{pubky}/pub/example.con"),
-                format!("pubky://{pubky}/pub/example.com/"),
-            ],
-            "reverse list shallow with limit and a directory cursor"
-        );
-    }
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -648,7 +481,6 @@ async fn list_events() {
         format!("pubky://{pubky}/pub/file2"),
         format!("pubky://{pubky}/pub/z.com/a.txt"),
     ];
-
     for url in urls {
         client.put(&url).body(vec![0]).send().await.unwrap();
         client.delete(url).send().await.unwrap();
@@ -720,6 +552,7 @@ async fn list_events() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
@@ -773,6 +606,7 @@ async fn read_after_event() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver_suite();
@@ -848,6 +682,7 @@ async fn dont_delete_shared_blobs() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn stream() {
     // TODO: test better streaming API
     let testnet = EphemeralTestnet::start().await.unwrap();

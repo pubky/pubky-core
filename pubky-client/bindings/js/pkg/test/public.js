@@ -191,8 +191,7 @@ test("list", async (t) => {
   }
 
   {
-    let list = await client.list(url, "a.txt", null, 2);
-
+    let list = await client.list(url, `pubky://${pubky}/pub/example.com/a.txt`, null, 2);
     t.deepEqual(
       list,
       [
@@ -250,7 +249,7 @@ test("list", async (t) => {
   }
 
   {
-    let list = await client.list(url, "d.txt", true, 2);
+    let list = await client.list(url, `pubky://${pubky}/pub/example.com/d.txt`, true, 2);
 
     t.deepEqual(
       list,
@@ -331,7 +330,7 @@ test('list shallow', async (t) => {
   }
 
   {
-    let list = await client.list(url, `example.com/`, false, null, true);
+    let list = await client.list(url, `pubky://${pubky}/pub/example.com/`, false, null, true);
 
     t.deepEqual(
       list,
