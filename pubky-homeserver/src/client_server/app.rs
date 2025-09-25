@@ -167,7 +167,7 @@ impl ClientServer {
 
         let state = AppState::new(
             AuthVerifier::default(),
-            context.db.clone(),
+            context.sql_db.clone(),
             context.file_service.clone(),
             context.config_toml.general.signup_mode.clone(),
             quota_bytes,
