@@ -3,7 +3,7 @@ use reqwest::{Method, StatusCode};
 use pubky_common::session::SessionInfo;
 
 use crate::{
-    AuthToken, Error, PubkyHttpClient, PubkyStorage, Result, global::global_client,
+    AuthToken, Error, PubkyHttpClient, Result, SessionStorage, global::global_client,
     util::check_http_status,
 };
 
@@ -167,8 +167,8 @@ impl PubkySession {
     /// - Requests that target this user’s homeserver automatically carry the
     ///   session cookie.
     ///
-    /// See [`PubkyStorage`] for usage examples.
-    pub fn storage(&self) -> PubkyStorage {
-        PubkyStorage::new_from_session(self)
+    /// See [`SessionStorage`] for usage examples.
+    pub fn storage(&self) -> SessionStorage {
+        SessionStorage::new(self)
     }
 }

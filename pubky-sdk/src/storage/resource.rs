@@ -1,10 +1,22 @@
 //! Typed addressing for files on a Pubky homeserver.
 //!
-//! Accepted inputs for `PubkyResource::parse`:
-//! - `<user_pubkey>/<path>`            (preferred; explicit user)
-//! - `/absolute/path`                  (session-scoped; user supplied elsewhere, must start with `/`)
+//! # Why two address shapes?
+//! Pubky paths come in two *disjoint* forms, each used by a different part of the API:
 //!
-//! Note: We intentionally do **not** accept `https://_pubky.<pk>/...` here.
+//! - [`ResourcePath`]: an **absolute**, URL-safe path like `"/pub/my.app/file"`.
+//!   It contains **no user** information and is used by *session-scoped* (authenticated)
+//!   operations that act “as me”. Example: `session.storage().get("/pub/my.app/file")`.
+//!
+//! - [`PubkyResource`]: an **addressed resource** that pairs a user with an absolute path,
+//!   e.g. `"<public_key>/pub/my.app/file"` or `pubky://<public_key>/pub/my.app/file`.
+//!   It is used by *public* (unauthenticated) operations and any API that must
+//!   target **another user’s** data. Example: `public.get("<pk>/pub/site/index.html")`.
+//!
+//! Keeping these distinct eliminates ambiguity and makes IDE auto-completion
+//! tell you exactly what each method expects.
+//!
+//! We intentionally do **not** accept `https://_pubky.<pk>/...` here; higher-level
+//! APIs handle resolution and URL formation for you.
 
 use std::{fmt, str::FromStr};
 
@@ -12,8 +24,6 @@ use pkarr::PublicKey;
 use url::Url;
 
 use crate::{Error, errors::RequestError};
-
-const EXPECTED_FORMS: &str = "expected `<user>/<path>` (preferred), `/absolute/path` (session scoped) or `pubky://<user>/<path>` (legacy)";
 
 #[inline]
 fn invalid(msg: impl Into<String>) -> Error {
@@ -23,22 +33,50 @@ fn invalid(msg: impl Into<String>) -> Error {
     .into()
 }
 
-/// Absolute, URL-safe homeserver path (always starts with `/`).
+// ============================================================================
+// ResourcePath
+// ============================================================================
+
+/// An **absolute, URL-safe** homeserver path (`/…`), with percent-encoding where needed.
+///
+/// - Always normalized to start with `/`.
+/// - Rejects `.` and `..` segments (no path traversal).
+/// - Rejects empty **internal** segments (i.e., `//`); preserves a trailing `/`.
+/// - Percent-encodes segments using `url::Url` rules (UTF-8).
+///
+/// Accepts both `"pub/my.app/file"` and `"/pub/my.app/file"` and normalizes to an
+/// absolute form.
+///
+/// ### Examples
+/// ```no_run
+/// # use pubky::ResourcePath;
+/// // Parse from &str (relative becomes absolute)
+/// let p = ResourcePath::parse("pub/my.app/file")?;
+/// assert_eq!(p.to_string(), "/pub/my.app/file");
+///
+/// // Trailing slash is preserved
+/// let dir = ResourcePath::parse("/pub/my.app/")?;
+/// assert_eq!(dir.to_string(), "/pub/my.app/");
+///
+/// // Percent-encoding
+/// let enc = ResourcePath::parse("pub/My File.txt")?;
+/// assert_eq!(enc.to_string(), "/pub/My%20File.txt");
+/// # Ok::<(), pubky::Error>(())
+/// ```
+///
+/// ### Errors
+/// Returns [`Error::Request`] (validation) on:
+/// - empty input
+/// - `//` within the path
+/// - `.` or `..` segments
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ResourcePath(String);
+pub struct ResourcePath(String);
 
 impl ResourcePath {
     /// Parse, validate, and normalize to an absolute HTTP-safe path.
     ///
-    /// Rules:
-    /// - Prepend a leading `/` if missing.
-    /// - No empty *internal* segments (rejects `//`), but preserves a trailing `/`.
-    /// - For safety, rejects `.` and `..` segments.
-    /// - Canonicalizes/percent-encodes segments using `url::Url` (UTF-8).
-    ///
-    /// Note: Provide *raw* human-readable segments (e.g. `"pub/My File.txt"`). Any literal `%`
-    /// will be encoded; pre-encoded sequences are **not** interpreted specially.
-    fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
+    /// See type docs for rules and examples.
+    pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
         let raw = s.as_ref();
         if raw.is_empty() {
             return Err(invalid("path cannot be empty"));
@@ -48,19 +86,16 @@ impl ResourcePath {
         let input = if raw.starts_with('/') {
             raw.to_string()
         } else {
-            format!("/{}", raw)
+            format!("/{raw}")
         };
         if input == "/" {
             return Ok(ResourcePath("/".to_string()));
         }
         let wants_trailing = input.ends_with('/');
 
-        // Build via URL segments (handles percent-encoding; no dot-seg normalization here).
-        // Use a dummy URL base.
+        // Build via URL path segments (handles percent-encoding).
         let mut u = Url::parse("dummy:///").map_err(|_| invalid("internal URL setup failed"))?;
-
         {
-            // Clear and rebuild path from validated segments.
             let mut segs = u
                 .path_segments_mut()
                 .map_err(|_| invalid("internal URL path handling failed"))?;
@@ -69,10 +104,9 @@ impl ResourcePath {
             let mut parts = input.trim_start_matches('/').split('/').peekable();
             while let Some(seg) = parts.next() {
                 if seg.is_empty() {
-                    // Empty segment inside the path => "//" (not allowed).
-                    // Allow only the final empty segment that represents a trailing slash.
+                    // Only allow the final empty segment (trailing slash)
                     if parts.peek().is_none() && wants_trailing {
-                        break; // we'll encode trailing slash below
+                        break;
                     }
                     return Err(invalid("path contains empty segment ('//')"));
                 }
@@ -81,7 +115,6 @@ impl ResourcePath {
                 }
                 segs.push(seg);
             }
-
             if wants_trailing {
                 segs.push(""); // encode trailing slash
             }
@@ -90,10 +123,9 @@ impl ResourcePath {
         Ok(ResourcePath(u.path().to_string()))
     }
 
-    /// Borrow this normalized absolute path as `&str`.
-    ///
-    /// Zero-cost: returns a slice into the internal `String` without allocating.
-    fn as_str(&self) -> &str {
+    /// Borrow the normalized absolute path as `&str`.
+    #[inline]
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -111,38 +143,61 @@ impl fmt::Display for ResourcePath {
     }
 }
 
-/// A parsed homeserver address.
-/// - `user: Some(..)` when the input was `<user>/...`
-/// - `user: None`    when the input was an session-scoped path (e.g. `/foo/bar` or `foo/bar`)
+// ============================================================================
+// PubkyResource
+// ============================================================================
+
+/// An **addressed resource**: `(owner: PublicKey, path: ResourcePath)`.
+///
+/// This is the unambiguous “user + absolute path” form used when acting on
+/// **another user’s** data (public reads, etc.).
+///
+/// Accepted inputs for `FromStr`:
+/// - `<public_key>/<abs-path>`
+/// - `pubky://<public_key>/<abs-path>`
+///
+/// Display renders as `<public_key>/<abs-path>`.
+///
+/// ### Examples
+/// ```no_run
+/// # use pkarr::Keypair;
+/// # use pubky::{PubkyResource, ResourcePath};
+/// // Build from parts
+/// let pk = Keypair::random().public_key();
+/// let r = PubkyResource::new(pk.clone(), "/pub/site/index.html")?;
+/// assert_eq!(r.to_string(), format!("{pk}/pub/site/index.html"));
+///
+/// // Parse from string
+/// let parsed: PubkyResource = format!("{pk}/pub/site/index.html").parse()?;
+///
+/// // `pubky://` form
+/// let parsed2: PubkyResource = format!("pubky://{pk}/pub/site/index.html").parse()?;
+///
+/// # Ok::<(), pubky::Error>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PubkyResource {
-    pub(crate) user: Option<PublicKey>,
-    path: ResourcePath,
+    /// The resource owner’s public key.
+    pub owner: PublicKey,
+    /// The owner-relative, normalized absolute path.
+    pub path: ResourcePath,
 }
 
 impl PubkyResource {
-    /// Construct from optional `PublicKey` and any string-y path.
-    pub fn new<S: AsRef<str>>(user: Option<PublicKey>, path: S) -> Result<Self, Error> {
+    /// Construct from `owner` and a path-like value (normalized to [`ResourcePath`]).
+    pub fn new<S: AsRef<str>>(owner: PublicKey, path: S) -> Result<Self, Error> {
         Ok(Self {
-            user,
+            owner,
             path: ResourcePath::parse(path)?,
         })
     }
 
-    /// Returns the owner user `PublicKey` of this resource if known.
-    pub fn owner(&self) -> Option<PublicKey> {
-        self.user.clone()
-    }
-
-    /// `pubky://<user>/<path>` requires a user; provide `default` to fill if missing.
-    pub(crate) fn to_pubky_url(&self, default: Option<&PublicKey>) -> Result<String, Error> {
-        let user = match (&self.user, default) {
-            (Some(u), _) => u,
-            (None, Some(d)) => d,
-            (None, None) => return Err(invalid("missing user for pubky URL rendering")),
-        };
+    /// Render as `pubky://<owner>/<abs-path>` (deep-link form).
+    ///
+    /// This is crate-internal but documented here for clarity.
+    pub(crate) fn to_pubky_url(&self) -> String {
         let rel = self.path.as_str().trim_start_matches('/');
-        Ok(format!("pubky://{}/{}", user, rel))
+        format!("pubky://{}/{}", self.owner, rel)
     }
 }
 
@@ -150,65 +205,122 @@ impl FromStr for PubkyResource {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // 1) Legacy scheme: pubky://<user>/<path>
+        // 1) pubky://<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky://") {
             let (user_str, path) = rest
                 .split_once('/')
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
-
             let user = PublicKey::try_from(user_str)
                 .map_err(|_| invalid(format!("invalid user public key: {user_str}")))?;
-            return PubkyResource::new(Some(user), path);
+            return PubkyResource::new(user, path);
         }
 
-        // 2) `<user>/<path>`?
+        // 2) `<user>/<path>` (must have a slash separating pk and rest)
         if let Some((user_id, path)) = s.split_once('/') {
-            if let Ok(user) = PublicKey::try_from(user_id) {
-                return PubkyResource::new(Some(user), path);
-            } else if !s.starts_with('/') {
-                return Err(invalid(EXPECTED_FORMS));
-            }
+            let user = PublicKey::try_from(user_id)
+                .map_err(|_| invalid("expected `<user>/<path>` or `pubky://<user>/<path>`"))?;
+            return PubkyResource::new(user, path);
         }
 
-        // 3) Agent-scoped path: must start with '/'
-        if s.starts_with('/') {
-            return PubkyResource::new(None, s);
-        }
-
-        Err(invalid(EXPECTED_FORMS))
+        Err(invalid(
+            "expected `<user>/<path>` or `pubky://<user>/<path>`",
+        ))
     }
 }
 
 impl fmt::Display for PubkyResource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.user {
-            Some(u) => {
-                let rel = self.path.as_str().trim_start_matches('/');
-                write!(f, "{}/{}", u, rel)
-            }
-            None => write!(f, "{}", self.path.as_str()),
-        }
+        let rel = self.path.as_str().trim_start_matches('/');
+        write!(f, "{}/{}", self.owner, rel)
     }
 }
 
-// --- Conversions ---
-/// Minimal, ergonomic conversions accepted by high-level APIs.
+// ============================================================================
+// Conversion traits
+// ============================================================================
+
+/// Convert common input types into a normalized [`ResourcePath`] (absolute).
 ///
-/// Use this trait to normalize user input into a validated [`PubkyResource`]
-/// without having to call `FromStr` manually. Implementations exist for:
-/// - `&str` and `String` (parsed forms described above)
-/// - `(PublicKey, P: AsRef<str>)` and `(&PublicKey, P: AsRef<str>)`
-///   to pair an explicit user with a relative path
+/// This trait is intentionally implemented for the “obvious” path-like things:
+/// - `ResourcePath` / `&ResourcePath` (pass-through / clone)
+/// - `&str`, `String`, and `&String`
+///
+/// It is used by *session-scoped* storage methods (`SessionStorage`) that act as
+/// the current user and therefore do **not** need a `PublicKey`.
+///
+/// ### Examples
+/// ```no_run
+/// # use pubky::{IntoResourcePath, ResourcePath};
+/// fn takes_abs<P: IntoResourcePath>(p: P) -> pubky::Result<ResourcePath> {
+///     p.into_abs_path()
+/// }
+///
+/// let a = takes_abs("/pub/my.app/file")?;
+/// let b = takes_abs("pub/my.app/file")?;
+/// assert_eq!(a, b);
+/// # Ok::<(), pubky::Error>(())
+/// ```
+pub trait IntoResourcePath {
+    /// Convert into a validated, normalized absolute [`ResourcePath`].
+    fn into_abs_path(self) -> Result<ResourcePath, Error>;
+}
+
+impl IntoResourcePath for ResourcePath {
+    #[inline]
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        Ok(self)
+    }
+}
+impl IntoResourcePath for &ResourcePath {
+    #[inline]
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        Ok(self.clone())
+    }
+}
+impl IntoResourcePath for &str {
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        ResourcePath::from_str(self)
+    }
+}
+impl IntoResourcePath for String {
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        ResourcePath::from_str(&self)
+    }
+}
+impl IntoResourcePath for &String {
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        ResourcePath::from_str(self.as_str())
+    }
+}
+
+/// Convert common input types into a normalized, **addressed** [`PubkyResource`].
+///
+/// Implementations:
+/// - `PubkyResource` / `&PubkyResource` (pass-through / clone)
+/// - `&str`, `String`, `&String` parsed as `<pk>/<abs-path>` or `pubky://<pk>/<abs-path>`
+/// - `(PublicKey, P: AsRef<str>)` and `(&PublicKey, P: AsRef<str>)` to pair a key with a path
+///
+/// This trait is used by *public* storage methods (`PublicStorage`) and any API that must
+/// reference **another user’s** data explicitly.
+///
+/// ### Examples
+/// ```no_run
+/// # use pkarr::Keypair;
+/// # use pubky::{IntoPubkyResource, PubkyResource};
+/// let user = Keypair::random().public_key();
+///
+/// // Pair (pk, path)
+/// let r1 = (user.clone(), "/pub/site/index.html").into_pubky_resource()?;
+///
+/// // Parse `<pk>/<path>`
+/// let r2: PubkyResource = format!("{}/pub/site/index.html", user).parse()?;
+///
+/// // Parse `pubky://`
+/// let r3: PubkyResource = format!("pubky://{}/pub/site/index.html", user).parse()?;
+/// # Ok::<(), pubky::Error>(())
+/// ```
 pub trait IntoPubkyResource {
-    /// Convert `self` into a validated [`PubkyResource`].
-    ///
-    /// Normalizes to an absolute, percent-encoded homeserver path and, if present,
-    /// binds the explicit user. Errors with [`Error::Request`] (validation) when the
-    /// input is malformed (e.g., contains `//`, `.` / `..`, or a bad public key).
-    ///
-    /// Examples (pseudo):
-    /// - `"/pub/my.app/file".into_pubky_resource()` -> session-scoped resource
-    /// - `(user_pk, "pub/my.app/file").into_pubky_resource()` ⇒ explicit user + relative path
+    /// Convert into a validated, normalized [`PubkyResource`].
     fn into_pubky_resource(self) -> Result<PubkyResource, Error>;
 }
 
@@ -235,19 +347,18 @@ impl IntoPubkyResource for String {
     }
 }
 impl IntoPubkyResource for &String {
-    #[inline]
     fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
         PubkyResource::from_str(self.as_str())
     }
 }
 impl<P: AsRef<str>> IntoPubkyResource for (PublicKey, P) {
     fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
-        PubkyResource::new(Some(self.0), self.1.as_ref())
+        PubkyResource::new(self.0, self.1.as_ref())
     }
 }
 impl<P: AsRef<str>> IntoPubkyResource for (&PublicKey, P) {
     fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
-        PubkyResource::new(Some(self.0.clone()), self.1.as_ref())
+        PubkyResource::new(self.0.clone(), self.1.as_ref())
     }
 }
 
@@ -281,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_explicit_user_both_forms() {
+    fn parse_addressed_user_both_forms() {
         let kp = Keypair::random();
         let user = kp.public_key();
         let s1 = format!("pubky://{}/pub/my.app/file", user);
@@ -290,35 +401,37 @@ mod tests {
         let p1 = PubkyResource::from_str(&s1).unwrap();
         let p2 = PubkyResource::from_str(&s2).unwrap();
 
-        assert_eq!(p1.user, Some(user.clone()));
-        assert_eq!(p2.user, Some(user.clone()));
+        assert_eq!(p1.owner, user);
+        assert_eq!(p2.owner, user);
         assert_eq!(p1.path.as_str(), "/pub/my.app/file");
         assert_eq!(p2.path.as_str(), "/pub/my.app/file");
 
         // Display: explicit user form
         assert_eq!(p1.to_string(), s2);
-        // URL rendering without default is fine when user exists
-        assert_eq!(p1.to_pubky_url(None).unwrap(), s1);
+        // Deep-link rendering (no default needed; owner is known)
+        assert_eq!(p1.to_pubky_url(), s1);
     }
 
     #[test]
-    fn parse_session_scoped_paths() {
-        // Absolute, session-scoped path is OK
-        let p_abs = PubkyResource::from_str("/pub/my.app/file").unwrap();
-        assert!(p_abs.user.is_none());
-        assert_eq!(p_abs.path.as_str(), "/pub/my.app/file");
+    fn session_scoped_paths_and_rendering() {
+        // Session-scoped absolute path is represented by ResourcePath
+        let p_abs = ResourcePath::parse("/pub/my.app/file").unwrap();
+        assert_eq!(p_abs.as_str(), "/pub/my.app/file");
 
-        // Relative session-scoped (no leading slash) is rejected
+        // PubkyResource::from_str("/...") must fail (owner is required)
         assert!(matches!(
-            PubkyResource::from_str("pub/my.app/file"),
+            PubkyResource::from_str("/pub/my.app/file"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
-        // Rendering a pubky:// URL from an session-scoped path requires a default user
+        // To render a pubky:// URL, pair with an explicit owner
         let kp = Keypair::random();
         let user = kp.public_key();
-        let url = p_abs.to_pubky_url(Some(&user)).unwrap();
-        assert_eq!(url, format!("pubky://{}/pub/my.app/file", user));
+        let r = PubkyResource::new(user.clone(), p_abs.as_str()).unwrap();
+        assert_eq!(
+            r.to_pubky_url(),
+            format!("pubky://{}/pub/my.app/file", user)
+        );
     }
 
     #[test]

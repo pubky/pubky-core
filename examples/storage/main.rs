@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::env;
 
-use pubky::{PubkyHttpClient, PubkyStorage};
+use pubky::{PubkyHttpClient, PublicStorage};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     }
 
     // For a basic GET request to any homeserver no session or key material is needed.
-    let storage = PubkyStorage::new_public()?;
+    let storage = PublicStorage::new()?;
 
     // Build the request
     let response = storage.get(args.resource).await?;

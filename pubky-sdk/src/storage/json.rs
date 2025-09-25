@@ -1,27 +1,21 @@
 use reqwest::Response;
 
-use super::core::PubkyStorage;
-use super::resource::IntoPubkyResource;
-
+use super::core::{PublicStorage, SessionStorage};
 use crate::Result;
+use crate::storage::resource::{IntoPubkyResource, IntoResourcePath};
 use crate::util::check_http_status;
 
-impl PubkyStorage {
-    /// GET and deserialize JSON.
+//
+// SessionStorage (as-me)
+//
+
+impl SessionStorage {
+    /// GET and deserialize JSON from an **absolute path**.
     ///
     /// Sets `Accept: application/json` and returns `T` via `resp.json()`.
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use serde::Deserialize;
-    /// # #[derive(Deserialize)] struct Info { version: String }
-    /// # async fn ex(storage: pubky::PubkyStorage) -> pubky::Result<()> {
-    /// let info: Info = storage.get_json("pub/my.app/info.json").await?;
-    /// # Ok(()) }
-    /// ```
     pub async fn get_json<P, T>(&self, path: P) -> Result<T>
     where
-        P: IntoPubkyResource,
+        P: IntoResourcePath,
         T: serde::de::DeserializeOwned,
     {
         let resp = self
@@ -30,27 +24,16 @@ impl PubkyStorage {
             .header(reqwest::header::ACCEPT, "application/json")
             .send()
             .await?;
-        let resp = crate::util::check_http_status(resp).await?;
+        let resp = check_http_status(resp).await?;
         Ok(resp.json::<T>().await?)
     }
 
-    /// PUT JSON and return the raw `Response`.
+    /// PUT JSON to an **absolute path** and return the raw `Response`.
     ///
     /// Serializes `body` as JSON.
-    /// Require an authenticated session for writes.
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use serde::Serialize;
-    /// # #[derive(Serialize)] struct Info { version: String }
-    /// # async fn ex(storage: pubky::PubkyStorage) -> pubky::Result<()> {
-    /// let info = Info { version: "42".into() };
-    /// storage.put_json("pub/my.app/info.json", &info).await?;
-    /// # Ok(()) }
-    /// ```
     pub async fn put_json<P, B>(&self, path: P, body: &B) -> Result<Response>
     where
-        P: IntoPubkyResource,
+        P: IntoResourcePath,
         B: serde::Serialize + ?Sized,
     {
         let resp = self
@@ -60,5 +43,27 @@ impl PubkyStorage {
             .send()
             .await?;
         check_http_status(resp).await
+    }
+}
+
+//
+// PublicStorage (read-only)
+//
+
+impl PublicStorage {
+    /// GET and deserialize JSON from an **addressed resource**.
+    pub async fn get_json<A, T>(&self, addr: A) -> Result<T>
+    where
+        A: IntoPubkyResource,
+        T: serde::de::DeserializeOwned,
+    {
+        let resp = self
+            .request(reqwest::Method::GET, addr)
+            .await?
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await?;
+        let resp = check_http_status(resp).await?;
+        Ok(resp.json::<T>().await?)
     }
 }

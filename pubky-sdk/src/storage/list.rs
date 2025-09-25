@@ -1,51 +1,78 @@
 use reqwest::Method;
 use url::Url;
 
-use super::core::PubkyStorage;
-use super::resource::IntoPubkyResource;
-
+use super::core::{PublicStorage, SessionStorage, dir_trailing_slash_error};
 use crate::Result;
+use crate::storage::resource::{IntoPubkyResource, IntoResourcePath};
 use crate::util::check_http_status;
 
-impl PubkyStorage {
-    /// Directory listing helper.
+impl SessionStorage {
+    /// Directory listing **as me** (authenticated).
     ///
     /// Requirements:
     /// - Path **must** point to a directory and **must end with `/`**.
-    /// - Passing a non-directory path (missing trailing slash) returns
-    ///   `Error::Request(RequestError::Validation)`.
     ///
-    /// # Examples
+    /// Returns absolute entry URLs.
+    ///
+    /// # Example
     /// ```no_run
-    /// # async fn example(storage: pubky::PubkyStorage) -> pubky::Result<()> {
-    /// let urls = storage.list("/pub/my.app/")?.limit(100).shallow(true).send().await?;
+    /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
+    /// let urls = session
+    ///     .storage()
+    ///     .list("/pub/my.app/")?
+    ///     .limit(100)
+    ///     .shallow(true)
+    ///     .send()
+    ///     .await?;
     /// for u in urls { println!("{u}"); }
     /// # Ok(()) }
     /// ```
-    pub fn list<P: IntoPubkyResource>(&self, path: P) -> Result<ListBuilder<'_>> {
-        Ok(ListBuilder {
-            storage: self,
-            url: self.to_url(path)?,
-            reverse: false,
-            shallow: false,
-            limit: None,
-            cursor: None,
-        })
+    pub fn list<P: IntoResourcePath>(&self, path: P) -> Result<ListBuilder<'_>> {
+        let url = self.to_url(path)?;
+        if !url.path().ends_with('/') {
+            return Err(dir_trailing_slash_error().into());
+        }
+        Ok(ListBuilder::session(self, url))
     }
 }
 
-/// Builder for homeserver `LIST` queries.
+impl PublicStorage {
+    /// Directory listing **public** (unauthenticated).
+    ///
+    /// Requirements:
+    /// - Address **must** point to a directory and **must end with `/`**.
+    ///
+    /// Returns absolute entry URLs.
+    pub fn list<A: IntoPubkyResource>(&self, addr: A) -> Result<ListBuilder<'_>> {
+        let url = self.to_url(addr)?;
+        if !url.path().ends_with('/') {
+            return Err(dir_trailing_slash_error().into());
+        }
+        Ok(ListBuilder::public(self, url))
+    }
+}
+
+/// Internal scope for a listing request.
+#[derive(Debug)]
+enum ListScope<'a> {
+    Session(&'a SessionStorage),
+    Public(&'a PublicStorage),
+}
+
+/// Unified builder for homeserver `LIST` queries (works for session & public).
 ///
 /// Configure optional flags like `reverse`, `shallow`, `limit`, and `cursor`,
 /// then call [`send`](Self::send) to perform the request.
 ///
 /// Returned entries are absolute `Url`s.
 ///
-/// See [`PubkyStorage::list`] for examples.
+/// Built via:
+/// - [`SessionStorage::list`] for authenticated “as me” listings.
+/// - [`PublicStorage::list`] for unauthenticated public listings.
 #[derive(Debug)]
 #[must_use]
 pub struct ListBuilder<'a> {
-    storage: &'a PubkyStorage,
+    scope: ListScope<'a>,
     url: Url,
     reverse: bool,
     shallow: bool,
@@ -54,6 +81,30 @@ pub struct ListBuilder<'a> {
 }
 
 impl<'a> ListBuilder<'a> {
+    #[inline]
+    fn session(storage: &'a SessionStorage, url: Url) -> Self {
+        Self {
+            scope: ListScope::Session(storage),
+            url,
+            reverse: false,
+            shallow: false,
+            limit: None,
+            cursor: None,
+        }
+    }
+
+    #[inline]
+    fn public(storage: &'a PublicStorage, url: Url) -> Self {
+        Self {
+            scope: ListScope::Public(storage),
+            url,
+            reverse: false,
+            shallow: false,
+            limit: None,
+            cursor: None,
+        }
+    }
+
     /// List newest-first instead of oldest-first.
     pub fn reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
@@ -79,12 +130,9 @@ impl<'a> ListBuilder<'a> {
     }
 
     /// Execute the LIST request and return entry URLs.
-    ///
-    /// Directory semantics are enforced: if the path didn’t end with `/`, it will be normalized.
     pub async fn send(self) -> Result<Vec<Url>> {
-        // Resolve now (absolute stays absolute, relative is based on session’s homeserver)
+        // 1) Build query params
         let mut url = self.url;
-
         {
             let mut q = url.query_pairs_mut();
             if self.reverse {
@@ -101,16 +149,32 @@ impl<'a> ListBuilder<'a> {
             }
         }
 
-        // Build the request without re-parsing the URL back through IntoPubkyResource
-        let rb = self
-            .storage
-            .client
-            .cross_request(Method::GET, url.clone())
-            .await?;
-        // Attach cookie only when hitting this session’s homeserver (native)
-        #[cfg(not(target_arch = "wasm32"))]
-        let rb = self.storage.maybe_attach_session_cookie(&url, rb);
+        // 2) Build request per scope
+        let rb = match self.scope {
+            ListScope::Public(storage) => {
+                storage
+                    .client
+                    .cross_request(Method::GET, url.clone())
+                    .await?
+            }
+            ListScope::Session(storage) => {
+                let rb = storage
+                    .client
+                    .cross_request(Method::GET, url.clone())
+                    .await?;
+                #[cfg(not(target_arch = "wasm32"))]
+                let rb = {
+                    let cookie_name = storage.user.to_string();
+                    rb.header(
+                        reqwest::header::COOKIE,
+                        format!("{cookie_name}={}", storage.cookie),
+                    )
+                };
+                rb
+            }
+        };
 
+        // 3) Send and parse
         let resp = rb.send().await?;
         let resp = check_http_status(resp).await?;
 

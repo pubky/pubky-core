@@ -1,86 +1,47 @@
 use reqwest::{Method, Response, StatusCode};
 
-use super::core::PubkyStorage;
-use super::resource::IntoPubkyResource;
-
+use super::core::{PublicStorage, SessionStorage};
+use super::resource::{IntoPubkyResource, IntoResourcePath};
 use crate::Result;
 use crate::storage::stats::ResourceStats;
 use crate::util::check_http_status;
 
-impl PubkyStorage {
-    fn ensure_session_for_write(&self) -> Result<()> {
-        if self.has_session {
-            return Ok(());
-        }
-        Err(crate::errors::AuthError::Validation(
-            "write requires an authenticated session (use session.storage())".into(),
-        )
-        .into())
-    }
+//
+// SessionStorage (authenticated, as-me)
+//
 
-    /// HTTP `GET`.
+impl SessionStorage {
+    /// HTTP `GET` (as me) for an **absolute path**.
     ///
-    /// - In **session mode**, attaches the session's cookie when targeting that user’s homeserver.
-    /// - In **public mode**, unauthenticated read against user-qualified paths.
-    ///
-    /// # Examples
+    /// # Example
     /// ```no_run
-    /// # use pubky::PubkyStorage;
-    /// # async fn example() -> pubky::Result<()> {
-    /// let storage = PubkyStorage::new_public()?;
-    /// let resp = storage.get("{user_id}/pub/my.app/data.bin").await?;
-    /// let bytes = resp.bytes().await?;
+    /// # async fn ex(session: pubky::PubkySession) -> pubky::Result<()> {
+    /// let text = session
+    ///     .storage()
+    ///     .get("/pub/my.app/hello.txt").await?
+    ///     .text().await?;
     /// # Ok(()) }
     /// ```
-    pub async fn get<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {
+    pub async fn get<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
         let resp = self.request(Method::GET, path).await?.send().await?;
         check_http_status(resp).await
     }
 
-    /// Lightweight existence check (no body download).
-    ///
-    /// Issues a `HEAD` request after resolving `path`. Returns:
-    /// - `Ok(true)` for 2xx
-    /// - `Ok(false)` for 404/410
-    /// - `Err(..)` for any other status or transport error
-    ///
-    /// Works in public or session mode. In session mode, attaches the session’s cookie
-    /// when the URL targets this session’s homeserver.
-    pub async fn exists<P: IntoPubkyResource>(&self, path: P) -> Result<bool> {
+    /// Lightweight existence check (HEAD) for an **absolute path**.
+    pub async fn exists<P: IntoResourcePath>(&self, path: P) -> Result<bool> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         match resp.status() {
             s if s.is_success() => Ok(true),
             StatusCode::NOT_FOUND | StatusCode::GONE => Ok(false),
             _ => {
-                // Map non-success/404/410 via our helper (returns Err).
                 let _ = check_http_status(resp).await?;
-                // Unreachable: check_http_status above would have errored.
                 Ok(false)
             }
         }
     }
 
-    /// Retrieve metadata via `HEAD` (no body).
-    ///
-    /// Returns the response headers for existing resources, or `Ok(None)` for
-    /// 404/410. Other non-2xx statuses (and transport errors) are returned as
-    /// errors. Metadata includes `content-length`, `content-type`, `etag`,
-    /// and `last-modified`, see [`ResourceStats`].
-    ///
-    /// Works in public or session mode.
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use pubky::PubkyStorage;
-    /// # async fn example() -> pubky::Result<()> {
-    /// let storage = PubkyStorage::new_public()?;
-    /// let resource_stats = storage.stats("{public_key}/pub/my.app/data.bin").await?;
-    /// if let Some(stats) = resource_stats {
-    ///     println!("size: {:?}", stats.content_length);
-    /// }
-    /// # Ok(()) }
-    /// ```
-    pub async fn stats<P: IntoPubkyResource>(&self, path: P) -> Result<Option<ResourceStats>> {
+    /// Retrieve metadata via `HEAD` for an **absolute path** (no body).
+    pub async fn stats<P: IntoResourcePath>(&self, path: P) -> Result<Option<ResourceStats>> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
         if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
             return Ok(None);
@@ -89,23 +50,14 @@ impl PubkyStorage {
         Ok(Some(ResourceStats::from_headers(resp.headers())))
     }
 
-    /// HTTP `PUT`.
+    /// HTTP `PUT` (write) for an **absolute path**.
     ///
-    /// Requires a session (server authorization). In public mode, this request will be
-    /// rejected, as servers will reject writes (401/403).
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
-    /// session.storage().put("/pub/my.app/hello.txt", "hello").await?; // must start with leading `/`
-    /// # Ok(()) }
-    /// ```
+    /// Requires a valid session; this handle is authenticated already.
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
     where
-        P: IntoPubkyResource,
+        P: IntoResourcePath,
         B: Into<reqwest::Body>,
     {
-        self.ensure_session_for_write()?;
         let resp = self
             .request(Method::PUT, path)
             .await?
@@ -115,20 +67,53 @@ impl PubkyStorage {
         check_http_status(resp).await
     }
 
-    /// HTTP `DELETE`.
-    ///
-    /// Requires a session (server authorization). In public mode, this request will be
-    /// rejected, as servers will reject writes (401/403).
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
-    /// session.storage().delete("/pub/my.app/hello.txt").await?; // must start with leading `/`
-    /// # Ok(()) }
-    /// ```
-    pub async fn delete<P: IntoPubkyResource>(&self, path: P) -> Result<Response> {
-        self.ensure_session_for_write()?;
+    /// HTTP `DELETE` for an **absolute path**.
+    pub async fn delete<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
         let resp = self.request(Method::DELETE, path).await?.send().await?;
         check_http_status(resp).await
+    }
+}
+
+//
+// PublicStorage (unauthenticated, any user)
+//
+
+impl PublicStorage {
+    /// HTTP `GET` for an **addressed resource** (`<pk>/<abs-path>` or `pubky://…`).
+    ///
+    /// # Example
+    /// ```no_run
+    /// # async fn ex() -> pubky::Result<()> {
+    /// let storage = pubky::PublicStorage::new()?;
+    /// let resp = storage.get("{other_pk}/pub/my.app/file.txt").await?;
+    /// let bytes = resp.bytes().await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn get<A: IntoPubkyResource>(&self, addr: A) -> Result<Response> {
+        let resp = self.request(Method::GET, addr).await?.send().await?;
+        check_http_status(resp).await
+    }
+
+    /// HEAD existence check for an addressed resource.
+    pub async fn exists<A: IntoPubkyResource>(&self, addr: A) -> Result<bool> {
+        let resp = self.request(Method::HEAD, addr).await?.send().await?;
+        match resp.status() {
+            s if s.is_success() => Ok(true),
+            StatusCode::NOT_FOUND | StatusCode::GONE => Ok(false),
+            _ => {
+                let _ = check_http_status(resp).await?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// Metadata via `HEAD` for an addressed resource (no body).
+    pub async fn stats<A: IntoPubkyResource>(&self, addr: A) -> Result<Option<ResourceStats>> {
+        let resp = self.request(Method::HEAD, addr).await?.send().await?;
+        if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
+            return Ok(None);
+        }
+        let resp = check_http_status(resp).await?;
+        Ok(Some(ResourceStats::from_headers(resp.headers())))
     }
 }

@@ -14,14 +14,14 @@ pub use crate::PubkySigner;
 // Authentication flow for apps.
 pub use crate::PubkyAuthFlow;
 // Homeserver storage API (http verbs + list)
-pub use crate::PubkyStorage;
+pub use crate::{PublicStorage, SessionStorage};
 // Pkdns/Pkarr retrieval and publishing
 pub use crate::Pkdns;
 
 // Helpers
 pub use crate::{Method, StatusCode};
 // Homeserver Resources Paths / URLs
-pub use crate::{IntoPubkyResource, PubkyResource, ResourceStats};
+pub use crate::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath, ResourceStats};
 // Capabilities for auth flows
 pub use crate::{Capabilities, Capability};
 // Secret recovery utilities

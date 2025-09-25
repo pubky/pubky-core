@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use pubky_testnet::{
     pubky::{
-        errors::RequestError, global_client, Error, Method, PubkyResource, PubkySigner,
-        PubkyStorage, StatusCode,
+        errors::RequestError, global_client, Error, Method, PubkySigner, PublicStorage, StatusCode,
     },
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
@@ -29,30 +28,8 @@ async fn put_get_delete() {
         .error_for_status()
         .unwrap();
 
-    // let's repeat the same request but using a strongly typed PubkyResource based over our own homeserver (user=None)
-    let path_pubky = PubkyResource::new(None, "/pub/foo.txt").unwrap();
-
-    session
-        .storage()
-        .put(path_pubky, vec![0, 1, 2, 3, 4])
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
-
-    // again same request but using a tuple
-    let tuple_path = (session.info().public_key(), "/pub/foo.txt");
-
-    session
-        .storage()
-        .put(tuple_path, vec![0, 1, 2, 3, 4])
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
-
     // Use Pubky native method to get data from homeserver
-    let response = PubkyStorage::new_public()
+    let response = PublicStorage::new()
         .unwrap()
         .get(format!("{pubky}/{path}"))
         .await
@@ -131,7 +108,7 @@ async fn put_then_get_json_roundtrip() {
     let _ = session.storage().put_json(path, &expected).await;
 
     // Read back as strongly-typed JSON and assert equality.
-    let got: Payload = PubkyStorage::new_public()
+    let got: Payload = PublicStorage::new()
         .unwrap()
         .get_json(format!("{}/{path}", pubky))
         .await
@@ -234,51 +211,52 @@ async fn unauthorized_put_delete() {
 
     // Owner user
     let owner = PubkySigner::random().unwrap();
-    let owner_pubky = owner.public_key().clone();
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
 
     // Other user (will attempt unauthorized ops)
     let other = PubkySigner::random().unwrap();
     let other_session = other.signup(&server.public_key(), None).await.unwrap();
 
-    let rel_path = "/pub/foo.txt";
+    let path = "/pub/foo.txt";
 
-    // Other tries to write to owner's namespace → 401 Unauthorized
-    let err = other_session
-        .storage()
-        .put((owner_pubky.clone(), rel_path), vec![0, 1, 2, 3, 4])
+    // Someone tries to write to owner's namespace -> 401 Unauthorized
+    let owner_url = format!(
+        "pubky://{}/{}",
+        owner_session.info().public_key(),
+        path.trim_start_matches('/')
+    );
+
+    let client = global_client().unwrap();
+    let response = client
+        .request(Method::PUT, &owner_url)
+        .body(vec![0, 1, 2, 3, 4])
+        .send()
         .await
-        .unwrap_err();
-    assert!(matches!(
-        err,
-        Error::Request(RequestError::Server { status, .. })
-            if status == StatusCode::UNAUTHORIZED
-    ));
+        .unwrap();
+
+    assert!(matches!(response.status(), StatusCode::UNAUTHORIZED));
 
     // Owner writes successfully
     let resp = owner_session
         .storage()
-        .put(rel_path, vec![0, 1, 2, 3, 4])
+        .put(path, vec![0, 1, 2, 3, 4])
         .await
         .unwrap();
     assert!(resp.status().is_success());
 
     // Other tries to delete owner's file → 401 Unauthorized
-    let err = other_session
-        .storage()
-        .delete((owner_pubky.clone(), rel_path))
+    let response = client
+        .request(Method::DELETE, &owner_url)
+        .send()
         .await
-        .unwrap_err();
-    assert!(matches!(
-        err,
-        Error::Request(RequestError::Server { status, .. })
-            if status == StatusCode::UNAUTHORIZED
-    ));
+        .unwrap();
+
+    assert!(matches!(response.status(), StatusCode::UNAUTHORIZED));
 
     // Owner can read contents
     let body = owner_session
         .storage()
-        .get(rel_path)
+        .get(path)
         .await
         .unwrap()
         .bytes()
@@ -353,7 +331,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::new_public()
+        let list = PublicStorage::new()
             .unwrap()
             .list(format!("{pubky}{path}"))
             .unwrap()
@@ -397,7 +375,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::new_public()
+        let list = PublicStorage::new()
             .unwrap()
             .list(format!("{pubky}{path}"))
             .unwrap()
@@ -441,7 +419,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::new_public()
+        let list = PublicStorage::new()
             .unwrap()
             .list(format!("{pubky}{path}"))
             .unwrap()
@@ -465,7 +443,7 @@ async fn list() {
     }
 
     {
-        let list = PubkyStorage::new_public()
+        let list = PublicStorage::new()
             .unwrap()
             .list(format!("{pubky}{path}"))
             .unwrap()
@@ -541,7 +519,7 @@ async fn list_shallow() {
 
     // shallow (no limit, no cursor)
     {
-        let list = PubkyStorage::new_public()
+        let list = PublicStorage::new()
             .unwrap()
             .list(format!("{pubky}/{path}"))
             .unwrap()
@@ -877,19 +855,19 @@ async fn read_after_event() {
     }
 
     // Now the file should exist
-    PubkyStorage::new_public()
+    PublicStorage::new()
         .unwrap()
         .exists(url.clone())
         .await
         .unwrap();
     // Provide metadata
-    PubkyStorage::new_public()
+    PublicStorage::new()
         .unwrap()
         .stats(url.clone())
         .await
         .unwrap();
     // And be fetchable
-    let resp = PubkyStorage::new_public().unwrap().get(url).await.unwrap();
+    let resp = PublicStorage::new().unwrap().get(url).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.bytes().await.unwrap();
     assert_eq!(body.as_ref(), &[0]);
