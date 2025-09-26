@@ -2,7 +2,7 @@
   "name": "@synonymdev/pubky",
   "type": "module",
   "description": "Pubky client",
-  "version": "0.5.4",
+  "version": "0.6.0-rc.4",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -12,7 +12,7 @@
     "testnet": "cargo run -p pubky-testnet",
     "test": "npm run test-nodejs && npm run test-browser",
     "test-nodejs": "tape test/*.js -cov",
-    "test-browser": "browserify test/*.js -p esmify | npx tape-run",
+    "test-browser": "browserify test/*.js -p esmify | xvfb-run -a npx tape-run",
     "build": "cargo run --bin bundle_pubky_npm",
     "prepublishOnly": "npm run build"
   },
