@@ -14,7 +14,7 @@ use pubky_common::recovery_file::Error as RecoveryFileError;
 /// A union type of all possible machine-readable codes for the `name` property
 /// of a {@link PubkyJsError}.
 ///
-/// This provides a simplified, actionable set of error categories for developers
+/// Provides a simplified, actionable set of error categories for developers
 /// to handle in their code.
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
@@ -112,6 +112,7 @@ impl From<pubky::Error> for PubkyJsError {
             pubky::Error::Parse(_) => PubkyErrorName::InvalidInput,
             pubky::Error::Authentication(_) => PubkyErrorName::AuthenticationError,
             pubky::Error::Pkarr(_) => PubkyErrorName::PkarrError,
+            pubky::Error::Build(_) => PubkyErrorName::InternalError,
         };
 
         Self::new_with_data(name, err, data)
