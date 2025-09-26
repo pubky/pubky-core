@@ -31,23 +31,24 @@ test("session: put/get/delete, public: get", async (t) => {
 
   // 2) Write as the user via SessionStorage (absolute path)
   await session.storage().putJson(path, json);
-  // 2.1) Read data as the user via SessionStorage (absolute path)
+
+  // 3) Read data as the user via SessionStorage (absolute path)
   {
     const got = await session.storage().getJson(path, json);
     t.deepEqual(got, { foo: "bar" }, "public getJson matches");
   }
 
-  // 3) Read publicly (no auth) via PublicStorage
+  // 4) Read publicly (no auth) via PublicStorage
   const publicStorage = new PublicStorage();
   {
     const got = await publicStorage.getJson(addr);
     t.deepEqual(got, { foo: "bar" }, "public getJson matches");
   }
 
-  // 4) Delete as the user
+  // 5) Delete as the user
   await session.storage().delete(path);
 
-  // 5) Public GET should 404 now
+  // 6) Public GET should 404 now
   try {
     await publicStorage.getJson(addr);
     t.fail("public getJson after delete should 404");
@@ -60,51 +61,63 @@ test("session: put/get/delete, public: get", async (t) => {
   t.end();
 });
 
-// test("not found", async (t) => {
-//   const client = Client.testnet();
+test("not found", async (t) => {
+  useTestnet();
 
-//   const keypair = Keypair.random();
+  // signup just to have a valid user id (we never write the file)
+  const signer = Signer.random();
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   const signupToken = await createSignupToken(client);
+  const userPk = session.publicKey();
+  const addr = `${userPk.z32()}/pub/example.com/definitely-missing.json`;
 
-//   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  const publicStorage = new PublicStorage();
 
-//   const publicKey = keypair.publicKey();
+  // exists() should be false
+  t.equal(
+    await publicStorage.exists(addr),
+    false,
+    "exists() is false on missing path",
+  );
 
-//   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
+  // getJson() should throw mapped request error with 404
+  try {
+    await publicStorage.getJson(addr);
+    t.fail("getJson() should throw on missing");
+  } catch (e) {
+    t.equal(e.name, "RequestError", "mapped error name");
+    t.equal(e.statusCode, 404, "status code 404");
+  }
 
-//   let result = await client.fetch(url);
+  t.end();
+});
 
-//   t.is(result.status, 404);
-// });
+test("unauthorized (no cookie) PUT returns 401", async (t) => {
+  useTestnet();
 
-// test("unauthorized", async (t) => {
-//   const client = Client.testnet();
+  // Sign up + then sign out to clear cookie for this host
+  const signer = Signer.random();
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   const keypair = Keypair.random();
-//   const publicKey = keypair.publicKey();
+  const userPk = session.publicKey();
+  const url = `pubky://${userPk.z32()}/pub/example.com/unauth.json`;
 
-//   const signupToken = await createSignupToken(client);
+  await session.signout(); // server clears cookie; subsequent writes should be 401
 
-//   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  // Issue a raw fetch PUT (with credentials) to that user's host - there is no valid cookie now
+  const client = Client.testnet();
+  const resp = await client.fetch(url, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ foo: "bar" }),
+    credentials: "include",
+  });
 
-//   const session = await client.session(publicKey);
-//   t.ok(session, "signup");
-
-//   await client.signout(publicKey);
-
-//   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
-
-//   // PUT public data, by authorized client
-//   let response = await client.fetch(url, {
-//     method: "PUT",
-//     body: JSON.stringify({ foo: "bar" }),
-//     contentType: "json",
-//     credentials: "include",
-//   });
-
-//   t.equals(response.status, 401);
-// });
+  t.equal(resp.status, 401, "PUT without valid session cookie is 401");
+  t.end();
+});
 
 // test("forbidden", async (t) => {
 //   const client = Client.testnet();
