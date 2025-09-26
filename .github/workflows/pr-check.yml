@@ -144,6 +144,30 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install Electron/X deps
+        run: |
+          set -eux
+          sudo apt-get update
+          # base deps (don’t include libasound here so a single missing package doesn’t abort)
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libgtk-3-0 \
+            libnss3 \
+            libxss1 \
+            libx11-xcb1 \
+            libxcb-dri3-0 \
+            libdrm2 \
+            libgbm1 \
+            libxdamage1 \
+            libxshmfence1 \
+            libxtst6
+          # asound: Ubuntu 24.04 uses libasound2t64; older images still use libasound2
+          sudo apt-get install -y --no-install-recommends libasound2t64 || \
+          sudo apt-get install -y --no-install-recommends libasound2
+
+      - name: Sanity Check (Electron works)
+        run: xvfb-run -a npx electron --no-sandbox --version
+
       - name: Build WASM
         working-directory: pubky-sdk/bindings/js/pkg
         run: |
@@ -169,9 +193,17 @@ jobs:
           done
           echo "Testnet homeserver is ready."
 
-      - name: Run Tests (browser and node-js)
+      - name: Node tests
         working-directory: pubky-sdk/bindings/js/pkg
-        run: npm run test
+        run: npm run test-nodejs
+
+      - name: Browser tests (Electron under Xvfb)
+        working-directory: pubky-sdk/bindings/js/pkg
+        env:
+          ELECTRON_DISABLE_SANDBOX: "1" # CI-safe
+        run: |
+          npx electron --version || true
+          xvfb-run -a npm run test-browser:ci
 
       - name: Show testnet logs if tests fail
         working-directory: pubky-sdk/bindings/js/pkg

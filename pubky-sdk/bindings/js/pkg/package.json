@@ -12,7 +12,8 @@
     "testnet": "cargo run -p pubky-testnet",
     "test": "npm run test-nodejs && npm run test-browser",
     "test-nodejs": "tape test/*.js -cov",
-    "test-browser": "browserify test/*.js -p esmify | xvfb-run -a npx tape-run",
+    "test-browser": "browserify test/*.js -p esmify | npx tape-run",
+    "test-browser:ci": "browserify test/*.js -p esmify | tape-run --browser electron --electron-arg=--no-sandbox --electron-arg=--disable-gpu",
     "build": "cargo run --bin bundle_pubky_npm",
     "prepublishOnly": "npm run build"
   },
