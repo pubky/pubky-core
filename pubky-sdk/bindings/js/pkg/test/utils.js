@@ -1,23 +1,31 @@
-// /**
-//  * Util to request a signup token from the given homeserver as admin.
-//  *
-//  * @param {Client} client - An instance of your client.
-//  * @param {string} homeserver_address - The homeserver's public key (as a domain-like string).
-//  * @param {string} [adminPassword="admin"] - The admin password (defaults to "admin").
-//  * @returns {Promise<string>} - The signup token.
-//  * @throws Will throw an error if the request fails.
-//  */
-// export async function createSignupToken(client, homeserver_address ="localhost:6288", adminPassword = "admin") {
-//   const adminUrl = `http://${homeserver_address}/generate_signup_token`;
-//   const response = await client.fetch(adminUrl, {
-//     method: "GET",
-//     headers: {
-//       "X-Admin-Password": adminPassword,
-//     },
-//   });
-//   if (!response.ok) {
-//     throw new Error(`Failed to get signup token: ${response.statusText}`);
-//   }
+/**
+ * Request a signup token from the homeserver admin endpoint.
+ *
+ * @param {string} [homeserverAddress="localhost:6288"]
+ *   Host:port of the homeserver admin HTTP endpoint (testnet default).
+ * @param {string} [adminPassword="admin"]
+ *   Admin password sent as `X-Admin-Password`.
+ * @returns {Promise<string>} The signup token.
+ */
+export async function createSignupToken(
+  homeserverAddress = "localhost:6288",
+  adminPassword = "admin",
+) {
+  const url = `http://${homeserverAddress}/generate_signup_token`;
 
-//   return response.text();
-// }
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { "X-Admin-Password": adminPassword },
+  });
+
+  const body = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(
+      `Failed to get signup token: ${res.status} ${res.statusText}${
+        body ? ` — ${body}` : ""
+      }`,
+    );
+  }
+
+  return body;
+}

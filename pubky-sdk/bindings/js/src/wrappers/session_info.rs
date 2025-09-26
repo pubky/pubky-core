@@ -10,7 +10,7 @@ pub struct SessionInfo(pub(crate) session::SessionInfo);
 #[wasm_bindgen]
 impl SessionInfo {
     /// Return the [PublicKey] of this session
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "publicKey")]
     pub fn public_key(&self) -> PublicKey {
         self.0.public_key().clone().into()
     }

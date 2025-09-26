@@ -1,59 +1,64 @@
-// import test from "tape";
+import test from "tape";
 
-// import { Client, Keypair, PublicKey, setLogLevel } from "../index.cjs";
-// import { createSignupToken } from "./utils.js";
+import {
+  Client,
+  Signer,
+  PublicStorage,
+  Keypair,
+  PublicKey,
+  setLogLevel,
+  useTestnet,
+} from "../index.cjs";
+import { createSignupToken } from "./utils.js";
 
-// const HOMESERVER_PUBLICKEY = PublicKey.from(
-//   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
-// );
+const HOMESERVER_PUBLICKEY = PublicKey.from(
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+);
 
-// test("public: put/get", async (t) => {
-//   const client = Client.testnet();
+test("session: put/get/delete, public: get", async (t) => {
+  // 0) Point the SDK at the local testnet (relays + wasm HTTP mapping)
+  useTestnet();
 
-//   const keypair = Keypair.random();
+  // 1) Signer & signup -> ready session (cookie stored by browser/wasm fetch)
+  const signer = Signer.random();
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   const signupToken = await createSignupToken(client);
+  const userPk = session.publicKey();
+  const path = "/pub/example.com/arbitrary";
+  const addr = `${userPk.z32()}/pub/example.com/arbitrary`; // addressed for public reads
+  const json = { foo: "bar" };
 
-//   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  // 2) Write as the user via SessionStorage (absolute path)
+  await session.storage().putJson(path, json);
+  // 2.1) Read data as the user via SessionStorage (absolute path)
+  {
+    const got = await session.storage().getJson(path, json);
+    t.deepEqual(got, { foo: "bar" }, "public getJson matches");
+  }
 
-//   const publicKey = keypair.publicKey();
+  // 3) Read publicly (no auth) via PublicStorage
+  const publicStorage = new PublicStorage();
+  {
+    const got = await publicStorage.getJson(addr);
+    t.deepEqual(got, { foo: "bar" }, "public getJson matches");
+  }
 
-//   let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
+  // 4) Delete as the user
+  await session.storage().delete(path);
 
-//   const json = { foo: "bar" };
+  // 5) Public GET should 404 now
+  try {
+    await publicStorage.getJson(addr);
+    t.fail("public getJson after delete should 404");
+  } catch (e) {
+    // Expect your wasm error mapping (RequestError + { statusCode: 404 })
+    t.equal(e.name, "RequestError", "mapped error name");
+    t.equal(e.statusCode, 404, "status code 404");
+  }
 
-//   // PUT public data, by authorized client
-//   await client.fetch(url, {
-//     method: "PUT",
-//     body: JSON.stringify(json),
-//     contentType: "json",
-//     credentials: "include",
-//   });
-
-//   const otherClient = Client.testnet();
-
-//   // GET public data without signup or signin
-//   {
-//     let response = await otherClient.fetch(url);
-
-//     t.is(response.status, 200);
-
-//     t.deepEquals(await response.json(), { foo: "bar" });
-//   }
-
-//   // DELETE public data, by authorized client
-//   await client.fetch(url, {
-//     method: "DELETE",
-//     credentials: "include",
-//   });
-
-//   // GET public data without signup or signin
-//   {
-//     let response = await otherClient.fetch(url);
-
-//     t.is(response.status, 404);
-//   }
-// });
+  t.end();
+});
 
 // test("not found", async (t) => {
 //   const client = Client.testnet();

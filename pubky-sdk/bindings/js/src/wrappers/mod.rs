@@ -1,2 +1,3 @@
 pub mod keys;
-pub mod session;
+pub mod recovery;
+pub mod session_info;

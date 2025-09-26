@@ -18,7 +18,7 @@ use pubky_common::recovery_file::Error as RecoveryFileError;
 /// to handle in their code.
 #[derive(Tsify, Serialize, Deserialize, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub enum PubkyErrorName {
     /// A network or server request failed. Check the network connection or retry.
     RequestError,
@@ -59,12 +59,11 @@ pub struct PubkyJsError {
     pub name: PubkyErrorName,
     pub message: String,
 
-    #[serde(
-        with = "serde_wasm_bindgen::preserve",
-        skip_serializing_if = "JsValue::is_undefined"
-    )]
-    #[tsify(optional, type = "any")]
-    pub data: JsValue,
+    /// For `RequestError::Server`, this carries the numeric HTTP status code (e.g. 404).
+    /// Otherwise `undefined` on the JS side.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub status_code: Option<u16>,
 }
 
 // --- Constructors for Ergonomics ---
@@ -74,16 +73,16 @@ impl PubkyJsError {
         Self {
             name,
             message: message.to_string(),
-            data: JsValue::UNDEFINED,
+            status_code: None,
         }
     }
 
     /// Creates a new error with a name, message, and structured data payload.
-    pub fn new_with_data<T: Display>(name: PubkyErrorName, message: T, data: JsValue) -> Self {
+    pub fn new_with_status<T: Display>(name: PubkyErrorName, message: T, status: u16) -> Self {
         Self {
             name,
             message: message.to_string(),
-            data,
+            status_code: Some(status),
         }
     }
 }
@@ -93,29 +92,19 @@ impl PubkyJsError {
 /// Converts a native `pubky::Error` into a `PubkyJsError`.
 impl From<pubky::Error> for PubkyJsError {
     fn from(err: pubky::Error) -> Self {
-        let mut data = JsValue::UNDEFINED;
         let name = match &err {
-            pubky::Error::Request(req_err) => {
-                if let RequestError::Server { status, .. } = req_err {
-                    // Manually construct the JS object for the data payload.
-                    let obj = js_sys::Object::new();
-                    js_sys::Reflect::set(
-                        &obj,
-                        &"statusCode".into(),
-                        &(status.as_u16() as f64).into(),
-                    )
-                    .unwrap();
-                    data = obj.into();
-                }
-                PubkyErrorName::RequestError
-            }
+            pubky::Error::Request(_) => PubkyErrorName::RequestError,
             pubky::Error::Parse(_) => PubkyErrorName::InvalidInput,
             pubky::Error::Authentication(_) => PubkyErrorName::AuthenticationError,
             pubky::Error::Pkarr(_) => PubkyErrorName::PkarrError,
             pubky::Error::Build(_) => PubkyErrorName::InternalError,
         };
 
-        Self::new_with_data(name, err, data)
+        // If this was a server error, attach status_code; else leave it None.
+        if let pubky::Error::Request(RequestError::Server { status, .. }) = &err {
+            return Self::new_with_status(name, &err, status.as_u16());
+        }
+        Self::new(name, err)
     }
 }
 
@@ -136,11 +125,7 @@ impl From<RecoveryFileError> for PubkyJsError {
 /// Converts a `pubky_common::capabilities::Error` into a `PubkyJsError`.
 impl From<CapabilitiesError> for PubkyJsError {
     fn from(err: CapabilitiesError) -> Self {
-        Self {
-            name: PubkyErrorName::InvalidInput,
-            message: err.to_string(),
-            data: JsValue::UNDEFINED,
-        }
+        Self::new(PubkyErrorName::InvalidInput, err.to_string())
     }
 }
 
@@ -155,6 +140,30 @@ impl From<url::ParseError> for PubkyJsError {
 impl From<PublicKeyError> for PubkyJsError {
     fn from(err: PublicKeyError) -> Self {
         Self::new(PubkyErrorName::InvalidInput, err)
+    }
+}
+
+/// Converts a `serde_wasm_bindgen::Error` (JS <-> Rust value (de)serialization) into `PubkyJsError`.
+impl From<serde_wasm_bindgen::Error> for PubkyJsError {
+    fn from(err: serde_wasm_bindgen::Error) -> Self {
+        // Treat bad JS values / schema mismatches as invalid input.
+        PubkyJsError::new(PubkyErrorName::InvalidInput, err)
+    }
+}
+
+/// Converts a `reqwest::Error` into a `PubkyJsError`.
+impl From<reqwest::Error> for PubkyJsError {
+    fn from(err: reqwest::Error) -> Self {
+        // Try to propagate status when present
+        if let Some(status) = err.status() {
+            PubkyJsError::new_with_status(
+                PubkyErrorName::RequestError,
+                err.to_string(),
+                status.as_u16(),
+            )
+        } else {
+            PubkyJsError::new(PubkyErrorName::RequestError, err.to_string())
+        }
     }
 }
 

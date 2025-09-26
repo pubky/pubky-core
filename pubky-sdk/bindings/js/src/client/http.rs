@@ -5,7 +5,7 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 use web_sys::{Headers, Request, RequestCredentials, RequestInit, ServiceWorkerGlobalScope};
 
-use crate::constructor::Client;
+use super::constructor::Client;
 use crate::js_result::JsResult;
 
 #[wasm_bindgen]
