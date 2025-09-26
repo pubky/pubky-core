@@ -29,6 +29,12 @@ impl Signer {
         self.0.public_key().into()
     }
 
+    /// Get a PKDNS actor bound to this signer's client & keypair (publishing enabled).
+    #[wasm_bindgen]
+    pub fn pkdns(&self) -> crate::pkdns::Pkdns {
+        crate::pkdns::Pkdns(self.0.pkdns())
+    }
+
     /// Sign up at a homeserver and return a ready `Session`.
     #[wasm_bindgen]
     pub async fn signup(

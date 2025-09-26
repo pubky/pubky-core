@@ -1,8 +1,10 @@
 use wasm_bindgen::prelude::*;
 
+pub mod auth_flow;
 pub mod client;
 mod js_error;
 mod js_result;
+pub mod pkdns;
 pub mod runtime;
 pub mod session;
 pub mod signer;

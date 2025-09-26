@@ -1,7 +1,6 @@
 // js/src/client/storage/session.rs
 use js_sys::Uint8Array;
-use serde::{Deserialize, Serialize};
-use tsify::Tsify;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use super::public::ResourceStats;

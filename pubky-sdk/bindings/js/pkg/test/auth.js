@@ -1,117 +1,160 @@
-// import test from "tape";
+import test from "tape";
+import { AuthFlow, Client, Signer, PublicKey, useTestnet } from "../index.cjs";
+import { createSignupToken } from "./utils.js";
 
-// import { Client, Keypair, PublicKey, setLogLevel } from "../index.cjs";
-// import { createSignupToken } from "./utils.js";
+const HOMESERVER_PUBLICKEY = PublicKey.from(
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+);
 
-// const HOMESERVER_PUBLICKEY = PublicKey.from(
-//   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
-// );
-// const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
+// relay base (no trailing slash is fine; the flow will append the channel id)
+const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
-// test("Auth: basic", async (t) => {
-//   const client = Client.testnet();
+test("Auth: basic", async (t) => {
+  useTestnet();
 
-//   const keypair = Keypair.random();
-//   const publicKey = keypair.publicKey();
+  const signer = Signer.random();
+  const signupToken = await createSignupToken();
 
-//   const signupToken = await createSignupToken(client);
+  // 1) Signup -> we have a valid session (cookie stored)
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  t.ok(session, "signup returned a session");
 
-//   // Use the received token to sign up.
-//   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  const userPk = session.publicKey().z32();
+  const path = "/pub/example.com/auth-basic.txt";
 
-//   const session = await client.session(publicKey);
-//   t.ok(session, "signup");
+  // 2) Write while logged in (via SessionStorage)
+  await session.storage().putText(path, "hello world");
 
-//   {
-//     await client.signout(publicKey);
+  // 3) Sign out (invalidates cookie)
+  await session.signout();
 
-//     const session = await client.session(publicKey);
-//     t.notOk(session, "signout");
-//   }
+  // 4) Verify unauthorized write now fails (no session)
+  const client = Client.testnet();
+  const url = `pubky://${userPk}${path}`;
+  const res401 = await client.fetch(url, {
+    method: "PUT",
+    body: "should fail",
+    credentials: "include",
+  });
+  t.equal(res401.status, 401, "PUT without session returns 401");
 
-//   {
-//     await client.signin(keypair);
+  // 5) Sign in again (re-establish session)
+  const session2 = await signer.signin();
+  t.ok(session2, "signin returned a new session");
 
-//     const session = await client.session(publicKey);
-//     t.ok(session, "signin");
-//   }
-// });
+  // 6) Write succeeds again
+  await session2.storage().putText(path, "hello again");
 
-// test("Auth: multi-user (cookies)", async (t) => {
-//   const client = Client.testnet();
+  t.end();
+});
 
-//   const alice = Keypair.random();
-//   const bob = Keypair.random();
+test("Auth: multi-user (cookies)", async (t) => {
+  useTestnet();
 
-//   const aliceSignupToken = await createSignupToken(client);
-//   const bobSignupToken = await createSignupToken(client);
+  const client = Client.testnet();
+  const alice = Signer.random();
+  const bob = Signer.random();
 
-//   await client.signup(alice, HOMESERVER_PUBLICKEY, aliceSignupToken);
+  const aliceSignup = await createSignupToken();
+  const bobSignup = await createSignupToken();
 
-//   let session = await client.session(alice.publicKey());
-//   t.ok(session, "signup");
+  // 1) Signup Alice
+  const aliceSession = await alice.signup(HOMESERVER_PUBLICKEY, aliceSignup);
+  t.ok(aliceSession, "alice signed up");
+  const alicePk = aliceSession.publicKey().z32();
 
-//   {
-//     await client.signup(bob, HOMESERVER_PUBLICKEY, bobSignupToken);
+  // 2) Signup Bob (same cookie jar should now hold *both* sessions)
+  const bobSession = await bob.signup(HOMESERVER_PUBLICKEY, bobSignup);
+  t.ok(bobSession, "bob signed up");
+  const bobPk = bobSession.publicKey().z32();
 
-//     const session = await client.session(bob.publicKey());
-//     t.ok(session, "signup");
-//   }
+  // 3) Write for Bob using generic client.fetch (credentials: include)
+  {
+    const url = `pubky://${bobPk}/pub/example.com/multi-bob.txt`;
+    const r = await client.fetch(url, {
+      method: "PUT",
+      body: "bob-data",
+      credentials: "include",
+    });
+    t.ok(r.ok, "bob can write");
+  }
 
-//   session = await client.session(alice.publicKey());
-//   t.is(
-//     session.pubky().z32(),
-//     alice.publicKey().z32(),
-//     "alice is still signed in",
-//   );
+  // 4) Alice still authenticated and can write too
+  {
+    const url = `pubky://${alicePk}/pub/example.com/multi-alice.txt`;
+    const r = await client.fetch(url, {
+      method: "PUT",
+      body: "alice-data",
+      credentials: "include",
+    });
+    t.ok(r.ok, "alice can still write");
+  }
 
-//   await client.signout(bob.publicKey());
+  // 5) Sign out Bob
+  await bobSession.signout();
 
-//   session = await client.session(alice.publicKey());
-//   t.is(
-//     session.pubky().z32(),
-//     alice.publicKey().z32(),
-//     "alice is still signed in after signout of bob",
-//   );
-// });
+  // 6) Alice still authenticated after Bob signs out
+  {
+    const url = `pubky://${alicePk}/pub/example.com/multi-alice-2.txt`;
+    const r = await client.fetch(url, {
+      method: "PUT",
+      body: "alice-still-ok",
+      credentials: "include",
+    });
+    t.ok(r.ok, "alice still can write after bob signout");
+  }
 
-// test("Auth: 3rd party signin", async (t) => {
-//   let keypair = Keypair.random();
-//   let pubky = keypair.publicKey().z32();
+  // 7) Bob can no longer write
+  {
+    const url = `pubky://${bobPk}/pub/example.com/multi-bob-2.txt`;
+    const r = await client.fetch(url, {
+      method: "PUT",
+      body: "should-fail",
+      credentials: "include",
+    });
+    t.equal(r.status, 401, "bob write fails after signout");
+  }
 
-//   // Third party app side
-//   let capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-//   let client = Client.testnet();
-//   let authRequest = client.authRequest(TESTNET_HTTP_RELAY, capabilities);
+  t.end();
+});
 
-//   let pubkyauthUrl = authRequest.url();
-//   let pubkyauthResponse = authRequest.response();
+test("Auth: 3rd party signin", async (t) => {
+  // Make sure we’re using the local testnet wiring (pkarr relays + http mapping).
+  useTestnet();
 
-//   if (globalThis.document) {
-//     // Skip `sendAuthToken` in browser
-//     // TODO: figure out why does it fail in browser unit tests
-//     // but not in real browser (check pubky-auth-widget.js commented part)
-//     return;
-//   }
+  // The signer (user) we’ll authenticate as.
+  const signer = Signer.random();
+  const pubky = signer.publicKey().z32();
 
-//   // Authenticator side
-//   {
-//     let client = Client.testnet();
+  // Third-party app starts an auth flow with requested capabilities.
+  const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
+  const flow = AuthFlow.start(capabilities, TESTNET_HTTP_RELAY);
 
-//     const signupToken = await createSignupToken(client);
+  const authUrl = flow.authorizationUrl();
 
-//     await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
+  // “Authenticator” side (e.g., Pubky Ring, key manager or user’s device):
+  {
+    // Sign up the signer at the homeserver so it can approve the request.
+    const signupToken = await createSignupToken();
+    await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//     await client.sendAuthToken(keypair, pubkyauthUrl);
-//   }
+    // Approve the third-party request by POSTing the signed, encrypted token to the relay.
+    await signer.approveAuthRequest(authUrl);
+  }
 
-//   let authedPubky = await pubkyauthResponse;
+  // Third-party side: wait until the flow completes and we get a session.
+  const session = await flow.awaitApproval(); // Promise resolving to a Session
 
-//   t.is(authedPubky.z32(), pubky);
+  // Validate it’s the same user and caps match what we requested.
+  t.equal(session.publicKey().z32(), pubky, "session belongs to expected user");
+  t.deepEqual(
+    session.info().capabilities(),
+    capabilities.split(","),
+    "session capabilities match",
+  );
 
-//   let session = await client.session(authedPubky);
-//   t.deepEqual(session.capabilities(), capabilities.split(","));
-// });
+  t.end();
+});
 
 // test("getHomeserver not found", async (t) => {
 //   const client = Client.testnet();
