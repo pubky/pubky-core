@@ -41,10 +41,10 @@ let txt = PublicStorage::new()?
   .text().await?;
 assert_eq!(txt, "hello");
 
-// 5) Publish / resolve your PKDNS (_pubky) record
+// 5) Publish / resolve PKDNS (_pubky) records
 signer.pkdns().publish_homeserver_if_stale(None).await?;
-let resolved = Pkdns::new()?.get_homeserver_of(&signer.public_key()).await;
-println!("current homeserver: {:?}", resolved);
+let resolved = signer.pkdns().get_homeserver().await;
+println!("Your current homeserver: {:?}", resolved);
 
 // 6) Keyless third-party app session via Auth Flow
 let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
@@ -155,13 +155,18 @@ Publish and retrieve pkarr record.
 
 ```rust no_run
 # use pubky::prelude::*;
-# async fn pkdns(signer: &PubkySigner) -> pubky::Result<()> {
+# async fn pkdns(signer: &PubkySigner, public_key: &PublicKey) -> pubky::Result<()> {
 // Republish only if stale (recommended in app start)
 signer.pkdns().publish_homeserver_if_stale(None).await?;
 
 // Force a homeserver record publish (e.g., migration)
 let homeserver = PublicKey::try_from("homeserver_pubky").unwrap();
 signer.pkdns().publish_homeserver_force(Some(&homeserver)).await?;
+
+// Resolve the homeserver of any public key
+let someone_homeserver = Pkdns::new()?.get_homeserver_of(public_key).await;
+println!("Someone else homeserver: {:?}", someone_homeserver);
+
 # Ok(()) }
 ```
 

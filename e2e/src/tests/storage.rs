@@ -215,7 +215,6 @@ async fn unauthorized_put_delete() {
 
     // Other user (will attempt unauthorized ops)
     let other = PubkySigner::random().unwrap();
-    let other_session = other.signup(&server.public_key(), None).await.unwrap();
 
     let path = "/pub/foo.txt";
 
