@@ -213,9 +213,6 @@ async fn unauthorized_put_delete() {
     let owner = PubkySigner::random().unwrap();
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
 
-    // Other user (will attempt unauthorized ops)
-    let other = PubkySigner::random().unwrap();
-
     let path = "/pub/foo.txt";
 
     // Someone tries to write to owner's namespace -> 401 Unauthorized
