@@ -1,7 +1,7 @@
 [package]
 name = "pubky"
 description = "Pubky SDK"
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
 edition = "2024"
 authors = [
     "SeverinAlexB <severin@synonym.to>",
@@ -28,7 +28,7 @@ default = []
 json = ["dep:serde", "dep:serde_json", "reqwest/json"]
 
 [dependencies]
-pubky-common = { path = "../pubky-common", version = "0.6.0-rc.3" }
+pubky-common = { path = "../pubky-common", version = "0.6.0-rc.4" }
 thiserror = "2.0.11"
 url = "2.5.4"
 bytes = "^1.10.0"

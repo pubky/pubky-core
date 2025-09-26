@@ -1,7 +1,7 @@
 [package]
 name = "pubky-common"
 description = "Types and struct in common between Pubky client and homeserver"
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
