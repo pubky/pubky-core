@@ -32,7 +32,7 @@ let keypair = Keypair.random();
 
 // Create a new account
 let homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
 
 await client.signup(keypair, homeserver, signup_token);

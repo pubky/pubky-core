@@ -1,4 +1,3 @@
-
 // /**
 //  * Util to request a signup token from the given homeserver as admin.
 //  *

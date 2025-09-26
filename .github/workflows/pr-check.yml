@@ -169,10 +169,9 @@ jobs:
           done
           echo "Testnet homeserver is ready."
 
-      - name: Run Tests (only node-js)
+      - name: Run Tests (browser and node-js)
         working-directory: pubky-sdk/bindings/js/pkg
-        # running only `test-nodjs` and not browser because of weird `exit` behavior
-        run: npm run test-nodejs
+        run: npm run test
 
       - name: Show testnet logs if tests fail
         working-directory: pubky-sdk/bindings/js/pkg
