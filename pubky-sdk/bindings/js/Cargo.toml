@@ -38,6 +38,7 @@ pubky-common = { path = "../../../pubky-common" }
 web-sys = { version = "0.3.77", default-features = false, features = [
     "Request",
     "RequestInit",
+    "RequestCredentials",
     "Headers",
     "ServiceWorkerGlobalScope",
 ] }
