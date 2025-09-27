@@ -19,7 +19,7 @@ test("Auth: basic", async (t) => {
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   t.ok(session, "signup returned a session");
 
-  const userPk = session.publicKey().z32();
+  const userPk = session.info().publicKey().z32();
   const path = "/pub/example.com/auth-basic.txt";
 
   // 2) Write while logged in (via SessionStorage)
@@ -61,12 +61,12 @@ test("Auth: multi-user (cookies)", async (t) => {
   // 1) Signup Alice
   const aliceSession = await alice.signup(HOMESERVER_PUBLICKEY, aliceSignup);
   t.ok(aliceSession, "alice signed up");
-  const alicePk = aliceSession.publicKey().z32();
+  const alicePk = aliceSession.info().publicKey().z32();
 
   // 2) Signup Bob (same cookie jar should now hold *both* sessions)
   const bobSession = await bob.signup(HOMESERVER_PUBLICKEY, bobSignup);
   t.ok(bobSession, "bob signed up");
-  const bobPk = bobSession.publicKey().z32();
+  const bobPk = bobSession.info().publicKey().z32();
 
   // 3) Write for Bob using generic client.fetch (credentials: include)
   {
@@ -146,7 +146,7 @@ test("Auth: 3rd party signin", async (t) => {
   const session = await flow.awaitApproval(); // Promise resolving to a Session
 
   // Validate it’s the same user and caps match what we requested.
-  t.equal(session.publicKey().z32(), pubky, "session belongs to expected user");
+  t.equal(session.info().publicKey().z32(), pubky, "session belongs to expected user");
   t.deepEqual(
     session.info().capabilities(),
     capabilities.split(","),
@@ -155,35 +155,3 @@ test("Auth: 3rd party signin", async (t) => {
 
   t.end();
 });
-
-// test("getHomeserver not found", async (t) => {
-//   const client = Client.testnet();
-
-//   const keypair = Keypair.random();
-//   const publicKey = keypair.publicKey();
-
-//   try {
-//     let homeserver = await client.getHomeserver(publicKey);
-//     t.fail("getHomeserver should NOT be found.");
-//   } catch (e) {
-//     t.pass("getHomeserver should NOT be found.");
-//   }
-// });
-
-// function sleep(ms) {
-//   return new Promise((resolve) => setTimeout(resolve, ms));
-// }
-
-// test("getHomeserver success", async (t) => {
-//   const client = Client.testnet();
-
-//   const keypair = Keypair.random();
-//   const publicKey = keypair.publicKey();
-
-//   const signupToken = await createSignupToken(client);
-
-//   await client.signup(keypair, HOMESERVER_PUBLICKEY, signupToken);
-
-//   let homeserver = await client.getHomeserver(publicKey);
-//   t.is(homeserver.z32(), HOMESERVER_PUBLICKEY.z32(), "homeserver is correct");
-// });

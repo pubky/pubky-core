@@ -80,6 +80,26 @@ const pk = kp.publicKey();
 const pk2 = PublicKey.from(pk.z32()); // parse from z-base-32 string
 ```
 
+#### createRecoveryFile
+
+```js
+let recoveryFile = keypair.createRecoveryFile(passphrase);
+```
+
+- keypair: An instance of [Keypair](#keypair).
+- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
+- Returns: A recovery file with a spec line and an encrypted secret key.
+
+#### toRecoveryFile
+
+```js
+let keypair = Keypair.fromRecoveryfile(recoveryFile, passphrase);
+```
+
+- recoveryFile: An instance of Uint8Array containing the recovery file blob.
+- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
+- Returns: An instance of [Keypair](#keypair).
+
 ---
 
 ### Signer & Session

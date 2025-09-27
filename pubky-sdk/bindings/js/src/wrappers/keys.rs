@@ -35,6 +35,22 @@ impl Keypair {
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.public_key())
     }
+
+    /// Create a recovery file for this keypair (encrypted with the given passphrase).
+    #[wasm_bindgen(js_name = "createRecoveryFile")]
+    pub fn create_recovery_file(&self, passphrase: &str) -> Uint8Array {
+        pubky_common::recovery_file::create_recovery_file(self.as_inner(), passphrase)
+            .as_slice()
+            .into()
+    }
+
+    /// Decrypt a recovery file and return a Keypair (decrypted with the given passphrase).
+    #[wasm_bindgen(js_name = "fromRecoveryFile")]
+    pub fn from_recovery_file(recovery_file: &[u8], passphrase: &str) -> JsResult<Keypair> {
+        let keypair =
+            pubky_common::recovery_file::decrypt_recovery_file(recovery_file, passphrase)?;
+        Ok(Keypair::from(keypair))
+    }
 }
 
 impl Keypair {

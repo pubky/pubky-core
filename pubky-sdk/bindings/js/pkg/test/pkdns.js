@@ -50,7 +50,7 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   const signer = Signer.random();
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-  const userPk = session.publicKey();
+  const userPk = session.info().publicKey();
 
   const pkdns = signer.pkdns();
   const readOnlyDns = new Pkdns();

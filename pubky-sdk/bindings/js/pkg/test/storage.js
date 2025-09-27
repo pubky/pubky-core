@@ -24,7 +24,7 @@ test("session: putJson/getJson/delete, public: getJson", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const userPk = session.publicKey();
+  const userPk = session.info().publicKey();
   const path = "/pub/example.com/arbitrary";
   const addr = `${userPk.z32()}/pub/example.com/arbitrary`; // addressed for public reads
   const json = { foo: "bar" };
@@ -69,7 +69,7 @@ test("session: putText/getText/delete, public: getText", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const userPk = session.publicKey().z32();
+  const userPk = session.info().publicKey().z32();
   const path = "/pub/example.com/hello.txt"; // session-scoped absolute path
   const addr = `${userPk}/pub/example.com/hello.txt`; // addressed for public reads
 
@@ -102,7 +102,7 @@ test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const userPk = session.publicKey().z32();
+  const userPk = session.info().publicKey().z32();
   const path = "/pub/example.com/blob.bin";
   const addr = `${userPk}/pub/example.com/blob.bin`;
 
@@ -136,7 +136,7 @@ test("not found", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const userPk = session.publicKey();
+  const userPk = session.info().publicKey();
   const addr = `${userPk.z32()}/pub/example.com/definitely-missing.json`;
 
   const publicStorage = new PublicStorage();
@@ -168,7 +168,7 @@ test("unauthorized (no cookie) PUT returns 401", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const userPk = session.publicKey();
+  const userPk = session.info().publicKey();
   const url = `pubky://${userPk.z32()}/pub/example.com/unauth.json`;
 
   await session.signout(); // server clears cookie; subsequent writes should be 401
@@ -220,7 +220,7 @@ test("list (public dir listing with limit/cursor/reverse)", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const userPk = session.publicKey().z32();
+  const userPk = session.info().publicKey().z32();
 
   // Create a mix of files; only those under /pub/example.com/ should show up
   const mk = (p) => session.storage().putText(p, "");
@@ -345,7 +345,7 @@ test("list shallow under /pub/", async (t) => {
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-  const pubky = session.publicKey().z32();
+  const pubky = session.info().publicKey().z32();
   const put = (p) => session.storage().putBytes(p, new Uint8Array());
 
   // Seed files (directories appear because they contain files)

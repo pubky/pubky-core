@@ -1,11 +1,11 @@
 import test from "tape";
 
-import { Keypair, createRecoveryFile, decryptRecoveryFile } from "../index.cjs";
+import { Keypair } from "../index.cjs";
 
 test("recovery", async (t) => {
   const keypair = Keypair.random();
 
-  const recoveryFile = createRecoveryFile(keypair, "very secure password");
+  const recoveryFile = keypair.createRecoveryFile("very secure password");
 
   t.is(recoveryFile.length, 91);
   t.deepEqual(
@@ -16,7 +16,7 @@ test("recovery", async (t) => {
     ],
   );
 
-  const recovered = decryptRecoveryFile(recoveryFile, "very secure password");
+  const recovered = Keypair.fromRecoveryFile(recoveryFile, "very secure password");
 
   t.is(recovered.publicKey().z32(), keypair.publicKey().z32());
 });
