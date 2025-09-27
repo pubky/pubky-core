@@ -2,7 +2,6 @@ use crate::persistence::lmdb::tables::entries::Entry;
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     core::{
-        err_if_user_is_invalid::err_if_user_is_invalid,
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
@@ -22,7 +21,6 @@ pub async fn head(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 
     let entry = state.file_service.get_info(&entry_path).await?;

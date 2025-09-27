@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "pubky-*",
-  "pubky-client/bindings/js",
+  "pubky-sdk/bindings/js",
   "http-relay",
   "pkarr-republisher",
   "examples",
@@ -13,7 +13,7 @@ default-members = [
   "pubky-homeserver",
   "http-relay",
   "pubky-testnet",
-  "pubky-client",
+  "pubky-sdk",
 ] # `ws publish` will only attempt to publish these ones. 
 resolver = "2"
 
