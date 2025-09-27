@@ -10,12 +10,6 @@ pub struct Session(pub(crate) pubky::PubkySession);
 
 #[wasm_bindgen]
 impl Session {
-    /// Return the session's user PublicKey.
-    #[wasm_bindgen(js_name = "publicKey")]
-    pub fn public_key(&self) -> crate::wrappers::keys::PublicKey {
-        self.0.info().public_key().clone().into()
-    }
-
     /// Return `SessionInfo``.
     #[wasm_bindgen]
     pub fn info(&self) -> SessionInfo {

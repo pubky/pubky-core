@@ -1,6 +1,6 @@
-# JS Pubky bindings
+# JS Pubky SDK bindings
 
-Wasm-pack wrap of [Pubky](https://github.com/pubky/pubky-core) client.
+Wasm-pack wrap of [Pubky](https://github.com/pubky/pubky-core) SDK.
 
 ## How To Build/Test the NPM Package
 

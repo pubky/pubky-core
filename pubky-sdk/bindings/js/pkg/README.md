@@ -1,13 +1,12 @@
 # Pubky
 
-JavaScript implementation of [Pubky](https://github.com/pubky/pubky-core) client.
+WASM/JS client for the [Pubky](https://github.com/pubky/pubky-core) SDK.
 
-## Table of Contents
-
-- [Install](#install)
-- [Getting Started](#getting-started)
-- [API](#api)
-- [Test and Development](#test-and-development)
+- Works in browsers and Node 20+.
+- First-class Signer/Session model.
+- Public & session-scoped storage helpers.
+- PKDNS (Pkarr) resolve/publish for homeservers.
+- Simple `AuthFlow` for pubkyauth.
 
 ## Install
 
@@ -15,277 +14,242 @@ JavaScript implementation of [Pubky](https://github.com/pubky/pubky-core) client
 npm install @synonymdev/pubky
 ```
 
-### Prerequisites
+> **Node**: requires Node v20+ (undici fetch, WebCrypto).
 
-For Nodejs, you need Node v20 or later.
-
-## Getting started
+## Getting Started
 
 ```js
-import { Client, Keypair, PublicKey } from "../index.js";
+import {
+  useTestnet, // optional: point SDK at local relays/hosts
+  Signer,
+  PublicKey,
+  PublicStorage,
+} from "@synonymdev/pubky";
 
-// Initialize Client with Pkarr relay(s).
-let client = new Client();
+// (optional) local dev wiring (relays + http mapping)
+useTestnet();
 
-// Generate a keypair
-let keypair = Keypair.random();
+// 1) Create a signer (user keys)
+const signer = Signer.random();
 
-// Create a new account
-let homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+// 2) Sign up at a homeserver (optionally with an invite)
+const homeserver = PublicKey.from(
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
+const signupToken = "<your-invite-token-or-null>";
+const session = await signer.signup(homeserver, signupToken);
 
-await client.signup(keypair, homeserver, signup_token);
+// 3) Write a public JSON file (session-scoped storage uses cookies automatically)
+const path = "/pub/example.com/hello.json";
+await session.storage().putJson(path, { hello: "world" });
 
-const publicKey = keypair.publicKey();
+// 4) Read it publicly (no auth)
+const userPk = session.info().publicKey();
+const addr = `${userPk.z32()}/pub/example.com/hello.json`;
+const pub = new PublicStorage();
+const json = await pub.getJson(addr); // -> { hello: "world" }
+```
 
-// Pubky URL
-let url = `pubky://${publicKey.z32()}/pub/example.com/arbitrary`;
+## API Overview
 
-// Verify that you are signed in.
-const session = await client.session(publicKey);
+### Client (HTTP bridge)
 
-// PUT public data, by authorized client
-await client.fetch(url, {
-  method: "PUT",
-  body: JSON.stringify({ foo: "bar" }),
-  credentials: "include",
-});
+```js
+import { Client } from "@synonymdev/pubky";
 
-// GET public data without signup or signin
-{
-  const client = new Client();
+const client = new Client(); // or: new Client()
 
-  let response = await client.fetch(url);
+// Works with both pubky:// and http(s)://
+const res = await client.fetch("pubky://<pubky>/pub/example.com/file.txt");
+```
+
+**Helpers**
+
+- `useTestnet(host = "localhost")` - sets global testnet wiring (relays + HTTP mapping).
+- `Client.testnet(host?)` - returns a `Client` preconfigured for testnet.
+
+---
+
+### Keys
+
+```js
+import { Keypair, PublicKey } from "@synonymdev/pubky";
+
+const kp = Keypair.random();
+const pk = kp.publicKey();
+const pk2 = PublicKey.from(pk.z32()); // parse from z-base-32 string
+```
+
+---
+
+### Signer & Session
+
+```js
+import { Signer } from "@synonymdev/pubky";
+
+const signer = Signer.random(); // or new Signer(keypair)
+const session = await signer.signup(homeserverPk, signupToken);
+const session2 = await signer.signin(); // fast sign-in, publishes in background
+const session3 = await signer.signinBlocking(); // slow sign-in, waits for homeserver publish
+
+await session.signout(); // invalidates session on server
+```
+
+**Session details**
+
+```js
+const info = session.info();
+info.publicKey(); // -> PublicKey
+info.capabilities(); // -> string[]
+
+session.storage(); // -> SessionStorage (absolute paths)
+```
+
+**Approve a pubkyauth request URL**
+
+```js
+await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
+```
+
+---
+
+### Storage
+
+#### PublicStorage (read-only; no cookies)
+
+```js
+import { PublicStorage } from "@synonymdev/pubky";
+const pub = new PublicStorage();
+
+await pub.getJson(`${pubky}/pub/example.com/data.json`);
+await pub.getText(`${pubky}/pub/example.com/readme.txt`);
+await pub.getBytes(`${pubky}/pub/example.com/icon.png`); // Uint8Array
+
+await pub.exists(`${pubky}/pub/example.com/foo`);
+await pub.stats(`${pubky}/pub/example.com/foo`); // { size, etag, ... } | null
+
+// List (prefix = "<pubky>/pub/.../"), optional cursor/reverse/limit/shallow
+await pub.list(`${pubky}/pub/example.com/`, null, false, 100, false);
+```
+
+#### SessionStorage (read/write; uses cookies)
+
+```js
+const s = session.storage();
+
+await s.putJson("/pub/example.com/data.json", { ok: true });
+await s.putText("/pub/example.com/note.txt", "hello");
+await s.putBytes("/pub/example.com/img.bin", new Uint8Array([1, 2, 3]));
+
+await s.getJson("/pub/example.com/data.json");
+await s.getText("/pub/example.com/note.txt");
+await s.getBytes("/pub/example.com/img.bin");
+
+await s.exists("/pub/example.com/data.json");
+await s.stats("/pub/example.com/data.json");
+
+await s.list("/pub/example.com/", null, false, 100, false);
+await s.delete("/pub/example.com/data.json");
+```
+
+---
+
+### PKDNS (Pkarr)
+
+Resolve or publish `_pubky` records.
+
+```js
+import { Pkdns, Signer, PublicKey } from "@synonymdev/pubky";
+
+// Read-only
+const pkdns = Pkdns.new();
+const host = await pkdns.getHomeserverOf(PublicKey.from("<user-z32>")); // string|null
+
+// With keys (bound to signer)
+const signer = Signer.random();
+await signer.signup(homeserverPk, null);
+const pkdnsWithKeys = signer.pkdns();
+
+// Publish if missing or stale (uses the same host as the current record unless overridden)
+await pkdnsWithKeys.publishHomeserverIfStale(); // optional override: migrate homeserver to (hostPk)
+await pkdnsWithKeys.publishHomeserverForce(); // optional override: migrate homeserver to (hostPk)
+```
+
+---
+
+### AuthFlow (pubkyauth)
+
+End-to-end auth (3rd-party app asks a user to approve via QR/deeplink, E.g. Pubky Ring).
+
+```js
+import { AuthFlow } from "@synonymdev/pubky";
+
+const caps = "/pub/my.app/:rw"; // capabilities string
+const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this)
+const flow = AuthFlow.start(caps, relay);
+
+renderQr(flow.authorizationUrl()); // show to user
+
+// Blocks until approved; returns a ready Session
+const session = await flow.awaitApproval();
+```
+
+---
+
+## Errors
+
+All async methods throw a structured `PubkyJsError`:
+
+```ts
+type PubkyJsError = {
+  name:
+    | "RequestError" // network/server/validation/JSON
+    | "InvalidInput"
+    | "AuthenticationError"
+    | "PkarrError"
+    | "InternalError";
+  message: string;
+  statusCode?: number; // present for HTTP server errors (4xx/5xx)
+};
+```
+
+Example:
+
+```js
+try {
+  await publicStorage.getJson(`${pk}/pub/example.com/missing.json`);
+} catch (e) {
+  if (e.name === "RequestError" && e.statusCode === 404) {
+    // handle not found
+  }
 }
-
-// Delete public data, by authorized client
-await client.fetch(url, { method: "DELETE", credentials: "include " });
 ```
 
-## API
+---
 
-### Client
-
-#### constructor
-
-```js
-let client = new Client();
-```
-
-#### fetch
-
-```js
-let response = await client.fetch(url, opts);
-```
-
-Just like normal Fetch API, but it can handle `pubky://` urls and `http(s)://` urls with Pkarr domains.
-
-#### signup
-
-```js
-await client.signup(keypair, homeserver, signup_token);
-```
-
-- keypair: An instance of [Keypair](#keypair).
-- homeserver: An instance of [PublicKey](#publickey) representing the homeserver.
-- signup_token: A homeserver could optionally ask for a valid signup token (aka, invitation code).
-
-Returns:
-
-- session: An instance of [Session](#session).
-
-#### signin
-
-```js
-let session = await client.signin(keypair);
-```
-
-- keypair: An instance of [Keypair](#keypair).
-
-Returns:
-
-- An instance of [Session](#session).
-
-#### signout
-
-```js
-await client.signout(publicKey);
-```
-
-- publicKey: An instance of [PublicKey](#publicKey).
-
-#### authRequest
-
-```js
-let pubkyAuthRequest = client.authRequest(relay, capabilities);
-
-let pubkyauthUrl = pubkyAuthRequest.url();
-
-showQr(pubkyauthUrl);
-
-let pubky = await pubkyAuthRequest.response();
-```
-
-Sign in to a user's Homeserver, without access to their [Keypair](#keypair), nor even [PublicKey](#publickey),
-instead request permissions (showing the user pubkyauthUrl), and await a Session after the user consenting to that request.
-
-- relay: A URL to an [HTTP relay](https://httprelay.io/features/link/) endpoint.
-- capabilities: A list of capabilities required for the app for example `/pub/pubky.app/:rw,/pub/example.com/:r`.
-
-#### sendAuthToken
-
-```js
-await client.sendAuthToken(keypair, pubkyauthUrl);
-```
-
-Consenting to authentication or authorization according to the required capabilities in the `pubkyauthUrl` , and sign and send an auth token to the requester.
-
-- keypair: An instance of [KeyPair](#keypair)
-- pubkyauthUrl: A string `pubkyauth://` url
-
-#### session {#session-method}
-
-```js
-let session = await client.session(publicKey);
-```
-
-- publicKey: An instance of [PublicKey](#publickey).
-- Returns: A [Session](#session) object if signed in, or undefined if not.
-
-### list
-
-```js
-let response = await client.list(url, cursor, reverse, limit);
-```
-
-- url: A string representing the Pubky URL. The path in that url is the prefix that you want to list files within.
-- cursor: Usually the last URL from previous calls. List urls after/before (depending on `reverse`) the cursor.
-- reverse: Whether or not return urls in reverse order.
-- limit: Number of urls to return.
-- Returns: A list of URLs of the files in the `url` you passed.
-
-### Keypair
-
-#### random
-
-```js
-let keypair = Keypair.random();
-```
-
-- Returns: A new random Keypair.
-
-#### fromSecretKey
-
-```js
-let keypair = Keypair.fromSecretKey(secretKey);
-```
-
-- secretKey: A 32 bytes Uint8array.
-- Returns: A new Keypair.
-
-#### publicKey {#publickey-method}
-
-```js
-let publicKey = keypair.publicKey();
-```
-
-- Returns: The [PublicKey](#publickey) associated with the Keypair.
-
-#### secretKey
-
-```js
-let secretKey = keypair.secretKey();
-```
-
-- Returns: The Uint8array secret key associated with the Keypair.
-
-### PublicKey
-
-#### from
-
-```js
-let publicKey = PublicKey.from(string);
-```
-
-- string: A string representing the public key.
-- Returns: A new PublicKey instance.
-
-#### z32
-
-```js
-let pubky = publicKey.z32();
-```
-
-Returns: The z-base-32 encoded string representation of the PublicKey.
-
-### Session
-
-#### pubky
-
-```js
-let pubky = session.pubky();
-```
-
-Returns an instance of [PublicKey](#publickey)
-
-#### capabilities
-
-```js
-let capabilities = session.capabilities();
-```
-
-Returns an array of capabilities, for example `["/pub/pubky.app/:rw"]`
-
-### Helper functions
-
-#### createRecoveryFile
-
-```js
-let recoveryFile = createRecoveryFile(keypair, passphrase);
-```
-
-- keypair: An instance of [Keypair](#keypair).
-- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
-- Returns: A recovery file with a spec line and an encrypted secret key.
-
-#### createRecoveryFile
-
-```js
-let keypair = decryptRecoveryfile(recoveryFile, passphrase);
-```
-
-- recoveryFile: An instance of Uint8Array containing the recovery file blob.
-- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
-- Returns: An instance of [Keypair](#keypair).
-
-## Test and Development
+## Local Test & Development
 
 For test and development, you can run a local homeserver in a test network.
 
-If you don't have Cargo Installed, start by installing it:
+1. Install Rust (for wasm builds):
 
 ```bash
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-Clone the Pubky repository:
-
-```bash
-git clone https://github.com/pubky/pubky
-cd pubky-sdk/bindings/js/pkg
-```
-
-Run the local testnet server
+2. Run the local testnet:
 
 ```bash
 npm run testnet
 ```
 
-Use the logged addresses as inputs to `Client`
+3. Point the SDK at testnet:
 
 ```js
-import { Client } from "../index.js";
-
-const client = Client.testnet();
+import { useTestnet } from "@synonymdev/pubky";
+useTestnet(); // defaults to localhost for Pkarr and Http relays.
 ```
+
+---
+
+MIT © Synonym
