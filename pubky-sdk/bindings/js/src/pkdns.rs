@@ -1,4 +1,3 @@
-use std::time::Duration;
 use wasm_bindgen::prelude::*;
 
 use crate::js_result::JsResult;
