@@ -1,8 +1,8 @@
 use reqwest::Response;
 
 use super::core::{PublicStorage, SessionStorage};
+use super::resource::{IntoPubkyResource, IntoResourcePath};
 use crate::Result;
-use crate::storage::resource::{IntoPubkyResource, IntoResourcePath};
 use crate::util::check_http_status;
 
 //

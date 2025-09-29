@@ -51,8 +51,10 @@ impl PubkySigner {
 
     // All of these methods use root capabilities
 
-    /// Sign in by locally signing a root-capability token. Returns a session-bound session.
-    /// Publishes the homeserver record if stale in the background.
+    /// Sign in to the users homeserver by locally signing a root-capability token.
+    /// This call returns a user session.
+    ///
+    /// In case the users pkdns records are stale, this call with republish them in the background.
     ///
     /// Prefer this signin for best user experience, it returns fast.
     pub async fn signin(&self) -> Result<PubkySession> {

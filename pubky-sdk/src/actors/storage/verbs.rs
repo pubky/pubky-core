@@ -2,8 +2,8 @@ use reqwest::{Method, Response, StatusCode};
 
 use super::core::{PublicStorage, SessionStorage};
 use super::resource::{IntoPubkyResource, IntoResourcePath};
+use super::stats::ResourceStats;
 use crate::Result;
-use crate::storage::stats::ResourceStats;
 use crate::util::check_http_status;
 
 //

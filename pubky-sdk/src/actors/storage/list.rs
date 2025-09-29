@@ -3,7 +3,7 @@ use url::Url;
 
 use super::core::{PublicStorage, SessionStorage, dir_trailing_slash_error};
 use crate::Result;
-use crate::storage::resource::{IntoPubkyResource, IntoResourcePath};
+use crate::actors::storage::resource::{IntoPubkyResource, IntoResourcePath};
 use crate::util::check_http_status;
 
 impl SessionStorage {
