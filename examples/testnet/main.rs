@@ -1,4 +1,4 @@
-use pubky_testnet::{pubky::prelude::*, EphemeralTestnet};
+use pubky_testnet::EphemeralTestnet;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -6,9 +6,14 @@ async fn main() -> anyhow::Result<()> {
     let testnet = EphemeralTestnet::start().await?;
     let homeserver = testnet.homeserver();
 
+    // Intantiate a Pubky SDK wrapper that uses this testnet's preconfigured client for transport
+    let pubky = testnet.sdk()?;
+
     // Create a random signer and sign up
-    let signer = PubkySigner::random()?;
-    let session = signer.signup(&homeserver.public_key(), None).await?;
+    let session = pubky
+        .signer_random()
+        .signup(&homeserver.public_key(), None)
+        .await?;
 
     // Write a file
     session.storage().put("/pub/my.app/hello.txt", "hi").await?;

@@ -5,9 +5,8 @@ use pubky_common::session::SessionInfo;
 
 use super::core::PubkySession;
 use crate::{
-    Capabilities, Result,
+    Capabilities, PubkyHttpClient, Result,
     errors::{AuthError, RequestError},
-    global_client,
 };
 
 impl PubkySession {
@@ -32,8 +31,14 @@ impl PubkySession {
     ///
     /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
-    pub async fn import_secret(token: &str) -> Result<Self> {
-        // 1) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
+    pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
+        // 1) Get the transport for this session
+        let client = match client {
+            Some(c) => c,
+            None => PubkyHttpClient::new()?,
+        };
+
+        // 2) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
         let (pk_str, cookie) = token
             .split_once(':')
             .ok_or_else(|| RequestError::Validation {
@@ -44,15 +49,15 @@ impl PubkySession {
             message: "invalid public key".into(),
         })?;
 
-        // 2) Build minimal session; placeholder SessionInfo will be replaced after validation.
+        // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.
         let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
         let mut session = PubkySession {
-            client: global_client()?,
+            client,
             info: placeholder,
             cookie: cookie.to_string(),
         };
 
-        // 3) Validate cookie and fetch authoritative SessionInfo
+        // 4) Validate cookie and fetch authoritative SessionInfo
         let info = session
             .revalidate()
             .await?
@@ -62,26 +67,91 @@ impl PubkySession {
         Ok(session)
     }
 
-    /// Write the session secret token to a file as plain text: `<pubkey>:<cookie_secret>`.
-    /// If the file exists, it is overwritten. On Unix, permissions are set to 600.
+    /// Write the session secret token to disk. Ensures a `.sess` extension.
+    ///
+    /// Behavior:
+    /// - If `secret_file_path` already ends with `.sess`, it is used as-is.
+    /// - If it has no extension, `.sess` is added.
+    /// - If it has a different extension, `.<ext>.sess` is appended (e.g., `foo.txt.sess`).
+    ///
+    /// On Unix, permissions are set to `0o600`.
     pub fn write_secret_file(&self, secret_file_path: &Path) -> std::io::Result<()> {
         let token = self.export_secret();
-        std::fs::write(secret_file_path, token)?;
+        let p = secret_file_path;
+
+        let target = match p.extension().and_then(|e| e.to_str()) {
+            Some("sess") => p.to_path_buf(),
+            Some(_) => {
+                // Append, do not replace: `name.ext` -> `name.ext.sess`
+                let mut out = p.to_path_buf();
+                let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("session");
+                out.set_file_name(format!("{fname}.sess"));
+                out
+            }
+            None => {
+                // No extension: add `.sess`
+                let mut out = p.to_path_buf();
+                out.set_extension("sess");
+                out
+            }
+        };
+
+        std::fs::write(&target, token)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(secret_file_path, std::fs::Permissions::from_mode(0o600))?;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600))?;
         }
         Ok(())
     }
 
-    /// Restore a session from a secret token stored in a file.
-    /// Reads the file, trims whitespace, then calls `import_secret` to validate and hydrate.
-    pub async fn from_secret_file(secret_file_path: &Path) -> Result<Self> {
+    /// Restore a session from a secret token stored in a file. Requires a `.sess` extension.
+    ///
+    /// Validation:
+    /// - `.sess` — valid; file is read and parsed.
+    /// - `.pkarr` — rejected with a clear error message pointing to `Keypair::from_secret_file`.
+    /// - Any other or missing extension — rejected with a `.sess`-specific error.
+    pub async fn from_secret_file(
+        secret_file_path: &Path,
+        client: Option<PubkyHttpClient>,
+    ) -> Result<Self> {
+        match secret_file_path.extension().and_then(|e| e.to_str()) {
+            Some("sess") => { /* ok */ }
+            Some("pkarr") => {
+                return Err(RequestError::Validation {
+                    message: format!(
+                        "refused to load `{}`: `.pkarr` is a keypair secret. \
+                         Use `Keypair::from_secret_file` to load keys. \
+                         Session secrets must use the `.sess` extension.",
+                        secret_file_path.display()
+                    ),
+                }
+                .into());
+            }
+            Some(other) => {
+                return Err(RequestError::Validation {
+                    message: format!(
+                        "invalid session secret extension `.{other}` for `{}`; expected `.sess`",
+                        secret_file_path.display()
+                    ),
+                }
+                .into());
+            }
+            None => {
+                return Err(RequestError::Validation {
+                    message: format!(
+                        "missing extension for `{}`; session secret files must end with `.sess`",
+                        secret_file_path.display()
+                    ),
+                }
+                .into());
+            }
+        }
+
         let token =
             std::fs::read_to_string(secret_file_path).map_err(|e| RequestError::Validation {
                 message: format!("failed to read session secret file: {e}"),
             })?;
-        Self::import_secret(token.trim()).await
+        Self::import_secret(token.trim(), client).await
     }
 }

@@ -50,7 +50,14 @@
 //! # Ok(()) }
 //! ```
 
-use crate::{Capabilities, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result};
+use std::path::Path;
+
+use pkarr::Keypair;
+
+use crate::{
+    Capabilities, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
+    errors::RequestError,
+};
 
 /// High-level façade. Owns a `PubkyHttpClient` and constructs the main actors.
 #[derive(Clone, Debug)]
@@ -111,6 +118,25 @@ impl Pubky {
     /// Read-only PKDNS actor (resolve `_pubky` records) using this façade’s client.
     pub fn pkdns(&self) -> crate::Pkdns {
         crate::Pkdns::with_client(self.client.clone())
+    }
+
+    // ------ Persistance helpers ----------
+
+    /// Restore a session from a `.sess` secret file
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn session_from_file<P: AsRef<Path>>(&self, path: P) -> Result<PubkySession> {
+        PubkySession::from_secret_file(path.as_ref(), Some(self.client.clone())).await
+    }
+
+    /// Load a keypair from a `.pkarr` secret file and return a [`PubkySigner`].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn signer_from_file<P: AsRef<Path>>(&self, path: P) -> Result<PubkySigner> {
+        let path = path.as_ref();
+
+        let kp = Keypair::from_secret_key_file(path).map_err(|e| RequestError::Validation {
+            message: format!("failed to load keypair secret file: {e}"),
+        })?;
+        Ok(self.signer(kp))
     }
 
     /// Access the underlying transport (advanced use).

@@ -6,6 +6,7 @@ use std::{
 
 use crate::Testnet;
 use http_relay::HttpRelay;
+use pubky::Pubky;
 use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
 
 /// A simple testnet with
@@ -78,9 +79,16 @@ impl StaticTestnet {
         self.testnet.client_builder()
     }
 
-    /// Creates a `pubky::PubkyHttpClient` pre-configured to use this test network.
+    /// Creates a [`pubky::PubkyHttpClient`] pre-configured to use this test network.
     pub fn client(&self) -> Result<pubky::PubkyHttpClient, pubky::BuildError> {
         self.testnet.client()
+    }
+
+    /// Creates a [`pubky::Pubky`] SDK facade pre-configured to use this test network.
+    ///
+    /// This is a convenience method that builds a client from `Self::client_builder`.
+    pub fn sdk(&self) -> Result<Pubky, pubky::BuildError> {
+        self.testnet.sdk()
     }
 
     /// Create a new pkarr client builder.

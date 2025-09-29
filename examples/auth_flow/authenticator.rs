@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{Capabilities, PubkyHttpClient, PubkySigner, PublicKey};
+use pubky::{Capabilities, Pubky, PublicKey};
 use std::path::PathBuf;
 use url::Url;
 
@@ -48,9 +48,7 @@ async fn main() -> Result<()> {
     println!("PublicKey: {}", keypair.public_key());
 
     let signer = if cli.testnet {
-        let client = PubkyHttpClient::testnet()?;
-        pubky::set_global_client(client);
-        let signer = PubkySigner::new(keypair)?;
+        let signer = Pubky::testnet()?.signer(keypair);
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
@@ -58,7 +56,7 @@ async fn main() -> Result<()> {
 
         signer
     } else {
-        PubkySigner::new(keypair)?
+        Pubky::new()?.signer(keypair)
     };
 
     println!("Sending AuthToken to the 3rd party app...");

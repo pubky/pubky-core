@@ -56,7 +56,6 @@ use pubky_common::{
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession,
     errors::{AuthError, Result},
-    global::global_client,
     util::check_http_status,
 };
 
@@ -84,6 +83,7 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 /// the background task; the relay channel itself expires server-side after its TTL.
 #[derive(Debug, Clone)]
 pub struct PubkyAuthFlow {
+    client: PubkyHttpClient,
     auth_url: Url,
     rx: flume::Receiver<Result<AuthToken>>,
     abort: AbortHandle,
@@ -114,8 +114,8 @@ impl PubkyAuthFlow {
     /// This awaits the background poller’s result, verifies/decrypts the token,
     /// and completes the `/session` exchange to return a ready-to-use [`PubkySession`].
     pub async fn await_approval(self) -> Result<PubkySession> {
-        let token = self.await_token().await?;
-        PubkySession::new(&token).await
+        let token = self.clone().await_token().await?;
+        PubkySession::new(&token, self.client.clone()).await
     }
 
     /// Block until the signer approves and we receive an [`AuthToken`].
@@ -135,7 +135,7 @@ impl PubkyAuthFlow {
     pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
         if let Some(tok) = self.try_token() {
             let token = tok?;
-            return Ok(Some(PubkySession::new(&token).await?));
+            return Ok(Some(PubkySession::new(&token, self.client.clone()).await?));
         }
         Ok(None)
     }
@@ -255,7 +255,7 @@ impl PubkyAuthFlowBuilder {
     pub fn start(self) -> Result<PubkyAuthFlow> {
         let client = match self.client {
             Some(c) => c,
-            None => global_client()?,
+            None => PubkyHttpClient::new()?,
         };
 
         // 1) Resolve relay base (default if not provided).
@@ -302,6 +302,7 @@ impl PubkyAuthFlowBuilder {
         wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
 
         Ok(PubkyAuthFlow {
+            client,
             auth_url,
             rx,
             abort: abort_handle,

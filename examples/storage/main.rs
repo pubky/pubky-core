@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::env;
 
-use pubky::{PubkyHttpClient, PublicStorage};
+use pubky::Pubky;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -22,13 +22,12 @@ async fn main() -> Result<()> {
         .with_env_filter(env::var("TRACING").unwrap_or("info".to_string()))
         .init();
 
-    // set the global client to testnet if needed.
-    if args.testnet {
-        pubky::set_global_client(PubkyHttpClient::testnet()?);
-    }
-
     // For a basic GET request to any homeserver no session or key material is needed.
-    let storage = PublicStorage::new()?;
+    // Create from a mainnet or testnet as needed.
+    let storage = match args.testnet {
+        true => Pubky::testnet()?.public_storage(),
+        false => Pubky::new()?.public_storage(),
+    };
 
     // Build the request
     let response = storage.get(args.resource).await?;

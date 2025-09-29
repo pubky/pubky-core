@@ -8,7 +8,6 @@ mod pubky;
 mod actors;
 mod client;
 pub mod errors;
-mod global;
 mod macros;
 
 mod util;
@@ -16,6 +15,7 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
+// SDK facade
 pub use pubky::Pubky;
 // Transport
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
@@ -28,7 +28,6 @@ pub use actors::{PublicStorage, SessionStorage};
 
 // Error and global client
 pub use errors::{BuildError, Error, Result};
-pub use global::{drop_global_client, global_client, set_global_client};
 
 // Export common types and constants
 pub use crate::actors::storage::{

@@ -74,7 +74,7 @@ impl PubkySigner {
     async fn signin_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
-        let session = PubkySession::new(&token).await?;
+        let session = PubkySession::new(&token, self.client.clone()).await?;
 
         match mode {
             PublishMode::Blocking => {

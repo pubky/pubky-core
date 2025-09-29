@@ -8,7 +8,7 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::Result;
 use http_relay::HttpRelay;
-use pubky::Keypair;
+use pubky::{Keypair, Pubky};
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
 };
@@ -40,11 +40,6 @@ impl Testnet {
             homeservers: vec![],
             temp_dirs: vec![],
         };
-
-        // Set a global shared pubky client so lazily initialized actors (PubkySession, PubkyAuthFlow, PubkySigner)
-        // work over this testnet
-        let testnet_client = testnet.client()?;
-        pubky::set_global_client(testnet_client);
 
         Ok(testnet)
     }
@@ -164,15 +159,18 @@ impl Testnet {
         builder
     }
 
-    /// Creates a `pubky::PubkyHttpClient` pre-configured to use this test network.
+    /// Creates a [`pubky::PubkyHttpClient`] pre-configured to use this test network.
     ///
     /// This is a convenience method that builds a client from `Self::client_builder`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the client fails to build, which should not happen in a test context.
     pub fn client(&self) -> Result<pubky::PubkyHttpClient, pubky::BuildError> {
         self.client_builder().build()
+    }
+
+    /// Creates a [`pubky::Pubky`] SDK facade pre-configured to use this test network.
+    ///
+    /// This is a convenience method that builds a client from `Self::client_builder`.
+    pub fn sdk(&self) -> Result<Pubky, pubky::BuildError> {
+        Ok(Pubky::with_client(self.client()?))
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.

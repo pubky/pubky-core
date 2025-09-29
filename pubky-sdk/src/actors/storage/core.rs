@@ -6,7 +6,6 @@ use super::resource::{IntoPubkyResource, IntoResourcePath, PubkyResource, Resour
 use crate::{
     PubkyHttpClient, PubkySession,
     errors::{RequestError, Result},
-    global::global_client,
 };
 
 /// Storage that acts **as the signed-in user** (authenticated).
@@ -91,7 +90,7 @@ impl PublicStorage {
     /// Create a public (unauthenticated) storage handle using the global client.
     pub fn new() -> Result<PublicStorage> {
         Ok(PublicStorage {
-            client: global_client()?,
+            client: PubkyHttpClient::new()?,
         })
     }
 

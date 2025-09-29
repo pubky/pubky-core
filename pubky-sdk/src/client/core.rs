@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 use crate::errors::BuildError;
-use crate::global::global_client;
 
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
@@ -236,9 +235,6 @@ impl PubkyHttpClientBuilder {
 /// - You want direct control over the PubkyHttpClient (power users, libs).
 /// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
 ///
-/// For most apps, prefer the higher-level actors and let them reuse the default shared
-/// [`crate::global::global_client`] under the hood.
-///
 /// ### Construction
 /// Use [`PubkyHttpClient::builder()`] to tweak timeouts, relays, or
 /// user-agent; or pick sensible defaults via [`PubkyHttpClient::new()`]. A
@@ -309,12 +305,6 @@ impl PubkyHttpClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
     pub fn new() -> Result<PubkyHttpClient, BuildError> {
         Self::builder().build()
-    }
-
-    /// Get-or-init the process-wide default client.
-    /// Convenience alias for [`crate::global_client()`].
-    pub fn global() -> Result<PubkyHttpClient, crate::BuildError> {
-        global_client()
     }
 
     /// Returns a builder to edit settings before creating [`PubkyHttpClient`].

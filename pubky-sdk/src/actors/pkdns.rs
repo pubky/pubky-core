@@ -15,7 +15,6 @@ use pkarr::{
 use crate::{
     PubkyHttpClient, PubkySigner,
     errors::{AuthError, Error, PkarrError, Result},
-    global::global_client,
 };
 
 /// Default staleness window for homeserver `_pubky` Pkarr records (1 hour).
@@ -72,7 +71,7 @@ impl Pkdns {
     /// Construct a Read-only PKDNS actor.
     pub fn new() -> Result<Self> {
         Ok(Self {
-            client: global_client()?,
+            client: PubkyHttpClient::new()?,
             keypair: None,
             stale_after: DEFAULT_STALE_AFTER,
         })
@@ -81,7 +80,7 @@ impl Pkdns {
     /// Construct a publishing-capable PKDNS actor.
     pub fn new_with_keypair(keypair: Keypair) -> Result<Self> {
         Ok(Self {
-            client: global_client()?,
+            client: PubkyHttpClient::new()?,
             keypair: Some(keypair),
             stale_after: DEFAULT_STALE_AFTER,
         })
@@ -106,6 +105,7 @@ impl Pkdns {
             stale_after: DEFAULT_STALE_AFTER,
         }
     }
+
     /// Set how long an existing `_pubky` PKARR record is considered **fresh** (builder-style).
     ///
     /// If the current record’s age is **≤ this duration**, [`Self::publish_homeserver_if_stale`]

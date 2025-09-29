@@ -1,4 +1,4 @@
-use crate::{BuildError, Keypair, PubkyHttpClient, PublicKey, global::global_client};
+use crate::{BuildError, Keypair, PubkyHttpClient, PublicKey};
 
 /// Key holder and signer.
 #[derive(Debug, Clone)]
@@ -21,7 +21,7 @@ impl PubkySigner {
     /// ```
     pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
         Ok(Self {
-            client: global_client()?,
+            client: PubkyHttpClient::new()?,
             keypair,
         })
     }

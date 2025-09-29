@@ -2,10 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use pubky_common::session::SessionInfo;
 
-use crate::{
-    AuthToken, Error, PubkyHttpClient, Result, SessionStorage, global::global_client,
-    util::check_http_status,
-};
+use crate::{AuthToken, Error, PubkyHttpClient, Result, SessionStorage, util::check_http_status};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
@@ -46,8 +43,7 @@ impl PubkySession {
     ///
     /// This POSTs `pubky://{user}/session` with the token, validates the response
     /// and constructs a new session-bound [`PubkySession`]
-    pub async fn new(token: &AuthToken) -> Result<PubkySession> {
-        let client = global_client()?;
+    pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<PubkySession> {
         let url = format!("pubky://{}/session", token.public_key());
         let response = client
             .cross_request(Method::POST, url)
