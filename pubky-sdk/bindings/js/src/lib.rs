@@ -5,7 +5,6 @@ pub mod client;
 mod js_error;
 mod js_result;
 pub mod pkdns;
-pub mod runtime;
 pub mod session;
 pub mod signer;
 pub mod storage;

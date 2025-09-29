@@ -14,22 +14,27 @@ pub struct AuthFlow(pub(crate) pubky::PubkyAuthFlow);
 impl AuthFlow {
     /// Start an auth flow.
     ///
-    /// - `capabilities` - a string of comma-separated entries like:
-    ///   `"/pub/app/:rw,/priv/foo.txt:r"`.
-    ///   Each entry must be `<scope>:<actions>` where `actions` are any combo of `r` and/or `w`.
-    ///   Examples:
-    ///     - `"/":rw"` (root read/write)
-    ///     - `"/pub/example.com/:r"`
-    ///     - `"/pub/app/:wr"` -> normalized to `"/pub/app/:rw"`
-    ///   If **any** entry is invalid, this throws an `InvalidInput` error with
-    ///   `error.data = string[]` listing the invalid tokens.
-    ///   An empty string is allowed (means “no requested scopes”).
+    /// @param {string} capabilities
+    /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.
+    /// Each entry must be `"<scope>:<actions>"`, where:
+    /// - `scope` starts with `/` (e.g. `/pub/example.app/`)
+    /// - `actions` is any combo of `r` and/or `w` (order is normalized; `wr` -> `rw`)
+    /// Empty string is allowed (no scopes).
     ///
-    /// - `relay` - optional HTTP relay base, e.g. `"http://localhost:15412/link/"`.
-    ///   If omitted, the default relay is used.
+    /// @param {string} [relay]
+    /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/link/"`.
+    /// Defaults to the default Synonym-hosted relay when omitted.
     ///
-    /// Background polling starts immediately. Call `authorizationUrl()` to show the QR/deeplink,
-    /// then `awaitApproval()` to get a `Session`, or poll via `tryPollOnce()`.
+    /// @returns {AuthFlow}
+    /// A running auth flow. Call `authorizationUrl()` to show the deep link,
+    /// then `awaitApproval()` to receive a `Session`.
+    /// @throws {PubkyJsError}
+    /// - `{ name: "InvalidInput", mesage: string }` if any capability entry is invalid
+    ///     or for an invalid relay URL.
+    /// @example
+    /// const flow = AuthFlow.start("/pub/my.app/:rw,/pub/pubky.app/:w");
+    /// renderQRCode(flow.authorizationUrl());
+    /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "start")]
     pub fn start(capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
         // 1) Validate & normalize the capabilities string (fail fast with details).
@@ -41,7 +46,7 @@ impl AuthFlow {
         // 3) Build the flow (optionally overriding the relay).
         let flow = if let Some(r) = relay {
             let url = Url::parse(&r)?;
-            pubky::PubkyAuthFlow::builder(caps).relay(url).start()?
+            pubky::PubkyAuthFlow::builder(&caps).relay(url).start()?
         } else {
             pubky::PubkyAuthFlow::start(&caps)?
         };

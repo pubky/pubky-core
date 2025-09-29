@@ -107,7 +107,7 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(caps)
+    let auth = PubkyAuthFlow::builder(&caps)
         .relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
@@ -241,7 +241,7 @@ async fn authz_timeout_reconnect() {
 
     // set custom global client with timeout of 1 sec
     // Start pairing auth flow using our custom client + local relay
-    let auth = PubkyAuthFlow::builder(capabilities)
+    let auth = PubkyAuthFlow::builder(&capabilities)
         .client(client)
         .relay(http_relay_url)
         .start()
