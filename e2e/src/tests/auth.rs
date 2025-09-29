@@ -113,7 +113,7 @@ async fn authz() {
     let signer = PubkySigner::random().unwrap();
     signer.signup(&server.public_key(), None).await.unwrap();
     signer
-        .approve_auth_request(&auth.authorization_url())
+        .approve_auth(&auth.authorization_url())
         .await
         .unwrap();
 
@@ -250,7 +250,7 @@ async fn authz_timeout_reconnect() {
     let url_clone = auth.authorization_url().clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(1_000)).await;
-        signer.approve_auth_request(&url_clone).await.unwrap();
+        signer.approve_auth(&url_clone).await.unwrap();
     });
 
     // The long-poll should survive timeouts and eventually yield an session

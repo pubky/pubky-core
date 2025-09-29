@@ -63,8 +63,8 @@ impl Signer {
 
     /// Approve a `pubkyauth://` request URL (encrypts & POSTs the signed AuthToken).
     #[wasm_bindgen(js_name = "approveAuthRequest")]
-    pub async fn approve_auth_request(&self, pubkyauth_url: String) -> JsResult<()> {
-        self.0.approve_auth_request(&pubkyauth_url).await?;
+    pub async fn approve_auth(&self, pubkyauth_url: String) -> JsResult<()> {
+        self.0.approve_auth(&pubkyauth_url).await?;
         Ok(())
     }
 }

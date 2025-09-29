@@ -51,7 +51,7 @@ let caps = Capabilities::builder().write("/pub/pubky.app/").finish();
 let auth_flow = PubkyAuthFlow::start(&caps)?;
 println!("Scan to sign in: {}", auth_flow.authorization_url());
 // show `url` (QR/deeplink); on the signing device call:
-// signer.approve_auth_request(&authorization_url).await?;
+// signer.approve_auth(&authorization_url).await?;
 let app_session = auth_flow.await_approval().await?;
 
 # Ok(()) }
@@ -191,8 +191,8 @@ let auth_flow = PubkyAuthFlow::start(&caps)?;
 println!("Scan to sign in: {}", auth_flow.authorization_url());
 
 // On the signer device (e.g., Pubky Ring), the user approves this request:
-// signer.approve_auth_request(auth_flow.authorization_url()).await?;
-# PubkySigner::random()?.approve_auth_request(auth_flow.authorization_url()).await?;
+// signer.approve_auth(auth_flow.authorization_url()).await?;
+# PubkySigner::random()?.approve_auth(auth_flow.authorization_url()).await?;
 
 // Blocks until approved; returns a session ready to use
 let session = auth_flow.await_approval().await?;
