@@ -98,8 +98,8 @@ impl PubkyAuthFlow {
     }
 
     /// Create a builder to override **relay** and/or provide a custom **client**.
-    pub fn builder(caps: Capabilities) -> PubkyAuthFlowBuilder {
-        PubkyAuthFlowBuilder::new(caps)
+    pub fn builder(caps: &Capabilities) -> PubkyAuthFlowBuilder {
+        PubkyAuthFlowBuilder::new(caps.clone())
     }
 
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.

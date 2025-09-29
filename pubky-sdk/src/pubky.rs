@@ -90,7 +90,7 @@ impl Pubky {
     /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
     /// or `try_poll_once()` (non-blocking UI loops).
     pub fn start_auth_flow(&self, caps: &Capabilities) -> Result<PubkyAuthFlow> {
-        PubkyAuthFlow::builder(caps.clone())
+        PubkyAuthFlow::builder(caps)
             .client(self.client.clone())
             .start()
     }
