@@ -3,6 +3,8 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 
+mod pubky;
+
 mod actors;
 mod client;
 pub mod errors;
@@ -14,6 +16,7 @@ mod util;
 pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
+pub use pubky::Pubky;
 // Transport
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 // High level actors

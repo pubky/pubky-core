@@ -97,6 +97,15 @@ impl Pkdns {
         }
     }
 
+    /// Create a read-only PKDNS actor bound to a specific client.
+    /// No keypair attached; publishing is disabled.
+    pub(crate) fn with_client(client: PubkyHttpClient) -> Self {
+        Self {
+            client,
+            keypair: None,
+            stale_after: DEFAULT_STALE_AFTER,
+        }
+    }
     /// Set how long an existing `_pubky` PKARR record is considered **fresh** (builder-style).
     ///
     /// If the current record’s age is **≤ this duration**, [`Self::publish_homeserver_if_stale`]
