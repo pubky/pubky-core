@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
+use super::{pkdns::Pkdns, session::Session};
 use crate::js_result::JsResult;
-use crate::session::Session;
 use crate::wrappers::{keys::Keypair, keys::PublicKey};
 
 #[wasm_bindgen]
@@ -31,8 +31,8 @@ impl Signer {
 
     /// Get a PKDNS actor bound to this signer's client & keypair (publishing enabled).
     #[wasm_bindgen]
-    pub fn pkdns(&self) -> crate::pkdns::Pkdns {
-        crate::pkdns::Pkdns(self.0.pkdns())
+    pub fn pkdns(&self) -> Pkdns {
+        Pkdns(self.0.pkdns())
     }
 
     /// Sign up at a homeserver and return a ready `Session`.

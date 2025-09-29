@@ -1,6 +1,7 @@
 // js/src/wrappers/session.rs
 use wasm_bindgen::prelude::*;
 
+use super::storage::SessionStorage;
 use crate::js_error::PubkyJsError;
 use crate::js_result::JsResult;
 use crate::wrappers::session_info::SessionInfo;
@@ -18,8 +19,8 @@ impl Session {
 
     /// Session-scoped storage (absolute paths).
     #[wasm_bindgen]
-    pub fn storage(&self) -> crate::storage::SessionStorage {
-        crate::storage::SessionStorage(pubky::SessionStorage::new(&self.0))
+    pub fn storage(&self) -> SessionStorage {
+        SessionStorage(pubky::SessionStorage::new(&self.0))
     }
 
     /// Invalidate this session on the server. Consumes the JS object.

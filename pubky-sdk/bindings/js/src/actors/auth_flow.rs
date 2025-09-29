@@ -2,9 +2,8 @@ use pubky_common::capabilities::Capabilities;
 use url::Url;
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    js_result::JsResult, session::Session, wrappers::capabilities::validate_caps_for_start,
-};
+use super::session::Session;
+use crate::{js_result::JsResult, wrappers::capabilities::validate_caps_for_start};
 
 /// JS-facing auth flow handle that polls a relay until a signer approves.
 #[wasm_bindgen]

@@ -1,13 +1,9 @@
 use wasm_bindgen::prelude::*;
 
-pub mod auth_flow;
+pub mod actors;
 pub mod client;
 mod js_error;
 mod js_result;
-pub mod pkdns;
-pub mod session;
-pub mod signer;
-pub mod storage;
 pub mod wrappers;
 
 #[wasm_bindgen(js_name = "setLogLevel")]
