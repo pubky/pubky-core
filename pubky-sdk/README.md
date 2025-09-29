@@ -84,7 +84,7 @@ let pubky = Pubky::new()?;
 let session = pubky.signer_random().signin().await?;
 
 let storage = session.storage();
-storage.put("/pub/my.app/data.txt", "hi").await?; // use relative paths when using session storage
+storage.put("/pub/my.app/data.txt", "hi").await?;
 let text = storage.get("/pub/my.app/data.txt").await?.text().await?;
 
 # Ok(()) }
@@ -100,7 +100,6 @@ use pubky::{Pubky, PublicKey};
 let pubky = Pubky::new()?;
 let public = pubky.public_storage();
 
-// use user-qualified addresses when accessing public storage
 let file = public.get(format!("{user_id}/pub/acme.app/file.bin")).await?.bytes().await?;
 
 # Ok(()) }
@@ -215,29 +214,31 @@ assert_eq!(s, "hi");
 
 ## Keypair and Session persistence
 
-Keypair secrets (`.pkarr`):
+Encrypted Keypair secrets (`.pkarr`):
 
 ```rust no_run
 use pubky::Pubky;
 # fn run() -> pubky::Result<()> {
-let sdk = Pubky::new()?;
-let signer = sdk.signer_from_file("alice.pkarr")?;
+let pubky = Pubky::new()?;
+let signer = pubky.signer_from_recovery_file("/path/to/alice.pkarr", "passphrase")?;
 # Ok(()) }
 ```
 
 Session secrets (`.sess`):
 
-```rust no_run
+```rust
 use pubky::Pubky;
 # async fn run() -> pubky::Result<()> {
 let sdk = Pubky::new()?;
 let session = sdk.signer_random().signin().await?;
 session.write_secret_file("alice.sess").unwrap();
 let restored = sdk.session_from_file("alice.sess").await?;
+
+# let _ = std::fs::remove_file("alice.sess");
 # Ok(()) }
 ```
 
-> Security: the cookie secret is a **bearer token**. Anyone holding it can act as the user within the granted capabilities. Treat it like a password.
+> Security: the `.sess` secret is a **bearer token**. Anyone holding it can act as the user within the granted capabilities. Treat it like a password.
 
 ## Example code
 

@@ -52,8 +52,6 @@
 
 use std::path::Path;
 
-use pkarr::Keypair;
-
 use crate::{
     Capabilities, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
     errors::RequestError,
@@ -128,14 +126,24 @@ impl Pubky {
         PubkySession::from_secret_file(path.as_ref(), Some(self.client.clone())).await
     }
 
-    /// Load a keypair from a `.pkarr` secret file and return a [`PubkySigner`].
+    /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn signer_from_file<P: AsRef<Path>>(&self, path: P) -> Result<PubkySigner> {
-        let path = path.as_ref();
+    pub fn signer_from_recovery_file<P: AsRef<Path>>(
+        &self,
+        path: P,
+        passphrase: &str,
+    ) -> Result<PubkySigner> {
+        use pubky_common::recovery_file::decrypt_recovery_file;
 
-        let kp = Keypair::from_secret_key_file(path).map_err(|e| RequestError::Validation {
-            message: format!("failed to load keypair secret file: {e}"),
+        let bytes = std::fs::read(path.as_ref()).map_err(|e| RequestError::Validation {
+            message: format!("failed to read recovery file: {e}"),
         })?;
+
+        let kp =
+            decrypt_recovery_file(&bytes, passphrase).map_err(|e| RequestError::Validation {
+                message: format!("failed to decrypt recovery file: {e}"),
+            })?;
+
         Ok(self.signer(kp))
     }
 
