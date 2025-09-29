@@ -32,7 +32,7 @@ sequenceDiagram
     3rd Party App ->>Authenticator: Display QR code
     note over 3rd Party App ,Authenticator: PubkyAuth URL
     Authenticator-->>User: Display consent form
-    note over Authenticator ,User: Showing capabilities <br/> (dzdidi: it should probably also show some verifiable 3rd app id to prevent spoofing)
+    note over Authenticator ,User: Showing capabilities <br/>
     User -->>Authenticator: Confirm consent
     note over User ,Authenticator: Assemble `AuthToken`
     Authenticator-->>Authenticator: Sign `AuthToken` and encrypt with `client_secret`
