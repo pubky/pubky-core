@@ -46,9 +46,9 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
 fn patch() -> io::Result<ExitStatus> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
 
-    println!("{manifest_dir}/src/bin/patch.mjs");
+    println!("{manifest_dir}/scripts/patch.mjs");
     let output = Command::new("node")
-        .args([format!("{manifest_dir}/src/bin/patch.mjs")])
+        .args([format!("{manifest_dir}/scripts/patch.mjs")])
         .output()?;
 
     println!(

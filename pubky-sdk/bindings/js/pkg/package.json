@@ -14,7 +14,7 @@
     "test-nodejs": "tape test/*.js -cov",
     "test-browser": "browserify test/*.js -p esmify | npx tape-run",
     "test-browser:ci": "browserify test/*.js -p esmify | tape-run --browser electron --electron-arg=--no-sandbox --electron-arg=--disable-gpu",
-    "build": "cargo run --bin bundle_pubky_npm",
+    "build": "cargo run --bin bundle_npm",
     "prepublishOnly": "npm run build"
   },
   "files": [
