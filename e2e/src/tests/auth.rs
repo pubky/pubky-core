@@ -1,5 +1,5 @@
-use pubky_testnet::pubky::{global_client, set_global_client, Method, PubkyHttpClient};
-use pubky_testnet::pubky::{PubkyAuthFlow, PubkySession, PubkySigner, StatusCode};
+use pubky_testnet::pubky::{Method, PubkyHttpClient};
+use pubky_testnet::pubky::{PubkyAuthFlow, PubkySession, StatusCode};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -13,8 +13,9 @@ use pubky_testnet::pubky::errors::{Error, RequestError};
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
-    let signer = PubkySigner::random().unwrap(); // Lazy constructor uses our global testnet pubky client
+    let signer = pubky.signer_random();
 
     let user = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
@@ -29,9 +30,10 @@ async fn basic_authn() {
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
     // Create a brand-new user and session
-    let signer = PubkySigner::random().unwrap();
+    let signer = pubky.signer_random();
     let pubky = signer.public_key().clone();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -94,6 +96,7 @@ async fn disabled_user() {
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
     let http_relay_url = testnet.http_relay().local_link_url();
 
@@ -106,11 +109,12 @@ async fn authz() {
     // Third-party app (keyless)
     let auth = PubkyAuthFlow::builder(caps)
         .relay(http_relay_url)
+        .client(pubky.client().clone())
         .start()
         .unwrap();
 
     // Signer authenticator
-    let signer = PubkySigner::random().unwrap();
+    let signer = pubky.signer_random();
     signer.signup(&server.public_key(), None).await.unwrap();
     signer
         .approve_auth(&auth.authorization_url())
@@ -157,9 +161,10 @@ async fn authz() {
 async fn persist_and_restore_info() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
     // Create user and session-bound agent
-    let signer = PubkySigner::random().unwrap();
+    let signer = pubky.signer_random();
     let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
     // Write something with the live agent
@@ -176,7 +181,9 @@ async fn persist_and_restore_info() {
     // Save to disk or however you want to persist `exported`
 
     // Rehydrate from the exported secret (validates the session)
-    let restored = PubkySession::import_secret(&secret_token).await.unwrap();
+    let restored = PubkySession::import_secret(&secret_token, Some(pubky.client().clone()))
+        .await
+        .unwrap();
 
     // Same identity?
     assert_eq!(restored.info().public_key(), &signer.public_key());
@@ -193,10 +200,11 @@ async fn persist_and_restore_info() {
 async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
     // Two independent users
-    let alice = PubkySigner::random().unwrap();
-    let bob = PubkySigner::random().unwrap();
+    let alice = pubky.signer_random();
+    let bob = pubky.signer_random();
 
     let alice_session = alice.signup(&server.public_key(), None).await.unwrap();
     let bob_session = bob.signup(&server.public_key(), None).await.unwrap();
@@ -215,6 +223,7 @@ async fn multiple_users() {
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
     let http_relay_url = testnet.http_relay().local_link_url();
 
@@ -231,19 +240,15 @@ async fn authz_timeout_reconnect() {
         .unwrap();
 
     // set custom global client with timeout of 1 sec
-    set_global_client(client);
-
     // Start pairing auth flow using our custom client + local relay
     let auth = PubkyAuthFlow::builder(capabilities)
+        .client(client)
         .relay(http_relay_url)
         .start()
         .unwrap();
 
-    // set again the default testnet client
-    set_global_client(testnet.client().unwrap());
-
     // Signer side: sign up, then approve after a delay (to exercise timeout/retry)
-    let signer = PubkySigner::random().unwrap();
+    let signer = pubky.signer_random();
     let signer_pubky = signer.public_key();
     signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -287,8 +292,10 @@ async fn authz_timeout_reconnect() {
 async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
-    let signer = PubkySigner::random().unwrap();
-    let signer2 = PubkySigner::random().unwrap();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer_random();
+    let signer2 = pubky.signer_random();
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
@@ -349,10 +356,11 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
 
     // Sign up a brand-new user (initial publish happens on signup)
-    let signer = PubkySigner::random().unwrap();
+    let signer = pubky.signer_random();
     let pubky = signer.public_key().clone();
     signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -394,9 +402,10 @@ async fn conditional_publish_skips_when_fresh() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
 
-    let signer = PubkySigner::random().unwrap();
+    let signer = pubky.signer_random();
     let pubky = signer.public_key().clone();
     signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -431,20 +440,19 @@ async fn republish_homeserver() {
     // Setup testnet + a homeserver.
     let mut testnet = Testnet::new().await.unwrap();
     let max_record_age = Duration::from_secs(5);
+    let pubky = testnet.sdk().unwrap();
     let server = testnet.create_homeserver().await.unwrap();
 
-    // Pubky client for reading pkarr records.
-    let client = global_client().unwrap();
-
     // Create user and publish initial record via signup.
-    let signer = PubkySigner::random().unwrap();
-    let pubky = signer.public_key().clone();
+    let signer = pubky.signer_random();
+    let public_key = signer.public_key().clone();
     signer.signup(&server.public_key(), None).await.unwrap();
 
     // Initial timestamp.
-    let ts1 = client
+    let ts1 = pubky
+        .client()
         .pkarr()
-        .resolve_most_recent(&pubky)
+        .resolve_most_recent(&public_key)
         .await
         .unwrap()
         .timestamp()
@@ -454,9 +462,10 @@ async fn republish_homeserver() {
     let pkdns = signer.pkdns().set_stale_after(max_record_age);
     pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
-    let ts2 = client
+    let ts2 = pubky
+        .client()
         .pkarr()
-        .resolve_most_recent(&pubky)
+        .resolve_most_recent(&public_key)
         .await
         .unwrap()
         .timestamp()
@@ -469,9 +478,10 @@ async fn republish_homeserver() {
     // Now the conditional publish should republish and bump the timestamp.
     pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
-    let ts3 = client
+    let ts3 = pubky
+        .client()
         .pkarr()
-        .resolve_most_recent(&pubky)
+        .resolve_most_recent(&public_key)
         .await
         .unwrap()
         .timestamp()
