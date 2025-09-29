@@ -30,6 +30,7 @@ sequenceDiagram
     3rd Party App ->>Authenticator: Show QR code
     note over 3rd Party App ,Authenticator: required Capabilities,<br/>relay url, and client secret
     Authenticator-->>User: Display consent form
+    note over Authenticator ,User: Showing capabilities <br/>
     User -->>Authenticator: Confirm consent
     Authenticator-->>Authenticator: Sign AuthToken & encrypt with client secret
     Authenticator->>HTTP Relay: Send encrypted AuthToken
