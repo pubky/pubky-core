@@ -19,12 +19,8 @@ impl Pubky {
     /// If not provided `localhost` is used.
     #[wasm_bindgen(js_name = "testnet")]
     pub fn testnet(host: Option<String>) -> JsResult<Pubky> {
-        if let Some(h) = host {
-            let client = pubky::PubkyHttpClient::builder().testnet_host(h).build()?;
-            Ok(Pubky(pubky::Pubky::with_client(client)))
-        } else {
-            Ok(Pubky(pubky::Pubky::testnet()?))
-        }
+        let client = Client::testnet(host);
+        Ok(Pubky(pubky::Pubky::with_client(client.0)))
     }
 
     /// Construct from an already-configured HTTP client.
@@ -36,7 +32,7 @@ impl Pubky {
     /// Start an auth flow using this façade’s client.
     #[wasm_bindgen(js_name = "startAuthFlow")]
     pub fn start_auth_flow(&self, capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
-        let flow = AuthFlow::start(capabilities, relay)?;
+        let flow = AuthFlow::start_with_client(capabilities, relay, Some(self.0.client().clone()))?;
         Ok(flow)
     }
 

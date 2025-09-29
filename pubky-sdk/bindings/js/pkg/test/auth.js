@@ -1,5 +1,5 @@
 import test from "tape";
-import { PublicKey } from "../index.cjs";
+import { PublicKey, Pubky, validateCapabilities} from "../index.cjs";
 import { createSignupToken } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
@@ -10,7 +10,7 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
 test("Auth: 3rd party signin", async (t) => {
-  const sdk = Pubky.testnet(); // or Pubky.testnet("localhost")
+  const sdk = Pubky.testnet();
 
   const signer = sdk.signerRandom();
   const pubky = signer.publicKey().z32();
@@ -37,59 +37,65 @@ test("Auth: 3rd party signin", async (t) => {
   t.end();
 });
 
-// test("AuthFlow.start: rejects malformed capabilities; normalizes valid; allows empty", async (t) => {
-//   useTestnet();
+test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows empty", async (t) => {
+  const sdk = Pubky.testnet(); // uses local testnet mapping so URLs are resolvable in-node
 
-//   // 1) Invalid entries -> throws InvalidInput
-//   try {
-//     AuthFlow.start("/ok/:rw,not/a/cap,/also:bad:x", TESTNET_HTTP_RELAY);
-//     t.fail("start() should throw on malformed capability entries");
-//   } catch (e) {
-//     t.equal(e.name, "InvalidInput", "invalid caps -> InvalidInput");
-//     t.ok(
-//       /Invalid capability entries/i.test(e.message),
-//       "error message mentions invalid entries"
-//     );
-//   }
+  // 1) Invalid entries -> throws InvalidInput with a precise message
+  try {
+    sdk.startAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", TESTNET_HTTP_RELAY);
+    t.fail("startAuthFlow() should throw on malformed capability entries");
+  } catch (e) {
+    t.equal(e.name, "InvalidInput", "invalid caps -> InvalidInput");
+    t.ok(
+      /Invalid capability entries/i.test(e.message),
+      "error message lists invalid entries"
+    );
+    t.ok(
+      e.message.includes("not/a/cap") && e.message.includes("/also:bad:x"),
+      "message includes concrete bad entries"
+    );
+  }
 
-//   // 2) Valid entry with unordered actions -> normalization in URL (wr -> rw)
-//   {
-//     const flow = AuthFlow.start("/pub/example/:wr", TESTNET_HTTP_RELAY);
-//     const url = new URL(flow.authorizationUrl());
-//     const caps = url.searchParams.get("caps");
-//     t.equal(caps, "/pub/example/:rw", "actions normalized to ':rw' in deep link");
-//   }
+  // 2) Valid entry with unordered actions -> normalized in URL (wr -> rw)
+  {
+    const flow = sdk.startAuthFlow("/pub/example/:wr", TESTNET_HTTP_RELAY);
+    const url = new URL(flow.authorizationUrl());
+    const caps = url.searchParams.get("caps");
+    t.equal(caps, "/pub/example/:rw", "actions normalized to ':rw' in deep link");
+  }
 
-//   // 3) Empty string -> allowed, caps param stays empty
-//   {
-//     const flow = AuthFlow.start("", TESTNET_HTTP_RELAY);
-//     const url = new URL(flow.authorizationUrl());
-//     const caps = url.searchParams.get("caps");
-//     t.equal(caps, "", "empty input allowed (no scopes)");
-//   }
+  // 3) Empty string -> allowed; caps param remains empty
+  {
+    const flow = sdk.startAuthFlow("", TESTNET_HTTP_RELAY);
+    const url = new URL(flow.authorizationUrl());
+    const caps = url.searchParams.get("caps");
+    t.equal(caps, "", "empty input allowed (no scopes)");
+  }
 
-//   t.end();
-// });
+  t.end();
+});
 
-// test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
-//   // OK + normalization
-//   t.equal(
-//     validateCapabilities("/pub/a/:wr,/priv/b/:r"),
-//     "/pub/a/:rw,/priv/b/:r",
-//     "normalize wr->rw and keep valid entries"
-//   );
+// Covers the pure string validator without running the flow.
+// Ensures normalization behavior and precise error reporting.
+test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
+  // OK + normalization
+  t.equal(
+    validateCapabilities("/pub/a/:wr,/priv/b/:r"),
+    "/pub/a/:rw,/priv/b/:r",
+    "normalize wr->rw and preserve valid entries"
+  );
 
-//   // Precise error message
-//   try {
-//     validateCapabilities("/pub/a/:rw,/x:y,/pub/b/:x");
-//     t.fail("validateCapabilities should throw on malformed entries");
-//   } catch (e) {
-//     t.equal(e.name, "InvalidInput", "helper throws InvalidInput on bad entries");
-//     t.ok(
-//       e.message.includes("/x:y") && e.message.includes("/pub/b/:x"),
-//       "message lists bad entries"
-//     );
-//   }
+  // Precise error message for malformed entries
+  try {
+    validateCapabilities("/pub/a/:rw,/x:y,/pub/b/:x");
+    t.fail("validateCapabilities should throw on malformed entries");
+  } catch (e) {
+    t.equal(e.name, "InvalidInput", "throws InvalidInput on bad entries");
+    t.ok(
+      e.message.includes("/x:y") && e.message.includes("/pub/b/:x"),
+      "message lists all offending entries"
+    );
+  }
 
-//   t.end();
-// });
+  t.end();
+});

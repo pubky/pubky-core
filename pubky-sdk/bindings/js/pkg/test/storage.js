@@ -1,132 +1,156 @@
-// import test from "tape";
+import test from "tape";
 
-// import {
-//   Client,
-//   Signer,
-//   PublicStorage,
-//   Keypair,
-//   PublicKey,
-//   setLogLevel,
-//   useTestnet,
-// } from "../index.cjs";
-// import { createSignupToken } from "./utils.js";
+import {
+  Pubky,
+  PublicKey,
+} from "../index.cjs";
+import { createSignupToken } from "./utils.js";
 
-// const HOMESERVER_PUBLICKEY = PublicKey.from(
-//   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
-// );
+const HOMESERVER_PUBLICKEY = PublicKey.from(
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+);
 
-// test("session: putJson/getJson/delete, public: getJson", async (t) => {
-//   // 0) Point the SDK at the local testnet (relays + wasm HTTP mapping)
-//   useTestnet();
+test("session: putJson/getJson/delete, public: getJson", async (t) => {
+  // 0) Use the façade pre-wired for local testnet (PKARR + WASM http mapping)
+  const sdk = Pubky.testnet();
 
-//   // 1) Signer & signup -> ready session (cookie stored by browser/wasm fetch)
-//   const signer = Signer.random();
-//   const signupToken = await createSignupToken();
-//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  // 1) Signer & signup -> ready session (cookie managed by fetch)
+  const signer = sdk.signerRandom();
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   const userPk = session.info().publicKey();
-//   const path = "/pub/example.com/arbitrary";
-//   const addr = `${userPk.z32()}/pub/example.com/arbitrary`; // addressed for public reads
-//   const json = { foo: "bar" };
+  const userPk = session.info().publicKey();
+  const path = "/pub/example.com/arbitrary";
+  const addr = `${userPk.z32()}/pub/example.com/arbitrary`;
+  const json = { foo: "bar" };
 
-//   // 2) Write as the user via SessionStorage (absolute path)
-//   await session.storage().putJson(path, json);
+  // 2) Write as the user via SessionStorage (absolute path)
+  await session.storage().putJson(path, json);
 
-//   // 3) Read data as the user via SessionStorage (absolute path)
-//   {
-//     const got = await session.storage().getJson(path, json);
-//     t.deepEqual(got, { foo: "bar" }, "public getJson matches");
-//   }
+  // 3) Read data as the user via SessionStorage (absolute path)
+  {
+    const got = await session.storage().getJson(path);
+    t.deepEqual(got, { foo: "bar" }, "session getJson matches");
+  }
 
-//   // 4) Read publicly (no auth) via PublicStorage
-//   const publicStorage = new PublicStorage();
-//   {
-//     const got = await publicStorage.getJson(addr);
-//     t.deepEqual(got, { foo: "bar" }, "public getJson matches");
-//   }
+  // 4) Read publicly (no auth) via PublicStorage
+  const publicStorage = sdk.publicStorage();
+  {
+    const got = await publicStorage.getJson(addr);
+    t.deepEqual(got, { foo: "bar" }, "public getJson matches");
+  }
 
-//   // 5) Delete as the user
-//   await session.storage().delete(path);
+  // 5) Delete as the user
+  await session.storage().delete(path);
 
-//   // 6) Public GET should 404 now
-//   try {
-//     await publicStorage.getJson(addr);
-//     t.fail("public getJson after delete should 404");
-//   } catch (e) {
-//     // Expect your wasm error mapping (RequestError + { statusCode: 404 })
-//     t.equal(e.name, "RequestError", "mapped error name");
-//     t.equal(e.statusCode, 404, "status code 404");
-//   }
+  // 6) Public GET should 404 now
+  try {
+    await publicStorage.getJson(addr);
+    t.fail("public getJson after delete should 404");
+  } catch (e) {
+    t.equal(e.name, "RequestError", "mapped error name");
+    t.equal(e.statusCode, 404, "status code 404");
+  }
 
-//   t.end();
-// });
+  t.end();
+});
 
-// test("session: putText/getText/delete, public: getText", async (t) => {
-//   useTestnet();
+test("session: putText/getText/delete, public: getText", async (t) => {
+  const sdk = Pubky.testnet();
 
-//   // 1) signup -> session
-//   const signer = Signer.random();
-//   const signupToken = await createSignupToken();
-//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  // 1) signer → signup → session
+  const signer = sdk.signerRandom();
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   const userPk = session.info().publicKey().z32();
-//   const path = "/pub/example.com/hello.txt"; // session-scoped absolute path
-//   const addr = `${userPk}/pub/example.com/hello.txt`; // addressed for public reads
+  const userPk = session.info().publicKey().z32();
+  const path = "/pub/example.com/hello.txt";            // session-scoped absolute path
+  const addr = `${userPk}/pub/example.com/hello.txt`;   // addressed for public reads
+  const text = "hello world from pubky";
 
-//   const text = "hello 🌍 pubky!";
+  // 2) write text as the user
+  await session.storage().putText(path, text);
 
-//   // 2) write text as the user
-//   await session.storage().putText(path, text);
+  // 3) read text back via session
+  {
+    const got = await session.storage().getText(path);
+    t.equal(got, text, "session getText matches");
+  }
 
-//   // 3) read text back via session-scoped getText
-//   {
-//     const got = await session.storage().getText(path);
-//     t.equal(got, text, "session getText matches");
-//   }
+  // 4) read text publicly (no auth)
+  {
+    const pub = sdk.publicStorage();
+    const got = await pub.getText(addr);
+    t.equal(got, text, "public getText matches");
+  }
 
-//   // 4) read text publicly (no auth) via PublicStorage
-//   {
-//     const pub = new PublicStorage();
-//     const got = await pub.getText(addr);
-//     t.equal(got, text, "public getText matches");
-//   }
+  // 5) delete
+  await session.storage().delete(path);
 
-//   t.end();
-// });
+  // 6) public GET should 404
+  {
+    const pub = sdk.publicStorage();
+    try {
+      await pub.getText(addr);
+      t.fail("public getText after delete should 404");
+    } catch (e) {
+      t.equal(e.name, "RequestError", "mapped error name");
+      t.equal(e.statusCode, 404, "status code 404");
+    }
+  }
 
-// test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
-//   useTestnet();
+  t.end();
+});
 
-//   // 1) signup -> session
-//   const signer = Signer.random();
-//   const signupToken = await createSignupToken();
-//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   const userPk = session.info().publicKey().z32();
-//   const path = "/pub/example.com/blob.bin";
-//   const addr = `${userPk}/pub/example.com/blob.bin`;
+test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
+  const sdk = Pubky.testnet();
 
-//   // Bytes payload (Buffer works; it's a Uint8Array subclass)
-//   const bytes = Buffer.from([0, 1, 2, 3, 4, 250, 251, 252, 253, 254, 255]);
+  // 1) signer → signup → session
+  const signer = sdk.signerRandom();
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
-//   // 2) write bytes
-//   await session.storage().putBytes(path, bytes);
+  const userPk = session.info().publicKey().z32();
+  const path = "/pub/example.com/blob.bin";            // session-scoped absolute path
+  const addr = `${userPk}/pub/example.com/blob.bin`;   // addressed for public reads
 
-//   // 3) read bytes back via session-scoped getBytes
-//   {
-//     const got = await session.storage().getBytes(path); // Uint8Array
-//     t.deepEqual([...got], [...bytes], "session getBytes matches");
-//   }
+  // Bytes payload (Buffer is a Uint8Array in Node)
+  const bytes = Buffer.from([0, 1, 2, 3, 4, 250, 251, 252, 253, 254, 255]);
 
-//   // 4) read bytes publicly via PublicStorage
-//   {
-//     const pub = new PublicStorage();
-//     const got = await pub.getBytes(addr); // Uint8Array
-//     t.deepEqual([...got], [...bytes], "public getBytes matches");
-//   }
+  // 2) write bytes
+  await session.storage().putBytes(path, bytes);
 
-//   t.end();
-// });
+  // 3) read bytes back via session
+  {
+    const got = await session.storage().getBytes(path); // Uint8Array
+    t.deepEqual([...got], [...bytes], "session getBytes matches");
+  }
+
+  // 4) read bytes publicly
+  {
+    const pub = sdk.publicStorage();
+    const got = await pub.getBytes(addr); // Uint8Array
+    t.deepEqual([...got], [...bytes], "public getBytes matches");
+  }
+
+  // 5) delete
+  await session.storage().delete(path);
+
+  // 6) public GET should 404
+  {
+    const pub = sdk.publicStorage();
+    try {
+      await pub.getBytes(addr);
+      t.fail("public getBytes after delete should 404");
+    } catch (e) {
+      t.equal(e.name, "RequestError", "mapped error name");
+      t.equal(e.statusCode, 404, "status code 404");
+    }
+  }
+
+  t.end();
+});
 
 // test("not found", async (t) => {
 //   useTestnet();

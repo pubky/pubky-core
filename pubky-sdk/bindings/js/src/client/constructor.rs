@@ -93,7 +93,7 @@ impl Client {
 
         let mut builder = pubky::PubkyHttpClient::builder();
         builder.pkarr(|p| p.relays(&[relay.as_str()]).expect("valid testnet relay"));
-        builder.testnet_host(hostname); // no-op on native, active on WASM
+        builder.testnet_host(Some(hostname)); // no-op on native, active on WASM
 
         let client = builder.build().expect("testnet build should be infallible");
         Self(client)

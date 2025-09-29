@@ -36,20 +36,30 @@ impl AuthFlow {
     /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "start")]
     pub fn start(capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
-        // 1) Validate & normalize the capabilities string (fail fast with details).
-        let normalized = validate_caps_for_start(capabilities)?;
+        Self::start_with_client(capabilities, relay, None)
+    }
 
-        // 2) Build native Capabilities (will be valid now).
+    /// Rust-only helper that threads an explicit transport.
+    pub(crate) fn start_with_client(
+        capabilities: &str,
+        relay: Option<String>,
+        client: Option<pubky::PubkyHttpClient>,
+    ) -> JsResult<AuthFlow> {
+        // 1) Validate & normalize capability string
+        let normalized = validate_caps_for_start(capabilities)?;
+        // 2) Build native Capabilities
         let caps = Capabilities::try_from(normalized.as_str())?;
 
-        // 3) Build the flow (optionally overriding the relay).
-        let flow = if let Some(r) = relay {
-            let url = Url::parse(&r)?;
-            pubky::PubkyAuthFlow::builder(&caps).relay(url).start()?
-        } else {
-            pubky::PubkyAuthFlow::start(&caps)?
-        };
-        Ok(AuthFlow(flow))
+        // 3) Build the flow with optional relay and optional client
+        let mut builder = pubky::PubkyAuthFlow::builder(&caps);
+        if let Some(c) = client {
+            builder = builder.client(c);
+        }
+        if let Some(r) = relay {
+            builder = builder.relay(Url::parse(&r)?);
+        }
+
+        Ok(AuthFlow(builder.start()?))
     }
 
     /// The `pubkyauth://` deep link to show (QR/deeplink) to the signer.

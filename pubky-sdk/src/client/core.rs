@@ -117,11 +117,14 @@ impl PubkyHttpClientBuilder {
     /// Sets the testnet host. This is only used for WASM builds.
     /// TODO: remove from the API surface of native configs without triggering clippy
     /// errors on the JS bindings package.
-    pub fn testnet_host(&mut self, host: String) -> &mut Self {
+    pub fn testnet_host(&mut self, host: Option<String>) -> &mut Self {
         // The field itself is still conditional, so the logic is gated.
         #[cfg(target_arch = "wasm32")]
         {
-            self.testnet_host = Some(host);
+            self.testnet_host = match host {
+                Some(h) => Some(h),
+                None => Some("localhost".to_string()),
+            };
         }
         // This avoids an "unused parameter" warning on non-WASM builds.
         #[cfg(not(target_arch = "wasm32"))]
@@ -355,7 +358,7 @@ impl PubkyHttpClient {
         builder.testnet();
 
         #[cfg(target_arch = "wasm32")]
-        builder.testnet_host("localhost".to_string());
+        builder.testnet_host(Some("localhost".to_string()));
 
         builder.build()
     }
