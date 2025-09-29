@@ -40,7 +40,6 @@ pub fn router(state: AppState) -> Router<AppState> {
 /// Dav path example:
 /// https://qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/dav/qtnyghnq9swketdtj9drc7rs5pfnxhs61gq4jwd317ezdegcrbco/pub/test.txt
 /// via https://github.com/pubky/pubky-core/pull/145#discussion_r2149297326
-
 pub async fn dav_handler(
     State(state): State<AppState>,
     // Path((key, path)): Path<(Z32Pubkey, String)>,

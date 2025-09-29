@@ -221,10 +221,7 @@ fn session_secret_from_header(
     let base64_encoded = auth_str.strip_prefix("Basic ")?;
     let decoded = Base64.decode(base64_encoded.trim()).ok()?;
     let decoded_str = String::from_utf8(decoded).ok()?;
-    let mut parts = decoded_str.splitn(2, ':');
-
-    let key = parts.next()?;
-    let secret = parts.next()?;
+    let (key, secret) = decoded_str.split_once(':')?;
 
     if key == public_key.to_string() {
         SessionSecret::new(secret.to_string()).ok()
