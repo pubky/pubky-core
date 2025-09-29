@@ -3,7 +3,7 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 
 use super::session::Session;
-use crate::{js_result::JsResult, wrappers::capabilities::validate_caps_for_start};
+use crate::{js_error::JsResult, wrappers::capabilities::validate_caps_for_start};
 
 /// JS-facing auth flow handle that polls a relay until a signer approves.
 #[wasm_bindgen]

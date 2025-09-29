@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::js_error::{PubkyErrorName, PubkyJsError};
-use crate::js_result::JsResult;
+use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
 
 static TESTNET_RELAY_PORT: &str = "15411";
 

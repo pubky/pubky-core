@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use crate::js_result::JsResult;
+use crate::js_error::JsResult;
 use js_sys::Uint8Array;
 
 #[wasm_bindgen]

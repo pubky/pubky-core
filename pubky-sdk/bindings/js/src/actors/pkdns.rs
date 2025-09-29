@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use crate::js_result::JsResult;
+use crate::js_error::JsResult;
 use crate::wrappers::keys::{Keypair, PublicKey};
 
 #[wasm_bindgen]

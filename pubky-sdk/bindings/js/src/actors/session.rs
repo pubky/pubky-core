@@ -2,8 +2,7 @@
 use wasm_bindgen::prelude::*;
 
 use super::storage::SessionStorage;
-use crate::js_error::PubkyJsError;
-use crate::js_result::JsResult;
+use crate::js_error::{JsResult, PubkyJsError};
 use crate::wrappers::session_info::SessionInfo;
 
 #[wasm_bindgen]

@@ -4,7 +4,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use super::public::ResourceStats;
-use crate::js_result::JsResult;
+use crate::js_error::JsResult;
 
 #[wasm_bindgen]
 pub struct SessionStorage(pub(crate) pubky::SessionStorage);

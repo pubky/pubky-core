@@ -3,7 +3,6 @@ use wasm_bindgen::prelude::*;
 pub mod actors;
 pub mod client;
 mod js_error;
-mod js_result;
 pub mod wrappers;
 
 #[wasm_bindgen(js_name = "setLogLevel")]

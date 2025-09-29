@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::js_result::JsResult;
+use crate::js_error::JsResult;
 
 /// TS-friendly stats object
 #[derive(Tsify, Serialize, Deserialize)]

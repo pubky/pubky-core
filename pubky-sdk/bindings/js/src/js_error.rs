@@ -9,6 +9,12 @@ use pubky::errors::{BuildError, RequestError};
 use pubky_common::capabilities::Error as CapabilitiesError;
 use pubky_common::recovery_file::Error as RecoveryFileError;
 
+/// A convenient `Result` type alias for fallible functions exposed to WebAssembly.
+///
+/// An `Err` variant will be automatically converted into a structured JavaScript exception
+/// that can be caught on the JS side.
+pub type JsResult<T> = Result<T, PubkyJsError>;
+
 // --- TypeScript Documentation & Schema ---
 
 /// A union type of all possible machine-readable codes for the `name` property

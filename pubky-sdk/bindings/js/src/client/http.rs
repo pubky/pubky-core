@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::{Headers, Request, RequestCredentials, RequestInit, ServiceWorkerGlobalScope};
 
 use super::constructor::Client;
-use crate::js_result::JsResult;
+use crate::js_error::JsResult;
 
 #[wasm_bindgen]
 impl Client {

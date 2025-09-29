@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use super::{pkdns::Pkdns, session::Session};
-use crate::js_result::JsResult;
+use crate::js_error::JsResult;
 use crate::wrappers::{keys::Keypair, keys::PublicKey};
 
 #[wasm_bindgen]

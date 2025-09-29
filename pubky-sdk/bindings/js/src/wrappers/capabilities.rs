@@ -5,10 +5,7 @@
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    js_error::{PubkyErrorName, PubkyJsError},
-    js_result::JsResult,
-};
+use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
 use pubky_common::capabilities::{Capabilities, Capability};
 
 /// Internal helper: normalizes capabilities and collects invalid tokens.
