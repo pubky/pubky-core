@@ -50,12 +50,13 @@
 //! # Ok(()) }
 //! ```
 
-use std::path::Path;
-
 use crate::{
     Capabilities, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
     errors::RequestError,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
 
 /// High-level façade. Owns a `PubkyHttpClient` and constructs the main actors.
 #[derive(Clone, Debug)]

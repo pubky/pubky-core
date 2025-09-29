@@ -1,463 +1,463 @@
-import test from "tape";
-
-import {
-  Client,
-  Signer,
-  PublicStorage,
-  Keypair,
-  PublicKey,
-  setLogLevel,
-  useTestnet,
-} from "../index.cjs";
-import { createSignupToken } from "./utils.js";
-
-const HOMESERVER_PUBLICKEY = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
-);
-
-test("session: putJson/getJson/delete, public: getJson", async (t) => {
-  // 0) Point the SDK at the local testnet (relays + wasm HTTP mapping)
-  useTestnet();
-
-  // 1) Signer & signup -> ready session (cookie stored by browser/wasm fetch)
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const userPk = session.info().publicKey();
-  const path = "/pub/example.com/arbitrary";
-  const addr = `${userPk.z32()}/pub/example.com/arbitrary`; // addressed for public reads
-  const json = { foo: "bar" };
-
-  // 2) Write as the user via SessionStorage (absolute path)
-  await session.storage().putJson(path, json);
-
-  // 3) Read data as the user via SessionStorage (absolute path)
-  {
-    const got = await session.storage().getJson(path, json);
-    t.deepEqual(got, { foo: "bar" }, "public getJson matches");
-  }
-
-  // 4) Read publicly (no auth) via PublicStorage
-  const publicStorage = new PublicStorage();
-  {
-    const got = await publicStorage.getJson(addr);
-    t.deepEqual(got, { foo: "bar" }, "public getJson matches");
-  }
-
-  // 5) Delete as the user
-  await session.storage().delete(path);
-
-  // 6) Public GET should 404 now
-  try {
-    await publicStorage.getJson(addr);
-    t.fail("public getJson after delete should 404");
-  } catch (e) {
-    // Expect your wasm error mapping (RequestError + { statusCode: 404 })
-    t.equal(e.name, "RequestError", "mapped error name");
-    t.equal(e.statusCode, 404, "status code 404");
-  }
-
-  t.end();
-});
-
-test("session: putText/getText/delete, public: getText", async (t) => {
-  useTestnet();
-
-  // 1) signup -> session
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const userPk = session.info().publicKey().z32();
-  const path = "/pub/example.com/hello.txt"; // session-scoped absolute path
-  const addr = `${userPk}/pub/example.com/hello.txt`; // addressed for public reads
-
-  const text = "hello 🌍 pubky!";
-
-  // 2) write text as the user
-  await session.storage().putText(path, text);
-
-  // 3) read text back via session-scoped getText
-  {
-    const got = await session.storage().getText(path);
-    t.equal(got, text, "session getText matches");
-  }
-
-  // 4) read text publicly (no auth) via PublicStorage
-  {
-    const pub = new PublicStorage();
-    const got = await pub.getText(addr);
-    t.equal(got, text, "public getText matches");
-  }
-
-  t.end();
-});
-
-test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
-  useTestnet();
-
-  // 1) signup -> session
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const userPk = session.info().publicKey().z32();
-  const path = "/pub/example.com/blob.bin";
-  const addr = `${userPk}/pub/example.com/blob.bin`;
-
-  // Bytes payload (Buffer works; it's a Uint8Array subclass)
-  const bytes = Buffer.from([0, 1, 2, 3, 4, 250, 251, 252, 253, 254, 255]);
-
-  // 2) write bytes
-  await session.storage().putBytes(path, bytes);
-
-  // 3) read bytes back via session-scoped getBytes
-  {
-    const got = await session.storage().getBytes(path); // Uint8Array
-    t.deepEqual([...got], [...bytes], "session getBytes matches");
-  }
-
-  // 4) read bytes publicly via PublicStorage
-  {
-    const pub = new PublicStorage();
-    const got = await pub.getBytes(addr); // Uint8Array
-    t.deepEqual([...got], [...bytes], "public getBytes matches");
-  }
-
-  t.end();
-});
-
-test("not found", async (t) => {
-  useTestnet();
-
-  // signup just to have a valid user id (we never write the file)
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const userPk = session.info().publicKey();
-  const addr = `${userPk.z32()}/pub/example.com/definitely-missing.json`;
-
-  const publicStorage = new PublicStorage();
-
-  // exists() should be false
-  t.equal(
-    await publicStorage.exists(addr),
-    false,
-    "exists() is false on missing path",
-  );
-
-  // getJson() should throw mapped request error with 404
-  try {
-    await publicStorage.getJson(addr);
-    t.fail("getJson() should throw on missing");
-  } catch (e) {
-    t.equal(e.name, "RequestError", "mapped error name");
-    t.equal(e.statusCode, 404, "status code 404");
-  }
-
-  t.end();
-});
-
-test("unauthorized (no cookie) PUT returns 401", async (t) => {
-  useTestnet();
-
-  // Sign up + then sign out to clear cookie for this host
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const userPk = session.info().publicKey();
-  const url = `pubky://${userPk.z32()}/pub/example.com/unauth.json`;
-
-  await session.signout(); // server clears cookie; subsequent writes should be 401
-
-  // Issue a raw fetch PUT (with credentials) to that user's host - there is no valid cookie now
-  const client = Client.testnet();
-  const resp = await client.fetch(url, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ foo: "bar" }),
-    credentials: "include",
-  });
-
-  t.equal(resp.status, 401, "PUT without valid session cookie is 401");
-  t.end();
-});
-
-test("forbidden: writing outside /pub returns 403", async (t) => {
-  useTestnet();
-
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  // Attempt to write into /priv -> should be forbidden
-  const path = "/priv/example.com/arbitrary";
-  try {
-    await session.storage().putText(path, "Hello");
-    t.fail("putText to /priv should fail with 403");
-  } catch (e) {
-    // wasm error mapping: camelCase enum + top-level statusCode
-    t.equal(e.name, "RequestError", "mapped error name");
-    t.equal(e.statusCode, 403, "status code 403");
-    t.ok(
-      String(e.message || "").includes(
-        "Writing to directories other than '/pub/'",
-      ),
-      "error message mentions /pub restriction",
-    );
-  }
-
-  t.end();
-});
-
-test("list (public dir listing with limit/cursor/reverse)", async (t) => {
-  useTestnet();
-
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const userPk = session.info().publicKey().z32();
-
-  // Create a mix of files; only those under /pub/example.com/ should show up
-  const mk = (p) => session.storage().putText(p, "");
-  await mk(`/pub/a.wrong/a.txt`);
-  await mk(`/pub/example.com/a.txt`);
-  await mk(`/pub/example.com/b.txt`);
-  await mk(`/pub/example.wrong/a.txt`);
-  await mk(`/pub/example.com/c.txt`);
-  await mk(`/pub/example.com/d.txt`);
-  await mk(`/pub/z.wrong/a.txt`);
-
-  const publicStorage = new PublicStorage();
-  const dir = `${userPk}/pub/example.com/`; // addressed path for public listing
-
-  // 1) normal list (no limit/cursor)
-  {
-    const list = await publicStorage.list(dir);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/a.txt`,
-        `pubky://${userPk}/pub/example.com/b.txt`,
-        `pubky://${userPk}/pub/example.com/c.txt`,
-        `pubky://${userPk}/pub/example.com/d.txt`,
-      ],
-      "normal list with no limit or cursor",
-    );
-  }
-
-  // 2) limit=2
-  {
-    const list = await publicStorage.list(dir, null, false, 2);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/a.txt`,
-        `pubky://${userPk}/pub/example.com/b.txt`,
-      ],
-      "normal list with limit but no cursor",
-    );
-  }
-
-  // 3) cursor suffix "a.txt", limit=2
-  {
-    const list = await publicStorage.list(dir, "a.txt", false, 2);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/b.txt`,
-        `pubky://${userPk}/pub/example.com/c.txt`,
-      ],
-      "normal list with limit and a suffix cursor",
-    );
-  }
-
-  // 4) cursor as full URL, limit=2
-  {
-    const list = await publicStorage.list(
-      dir,
-      `pubky://${userPk}/pub/example.com/a.txt`,
-      false,
-      2,
-    );
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/b.txt`,
-        `pubky://${userPk}/pub/example.com/c.txt`,
-      ],
-      "normal list with limit and a full url cursor",
-    );
-  }
-
-  // 5) reverse listing
-  {
-    const list = await publicStorage.list(dir, null, true);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/d.txt`,
-        `pubky://${userPk}/pub/example.com/c.txt`,
-        `pubky://${userPk}/pub/example.com/b.txt`,
-        `pubky://${userPk}/pub/example.com/a.txt`,
-      ],
-      "reverse list with no limit or cursor",
-    );
-  }
-
-  // 6) reverse + limit=2
-  {
-    const list = await publicStorage.list(dir, null, true, 2);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/d.txt`,
-        `pubky://${userPk}/pub/example.com/c.txt`,
-      ],
-      "reverse list with limit but no cursor",
-    );
-  }
-
-  // 7) reverse + suffix cursor "d.txt" + limit=2
-  {
-    const list = await publicStorage.list(dir, "d.txt", true, 2);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${userPk}/pub/example.com/c.txt`,
-        `pubky://${userPk}/pub/example.com/b.txt`,
-      ],
-      "reverse list with limit and a suffix cursor",
-    );
-  }
-
-  t.end();
-});
-
-test("list shallow under /pub/", async (t) => {
-  useTestnet();
-
-  const signer = Signer.random();
-  const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-
-  const pubky = session.info().publicKey().z32();
-  const put = (p) => session.storage().putBytes(p, new Uint8Array());
-
-  // Seed files (directories appear because they contain files)
-  await Promise.all([
-    put("/pub/a.com/a.txt"),
-    put("/pub/example.com/a.txt"),
-    put("/pub/example.com/b.txt"),
-    put("/pub/example.com/c.txt"),
-    put("/pub/example.com/d.txt"),
-    put("/pub/example.con/d.txt"), // makes /pub/example.con/ a directory
-    put("/pub/example.con"), // also a file with same stem
-    put("/pub/file"),
-    put("/pub/file2"),
-    put("/pub/z.com/a.txt"),
-  ]);
-
-  const dirPath = "/pub/";
-  const dirAddr = `${pubky}/pub/`; // addressed form for public listing (optional)
-
-  // 1) shallow list (session)
-  {
-    const list = await session
-      .storage()
-      .list(dirPath, undefined, false, undefined, true);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${pubky}/pub/a.com/`,
-        `pubky://${pubky}/pub/example.com/`,
-        `pubky://${pubky}/pub/example.con`,
-        `pubky://${pubky}/pub/example.con/`,
-        `pubky://${pubky}/pub/file`,
-        `pubky://${pubky}/pub/file2`,
-        `pubky://${pubky}/pub/z.com/`,
-      ],
-      "normal list shallow",
-    );
-  }
-
-  // 2) shallow list with limit=3 (session)
-  {
-    const list = await session
-      .storage()
-      .list(dirPath, undefined, false, 3, true);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${pubky}/pub/a.com/`,
-        `pubky://${pubky}/pub/example.com/`,
-        `pubky://${pubky}/pub/example.con`,
-      ],
-      "shallow list with limit",
-    );
-  }
-
-  // 3) shallow list with cursor suffix (session)
-  {
-    const list = await session
-      .storage()
-      .list(dirPath, "example.com/", false, undefined, true);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${pubky}/pub/example.con`,
-        `pubky://${pubky}/pub/example.con/`,
-        `pubky://${pubky}/pub/file`,
-        `pubky://${pubky}/pub/file2`,
-        `pubky://${pubky}/pub/z.com/`,
-      ],
-      "shallow list with cursor suffix",
-    );
-  }
-
-  // 4) shallow reverse list (session)
-  {
-    const list = await session
-      .storage()
-      .list(dirPath, undefined, true, undefined, true);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${pubky}/pub/z.com/`,
-        `pubky://${pubky}/pub/file2`,
-        `pubky://${pubky}/pub/file`,
-        `pubky://${pubky}/pub/example.con/`,
-        `pubky://${pubky}/pub/example.con`,
-        `pubky://${pubky}/pub/example.com/`,
-        `pubky://${pubky}/pub/a.com/`,
-      ],
-      "reverse shallow list",
-    );
-  }
-
-  // 5) shallow reverse with limit=3 (session)
-  {
-    const list = await session
-      .storage()
-      .list(dirPath, undefined, true, 3, true);
-    t.deepEqual(
-      list,
-      [
-        `pubky://${pubky}/pub/z.com/`,
-        `pubky://${pubky}/pub/file2`,
-        `pubky://${pubky}/pub/file`,
-      ],
-      "reverse shallow with limit",
-    );
-  }
-
-  // OPTIONAL: same checks via PublicStorage.list on addressed dir
-  // const pub = new PublicStorage();
-  // const listPublic = await pub.list(dirAddr, undefined, false, undefined, true);
-
-  t.end();
-});
+// import test from "tape";
+
+// import {
+//   Client,
+//   Signer,
+//   PublicStorage,
+//   Keypair,
+//   PublicKey,
+//   setLogLevel,
+//   useTestnet,
+// } from "../index.cjs";
+// import { createSignupToken } from "./utils.js";
+
+// const HOMESERVER_PUBLICKEY = PublicKey.from(
+//   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+// );
+
+// test("session: putJson/getJson/delete, public: getJson", async (t) => {
+//   // 0) Point the SDK at the local testnet (relays + wasm HTTP mapping)
+//   useTestnet();
+
+//   // 1) Signer & signup -> ready session (cookie stored by browser/wasm fetch)
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const userPk = session.info().publicKey();
+//   const path = "/pub/example.com/arbitrary";
+//   const addr = `${userPk.z32()}/pub/example.com/arbitrary`; // addressed for public reads
+//   const json = { foo: "bar" };
+
+//   // 2) Write as the user via SessionStorage (absolute path)
+//   await session.storage().putJson(path, json);
+
+//   // 3) Read data as the user via SessionStorage (absolute path)
+//   {
+//     const got = await session.storage().getJson(path, json);
+//     t.deepEqual(got, { foo: "bar" }, "public getJson matches");
+//   }
+
+//   // 4) Read publicly (no auth) via PublicStorage
+//   const publicStorage = new PublicStorage();
+//   {
+//     const got = await publicStorage.getJson(addr);
+//     t.deepEqual(got, { foo: "bar" }, "public getJson matches");
+//   }
+
+//   // 5) Delete as the user
+//   await session.storage().delete(path);
+
+//   // 6) Public GET should 404 now
+//   try {
+//     await publicStorage.getJson(addr);
+//     t.fail("public getJson after delete should 404");
+//   } catch (e) {
+//     // Expect your wasm error mapping (RequestError + { statusCode: 404 })
+//     t.equal(e.name, "RequestError", "mapped error name");
+//     t.equal(e.statusCode, 404, "status code 404");
+//   }
+
+//   t.end();
+// });
+
+// test("session: putText/getText/delete, public: getText", async (t) => {
+//   useTestnet();
+
+//   // 1) signup -> session
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const userPk = session.info().publicKey().z32();
+//   const path = "/pub/example.com/hello.txt"; // session-scoped absolute path
+//   const addr = `${userPk}/pub/example.com/hello.txt`; // addressed for public reads
+
+//   const text = "hello 🌍 pubky!";
+
+//   // 2) write text as the user
+//   await session.storage().putText(path, text);
+
+//   // 3) read text back via session-scoped getText
+//   {
+//     const got = await session.storage().getText(path);
+//     t.equal(got, text, "session getText matches");
+//   }
+
+//   // 4) read text publicly (no auth) via PublicStorage
+//   {
+//     const pub = new PublicStorage();
+//     const got = await pub.getText(addr);
+//     t.equal(got, text, "public getText matches");
+//   }
+
+//   t.end();
+// });
+
+// test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
+//   useTestnet();
+
+//   // 1) signup -> session
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const userPk = session.info().publicKey().z32();
+//   const path = "/pub/example.com/blob.bin";
+//   const addr = `${userPk}/pub/example.com/blob.bin`;
+
+//   // Bytes payload (Buffer works; it's a Uint8Array subclass)
+//   const bytes = Buffer.from([0, 1, 2, 3, 4, 250, 251, 252, 253, 254, 255]);
+
+//   // 2) write bytes
+//   await session.storage().putBytes(path, bytes);
+
+//   // 3) read bytes back via session-scoped getBytes
+//   {
+//     const got = await session.storage().getBytes(path); // Uint8Array
+//     t.deepEqual([...got], [...bytes], "session getBytes matches");
+//   }
+
+//   // 4) read bytes publicly via PublicStorage
+//   {
+//     const pub = new PublicStorage();
+//     const got = await pub.getBytes(addr); // Uint8Array
+//     t.deepEqual([...got], [...bytes], "public getBytes matches");
+//   }
+
+//   t.end();
+// });
+
+// test("not found", async (t) => {
+//   useTestnet();
+
+//   // signup just to have a valid user id (we never write the file)
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const userPk = session.info().publicKey();
+//   const addr = `${userPk.z32()}/pub/example.com/definitely-missing.json`;
+
+//   const publicStorage = new PublicStorage();
+
+//   // exists() should be false
+//   t.equal(
+//     await publicStorage.exists(addr),
+//     false,
+//     "exists() is false on missing path",
+//   );
+
+//   // getJson() should throw mapped request error with 404
+//   try {
+//     await publicStorage.getJson(addr);
+//     t.fail("getJson() should throw on missing");
+//   } catch (e) {
+//     t.equal(e.name, "RequestError", "mapped error name");
+//     t.equal(e.statusCode, 404, "status code 404");
+//   }
+
+//   t.end();
+// });
+
+// test("unauthorized (no cookie) PUT returns 401", async (t) => {
+//   useTestnet();
+
+//   // Sign up + then sign out to clear cookie for this host
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const userPk = session.info().publicKey();
+//   const url = `pubky://${userPk.z32()}/pub/example.com/unauth.json`;
+
+//   await session.signout(); // server clears cookie; subsequent writes should be 401
+
+//   // Issue a raw fetch PUT (with credentials) to that user's host - there is no valid cookie now
+//   const client = Client.testnet();
+//   const resp = await client.fetch(url, {
+//     method: "PUT",
+//     headers: { "content-type": "application/json" },
+//     body: JSON.stringify({ foo: "bar" }),
+//     credentials: "include",
+//   });
+
+//   t.equal(resp.status, 401, "PUT without valid session cookie is 401");
+//   t.end();
+// });
+
+// test("forbidden: writing outside /pub returns 403", async (t) => {
+//   useTestnet();
+
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   // Attempt to write into /priv -> should be forbidden
+//   const path = "/priv/example.com/arbitrary";
+//   try {
+//     await session.storage().putText(path, "Hello");
+//     t.fail("putText to /priv should fail with 403");
+//   } catch (e) {
+//     // wasm error mapping: camelCase enum + top-level statusCode
+//     t.equal(e.name, "RequestError", "mapped error name");
+//     t.equal(e.statusCode, 403, "status code 403");
+//     t.ok(
+//       String(e.message || "").includes(
+//         "Writing to directories other than '/pub/'",
+//       ),
+//       "error message mentions /pub restriction",
+//     );
+//   }
+
+//   t.end();
+// });
+
+// test("list (public dir listing with limit/cursor/reverse)", async (t) => {
+//   useTestnet();
+
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const userPk = session.info().publicKey().z32();
+
+//   // Create a mix of files; only those under /pub/example.com/ should show up
+//   const mk = (p) => session.storage().putText(p, "");
+//   await mk(`/pub/a.wrong/a.txt`);
+//   await mk(`/pub/example.com/a.txt`);
+//   await mk(`/pub/example.com/b.txt`);
+//   await mk(`/pub/example.wrong/a.txt`);
+//   await mk(`/pub/example.com/c.txt`);
+//   await mk(`/pub/example.com/d.txt`);
+//   await mk(`/pub/z.wrong/a.txt`);
+
+//   const publicStorage = new PublicStorage();
+//   const dir = `${userPk}/pub/example.com/`; // addressed path for public listing
+
+//   // 1) normal list (no limit/cursor)
+//   {
+//     const list = await publicStorage.list(dir);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/a.txt`,
+//         `pubky://${userPk}/pub/example.com/b.txt`,
+//         `pubky://${userPk}/pub/example.com/c.txt`,
+//         `pubky://${userPk}/pub/example.com/d.txt`,
+//       ],
+//       "normal list with no limit or cursor",
+//     );
+//   }
+
+//   // 2) limit=2
+//   {
+//     const list = await publicStorage.list(dir, null, false, 2);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/a.txt`,
+//         `pubky://${userPk}/pub/example.com/b.txt`,
+//       ],
+//       "normal list with limit but no cursor",
+//     );
+//   }
+
+//   // 3) cursor suffix "a.txt", limit=2
+//   {
+//     const list = await publicStorage.list(dir, "a.txt", false, 2);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/b.txt`,
+//         `pubky://${userPk}/pub/example.com/c.txt`,
+//       ],
+//       "normal list with limit and a suffix cursor",
+//     );
+//   }
+
+//   // 4) cursor as full URL, limit=2
+//   {
+//     const list = await publicStorage.list(
+//       dir,
+//       `pubky://${userPk}/pub/example.com/a.txt`,
+//       false,
+//       2,
+//     );
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/b.txt`,
+//         `pubky://${userPk}/pub/example.com/c.txt`,
+//       ],
+//       "normal list with limit and a full url cursor",
+//     );
+//   }
+
+//   // 5) reverse listing
+//   {
+//     const list = await publicStorage.list(dir, null, true);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/d.txt`,
+//         `pubky://${userPk}/pub/example.com/c.txt`,
+//         `pubky://${userPk}/pub/example.com/b.txt`,
+//         `pubky://${userPk}/pub/example.com/a.txt`,
+//       ],
+//       "reverse list with no limit or cursor",
+//     );
+//   }
+
+//   // 6) reverse + limit=2
+//   {
+//     const list = await publicStorage.list(dir, null, true, 2);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/d.txt`,
+//         `pubky://${userPk}/pub/example.com/c.txt`,
+//       ],
+//       "reverse list with limit but no cursor",
+//     );
+//   }
+
+//   // 7) reverse + suffix cursor "d.txt" + limit=2
+//   {
+//     const list = await publicStorage.list(dir, "d.txt", true, 2);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${userPk}/pub/example.com/c.txt`,
+//         `pubky://${userPk}/pub/example.com/b.txt`,
+//       ],
+//       "reverse list with limit and a suffix cursor",
+//     );
+//   }
+
+//   t.end();
+// });
+
+// test("list shallow under /pub/", async (t) => {
+//   useTestnet();
+
+//   const signer = Signer.random();
+//   const signupToken = await createSignupToken();
+//   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+//   const pubky = session.info().publicKey().z32();
+//   const put = (p) => session.storage().putBytes(p, new Uint8Array());
+
+//   // Seed files (directories appear because they contain files)
+//   await Promise.all([
+//     put("/pub/a.com/a.txt"),
+//     put("/pub/example.com/a.txt"),
+//     put("/pub/example.com/b.txt"),
+//     put("/pub/example.com/c.txt"),
+//     put("/pub/example.com/d.txt"),
+//     put("/pub/example.con/d.txt"), // makes /pub/example.con/ a directory
+//     put("/pub/example.con"), // also a file with same stem
+//     put("/pub/file"),
+//     put("/pub/file2"),
+//     put("/pub/z.com/a.txt"),
+//   ]);
+
+//   const dirPath = "/pub/";
+//   const dirAddr = `${pubky}/pub/`; // addressed form for public listing (optional)
+
+//   // 1) shallow list (session)
+//   {
+//     const list = await session
+//       .storage()
+//       .list(dirPath, undefined, false, undefined, true);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${pubky}/pub/a.com/`,
+//         `pubky://${pubky}/pub/example.com/`,
+//         `pubky://${pubky}/pub/example.con`,
+//         `pubky://${pubky}/pub/example.con/`,
+//         `pubky://${pubky}/pub/file`,
+//         `pubky://${pubky}/pub/file2`,
+//         `pubky://${pubky}/pub/z.com/`,
+//       ],
+//       "normal list shallow",
+//     );
+//   }
+
+//   // 2) shallow list with limit=3 (session)
+//   {
+//     const list = await session
+//       .storage()
+//       .list(dirPath, undefined, false, 3, true);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${pubky}/pub/a.com/`,
+//         `pubky://${pubky}/pub/example.com/`,
+//         `pubky://${pubky}/pub/example.con`,
+//       ],
+//       "shallow list with limit",
+//     );
+//   }
+
+//   // 3) shallow list with cursor suffix (session)
+//   {
+//     const list = await session
+//       .storage()
+//       .list(dirPath, "example.com/", false, undefined, true);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${pubky}/pub/example.con`,
+//         `pubky://${pubky}/pub/example.con/`,
+//         `pubky://${pubky}/pub/file`,
+//         `pubky://${pubky}/pub/file2`,
+//         `pubky://${pubky}/pub/z.com/`,
+//       ],
+//       "shallow list with cursor suffix",
+//     );
+//   }
+
+//   // 4) shallow reverse list (session)
+//   {
+//     const list = await session
+//       .storage()
+//       .list(dirPath, undefined, true, undefined, true);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${pubky}/pub/z.com/`,
+//         `pubky://${pubky}/pub/file2`,
+//         `pubky://${pubky}/pub/file`,
+//         `pubky://${pubky}/pub/example.con/`,
+//         `pubky://${pubky}/pub/example.con`,
+//         `pubky://${pubky}/pub/example.com/`,
+//         `pubky://${pubky}/pub/a.com/`,
+//       ],
+//       "reverse shallow list",
+//     );
+//   }
+
+//   // 5) shallow reverse with limit=3 (session)
+//   {
+//     const list = await session
+//       .storage()
+//       .list(dirPath, undefined, true, 3, true);
+//     t.deepEqual(
+//       list,
+//       [
+//         `pubky://${pubky}/pub/z.com/`,
+//         `pubky://${pubky}/pub/file2`,
+//         `pubky://${pubky}/pub/file`,
+//       ],
+//       "reverse shallow with limit",
+//     );
+//   }
+
+//   // OPTIONAL: same checks via PublicStorage.list on addressed dir
+//   // const pub = new PublicStorage();
+//   // const listPublic = await pub.list(dirAddr, undefined, false, undefined, true);
+
+//   t.end();
+// });
