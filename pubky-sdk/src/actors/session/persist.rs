@@ -75,9 +75,9 @@ impl PubkySession {
     /// - If it has a different extension, `.<ext>.sess` is appended (e.g., `foo.txt.sess`).
     ///
     /// On Unix, permissions are set to `0o600`.
-    pub fn write_secret_file(&self, secret_file_path: &Path) -> std::io::Result<()> {
+    pub fn write_secret_file<P: AsRef<Path>>(&self, secret_file_path: P) -> std::io::Result<()> {
         let token = self.export_secret();
-        let p = secret_file_path;
+        let p = secret_file_path.as_ref();
 
         let target = match p.extension().and_then(|e| e.to_str()) {
             Some("sess") => p.to_path_buf(),

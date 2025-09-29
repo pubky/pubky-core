@@ -19,7 +19,7 @@
 //! # use pubky::{Capabilities, PubkyAuthFlow};
 //! # use std::time::Duration;
 //! # async fn ui() -> pubky::Result<()> {
-//! let flow = PubkyAuthFlow::builder(Capabilities::default())
+//! let flow = PubkyAuthFlow::builder(&Capabilities::default())
 //!     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
 //!     .start()?; // starts background polling immediately
 //!

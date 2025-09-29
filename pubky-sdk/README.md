@@ -17,15 +17,15 @@ pubky = "0.x"            # this crate
 ## Quick start
 
 ```rust no_run
-use pubky::{Pubky, PublicKey, Capabilities};
+use pubky::prelude::*;
 
 # async fn run() -> pubky::Result<()> {
 
 let pubky = Pubky::new()?; // or Pubky::testnet() for local testnet.
 
 // 1) Create a new random key user and bound to a Signer
-let keypair = Keypair::random()
-let signer = pubky::signer(keypair);
+let keypair = Keypair::random();
+let signer = pubky.signer(keypair);
 
 // 2) Sign up on a homeserver (identified by its public key)
 let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
@@ -45,9 +45,9 @@ assert_eq!(txt, "hello");
 
 // 5) Keyless app flow (QR/deeplink)
 let caps = Capabilities::builder().write("/pub/acme.app/").finish();
-let auth_flow = pubky.start_auth_flow(&caps)?;
-println!("Scan to sign in: {}", auth_flow.authorization_url());
-let app_session = auth_flow.await_approval().await?;
+let flow = pubky.start_auth_flow(&caps)?;
+println!("Scan to sign in: {}", flow.authorization_url());
+let app_session = flow.await_approval().await?;
 
 // 6) Optional (advanced): publish or resolve PKDNS (_pubky) records
 signer.pkdns().publish_homeserver_if_stale(None).await?;
@@ -121,7 +121,7 @@ Resolve another user’s homeserver, or publish your own via the signer.
 
 ```rust no_run
 use pubky::{Pubky, PublicKey};
-# async fn run(other: PublicKey) -> pubky::Result<()> {
+# async fn run(other: PublicKey, new_homeserver_id: PublicKey) -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 
 // read-only resolver
@@ -132,7 +132,7 @@ let host = pkdns.get_homeserver_of(&other).await;
 let signer = pubky.signer_random();
 signer.pkdns().publish_homeserver_if_stale(None).await?;
 // or force republish (e.g. homeserver migration)
-signer.pkdns().publish_homeserver_force(Some("new_homeserver_id")).await?;
+signer.pkdns().publish_homeserver_force(Some(&new_homeserver_id)).await?;
 
 # Ok(()) }
 ```
@@ -160,7 +160,7 @@ let flow = pubky.start_auth_flow(&caps)?;
 println!("Scan to sign in: {}", flow.authorization_url());
 
 // On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;
-# PubkySigner::random()?.approve_auth(auth_flow.authorization_url()).await?;
+# pubky.signer_random().approve_auth(flow.authorization_url()).await?;
 
 let session = flow.await_approval().await?;
 
@@ -201,9 +201,9 @@ Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully
 
 let testnet = EphemeralTestnet::start().await.unwrap();
 let homeserver  = testnet.homeserver();
-let pubky = testnet.sdk();
+let pubky = testnet.sdk()?;
 
-let signer = pubky::signer_random()?;
+let signer = pubky.signer_random();
 let session  = signer.signup(&homeserver.public_key(), None).await?;
 
 session.storage().put("/pub/my.app/hello.txt", "hi").await?;
@@ -232,7 +232,7 @@ use pubky::Pubky;
 # async fn run() -> pubky::Result<()> {
 let sdk = Pubky::new()?;
 let session = sdk.signer_random().signin().await?;
-session.write_secret_file("alice.sess")?;
+session.write_secret_file("alice.sess").unwrap();
 let restored = sdk.session_from_file("alice.sess").await?;
 # Ok(()) }
 ```
