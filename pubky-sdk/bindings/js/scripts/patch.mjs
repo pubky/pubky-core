@@ -3,18 +3,24 @@
 // Based on hacks from [this issue](https://github.com/rustwasm/wasm-pack/issues/1334)
 
 import { readFile, writeFile, rename } from "node:fs/promises";
-import { fileURLToPath } from 'node:url';
-import path, { dirname } from 'node:path';
+import { fileURLToPath } from "node:url";
+import path, { dirname } from "node:path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const cargoTomlContent = await readFile(path.join(__dirname, "../Cargo.toml"), "utf8");
+const cargoTomlContent = await readFile(
+  path.join(__dirname, "../Cargo.toml"),
+  "utf8",
+);
 const pkgName = /\[package\]\nname = "(.*?)"/.exec(cargoTomlContent)[1];
 const base = pkgName.replace(/-wasm$/, "");
 const name = base.replace(/-/g, "_");
 
-const content = await readFile(path.join(__dirname, `../pkg/nodejs/${name}.js`), "utf8");
+const content = await readFile(
+  path.join(__dirname, `../pkg/nodejs/${name}.js`),
+  "utf8",
+);
 
 const patched = content
   // use global TextDecoder TextEncoder
@@ -24,11 +30,14 @@ const patched = content
   // Export classes
   .replace(/\nclass (.*?) \{/g, "\n export class $1 {")
   // Export functions
-  .replace(/\nmodule.exports.(.*?) = function/g, "\nimports.$1 = $1;\nexport function $1")
+  .replace(
+    /\nmodule.exports.(.*?) = function/g,
+    "\nimports.$1 = $1;\nexport function $1",
+  )
   // Add exports to 'imports'
   .replace(/\nmodule\.exports\.(.*?)\s+/g, "\nimports.$1")
   // Export default
-  .replace(/$/, 'export default imports')
+  .replace(/$/, "export default imports")
   // inline wasm bytes
   .replace(
     /\nconst path.*\nconst bytes.*\n/,
@@ -50,27 +59,42 @@ var __toBinary = /* @__PURE__ */ (() => {
   };
 })();
 
-const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `../pkg/nodejs/${name}_bg.wasm`), "base64"))
-    });
+const bytes = __toBinary(${JSON.stringify(
+      await readFile(
+        path.join(__dirname, `../pkg/nodejs/${name}_bg.wasm`),
+        "base64",
+      ),
+    )});
 `,
   );
 
-await writeFile(path.join(__dirname, `../pkg/index.js`), patched + "\nglobalThis['pubky'] = imports");
+await writeFile(
+  path.join(__dirname, `../pkg/index.js`),
+  patched + "\nglobalThis['pubky'] = imports",
+);
 
 // Move outside of nodejs
 
-await Promise.all([".js", ".d.ts", "_bg.wasm"].map(suffix =>
-  rename(
-    path.join(__dirname, `../pkg/nodejs/${name}${suffix}`),
-    path.join(__dirname, `../pkg/${suffix === '.js' ? "index.cjs" : (name + suffix)}`),
-  ))
-)
+await Promise.all(
+  [".js", ".d.ts", "_bg.wasm"].map((suffix) =>
+    rename(
+      path.join(__dirname, `../pkg/nodejs/${name}${suffix}`),
+      path.join(
+        __dirname,
+        `../pkg/${suffix === ".js" ? "index.cjs" : name + suffix}`,
+      ),
+    ),
+  ),
+);
 
 // Add index.cjs headers
 
 const indexcjsPath = path.join(__dirname, `../pkg/index.cjs`);
 
-const headerContent = await readFile(path.join(__dirname, `../pkg/node-header.cjs`), 'utf8');
-const indexcjsContent = await readFile(indexcjsPath, 'utf8');
+const headerContent = await readFile(
+  path.join(__dirname, `../pkg/node-header.cjs`),
+  "utf8",
+);
+const indexcjsContent = await readFile(indexcjsPath, "utf8");
 
-await writeFile(indexcjsPath, headerContent + '\n' + indexcjsContent, 'utf8')
+await writeFile(indexcjsPath, headerContent + "\n" + indexcjsContent, "utf8");

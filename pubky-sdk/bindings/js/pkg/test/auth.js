@@ -1,5 +1,5 @@
 import test from "tape";
-import { PublicKey, Pubky, validateCapabilities} from "../index.cjs";
+import { PublicKey, Pubky, validateCapabilities } from "../index.cjs";
 import { createSignupToken } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
@@ -27,7 +27,11 @@ test("Auth: 3rd party signin", async (t) => {
 
   const session = await flow.awaitApproval();
 
-  t.equal(session.info().publicKey().z32(), pubky, "session belongs to expected user");
+  t.equal(
+    session.info().publicKey().z32(),
+    pubky,
+    "session belongs to expected user",
+  );
   t.deepEqual(
     session.info().capabilities(),
     capabilities.split(","),
@@ -48,11 +52,11 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
     t.equal(e.name, "InvalidInput", "invalid caps -> InvalidInput");
     t.ok(
       /Invalid capability entries/i.test(e.message),
-      "error message lists invalid entries"
+      "error message lists invalid entries",
     );
     t.ok(
       e.message.includes("not/a/cap") && e.message.includes("/also:bad:x"),
-      "message includes concrete bad entries"
+      "message includes concrete bad entries",
     );
   }
 
@@ -61,7 +65,11 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
     const flow = sdk.startAuthFlow("/pub/example/:wr", TESTNET_HTTP_RELAY);
     const url = new URL(flow.authorizationUrl());
     const caps = url.searchParams.get("caps");
-    t.equal(caps, "/pub/example/:rw", "actions normalized to ':rw' in deep link");
+    t.equal(
+      caps,
+      "/pub/example/:rw",
+      "actions normalized to ':rw' in deep link",
+    );
   }
 
   // 3) Empty string -> allowed; caps param remains empty
@@ -82,7 +90,7 @@ test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
   t.equal(
     validateCapabilities("/pub/a/:wr,/priv/b/:r"),
     "/pub/a/:rw,/priv/b/:r",
-    "normalize wr->rw and preserve valid entries"
+    "normalize wr->rw and preserve valid entries",
   );
 
   // Precise error message for malformed entries
@@ -93,7 +101,7 @@ test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
     t.equal(e.name, "InvalidInput", "throws InvalidInput on bad entries");
     t.ok(
       e.message.includes("/x:y") && e.message.includes("/pub/b/:x"),
-      "message lists all offending entries"
+      "message lists all offending entries",
     );
   }
 
