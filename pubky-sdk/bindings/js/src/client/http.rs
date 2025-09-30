@@ -1,6 +1,6 @@
 //! Fetch method handling HTTP and Pubky urls with Pkarr TLD.
 
-use js_sys::Promise;
+use js_sys::{Promise, Reflect};
 use url::Url;
 use wasm_bindgen::prelude::*;
 use web_sys::{Headers, Request, RequestCredentials, RequestInit, ServiceWorkerGlobalScope};
@@ -14,22 +14,50 @@ impl Client {
     pub async fn fetch(&self, url: &str, init: Option<RequestInit>) -> JsResult<Promise> {
         // 1) Parse URL
         let mut url = Url::parse(url)?;
+
+        // 2) Ask the SDK to prepare (rewrite pubky://, resolve pkarr, etc.)
+        //    Returns Some(<z32>) iff this is a pubky:// request.
+        let pubky_host = self.0.prepare_request(&mut url).await?;
+
+        // 3) Start from caller's init; DO NOT clobber headers.
         let req_init = init.unwrap_or_default();
 
-        // 2) Ask the SDK to prepare the request (rewrite pubky://, resolve _pubky.<pk>, etc.)
-        if let Some(pubky_host) = self.0.prepare_request(&mut url).await? {
-            // Add the `pubky-host` header expected by the server in WASM environments.
-            let headers = Headers::new()?;
-            headers.append("pubky-host", &pubky_host)?;
-            req_init.set_headers(&headers.into());
+        // 3a) If needed, ensure `pubky-host` is present in *init.headers* BEFORE Request creation.
+        if let Some(host) = pubky_host.as_deref() {
+            // Try to read any existing headers off RequestInit via reflection.
+            // This value can be: undefined/null (no headers), a real `Headers`, or
+            // a plain object/array. We handle those cases explicitly.
+            let headers_js = Reflect::get(req_init.as_ref(), &JsValue::from_str("headers"))
+                .unwrap_or(JsValue::UNDEFINED);
+
+            if headers_js.is_undefined() || headers_js.is_null() {
+                // No headers -> create and set ours.
+                let headers = Headers::new()?;
+                headers.set("pubky-host", host)?;
+                req_init.set_headers(&headers.into());
+            } else if headers_js.is_instance_of::<Headers>() {
+                // Already a `Headers` object -> mutate in place (don’t replace).
+                let headers: Headers = headers_js.unchecked_into();
+                headers.set("pubky-host", host)?;
+                // No need to set_headers again; we mutated the same object.
+            } else {
+                // Some non-`Headers` thing (e.g., plain object/array).
+                // Safest is to replace with a real `Headers` that includes `pubky-host`.
+                // (Our SDK paths pass a `Headers` already.)
+                let headers = Headers::new()?;
+                headers.set("pubky-host", host)?;
+                req_init.set_headers(&headers.into());
+            }
         }
 
-        // 3) Always include credentials (cookies) — matches reqwest’s `.fetch_credentials_include()`.
+        // 4) Always include credentials (cookies)
         req_init.set_credentials(RequestCredentials::Include);
 
-        // 4) Build a JS Request and dispatch it using the environment’s fetch.
+        // 5) Build the Request *after* headers/credentials are set
         let js_req = Request::new_with_str_and_init(url.as_str(), &req_init)
             .map_err(|_| JsValue::from_str("invalid RequestInit"))?;
+
+        // 6) Dispatch using the proper global (SW or Window)
         Ok(js_fetch(&js_req))
     }
 }

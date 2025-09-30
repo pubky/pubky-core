@@ -3,7 +3,10 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 
 use super::session::Session;
-use crate::{js_error::JsResult, wrappers::capabilities::validate_caps_for_start};
+use crate::{
+    js_error::JsResult,
+    wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start},
+};
 
 /// JS-facing auth flow handle that polls a relay until a signer approves.
 #[wasm_bindgen]
@@ -72,6 +75,12 @@ impl AuthFlow {
     #[wasm_bindgen(js_name = "awaitApproval")]
     pub async fn await_approval(self) -> JsResult<Session> {
         Ok(Session(self.0.await_approval().await?))
+    }
+
+    /// Block until the signer approves; returns a ready `Session`.
+    #[wasm_bindgen(js_name = "awaitToken")]
+    pub async fn await_token(self) -> JsResult<AuthToken> {
+        Ok(AuthToken(self.0.await_token().await?))
     }
 
     /// Non-blocking probe; returns `Some(Session)` when ready, otherwise `undefined`.
