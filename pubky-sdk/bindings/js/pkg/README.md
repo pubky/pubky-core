@@ -19,54 +19,69 @@ npm install @synonymdev/pubky
 ## Getting Started
 
 ```js
-import {
-  useTestnet, // optional: point SDK at local relays/hosts
-  Signer,
-  PublicKey,
-  PublicStorage,
-} from "@synonymdev/pubky";
+import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 
-// (optional) local dev wiring (relays + http mapping)
-useTestnet();
+// Initiate a Pubky SDK facade wired for default mainnet Pkarr relays.
+const pubky = new Pubky(); // or: const pubky = Pubky.testnet(); for localhost testnet.
 
-// 1) Create a signer (user keys)
-const signer = Signer.random();
+// 1) Create a random user keys and bound to a new Signer.
+const keypair = Keypair.random();
+const signer = pubky.signer(keypair);
 
 // 2) Sign up at a homeserver (optionally with an invite)
 const homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
-const signupToken = "<your-invite-token-or-null>";
+const signupToken = "<your-invite-code-or-null>";
 const session = await signer.signup(homeserver, signupToken);
 
 // 3) Write a public JSON file (session-scoped storage uses cookies automatically)
 const path = "/pub/example.com/hello.json";
 await session.storage().putJson(path, { hello: "world" });
 
-// 4) Read it publicly (no auth)
+// 4) Read it publicly (no auth needed)
 const userPk = session.info().publicKey();
 const addr = `${userPk.z32()}/pub/example.com/hello.json`;
-const pub = new PublicStorage();
-const json = await pub.getJson(addr); // -> { hello: "world" }
+const json = await pubky.publicStorage().getJson(addr); // -> { hello: "world" }
 ```
 
 ## API Overview
+
+Façade `Pubky` to quickly get any flow started:
+
+```js
+import { Pubky, Keypair } from "@synonymdev/pubky";
+
+// Mainnet (default relays)
+const pubky = new Pubky();
+
+// Local testnet wiring (Pkarr + HTTP mapping).
+// Omit the argument for "localhost".
+const pubkyLocal = Pubky.testnet("localhost");
+
+// Signers (bind your keypair to the façade)
+const signer = pubky.signer(Keypair.random());
+
+// Public storage (read-only)
+const publicStorage = pubky.publicStorage();
+
+// PKDNS resolver (read-only)
+const pkdns = pubky.pkdns();
+
+// Optional: raw HTTP client for advanced use
+const client = pubky.client();
+```
 
 ### Client (HTTP bridge)
 
 ```js
 import { Client } from "@synonymdev/pubky";
 
-const client = new Client(); // or: new Client()
+const client = new Client(); // or: pubky.client(); instead of constructing a client manually
 
 // Works with both pubky:// and http(s)://
 const res = await client.fetch("pubky://<pubky>/pub/example.com/file.txt");
 ```
-
-**Helpers**
-
-- `useTestnet(host = "localhost")` - sets global testnet wiring (relays + HTTP mapping).
-- `Client.testnet(host?)` - returns a `Client` preconfigured for testnet.
 
 ---
 
@@ -75,54 +90,59 @@ const res = await client.fetch("pubky://<pubky>/pub/example.com/file.txt");
 ```js
 import { Keypair, PublicKey } from "@synonymdev/pubky";
 
-const kp = Keypair.random();
-const pk = kp.publicKey();
-const pk2 = PublicKey.from(pk.z32()); // parse from z-base-32 string
+const keypair = Keypair.random();
+const pubkey = keypair.publicKey();
+
+// z-base-32 roundtrip
+const parsed = PublicKey.from(pubkey.z32());
 ```
 
-#### createRecoveryFile
+#### Recovery file (encrypt/decrypt root secret)
 
 ```js
-let recoveryFile = keypair.createRecoveryFile(passphrase);
+// Encrypt to recovery file (Uint8Array)
+const recoveryFile = keypair.createRecoveryFile("strong passphrase");
+
+// Decrypt back into a Keypair
+const restored = Keypair.fromRecoveryfile(recoveryFile, "strong passphrase");
+
+// Build a Signer from a recovered key
+const signer = pubky.signer(restored);
 ```
 
 - keypair: An instance of [Keypair](#keypair).
 - passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
 - Returns: A recovery file with a spec line and an encrypted secret key.
 
-#### toRecoveryFile
-
-```js
-let keypair = Keypair.fromRecoveryfile(recoveryFile, passphrase);
-```
-
-- recoveryFile: An instance of Uint8Array containing the recovery file blob.
-- passphrase: A utf-8 string [passphrase](https://www.useapassphrase.com/).
-- Returns: An instance of [Keypair](#keypair).
-
 ---
 
 ### Signer & Session
 
 ```js
-import { Signer } from "@synonymdev/pubky";
+import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 
-const signer = Signer.random(); // or new Signer(keypair)
-const session = await signer.signup(homeserverPk, signupToken);
-const session2 = await signer.signin(); // fast sign-in, publishes in background
-const session3 = await signer.signinBlocking(); // slow sign-in, waits for homeserver publish
+const pubky = new Pubky();
 
-await session.signout(); // invalidates session on server
+const keypair = Keypair.random();
+const signer = pubky.signer(keypair);
+
+const homeserver = PublicKey.from("8pinxxgq…");
+const session = await signer.signup(homeserver, /* invite */ null);
+
+const session2 = await signer.signin(); // fast, prefer this; publishes PKDNS in background
+const session3 = await signer.signinBlocking(); // slower but safer; waits for PKDNS publish
+
+await session.signout(); // invalidates server session
 ```
 
 **Session details**
 
 ```js
 const info = session.info();
-info.publicKey(); // -> PublicKey
-info.capabilities(); // -> string[]
+const userPk = info.publicKey(); // -> PublicKey
+const caps = info.capabilities(); // -> string[]
 
-session.storage(); // -> SessionStorage (absolute paths)
+const storage = session.storage(); // -> SessionStorage (absolute paths)
 ```
 
 **Approve a pubkyauth request URL**
@@ -133,23 +153,50 @@ await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
 
 ---
 
-### Storage
+### AuthFlow (pubkyauth)
 
-#### PublicStorage (read-only; no cookies)
+End-to-end auth (3rd-party app asks a user to approve via QR/deeplink, E.g. Pubky Ring).
 
 ```js
-import { PublicStorage } from "@synonymdev/pubky";
-const pub = new PublicStorage();
+import { Pubky } from "@synonymdev/pubky";
+const pubky = new Pubky();
 
-await pub.getJson(`${pubky}/pub/example.com/data.json`);
-await pub.getText(`${pubky}/pub/example.com/readme.txt`);
-await pub.getBytes(`${pubky}/pub/example.com/icon.png`); // Uint8Array
+// Comma-separated capabilities string
+const caps = "/pub/my.app/:rw,/pub/another.app/folder/:w";
 
-await pub.exists(`${pubky}/pub/example.com/foo`);
-await pub.stats(`${pubky}/pub/example.com/foo`); // { size, etag, ... } | null
+// Optional relay; defaults to Synonym-hosted relay if omitted
+const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this)
 
-// List (prefix = "<pubky>/pub/.../"), optional cursor/reverse/limit/shallow
-await pub.list(`${pubky}/pub/example.com/`, null, false, 100, false);
+// Start the auth polling
+const flow = pubky.startAuthFlow(caps, relay);
+
+renderQr(flow.authorizationUrl()); // show to user
+
+// Blocks until the signer approves; returns a ready Session
+const session = await flow.awaitApproval();
+```
+
+---
+
+### Storage
+
+#### PublicStorage (read-only)
+
+```js
+const pub = pubky.publicStorage();
+
+// Reads
+await pub.getJson(`${userPk.z32()}/pub/example.com/data.json`);
+await pub.getText(`${userPk.z32()}/pub/example.com/readme.txt`);
+await pub.getBytes(`${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
+
+// Metadata
+await pub.exists(`${userPk.z32()}/pub/example.com/foo`); // boolean
+await pub.stats(`${userPk.z32()}/pub/example.com/foo`); // { content_length, content_type, etag, last_modified } | null
+
+// List directory (addressed path "<pubky>/pub/.../")
+// list(addr, cursor=null|suffix|fullUrl, reverse=false, limit?, shallow=false)
+await pub.list(`${userPk.z32()}/pub/example.com/`, null, false, 100, false);
 ```
 
 #### SessionStorage (read/write; uses cookies)
@@ -157,18 +204,24 @@ await pub.list(`${pubky}/pub/example.com/`, null, false, 100, false);
 ```js
 const s = session.storage();
 
+// Writes
 await s.putJson("/pub/example.com/data.json", { ok: true });
 await s.putText("/pub/example.com/note.txt", "hello");
 await s.putBytes("/pub/example.com/img.bin", new Uint8Array([1, 2, 3]));
 
+// Reads
 await s.getJson("/pub/example.com/data.json");
 await s.getText("/pub/example.com/note.txt");
 await s.getBytes("/pub/example.com/img.bin");
 
+// Metadata
 await s.exists("/pub/example.com/data.json");
 await s.stats("/pub/example.com/data.json");
 
+// Listing (session-scoped absolute dir)
 await s.list("/pub/example.com/", null, false, 100, false);
+
+// Delete
 await s.delete("/pub/example.com/data.json");
 ```
 
@@ -179,39 +232,21 @@ await s.delete("/pub/example.com/data.json");
 Resolve or publish `_pubky` records.
 
 ```js
-import { Pkdns, Signer, PublicKey } from "@synonymdev/pubky";
+import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 
-// Read-only
-const pkdns = Pkdns.new();
-const host = await pkdns.getHomeserverOf(PublicKey.from("<user-z32>")); // string|null
+const pubky = new Pubky();
 
-// With keys (bound to signer)
-const signer = Signer.random();
-await signer.signup(homeserverPk, null);
-const pkdnsWithKeys = signer.pkdns();
+// Read-only resolver
+const resolver = pubky.pkdns();
+const homeserver = await resolver.getHomeserverOf(PublicKey.from("<user-z32>")); // string | undefined
 
-// Publish if missing or stale (uses the same host as the current record unless overridden)
-await pkdnsWithKeys.publishHomeserverIfStale(); // optional override: migrate homeserver to (hostPk)
-await pkdnsWithKeys.publishHomeserverForce(); // optional override: migrate homeserver to (hostPk)
-```
+// With keys (signer-bound)
+const signer = pubky.signer(Keypair.random());
 
----
-
-### AuthFlow (pubkyauth)
-
-End-to-end auth (3rd-party app asks a user to approve via QR/deeplink, E.g. Pubky Ring).
-
-```js
-import { AuthFlow } from "@synonymdev/pubky";
-
-const caps = "/pub/my.app/:rw"; // capabilities string
-const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this)
-const flow = AuthFlow.start(caps, relay);
-
-renderQr(flow.authorizationUrl()); // show to user
-
-// Blocks until approved; returns a ready Session
-const session = await flow.awaitApproval();
+// Republish if missing or stale (reuses current host unless overridden)
+await signer.pkdns().publishHomeserverIfStale();
+// Or force an override now:
+await signer.pkdns().publishHomeserverForce(/* optional override homeserver*/);
 ```
 
 ---
@@ -266,8 +301,10 @@ npm run testnet
 3. Point the SDK at testnet:
 
 ```js
-import { useTestnet } from "@synonymdev/pubky";
-useTestnet(); // defaults to localhost for Pkarr and Http relays.
+import { Pubky } from "@synonymdev/pubky";
+
+const pubky = Pubky.testnet(); // defaults to localhost
+// or: const pubky = Pubky.testnet("testnet-host");  // custom host (e.g. Docker bridge)
 ```
 
 ---
