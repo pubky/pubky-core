@@ -81,25 +81,53 @@ impl Pubky {
         Ok(flow)
     }
 
-    /// Create a signer bound to this façade’s client from an existing keypair.
+    /// Create a `Signer` from an existing `Keypair`.
+    ///
+    /// @param {Keypair} keypair The user’s keys.
+    /// @returns {Signer}
+    ///
+    /// @example
+    /// const signer = pubky.signer(Keypair.random());
+    /// const session = await signer.signup(homeserverPk, null);
     #[wasm_bindgen(js_name = "signer")]
     pub fn signer(&self, keypair: Keypair) -> Signer {
         Signer(self.0.signer(keypair.as_inner().clone()))
     }
 
-    /// Public, unauthenticated storage bound to this façade’s client.
+    /// Public, unauthenticated storage API.
+    ///
+    /// Use for **read-only** public access via addressed paths:
+    /// `"<user-z32>/pub/…"`.
+    ///
+    /// @returns {PublicStorage}
+    ///
+    /// @example
+    /// const pub = pubky.publicStorage();
+    /// const text = await pub.getText(`${userPk.z32()}/pub/example.com/hello.txt`);
     #[wasm_bindgen(js_name = "publicStorage")]
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage(self.0.public_storage())
     }
 
-    /// Read-only PKDNS actor bound to this façade’s client.
+    /// Read-only PKDNS (Pkarr) resolver.
+    ///
+    /// @returns {Pkdns}
+    ///
+    /// @example
+    /// const dns = pubky.pkdns();
+    /// const homeserver = await dns.getHomeserverOf(userPk);
     #[wasm_bindgen]
     pub fn pkdns(&self) -> Pkdns {
         Pkdns(self.0.pkdns())
     }
 
-    /// Expose the underlying HTTP client for advanced use.
+    /// Access the underlying HTTP client (advanced).
+    ///
+    /// @returns {Client}
+    /// Use this for low-level `fetch()` calls or testing with raw URLs.
+    ///
+    /// @example
+    /// const r = await pubky.client().fetch(`pubky://${user}/pub/app/file.txt`, { credentials: "include" });
     #[wasm_bindgen]
     pub fn client(&self) -> Client {
         Client(self.0.client().clone())

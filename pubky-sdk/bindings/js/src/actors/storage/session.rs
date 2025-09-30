@@ -6,12 +6,20 @@ use wasm_bindgen::prelude::*;
 use super::public::ResourceStats;
 use crate::js_error::JsResult;
 
+/// Read/write storage scoped to **your** session (absolute paths: `/pub/...`).
 #[wasm_bindgen]
 pub struct SessionStorage(pub(crate) pubky::SessionStorage);
 
 #[wasm_bindgen]
 impl SessionStorage {
-    /// Directory listing in session scope (absolute paths only).
+    /// List a directory (absolute session path). Returns `pubky://…` URLs.
+    ///
+    /// @param {string} dirPath Must end with `/`.
+    /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
+    /// @param {boolean=} reverse Default `false`.
+    /// @param {number=} limit Optional result limit.
+    /// @param {boolean=} shallow Default `false`.
+    /// @returns {Promise<string[]>}
     #[wasm_bindgen]
     pub async fn list(
         &self,
@@ -38,7 +46,10 @@ impl SessionStorage {
         Ok(urls)
     }
 
-    /// GET as bytes.
+    /// GET bytes from an absolute session path.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<Uint8Array>}
     #[wasm_bindgen(js_name = "getBytes")]
     pub async fn get_bytes(&self, path: &str) -> JsResult<Uint8Array> {
         let resp = self.0.get(path).await?;
@@ -46,14 +57,20 @@ impl SessionStorage {
         Ok(Uint8Array::from(bytes.as_ref()))
     }
 
-    /// GET as UTF-8 text.
+    /// GET text from an absolute session path.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<string>}
     #[wasm_bindgen(js_name = "getText")]
     pub async fn get_text(&self, path: &str) -> JsResult<String> {
         let resp = self.0.get(path).await?;
         Ok(resp.text().await?)
     }
 
-    /// GET JSON (sets Accept: application/json)
+    /// GET JSON from an absolute session path.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<any>}
     #[wasm_bindgen(js_name = "getJson")]
     pub async fn get_json(&self, addr: &str) -> JsResult<JsValue> {
         let v: serde_json::Value = self.0.get_json(addr).await?;
@@ -61,33 +78,51 @@ impl SessionStorage {
         Ok(v.serialize(&ser)?)
     }
 
-    /// HEAD existence check.
+    /// Check existence.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<boolean>}
     #[wasm_bindgen]
     pub async fn exists(&self, path: &str) -> JsResult<bool> {
         Ok(self.0.exists(path).await?)
     }
 
-    /// HEAD stats.
+    /// Get metadata (or `null` if missing).
+    ///
+    /// @param {string} path
+    /// @returns {Promise<null | ResourceStats >}
     #[wasm_bindgen]
     pub async fn stats(&self, path: &str) -> JsResult<Option<ResourceStats>> {
         Ok(self.0.stats(path).await?.map(Into::into))
     }
 
-    /// PUT bytes.
+    /// PUT binary at an absolute session path.
+    ///
+    /// @param {string} path
+    /// @param {Uint8Array} bytes
+    /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "putBytes")]
     pub async fn put_bytes(&self, path: &str, body: &[u8]) -> JsResult<()> {
         self.0.put(path, body.to_vec()).await?;
         Ok(())
     }
 
-    /// PUT UTF-8 text.
+    /// PUT text at an absolute session path.
+    ///
+    /// @param {string} path
+    /// @param {string} text
+    /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "putText")]
     pub async fn put_text(&self, path: &str, body: &str) -> JsResult<()> {
         self.0.put(path, body.as_bytes().to_vec()).await?;
         Ok(())
     }
 
-    /// PUT JSON (sets Content-Type: application/json)
+    /// PUT JSON at an absolute session path.
+    ///
+    /// @param {string} path Absolute path (e.g. `"/pub/app/data.json"`).
+    /// @param {any} value JSON-serializable value.
+    /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "putJson")]
     pub async fn put_json(&self, path: &str, body: JsValue) -> JsResult<()> {
         let v: serde_json::Value = serde_wasm_bindgen::from_value(body)?;
@@ -95,7 +130,10 @@ impl SessionStorage {
         Ok(())
     }
 
-    /// DELETE.
+    /// Delete a path (file or empty directory).
+    ///
+    /// @param {string} path
+    /// @returns {Promise<void>}
     #[wasm_bindgen]
     pub async fn delete(&self, path: &str) -> JsResult<()> {
         self.0.delete(path).await?;

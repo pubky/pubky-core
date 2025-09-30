@@ -26,24 +26,6 @@ impl PubkySigner {
         })
     }
 
-    /// Construct a Signer with a fresh random keypair, using the process-wide shared [PubkyHttpClient].
-    ///
-    /// Purpose:
-    /// - Fast ephemeral identities for e2e tests or demos.
-    /// - Local experiments where keys are not persisted.
-    ///
-    ///
-    /// # Examples
-    /// ```
-    /// # use pubky::PubkySigner;
-    /// let signer = PubkySigner::random()?;
-    /// // e.g., `signer.signup(&homeserver_pk, None).await?;`
-    /// # Ok::<_, pubky::BuildError>(())
-    /// ```
-    pub fn random() -> std::result::Result<Self, BuildError> {
-        Self::new(Keypair::random())
-    }
-
     /// Public key of this signer.
     #[inline]
     pub fn public_key(&self) -> PublicKey {

@@ -8,13 +8,19 @@ use crate::{
     wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start},
 };
 
-/// JS-facing auth flow handle that polls a relay until a signer approves.
+/// Start and control a pubkyauth authorization flow.
+///
+/// Typical flow:
+/// 1) `AuthFlow.start(...)` or `pubky.startAuthFlow(...)`
+/// 2) Show `authorizationUrl()` as QR/deeplink to the user’s signing device
+/// 3) `awaitApproval()` to receive a ready `Session`
 #[wasm_bindgen]
 pub struct AuthFlow(pub(crate) pubky::PubkyAuthFlow);
 
 #[wasm_bindgen]
 impl AuthFlow {
-    /// Start an auth flow.
+    /// Start a flow (standalone).
+    /// Prefer `pubky.startAuthFlow()` to reuse a façade client.
     ///
     /// @param {string} capabilities
     /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.
@@ -42,7 +48,7 @@ impl AuthFlow {
         Self::start_with_client(capabilities, relay, None)
     }
 
-    /// Rust-only helper that threads an explicit transport.
+    /// Internal helper that threads an explicit transport.
     pub(crate) fn start_with_client(
         capabilities: &str,
         relay: Option<String>,
@@ -65,25 +71,45 @@ impl AuthFlow {
         Ok(AuthFlow(builder.start()?))
     }
 
-    /// The `pubkyauth://` deep link to show (QR/deeplink) to the signer.
+    /// Return the authorization deep link (URL) to show as QR or open on the signer device.
+    ///
+    /// @returns {string} A `pubkyauth://…` or `https://…` URL with channel info.
+    ///
+    /// @example
+    /// renderQr(flow.authorizationUrl());
     #[wasm_bindgen(js_name = "authorizationUrl")]
     pub fn authorization_url(&self) -> String {
         self.0.authorization_url().as_str().to_string()
     }
 
-    /// Block until the signer approves; returns a ready `Session`.
+    /// Block until the user approves on their signer device; returns a `Session`.
+    ///
+    /// @returns {Promise<Session>}
+    /// Resolves when approved; rejects on timeout/cancel/network errors.
+    ///
+    /// @throws {PubkyJsError}
+    /// - `RequestError` if relay/network fails
+    /// - `AuthenticationError` if approval is denied/invalid
     #[wasm_bindgen(js_name = "awaitApproval")]
     pub async fn await_approval(self) -> JsResult<Session> {
         Ok(Session(self.0.await_approval().await?))
     }
 
-    /// Block until the signer approves; returns a ready `Session`.
+    /// Block until the user approves on their signer device; returns an `AuthToken`.
+    ///
+    /// @returns {Promise<AuthToken>}
+    /// Resolves when approved; rejects on timeout/cancel/network errors.
+    ///
+    /// @throws {PubkyJsError}
+    /// - `RequestError` if relay/network fails
     #[wasm_bindgen(js_name = "awaitToken")]
     pub async fn await_token(self) -> JsResult<AuthToken> {
         Ok(AuthToken(self.0.await_token().await?))
     }
 
-    /// Non-blocking probe; returns `Some(Session)` when ready, otherwise `undefined`.
+    /// Non-blocking single poll step (advanced UIs).
+    ///
+    /// @returns {Promise<Session|null>} A session if the approval arrived, otherwise `null`.
     #[wasm_bindgen(js_name = "tryPollOnce")]
     pub async fn try_poll_once(&self) -> JsResult<Option<Session>> {
         Ok(self.0.try_poll_once().await?.map(Session))

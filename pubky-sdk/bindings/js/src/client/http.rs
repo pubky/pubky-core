@@ -10,6 +10,15 @@ use crate::js_error::JsResult;
 
 #[wasm_bindgen]
 impl Client {
+    /// Perform a raw fetch. Works with `pubky://` or `http(s)://` URLs.
+    ///
+    /// @param {string} url
+    /// @param {RequestInit=} init Standard fetch options; `credentials: "include"` recommended for session I/O.
+    /// @returns {Promise<Response>}
+    ///
+    /// @example
+    /// const client = pubky.client();
+    /// const res = await client.fetch(`pubky://${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
     #[wasm_bindgen]
     pub async fn fetch(&self, url: &str, init: Option<RequestInit>) -> JsResult<Promise> {
         // 1) Parse URL

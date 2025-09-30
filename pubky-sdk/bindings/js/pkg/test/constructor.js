@@ -27,11 +27,11 @@ test("new Client() partial config", async (t) => {
 });
 
 test("new Client() with faulty config", async (t) => {
-  // Request timeout must be non-zero; 0 should throw (NonZeroU64)
+  // Request timeout must be positive; should throw
   t.throws(
     () =>
       new Client({
-        pkarr: { requestTimeout: 0 },
+        pkarr: { requestTimeout: -1000 },
       }),
     "should throw an error",
   );
