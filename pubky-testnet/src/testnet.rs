@@ -193,8 +193,7 @@ impl Testnet {
 mod test {
     use std::time::Duration;
 
-    use crate::Testnet;
-    use pubky::{Keypair, PubkySigner};
+    use crate::{pubky::Keypair, Testnet};
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
@@ -222,8 +221,9 @@ mod test {
         testnet.create_homeserver().await.unwrap();
 
         let hs = testnet.homeservers.first().unwrap();
+        let sdk = testnet.sdk().unwrap();
 
-        let signer = PubkySigner::random().unwrap();
+        let signer = sdk.signer_random();
 
         let session = signer.signup(&hs.public_key(), None).await.unwrap();
         assert_eq!(session.info().public_key(), &signer.public_key());
@@ -276,7 +276,9 @@ mod test {
                 };
                 let hs = testnet.homeservers.first().unwrap();
 
-                let signer = PubkySigner::random().unwrap();
+                let sdk = testnet.sdk().unwrap();
+
+                let signer = sdk.signer_random();
 
                 let session = signer.signup(&hs.public_key(), None).await.unwrap();
 
