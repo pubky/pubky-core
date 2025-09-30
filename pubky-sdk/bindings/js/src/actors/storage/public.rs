@@ -1,42 +1,10 @@
 // js/src/client/storage/public.rs
+use super::stats::ResourceStats;
 use js_sys::Uint8Array;
-use serde::{Deserialize, Serialize};
-use tsify::Tsify;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::js_error::JsResult;
-
-/// TS-friendly stats object
-#[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
-#[serde(rename_all = "camelCase")]
-pub struct ResourceStats {
-    #[tsify(optional)]
-    pub content_length: Option<u64>,
-    #[tsify(optional)]
-    pub content_type: Option<String>,
-    /// Unix millis since epoch
-    #[tsify(optional)]
-    pub last_modified_ms: Option<u64>,
-    #[tsify(optional)]
-    pub etag: Option<String>,
-}
-
-impl From<pubky::ResourceStats> for ResourceStats {
-    fn from(s: pubky::ResourceStats) -> Self {
-        let last_modified_ms = s.last_modified.map(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64
-        });
-        Self {
-            content_length: s.content_length,
-            content_type: s.content_type,
-            last_modified_ms,
-            etag: s.etag,
-        }
-    }
-}
 
 /// Read-only public storage using addressed paths (`"<user-z32>/pub/...")`.
 #[wasm_bindgen]
@@ -126,12 +94,19 @@ impl PublicStorage {
         Ok(self.0.exists(address).await?)
     }
 
-    /// Get metadata for a path (or `null` if missing).
+    /// Get metadata for an address
     ///
-    /// @param {string} addr
-    /// @returns {Promise<null | ResourceStats >}
-    #[wasm_bindgen]
-    pub async fn stats(&self, address: &str) -> JsResult<Option<ResourceStats>> {
-        Ok(self.0.stats(address).await?.map(Into::into))
+    /// @param {string} absPath Absolute path under your user (starts with `/`).
+    /// @returns {Promise<ResourceStats|null>} `null` if the resource does not exist.
+    /// @throws {PubkyJsError} On invalid input or transport/server errors.
+    #[wasm_bindgen(js_name = "stats")]
+    pub async fn stats(&self, abs_path: String) -> JsResult<JsValue> {
+        let opt = self.0.stats(&abs_path).await?;
+        if let Some(native) = opt {
+            let js = serde_wasm_bindgen::to_value(&ResourceStats::from(native))?;
+            Ok(js)
+        } else {
+            Ok(JsValue::NULL) // return null instead of undefined
+        }
     }
 }

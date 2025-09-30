@@ -3,7 +3,7 @@ use js_sys::Uint8Array;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use super::public::ResourceStats;
+use super::stats::ResourceStats;
 use crate::js_error::JsResult;
 
 /// Read/write storage scoped to **your** session (absolute paths: `/pub/...`).
@@ -87,13 +87,20 @@ impl SessionStorage {
         Ok(self.0.exists(path).await?)
     }
 
-    /// Get metadata (or `null` if missing).
+    /// Get metadata for an absolute, session-scoped path (e.g. `"/pub/app/file.json"`).
     ///
-    /// @param {string} path
-    /// @returns {Promise<null | ResourceStats >}
-    #[wasm_bindgen]
-    pub async fn stats(&self, path: &str) -> JsResult<Option<ResourceStats>> {
-        Ok(self.0.stats(path).await?.map(Into::into))
+    /// @param {string} absPath Absolute path under your user (starts with `/`).
+    /// @returns {Promise<ResourceStats|null>} `null` if the resource does not exist.
+    /// @throws {PubkyJsError} On invalid input or transport/server errors.
+    #[wasm_bindgen(js_name = "stats")]
+    pub async fn stats(&self, abs_path: String) -> JsResult<JsValue> {
+        let opt = self.0.stats(&abs_path).await?;
+        if let Some(native) = opt {
+            let js = serde_wasm_bindgen::to_value(&ResourceStats::from(native))?;
+            Ok(js)
+        } else {
+            Ok(JsValue::NULL) // return null instead of undefined
+        }
     }
 
     /// PUT binary at an absolute session path.

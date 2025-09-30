@@ -130,7 +130,6 @@ test("Auth: multi-user (cookies)", async (t) => {
   t.end();
 });
 
-
 /**
  * - Have *two* valid sessions (cookies for both users in one process).
  * - Interleave writes across both users, using BOTH high-level SessionStorage (absolute paths)
@@ -146,13 +145,13 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
 
   // Create two users & sign them up — both cookies end up in the same jar.
   const alice = sdk.signer(Keypair.random());
-  const bob   = sdk.signer(Keypair.random());
+  const bob = sdk.signer(Keypair.random());
 
   const aliceToken = await createSignupToken();
-  const bobToken   = await createSignupToken();
+  const bobToken = await createSignupToken();
 
   const aliceSession = await alice.signup(HOMESERVER_PUBLICKEY, aliceToken);
-  const bobSession   = await bob.signup(HOMESERVER_PUBLICKEY, bobToken);
+  const bobSession = await bob.signup(HOMESERVER_PUBLICKEY, bobToken);
 
   const A = aliceSession.info().publicKey().z32();
   const B = bobSession.info().publicKey().z32();
@@ -168,7 +167,11 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
 
   // 1) Alice writes via SessionStorage (absolute path)
   await aliceSession.storage().putText(P, "alice#1");
-  t.equal(await readTextPublic(A, P), "alice#1", "alice write visible under alice");
+  t.equal(
+    await readTextPublic(A, P),
+    "alice#1",
+    "alice write visible under alice",
+  );
 
   // 2) Bob writes via SessionStorage
   await bobSession.storage().putText(P, "bob#1");
@@ -262,7 +265,11 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
   // Confirm user#1 cannot write via low-level fetch anymore (401)
   {
     const url = `pubky://${u1.user}${P}`;
-    const r = await client.fetch(url, { method: "PUT", body: "should-401", credentials: "include" });
+    const r = await client.fetch(url, {
+      method: "PUT",
+      body: "should-401",
+      credentials: "include",
+    });
     t.equal(r.status, 401, "signed-out user cannot write");
   }
 
@@ -285,7 +292,11 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
   // Interleave a bit: use low-level client for u2 (ensures header/URL are aligned)
   {
     const url = `pubky://${u2.user}${P}`;
-    const r = await client.fetch(url, { method: "PUT", body: "user#2:via-client", credentials: "include" });
+    const r = await client.fetch(url, {
+      method: "PUT",
+      body: "user#2:via-client",
+      credentials: "include",
+    });
     t.ok(r.ok, "low-level client PUT for user#2 ok");
   }
   t.equal(

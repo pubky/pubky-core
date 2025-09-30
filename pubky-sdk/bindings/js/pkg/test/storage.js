@@ -472,3 +472,127 @@ test("list shallow under /pub/", async (t) => {
 
   t.end();
 });
+
+/**
+ * stats()/exists() for JSON content.
+ * - Write JSON via SessionStorage.
+ * - Check exists() in both session and public modes.
+ * - stats() must be non-null and consistent across session/public.
+ * - lastModifiedMs increases after an update (with a short delay for clock resolution).
+ * - contentLength must equal the actual stored bytes length.
+ * - etag (if present) should change after content update.
+ */
+test("stats & exists: JSON (session + public)", async (t) => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const sdk = Pubky.testnet();
+
+  // 1) signup -> session
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const userPk = session.info().publicKey().z32();
+  const path = "/pub/example.com/meta.json"; // session-scoped
+  const addr = `${userPk}/pub/example.com/meta.json`; // public addressed
+  const payload1 = { hello: "world" };
+  const payload2 = { hello: "pubky", n: 2 };
+
+  // 2) write JSON
+  await session.storage().putJson(path, payload1);
+
+  // 3) exists(): session & public
+  t.equal(
+    await session.storage().exists(path),
+    true,
+    "session.exists() -> true",
+  );
+  t.equal(
+    await sdk.publicStorage().exists(addr),
+    true,
+    "public.exists() -> true",
+  );
+
+  // 4) stats(): session & public (should both be non-null)
+  const s1 = await session.storage().stats(path);
+  const p1 = await sdk.publicStorage().stats(addr);
+  t.ok(s1, "session.stats() not null");
+  t.ok(p1, "public.stats() not null");
+
+  // 5) contentLength equals actual stored bytes length
+  {
+    const bytes = await sdk.publicStorage().getBytes(addr);
+    t.equal(
+      p1.contentLength,
+      bytes.byteLength,
+      "public.stats().contentLength matches actual bytes length",
+    );
+  }
+
+  // 6) contentType should identify JSON (exact value may vary by server)
+  if (p1.contentType != null) {
+    t.ok(
+      /json/i.test(p1.contentType),
+      `contentType hints JSON (got: ${p1.contentType})`,
+    );
+  }
+
+  // 7) lastModifiedMs is a finite number
+  t.ok(
+    Number.isFinite(p1.lastModifiedMs ?? NaN),
+    "lastModifiedMs is a finite number",
+  );
+
+  // 8) Update content and observe monotonic lastModifiedMs (+ optional ETag change)
+  await sleep(1100); // leave room for mtime resolution
+  await session.storage().putJson(path, payload2);
+
+  const p2 = await sdk.publicStorage().stats(addr);
+  t.ok(
+    p2 && p2.lastModifiedMs > p1.lastModifiedMs,
+    "lastModifiedMs increased after update",
+  );
+
+  if (p1.etag && p2?.etag) {
+    t.notEqual(p2.etag, p1.etag, "etag changed after update (when present)");
+  }
+
+  t.end();
+});
+
+/**
+ * stats()/exists() for missing content.
+ * - Ensure exists() is false.
+ * - stats() returns null (both public and session).
+ */
+test("stats & exists: missing resource", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const userPk = session.info().publicKey().z32();
+  const path = "/pub/example.com/definitely-missing.bin"; // session-scoped
+  const addr = `${userPk}/pub/example.com/definitely-missing.bin`; // public addressed
+
+  t.equal(
+    await session.storage().exists(path),
+    false,
+    "session.exists() -> false",
+  );
+  t.equal(
+    await sdk.publicStorage().exists(addr),
+    false,
+    "public.exists() -> false",
+  );
+
+  t.equal(await session.storage().stats(path), null, "session.stats() -> null");
+  t.equal(
+    await sdk.publicStorage().stats(addr),
+    null,
+    "public.stats() -> null",
+  );
+
+  t.end();
+});
