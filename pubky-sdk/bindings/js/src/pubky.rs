@@ -3,33 +3,78 @@ use wasm_bindgen::prelude::*;
 use crate::actors::{auth_flow::AuthFlow, pkdns::Pkdns, signer::Signer, storage::PublicStorage};
 use crate::{client::constructor::Client, js_error::JsResult, wrappers::keys::Keypair};
 
+/// High-level entrypoint to the Pubky SDK.
 #[wasm_bindgen]
 pub struct Pubky(pub(crate) pubky::Pubky);
 
 #[wasm_bindgen]
 impl Pubky {
-    /// Construct with defaults (mainnet pkarr relays).
+    /// Create a Pubky façade wired for **mainnet** defaults (public relays).
+    ///
+    /// @returns {Pubky}
+    /// A new façade instance. Use this to create signers, start auth flows, etc.
+    ///
+    /// @example
+    /// const pubky = new Pubky();
+    /// const signer = pubky.signer(Keypair.random());
     #[wasm_bindgen(constructor)]
     pub fn new() -> JsResult<Pubky> {
         Ok(Pubky(pubky::Pubky::new()?))
     }
 
-    /// Construct preconfigured for a local testnet.
-    /// If `host` provided, pkarr and http relays -> `http://<host>:xxxxx/`
-    /// If not provided `localhost` is used.
+    /// Create a Pubky façade preconfigured for a **local testnet**.
+    ///
+    /// If `host` is provided, PKARR and HTTP endpoints are derived as `http://<host>:ports/...`.
+    /// If omitted, `"localhost"` is assumed (handy for `cargo install pubky-testnet`).
+    ///
+    /// @param {string=} host Optional host (e.g. `"localhost"`, `"docker-host"`, `"127.0.0.1"`).
+    /// @returns {Pubky}
+    ///
+    /// @example
+    /// const pubky = Pubky.testnet();              // localhost default
+    /// const pubky = Pubky.testnet("docker-host"); // custom hostname/IP
     #[wasm_bindgen(js_name = "testnet")]
     pub fn testnet(host: Option<String>) -> JsResult<Pubky> {
         let client = Client::testnet(host);
         Ok(Pubky(pubky::Pubky::with_client(client.0)))
     }
 
-    /// Construct from an already-configured HTTP client.
+    /// Wrap an existing configured HTTP client into a Pubky façade.
+    ///
+    /// @param {Client} client A previously constructed client.
+    /// @returns {Pubky}
+    ///
+    /// @example
+    /// const client = Client.testnet();
+    /// const pubky = Pubky.withClient(client);
     #[wasm_bindgen(js_name = "withClient")]
     pub fn with_client(client: &Client) -> Pubky {
         Pubky(pubky::Pubky::with_client(client.0.clone()))
     }
 
-    /// Start an auth flow using this façade’s client.
+    /// Start a **pubkyauth** flow.
+    ///
+    /// Provide a **capabilities string** and (optionally) a relay base URL.
+    /// The capabilities string is a comma-separated list of entries:
+    /// `"<scope>:<actions>"`, where:
+    /// - `scope` starts with `/` (e.g. `/pub/example.app/`).
+    /// - `actions` is any combo of `r` and/or `w` (order normalized; `wr` -> `rw`).
+    /// Pass `""` for no scopes (read-only public session).
+    ///
+    /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
+    /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/link/"`).
+    /// @returns {AuthFlow}
+    /// A running auth flow. Call `authorizationUrl()` to show a QR/deeplink,
+    /// then `awaitApproval()` to obtain a `Session`.
+    ///
+    /// @throws {PubkyJsError}
+    /// - `{ name: "InvalidInput" }` for malformed capabilities or bad relay URL
+    /// - `{ name: "RequestError" }` if the flow cannot be started (network/relay)
+    ///
+    /// @example
+    /// const flow = pubky.startAuthFlow("/pub/my.app/:rw");
+    /// renderQr(flow.authorizationUrl());
+    /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "startAuthFlow")]
     pub fn start_auth_flow(&self, capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
         let flow = AuthFlow::start_with_client(capabilities, relay, Some(self.0.client().clone()))?;

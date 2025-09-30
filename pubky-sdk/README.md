@@ -76,7 +76,7 @@ println!("Your current homeserver: {:?}", resolved);
 Session (authenticated):
 
 ```rust no_run
-use pubky::Pubky;
+use pubky::{Pubky, Keypair};
 
 # async fn run() -> pubky::Result<()> {
 
@@ -119,7 +119,7 @@ Path rules:
 Resolve another user’s homeserver, or publish your own via the signer.
 
 ```rust no_run
-use pubky::{Pubky, PublicKey};
+use pubky::{Pubky, PublicKey, Keypair};
 # async fn run(other: PublicKey, new_homeserver_id: PublicKey) -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 
@@ -147,7 +147,7 @@ Request an authorization URL and await approval.
 3. Await `await_approval()` to obtain a session-bound `PubkySession`.
 
 ```rust
-# use pubky::{Pubky, Capabilities};
+# use pubky::{Pubky, Capabilities, Keypair};
 # async fn auth() -> pubky::Result<()> {
 
 let pubky = Pubky::new()?;
@@ -195,7 +195,7 @@ let auth_flow = PubkyAuthFlow::builder(&caps)
 Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
 
 ```rust
-# use pubky_testnet::{EphemeralTestnet};
+# use pubky_testnet::{EphemeralTestnet, pubky::Keypair};
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
 let testnet = EphemeralTestnet::start().await.unwrap();
