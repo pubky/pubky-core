@@ -1,6 +1,6 @@
 import test from "tape";
 
-import { Pubky, PublicKey } from "../index.cjs";
+import { Pubky, PublicKey, Keypair } from "../index.cjs";
 import { createSignupToken } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
@@ -12,7 +12,7 @@ test("session: putJson/getJson/delete, public: getJson", async (t) => {
   const sdk = Pubky.testnet();
 
   // 1) Signer & signup -> ready session (cookie managed by fetch)
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -55,8 +55,8 @@ test("session: putJson/getJson/delete, public: getJson", async (t) => {
 test("session: putText/getText/delete, public: getText", async (t) => {
   const sdk = Pubky.testnet();
 
-  // 1) signer → signup → session
-  const signer = sdk.signerRandom();
+  // 1) signer -> signup -> session
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -102,8 +102,8 @@ test("session: putText/getText/delete, public: getText", async (t) => {
 test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
   const sdk = Pubky.testnet();
 
-  // 1) signer → signup → session
-  const signer = sdk.signerRandom();
+  // 1) signer -> signup -> session
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -152,7 +152,7 @@ test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
 test("not found", async (t) => {
   const sdk = Pubky.testnet();
 
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -182,7 +182,7 @@ test("not found", async (t) => {
 test("unauthorized (no cookie) PUT returns 401", async (t) => {
   const sdk = Pubky.testnet();
 
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -206,7 +206,7 @@ test("unauthorized (no cookie) PUT returns 401", async (t) => {
 test("forbidden: writing outside /pub returns 403", async (t) => {
   const sdk = Pubky.testnet();
 
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -231,7 +231,7 @@ test("forbidden: writing outside /pub returns 403", async (t) => {
 test("list (public dir listing with limit/cursor/reverse)", async (t) => {
   const sdk = Pubky.testnet();
 
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
@@ -356,7 +356,7 @@ test("list (public dir listing with limit/cursor/reverse)", async (t) => {
 test("list shallow under /pub/", async (t) => {
   const sdk = Pubky.testnet();
 
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 

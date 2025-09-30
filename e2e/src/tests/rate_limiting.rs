@@ -1,7 +1,8 @@
 use std::time::{Duration, Instant};
 
-use pubky_testnet::pubky::{errors::RequestError, Error};
-use pubky_testnet::pubky::{Method, PubkySession, StatusCode};
+use pubky_testnet::pubky::{
+    errors::RequestError, Error, Keypair, Method, PubkySession, StatusCode,
+};
 use pubky_testnet::{
     pubky_homeserver::{
         quota_config::{GlobPattern, LimitKey, LimitKeyType, PathLimit},
@@ -39,7 +40,7 @@ async fn limit_signin_get_session() {
     let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
 
     // Create a user (signup should not hit the POST /session signin limit)
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     signer.signup(&server.public_key(), None).await.unwrap();
 
     // First signin should be OK
@@ -73,7 +74,7 @@ async fn limit_signin_get_session_whitelist() {
     let pubky = testnet.sdk().unwrap();
 
     // Pre-generate the whitelisted user (we need their pubkey in the config)
-    let whitelisted_signer = pubky.signer_random();
+    let whitelisted_signer = pubky.signer(Keypair::random());
     let whitelisted_pubky = whitelisted_signer.public_key().clone();
 
     // Rate-limit GET /session by user, but whitelist `whitelisted_pubky`
@@ -106,7 +107,7 @@ async fn limit_signin_get_session_whitelist() {
     session_w.revalidate().await.unwrap();
 
     // --- Non-whitelisted user ---
-    let other = pubky.signer_random();
+    let other = pubky.signer(Keypair::random());
     other.signup(&server.public_key(), None).await.unwrap();
     let session_o = other.signin().await.unwrap();
 
@@ -172,7 +173,7 @@ async fn limit_upload() {
     let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
 
     // User + session-bound session
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Upload ~3 KB; at 1 KB/s it should take > 2s total
@@ -224,7 +225,7 @@ async fn test_concurrent_write_read() {
     let user_count = 10usize;
     let mut sessions: Vec<PubkySession> = Vec::with_capacity(user_count);
     for _ in 0..user_count {
-        let signer = pubky.signer_random();
+        let signer = pubky.signer(Keypair::random());
         let session = signer.signup(&server.public_key(), None).await.unwrap();
         sessions.push(session);
     }

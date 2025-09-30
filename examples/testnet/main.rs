@@ -1,4 +1,4 @@
-use pubky_testnet::EphemeralTestnet;
+use pubky_testnet::{pubky::Keypair, EphemeralTestnet};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create a random signer and sign up
     let session = pubky
-        .signer_random()
+        .signer(Keypair::random())
         .signup(&homeserver.public_key(), None)
         .await?;
 

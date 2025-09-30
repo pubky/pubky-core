@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, Error, Method, StatusCode},
+    pubky::{errors::RequestError, Error, Keypair, Method, StatusCode},
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
@@ -11,7 +11,7 @@ async fn put_get_delete() {
     let server = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
     let public_key = session.info().public_key();
@@ -86,7 +86,7 @@ async fn put_then_get_json_roundtrip() {
     let server = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
     let public_key = session.info().public_key();
@@ -147,7 +147,7 @@ async fn put_quota_applied() {
     let server = testnet.create_homeserver_with_mock(mock_dir).await.unwrap();
 
     // Create a user/session
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     let p1 = "/pub/data";
@@ -213,7 +213,7 @@ async fn unauthorized_put_delete() {
     let pubky = testnet.sdk().unwrap();
 
     // Owner user
-    let owner = pubky.signer_random();
+    let owner = pubky.signer(Keypair::random());
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
 
     let path = "/pub/foo.txt";
@@ -271,7 +271,7 @@ async fn list() {
     let server = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key();
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
@@ -496,7 +496,7 @@ async fn list_shallow() {
     let pubky = testnet.sdk().unwrap();
 
     // Create a user/session
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -728,7 +728,7 @@ async fn list_events() {
     let pubky = testnet.sdk().unwrap();
 
     // Create a user/session
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -826,7 +826,7 @@ async fn read_after_event() {
     let pubky = testnet.sdk().unwrap();
 
     // User + session
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -876,8 +876,8 @@ async fn dont_delete_shared_blobs() {
     let pubky = testnet.sdk().unwrap();
 
     // Two independent users
-    let u1 = pubky.signer_random();
-    let u2 = pubky.signer_random();
+    let u1 = pubky.signer(Keypair::random());
+    let u2 = pubky.signer(Keypair::random());
 
     let a1 = u1.signup(&homeserver.public_key(), None).await.unwrap();
     let a2 = u2.signup(&homeserver.public_key(), None).await.unwrap();
@@ -932,7 +932,7 @@ async fn stream() {
     let server = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     let path = "/pub/foo.txt";

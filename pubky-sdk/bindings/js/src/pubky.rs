@@ -37,15 +37,9 @@ impl Pubky {
     }
 
     /// Create a signer bound to this façade’s client from an existing keypair.
-    #[wasm_bindgen(js_name = "signerFromKeypair")]
+    #[wasm_bindgen(js_name = "signer")]
     pub fn signer(&self, keypair: Keypair) -> Signer {
         Signer(self.0.signer(keypair.as_inner().clone()))
-    }
-
-    /// Create a signer with a fresh random keypair (facade-bound).
-    #[wasm_bindgen(js_name = "signerRandom")]
-    pub fn signer_random(&self) -> Signer {
-        Signer(self.0.signer_random())
     }
 
     /// Public, unauthenticated storage bound to this façade’s client.

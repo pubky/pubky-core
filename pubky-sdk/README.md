@@ -81,7 +81,7 @@ use pubky::Pubky;
 # async fn run() -> pubky::Result<()> {
 
 let pubky = Pubky::new()?;
-let session = pubky.signer_random().signin().await?;
+let session = pubky.signer(Keypair::random()).signin().await?;
 
 let storage = session.storage();
 storage.put("/pub/my.app/data.txt", "hi").await?;
@@ -128,7 +128,7 @@ let pkdns = pubky.pkdns();
 let host = pkdns.get_homeserver_of(&other).await;
 
 // publish with your key
-let signer = pubky.signer_random();
+let signer = pubky.signer(Keypair::random());
 signer.pkdns().publish_homeserver_if_stale(None).await?;
 // or force republish (e.g. homeserver migration)
 signer.pkdns().publish_homeserver_force(Some(&new_homeserver_id)).await?;
@@ -159,7 +159,7 @@ let flow = pubky.start_auth_flow(&caps)?;
 println!("Scan to sign in: {}", flow.authorization_url());
 
 // On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;
-# pubky.signer_random().approve_auth(flow.authorization_url()).await?;
+# pubky.signer(Keypair::random()).approve_auth(flow.authorization_url()).await?;
 
 let session = flow.await_approval().await?;
 
@@ -202,7 +202,7 @@ let testnet = EphemeralTestnet::start().await.unwrap();
 let homeserver  = testnet.homeserver();
 let pubky = testnet.sdk()?;
 
-let signer = pubky.signer_random();
+let signer = pubky.signer(Keypair::random());
 let session  = signer.signup(&homeserver.public_key(), None).await?;
 
 session.storage().put("/pub/my.app/hello.txt", "hi").await?;
@@ -230,7 +230,7 @@ Session secrets (`.sess`):
 use pubky::Pubky;
 # async fn run() -> pubky::Result<()> {
 let sdk = Pubky::new()?;
-let session = sdk.signer_random().signin().await?;
+let session = sdk.signer(Keypair::random()).signin().await?;
 session.write_secret_file("alice.sess").unwrap();
 let restored = sdk.session_from_file("alice.sess").await?;
 

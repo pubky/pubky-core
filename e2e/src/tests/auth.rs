@@ -1,5 +1,6 @@
-use pubky_testnet::pubky::{Method, PubkyHttpClient};
-use pubky_testnet::pubky::{PubkyAuthFlow, PubkySession, StatusCode};
+use pubky_testnet::pubky::{
+    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode,
+};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
@@ -15,7 +16,7 @@ async fn basic_authn() {
     let homeserver = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
 
     let user = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
@@ -33,7 +34,7 @@ async fn disabled_user() {
     let pubky = testnet.sdk().unwrap();
 
     // Create a brand-new user and session
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let pubky = signer.public_key().clone();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -114,7 +115,7 @@ async fn authz() {
         .unwrap();
 
     // Signer authenticator
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     signer.signup(&server.public_key(), None).await.unwrap();
     signer
         .approve_auth(&auth.authorization_url())
@@ -164,7 +165,7 @@ async fn persist_and_restore_info() {
     let pubky = testnet.sdk().unwrap();
 
     // Create user and session-bound agent
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
     // Write something with the live agent
@@ -203,8 +204,8 @@ async fn multiple_users() {
     let pubky = testnet.sdk().unwrap();
 
     // Two independent users
-    let alice = pubky.signer_random();
-    let bob = pubky.signer_random();
+    let alice = pubky.signer(Keypair::random());
+    let bob = pubky.signer(Keypair::random());
 
     let alice_session = alice.signup(&server.public_key(), None).await.unwrap();
     let bob_session = bob.signup(&server.public_key(), None).await.unwrap();
@@ -248,7 +249,7 @@ async fn authz_timeout_reconnect() {
         .unwrap();
 
     // Signer side: sign up, then approve after a delay (to exercise timeout/retry)
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let signer_pubky = signer.public_key();
     signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -294,8 +295,8 @@ async fn signup_with_token() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer_random();
-    let signer2 = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
+    let signer2 = pubky.signer(Keypair::random());
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
@@ -360,7 +361,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
     let client = testnet.client().unwrap();
 
     // Sign up a brand-new user (initial publish happens on signup)
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let pubky = signer.public_key().clone();
     signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -405,7 +406,7 @@ async fn conditional_publish_skips_when_fresh() {
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
 
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let pubky = signer.public_key().clone();
     signer.signup(&server.public_key(), None).await.unwrap();
 
@@ -444,7 +445,7 @@ async fn republish_homeserver() {
     let server = testnet.create_homeserver().await.unwrap();
 
     // Create user and publish initial record via signup.
-    let signer = pubky.signer_random();
+    let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key().clone();
     signer.signup(&server.public_key(), None).await.unwrap();
 

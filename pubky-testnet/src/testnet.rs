@@ -223,7 +223,7 @@ mod test {
         let hs = testnet.homeservers.first().unwrap();
         let sdk = testnet.sdk().unwrap();
 
-        let signer = sdk.signer_random();
+        let signer = sdk.signer(Keypair::random());
 
         let session = signer.signup(&hs.public_key(), None).await.unwrap();
         assert_eq!(session.info().public_key(), &signer.public_key());
@@ -278,7 +278,7 @@ mod test {
 
                 let sdk = testnet.sdk().unwrap();
 
-                let signer = sdk.signer_random();
+                let signer = sdk.signer(Keypair::random());
 
                 let session = signer.signup(&hs.public_key(), None).await.unwrap();
 

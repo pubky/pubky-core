@@ -102,11 +102,6 @@ impl Pubky {
         }
     }
 
-    /// Create a `PubkySigner` with a fresh random keypair.
-    pub fn signer_random(&self) -> PubkySigner {
-        self.signer(crate::Keypair::random())
-    }
-
     /// Create a public, unauthenticated storage handle using this façade’s client.
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage {

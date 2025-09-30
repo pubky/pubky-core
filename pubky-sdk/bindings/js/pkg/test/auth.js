@@ -1,5 +1,5 @@
 import test from "tape";
-import { PublicKey, Pubky, validateCapabilities } from "../index.cjs";
+import { PublicKey, Pubky, validateCapabilities, Keypair } from "../index.cjs";
 import { createSignupToken } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
@@ -12,7 +12,7 @@ const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 test("Auth: 3rd party signin", async (t) => {
   const sdk = Pubky.testnet();
 
-  const signer = sdk.signerRandom();
+  const signer = sdk.signer(Keypair.random());
   const pubky = signer.publicKey().z32();
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
