@@ -227,12 +227,13 @@ let signer = pubky.signer_from_recovery_file("/path/to/alice.pkarr", "passphrase
 Session secrets (`.sess`):
 
 ```rust
-use pubky::Pubky;
+use pubky::{Pubky, Keypair};
 # async fn run() -> pubky::Result<()> {
-let sdk = Pubky::new()?;
-let session = sdk.signer(Keypair::random()).signin().await?;
+let pubky = Pubky::new()?;
+let keypair = Keypair::random();
+let session = pubky.signer(keypair).signin().await?;
 session.write_secret_file("alice.sess").unwrap();
-let restored = sdk.session_from_file("alice.sess").await?;
+let restored = pubky.session_from_file("alice.sess").await?;
 
 # let _ = std::fs::remove_file("alice.sess");
 # Ok(()) }
