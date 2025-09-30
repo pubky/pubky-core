@@ -129,3 +129,168 @@ test("Auth: multi-user (cookies)", async (t) => {
 
   t.end();
 });
+
+
+/**
+ * - Have *two* valid sessions (cookies for both users in one process).
+ * - Interleave writes across both users, using BOTH high-level SessionStorage (absolute paths)
+ *   and low-level Client.fetch (addressed `pubky://...` URLs).
+ * - Ensure each write lands under the correct user regardless of recent activity or order.
+ *
+ * If the WASM client ever derives `pubky-host` from a stale/global identity,
+ * or the cookie jar gets mismatched, we should see 401/403 or wrong-user data.
+ */
+test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
+  const sdk = Pubky.testnet(); // local testnet wiring
+  const client = sdk.client();
+
+  // Create two users & sign them up — both cookies end up in the same jar.
+  const alice = sdk.signer(Keypair.random());
+  const bob   = sdk.signer(Keypair.random());
+
+  const aliceToken = await createSignupToken();
+  const bobToken   = await createSignupToken();
+
+  const aliceSession = await alice.signup(HOMESERVER_PUBLICKEY, aliceToken);
+  const bobSession   = await bob.signup(HOMESERVER_PUBLICKEY, bobToken);
+
+  const A = aliceSession.info().publicKey().z32();
+  const B = bobSession.info().publicKey().z32();
+
+  // Helpers
+  const readTextPublic = async (user, relPath) => {
+    const text = await sdk.publicStorage().getText(`${user}${relPath}`);
+    return text;
+  };
+
+  // Paths are identical per-user; results must not cross.
+  const P = "/pub/example.com/owner.txt";
+
+  // 1) Alice writes via SessionStorage (absolute path)
+  await aliceSession.storage().putText(P, "alice#1");
+  t.equal(await readTextPublic(A, P), "alice#1", "alice write visible under alice");
+
+  // 2) Bob writes via SessionStorage
+  await bobSession.storage().putText(P, "bob#1");
+  t.equal(await readTextPublic(B, P), "bob#1", "bob write visible under bob");
+
+  // 3) Interleave in reverse order (ensure no global “current user” leakage)
+  await bobSession.storage().putText(P, "bob#2");
+  await aliceSession.storage().putText(P, "alice#2");
+  t.equal(await readTextPublic(A, P), "alice#2", "alice second write still under alice");
+  t.equal(await readTextPublic(B, P), "bob#2", "bob second write still under bob");
+
+  // 4) Raw client.fetch using addressed pubky:// URLs (exercises header derivation path)
+  {
+    const urlA = `pubky://${A}${P}`;
+    const r = await client.fetch(urlA, {
+      method: "PUT",
+      body: "alice#3",
+      credentials: "include", // send cookies for this host
+    });
+    t.ok(r.ok, "client.fetch PUT for alice ok");
+  }
+  {
+    const urlB = `pubky://${B}${P}`;
+    const r = await client.fetch(urlB, {
+      method: "PUT",
+      body: "bob#3",
+      credentials: "include",
+    });
+    t.ok(r.ok, "client.fetch PUT for bob ok");
+  }
+
+  t.equal(await readTextPublic(A, P), "alice#3", "client.fetch wrote to alice");
+  t.equal(await readTextPublic(B, P), "bob#3", "client.fetch wrote to bob");
+
+  // 5) Stale-handle safety: Create a *third* user; ensure earlier Session handles still write correctly.
+  const carol = sdk.signer(Keypair.random());
+  const carolToken = await createSignupToken();
+  const carolSession = await carol.signup(HOMESERVER_PUBLICKEY, carolToken);
+  const C = carolSession.info().publicKey().z32();
+
+  // Write using *old* alice handle, then *old* bob handle, after a *new* signup happened.
+  await aliceSession.storage().putText(P, "alice#4");
+  await bobSession.storage().putText(P, "bob#4");
+  t.equal(await readTextPublic(A, P), "alice#4", "stale alice handle still targets alice");
+  t.equal(await readTextPublic(B, P), "bob#4", "stale bob handle still targets bob");
+
+  // Carol writes too (control).
+  await carolSession.storage().putText(P, "carol#1");
+  t.equal(await readTextPublic(C, P), "carol#1", "carol write lands under carol");
+
+  t.end();
+});
+
+/**
+ * Simulates a user repeatedly signing up and signing out — which in browsers often
+ * correlates with page reloads and “switch account” flows.
+ *
+ * We assert that:
+ *  - Each *new* session writes only for its own user.
+ *  - The most recently *signed-out* user cannot write anymore (401).
+ *  - Older Session handles never “jump” to a newer identity.
+ */
+test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
+  const sdk = Pubky.testnet();
+  const client = sdk.client();
+
+  const P = "/pub/example.com/loop.txt";
+
+  // Helper to sign up a fresh user and write a marker for that user
+  async function signupAndMark(label) {
+    const signer = sdk.signer(Keypair.random());
+    const token = await createSignupToken();
+    const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
+    const user = session.info().publicKey().z32();
+    await session.storage().putText(P, label);
+    return { signer, session, user };
+  }
+
+  // Loop twice to mimic repeated flows
+  const u1 = await signupAndMark("user#1:hello");
+  t.equal(
+    await sdk.publicStorage().getText(`${u1.user}${P}`),
+    "user#1:hello",
+    "first user marked",
+  );
+
+  await u1.session.signout();
+
+  // Confirm user#1 cannot write via low-level fetch anymore (401)
+  {
+    const url = `pubky://${u1.user}${P}`;
+    const r = await client.fetch(url, { method: "PUT", body: "should-401", credentials: "include" });
+    t.equal(r.status, 401, "signed-out user cannot write");
+  }
+
+  // Second user joins
+  const u2 = await signupAndMark("user#2:hello");
+  t.equal(
+    await sdk.publicStorage().getText(`${u2.user}${P}`),
+    "user#2:hello",
+    "second user marked",
+  );
+
+  // Old handle shouldn’t suddenly write for the new user; in fact, it should have been dropped
+  try {
+    await u1.session.storage().putText(P, "nope");
+    t.fail("stale user#1 session should not be able to write after signout");
+  } catch (e) {
+    t.equal(e.name, "Error", "stale handle write -> Error");
+  }
+
+  // Interleave a bit: use low-level client for u2 (ensures header/URL are aligned)
+  {
+    const url = `pubky://${u2.user}${P}`;
+    const r = await client.fetch(url, { method: "PUT", body: "user#2:via-client", credentials: "include" });
+    t.ok(r.ok, "low-level client PUT for user#2 ok");
+  }
+  t.equal(
+    await sdk.publicStorage().getText(`${u2.user}${P}`),
+    "user#2:via-client",
+    "low-level client wrote under user#2",
+  );
+
+  t.end();
+});
