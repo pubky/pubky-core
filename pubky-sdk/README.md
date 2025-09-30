@@ -105,7 +105,7 @@ let file = public.get(format!("{user_id}/pub/acme.app/file.bin")).await?.bytes()
 # Ok(()) }
 ```
 
-See the [Public Storage example](https://github.com/pubky/pubky-core/tree/main/examples/storage).
+See the [Public Storage example](https://github.com/pubky/pubky-core/tree/main/examples/rust/storage).
 
 Path rules:
 
@@ -166,7 +166,7 @@ let session = flow.await_approval().await?;
 # Ok(()) }
 ```
 
-See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-core/tree/main/examples/auth_flow).
+See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-core/tree/main/examples/rust/auth_flow).
 
 #### Relay & reliability
 
