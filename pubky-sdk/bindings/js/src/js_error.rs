@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 
 use pkarr::errors::PublicKeyError;
 use pubky::errors::{BuildError, RequestError};
+use pubky_common::auth::Error as AuthTokenError;
 use pubky_common::capabilities::Error as CapabilitiesError;
 use pubky_common::recovery_file::Error as RecoveryFileError;
 
@@ -132,6 +133,15 @@ impl From<RecoveryFileError> for PubkyJsError {
 impl From<CapabilitiesError> for PubkyJsError {
     fn from(err: CapabilitiesError) -> Self {
         Self::new(PubkyErrorName::InvalidInput, err.to_string())
+    }
+}
+
+/// Converts an AuthToken parsing/verification error into a `PubkyJsError`.
+impl From<AuthTokenError> for PubkyJsError {
+    fn from(err: AuthTokenError) -> Self {
+        // Treat any token parse/verify failure as an authentication failure.
+        // (No HTTP status here; it's a local verification error.)
+        PubkyJsError::new(PubkyErrorName::AuthenticationError, err.to_string())
     }
 }
 

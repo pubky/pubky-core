@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use crate::js_error::JsResult;
 use crate::wrappers::keys::{Keypair, PublicKey};
 
+/// Resolve/publish `_pubky` PKDNS records (homeserver pointers).
 #[wasm_bindgen]
 pub struct Pkdns(pub(crate) pubky::Pkdns);
 
@@ -24,14 +25,18 @@ impl Pkdns {
 
     // -------------------- Reads --------------------
 
-    /// Resolve current homeserver for any pubkey via PKDNS.
-    /// Returns the target host string, or `undefined` if not found.
+    /// Resolve the homeserver for a given public key (read-only).
+    ///
+    /// @param {PublicKey} user
+    /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
     pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> JsResult<Option<String>> {
         Ok(self.0.get_homeserver_of(pubky.as_inner()).await)
     }
 
-    /// Convenience: resolve homeserver for **this** user (requires keypair).
+    /// Resolve the homeserver for **this** user (requires keypair).
+    ///
+    /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserver")]
     pub async fn get_homeserver(&self) -> JsResult<Option<String>> {
         Ok(self.0.get_homeserver().await?)
@@ -39,7 +44,12 @@ impl Pkdns {
 
     // -------------------- Publishing --------------------
 
-    /// Force publish `_pubky` to the DHT. Optional host override.
+    /// Republish homeserver if record is missing/stale.
+    ///
+    /// Requires keypair or to be signer bound.
+    ///
+    /// @param {PublicKey=} overrideHost Optional new homeserver to publish (migration).
+    /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "publishHomeserverForce")]
     pub async fn publish_homeserver_force(&self, host_override: Option<PublicKey>) -> JsResult<()> {
         let host_ref = host_override.as_ref().map(|h| h.as_inner());
@@ -47,7 +57,12 @@ impl Pkdns {
         Ok(())
     }
 
-    /// Publish `_pubky` only if missing or stale. Optional host override.
+    /// Force publish homeserver immediately (even if fresh).
+    ///
+    /// Requires keypair or to be signer bound.
+    ///
+    /// @param {PublicKey=} overrideHost Optional new homeserver to publish (migration).
+    /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "publishHomeserverIfStale")]
     pub async fn publish_homeserver_if_stale(
         &self,

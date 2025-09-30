@@ -61,42 +61,41 @@ impl AuthToken {
     // Constructors / statics
     // ---------------------------------------------------------------------
 
-    // TODO
-    // /// Parse and verify an `AuthToken` from its canonical bytes.
-    // ///
-    // /// - Verifies version, timestamp freshness window, and signature.
-    // /// - Throws on invalid/expired/unknown version.
-    // ///
-    // /// Use this on your server after receiving `Uint8Array` from the client.
-    // ///
-    // /// ```js
-    // /// import { AuthToken } from "@synonymdev/pubky";
-    // ///
-    // /// export async function POST(req) {
-    // ///   const bytes = new Uint8Array(await req.arrayBuffer());
-    // ///   const token = AuthToken.verify(bytes); // throws on failure
-    // ///   return new Response(token.publicKey().z32(), { status: 200 });
-    // /// }
-    // /// ```
-    // #[wasm_bindgen(js_name = "verify")]
-    // pub fn verify_js(bytes: js_sys::Uint8Array) -> JsResult<AuthToken> {
-    //     let vec = bytes.to_vec();
-    //     let token = pubky::AuthToken::verify(&vec)?; // maps to PubkyJsError on failure
-    //     Ok(AuthToken(token))
-    // }
+    /// Parse and verify an `AuthToken` from its canonical bytes.
+    ///
+    /// - Verifies version, timestamp freshness window, and signature.
+    /// - Throws on invalid/expired/unknown version.
+    ///
+    /// Use this on your server after receiving `Uint8Array` from the client.
+    ///
+    /// ```js
+    /// import { AuthToken } from "@synonymdev/pubky";
+    ///
+    /// export async function POST(req) {
+    ///   const bytes = new Uint8Array(await req.arrayBuffer());
+    ///   const token = AuthToken.verify(bytes); // throws on failure
+    ///   return new Response(token.publicKey().z32(), { status: 200 });
+    /// }
+    /// ```
+    #[wasm_bindgen(js_name = "verify")]
+    pub fn verify_js(bytes: js_sys::Uint8Array) -> JsResult<AuthToken> {
+        let vec = bytes.to_vec();
+        let token = pubky::AuthToken::verify(&vec)?; // maps to PubkyJsError on failure
+        Ok(AuthToken(token))
+    }
 
-    // /// Deserialize an `AuthToken` **without** verification.
-    // ///
-    // /// Most apps should call [`AuthToken.verify()`]. This is provided for tooling or diagnostics
-    // /// where you want to inspect the structure first.
-    // ///
-    // /// Throws if the bytes cannot be parsed as a valid serialized token.
-    // #[wasm_bindgen(js_name = "fromBytes")]
-    // pub fn from_bytes(bytes: js_sys::Uint8Array) -> JsResult<AuthToken> {
-    //     let vec = bytes.to_vec();
-    //     let token = pubky::AuthToken::deserialize(&vec)?; // parse only
-    //     Ok(AuthToken(token))
-    // }
+    /// Deserialize an `AuthToken` **without** verification.
+    ///
+    /// Most apps should call [`AuthToken.verify()`]. This is provided for tooling or diagnostics
+    /// where you want to inspect the structure first.
+    ///
+    /// Throws if the bytes cannot be parsed as a valid serialized token.
+    #[wasm_bindgen(js_name = "fromBytes")]
+    pub fn from_bytes(bytes: js_sys::Uint8Array) -> JsResult<AuthToken> {
+        let vec = bytes.to_vec();
+        let token = pubky::AuthToken::deserialize(&vec)?; // parse only
+        Ok(AuthToken(token))
+    }
 
     // ---------------------------------------------------------------------
     // Instance methods

@@ -26,9 +26,12 @@ fn normalize_and_collect(input: &str) -> (String, Vec<String>) {
 
 /// Validate and normalize a capabilities string.
 ///
-/// - On success: returns a **normalized** string (e.g. `"/pub/app/:rw,/priv/foo/:r"`).
-/// - On failure: throws `PubkyJsError { name: "InvalidInput", message: string }`
-/// - Empty input is allowed (means “no scopes”).
+/// - Normalizes action order (`wr` -> `rw`)
+/// - Throws `InvalidInput` listing malformed entries.
+///
+/// @param {string} input
+/// @returns {string} Normalized string (same shape as input).
+/// @throws {PubkyJsError} `{ name: "InvalidInput" }` with a helpful message.
 #[wasm_bindgen(js_name = "validateCapabilities")]
 pub fn validate_capabilities(input: &str) -> JsResult<String> {
     let (normalized, invalid) = normalize_and_collect(input);
