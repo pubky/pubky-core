@@ -5,24 +5,24 @@ edition.workspace = true
 publish = false
 
 [[bin]]
+name = "testnet"
+path = "./1-testnet/main.rs"
+
+[[bin]]
 name = "signup"
-path = "./signup/signup.rs"
+path = "./2-signup/signup.rs"
 
 [[bin]]
 name = "authenticator"
-path = "./auth_flow/authenticator.rs"
+path = "./3-auth_flow/authenticator.rs"
 
 [[bin]]
 name = "storage"
-path = "./storage/main.rs"
+path = "./4-storage/main.rs"
 
 [[bin]]
 name = "request"
-path = "./request/main.rs"
-
-[[bin]]
-name = "testnet"
-path = "./testnet/main.rs"
+path = "./5-request/main.rs"
 
 [dependencies]
 anyhow = "1.0.99"
