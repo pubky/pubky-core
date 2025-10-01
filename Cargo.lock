@@ -2973,6 +2973,7 @@ dependencies = [
  "log",
  "pkarr",
  "pubky",
+ "pubky-common",
  "reqwest",
  "serde",
  "serde-wasm-bindgen",

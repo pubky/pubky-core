@@ -40,6 +40,7 @@ tsify = "0.5.5"
 pubky = { path = "../../../pubky-sdk", default-features = false, features = [
     "json",
 ] }
+pubky-common = { path = "../../../pubky-common" }
 pkarr = { workspace = true, default-features = false }
 web-sys = { version = "0.3.77", default-features = false, features = [
     "Request",
