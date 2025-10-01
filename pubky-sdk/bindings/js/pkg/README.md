@@ -307,16 +307,17 @@ try {
 
 For test and development, you can run a local homeserver in a test network.
 
-1. Install Rust (for wasm builds):
+1. Install Rust (for wasm and testnet builds):
 
 ```bash
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-2. Run the local testnet:
+2. Install and run the local testnet:
 
 ```bash
-npm run testnet
+cargo install pubky-testnet
+pubky-testnet
 ```
 
 3. Point the SDK at testnet:

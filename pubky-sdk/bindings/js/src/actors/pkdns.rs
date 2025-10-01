@@ -44,7 +44,7 @@ impl Pkdns {
 
     // -------------------- Publishing --------------------
 
-    /// Republish homeserver if record is missing/stale.
+    /// Force publish homeserver immediately (even if fresh).
     ///
     /// Requires keypair or to be signer bound.
     ///
@@ -57,7 +57,7 @@ impl Pkdns {
         Ok(())
     }
 
-    /// Force publish homeserver immediately (even if fresh).
+    /// Republish homeserver if record is missing/stale.
     ///
     /// Requires keypair or to be signer bound.
     ///
