@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     );
     tracing::info!(
         "Homeserver Pubky TLS listening on {}",
-        server.client_server().pubky_tls_ip_url_ring()
+        server.client_server().pubky_tls_ip_url()
     );
     tracing::info!(
         "Admin server listening on http://{}",

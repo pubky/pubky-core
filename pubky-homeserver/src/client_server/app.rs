@@ -232,7 +232,7 @@ impl ClientServer {
     }
 
     /// Get the URL of the pubky tls server with the Pubky IP address.
-    pub fn pubky_tls_ip_url_ring(&self) -> String {
+    pub fn pubky_tls_ip_url(&self) -> String {
         format!("https://{}", self.pubky_tls_socket)
     }
 
