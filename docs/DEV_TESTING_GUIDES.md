@@ -20,7 +20,7 @@ This command creates a postgres container and also automatically creates the `pu
 
 ```toml
 [general]
-database_url = "postgres://postgres@postgres@localhost:5432/pubky_homeserver"
+database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
 ```
 
 [pgadmin](https://www.pgadmin.org/) is a great explorer to inspect database values.
