@@ -15,7 +15,7 @@
     "request": "node 5-request.mjs"
   },
   "dependencies": {
-    "@synonymdev/pubky": "file:../../pubky-sdk/bindings/js/pkg",
+    "@synonymdev/pubky": "0.6.0-rc.2",
     "mri": "^1.2.0",
     "password-prompt": "^1.1.3"
   }

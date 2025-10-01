@@ -2,7 +2,7 @@
 // End-to-end testnet roundtrip: signup -> write -> read.
 import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
 
-// This is the default testnet homeserver. It comes from a secret of `00000...` bytes.
+// This is the default testnet homeserver. It comes from the secret `00000...` (bits).
 const TESTNET_HOMESERVER =
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
