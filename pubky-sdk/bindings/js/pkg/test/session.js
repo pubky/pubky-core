@@ -177,52 +177,50 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
   await bobSession.storage().putText(P, "bob#1");
   t.equal(await readTextPublic(B, P), "bob#1", "bob write visible under bob");
 
-  // TODO: these tests are failing on Browser, issue with cookies and pubky-host!
-  //
-  // // 3) Interleave in reverse order (ensure no global “current user” leakage)
-  // await bobSession.storage().putText(P, "bob#2");
-  // await aliceSession.storage().putText(P, "alice#2");
-  // t.equal(await readTextPublic(A, P), "alice#2", "alice second write still under alice");
-  // t.equal(await readTextPublic(B, P), "bob#2", "bob second write still under bob");
+  // 3) Interleave in reverse order (ensure no global “current user” leakage)
+  await bobSession.storage().putText(P, "bob#2");
+  await aliceSession.storage().putText(P, "alice#2");
+  t.equal(await readTextPublic(A, P), "alice#2", "alice second write still under alice");
+  t.equal(await readTextPublic(B, P), "bob#2", "bob second write still under bob");
 
-  // // 4) Raw client.fetch using addressed pubky:// URLs (exercises header derivation path)
-  // {
-  //   const urlA = `pubky://${A}${P}`;
-  //   const r = await client.fetch(urlA, {
-  //     method: "PUT",
-  //     body: "alice#3",
-  //     credentials: "include", // send cookies for this host
-  //   });
-  //   t.ok(r.ok, "client.fetch PUT for alice ok");
-  // }
-  // {
-  //   const urlB = `pubky://${B}${P}`;
-  //   const r = await client.fetch(urlB, {
-  //     method: "PUT",
-  //     body: "bob#3",
-  //     credentials: "include",
-  //   });
-  //   t.ok(r.ok, "client.fetch PUT for bob ok");
-  // }
+  // 4) Raw client.fetch using addressed pubky:// URLs (exercises header derivation path)
+  {
+    const urlA = `pubky://${A}${P}`;
+    const r = await client.fetch(urlA, {
+      method: "PUT",
+      body: "alice#3",
+      credentials: "include", // send cookies for this host
+    });
+    t.ok(r.ok, "client.fetch PUT for alice ok");
+  }
+  {
+    const urlB = `pubky://${B}${P}`;
+    const r = await client.fetch(urlB, {
+      method: "PUT",
+      body: "bob#3",
+      credentials: "include",
+    });
+    t.ok(r.ok, "client.fetch PUT for bob ok");
+  }
 
-  // t.equal(await readTextPublic(A, P), "alice#3", "client.fetch wrote to alice");
-  // t.equal(await readTextPublic(B, P), "bob#3", "client.fetch wrote to bob");
+  t.equal(await readTextPublic(A, P), "alice#3", "client.fetch wrote to alice");
+  t.equal(await readTextPublic(B, P), "bob#3", "client.fetch wrote to bob");
 
-  // // 5) Stale-handle safety: Create a *third* user; ensure earlier Session handles still write correctly.
-  // const carol = sdk.signer(Keypair.random());
-  // const carolToken = await createSignupToken();
-  // const carolSession = await carol.signup(HOMESERVER_PUBLICKEY, carolToken);
-  // const C = carolSession.info().publicKey().z32();
+  // 5) Stale-handle safety: Create a *third* user; ensure earlier Session handles still write correctly.
+  const carol = sdk.signer(Keypair.random());
+  const carolToken = await createSignupToken();
+  const carolSession = await carol.signup(HOMESERVER_PUBLICKEY, carolToken);
+  const C = carolSession.info().publicKey().z32();
 
-  // // Write using *old* alice handle, then *old* bob handle, after a *new* signup happened.
-  // await aliceSession.storage().putText(P, "alice#4");
-  // await bobSession.storage().putText(P, "bob#4");
-  // t.equal(await readTextPublic(A, P), "alice#4", "stale alice handle still targets alice");
-  // t.equal(await readTextPublic(B, P), "bob#4", "stale bob handle still targets bob");
+  // Write using *old* alice handle, then *old* bob handle, after a *new* signup happened.
+  await aliceSession.storage().putText(P, "alice#4");
+  await bobSession.storage().putText(P, "bob#4");
+  t.equal(await readTextPublic(A, P), "alice#4", "stale alice handle still targets alice");
+  t.equal(await readTextPublic(B, P), "bob#4", "stale bob handle still targets bob");
 
-  // // Carol writes too (control).
-  // await carolSession.storage().putText(P, "carol#1");
-  // t.equal(await readTextPublic(C, P), "carol#1", "carol write lands under carol");
+  // Carol writes too (control).
+  await carolSession.storage().putText(P, "carol#1");
+  t.equal(await readTextPublic(C, P), "carol#1", "carol write lands under carol");
 
   t.end();
 });

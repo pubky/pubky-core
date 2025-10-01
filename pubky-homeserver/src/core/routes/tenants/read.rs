@@ -45,19 +45,7 @@ pub async fn get(
 
     let entry = state.file_service.get_info(&entry_path).await?;
 
-    // Handle IF_MODIFIED_SINCE
-    if let Some(condition_http_date) = headers
-        .get(header::IF_MODIFIED_SINCE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| HttpDate::from_str(s).ok())
-    {
-        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
-        if condition_http_date >= entry_http_date {
-            return not_modified_response(&entry);
-        }
-    };
-
-    // Handle IF_NONE_MATCH
+    // Per RFC 7232 §3: If-None-Match has precedence over If-Modified-Since.
     if let Some(request_etag) = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|h| h.to_str().ok())
@@ -66,11 +54,20 @@ pub async fn get(
         if request_etag
             .trim()
             .split(',')
-            .collect::<Vec<_>>()
-            .contains(&current_etag.as_str())
+            .map(|s| s.trim())
+            .any(|tag| tag == current_etag)
         {
             return not_modified_response(&entry);
-        };
+        }
+    } else if let Some(condition_http_date) = headers
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| HttpDate::from_str(s).ok())
+    {
+        let entry_http_date: HttpDate = entry.timestamp().to_owned().into();
+        if condition_http_date >= entry_http_date {
+            return not_modified_response(&entry);
+        }
     }
 
     let stream = state.file_service.get_stream(&entry_path).await?;
@@ -107,6 +104,8 @@ pub fn list(
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
+        .header(header::VARY, "pubky-host")
+        .header(header::CACHE_CONTROL, "private, must-revalidate")
         .body(Body::from(vec.join("\n")))?)
 }
 
@@ -116,6 +115,8 @@ fn not_modified_response(entry: &Entry) -> HttpResult<Response<Body>> {
         .status(StatusCode::NOT_MODIFIED)
         .header(header::ETAG, format!("\"{}\"", entry.content_hash()))
         .header(header::LAST_MODIFIED, entry.timestamp().format_http_date())
+        .header(header::VARY, "pubky-host")
+        .header(header::CACHE_CONTROL, "private, must-revalidate")
         .body(Body::empty())?)
 }
 
@@ -141,7 +142,12 @@ impl Entry {
                 .try_into()
                 .expect("hex string is valid"),
         );
-
+        // tenant-aware caching
+        headers.insert(header::VARY, HeaderValue::from_static("pubky-host"));
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, must-revalidate"),
+        );
         headers
     }
 }
@@ -301,5 +307,51 @@ mod tests {
             .await;
 
         response.assert_header(header::CONTENT_TYPE, "text/plain");
+    }
+    #[tokio::test]
+    async fn if_none_match_precedes_if_modified_since() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        // Write v1
+        server
+            .put("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(header::COOKIE, cookie.clone())
+            .bytes(Vec::from("alice").into())
+            .expect_success()
+            .await;
+
+        // Baseline GET to capture ETag and Last-Modified
+        let base = server
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .expect_success()
+            .await;
+        let etag_v1 = base
+            .headers()
+            .get(header::ETAG)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        let lm_v1 = base.headers().get(header::LAST_MODIFIED).unwrap().clone();
+
+        // Overwrite with different content but same-second timestamp likely
+        server
+            .put("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(header::COOKIE, cookie.clone())
+            .bytes(Vec::from("bob").into())
+            .expect_success()
+            .await;
+
+        // Conditional GET that sends both validators; must return 200 because ETag changed.
+        let r = server
+            .get("/pub/foo")
+            .add_header("host", public_key.to_string())
+            .add_header(header::IF_NONE_MATCH, etag_v1)
+            .add_header(header::IF_MODIFIED_SINCE, lm_v1)
+            .await;
+        r.assert_status(StatusCode::OK);
     }
 }
