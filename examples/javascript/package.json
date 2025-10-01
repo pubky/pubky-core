@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Node 20+ CLI examples for @synonymdev/pubky",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "testnet": "node 1-testnet.mjs",
     "signup": "node 2-signup.mjs",

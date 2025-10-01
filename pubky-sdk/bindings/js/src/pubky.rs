@@ -19,7 +19,8 @@ impl Pubky {
     /// const signer = pubky.signer(Keypair.random());
     #[wasm_bindgen(constructor)]
     pub fn new() -> JsResult<Pubky> {
-        Ok(Pubky(pubky::Pubky::new()?))
+        let client = Client::new(None)?;
+        Ok(Pubky(pubky::Pubky::with_client(client.0)))
     }
 
     /// Create a Pubky façade preconfigured for a **local testnet**.
@@ -35,7 +36,7 @@ impl Pubky {
     /// const pubky = Pubky.testnet("docker-host"); // custom hostname/IP
     #[wasm_bindgen(js_name = "testnet")]
     pub fn testnet(host: Option<String>) -> JsResult<Pubky> {
-        let client = Client::testnet(host);
+        let client = Client::testnet(host)?;
         Ok(Pubky(pubky::Pubky::with_client(client.0)))
     }
 

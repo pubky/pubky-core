@@ -16,7 +16,7 @@ export function args(argv, { aliases = {}, defaults = {}, usage } = {}) {
   const a = mri(argv, {
     alias: aliases,
     default: defaults,
-    boolean: ["testnet", "help"]
+    boolean: ["testnet", "help"],
   });
   if (a.help && usage) {
     console.log(usage);
@@ -51,7 +51,9 @@ export async function readFileUint8(path) {
  */
 export function printHttpResponse(res, body) {
   console.log(`< Response:`);
-  console.log(`< ${res.httpVersion || "HTTP/?"} ${res.status} ${res.statusText || ""}`);
+  console.log(
+    `< ${res.httpVersion || "HTTP/?"} ${res.status} ${res.statusText || ""}`,
+  );
   for (const [k, v] of res.headers) console.log(`< ${k}: ${v}`);
   if (body instanceof Uint8Array) {
     try {

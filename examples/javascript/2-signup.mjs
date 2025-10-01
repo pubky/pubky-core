@@ -18,13 +18,13 @@ if (!homeserverArg || !recoveryPath) {
   process.exit(1);
 }
 
-// 1) Pick mainnet/testnet façade
+// 1) Init a mainnet/testnet Pubky SDK entrypoint
 const pubky = a.testnet ? Pubky.testnet() : new Pubky();
 
 // 2) Decrypt recovery -> Keypair -> Signer
 const passphrase = await promptHidden("Enter recovery passphrase: ");
 const recoveryBytes = await readFileUint8(recoveryPath);
-const keypair = Keypair.fromRecoveryfile(recoveryBytes, passphrase);
+const keypair = Keypair.fromRecoveryFile(recoveryBytes, passphrase);
 const signer = pubky.signer(keypair);
 
 // 3) Signup at the homeserver (optional invite)

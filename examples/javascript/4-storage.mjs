@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Read a public resource (no auth). Keep it minimal and Pubky-focused.
+// Read a public resource (no auth).
 import { Pubky } from "@synonymdev/pubky";
 import { args } from "./_cli.mjs";
 
@@ -8,7 +8,8 @@ Usage:
   npm run storage -- <pubky>/<absolute-path> [--testnet]
 
 Example:
-  npm run storage -- operrr8.../pub/pubky.app/posts/0033X02JAN0SG --testnet
+  npm run storage -- q5oo7majwe3mbkj6p49osws8o748b186bbojdxdn3asnn63enk6y/pub/my.app/hello.txt --testnet
+  npm run storage -- operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 `;
 
 const a = args(process.argv.slice(2), { usage });
@@ -21,14 +22,12 @@ if (!resource) {
 const pubky = a.testnet ? Pubky.testnet() : new Pubky();
 
 // PublicStorage reads from addressed "<pk>/<abs-path>"
-const pub = pubky.publicStorage();
+const exists = await pubky.publicStorage().exists(resource);
+console.log(`Exists: ${exists ? "yes" : "no"}`);
 
-// Auto-choose a reader based on extension (purely for demo)
-if (resource.endsWith(".json")) {
-  console.log(await pub.getJson(resource));
-} else if (resource.endsWith(".txt")) {
-  console.log(await pub.getText(resource));
-} else {
-  const bytes = await pub.getBytes(resource);
-  console.log(`(binary) ${bytes.length} bytes`);
-}
+const stats = await pubky.publicStorage().stats(resource);
+console.log(`File stats: ${stats ? JSON.stringify(stats, null, 2) : "(none)"}`);
+
+// Get bytes and render length (purely for demo)
+const bytes = await pubky.publicStorage().getText(resource);
+console.log(`Downloaded (binary) ${bytes.length} bytes`);

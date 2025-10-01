@@ -101,7 +101,10 @@ impl Client {
             }
         }
 
-        Ok(Self(builder.build()?))
+        let client = builder.build()?;
+        log::debug!("Client created: {:?}", client);
+
+        Ok(Self(client))
     }
 
     /// Create a client wired for **local testnet**.
@@ -122,7 +125,7 @@ impl Client {
     /// @example
     /// const client = Client.testnet("docker0");  // custom host
     #[wasm_bindgen]
-    pub fn testnet(host: Option<String>) -> Self {
+    pub fn testnet(host: Option<String>) -> JsResult<Self> {
         let hostname = host.unwrap_or_else(|| "localhost".to_string());
         let relay = format!("http://{}:{}/", hostname, TESTNET_RELAY_PORT);
 
@@ -130,7 +133,9 @@ impl Client {
         builder.pkarr(|p| p.relays(&[relay.as_str()]).expect("valid testnet relay"));
         builder.testnet_host(Some(hostname));
 
-        let client = builder.build().expect("testnet build should be infallible");
-        Self(client)
+        let client = builder.build()?;
+        log::debug!("Client created: {:?}", client);
+
+        Ok(Self(client))
     }
 }

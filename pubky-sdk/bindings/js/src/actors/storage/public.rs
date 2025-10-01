@@ -100,13 +100,10 @@ impl PublicStorage {
     /// @returns {Promise<ResourceStats|null>} `null` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
-    pub async fn stats(&self, abs_path: String) -> JsResult<JsValue> {
-        let opt = self.0.stats(&abs_path).await?;
-        if let Some(native) = opt {
-            let js = serde_wasm_bindgen::to_value(&ResourceStats::from(native))?;
-            Ok(js)
-        } else {
-            Ok(JsValue::NULL) // return null instead of undefined
+    pub async fn stats(&self, address: String) -> JsResult<Option<ResourceStats>> {
+        match self.0.stats(&address).await? {
+            Some(stats) => Ok(Some(ResourceStats::from(stats))),
+            None => Ok(None),
         }
     }
 }

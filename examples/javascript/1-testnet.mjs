@@ -3,7 +3,8 @@
 import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
 
 // This is the default testnet homeserver. It comes from a secret of `00000...` bytes.
-const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+const TESTNET_HOMESERVER =
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 // 1) Build Pubky SDK facade for local testnet host
 const pubky = Pubky.testnet();
