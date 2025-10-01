@@ -114,9 +114,9 @@ Path rules:
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
 
-## PKDNS (`_pubky`)
+## PKDNS (Pkarr)
 
-Resolve another user’s homeserver, or publish your own via the signer.
+Resolve another user’s homeserver (`_pubky` record), or publish your own via the signer.
 
 ```rust no_run
 use pubky::{Pubky, PublicKey, Keypair};
@@ -164,6 +164,12 @@ println!("Scan to sign in: {}", flow.authorization_url());
 let session = flow.await_approval().await?;
 
 # Ok(()) }
+```
+
+Approve an auth request
+
+```rust ignore
+signer.approve_auth(authorization_url).await?;
 ```
 
 See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-core/tree/main/examples/rust/3-auth_flow).

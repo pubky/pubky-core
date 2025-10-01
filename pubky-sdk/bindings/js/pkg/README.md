@@ -16,6 +16,8 @@ npm install @synonymdev/pubky
 
 > **Node**: requires Node v20+ (undici fetch, WebCrypto).
 
+Module system + TS types: ESM and CommonJS both supported; TypeScript typings generated via tsify are included. Use `import { Pubky } from "@synonymdev/pubky"` (ESM) or `const { Pubky } = require("@synonymdev/pubky")` (CJS).
+
 ## Getting Started
 
 ```js
@@ -24,7 +26,7 @@ import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 // Initiate a Pubky SDK facade wired for default mainnet Pkarr relays.
 const pubky = new Pubky(); // or: const pubky = Pubky.testnet(); for localhost testnet.
 
-// 1) Create a random user keys and bound to a new Signer.
+// 1) Create random user keys and bind to a new Signer.
 const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
 
@@ -178,6 +180,12 @@ renderQr(flow.authorizationUrl()); // show to user
 const session = await flow.awaitApproval();
 ```
 
+#### Http Relay & reliability
+
+- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- For production and larger apps, run **your own http relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
+  The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
+
 ---
 
 ### Storage
@@ -196,7 +204,7 @@ await pub.getBytes(`${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
 await pub.exists(`${userPk.z32()}/pub/example.com/foo`); // boolean
 await pub.stats(`${userPk.z32()}/pub/example.com/foo`); // { content_length, content_type, etag, last_modified } | null
 
-// List directory (addressed path "<pubky>/pub/.../")
+// List directory (addressed path "<pubky>/pub/.../") must include trailing `/`.
 // list(addr, cursor=null|suffix|fullUrl, reverse=false, limit?, shallow=false)
 await pub.list(`${userPk.z32()}/pub/example.com/`, null, false, 100, false);
 ```

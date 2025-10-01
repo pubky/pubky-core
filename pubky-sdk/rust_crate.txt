@@ -1,0 +1,3704 @@
+./src/prelude.rs
+```
+//! Common imports for quick starts.
+
+// Common
+pub use crate::{BuildError, Error, Keypair, PublicKey};
+
+// Transport
+pub use crate::{PubkyHttpClient, PubkyHttpClientBuilder};
+
+// SDK Facade
+pub use crate::Pubky;
+
+// Helpers
+pub use crate::{Method, StatusCode};
+// Homeserver Resources Paths / URLs
+pub use crate::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath, ResourceStats};
+// Capabilities for auth flows
+pub use crate::{Capabilities, Capability};
+// Secret recovery utilities
+pub use crate::recovery_file;
+```
+./src/actors/signer/auth.rs
+```
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use reqwest::Method;
+use std::collections::HashMap;
+use url::Url;
+
+use pubky_common::{
+    auth::AuthToken,
+    crypto::{encrypt, hash},
+};
+
+use crate::{
+    Capabilities,
+    errors::{AuthError, Result},
+    util::check_http_status,
+};
+
+use super::PubkySigner;
+
+impl PubkySigner {
+    /// Produces sessions for an app (e.g. Pubky Ring -> App). Sends a signed
+    /// `AuthToken` to the relay channel encoded in a `pubkyauth://` URL.
+    ///
+    /// Typical usage:
+    /// - App constructs `PubkyAuthFlow` and subscribe, shows QR/deeplink.
+    /// - Signer calls `send_auth_token` with that URL.
+    ///
+    /// Requirements:
+    /// - `pubkyauth:///?caps=…&secret=<b64url>&relay=<relay_base>`
+    /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
+    pub async fn approve_auth(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
+        let pubkyauth_url = Url::parse(pubkyauth_url.as_ref())?;
+
+        // 1) Extract query params
+        let query_params: HashMap<String, String> =
+            pubkyauth_url.query_pairs().into_owned().collect();
+
+        let relay_str = query_params
+            .get("relay")
+            .ok_or_else(|| AuthError::Validation("Missing 'relay' query parameter".to_string()))?;
+        let relay = Url::parse(relay_str)?;
+
+        let secret_str = query_params
+            .get("secret")
+            .ok_or_else(|| AuthError::Validation("Missing 'secret' query parameter".to_string()))?;
+
+        // 2) Decode client secret
+        let secret_bytes = URL_SAFE_NO_PAD
+            .decode(secret_str)
+            .map_err(|e| AuthError::Validation(format!("Invalid base64 secret: {e}")))?;
+
+        let client_secret: [u8; 32] = secret_bytes
+            .try_into()
+            .map_err(|_| AuthError::Validation("Client secret must be 32 bytes".to_string()))?;
+
+        // 3) Build token with requested capabilities parsed from URL
+        let capabilities = Capabilities::from(&pubkyauth_url);
+
+        let token = AuthToken::sign(&self.keypair, capabilities);
+        let encrypted_token = encrypt(&token.serialize(), &client_secret);
+
+        // 4) Derive channel: relay/<base64url(hash(secret))>
+        let mut callback_url = relay.clone();
+        let mut path_segments = callback_url
+            .path_segments_mut()
+            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+        path_segments.pop_if_empty();
+        let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
+        path_segments.push(&channel_id);
+        drop(path_segments);
+
+        // 5) POST encrypted token
+        let response = self
+            .client
+            .cross_request(Method::POST, callback_url)
+            .await?
+            .body(encrypted_token)
+            .send()
+            .await?;
+
+        check_http_status(response).await?;
+        Ok(())
+    }
+}
+```
+./src/actors/signer/session.rs
+```
+use pubky_common::auth::AuthToken;
+use reqwest::Method;
+use url::Url;
+
+use super::PubkySigner;
+use crate::{Capabilities, Capability, PubkySession, PublicKey, Result, util::check_http_status};
+
+enum PublishMode {
+    Background,
+    Blocking,
+}
+
+impl PubkySigner {
+    /// Create an account on a homeserver and return a ready-to-use `PubkySession`.
+    ///
+    /// Side effects:
+    /// - Publishes the `_pubky` pkarr record pointing to `homeserver` (force mode).
+    ///
+    /// Notes:
+    /// - Uses a **root** capability token (sufficient for signup).
+    pub async fn signup(
+        &self,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<PubkySession> {
+        let mut url = Url::parse(&format!("https://{}", homeserver))?;
+        url.set_path("/signup");
+        if let Some(token) = signup_token {
+            url.query_pairs_mut().append_pair("signup_token", token);
+        }
+
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
+        let auth_token = AuthToken::sign(&self.keypair, capabilities);
+
+        let response = self
+            .client
+            .cross_request(Method::POST, url)
+            .await?
+            .body(auth_token.serialize())
+            .send()
+            .await?;
+
+        // Map non-2xx into our error type; keep body/headers intact for the caller.
+        let response = check_http_status(response).await?;
+
+        self.pkdns()
+            .publish_homeserver_force(Some(homeserver))
+            .await?;
+        PubkySession::new_from_response(self.client.clone(), response).await
+    }
+
+    // All of these methods use root capabilities
+
+    /// Sign in to the users homeserver by locally signing a root-capability token.
+    /// This call returns a user session.
+    ///
+    /// In case the users pkdns records are stale, this call with republish them in the background.
+    ///
+    /// Prefer this signin for best user experience, it returns fast.
+    pub async fn signin(&self) -> Result<PubkySession> {
+        self.signin_with_publish(PublishMode::Background).await
+    }
+
+    /// Sign in by locally signing a root-capability token. Returns a session-bound session.
+    /// Publishes the homeserver record if stale in the background.
+    ///
+    /// Prefer this signin for highest guarantees of discoverability from Dht and pkarr relays,
+    /// it returns slow (~3-5 seconds).
+    pub async fn signin_blocking(&self) -> Result<PubkySession> {
+        self.signin_with_publish(PublishMode::Blocking).await
+    }
+
+    /// Internal helper to sign in, then optionally refresh `_pubky` record.
+    async fn signin_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
+        let token = AuthToken::sign(&self.keypair, capabilities);
+        let session = PubkySession::new(&token, self.client.clone()).await?;
+
+        match mode {
+            PublishMode::Blocking => {
+                self.pkdns().publish_homeserver_if_stale(None).await?;
+            }
+            PublishMode::Background => {
+                // Fire-and-forget path: refresh in the background
+                let signer = self.clone();
+                let fut = async move {
+                    let _ = signer.pkdns().publish_homeserver_if_stale(None).await;
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                tokio::spawn(fut);
+                #[cfg(target_arch = "wasm32")]
+                wasm_bindgen_futures::spawn_local(fut);
+            }
+        }
+
+        Ok(session)
+    }
+}
+```
+./src/actors/signer/core.rs
+```
+use crate::{BuildError, Keypair, PubkyHttpClient, PublicKey};
+
+/// Key holder and signer.
+#[derive(Debug, Clone)]
+pub struct PubkySigner {
+    pub(crate) client: PubkyHttpClient,
+    pub(crate) keypair: Keypair,
+}
+
+impl PubkySigner {
+    /// Construct a new PubkySigner.
+    ///
+    /// This is your entry point to keychain managing tooling.
+    ///
+    /// # Examples
+    /// ```
+    /// # use pubky::{PubkySigner, Keypair};
+    /// let keypair = Keypair::random();
+    /// let app  = PubkySigner::new(keypair)?;
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
+    pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
+        Ok(Self {
+            client: PubkyHttpClient::new()?,
+            keypair,
+        })
+    }
+
+    /// Public key of this signer.
+    #[inline]
+    pub fn public_key(&self) -> PublicKey {
+        self.keypair.public_key()
+    }
+
+    /// Borrow the signer's keypair.
+    #[inline]
+    pub fn keypair(&self) -> &Keypair {
+        &self.keypair
+    }
+}
+```
+./src/actors/signer/mod.rs
+```
+//! High-level Pubky **signer** actor: sign tokens, `signup`/`signin`, publish PKARR records, and turn it into a session.
+
+pub mod auth;
+pub mod core;
+pub mod session;
+
+pub use core::PubkySigner;
+```
+./src/actors/storage/verbs.rs
+```
+use reqwest::{Method, Response, StatusCode};
+
+use super::core::{PublicStorage, SessionStorage};
+use super::resource::{IntoPubkyResource, IntoResourcePath};
+use super::stats::ResourceStats;
+use crate::Result;
+use crate::util::check_http_status;
+
+//
+// SessionStorage (authenticated, as-me)
+//
+
+impl SessionStorage {
+    /// HTTP `GET` (as me) for an **absolute path**.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # async fn ex(session: pubky::PubkySession) -> pubky::Result<()> {
+    /// let text = session
+    ///     .storage()
+    ///     .get("/pub/my.app/hello.txt").await?
+    ///     .text().await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn get<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
+        let resp = self.request(Method::GET, path).await?.send().await?;
+        check_http_status(resp).await
+    }
+
+    /// Lightweight existence check (HEAD) for an **absolute path**.
+    pub async fn exists<P: IntoResourcePath>(&self, path: P) -> Result<bool> {
+        let resp = self.request(Method::HEAD, path).await?.send().await?;
+        match resp.status() {
+            s if s.is_success() => Ok(true),
+            StatusCode::NOT_FOUND | StatusCode::GONE => Ok(false),
+            _ => {
+                let _ = check_http_status(resp).await?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// Retrieve metadata via `HEAD` for an **absolute path** (no body).
+    pub async fn stats<P: IntoResourcePath>(&self, path: P) -> Result<Option<ResourceStats>> {
+        let resp = self.request(Method::HEAD, path).await?.send().await?;
+        if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
+            return Ok(None);
+        }
+        let resp = check_http_status(resp).await?;
+        Ok(Some(ResourceStats::from_headers(resp.headers())))
+    }
+
+    /// HTTP `PUT` (write) for an **absolute path**.
+    ///
+    /// Requires a valid session; this handle is authenticated already.
+    pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
+    where
+        P: IntoResourcePath,
+        B: Into<reqwest::Body>,
+    {
+        let resp = self
+            .request(Method::PUT, path)
+            .await?
+            .body(body)
+            .send()
+            .await?;
+        check_http_status(resp).await
+    }
+
+    /// HTTP `DELETE` for an **absolute path**.
+    pub async fn delete<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
+        let resp = self.request(Method::DELETE, path).await?.send().await?;
+        check_http_status(resp).await
+    }
+}
+
+//
+// PublicStorage (unauthenticated, any user)
+//
+
+impl PublicStorage {
+    /// HTTP `GET` for an **addressed resource** (`<pk>/<abs-path>` or `pubky://…`).
+    ///
+    /// # Example
+    /// ```no_run
+    /// # async fn ex() -> pubky::Result<()> {
+    /// let storage = pubky::PublicStorage::new()?;
+    /// let resp = storage.get("{other_pk}/pub/my.app/file.txt").await?;
+    /// let bytes = resp.bytes().await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn get<A: IntoPubkyResource>(&self, addr: A) -> Result<Response> {
+        let resp = self.request(Method::GET, addr).await?.send().await?;
+        check_http_status(resp).await
+    }
+
+    /// HEAD existence check for an addressed resource.
+    pub async fn exists<A: IntoPubkyResource>(&self, addr: A) -> Result<bool> {
+        let resp = self.request(Method::HEAD, addr).await?.send().await?;
+        match resp.status() {
+            s if s.is_success() => Ok(true),
+            StatusCode::NOT_FOUND | StatusCode::GONE => Ok(false),
+            _ => {
+                let _ = check_http_status(resp).await?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// Metadata via `HEAD` for an addressed resource (no body).
+    pub async fn stats<A: IntoPubkyResource>(&self, addr: A) -> Result<Option<ResourceStats>> {
+        let resp = self.request(Method::HEAD, addr).await?.send().await?;
+        if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
+            return Ok(None);
+        }
+        let resp = check_http_status(resp).await?;
+        Ok(Some(ResourceStats::from_headers(resp.headers())))
+    }
+}
+```
+./src/actors/storage/core.rs
+```
+use pkarr::PublicKey;
+use reqwest::{Method, RequestBuilder};
+use url::Url;
+
+use super::resource::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath};
+use crate::{
+    PubkyHttpClient, PubkySession,
+    errors::{RequestError, Result},
+};
+
+/// Storage that acts **as the signed-in user** (authenticated).
+///
+/// Accepts **absolute paths** (`ResourcePath`) only; the user is implied by the session.
+/// Writes are allowed.
+///
+/// Returned by [`PubkySession::storage()`].
+#[derive(Debug, Clone)]
+pub struct SessionStorage {
+    pub(crate) client: PubkyHttpClient,
+    pub(crate) user: PublicKey,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) cookie: String,
+}
+
+impl SessionStorage {
+    /// Construct from an existing session.
+    ///
+    /// Equivalent to `session.storage()`.
+    pub fn new(session: &PubkySession) -> SessionStorage {
+        SessionStorage {
+            client: session.client.clone(),
+            user: session.info.public_key().clone(),
+            #[cfg(not(target_arch = "wasm32"))]
+            cookie: session.cookie.clone(),
+        }
+    }
+
+    /// Convenience: unauthenticated public reader using the same client.
+    pub fn public(&self) -> PublicStorage {
+        PublicStorage {
+            client: self.client.clone(),
+        }
+    }
+
+    /// Resolve an **absolute** path into a concrete `pubky://…` URL for this session’s user.
+    pub(crate) fn to_url<P: IntoResourcePath>(&self, p: P) -> Result<Url> {
+        let path: ResourcePath = p.into_abs_path()?;
+        let addr = PubkyResource::new(self.user.clone(), path.as_str())?;
+        let url_str = addr.to_pubky_url();
+        Ok(Url::parse(&url_str)?)
+    }
+
+    /// Build a request for this storage.
+    ///
+    /// - Paths are **absolute** (session-scoped).
+    /// - On native targets, the session cookie is attached **always** as the URL points
+    ///   to this user’s homeserver (cookies never leak across users).
+    pub(crate) async fn request<P: IntoResourcePath>(
+        &self,
+        method: Method,
+        path: P,
+    ) -> Result<RequestBuilder> {
+        let url = self.to_url(path)?;
+        let rb = self.client.cross_request(method, url).await?;
+
+        // Always attach session cookie on native; this handle is scoped to *my* user.
+        #[cfg(not(target_arch = "wasm32"))]
+        let rb = {
+            let cookie_name = self.user.to_string();
+            rb.header(
+                reqwest::header::COOKIE,
+                format!("{cookie_name}={}", self.cookie),
+            )
+        };
+
+        Ok(rb)
+    }
+}
+
+/// Storage that reads **public data for any user** (unauthenticated).
+///
+/// Accepts **addressed resources** (`PubkyResource`: user + absolute path).
+/// Writes are not available.
+#[derive(Debug, Clone)]
+pub struct PublicStorage {
+    pub(crate) client: PubkyHttpClient,
+}
+
+impl PublicStorage {
+    /// Create a public (unauthenticated) storage handle using the global client.
+    pub fn new() -> Result<PublicStorage> {
+        Ok(PublicStorage {
+            client: PubkyHttpClient::new()?,
+        })
+    }
+
+    /// Resolve an addressed resource into a concrete `pubky://…` URL.
+    pub(crate) fn to_url<A: IntoPubkyResource>(&self, addr: A) -> Result<Url> {
+        let addr: PubkyResource = addr.into_pubky_resource()?;
+        let url_str = addr.to_pubky_url();
+        Ok(Url::parse(&url_str)?)
+    }
+
+    /// Build a request for this public storage (no cookies).
+    pub(crate) async fn request<A: IntoPubkyResource>(
+        &self,
+        method: Method,
+        addr: A,
+    ) -> Result<RequestBuilder> {
+        let url = self.to_url(addr)?;
+        let rb = self.client.cross_request(method, url).await?;
+        Ok(rb)
+    }
+}
+
+/// Helper: validation error for directory listings without trailing slash.
+#[inline]
+pub(crate) fn dir_trailing_slash_error() -> RequestError {
+    RequestError::Validation {
+        message: "directory listings must end with `/`".into(),
+    }
+}
+```
+./src/actors/storage/mod.rs
+```
+pub mod core;
+#[cfg(feature = "json")]
+pub mod json;
+pub mod list;
+pub mod resource;
+pub mod stats;
+pub mod verbs;
+```
+./src/actors/storage/resource.rs
+```
+//! Typed addressing for files on a Pubky homeserver.
+//!
+//! # Why two address shapes?
+//! Pubky paths come in two *disjoint* forms, each used by a different part of the API:
+//!
+//! - [`ResourcePath`]: an **absolute**, URL-safe path like `"/pub/my.app/file"`.
+//!   It contains **no user** information and is used by *session-scoped* (authenticated)
+//!   operations that act “as me”. Example: `session.storage().get("/pub/my.app/file")`.
+//!
+//! - [`PubkyResource`]: an **addressed resource** that pairs a user with an absolute path,
+//!   e.g. `"<public_key>/pub/my.app/file"` or `pubky://<public_key>/pub/my.app/file`.
+//!   It is used by *public* (unauthenticated) operations and any API that must
+//!   target **another user’s** data. Example: `public.get("<pk>/pub/site/index.html")`.
+//!
+//! Keeping these distinct eliminates ambiguity and makes IDE auto-completion
+//! tell you exactly what each method expects.
+//!
+//! We intentionally do **not** accept `https://_pubky.<pk>/...` here; higher-level
+//! APIs handle resolution and URL formation for you.
+
+use std::{fmt, str::FromStr};
+
+use pkarr::PublicKey;
+use url::Url;
+
+use crate::{Error, errors::RequestError};
+
+#[inline]
+fn invalid(msg: impl Into<String>) -> Error {
+    RequestError::Validation {
+        message: msg.into(),
+    }
+    .into()
+}
+
+// ============================================================================
+// ResourcePath
+// ============================================================================
+
+/// An **absolute, URL-safe** homeserver path (`/…`), with percent-encoding where needed.
+///
+/// - Always normalized to start with `/`.
+/// - Rejects `.` and `..` segments (no path traversal).
+/// - Rejects empty **internal** segments (i.e., `//`); preserves a trailing `/`.
+/// - Percent-encodes segments using `url::Url` rules (UTF-8).
+///
+/// Accepts both `"pub/my.app/file"` and `"/pub/my.app/file"` and normalizes to an
+/// absolute form.
+///
+/// ### Examples
+/// ```no_run
+/// # use pubky::ResourcePath;
+/// // Parse from &str (relative becomes absolute)
+/// let p = ResourcePath::parse("pub/my.app/file")?;
+/// assert_eq!(p.to_string(), "/pub/my.app/file");
+///
+/// // Trailing slash is preserved
+/// let dir = ResourcePath::parse("/pub/my.app/")?;
+/// assert_eq!(dir.to_string(), "/pub/my.app/");
+///
+/// // Percent-encoding
+/// let enc = ResourcePath::parse("pub/My File.txt")?;
+/// assert_eq!(enc.to_string(), "/pub/My%20File.txt");
+/// # Ok::<(), pubky::Error>(())
+/// ```
+///
+/// ### Errors
+/// Returns [`Error::Request`] (validation) on:
+/// - empty input
+/// - `//` within the path
+/// - `.` or `..` segments
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ResourcePath(String);
+
+impl ResourcePath {
+    /// Parse, validate, and normalize to an absolute HTTP-safe path.
+    ///
+    /// See type docs for rules and examples.
+    pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
+        let raw = s.as_ref();
+        if raw.is_empty() {
+            return Err(invalid("path cannot be empty"));
+        }
+
+        // Normalize to absolute (keep "/" as-is).
+        let input = if raw.starts_with('/') {
+            raw.to_string()
+        } else {
+            format!("/{raw}")
+        };
+        if input == "/" {
+            return Ok(ResourcePath("/".to_string()));
+        }
+        let wants_trailing = input.ends_with('/');
+
+        // Build via URL path segments (handles percent-encoding).
+        let mut u = Url::parse("dummy:///").map_err(|_| invalid("internal URL setup failed"))?;
+        {
+            let mut segs = u
+                .path_segments_mut()
+                .map_err(|_| invalid("internal URL path handling failed"))?;
+            segs.clear();
+
+            let mut parts = input.trim_start_matches('/').split('/').peekable();
+            while let Some(seg) = parts.next() {
+                if seg.is_empty() {
+                    // Only allow the final empty segment (trailing slash)
+                    if parts.peek().is_none() && wants_trailing {
+                        break;
+                    }
+                    return Err(invalid("path contains empty segment ('//')"));
+                }
+                if seg == "." || seg == ".." {
+                    return Err(invalid("path cannot contain '.' or '..'"));
+                }
+                segs.push(seg);
+            }
+            if wants_trailing {
+                segs.push(""); // encode trailing slash
+            }
+        }
+
+        Ok(ResourcePath(u.path().to_string()))
+    }
+
+    /// Borrow the normalized absolute path as `&str`.
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl FromStr for ResourcePath {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
+impl fmt::Display for ResourcePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+// ============================================================================
+// PubkyResource
+// ============================================================================
+
+/// An **addressed resource**: `(owner: PublicKey, path: ResourcePath)`.
+///
+/// This is the unambiguous “user + absolute path” form used when acting on
+/// **another user’s** data (public reads, etc.).
+///
+/// Accepted inputs for `FromStr`:
+/// - `<public_key>/<abs-path>`
+/// - `pubky://<public_key>/<abs-path>`
+///
+/// Display renders as `<public_key>/<abs-path>`.
+///
+/// ### Examples
+/// ```no_run
+/// # use pkarr::Keypair;
+/// # use pubky::{PubkyResource, ResourcePath};
+/// // Build from parts
+/// let pk = Keypair::random().public_key();
+/// let r = PubkyResource::new(pk.clone(), "/pub/site/index.html")?;
+/// assert_eq!(r.to_string(), format!("{pk}/pub/site/index.html"));
+///
+/// // Parse from string
+/// let parsed: PubkyResource = format!("{pk}/pub/site/index.html").parse()?;
+///
+/// // `pubky://` form
+/// let parsed2: PubkyResource = format!("pubky://{pk}/pub/site/index.html").parse()?;
+///
+/// # Ok::<(), pubky::Error>(())
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PubkyResource {
+    /// The resource owner’s public key.
+    pub owner: PublicKey,
+    /// The owner-relative, normalized absolute path.
+    pub path: ResourcePath,
+}
+
+impl PubkyResource {
+    /// Construct from `owner` and a path-like value (normalized to [`ResourcePath`]).
+    pub fn new<S: AsRef<str>>(owner: PublicKey, path: S) -> Result<Self, Error> {
+        Ok(Self {
+            owner,
+            path: ResourcePath::parse(path)?,
+        })
+    }
+
+    /// Render as `pubky://<owner>/<abs-path>` (deep-link form).
+    ///
+    /// This is crate-internal but documented here for clarity.
+    pub(crate) fn to_pubky_url(&self) -> String {
+        let rel = self.path.as_str().trim_start_matches('/');
+        format!("pubky://{}/{}", self.owner, rel)
+    }
+}
+
+impl FromStr for PubkyResource {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // 1) pubky://<user>/<path>
+        if let Some(rest) = s.strip_prefix("pubky://") {
+            let (user_str, path) = rest
+                .split_once('/')
+                .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
+            let user = PublicKey::try_from(user_str)
+                .map_err(|_| invalid(format!("invalid user public key: {user_str}")))?;
+            return PubkyResource::new(user, path);
+        }
+
+        // 2) `<user>/<path>` (must have a slash separating pk and rest)
+        if let Some((user_id, path)) = s.split_once('/') {
+            let user = PublicKey::try_from(user_id)
+                .map_err(|_| invalid("expected `<user>/<path>` or `pubky://<user>/<path>`"))?;
+            return PubkyResource::new(user, path);
+        }
+
+        Err(invalid(
+            "expected `<user>/<path>` or `pubky://<user>/<path>`",
+        ))
+    }
+}
+
+impl fmt::Display for PubkyResource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rel = self.path.as_str().trim_start_matches('/');
+        write!(f, "{}/{}", self.owner, rel)
+    }
+}
+
+// ============================================================================
+// Conversion traits
+// ============================================================================
+
+/// Convert common input types into a normalized [`ResourcePath`] (absolute).
+///
+/// This trait is intentionally implemented for the “obvious” path-like things:
+/// - `ResourcePath` / `&ResourcePath` (pass-through / clone)
+/// - `&str`, `String`, and `&String`
+///
+/// It is used by *session-scoped* storage methods (`SessionStorage`) that act as
+/// the current user and therefore do **not** need a `PublicKey`.
+///
+/// ### Examples
+/// ```no_run
+/// # use pubky::{IntoResourcePath, ResourcePath};
+/// fn takes_abs<P: IntoResourcePath>(p: P) -> pubky::Result<ResourcePath> {
+///     p.into_abs_path()
+/// }
+///
+/// let a = takes_abs("/pub/my.app/file")?;
+/// let b = takes_abs("pub/my.app/file")?;
+/// assert_eq!(a, b);
+/// # Ok::<(), pubky::Error>(())
+/// ```
+pub trait IntoResourcePath {
+    /// Convert into a validated, normalized absolute [`ResourcePath`].
+    fn into_abs_path(self) -> Result<ResourcePath, Error>;
+}
+
+impl IntoResourcePath for ResourcePath {
+    #[inline]
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        Ok(self)
+    }
+}
+impl IntoResourcePath for &ResourcePath {
+    #[inline]
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        Ok(self.clone())
+    }
+}
+impl IntoResourcePath for &str {
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        ResourcePath::from_str(self)
+    }
+}
+impl IntoResourcePath for String {
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        ResourcePath::from_str(&self)
+    }
+}
+impl IntoResourcePath for &String {
+    fn into_abs_path(self) -> Result<ResourcePath, Error> {
+        ResourcePath::from_str(self.as_str())
+    }
+}
+
+/// Convert common input types into a normalized, **addressed** [`PubkyResource`].
+///
+/// Implementations:
+/// - `PubkyResource` / `&PubkyResource` (pass-through / clone)
+/// - `&str`, `String`, `&String` parsed as `<pk>/<abs-path>` or `pubky://<pk>/<abs-path>`
+/// - `(PublicKey, P: AsRef<str>)` and `(&PublicKey, P: AsRef<str>)` to pair a key with a path
+///
+/// This trait is used by *public* storage methods (`PublicStorage`) and any API that must
+/// reference **another user’s** data explicitly.
+///
+/// ### Examples
+/// ```no_run
+/// # use pkarr::Keypair;
+/// # use pubky::{IntoPubkyResource, PubkyResource};
+/// let user = Keypair::random().public_key();
+///
+/// // Pair (pk, path)
+/// let r1 = (user.clone(), "/pub/site/index.html").into_pubky_resource()?;
+///
+/// // Parse `<pk>/<path>`
+/// let r2: PubkyResource = format!("{}/pub/site/index.html", user).parse()?;
+///
+/// // Parse `pubky://`
+/// let r3: PubkyResource = format!("pubky://{}/pub/site/index.html", user).parse()?;
+/// # Ok::<(), pubky::Error>(())
+/// ```
+pub trait IntoPubkyResource {
+    /// Convert into a validated, normalized [`PubkyResource`].
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error>;
+}
+
+impl IntoPubkyResource for PubkyResource {
+    #[inline]
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        Ok(self)
+    }
+}
+impl IntoPubkyResource for &PubkyResource {
+    #[inline]
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        Ok(self.clone())
+    }
+}
+impl IntoPubkyResource for &str {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        PubkyResource::from_str(self)
+    }
+}
+impl IntoPubkyResource for String {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        PubkyResource::from_str(&self)
+    }
+}
+impl IntoPubkyResource for &String {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        PubkyResource::from_str(self.as_str())
+    }
+}
+impl<P: AsRef<str>> IntoPubkyResource for (PublicKey, P) {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        PubkyResource::new(self.0, self.1.as_ref())
+    }
+}
+impl<P: AsRef<str>> IntoPubkyResource for (&PublicKey, P) {
+    fn into_pubky_resource(self) -> Result<PubkyResource, Error> {
+        PubkyResource::new(self.0.clone(), self.1.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pkarr::Keypair;
+
+    #[test]
+    fn file_path_normalization_and_rejections() {
+        // Normalize relative
+        assert_eq!(
+            ResourcePath::parse("pub/my.app").unwrap().as_str(),
+            "/pub/my.app"
+        );
+        // Keep absolute
+        assert_eq!(
+            ResourcePath::parse("/pub/my.app").unwrap().as_str(),
+            "/pub/my.app"
+        );
+        // Reject empty
+        assert!(matches!(
+            ResourcePath::parse(""),
+            Err(Error::Request(RequestError::Validation { .. }))
+        ));
+        // Reject double-slash
+        assert!(matches!(
+            ResourcePath::parse("/pub//app"),
+            Err(Error::Request(RequestError::Validation { .. }))
+        ));
+    }
+
+    #[test]
+    fn parse_addressed_user_both_forms() {
+        let kp = Keypair::random();
+        let user = kp.public_key();
+        let s1 = format!("pubky://{}/pub/my.app/file", user);
+        let s2 = format!("{}/pub/my.app/file", user);
+
+        let p1 = PubkyResource::from_str(&s1).unwrap();
+        let p2 = PubkyResource::from_str(&s2).unwrap();
+
+        assert_eq!(p1.owner, user);
+        assert_eq!(p2.owner, user);
+        assert_eq!(p1.path.as_str(), "/pub/my.app/file");
+        assert_eq!(p2.path.as_str(), "/pub/my.app/file");
+
+        // Display: explicit user form
+        assert_eq!(p1.to_string(), s2);
+        // Deep-link rendering (no default needed; owner is known)
+        assert_eq!(p1.to_pubky_url(), s1);
+    }
+
+    #[test]
+    fn session_scoped_paths_and_rendering() {
+        // Session-scoped absolute path is represented by ResourcePath
+        let p_abs = ResourcePath::parse("/pub/my.app/file").unwrap();
+        assert_eq!(p_abs.as_str(), "/pub/my.app/file");
+
+        // PubkyResource::from_str("/...") must fail (owner is required)
+        assert!(matches!(
+            PubkyResource::from_str("/pub/my.app/file"),
+            Err(Error::Request(RequestError::Validation { .. }))
+        ));
+
+        // To render a pubky:// URL, pair with an explicit owner
+        let kp = Keypair::random();
+        let user = kp.public_key();
+        let r = PubkyResource::new(user.clone(), p_abs.as_str()).unwrap();
+        assert_eq!(
+            r.to_pubky_url(),
+            format!("pubky://{}/pub/my.app/file", user)
+        );
+    }
+
+    #[test]
+    fn error_cases() {
+        let kp = Keypair::random();
+        let user = kp.public_key();
+
+        // Invalid user key in `<user>/<path>`
+        assert!(matches!(
+            PubkyResource::from_str("not-a-key/pub/my.app"),
+            Err(Error::Request(RequestError::Validation { .. }))
+        ));
+
+        // Double-slash inside path
+        let s_bad = format!("{}/pub//app", user);
+        assert!(matches!(
+            PubkyResource::from_str(&s_bad),
+            Err(Error::Request(RequestError::Validation { .. }))
+        ));
+    }
+
+    #[test]
+    fn percent_encoding_and_unicode() {
+        assert_eq!(
+            ResourcePath::parse("pub/My File.txt").unwrap().as_str(),
+            "/pub/My%20File.txt"
+        );
+        assert_eq!(
+            ResourcePath::parse("/ä/β/漢").unwrap().as_str(),
+            "/%C3%A4/%CE%B2/%E6%BC%A2"
+        );
+    }
+
+    #[test]
+    fn rejects_dot_segments_but_allows_trailing_slash() {
+        assert!(ResourcePath::parse("/a/./b").is_err());
+        assert!(ResourcePath::parse("/a/../b").is_err());
+        assert_eq!(
+            ResourcePath::parse("/pub/my.app/").unwrap().as_str(),
+            "/pub/my.app/"
+        );
+    }
+}
+```
+./src/actors/storage/stats.rs
+```
+use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE, ETAG, HeaderMap, LAST_MODIFIED};
+use std::time::SystemTime;
+
+/// Typed metadata for a stored object (from a `HEAD` request).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResourceStats {
+    /// `Content-Length` parsed as `u64`.
+    pub content_length: Option<u64>,
+    /// `Content-Type` as sent by the server (verbatim).
+    pub content_type: Option<String>,
+    /// `Last-Modified` parsed into `SystemTime` (RFC7231).
+    pub last_modified: Option<SystemTime>,
+    /// ETag string.
+    pub etag: Option<String>,
+}
+
+impl ResourceStats {
+    /// Build from response headers.
+    pub fn from_headers(h: &HeaderMap) -> Self {
+        let content_length = h
+            .get(CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok());
+
+        let content_type = h
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        let last_modified = h
+            .get(LAST_MODIFIED)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| httpdate::parse_http_date(s).ok());
+
+        let etag = h.get(ETAG).and_then(|v| v.to_str().ok()).map(clean_etag);
+
+        Self {
+            content_length,
+            content_type,
+            last_modified,
+            etag,
+        }
+    }
+}
+
+fn clean_etag(raw: &str) -> String {
+    let s = raw.trim();
+
+    // Weak: W/"abc" -> W/abc
+    if s.starts_with("W/\"") && s.ends_with('"') && s.len() >= 4 {
+        return format!("W/{}", &s[3..s.len() - 1]);
+    }
+
+    // Strong: "abc" -> abc
+    if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+        return s[1..s.len() - 1].to_string();
+    }
+
+    s.to_string()
+}
+```
+./src/actors/storage/list.rs
+```
+use reqwest::Method;
+use url::Url;
+
+use super::core::{PublicStorage, SessionStorage, dir_trailing_slash_error};
+use crate::Result;
+use crate::actors::storage::resource::{IntoPubkyResource, IntoResourcePath};
+use crate::util::check_http_status;
+
+impl SessionStorage {
+    /// Directory listing **as me** (authenticated).
+    ///
+    /// Requirements:
+    /// - Path **must** point to a directory and **must end with `/`**.
+    ///
+    /// Returns absolute entry URLs.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
+    /// let urls = session
+    ///     .storage()
+    ///     .list("/pub/my.app/")?
+    ///     .limit(100)
+    ///     .shallow(true)
+    ///     .send()
+    ///     .await?;
+    /// for u in urls { println!("{u}"); }
+    /// # Ok(()) }
+    /// ```
+    pub fn list<P: IntoResourcePath>(&self, path: P) -> Result<ListBuilder<'_>> {
+        let url = self.to_url(path)?;
+        if !url.path().ends_with('/') {
+            return Err(dir_trailing_slash_error().into());
+        }
+        Ok(ListBuilder::session(self, url))
+    }
+}
+
+impl PublicStorage {
+    /// Directory listing **public** (unauthenticated).
+    ///
+    /// Requirements:
+    /// - Address **must** point to a directory and **must end with `/`**.
+    ///
+    /// Returns absolute entry URLs.
+    pub fn list<A: IntoPubkyResource>(&self, addr: A) -> Result<ListBuilder<'_>> {
+        let url = self.to_url(addr)?;
+        if !url.path().ends_with('/') {
+            return Err(dir_trailing_slash_error().into());
+        }
+        Ok(ListBuilder::public(self, url))
+    }
+}
+
+/// Internal scope for a listing request.
+#[derive(Debug)]
+enum ListScope<'a> {
+    Session(&'a SessionStorage),
+    Public(&'a PublicStorage),
+}
+
+/// Unified builder for homeserver `LIST` queries (works for session & public).
+///
+/// Configure optional flags like `reverse`, `shallow`, `limit`, and `cursor`,
+/// then call [`send`](Self::send) to perform the request.
+///
+/// Returned entries are absolute `Url`s.
+///
+/// Built via:
+/// - [`SessionStorage::list`] for authenticated “as me” listings.
+/// - [`PublicStorage::list`] for unauthenticated public listings.
+#[derive(Debug)]
+#[must_use]
+pub struct ListBuilder<'a> {
+    scope: ListScope<'a>,
+    url: Url,
+    reverse: bool,
+    shallow: bool,
+    limit: Option<u16>,
+    cursor: Option<String>,
+}
+
+impl<'a> ListBuilder<'a> {
+    #[inline]
+    fn session(storage: &'a SessionStorage, url: Url) -> Self {
+        Self {
+            scope: ListScope::Session(storage),
+            url,
+            reverse: false,
+            shallow: false,
+            limit: None,
+            cursor: None,
+        }
+    }
+
+    #[inline]
+    fn public(storage: &'a PublicStorage, url: Url) -> Self {
+        Self {
+            scope: ListScope::Public(storage),
+            url,
+            reverse: false,
+            shallow: false,
+            limit: None,
+            cursor: None,
+        }
+    }
+
+    /// List newest-first instead of oldest-first.
+    pub fn reverse(mut self, reverse: bool) -> Self {
+        self.reverse = reverse;
+        self
+    }
+
+    /// Do not recurse into subdirectories.
+    pub fn shallow(mut self, shallow: bool) -> Self {
+        self.shallow = shallow;
+        self
+    }
+
+    /// Maximum number of entries to return (homeserver may cap).
+    pub fn limit(mut self, limit: u16) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Resume listing from a previous `cursor` token.
+    pub fn cursor(mut self, cursor: &str) -> Self {
+        self.cursor = Some(cursor.to_string());
+        self
+    }
+
+    /// Execute the LIST request and return entry URLs.
+    pub async fn send(self) -> Result<Vec<Url>> {
+        // 1) Build query params
+        let mut url = self.url;
+        {
+            let mut q = url.query_pairs_mut();
+            if self.reverse {
+                q.append_key_only("reverse");
+            }
+            if self.shallow {
+                q.append_key_only("shallow");
+            }
+            if let Some(limit) = self.limit {
+                q.append_pair("limit", &limit.to_string());
+            }
+            if let Some(cursor) = self.cursor {
+                q.append_pair("cursor", &cursor);
+            }
+        }
+
+        // 2) Build request per scope
+        let rb = match self.scope {
+            ListScope::Public(storage) => {
+                storage
+                    .client
+                    .cross_request(Method::GET, url.clone())
+                    .await?
+            }
+            ListScope::Session(storage) => {
+                let rb = storage
+                    .client
+                    .cross_request(Method::GET, url.clone())
+                    .await?;
+                #[cfg(not(target_arch = "wasm32"))]
+                let rb = {
+                    let cookie_name = storage.user.to_string();
+                    rb.header(
+                        reqwest::header::COOKIE,
+                        format!("{cookie_name}={}", storage.cookie),
+                    )
+                };
+                rb
+            }
+        };
+
+        // 3) Send and parse
+        let resp = rb.send().await?;
+        let resp = check_http_status(resp).await?;
+
+        let bytes = resp.bytes().await?;
+        let mut out = Vec::new();
+        for line in String::from_utf8_lossy(&bytes).lines() {
+            out.push(Url::parse(line)?);
+        }
+        Ok(out)
+    }
+}
+```
+./src/actors/storage/json.rs
+```
+use reqwest::Response;
+
+use super::core::{PublicStorage, SessionStorage};
+use super::resource::{IntoPubkyResource, IntoResourcePath};
+use crate::Result;
+use crate::util::check_http_status;
+
+//
+// SessionStorage (as-me)
+//
+
+impl SessionStorage {
+    /// GET and deserialize JSON from an **absolute path**.
+    ///
+    /// Sets `Accept: application/json` and returns `T` via `resp.json()`.
+    pub async fn get_json<P, T>(&self, path: P) -> Result<T>
+    where
+        P: IntoResourcePath,
+        T: serde::de::DeserializeOwned,
+    {
+        let resp = self
+            .request(reqwest::Method::GET, path)
+            .await?
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await?;
+        let resp = check_http_status(resp).await?;
+        Ok(resp.json::<T>().await?)
+    }
+
+    /// PUT JSON to an **absolute path** and return the raw `Response`.
+    ///
+    /// Serializes `body` as JSON.
+    pub async fn put_json<P, B>(&self, path: P, body: &B) -> Result<Response>
+    where
+        P: IntoResourcePath,
+        B: serde::Serialize + ?Sized,
+    {
+        let resp = self
+            .request(reqwest::Method::PUT, path)
+            .await?
+            .json(body)
+            .send()
+            .await?;
+        check_http_status(resp).await
+    }
+}
+
+//
+// PublicStorage (read-only)
+//
+
+impl PublicStorage {
+    /// GET and deserialize JSON from an **addressed resource**.
+    pub async fn get_json<A, T>(&self, addr: A) -> Result<T>
+    where
+        A: IntoPubkyResource,
+        T: serde::de::DeserializeOwned,
+    {
+        let resp = self
+            .request(reqwest::Method::GET, addr)
+            .await?
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await?;
+        let resp = check_http_status(resp).await?;
+        Ok(resp.json::<T>().await?)
+    }
+}
+```
+./src/actors/auth_flow.rs
+```
+//! Client <=> Signer authing (“pubkyauth”) as a single, self-contained flow.
+//!
+//! ## TL;DR (happy path)
+//! ```no_run
+//! # use pubky::{Capabilities, PubkyAuthFlow};
+//! # async fn run() -> pubky::Result<()> {
+//! let caps = Capabilities::default();
+//! let flow = PubkyAuthFlow::start(&caps)?; // starts background polling immediately
+//! println!("Scan to sign in: {}", flow.authorization_url());
+//!
+//! // Blocks until the signer (e.g., Pubky Ring) approves and server issues a session.
+//! let session = flow.await_approval().await?;
+//! println!("Signed in as {}", session.info().public_key());
+//! # Ok(()) }
+//! ```
+//!
+//! ## Custom relay / non-blocking UI
+//! ```no_run
+//! # use pubky::{Capabilities, PubkyAuthFlow};
+//! # use std::time::Duration;
+//! # async fn ui() -> pubky::Result<()> {
+//! let flow = PubkyAuthFlow::builder(&Capabilities::default())
+//!     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
+//!     .start()?; // starts background polling immediately
+//!
+//! // show_qr(flow.authorization_url()); // render QR or deeplink in your UI
+//!
+//! loop {
+//!     if let Some(session) = flow.try_poll_once().await? {
+//!         // on_logged_in(session);
+//!         break;
+//!     }
+//!     tokio::time::sleep(Duration::from_millis(300)).await;
+//! }
+//! # Ok(()) }
+//! ```
+//!
+//! ## How it works (security)
+//! Each flow generates a random `client_secret` (32 bytes). The relay **channel id**
+//! is `base64url( hash(client_secret) )`. The signer encrypts an `AuthToken` with
+//! `client_secret` and POSTs it to the channel; your app long-polls `GET` on the same
+//! URL and decrypts the payload locally. The relay **cannot decrypt anything**, it
+//! simply forwards bytes.
+
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use futures_util::future::{AbortHandle, Abortable};
+
+use reqwest::Method;
+use url::Url;
+
+use pubky_common::{
+    crypto::decrypt,
+    crypto::{hash, random_bytes},
+};
+
+use crate::{
+    AuthToken, Capabilities, PubkyHttpClient, PubkySession,
+    errors::{AuthError, Result},
+    util::check_http_status,
+};
+
+#[cfg(target_arch = "wasm32")]
+use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
+
+/// Default HTTP relay base when none is supplied.
+///
+/// The per-flow channel segment is appended automatically as:
+/// `base + base64url(hash(client_secret))`.
+///
+/// A trailing slash on `base` is optional; we normalize paths.
+pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
+
+/// End-to-end **auth flow** (request + live polling) you *hold on to*.
+///
+/// Use it like this:
+/// 1. Construct with [`PubkyAuthFlow::start`] (happy path) or the builder
+///    [`PubkyAuthFlow::builder`] to override relay/client.
+/// 2. Display [`authorization_url`](Self::authorization_url) (QR/deeplink) to the signer.
+/// 3. Complete the flow with [`await_approval`](Self::await_approval) **or**
+///    poll with [`try_poll_once`](Self::try_poll_once) / [`try_token`](Self::try_token).
+///
+/// Background polling **starts immediately** at construction. Dropping this value cancels
+/// the background task; the relay channel itself expires server-side after its TTL.
+#[derive(Debug, Clone)]
+pub struct PubkyAuthFlow {
+    client: PubkyHttpClient,
+    auth_url: Url,
+    rx: flume::Receiver<Result<AuthToken>>,
+    abort: AbortHandle,
+}
+
+impl PubkyAuthFlow {
+    /// Start a flow with the default HTTP relay.
+    ///
+    /// Spawns the background poller immediately and returns a handle.
+    pub fn start(caps: &Capabilities) -> Result<Self> {
+        PubkyAuthFlowBuilder::new(caps.clone()).start()
+    }
+
+    /// Create a builder to override **relay** and/or provide a custom **client**.
+    pub fn builder(caps: &Capabilities) -> PubkyAuthFlowBuilder {
+        PubkyAuthFlowBuilder::new(caps.clone())
+    }
+
+    /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
+    ///
+    /// Contains the **capabilities**, **client_secret** (base64url), and **relay** base.
+    pub fn authorization_url(&self) -> &Url {
+        &self.auth_url
+    }
+
+    /// Block until the signer approves and the server issues a session.
+    ///
+    /// This awaits the background poller’s result, verifies/decrypts the token,
+    /// and completes the `/session` exchange to return a ready-to-use [`PubkySession`].
+    pub async fn await_approval(self) -> Result<PubkySession> {
+        let token = self.clone().await_token().await?;
+        PubkySession::new(&token, self.client.clone()).await
+    }
+
+    /// Block until the signer approves and we receive an [`AuthToken`].
+    ///
+    /// This awaits the background poller’s result.
+    pub async fn await_token(self) -> Result<AuthToken> {
+        match self.rx.recv_async().await {
+            Ok(res) => res,
+            Err(_) => Err(AuthError::RequestExpired.into()),
+        }
+    }
+
+    /// Non-blocking probe (single step) that **consumes any ready token** and returns:
+    /// - `Ok(Some(session))` when a token was delivered and the session established.
+    /// - `Ok(None)` if no payload yet (keep polling later).
+    /// - `Err(e)` on transport/server errors or if the channel expired.
+    pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
+        if let Some(tok) = self.try_token() {
+            let token = tok?;
+            return Ok(Some(PubkySession::new(&token, self.client.clone()).await?));
+        }
+        Ok(None)
+    }
+
+    /// Non-blocking check: returns a verified `AuthToken` if the background poller has delivered it.
+    ///
+    /// - `Some(Ok(AuthToken))` when ready.
+    /// - `Some(Err(_))` if the background task failed (expired/transport error).
+    /// - `None` if not yet delivered.
+    pub fn try_token(&self) -> Option<Result<AuthToken>> {
+        self.rx.try_recv().ok()
+    }
+
+    // -- internals --
+
+    /// Long-poll until a token arrives or the channel expires. Runs in the background task.
+    async fn poll_for_token_loop(
+        client: PubkyHttpClient,
+        relay_channel_url: Url,
+        client_secret: [u8; 32],
+        tx: flume::Sender<Result<AuthToken>>,
+    ) {
+        use reqwest::StatusCode;
+
+        // Simple retry-on-timeout loop.
+        let response = loop {
+            let req = client.cross_request(Method::GET, relay_channel_url.clone());
+            let resp = match req.await {
+                Ok(rb) => rb.send().await,
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            };
+            match resp {
+                Ok(r) => break r,
+                Err(e) if e.is_timeout() => continue,
+                Err(e) => {
+                    let _ = tx.send(Err(e.into()));
+                    return;
+                }
+            }
+        };
+
+        if response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::GONE {
+            let _ = tx.send(Err(AuthError::RequestExpired.into()));
+            return;
+        }
+
+        let response = match check_http_status(response).await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tx.send(Err(e));
+                return;
+            }
+        };
+
+        let encrypted = match response.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = tx.send(Err(e.into()));
+                return;
+            }
+        };
+
+        let token = (|| -> Result<AuthToken> {
+            let token_bytes = decrypt(&encrypted, &client_secret)?;
+            let token = AuthToken::verify(&token_bytes)?;
+            Ok(token)
+        })();
+
+        let _ = tx.send(token);
+    }
+}
+
+impl Drop for PubkyAuthFlow {
+    fn drop(&mut self) {
+        // Stop background polling immediately.
+        self.abort.abort();
+    }
+}
+
+/// Builder for [`PubkyAuthFlow`].
+///
+/// Use to override the HTTP relay and/or the `PubkyHttpClient`.
+#[derive(Debug, Clone)]
+pub struct PubkyAuthFlowBuilder {
+    caps: Capabilities,
+    relay: Option<Url>,
+    client: Option<PubkyHttpClient>,
+}
+
+impl PubkyAuthFlowBuilder {
+    pub(crate) fn new(caps: Capabilities) -> Self {
+        Self {
+            caps,
+            relay: None,
+            client: None,
+        }
+    }
+
+    /// Set a custom relay base URL. The flow will append the per-channel segment
+    /// as `base + base64url(hash(client_secret))`. Trailing slash optional.
+    pub fn relay(mut self, relay: Url) -> Self {
+        self.relay = Some(relay);
+        self
+    }
+
+    /// Provide a custom `PubkyHttpClient` (e.g., with custom TLS, roots, or test wiring).
+    pub fn client(mut self, client: PubkyHttpClient) -> Self {
+        self.client = Some(client);
+        self
+    }
+
+    /// Finalize: derive channel, compute the `pubkyauth://` deep link, spawn the background poller,
+    /// and return the flow handle.
+    pub fn start(self) -> Result<PubkyAuthFlow> {
+        let client = match self.client {
+            Some(c) => c,
+            None => PubkyHttpClient::new()?,
+        };
+
+        // 1) Resolve relay base (default if not provided).
+        let mut relay = match self.relay {
+            Some(u) => u,
+            None => Url::parse(DEFAULT_HTTP_RELAY)?,
+        };
+
+        // 2) Generate client secret and build pubkyauth:// URL (caps + secret + relay).
+        let client_secret = random_bytes::<32>();
+        let auth_url = Url::parse(&format!(
+            "pubkyauth:///?caps={}&secret={}&relay={}",
+            self.caps,
+            URL_SAFE_NO_PAD.encode(client_secret),
+            relay
+        ))?;
+
+        // 3) Append derived channel id to the relay URL.
+        //    channel_id = base64url( hash(client_secret) )
+        {
+            let mut segs = relay
+                .path_segments_mut()
+                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+            segs.pop_if_empty(); // normalize trailing slash
+            let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
+            segs.push(&channel_id);
+        }
+
+        // 4) Spawn background polling (single-shot delivery)
+        let (tx, rx) = flume::bounded(1);
+        let (abort_handle, abort_reg) = AbortHandle::new_pair();
+        let bg_client = client.clone();
+        let bg_relay = relay.clone();
+        let bg_secret = client_secret;
+
+        let fut = async move {
+            PubkyAuthFlow::poll_for_token_loop(bg_client, bg_relay, bg_secret, tx).await;
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        tokio::spawn(Abortable::new(fut, abort_reg));
+
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
+
+        Ok(PubkyAuthFlow {
+            client,
+            auth_url,
+            rx,
+            abort: abort_handle,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Capabilities;
+
+    #[tokio::test]
+    async fn constructs_urls_and_channel() {
+        let caps = Capabilities::default();
+        let flow = PubkyAuthFlow::start(&caps).unwrap();
+
+        // pubkyauth:// deep link contains caps + secret + relay
+        assert!(
+            flow.authorization_url()
+                .as_str()
+                .starts_with("pubkyauth:///?caps=")
+        );
+        assert!(
+            flow.authorization_url()
+                .query_pairs()
+                .any(|(k, _)| k == "secret")
+        );
+        assert!(
+            flow.authorization_url()
+                .query_pairs()
+                .any(|(k, _)| k == "relay")
+        );
+    }
+}
+```
+./src/actors/mod.rs
+```
+pub mod auth_flow;
+pub mod pkdns;
+mod session;
+mod signer;
+pub mod storage;
+
+pub use auth_flow::PubkyAuthFlow;
+pub use pkdns::Pkdns;
+pub use session::core::PubkySession;
+pub use signer::PubkySigner;
+pub use storage::core::{PublicStorage, SessionStorage};
+```
+./src/actors/pkdns.rs
+```
+//! PKDNS (Pkarr) top-level actor: resolve & publish `_pubky` records.
+//!
+//! - **Read-only (no keys):** `Pkdns::new()`
+//! - **Publish (with keys):** `Pkdns::new_with_keypair(..)` or `signer.pkdns()`
+//!
+//! Reads do not require a session or keys. Publishing requires a `Keypair`.
+
+use std::time::Duration;
+
+use pkarr::{
+    Keypair, PublicKey, SignedPacket, Timestamp,
+    dns::rdata::{RData, SVCB},
+};
+
+use crate::{
+    PubkyHttpClient, PubkySigner,
+    errors::{AuthError, Error, PkarrError, Result},
+};
+
+/// Default staleness window for homeserver `_pubky` Pkarr records (1 hour).
+///
+/// Used by [`crate::Pkdns::publish_homeserver_if_stale`] to decide when a record
+/// should be republished. Republish too often and you add DHT churn; too rarely
+/// and lookups may not be able to find the user's homeserver.
+///
+/// You can override this per instance via [`crate::Pkdns::set_stale_after`] (mutable setter).
+pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
+
+/// PKDNS actor: resolve & publish `_pubky` PKARR records.
+///
+/// Construct it **without** a keypair for read-only queries:
+/// ```no_run
+/// # async fn example() -> pubky::Result<()> {
+/// let pkdns = pubky::Pkdns::new()?;
+/// if let Some(host) = pkdns.get_homeserver_of(&"o4dk…uyy".try_into().unwrap()).await {
+///     println!("homeserver: {host}");
+/// }
+/// # Ok(()) }
+/// ```
+///
+/// Or **with** a keypair for publishing and self lookups:
+/// ```no_run
+/// # async fn example(kp: pubky::Keypair) -> pubky::Result<()> {
+/// let pkdns = pubky::Pkdns::new_with_keypair(kp)?;
+/// // Self-lookup (requires keypair on this Pkdns)
+/// let my_host = pkdns.get_homeserver().await?;
+/// println!("my homeserver: {my_host:?}");
+///
+/// // Publish if stale
+/// pkdns.publish_homeserver_if_stale(None).await?;
+/// # Ok(()) }
+/// ```
+#[derive(Debug, Clone)]
+pub struct Pkdns {
+    client: PubkyHttpClient,
+    keypair: Option<Keypair>,
+    /// Maximum age before a user record should be republished.
+    /// Defaults to 1 hour.
+    stale_after: Duration,
+}
+
+impl PubkySigner {
+    /// Get a PKDNS actor bound to this signer's client and keypair (publishing enabled).
+    #[inline]
+    pub fn pkdns(&self) -> Pkdns {
+        crate::Pkdns::with_client_and_keypair(self.client.clone(), self.keypair.clone())
+    }
+}
+
+impl Pkdns {
+    /// Construct a Read-only PKDNS actor.
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            client: PubkyHttpClient::new()?,
+            keypair: None,
+            stale_after: DEFAULT_STALE_AFTER,
+        })
+    }
+
+    /// Construct a publishing-capable PKDNS actor.
+    pub fn new_with_keypair(keypair: Keypair) -> Result<Self> {
+        Ok(Self {
+            client: PubkyHttpClient::new()?,
+            keypair: Some(keypair),
+            stale_after: DEFAULT_STALE_AFTER,
+        })
+    }
+
+    /// Infallible constructor with client + keypair (publishing enabled).
+    /// Used internally for `signer.pkdns()`
+    fn with_client_and_keypair(client: PubkyHttpClient, keypair: Keypair) -> Self {
+        Self {
+            client,
+            keypair: Some(keypair),
+            stale_after: DEFAULT_STALE_AFTER,
+        }
+    }
+
+    /// Create a read-only PKDNS actor bound to a specific client.
+    /// No keypair attached; publishing is disabled.
+    pub(crate) fn with_client(client: PubkyHttpClient) -> Self {
+        Self {
+            client,
+            keypair: None,
+            stale_after: DEFAULT_STALE_AFTER,
+        }
+    }
+
+    /// Set how long an existing `_pubky` PKARR record is considered **fresh** (builder-style).
+    ///
+    /// If the current record’s age is **≤ this duration**, [`Self::publish_homeserver_if_stale`]
+    /// is a no-op; otherwise the record is (re)published.
+    ///
+    /// Defaults to 1 hour [DEFAULT_STALE_AFTER].
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # async fn ex(signer: pubky::PubkySigner) -> pubky::Result<()> {
+    /// let pkdns = signer.pkdns()
+    ///     .set_stale_after(Duration::from_secs(30 * 60)); // 30 minutes
+    ///
+    /// // Will re-publish same homeserver only if the existing record is older than 30 minutes.
+    /// pkdns.publish_homeserver_if_stale(None).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn set_stale_after(mut self, d: Duration) -> Self {
+        self.stale_after = d;
+        self
+    }
+
+    // -------------------- Reads --------------------
+
+    /// Resolve current homeserver host for **any** `pubky` via Pkarr (no keypair required).
+    ///
+    /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
+    /// or `None` if the record is missing/unresolvable.
+    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<String> {
+        let packet = self.client.pkarr().resolve_most_recent(pubky).await?;
+        extract_host_from_packet(&packet)
+    }
+
+    /// Convenience: resolve the homeserver for **this** user (requires keypair on `Pkdns`).
+    ///
+    /// Returns:
+    /// - `Ok(Some(host))` if resolvable,
+    /// - `Ok(None)` if no record is found,
+    /// - `Err(_)` only for transport errors.
+    pub async fn get_homeserver(&self) -> Result<Option<String>> {
+        let kp = self.keypair.as_ref().ok_or_else(|| {
+            Error::from(AuthError::Validation(
+                "get_homeserver() requires a keypair; use Pkdns::new_with_keypair() or signer.pkdns()".into(),
+            ))
+        })?;
+        Ok(self.get_homeserver_of(&kp.public_key()).await)
+    }
+
+    // -------------------- Publishing (requires keypair) --------------------
+
+    /// Publish `_pubky` **forcing** a refresh.
+    ///
+    /// If `host_override` is `None`, reuses the host found in the existing record (if any).
+    pub async fn publish_homeserver_force(&self, host_override: Option<&PublicKey>) -> Result<()> {
+        self.publish_homeserver(host_override, PublishMode::Force)
+            .await
+    }
+
+    /// Publish `_pubky` **only if stale/missing**.
+    ///
+    /// If `host_override` is `None`, reuses the host found in the existing record (if any).
+    pub async fn publish_homeserver_if_stale(
+        &self,
+        host_override: Option<&PublicKey>,
+    ) -> Result<()> {
+        self.publish_homeserver(host_override, PublishMode::IfStale)
+            .await
+    }
+
+    // ---- internals ----
+
+    async fn publish_homeserver(
+        &self,
+        host_override: Option<&PublicKey>,
+        mode: PublishMode,
+    ) -> Result<()> {
+        let kp = self.keypair.as_ref().ok_or_else(|| {
+            Error::from(AuthError::Validation(
+                "publishing `_pubky` requires a keypair (use Pkdns::new_with_keypair or signer.pkdns())".into(),
+            ))
+        })?;
+        let pubky = kp.public_key();
+
+        // 1) Resolve the most recent record once.
+        let existing = self.client.pkarr().resolve_most_recent(&pubky).await;
+
+        // 2) Decide host string to publish.
+        let host_str = match determine_host(host_override, existing.as_ref()) {
+            Some(h) => h,
+            None => return Ok(()), // nothing to do
+        };
+
+        // 3) Age check (for IfStale).
+        if matches!(mode, PublishMode::IfStale)
+            && let Some(ref record) = existing
+        {
+            let elapsed = Timestamp::now() - record.timestamp();
+            let age = Duration::from_micros(elapsed.as_u64());
+            if age <= self.stale_after {
+                return Ok(());
+            }
+        }
+
+        // 4) Publish with small retry loop on retryable pkarr errors.
+        for attempt in 1..=3 {
+            match self
+                .publish_homeserver_inner(kp, &host_str, existing.clone())
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    if let Error::Pkarr(pk) = &e
+                        && pk.is_retryable()
+                        && attempt < 3
+                    {
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn publish_homeserver_inner(
+        &self,
+        keypair: &Keypair,
+        host: &str,
+        existing: Option<SignedPacket>,
+    ) -> Result<()> {
+        // Keep previous records that are *not* `_pubky.*`, then write `_pubky` HTTPS/SVCB.
+        let mut builder = SignedPacket::builder();
+        if let Some(ref packet) = existing {
+            for answer in packet.resource_records("_pubky") {
+                if !answer.name.to_string().starts_with("_pubky") {
+                    builder = builder.record(answer.to_owned());
+                }
+            }
+        }
+
+        let svcb = SVCB::new(0, host.try_into().map_err(PkarrError::from)?);
+        let signed_packet = builder
+            .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
+            .sign(keypair)
+            .map_err(PkarrError::from)?;
+
+        self.client
+            .pkarr()
+            .publish(&signed_packet, existing.map(|s| s.timestamp()))
+            .await
+            .map_err(PkarrError::from)?;
+
+        Ok(())
+    }
+}
+
+/// Internal publish strategy.
+#[derive(Debug, Clone, Copy)]
+enum PublishMode {
+    Force,
+    IfStale,
+}
+
+/// Pick a host to publish: explicit override or the one found in the DHT packet.
+fn determine_host(
+    override_host: Option<&PublicKey>,
+    dht_packet: Option<&SignedPacket>,
+) -> Option<String> {
+    if let Some(host) = override_host {
+        return Some(host.to_string());
+    }
+    dht_packet.and_then(extract_host_from_packet)
+}
+
+/// Extract `_pubky` SVCB/HTTPS target from a signed Pkarr packet.
+pub(crate) fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
+    packet
+        .resource_records("_pubky")
+        .find_map(|rr| match &rr.rdata {
+            RData::SVCB(svcb) => Some(svcb.target.to_string()),
+            RData::HTTPS(https) => Some(https.0.target.to_string()),
+            _ => None,
+        })
+}
+```
+./src/actors/session/core.rs
+```
+use reqwest::{Method, StatusCode};
+
+use pubky_common::session::SessionInfo;
+
+use crate::{AuthToken, Error, PubkyHttpClient, Result, SessionStorage, util::check_http_status};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::errors::AuthError;
+
+/// Stateful, per-identity API driver built on a shared [`PubkyHttpClient`].
+///
+/// An `PubkySession` represents one user/identity. It optionally holds a `Keypair` (for
+/// self-signed flows like `signin()`/`signup()`), and always tracks the user’s `pubky`
+/// (either from the keypair or learned later via the pubkyauth flow). On native targets,
+/// each agent also owns exactly one session cookie secret; cookies never leak across agents.
+///
+/// What it does:
+/// - Attaches the correct session cookie to requests that target this agent’s homeserver
+///   (`pubky://<pubky>/...` or `https://_pubky.<pubky>/...`), and to nothing else.
+/// - Exposes homeserver verbs (`get/put/post/patch/delete/head`) scoped to this identity.
+/// - Implements identity flows: `signup`, `signin`, `signout`, `session`, and pubkyauth.
+///
+/// When to use:
+/// - Use `PubkySession` whenever you’re acting “as a user” against a Pubky homeserver.
+/// - Use `PubkyHttpClient` only for raw transport or unauthenticated/public operations.
+///
+/// Concurrency:
+/// - `PubkySession` is cheap to clone and thread-safe; it shares the underlying `PubkyHttpClient`.
+#[derive(Clone, Debug)]
+pub struct PubkySession {
+    pub(crate) client: PubkyHttpClient,
+
+    /// Known session for this session.
+    pub(crate) info: SessionInfo,
+
+    /// Native-only, single session cookie secret for `_pubky.<pubky>`. Never shared across agents.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) cookie: String,
+}
+
+impl PubkySession {
+    /// Establish a session from a signed [`AuthToken`].
+    ///
+    /// This POSTs `pubky://{user}/session` with the token, validates the response
+    /// and constructs a new session-bound [`PubkySession`]
+    pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<PubkySession> {
+        let url = format!("pubky://{}/session", token.public_key());
+        let response = client
+            .cross_request(Method::POST, url)
+            .await?
+            .body(token.serialize())
+            .send()
+            .await?;
+
+        let response = check_http_status(response).await?;
+        Self::new_from_response(client.clone(), response).await
+    }
+
+    /// Construct a session **from a successful `/session` or `/signup` response**.
+    ///
+    /// - Reads the `SessionInfo` body (to learn the user pubky).
+    /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
+    pub(crate) async fn new_from_response(
+        client: PubkyHttpClient,
+        response: reqwest::Response,
+    ) -> Result<PubkySession> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // WASM: cookies are browser-managed; just parse the session body.
+            let bytes = response.bytes().await?;
+            let info = SessionInfo::deserialize(&bytes)?;
+            return Ok(PubkySession { client, info });
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // 1) Snapshot all Set-Cookie header values before consuming the body.
+            let mut raw_set_cookies = Vec::new();
+            for val in response
+                .headers()
+                .get_all(reqwest::header::SET_COOKIE)
+                .iter()
+            {
+                if let Ok(raw) = std::str::from_utf8(val.as_bytes()) {
+                    raw_set_cookies.push(raw.to_owned());
+                }
+            }
+
+            // 2) Read and parse the session body (this consumes the response).
+            let bytes = response.bytes().await?;
+            let info = SessionInfo::deserialize(&bytes)?;
+
+            // 3) Find the cookie named exactly as the user's pubky.
+            let cookie_name = info.public_key().to_string();
+            let cookie = raw_set_cookies
+                .iter()
+                .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
+                .find(|c| c.name() == cookie_name)
+                .map(|c| c.value().to_string())
+                .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
+
+            Ok(PubkySession {
+                client,
+                info,
+                cookie,
+            })
+        }
+    }
+
+    /// Returns the session info
+    pub fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+
+    /// Returns a reference to the internal `PubkyHttpClient`
+    /// Raw transport handle. No per-session cookie injection. Use `storage()` for
+    /// authenticated, session-scoped requests.
+    pub fn client(&self) -> &PubkyHttpClient {
+        &self.client
+    }
+
+    /// Round-trip the current session with the homeserver to verify it’s still valid.
+    ///
+    /// Returns:
+    /// - `Ok(Some(session))` if the server recognizes and returns the session (still valid).
+    /// - `Ok(None)` if the session no longer exists (expired/invalidated).
+    /// - `Err(_)` for transport or server errors unrelated to validity.
+    ///
+    /// This does *not* mutate the session; it’s a sanity/validity check.
+    pub async fn revalidate(&self) -> Result<Option<SessionInfo>> {
+        let response = self
+            .storage()
+            .request(Method::GET, "/session")
+            .await?
+            .send()
+            .await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = check_http_status(response).await?;
+        let bytes = response.bytes().await?;
+        Ok(Some(SessionInfo::deserialize(&bytes)?))
+    }
+
+    /// Sign out and invalidate this session server-side.
+    ///
+    /// - **On success:** the session is consumed (dropped).
+    /// - **On failure:** you get `(Error, Self)` back so you can retry or inspect.
+    pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
+        let resp = match self.storage().delete("/session").await {
+            Ok(r) => r,
+            Err(e) => return Err((e, self)),
+        };
+        if let Err(e) = check_http_status(resp).await {
+            return Err((e, self));
+        }
+        Ok(()) // success => `self` is consumed
+    }
+
+    /// Create a **session-mode** Storage bound to this user session.
+    ///
+    /// - Relative paths (e.g. `"pub/my.app/file"`) are resolved to **this** user.
+    /// - Requests that target this user’s homeserver automatically carry the
+    ///   session cookie.
+    ///
+    /// See [`SessionStorage`] for usage examples.
+    pub fn storage(&self) -> SessionStorage {
+        SessionStorage::new(self)
+    }
+}
+```
+./src/actors/session/persist.rs
+```
+use std::path::Path;
+
+use pkarr::PublicKey;
+use pubky_common::session::SessionInfo;
+
+use super::core::PubkySession;
+use crate::{
+    Capabilities, PubkyHttpClient, Result,
+    errors::{AuthError, RequestError},
+};
+
+impl PubkySession {
+    /// Export the minimum data needed to restore this session later.
+    /// Returns a single compact secret token `<pubkey>:<cookie_secret>`
+    ///
+    /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
+    /// from a signer on a script restart.
+    ///
+    /// Treat the returned String as a **bearer secret**. Do not log it; store it
+    /// securely.
+    pub fn export_secret(&self) -> String {
+        let public_key = self.info().public_key().to_string();
+        let cookie = self.cookie.clone();
+        format!("{public_key}:{cookie}")
+    }
+
+    /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
+    ///
+    /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
+    /// from a signer on a script restart.
+    ///
+    /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
+    /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
+    pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
+        // 1) Get the transport for this session
+        let client = match client {
+            Some(c) => c,
+            None => PubkyHttpClient::new()?,
+        };
+
+        // 2) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
+        let (pk_str, cookie) = token
+            .split_once(':')
+            .ok_or_else(|| RequestError::Validation {
+                message: "invalid secret: expected `<pubkey>:<cookie>`".into(),
+            })?;
+
+        let public_key = PublicKey::try_from(pk_str).map_err(|_| RequestError::Validation {
+            message: "invalid public key".into(),
+        })?;
+
+        // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.
+        let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
+        let mut session = PubkySession {
+            client,
+            info: placeholder,
+            cookie: cookie.to_string(),
+        };
+
+        // 4) Validate cookie and fetch authoritative SessionInfo
+        let info = session
+            .revalidate()
+            .await?
+            .ok_or(AuthError::RequestExpired)?;
+        session.info = info;
+
+        Ok(session)
+    }
+
+    /// Write the session secret token to disk. Ensures a `.sess` extension.
+    ///
+    /// Behavior:
+    /// - If `secret_file_path` already ends with `.sess`, it is used as-is.
+    /// - If it has no extension, `.sess` is added.
+    /// - If it has a different extension, `.<ext>.sess` is appended (e.g., `foo.txt.sess`).
+    ///
+    /// On Unix, permissions are set to `0o600`.
+    pub fn write_secret_file<P: AsRef<Path>>(&self, secret_file_path: P) -> std::io::Result<()> {
+        let token = self.export_secret();
+        let p = secret_file_path.as_ref();
+
+        let target = match p.extension().and_then(|e| e.to_str()) {
+            Some("sess") => p.to_path_buf(),
+            Some(_) => {
+                // Append, do not replace: `name.ext` -> `name.ext.sess`
+                let mut out = p.to_path_buf();
+                let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("session");
+                out.set_file_name(format!("{fname}.sess"));
+                out
+            }
+            None => {
+                // No extension: add `.sess`
+                let mut out = p.to_path_buf();
+                out.set_extension("sess");
+                out
+            }
+        };
+
+        std::fs::write(&target, token)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
+    }
+
+    /// Restore a session from a secret token stored in a file. Requires a `.sess` extension.
+    ///
+    /// Validation:
+    /// - `.sess` — valid; file is read and parsed.
+    /// - `.pkarr` — rejected with a clear error message pointing to `Keypair::from_secret_file`.
+    /// - Any other or missing extension — rejected with a `.sess`-specific error.
+    pub async fn from_secret_file(
+        secret_file_path: &Path,
+        client: Option<PubkyHttpClient>,
+    ) -> Result<Self> {
+        match secret_file_path.extension().and_then(|e| e.to_str()) {
+            Some("sess") => { /* ok */ }
+            Some("pkarr") => {
+                return Err(RequestError::Validation {
+                    message: format!(
+                        "refused to load `{}`: `.pkarr` is a keypair secret. \
+                         Use `Keypair::from_secret_file` to load keys. \
+                         Session secrets must use the `.sess` extension.",
+                        secret_file_path.display()
+                    ),
+                }
+                .into());
+            }
+            Some(other) => {
+                return Err(RequestError::Validation {
+                    message: format!(
+                        "invalid session secret extension `.{other}` for `{}`; expected `.sess`",
+                        secret_file_path.display()
+                    ),
+                }
+                .into());
+            }
+            None => {
+                return Err(RequestError::Validation {
+                    message: format!(
+                        "missing extension for `{}`; session secret files must end with `.sess`",
+                        secret_file_path.display()
+                    ),
+                }
+                .into());
+            }
+        }
+
+        let token =
+            std::fs::read_to_string(secret_file_path).map_err(|e| RequestError::Validation {
+                message: format!("failed to read session secret file: {e}"),
+            })?;
+        Self::import_secret(token.trim(), client).await
+    }
+}
+```
+./src/actors/session/mod.rs
+```
+pub mod core;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod persist;
+```
+./src/pubky.rs
+```
+//! High-level façade for the Pubky crate.
+//!
+//! ## Mental model
+//! - `Pubky` - your entrypoint/handle to the SDK. Owns a `PubkyHttpClient`.
+//! - `Signer` - local private keys; can `signin`/`signup`, publish PKDNS, approve auth requests.
+//! - `Session` - authenticated, “as me” API; exposes scoped storage.
+//! - `PublicStorage` - unauthenticated, “read others” API.
+//!
+//! ## Quick starts
+//! ### 1) App sign-in via QR/deeplink (auth flow)
+//! ```no_run
+//! use pubky::{Pubky, Capabilities};
+//!
+//! # async fn run() -> pubky::Result<()> {
+//! let pubky = Pubky::new()?; // or Pubky::testnet() / Pubky::with_client(...)
+//!
+//! let caps = Capabilities::default();
+//! let flow = pubky.start_auth_flow(&caps)?;
+//! println!("Scan to sign in: {}", flow.authorization_url());
+//!
+//! let session = flow.await_approval().await?;
+//! println!("Signed in as {}", session.info().public_key());
+//! # Ok(()) }
+//! ```
+//!
+//! ### 2) Script that holds a key and signs in locally with root capabilities
+//! ```no_run
+//! use pubky::{Pubky, PubkySigner, Keypair};
+//!
+//! # async fn run() -> pubky::Result<()> {
+//! let pubky = Pubky::new()?;
+//! let kp = Keypair::random();
+//! let signer = pubky.signer(kp);
+//!
+//! let session = signer.signin().await?;
+//! // do writes as-me
+//! session.storage().put("/pub/demo/hello.txt", "hi").await?;
+//! # Ok(()) }
+//! ```
+//!
+//! ### 3) Public read (no identity)
+//! ```no_run
+//! use pubky::Pubky;
+//!
+//! # async fn run(user: pubky::PublicKey) -> pubky::Result<()> {
+//! let pubky = Pubky::new()?;
+//! let public = pubky.public_storage();
+//! let addr = format!("{}/pub/site/index.html", user);
+//! let html = public.get(addr).await?.text().await?;
+//! # Ok(()) }
+//! ```
+
+use crate::{
+    Capabilities, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
+    errors::RequestError,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
+
+/// High-level façade. Owns a `PubkyHttpClient` and constructs the main actors.
+#[derive(Clone, Debug)]
+pub struct Pubky {
+    client: PubkyHttpClient,
+}
+
+impl Pubky {
+    /// Construct with defaults (mainnet relays, standard timeouts).
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            client: PubkyHttpClient::new()?,
+        })
+    }
+
+    /// Construct preconfigured for a local Pubky testnet.
+    pub fn testnet() -> Result<Self> {
+        Ok(Self {
+            client: PubkyHttpClient::testnet()?,
+        })
+    }
+
+    /// Construct from an already-configured transport.
+    pub fn with_client(client: PubkyHttpClient) -> Self {
+        Self { client }
+    }
+
+    /// Start an end-to-end auth flow (QR/deeplink).
+    ///
+    /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
+    /// or `try_poll_once()` (non-blocking UI loops).
+    pub fn start_auth_flow(&self, caps: &Capabilities) -> Result<PubkyAuthFlow> {
+        PubkyAuthFlow::builder(caps)
+            .client(self.client.clone())
+            .start()
+    }
+
+    /// Create a `PubkySigner` for a given keypair.
+    pub fn signer(&self, keypair: crate::Keypair) -> PubkySigner {
+        PubkySigner {
+            client: self.client.clone(),
+            keypair,
+        }
+    }
+
+    /// Create a public, unauthenticated storage handle using this façade’s client.
+    pub fn public_storage(&self) -> PublicStorage {
+        PublicStorage {
+            client: self.client.clone(),
+        }
+    }
+
+    /// Read-only PKDNS actor (resolve `_pubky` records) using this façade’s client.
+    pub fn pkdns(&self) -> crate::Pkdns {
+        crate::Pkdns::with_client(self.client.clone())
+    }
+
+    // ------ Persistance helpers ----------
+
+    /// Restore a session from a `.sess` secret file
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn session_from_file<P: AsRef<Path>>(&self, path: P) -> Result<PubkySession> {
+        PubkySession::from_secret_file(path.as_ref(), Some(self.client.clone())).await
+    }
+
+    /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn signer_from_recovery_file<P: AsRef<Path>>(
+        &self,
+        path: P,
+        passphrase: &str,
+    ) -> Result<PubkySigner> {
+        use pubky_common::recovery_file::decrypt_recovery_file;
+
+        let bytes = std::fs::read(path.as_ref()).map_err(|e| RequestError::Validation {
+            message: format!("failed to read recovery file: {e}"),
+        })?;
+
+        let kp =
+            decrypt_recovery_file(&bytes, passphrase).map_err(|e| RequestError::Validation {
+                message: format!("failed to decrypt recovery file: {e}"),
+            })?;
+
+        Ok(self.signer(kp))
+    }
+
+    /// Access the underlying transport (advanced use).
+    #[inline]
+    pub fn client(&self) -> &PubkyHttpClient {
+        &self.client
+    }
+}
+```
+./src/client/core.rs
+```
+use std::fmt::Debug;
+use std::time::Duration;
+
+use crate::errors::BuildError;
+
+const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
+
+#[derive(Debug, Clone)]
+#[must_use]
+/// Configures a [`PubkyHttpClient`] before construction.
+///
+/// Customize timeouts, user-agent, pkarr relays, and (WASM) testnet behavior.
+/// Most code obtains this via [`PubkyHttpClient::builder()`], which simply returns
+/// `PubkyHttpClientBuilder::default()`.
+///
+/// # Defaults
+/// - Pkarr relays: [`crate::DEFAULT_RELAYS`]
+/// - HTTP request timeout: reqwest default (no global timeout) unless set via
+///   [`Self::request_timeout`]
+/// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
+///
+/// # Example
+/// ```
+/// use std::time::Duration;
+/// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
+/// let client = PubkyHttpClient::builder()
+///     .request_timeout(Duration::from_secs(10))
+///     .user_agent_extra("myapp/1.2.3")
+///     .build()?;
+/// # Ok::<_, pubky::BuildError>(())
+/// ```
+///
+/// You can keep the default Pkarr relays or override them via the builder:
+/// ```
+/// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
+/// # fn main() -> Result<(), pubky::BuildError> {
+/// // Start from defaults; you can also supply your own entirely.
+/// let mut b = PubkyHttpClient::builder();
+/// b.pkarr(|p| p.relays(&["https://pkarr.example.net/"]).expect("infallible"));
+/// let _client = b.build()?;
+/// # Ok(()) }
+/// ```
+#[derive(Default)]
+pub struct PubkyHttpClientBuilder {
+    pkarr: pkarr::ClientBuilder,
+    http_request_timeout: Option<Duration>,
+
+    /// Optional user-agent segment appended to the default UA for app-level telemetry.
+    user_agent_extra: Option<String>,
+
+    /// The hostname to use for testnet URL transformations (WASM only).
+    #[cfg(target_arch = "wasm32")]
+    testnet_host: Option<String>,
+}
+
+impl PubkyHttpClientBuilder {
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Configure this builder to talk to a **local Pubky testnet** on `localhost`.
+    ///
+    /// Concretely:
+    /// - **DHT bootstrap** to the local testnet node at: `"localhost:6881"`
+    /// - **PKARR relay** base URL: `"http://localhost:15411"`
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use pubky::PubkyHttpClient;
+    ///
+    /// let client = PubkyHttpClient::builder()
+    ///     .testnet()
+    ///     .build()
+    ///     .expect("testnet client");
+    /// ```
+    pub fn testnet(&mut self) -> &mut Self {
+        self.testnet_with_host("localhost")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Configure this builder to talk to a **Pubky testnet** reachable at a custom host.
+    ///
+    /// Use this when your testnet stack isn’t on `localhost` (e.g. running in Docker,
+    /// a remote VM, or LAN machine).
+    ///
+    /// Concretely (native):
+    /// - DHT bootstrap peer: `"<host>:6881"`
+    /// - PKARR relay base:   `"http://<host>:15411"`
+    ///
+    /// # Examples
+    /// ```
+    /// use pubky::PubkyHttpClient;
+    ///
+    /// let client = PubkyHttpClient::builder()
+    ///     .testnet_with_host("192.168.1.50") // or "host.docker.internal"
+    ///     .build()
+    ///     .expect("testnet client");
+    /// ```
+    ///
+    /// # Notes
+    /// - These ports come from `pubky_common::constants::testnet_ports::{ BOOTSTRAP, PKARR_RELAY }`.
+    /// - Ensure your testnet exposes them from that host (and they’re reachable from where this code runs).
+    pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
+        self.pkarr
+            .bootstrap(&[format!(
+                "{}:{}",
+                host,
+                pubky_common::constants::testnet_ports::BOOTSTRAP
+            )])
+            .relays(&[format!(
+                "http://{}:{}",
+                host,
+                pubky_common::constants::testnet_ports::PKARR_RELAY
+            )])
+            .expect("relays urls infallible");
+
+        self
+    }
+
+    /// Sets the testnet host. This is only used for WASM builds.
+    /// TODO: remove from the API surface of native configs without triggering clippy
+    /// errors on the JS bindings package.
+    pub fn testnet_host(&mut self, host: Option<String>) -> &mut Self {
+        // The field itself is still conditional, so the logic is gated.
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.testnet_host = match host {
+                Some(h) => Some(h),
+                None => Some("localhost".to_string()),
+            };
+        }
+        // This avoids an "unused parameter" warning on non-WASM builds.
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = host;
+
+        self
+    }
+
+    /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
+    ///
+    /// Use this to influence PKARR resolution inputs (relays, bootstrap nodes,
+    /// timeouts, etc.) *before* building the client. There are no per-request
+    /// resolution knobs; configuration is done up front.
+    ///
+    /// # Example
+    /// ```
+    /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
+    /// let client = PubkyHttpClient::builder()
+    ///     .pkarr(|p| p
+    ///         .relays(&["https://pkarr.example.net/"]).expect("infallible")
+    ///         .bootstrap(&["dht.node.example:6881"])
+    ///     )
+    ///     .build()?;
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
+    pub fn pkarr<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut pkarr::ClientBuilder) -> &mut pkarr::ClientBuilder,
+    {
+        f(&mut self.pkarr);
+
+        self
+    }
+
+    /// Set HTTP requests timeout.
+    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.http_request_timeout = Some(timeout);
+
+        self
+    }
+
+    /// Append an extra user-agent segment after the default `pubky.org@<version>`.
+    /// Enables app-level telemetry
+    /// Example: `.user_agent_extra("myapp/1.2.3")`
+    pub fn user_agent_extra<S: Into<String>>(&mut self, extra: S) -> &mut Self {
+        self.user_agent_extra = Some(extra.into());
+        self
+    }
+
+    /// Build [PubkyHttpClient]
+    pub fn build(&self) -> Result<PubkyHttpClient, BuildError> {
+        let pkarr = self.pkarr.build()?;
+
+        // Compose user agent with optional extra part.
+        let user_agent = match &self.user_agent_extra {
+            Some(extra) if !extra.trim().is_empty() => {
+                &format!("{DEFAULT_USER_AGENT} {}", extra.trim())
+            }
+            _ => DEFAULT_USER_AGENT,
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone()).user_agent(user_agent);
+
+        #[cfg(target_arch = "wasm32")]
+        let http_builder = reqwest::Client::builder().user_agent(user_agent);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent);
+
+        // TODO: change this after Reqwest publish a release with timeout in wasm
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(timeout) = self.http_request_timeout {
+            http_builder = http_builder.timeout(timeout);
+
+            icann_http_builder = icann_http_builder.timeout(timeout);
+        }
+        Ok(PubkyHttpClient {
+            pkarr,
+            http: http_builder.build()?,
+
+            #[cfg(not(target_arch = "wasm32"))]
+            icann_http: icann_http_builder.build()?,
+
+            #[cfg(target_arch = "wasm32")]
+            testnet_host: self.testnet_host.clone(),
+        })
+    }
+}
+
+/// Transport client for Pubky homeserver APIs and generic HTTP, with PKARR-aware
+/// URL handling.
+///
+/// `PubkyHttpClient` is the low-level, stateless engine the higher-level actors
+/// (`PubkySession`, `PubkyStorage`, `Pkdns`, `PubkyAuthFlow`) are built on. It owns:
+/// - A pkarr DHT client (for resolving pkdns endpoints and publishing records).
+/// - One or more reqwest HTTP clients (platform-specific).
+///
+/// ### What it does
+/// - Understands `pubky://<user>/<path>` and rewrites it to the correct HTTPS
+///   form for requests.
+/// - Detects pkarr public-key hosts and resolves them to concrete endpoints.
+/// - Internally, uses a unified `cross_request(..)` that works the same on native rust and
+///   WASM (WASM performs endpoint resolution & header injection; native is a thin wrapper).
+///
+/// ### What it *doesn’t* do
+/// - It is **not** session/identity aware. No cookies, no per-user scoping.
+///   For authenticated per-user flows use [`crate::PubkySession`].
+///
+/// ### When to use
+/// - You want direct control over the PubkyHttpClient (power users, libs).
+/// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
+///
+/// ### Construction
+/// Use [`PubkyHttpClient::builder()`] to tweak timeouts, relays, or
+/// user-agent; or pick sensible defaults via [`PubkyHttpClient::new()`]. A
+/// [`PubkyHttpClient::testnet()`] helper configures a local test network.
+///
+/// ### Platform notes
+/// - **Native (rust, not WASM target):**
+///   - ICANN domains use standard X.509 TLS via the `icann_http` client.
+///   - Pubky/PKDNS hosts (public-key hostnames / `pubky://…`) use **PubkyTLS**
+///     (TLS with RFC 7250 Raw Public Keys), verifying the connection against the
+///     target public key—no CA chain involved.
+/// - **WASM:**
+///   - All requests use the browser’s standard X.509 TLS stack.
+///   - For Pubky/PKDNS hosts, private method `cross_request(..)` resolves the
+///     endpoint via PKARR, rewrites the URL (including testnet/localhost mapping),
+///     and may add a `pubky-host` header to convey the intended public-key host.
+///
+/// ### Examples
+/// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
+/// ```
+/// # use pubky::PubkyHttpClient;
+/// let client = PubkyHttpClient::new()?;
+/// # Ok::<_, pubky::BuildError>(())
+/// ```
+///
+/// Fetching a standard ICANN URL or any URL with `request`:
+/// ```
+/// # use pubky::{PubkyHttpClient, Result};
+/// # use reqwest::Method;
+/// # async fn run() -> Result<()> {
+/// let client = PubkyHttpClient::new()?;
+/// let resp = client.request(Method::GET, "https://example.com")
+///     .send().await?;
+/// assert!(resp.status().is_success());
+/// # Ok(()) }
+/// ```
+///
+/// Resolving and fetching a `pubky://` resource directly:
+/// ```no_run
+/// # use pubky::{PubkyHttpClient, Result};
+/// # use reqwest::Method;
+/// # async fn run() -> Result<()> {
+/// let client = PubkyHttpClient::new()?;
+/// // Pubky App profile of user Pubky https://pubky.app/profile/ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y
+/// let user = "ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y";
+/// let url = format!("pubky://{user}/pub/pubky.app/profile.json");
+/// let resp = client.request(Method::GET, &url).send().await?;
+/// let info = resp.text().await?;
+/// # Ok(()) }
+/// ```
+///
+/// > Tip: For authenticated reads/writes, prefer `session.storage().get(...)`, which
+/// > automatically scopes paths and attaches the right session cookie.
+#[derive(Clone, Debug)]
+pub struct PubkyHttpClient {
+    pub(crate) http: reqwest::Client,
+    pub(crate) pkarr: pkarr::Client,
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) icann_http: reqwest::Client,
+
+    /// The hostname to use for testnet URL transformations (WASM only).
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) testnet_host: Option<String>,
+}
+
+impl PubkyHttpClient {
+    /// Creates a client configured for public mainline DHT and pkarr relays.
+    pub fn new() -> Result<PubkyHttpClient, BuildError> {
+        Self::builder().build()
+    }
+
+    /// Returns a builder to edit settings before creating [`PubkyHttpClient`].
+    /// Prefer this when you need to control PKARR/DHT inputs (relays, bootstrap);
+    /// resolution itself remains automatic during requests.
+    pub fn builder() -> PubkyHttpClientBuilder {
+        PubkyHttpClientBuilder::default()
+    }
+
+    /// Creates a [`PubkyHttpClient`] preconfigured to talk to a **locally running Pubky testnet**.
+    ///
+    /// # What this configures
+    /// On **non wasm** targets (`not(target_arch = "wasm32")`):
+    /// - **DHT bootstrap** to the local testnet node at: `"localhost:6881"`
+    /// - **PKARR relay** base URL: `"http://localhost:15411"`
+    ///
+    /// On **WASM** targets:
+    /// - Browser environments can’t dial UDP DHT; the builder is adjusted to use the
+    ///   testnet HTTP endpoints suitable for the browser (no UDP bootstrap). PKARR HTTP
+    ///   relay still points at `http://localhost:15411` unless you override it.
+    ///
+    /// # Requirements
+    /// You must have `pubky-testnet` binary running locally (it provides a homeserver, a DHT bootstrap,
+    /// and a PKARR relay on the ports above). For example:
+    /// ```sh
+    /// # From the pubky repo:
+    /// cargo run -p pubky-testnet
+    /// ```
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use pubky::PubkyHttpClient;
+    ///
+    /// # async fn run() -> pubky::Result<()> {
+    /// let client = PubkyHttpClient::testnet()?;
+    /// // Now all pubky:// and https://<pubkey>/... requests resolve via the local testnet
+    /// // DHT/PKARR, and hit the local homeserver.
+    /// # Ok(()) }
+    /// ```
+    ///
+    /// # See also
+    /// - [`PubkyHttpClientBuilder::testnet`] to tweak additional settings first.
+    /// - [`PubkyHttpClientBuilder::testnet_with_host`] to target a non-`localhost` host.
+    pub fn testnet() -> Result<PubkyHttpClient, BuildError> {
+        let mut builder = Self::builder();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        builder.testnet();
+
+        #[cfg(target_arch = "wasm32")]
+        builder.testnet_host(Some("localhost".to_string()));
+
+        builder.build()
+    }
+
+    // === Getters ===
+
+    /// Returns a reference to the internal Pkarr Client.
+    pub fn pkarr(&self) -> &pkarr::Client {
+        &self.pkarr
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use reqwest::Method;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch() {
+        let client = PubkyHttpClient::new().unwrap();
+        let response = client
+            .request(Method::GET, "https://example.com/")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+}
+```
+./src/client/mod.rs
+```
+pub mod core;
+mod http_targets;
+```
+./src/client/http_targets/mod.rs
+```
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+```
+./src/client/http_targets/wasm.rs
+```
+//! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
+
+use crate::PubkyHttpClient;
+use crate::errors::{PkarrError, Result};
+use futures_lite::StreamExt;
+use pkarr::PublicKey;
+use pkarr::extra::endpoints::Endpoint;
+use reqwest::{IntoUrl, Method, RequestBuilder};
+use url::Url;
+
+impl PubkyHttpClient {
+    /// A wrapper around [PubkyHttpClient::request], with the same signature between native and wasm.
+    pub(crate) async fn cross_request<T: IntoUrl>(
+        &self,
+        method: Method,
+        url: T,
+    ) -> Result<RequestBuilder> {
+        let original_url = url.as_str();
+        let mut url = Url::parse(original_url)?;
+
+        if let Some(pubky_host) = self.prepare_request(&mut url).await? {
+            Ok(self
+                .http
+                .request(method, url.clone())
+                .header("pubky-host", pubky_host)
+                .fetch_credentials_include())
+        } else {
+            Ok(self
+                .http
+                .request(method, url.clone())
+                .fetch_credentials_include())
+        }
+    }
+
+    /// - Transforms pubky:// url to http(s):// urls
+    /// - Resolves a clearnet host to call with fetch
+    /// - Returns the `pubky-host` value if available
+    pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
+        let host = url.host_str().unwrap_or("").to_string();
+
+        if url.scheme() == "pubky" {
+            *url = Url::parse(&format!("https{}", &url.as_str()[5..]))?;
+            url.set_host(Some(&format!("_pubky.{}", url.host_str().unwrap_or(""))))
+                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+        }
+
+        let mut pubky_host = None;
+
+        if PublicKey::try_from(host.clone()).is_ok() {
+            self.transform_url(url).await?;
+
+            pubky_host = Some(host);
+        };
+
+        Ok(pubky_host)
+    }
+
+    async fn transform_url(&self, url: &mut Url) -> Result<()> {
+        let clone = url.clone();
+        let qname = clone.host_str().unwrap_or("");
+        log::debug!("Prepare request {}", url.as_str());
+
+        let mut stream = self.pkarr.resolve_https_endpoints(qname);
+
+        let mut so_far: Option<Endpoint> = None;
+
+        while let Some(endpoint) = stream.next().await {
+            if endpoint.domain().is_some() {
+                so_far = Some(endpoint);
+
+                // TODO: currently we return the first thing we can see,
+                // in the future we might want to failover to other endpoints
+                break;
+            }
+        }
+
+        if let Some(e) = so_far {
+            // Check if the resolved domain is a testnet domain. It is if it's "localhost"
+            // or if it matches the testnet_host configured in the client.
+            let is_testnet_domain = e.domain().map_or(false, |domain| {
+                if domain == "localhost" {
+                    return true;
+                }
+                if let Some(test_host) = &self.testnet_host {
+                    return domain == test_host;
+                }
+                false
+            });
+
+            // TODO: detect loopback IPs and other equivalent to localhost
+            if is_testnet_domain {
+                url.set_scheme("http")
+                    .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+
+                let http_port = e
+                    .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
+                    .and_then(|x| <[u8; 2]>::try_from(x).ok())
+                    .map(u16::from_be_bytes)
+                    .ok_or_else(|| {
+                        PkarrError::InvalidRecord(
+                            "could not find HTTP_PORT service param in Pkarr record".to_string(),
+                        )
+                    })?;
+
+                url.set_port(Some(http_port))
+                    .map_err(|_| url::ParseError::InvalidPort)?;
+            } else if let Some(port) = e.port() {
+                url.set_port(Some(port))
+                    .map_err(|_| url::ParseError::InvalidPort)?;
+            }
+
+            if let Some(domain) = e.domain() {
+                url.set_host(Some(domain))
+                    .map_err(|_| url::ParseError::SetHostOnCannotBeABaseUrl)?;
+            }
+
+            log::debug!("Transformed URL to: {}", url.as_str());
+        } else {
+            // TODO: didn't find any domain, what to do?
+            //  return an error.
+            log::debug!("Could not resolve host: {}", qname);
+        }
+
+        Ok(())
+    }
+}
+```
+./src/client/http_targets/native.rs
+```
+use crate::{PubkyHttpClient, PublicKey, Result};
+use reqwest::{IntoUrl, Method, RequestBuilder};
+use url::Url;
+
+impl PubkyHttpClient {
+    /// No-op. Unused. This `pub` function exists only to avoid a clippy error on the `binding/js` crate.
+    /// TODO: find a better solution to this.
+    pub async fn prepare_request(&self, _url: &mut Url) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Constructs a [`reqwest::RequestBuilder`] for the given HTTP `method` and `url`,
+    /// routing through the client’s unified request path.
+    ///
+    /// This method ensures that special Pubky and pkarr URL schemes or hosts are
+    /// normalized and resolved according to platform-specific rules (native or WASM),
+    /// including:
+    /// - Translating `pubky://` URLs into the appropriate HTTPS form.
+    /// - Detecting pkarr public key hostnames and applying the correct resolution/TLS handling.
+    /// - Routing standard ICANN domains through the `icann_http` client on native builds.
+    ///
+    /// On native targets, this is effectively a thin wrapper around [`PubkyHttpClient::request`],
+    /// while on WASM it also performs host transformation and may add the `pubky-host` header.
+    ///
+    /// Returns a [`Result`] containing the prepared `RequestBuilder`, or a URL/transport
+    /// parsing error if the supplied `url` is invalid.
+    ///
+    /// [`PubkyHttpClient::request`]: crate::PubkyHttpClient::request
+    pub(crate) async fn cross_request<U: IntoUrl>(
+        &self,
+        method: Method,
+        url: U,
+    ) -> Result<RequestBuilder> {
+        Ok(self.request(method, url))
+    }
+
+    /// Start building a `Request` with the `Method` and `Url` (native-only)
+    ///
+    /// Returns a `RequestBuilder`, which will allow setting headers and
+    /// the request body before sending.
+    ///
+    /// Differs from [reqwest::Client::request], in that it can make requests to:
+    /// 1. HTTPs URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    ///    corresponding endpoints, and verifying TLS certificates accordingly.
+    ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
+    /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    ///
+    /// # Errors
+    ///
+    /// This method fails whenever the supplied `Url` cannot be parsed.
+    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
+        let url = url.as_str();
+
+        if url.starts_with("pubky://") {
+            // Rewrite pubky:// urls to https://_pubky.
+            let url = format!("https://_pubky.{}", url.split_at(8).1);
+
+            return self.http.request(method, url);
+            // PublicKey has methods to extract a publickey from a well-formed URL
+        } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
+            // TODO: remove icann_http when we can control reqwest connection
+            // and or create a tls config per connection.
+            return self.icann_http.request(method, url);
+        }
+
+        self.http.request(method, url)
+    }
+}
+```
+./src/util.rs
+```
+use reqwest::Response;
+
+use crate::errors::{Error, RequestError, Result};
+
+/// Convert non-2xx responses into a structured error that includes the server body.
+///
+/// If the status is successful (2xx), the original response is returned.
+/// If the status is an error (4xx or 5xx), the response body is consumed
+/// to create a `PubkyError::Request(RequestError::Server)` and returned as an `Err`.
+pub(crate) async fn check_http_status(response: Response) -> Result<Response> {
+    if response.status().is_success() {
+        return Ok(response);
+    }
+
+    let status = response.status();
+    let message = response.text().await.unwrap_or_else(|_| {
+        status
+            .canonical_reason()
+            .unwrap_or("Unknown Error")
+            .to_string()
+    });
+
+    Err(Error::from(RequestError::Server { status, message }))
+}
+```
+./src/errors.rs
+```
+//! Unified error types for the `pubky` crate.
+//!
+//! This module centralizes all failures that can occur while using the SDK and
+//! provides a single top-level [`enum@Error`] enum plus the convenient [`Result`] alias.
+//! Errors from lower layers (`reqwest`, `pkarr`, `pubky_common`, URL parsing) are
+//! mapped into structured variants so callers can handle them precisely.
+
+use thiserror::Error;
+
+// --- Build-Time Error ---
+
+/// Errors that can occur while building a [`crate::PubkyHttpClient`].
+#[derive(Debug, Error)]
+pub enum BuildError {
+    /// Failed to construct the underlying pkarr client (DHT/relay configuration).
+    #[error("Failed to build the Pkarr client: {0}")]
+    Pkarr(#[from] pkarr::errors::BuildError),
+
+    /// Failed to build the HTTP client (reqwest configuration).
+    #[error("Failed to build the HTTP client: {0}")]
+    Http(#[from] reqwest::Error),
+}
+
+// --- The Main Operational Error Enum ---
+
+/// The crate’s top-level error type.
+///
+/// It groups failures into high-level categories:
+/// - [`Error::Request`] — HTTP transport/server/validation issues
+/// - [`Error::Pkarr`] — PKARR/DHT resolution and publishing issues
+/// - [`Error::Parse`] — URL parsing failures
+/// - [`Error::Authentication`] — auth/session/token/crypto issues
+/// - [`Error::Build`] — construction of the client failed
+///
+/// Most lower-level errors automatically convert into this enum via `From`.
+#[derive(Debug, Error)]
+pub enum Error {
+    /// HTTP request/response failed (transport, server, validation, JSON).
+    #[error("Request failed: {0}")]
+    Request(#[from] RequestError),
+
+    /// PKARR/DHT operation failed.
+    #[error("Pkarr operation failed: {0}")]
+    Pkarr(#[from] PkarrError),
+
+    /// URL parsing failed while preparing a request or path.
+    #[error("Failed to parse URL: {0}")]
+    Parse(#[from] url::ParseError),
+
+    /// Authentication flow failed (token, session, crypto, or validation).
+    #[error("Authentication error: {0}")]
+    Authentication(#[from] AuthError),
+
+    /// Building the client failed (reqwest or pkarr configuration).
+    #[error("Client build failed: {0}")]
+    Build(#[from] BuildError),
+}
+
+// --- Pkarr Operational Errors ---
+
+/// Runtime errors produced while resolving or publishing PKARR records.
+#[derive(Debug, Error)]
+pub enum PkarrError {
+    /// Low-level DNS encoding/decoding failure.
+    #[error("DNS operation failed: {0}")]
+    Dns(#[from] pkarr::dns::SimpleDnsError),
+
+    /// Failed to construct or sign a PKARR DNS packet locally.
+    #[error("Failed to build or sign DNS packet: {0}")]
+    SignPacket(#[from] pkarr::errors::SignedPacketBuildError),
+
+    /// DHT publish operation failed (often transient).
+    #[error("Failed to publish record to the DHT: {0}")]
+    Publish(#[from] pkarr::errors::PublishError),
+
+    /// DHT query (lookup) failed (often transient).
+    #[error("Failed to query the DHT: {0}")]
+    Query(#[from] pkarr::errors::QueryError),
+
+    /// Record was present but malformed or missing required fields.
+    #[error("Pkarr record is malformed or missing required data: {0}")]
+    InvalidRecord(String),
+}
+
+impl PkarrError {
+    /// Returns true if the error is from a DHT operation that might succeed by simply retrying.
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, PkarrError::Publish(_) | PkarrError::Query(_))
+    }
+}
+
+// --- Consolidated Authentication Error ---
+
+/// Errors originating from authentication flows (sessions, tokens, crypto).
+#[derive(Debug, Error)]
+pub enum AuthError {
+    /// SessionInfo (de)serialization or validation failed.
+    #[error("SessionInfo handling failed: {0}")]
+    SessionInfo(#[from] pubky_common::session::Error),
+
+    /// Auth token failed signature verification or was otherwise invalid.
+    #[error("Token verification failed: {0}")]
+    VerificationFailed(#[from] pubky_common::auth::Error),
+
+    /// Failure to decrypt/verify an encrypted auth payload.
+    #[error("Cryptography error: {0}")]
+    DecryptError(#[from] pubky_common::crypto::DecryptError),
+
+    /// Caller or input validation error (e.g., missing parameter, bad URL).
+    #[error("General authentication error: {0}")]
+    Validation(String),
+
+    /// The auth/relay request expired or was canceled before completion.
+    #[error("The provided auth request has expired or was cancelled.")]
+    RequestExpired,
+}
+
+// --- Consolidated Request Error ---
+
+/// Transport and server-side HTTP errors.
+#[derive(Debug, Error)]
+pub enum RequestError {
+    /// Network/protocol failure from reqwest (timeouts, TLS, I/O, etc.).
+    #[error("HTTP transport error: {0}")]
+    Transport(#[from] reqwest::Error),
+
+    /// The server returned a non-success status. Includes status and body message.
+    #[error("Server responded with an error: {status} - {message}")]
+    Server {
+        /// The HTTP status code returned by the server.
+        status: reqwest::StatusCode,
+        /// Short description or the server response body captured for context.
+        message: String,
+    },
+
+    /// Caller supplied an invalid URL/path/argument for this API.
+    #[error("Invalid request/URI: {message}")]
+    Validation {
+        /// Human-readable explanation of what was invalid.
+        message: String,
+    },
+
+    /// JSON decoding failed when parsing a server response.
+    #[error("JSON decode error: {message}")]
+    DecodeJson {
+        /// Error message from the JSON deserializer (with context if available).
+        message: String,
+    },
+}
+
+/// A specialized `Result` type for `pubky` operations.
+pub type Result<T> = std::result::Result<T, Error>;
+
+// Ergonomic "Staircase" From Implementations ---
+// A macro to reduce boilerplate for converting base errors into the top-level Error.
+macro_rules! impl_from_for_error {
+    ($from_type:ty, $to_variant:path) => {
+        impl From<$from_type> for Error {
+            fn from(err: $from_type) -> Self {
+                $to_variant(err.into())
+            }
+        }
+    };
+}
+
+// Pkarr Errors
+impl_from_for_error!(pkarr::errors::SignedPacketBuildError, Error::Pkarr);
+impl_from_for_error!(pkarr::errors::PublishError, Error::Pkarr);
+impl_from_for_error!(pkarr::errors::QueryError, Error::Pkarr);
+impl_from_for_error!(pkarr::dns::SimpleDnsError, Error::Pkarr);
+
+// Auth Errors
+impl_from_for_error!(pubky_common::session::Error, Error::Authentication);
+impl_from_for_error!(pubky_common::auth::Error, Error::Authentication);
+impl_from_for_error!(pubky_common::crypto::DecryptError, Error::Authentication);
+
+// Request Errors
+impl_from_for_error!(reqwest::Error, Error::Request);
+```
+./src/macros.rs
+```
+/// Cross-platform `debug!` logging macro.
+///
+/// On native (non-WASM) builds it forwards to [`tracing::debug!`].  
+/// In WASM builds (e.g. browsers) it forwards to `log::debug!`.  
+/// In tests it prints to `stdout`.
+///
+/// Useful when writing code that runs on both native and WASM without
+/// pulling platform-specific logging crates into your app.
+///
+/// # Examples
+/// ```
+/// use pubky::cross_debug;
+/// # fn main() {
+/// cross_debug!("listing {} entries", 42);
+/// # }
+/// ```
+#[macro_export]
+macro_rules! cross_debug {
+    ($($arg:tt)*) => {
+        #[cfg(all(not(test), target_arch = "wasm32"))]
+        log::debug!($($arg)*);
+        #[cfg(all(not(test), not(target_arch = "wasm32")))]
+        tracing::debug!($($arg)*);
+        #[cfg(test)]
+        println!($($arg)*);
+    };
+}
+```
+./src/lib.rs
+```
+#![doc = include_str!("../README.md")]
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(any(), deny(clippy::unwrap_used))]
+
+mod pubky;
+
+mod actors;
+mod client;
+pub mod errors;
+mod macros;
+
+mod util;
+
+pub mod prelude;
+
+// --- PUBLIC API EXPORTS ---
+// SDK facade
+pub use pubky::Pubky;
+// Transport
+pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
+// High level actors
+pub use actors::Pkdns;
+pub use actors::PubkyAuthFlow;
+pub use actors::PubkySession;
+pub use actors::PubkySigner;
+pub use actors::{PublicStorage, SessionStorage};
+
+// Error and global client
+pub use errors::{BuildError, Error, Result};
+
+// Export common types and constants
+pub use crate::actors::storage::{
+    list::ListBuilder,
+    resource::{IntoPubkyResource, IntoResourcePath},
+    resource::{PubkyResource, ResourcePath},
+    stats::ResourceStats,
+};
+pub use actors::auth_flow::DEFAULT_HTTP_RELAY;
+pub use actors::pkdns::DEFAULT_STALE_AFTER;
+pub use pkarr::DEFAULT_RELAYS;
+
+// Re-exports
+pub use pkarr::{Keypair, PublicKey};
+pub use pubky_common::{
+    auth::AuthToken,
+    capabilities::{Capabilities, Capability},
+    recovery_file,
+};
+pub use reqwest::{Method, StatusCode};
+```
+./README.md
+```
+# Pubky SDK (Rust)
+
+Ergonomic building blocks for Pubky apps: one façade (`Pubky`) plus focused actors for sessions, storage API, signer helpers, and QR auth flow for keyless apps.
+
+Rust implementation of [Pubky](https://github.com/pubky/pubky-core) SDK.
+
+## Install
+
+```toml
+# Cargo.toml
+[dependencies]
+pubky = "0.x"            # this crate
+# Optional helpers used in examples:
+# pubky-testnet = "0.x"
+```
+
+## Quick start
+
+```rust no_run
+use pubky::prelude::*;
+
+# async fn run() -> pubky::Result<()> {
+
+let pubky = Pubky::new()?; // or Pubky::testnet() for local testnet.
+
+// 1) Create a new random key user and bound to a Signer
+let keypair = Keypair::random();
+let signer = pubky.signer(keypair);
+
+// 2) Sign up on a homeserver (identified by its public key)
+let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
+let session = signer.signup(&homeserver, None).await?;
+
+// 3) Read/Write as the signed-in user
+session.storage().put("/pub/my.app/hello.txt", "hello").await?;
+let body = session.storage().get("/pub/my.app/hello.txt").await?.text().await?;
+assert_eq!(&body, "hello");
+
+// 4) Public read of another user’s file
+let txt = pubky.public_storage()
+  .get(format!("{}/pub/my.app/hello.txt", session.info().public_key()))
+  .await?
+  .text().await?;
+assert_eq!(txt, "hello");
+
+// 5) Keyless app flow (QR/deeplink)
+let caps = Capabilities::builder().write("/pub/acme.app/").finish();
+let flow = pubky.start_auth_flow(&caps)?;
+println!("Scan to sign in: {}", flow.authorization_url());
+let app_session = flow.await_approval().await?;
+
+// 6) Optional (advanced): publish or resolve PKDNS (_pubky) records
+signer.pkdns().publish_homeserver_if_stale(None).await?;
+let resolved = signer.pkdns().get_homeserver().await;
+println!("Your current homeserver: {:?}", resolved);
+
+# Ok(()) }
+```
+
+## Mental model
+
+- `Pubky` - façade, always start here! Owns the transport and constructs actors.
+- `PubkySigner` - local key holder. Can `signup`, `signin`, approve QR auth, publish PKDNS.
+- `PubkySession` - authenticated “as me” handle. Exposes session-scoped storage.
+- `PublicStorage` - unauthenticated reads of others’ public data.
+- `Pkdns` - resolve/publish `_pubky` records.
+
+#### Transport:
+
+- **`PubkyHttpClient`** stateless transport: handles requests to pubky public-key hosts.
+
+## Examples
+
+### Storage API (session & public)
+
+Session (authenticated):
+
+```rust no_run
+use pubky::{Pubky, Keypair};
+
+# async fn run() -> pubky::Result<()> {
+
+let pubky = Pubky::new()?;
+let session = pubky.signer(Keypair::random()).signin().await?;
+
+let storage = session.storage();
+storage.put("/pub/my.app/data.txt", "hi").await?;
+let text = storage.get("/pub/my.app/data.txt").await?.text().await?;
+
+# Ok(()) }
+```
+
+Public (read-only):
+
+```rust no_run
+use pubky::{Pubky, PublicKey};
+
+# async fn run(user_id: PublicKey) -> pubky::Result<()> {
+
+let pubky = Pubky::new()?;
+let public = pubky.public_storage();
+
+let file = public.get(format!("{user_id}/pub/acme.app/file.bin")).await?.bytes().await?;
+
+# Ok(()) }
+```
+
+See the [Public Storage example](https://github.com/pubky/pubky-core/tree/main/examples/rust/4-storage).
+
+Path rules:
+
+- Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
+- Public storage uses **addressed** form `<user>/pub/app/file.txt` (or `pubky://<user>/...`).
+
+**Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
+
+## PKDNS (`_pubky`)
+
+Resolve another user’s homeserver, or publish your own via the signer.
+
+```rust no_run
+use pubky::{Pubky, PublicKey, Keypair};
+# async fn run(other: PublicKey, new_homeserver_id: PublicKey) -> pubky::Result<()> {
+let pubky = Pubky::new()?;
+
+// read-only resolver
+let pkdns = pubky.pkdns();
+let host = pkdns.get_homeserver_of(&other).await;
+
+// publish with your key
+let signer = pubky.signer(Keypair::random());
+signer.pkdns().publish_homeserver_if_stale(None).await?;
+// or force republish (e.g. homeserver migration)
+signer.pkdns().publish_homeserver_force(Some(&new_homeserver_id)).await?;
+
+# Ok(()) }
+```
+
+### Pubky QR auth for third-party and keyless apps
+
+Request an authorization URL and await approval.
+
+**Typical usage:**
+
+1. Start an auth flow with `pubky.start_auth_flow(&caps)` (or use the `PubkyAuthFlow::builder()` to set a custom relay).
+2. Show `authorization_url()` (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) — [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756) / [Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
+3. Await `await_approval()` to obtain a session-bound `PubkySession`.
+
+```rust
+# use pubky::{Pubky, Capabilities, Keypair};
+# async fn auth() -> pubky::Result<()> {
+
+let pubky = Pubky::new()?;
+// Read/Write capabilities for acme.app route
+let caps = Capabilities::builder().read_write("pub/acme.app/").finish();
+
+// Start the flow using the default relay (see “Relay & reliability” below)
+let flow = pubky.start_auth_flow(&caps)?;
+println!("Scan to sign in: {}", flow.authorization_url());
+
+// On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;
+# pubky.signer(Keypair::random()).approve_auth(flow.authorization_url()).await?;
+
+let session = flow.await_approval().await?;
+
+# Ok(()) }
+```
+
+See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-core/tree/main/examples/rust/3-auth_flow).
+
+#### Relay & reliability
+
+- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- For production and larger apps, run **your own relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
+  The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
+
+**Custom relay example**
+
+```rust
+# use pubky::{PubkyAuthFlow, Capabilities};
+# async fn custom_relay() -> pubky::Result<()> {
+let caps = Capabilities::builder().read("pub/acme.app/").finish();
+let auth_flow = PubkyAuthFlow::builder(&caps)
+    .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
+    .start()?;
+# Ok(()) }
+```
+
+## Features
+
+- `json`: enable `Storage` helpers (`.get_json()` / `.put_json()`) and serde on certain types.
+
+```toml
+# Cargo.toml
+[dependencies]
+pubky = { version = "x.y.z", features = ["json"] }
+```
+
+## Testing locally
+
+Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
+
+```rust
+# use pubky_testnet::{EphemeralTestnet, pubky::Keypair};
+# async fn test() -> pubky_testnet::pubky::Result<()> {
+
+let testnet = EphemeralTestnet::start().await.unwrap();
+let homeserver  = testnet.homeserver();
+let pubky = testnet.sdk()?;
+
+let signer = pubky.signer(Keypair::random());
+let session  = signer.signup(&homeserver.public_key(), None).await?;
+
+session.storage().put("/pub/my.app/hello.txt", "hi").await?;
+let s = session.storage().get("/pub/my.app/hello.txt").await?.text().await?;
+assert_eq!(s, "hi");
+
+# Ok(()) }
+```
+
+## Keypair and Session persistence
+
+Encrypted Keypair secrets (`.pkarr`):
+
+```rust no_run
+use pubky::Pubky;
+# fn run() -> pubky::Result<()> {
+let pubky = Pubky::new()?;
+let signer = pubky.signer_from_recovery_file("/path/to/alice.pkarr", "passphrase")?;
+# Ok(()) }
+```
+
+Session secrets (`.sess`):
+
+```rust
+use pubky::{Pubky, Keypair};
+# async fn run() -> pubky::Result<()> {
+let pubky = Pubky::new()?;
+let keypair = Keypair::random();
+let session = pubky.signer(keypair).signin().await?;
+session.write_secret_file("alice.sess").unwrap();
+let restored = pubky.session_from_file("alice.sess").await?;
+
+# let _ = std::fs::remove_file("alice.sess");
+# Ok(()) }
+```
+
+> Security: the `.sess` secret is a **bearer token**. Anyone holding it can act as the user within the granted capabilities. Treat it like a password.
+
+## Example code
+
+Check more [examples](https://github.com/pubky/pubky-core/tree/main/examples) using the Pubky SDK.
+
+## JS bindings
+
+Find a wrapper of this crate using `wasm_bindgen` in [npmjs.com](https://www.npmjs.com/package/@synonymdev/pubky). Or build on `pubky-sdk` codebase under `pubky-sdk/bindings/js`.
+
+---
+
+**License:** MIT
+**Relay:** [https://httprelay.io](https://httprelay.io) (open source; run your own for production)
+```
+./Cargo.toml
+```
+[package]
+name = "pubky"
+description = "Pubky SDK"
+version = "0.6.0-rc.4"
+edition = "2024"
+authors = [
+    "SeverinAlexB <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+    "Nuh <nuh@nuh.dev>",
+]
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
+categories = [
+    "network-programming",
+    "cryptography",
+    "web-programming",
+    "authentication",
+]
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+json = ["dep:serde", "dep:serde_json", "reqwest/json"]
+
+[dependencies]
+pubky-common = { path = "../pubky-common", version = "0.6.0-rc.4" }
+thiserror = "2.0.11"
+url = "2.5.4"
+bytes = "^1.10.0"
+base64 = "0.22.1"
+pkarr = { workspace = true, features = ["full"] }
+cookie = "0.18.1"
+flume = { version = "0.11.1", default-features = false, features = ["async"] }
+futures-util = "0.3.31"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+arc-swap = "1.7.1"
+httpdate = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12.12", default-features = false, features = [
+    "cookies",
+    "rustls-tls",
+    "json",
+] }
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "0.12.12", default-features = false, features = ["json"] }
+log = "0.4.25"
+wasm-bindgen-futures = "0.4.50"
+futures-lite = { version = "2.6.0", default-features = false }
+
+[dev-dependencies]
+anyhow = "1.0.95"
+futures-lite = "2.6.0"
+tracing-subscriber = "0.3.19"
+mainline = { version = "5.4.0" }
+pubky-testnet = { path = "../pubky-testnet" } # used in docstring tests
+
+[package.metadata.docs.rs]
+all-features = true
+```

@@ -37,7 +37,7 @@ impl AuthFlow {
     /// A running auth flow. Call `authorizationUrl()` to show the deep link,
     /// then `awaitApproval()` to receive a `Session`.
     /// @throws {PubkyJsError}
-    /// - `{ name: "InvalidInput", mesage: string }` if any capability entry is invalid
+    /// - `{ name: "InvalidInput", message: string }` if any capability entry is invalid
     ///     or for an invalid relay URL.
     /// @example
     /// const flow = AuthFlow.start("/pub/my.app/:rw,/pub/pubky.app/:w");
