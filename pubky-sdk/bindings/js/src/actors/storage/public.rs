@@ -97,7 +97,7 @@ impl PublicStorage {
     /// Get metadata for an address
     ///
     /// @param {string} absPath Absolute path under your user (starts with `/`).
-    /// @returns {Promise<ResourceStats|null>} `null` if the resource does not exist.
+    /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
     pub async fn stats(&self, address: String) -> JsResult<Option<ResourceStats>> {

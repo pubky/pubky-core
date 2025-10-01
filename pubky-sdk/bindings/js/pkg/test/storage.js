@@ -516,8 +516,8 @@ test("stats & exists: JSON (session + public)", async (t) => {
   // 4) stats(): session & public (should both be non-null)
   const s1 = await session.storage().stats(path);
   const p1 = await sdk.publicStorage().stats(addr);
-  t.ok(s1, "session.stats() not null");
-  t.ok(p1, "public.stats() not null");
+  t.ok(s1, "session.stats() not undefined");
+  t.ok(p1, "public.stats() not undefined");
 
   // 5) contentLength equals actual stored bytes length
   {
@@ -530,7 +530,7 @@ test("stats & exists: JSON (session + public)", async (t) => {
   }
 
   // 6) contentType should identify JSON (exact value may vary by server)
-  if (p1.contentType != null) {
+  if (p1.contentType != undefined) {
     t.ok(
       /json/i.test(p1.contentType),
       `contentType hints JSON (got: ${p1.contentType})`,
@@ -563,7 +563,7 @@ test("stats & exists: JSON (session + public)", async (t) => {
 /**
  * stats()/exists() for missing content.
  * - Ensure exists() is false.
- * - stats() returns null (both public and session).
+ * - stats() returns undefined (both public and session).
  */
 test("stats & exists: missing resource", async (t) => {
   const sdk = Pubky.testnet();
@@ -587,11 +587,15 @@ test("stats & exists: missing resource", async (t) => {
     "public.exists() -> false",
   );
 
-  t.equal(await session.storage().stats(path), null, "session.stats() -> null");
+  t.equal(
+    await session.storage().stats(path),
+    undefined,
+    "session.stats() -> undefined",
+  );
   t.equal(
     await sdk.publicStorage().stats(addr),
-    null,
-    "public.stats() -> null",
+    undefined,
+    "public.stats() -> undefined",
   );
 
   t.end();
