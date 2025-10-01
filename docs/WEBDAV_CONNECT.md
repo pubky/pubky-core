@@ -4,7 +4,7 @@ There is an extensive list of [clients](https://github.com/fstanis/awesome-webda
 
 ## Connection string
 In order to connect to the their homeserver's user's directory user should use server url `http://<homeserver pubky>` with remote path `/dav/<user public key>/pub/`
-The full connection string should be `http://<homeserver pubky>/dav/<user pubky>/pub/<path>`
+The full connection string should be `http(s)://<homeserver url>/dav/<user pubky>/pub/<path>`
 
 ## Authentication
 While WebDAV supports multiple authenication schemes. The most common schemes supported by various clients are `Basic` and `Client Certificate`.
@@ -21,10 +21,11 @@ In order to access your pubky login to [pubky.app](https://pubky.app), go to you
 In order to access session secret extract it from your session in [pubky.app](https://pubky.app). While logged in, open browsers developer console:
 1. Go to `"Application"` > `"Storage"` > `"Cookies"`
 2. Select `https://pubky.app` and copy `"Value"` - alphanumeric uppercase string.
+2. Select `https://pubky.app`. Choose the cookie with your users public key as key. Copy `"Value"` - alphanumeric uppercase string.
 
 ## Limitations:
 - No support for creation directories. Instead they are created automatically by path. For example, to created a file `/pub/test/foo/bar.txt` user, instead of creating directories `test/` and `test/foo` and then creating file `bar.txt` can simply create `/test/foo/bar.txt` right away.
-- Locks necessary for collaborative editing of file are not supported until implementation of access controls necessary for delegation of write permissions for other users are implmented on the homeserver.
+- Locks necessary for collaborative editing of file are not supported.
 
 ## List of apps
 https://davix.web.cern.ch/davix/docs/devel/ - cross platform
