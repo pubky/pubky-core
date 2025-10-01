@@ -1,12 +1,8 @@
 # Pubky
 
-WASM/JS client for the [Pubky](https://github.com/pubky/pubky-core) SDK.
+JS/WASM SDK for [Pubky](https://github.com/pubky/pubky-core).
 
-- Works in browsers and Node 20+.
-- First-class Signer/Session model.
-- Public & session-scoped storage helpers.
-- PKDNS (Pkarr) resolve/publish for homeservers.
-- Simple `AuthFlow` for pubkyauth.
+Works in browsers and Node 20+.
 
 ## Install
 
@@ -51,7 +47,7 @@ Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/m
 
 ## API Overview
 
-Façade `Pubky` to quickly get any flow started:
+Use `new Pubky()` to quickly get any flow started:
 
 ```js
 import { Pubky, Keypair } from "@synonymdev/pubky";
@@ -63,7 +59,7 @@ const pubky = new Pubky();
 // Omit the argument for "localhost".
 const pubkyLocal = Pubky.testnet("localhost");
 
-// Signers (bind your keypair to the façade)
+// Signer (bind your keypair to a new Signer actor)
 const signer = pubky.signer(Keypair.random());
 
 // Public storage (read-only)

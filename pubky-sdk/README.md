@@ -1,4 +1,4 @@
-# Pubky SDK (Rust)
+# Pubky SDK
 
 Ergonomic building blocks for Pubky apps: one façade (`Pubky`) plus focused actors for sessions, storage API, signer helpers, and QR auth flow for keyless apps.
 
