@@ -2655,9 +2655,9 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4894f84699243d702526e0f3415d6436377dc3194c69e20da3d872374458efdc"
+checksum = "721afc0e3229ce2aa5db1765fa2e8deb9497fd8f3bd6c0f47d08a37161638402"
 dependencies = [
  "anyhow",
  "axum",
