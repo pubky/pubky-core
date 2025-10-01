@@ -20,7 +20,7 @@ impl PublicStorage {
 
     /// List a directory. Results are `pubky://…` absolute URLs.
     ///
-    /// @param {string} dirAddr Addressed directory (must end with `/`).
+    /// @param {string} address Addressed directory (must end with `/`).
     /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
     /// @param {boolean=} reverse Default `false`. When `true`, newest/lexicographically-last first.
     /// @param {number=} limit Optional result limit.
@@ -55,7 +55,7 @@ impl PublicStorage {
 
     /// Fetch bytes from an addressed path.
     ///
-    /// @param {string} addr
+    /// @param {string} address
     /// @returns {Promise<Uint8Array>}
     #[wasm_bindgen(js_name = "getBytes")]
     pub async fn get_bytes(&self, address: &str) -> JsResult<Uint8Array> {
@@ -66,7 +66,7 @@ impl PublicStorage {
 
     /// Fetch text from an addressed path as UTF-8 text.
     ///
-    /// @param {string} addr
+    /// @param {string} address
     /// @returns {Promise<string>}
     #[wasm_bindgen(js_name = "getText")]
     pub async fn get_text(&self, address: &str) -> JsResult<String> {
@@ -76,18 +76,18 @@ impl PublicStorage {
 
     /// Fetch JSON from an addressed path.
     ///
-    /// @param {string} addr `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
+    /// @param {string} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
     /// @returns {Promise<any>}
     #[wasm_bindgen(js_name = "getJson")]
-    pub async fn get_json(&self, addr: &str) -> JsResult<JsValue> {
-        let v: serde_json::Value = self.0.get_json(addr).await?;
+    pub async fn get_json(&self, address: &str) -> JsResult<JsValue> {
+        let v: serde_json::Value = self.0.get_json(address).await?;
         let ser = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
         Ok(v.serialize(&ser)?)
     }
 
     /// Check if a path exists.
     ///
-    /// @param {string} addr
+    /// @param {string} address
     /// @returns {Promise<boolean>}
     #[wasm_bindgen]
     pub async fn exists(&self, address: &str) -> JsResult<bool> {
@@ -96,12 +96,12 @@ impl PublicStorage {
 
     /// Get metadata for an address
     ///
-    /// @param {string} absPath Absolute path under your user (starts with `/`).
+    /// @param {string} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
     /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
-    pub async fn stats(&self, address: String) -> JsResult<Option<ResourceStats>> {
-        match self.0.stats(&address).await? {
+    pub async fn stats(&self, address: &str) -> JsResult<Option<ResourceStats>> {
+        match self.0.stats(address).await? {
             Some(stats) => Ok(Some(ResourceStats::from(stats))),
             None => Ok(None),
         }

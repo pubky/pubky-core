@@ -54,7 +54,7 @@ pub enum PubkyErrorName {
 ///   await client.signup(...);
 /// } catch (e) {
 ///   const error = e as PubkyJsError;
-///   if (error.name === 'RequestError' && error.data?.statusCode === 404) {
+///   if (error.name === 'RequestError' && error.statusCode === 404) {
 ///     // Handle not found...
 ///   }
 /// }

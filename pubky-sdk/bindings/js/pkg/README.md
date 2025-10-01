@@ -30,7 +30,7 @@ const signer = pubky.signer(keypair);
 
 // 2) Sign up at a homeserver (optionally with an invite)
 const homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
 const signupToken = "<your-invite-code-or-null>";
 const session = await signer.signup(homeserver, signupToken);
@@ -44,6 +44,8 @@ const userPk = session.info().publicKey();
 const addr = `${userPk.z32()}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage().getJson(addr); // -> { hello: "world" }
 ```
+
+Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
 
 ## API Overview
 
@@ -104,7 +106,7 @@ const parsed = PublicKey.from(pubkey.z32());
 const recoveryFile = keypair.createRecoveryFile("strong passphrase");
 
 // Decrypt back into a Keypair
-const restored = Keypair.fromRecoveryfile(recoveryFile, "strong passphrase");
+const restored = Keypair.fromRecoveryFile(recoveryFile, "strong passphrase");
 
 // Build a Signer from a recovered key
 const signer = pubky.signer(restored);
@@ -224,6 +226,13 @@ await s.list("/pub/example.com/", null, false, 100, false);
 // Delete
 await s.delete("/pub/example.com/data.json");
 ```
+
+Path rules:
+
+- Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
+- Public storage uses **addressed** form `<user>/pub/app/file.txt` (or `pubky://<user>/...`).
+
+**Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
 
 ---
 

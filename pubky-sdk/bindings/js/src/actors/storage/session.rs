@@ -14,7 +14,7 @@ pub struct SessionStorage(pub(crate) pubky::SessionStorage);
 impl SessionStorage {
     /// List a directory (absolute session path). Returns `pubky://…` URLs.
     ///
-    /// @param {string} dirPath Must end with `/`.
+    /// @param {string} path Must end with `/`.
     /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
     /// @param {boolean=} reverse Default `false`.
     /// @param {number=} limit Optional result limit.
@@ -89,12 +89,12 @@ impl SessionStorage {
 
     /// Get metadata for an absolute, session-scoped path (e.g. `"/pub/app/file.json"`).
     ///
-    /// @param {string} absPath Absolute path under your user (starts with `/`).
+    /// @param {string} path Absolute path under your user (starts with `/`).
     /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
-    pub async fn stats(&self, abs_path: String) -> JsResult<Option<ResourceStats>> {
-        match self.0.stats(&abs_path).await? {
+    pub async fn stats(&self, path: &str) -> JsResult<Option<ResourceStats>> {
+        match self.0.stats(path).await? {
             Some(stats) => Ok(Some(ResourceStats::from(stats))),
             None => Ok(None),
         }

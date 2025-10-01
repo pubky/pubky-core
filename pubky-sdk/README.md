@@ -188,7 +188,13 @@ let auth_flow = PubkyAuthFlow::builder(&caps)
 
 ## Features
 
-- `json` enable `storage::json` helpers (`get_json` / `put_json`) and serde on certain types.
+- `json`: enable `Storage` helpers (`.get_json()` / `.put_json()`) and serde on certain types.
+
+```toml
+# Cargo.toml
+[dependencies]
+pubky = { version = "x.y.z", features = ["json"] }
+```
 
 ## Testing locally
 
