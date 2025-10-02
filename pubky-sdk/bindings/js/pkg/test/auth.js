@@ -13,27 +13,26 @@ test("Auth: 3rd party signin", async (t) => {
   const sdk = Pubky.testnet();
 
   const signer = sdk.signer(Keypair.random());
-  const pubky = signer.publicKey().z32();
+  const pubky = signer.publicKey.z32();
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
   const flow = sdk.startAuthFlow(capabilities, TESTNET_HTTP_RELAY);
-  const authUrl = flow.authorizationUrl();
 
   {
     const signupToken = await createSignupToken();
     await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-    await signer.approveAuthRequest(authUrl);
+    await signer.approveAuthRequest(flow.authorizationUrl);
   }
 
   const session = await flow.awaitApproval();
 
   t.equal(
-    session.info().publicKey().z32(),
+    session.info.publicKey.z32(),
     pubky,
     "session belongs to expected user",
   );
   t.deepEqual(
-    session.info().capabilities(),
+    session.info.capabilities,
     capabilities.split(","),
     "session capabilities match",
   );
@@ -63,7 +62,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   // 2) Valid entry with unordered actions -> normalized in URL (wr -> rw)
   {
     const flow = sdk.startAuthFlow("/pub/example/:wr", TESTNET_HTTP_RELAY);
-    const url = new URL(flow.authorizationUrl());
+    const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(
       caps,
@@ -75,7 +74,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   // 3) Empty string -> allowed; caps param remains empty
   {
     const flow = sdk.startAuthFlow("", TESTNET_HTTP_RELAY);
-    const url = new URL(flow.authorizationUrl());
+    const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(caps, "", "empty input allowed (no scopes)");
   }

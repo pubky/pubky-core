@@ -16,7 +16,7 @@ impl Session {
     /// Retrieve immutable info about this session (user & capabilities).
     ///
     /// @returns {SessionInfo}
-    #[wasm_bindgen]
+    #[wasm_bindgen(getter)]
     pub fn info(&self) -> SessionInfo {
         SessionInfo(self.0.info().clone())
     }
@@ -24,7 +24,7 @@ impl Session {
     /// Access the session-scoped storage API (read/write).
     ///
     /// @returns {SessionStorage}
-    #[wasm_bindgen]
+    #[wasm_bindgen(getter)]
     pub fn storage(&self) -> SessionStorage {
         SessionStorage(pubky::SessionStorage::new(&self.0))
     }

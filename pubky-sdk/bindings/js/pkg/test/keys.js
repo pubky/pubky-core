@@ -10,9 +10,7 @@ test("generate keys from a seed", async (t) => {
 
   const keypair = Keypair.fromSecretKey(secretkey);
 
-  const publicKey = keypair.publicKey();
-
-  t.is(publicKey.z32(), "gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o");
+  t.is(keypair.publicKey.z32(), "gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o");
 });
 
 test("fromSecretKey error", async (t) => {

@@ -14,6 +14,7 @@ Examples:
     -H "Accept: application/json" \\
     -d '{"msg":"hello"}' \\
     POST https://example.com/data.json
+  npm run request -- GET pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 `;
 
 const a = args(process.argv.slice(2), {
@@ -28,7 +29,6 @@ if (!method || !url) {
 }
 
 const pubky = a.testnet ? Pubky.testnet() : new Pubky();
-const client = pubky.client();
 
 const headers = {};
 for (const h of Array.isArray(a.header)
@@ -39,7 +39,7 @@ for (const h of Array.isArray(a.header)
   headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim();
 }
 
-const res = await client.fetch(url, {
+const res = await pubky.client.fetch(url, {
   method,
   headers,
   body: a.data ?? undefined,

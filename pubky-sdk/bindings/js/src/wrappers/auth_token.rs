@@ -105,10 +105,9 @@ impl AuthToken {
     ///
     /// Use `.z32()` on the returned `PublicKey` to get the string form.
     ///
-    /// ```js
-    /// const who = token.publicKey().z32();
-    /// ```
-    #[wasm_bindgen(js_name = "publicKey")]
+    /// @example
+    /// const who = sessionInfo.publicKey.z32();
+    #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         // `pubky::PublicKey` implements `Clone`
         PublicKey(self.0.public_key().clone())
@@ -122,7 +121,7 @@ impl AuthToken {
     /// Returns: `string[]`, where each item is the canonical entry `"<scope>:<actions>"`.
     ///
     /// Example entry: `"/pub/my.app/:rw"`
-    #[wasm_bindgen]
+    #[wasm_bindgen(getter)]
     pub fn capabilities(&self) -> Array {
         let arr = Array::new();
         for cap in self.0.capabilities().iter() {

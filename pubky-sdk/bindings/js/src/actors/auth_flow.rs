@@ -77,7 +77,7 @@ impl AuthFlow {
     ///
     /// @example
     /// renderQr(flow.authorizationUrl());
-    #[wasm_bindgen(js_name = "authorizationUrl")]
+    #[wasm_bindgen(js_name = "authorizationUrl", getter)]
     pub fn authorization_url(&self) -> String {
         self.0.authorization_url().as_str().to_string()
     }

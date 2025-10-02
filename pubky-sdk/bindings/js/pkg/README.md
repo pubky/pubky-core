@@ -35,16 +35,16 @@ const session = await signer.signup(homeserver, signupToken);
 
 // 3) Write a public JSON file (session-scoped storage uses cookies automatically)
 const path = "/pub/example.com/hello.json";
-await session.storage().putJson(path, { hello: "world" });
+await session.storage.putJson(path, { hello: "world" });
 
 // 4) Read it publicly (no auth needed)
-const userPk = session.info().publicKey();
-const addr = `${userPk.z32()}/pub/example.com/hello.json`;
-const json = await pubky.publicStorage().getJson(addr); // -> { hello: "world" }
+const userPk = session.info.publicKey.z32();
+const addr = `${userPk}/pub/example.com/hello.json`;
+const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
 const authFlow = pubky.startAuthFlow("/pub/my.app/:rw"); // require permissions to read and write into `my.app`
-renderQr(flow.authorizationUrl()); // show to user
+renderQr(flow.authorizationUrl); // show to user
 const session = await authFlow.awaitApproval();
 ```
 
@@ -71,13 +71,13 @@ const signer = pubky.signer(Keypair.random());
 const authFlow = pubky.startAuthFlow("/pub/my.app/:rw");
 
 // Public storage (read-only)
-const publicStorage = pubky.publicStorage();
+const publicStorage = pubky.publicStorage;
 
 // PKDNS resolver (read-only)
-const pkdns = pubky.pkdns();
+const pkdns = pubky.pkdns;
 
 // Optional: raw HTTP client for advanced use
-const client = pubky.client();
+const client = pubky.client;
 ```
 
 ### Client (HTTP bridge)
@@ -85,7 +85,7 @@ const client = pubky.client();
 ```js
 import { Client } from "@synonymdev/pubky";
 
-const client = new Client(); // or: pubky.client(); instead of constructing a client manually
+const client = new Client(); // or: pubky.client.fetch(); instead of constructing a client manually
 
 // Works with both pubky:// and http(s)://
 const res = await client.fetch("pubky://<pubky>/pub/example.com/file.txt");
@@ -99,7 +99,7 @@ const res = await client.fetch("pubky://<pubky>/pub/example.com/file.txt");
 import { Keypair, PublicKey } from "@synonymdev/pubky";
 
 const keypair = Keypair.random();
-const pubkey = keypair.publicKey();
+const pubkey = keypair.publicKey;
 
 // z-base-32 roundtrip
 const parsed = PublicKey.from(pubkey.z32());
@@ -146,11 +146,10 @@ await session.signout(); // invalidates server session
 **Session details**
 
 ```js
-const info = session.info();
-const userPk = info.publicKey(); // -> PublicKey
-const caps = info.capabilities(); // -> string[]
+const userPk = session.info.publicKey.z32(); // -> PublicKey as z32 string
+const caps = session.info.capabilities; // -> string[] permissions and paths
 
-const storage = session.storage(); // -> SessionStorage (absolute paths)
+const storage = session.storage; // -> This User's storage API (absolute paths)
 ```
 
 **Approve a pubkyauth request URL**
@@ -178,7 +177,7 @@ const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this
 // Start the auth polling
 const flow = pubky.startAuthFlow(caps, relay);
 
-renderQr(flow.authorizationUrl()); // show to user
+renderQr(flow.authorizationUrl); // show to user
 
 // Blocks until the signer approves; returns a ready Session
 const session = await flow.awaitApproval();
@@ -197,7 +196,7 @@ const session = await flow.awaitApproval();
 #### PublicStorage (read-only)
 
 ```js
-const pub = pubky.publicStorage();
+const pub = pubky.publicStorage;
 
 // Reads
 await pub.getJson(`${userPk.z32()}/pub/example.com/data.json`);
@@ -216,7 +215,7 @@ await pub.list(`${userPk.z32()}/pub/example.com/`, null, false, 100, false);
 #### SessionStorage (read/write; uses cookies)
 
 ```js
-const s = session.storage();
+const s = session.storage;
 
 // Writes
 await s.putJson("/pub/example.com/data.json", { ok: true });
@@ -258,16 +257,17 @@ import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 const pubky = new Pubky();
 
 // Read-only resolver
-const resolver = pubky.pkdns();
-const homeserver = await resolver.getHomeserverOf(PublicKey.from("<user-z32>")); // string | undefined
+const homeserver = await pubky.pkdns.getHomeserverOf(
+  PublicKey.from("<user-z32>")
+); // string | undefined
 
 // With keys (signer-bound)
 const signer = pubky.signer(Keypair.random());
 
 // Republish if missing or stale (reuses current host unless overridden)
-await signer.pkdns().publishHomeserverIfStale();
+await signer.pkdns.publishHomeserverIfStale();
 // Or force an override now:
-await signer.pkdns().publishHomeserverForce(/* optional override homeserver*/);
+await signer.pkdns.publishHomeserverForce(/* optional override homeserver*/);
 ```
 
 ---

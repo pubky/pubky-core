@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // End-to-end testnet roundtrip: signup -> write -> read.
-import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
+import { Pubky, Keypair, PublicKey, setLogLevel } from "@synonymdev/pubky";
 
 // This is the default testnet homeserver. It comes from the secret `00000...` (bits).
 const TESTNET_HOMESERVER =
@@ -14,12 +14,12 @@ const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
 const homeserver = PublicKey.from(TESTNET_HOMESERVER);
 const session = await signer.signup(homeserver, null);
-console.log("Signed up succeeded for user:", session.info().publicKey().z32());
+console.log("Signed up succeeded for user:", session.info.publicKey.z32());
 
 // 3) Write then read a file under /pub/<your.app>/
 const path = "/pub/my.app/hello.txt";
-await session.storage().putText(path, "hi");
+await session.storage.putText(path, "hi");
 console.log("Data write succeeded on path:", path);
 
-const roundtrip = await session.storage().getText(path);
+const roundtrip = await session.storage.getText(path);
 console.log("Roundtrip succeeded, response data:", roundtrip);

@@ -32,5 +32,5 @@ const homeserver = PublicKey.from(homeserverArg);
 const session = await signer.signup(homeserver, signupCode ?? null);
 
 // 4) Show session owner + capabilities
-console.log("\nSigned up as:", session.info().publicKey().z32());
-console.log("Capabilities:", session.info().capabilities());
+console.log("\nSigned up as:", session.info.publicKey.z32());
+console.log("Capabilities:", session.info.capabilities);

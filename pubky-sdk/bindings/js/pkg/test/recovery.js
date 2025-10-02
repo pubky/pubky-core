@@ -21,5 +21,5 @@ test("recovery", async (t) => {
     "very secure password",
   );
 
-  t.is(recovered.publicKey().z32(), keypair.publicKey().z32());
+  t.is(recovered.publicKey.z32(), keypair.publicKey.z32());
 });

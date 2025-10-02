@@ -65,7 +65,7 @@ impl Pubky {
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
     /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/link/"`).
     /// @returns {AuthFlow}
-    /// A running auth flow. Call `authorizationUrl()` to show a QR/deeplink,
+    /// A running auth flow. Show `authorizationUrl` as QR/deeplink,
     /// then `awaitApproval()` to obtain a `Session`.
     ///
     /// @throws {PubkyJsError}
@@ -74,7 +74,7 @@ impl Pubky {
     ///
     /// @example
     /// const flow = pubky.startAuthFlow("/pub/my.app/:rw");
-    /// renderQr(flow.authorizationUrl());
+    /// renderQr(flow.authorizationUrl);
     /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "startAuthFlow")]
     pub fn start_auth_flow(&self, capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
@@ -103,9 +103,8 @@ impl Pubky {
     /// @returns {PublicStorage}
     ///
     /// @example
-    /// const pub = pubky.publicStorage();
-    /// const text = await pub.getText(`${userPk.z32()}/pub/example.com/hello.txt`);
-    #[wasm_bindgen(js_name = "publicStorage")]
+    /// const text = await pubky.publicStorage.getText(`${userPk.z32()}/pub/example.com/hello.txt`);
+    #[wasm_bindgen(js_name = "publicStorage", getter)]
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage(self.0.public_storage())
     }
@@ -115,9 +114,8 @@ impl Pubky {
     /// @returns {Pkdns}
     ///
     /// @example
-    /// const dns = pubky.pkdns();
-    /// const homeserver = await dns.getHomeserverOf(userPk);
-    #[wasm_bindgen]
+    /// const homeserver = await pubky.pkdns.getHomeserverOf(userPk);
+    #[wasm_bindgen(getter)]
     pub fn pkdns(&self) -> Pkdns {
         Pkdns(self.0.pkdns())
     }
@@ -128,8 +126,8 @@ impl Pubky {
     /// Use this for low-level `fetch()` calls or testing with raw URLs.
     ///
     /// @example
-    /// const r = await pubky.client().fetch(`pubky://${user}/pub/app/file.txt`, { credentials: "include" });
-    #[wasm_bindgen]
+    /// const r = await pubky.client.fetch(`pubky://${user}/pub/app/file.txt`, { credentials: "include" });
+    #[wasm_bindgen(getter)]
     pub fn client(&self) -> Client {
         Client(self.0.client().clone())
     }

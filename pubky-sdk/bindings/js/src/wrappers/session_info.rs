@@ -12,8 +12,13 @@ pub struct SessionInfo(pub(crate) session::SessionInfo);
 impl SessionInfo {
     /// The user’s public key for this session.
     ///
+    /// Use `.z32()` on the returned `PublicKey` to get the string form.
+    ///
     /// @returns {PublicKey}
-    #[wasm_bindgen(js_name = "publicKey")]
+    ///
+    /// @example
+    /// const who = sessionInfo.publicKey.z32();
+    #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         self.0.public_key().clone().into()
     }
@@ -21,6 +26,7 @@ impl SessionInfo {
     /// Effective capabilities granted to this session.
     ///
     /// @returns {string[]} Normalized capability entries (e.g. `"/pub/app/:rw"`).
+    #[wasm_bindgen(js_name = "capabilities", getter)]
     pub fn capabilities(&self) -> Vec<String> {
         self.0
             .capabilities()

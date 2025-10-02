@@ -22,12 +22,12 @@ if (!resource) {
 const pubky = a.testnet ? Pubky.testnet() : new Pubky();
 
 // PublicStorage reads from addressed "<pk>/<abs-path>"
-const exists = await pubky.publicStorage().exists(resource);
+const exists = await pubky.publicStorage.exists(resource);
 console.log(`Exists: ${exists ? "yes" : "no"}`);
 
-const stats = await pubky.publicStorage().stats(resource);
+const stats = await pubky.publicStorage.stats(resource);
 console.log(`File stats: ${stats ? JSON.stringify(stats, null, 2) : "(none)"}`);
 
 // Get bytes and render length (purely for demo)
-const bytes = await pubky.publicStorage().getText(resource);
+const bytes = await pubky.publicStorage.getText(resource);
 console.log(`Downloaded (binary) ${bytes.length} bytes`);

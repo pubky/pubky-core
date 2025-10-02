@@ -28,7 +28,7 @@ impl Signer {
     /// Get the public key of this signer.
     ///
     /// @returns {PublicKey}
-    #[wasm_bindgen(js_name = "publicKey")]
+    #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         self.0.public_key().into()
     }
@@ -89,7 +89,10 @@ impl Signer {
     /// Get a PKDNS actor bound to this signer's client & keypair (publishing enabled).
     ///
     /// @returns {Pkdns}
-    #[wasm_bindgen]
+    ///
+    /// @example
+    /// await signer.pkdns.publishHomeserverIfStale(homeserverPk);
+    #[wasm_bindgen(getter)]
     pub fn pkdns(&self) -> Pkdns {
         Pkdns(self.0.pkdns())
     }
