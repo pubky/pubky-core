@@ -30,8 +30,8 @@ impl Pkdns {
     /// @param {PublicKey} user
     /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
-    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> JsResult<Option<String>> {
-        Ok(self.0.get_homeserver_of(pubky.as_inner()).await)
+    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<String> {
+        self.0.get_homeserver_of(pubky.as_inner()).await
     }
 
     /// Resolve the homeserver for **this** user (requires keypair).

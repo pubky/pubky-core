@@ -111,16 +111,16 @@ impl Pubky {
         }
     }
 
-    /// Read-only PKDNS actor (resolve `_pubky` records) using this facade’s client.
-    pub fn pkdns(&self) -> crate::Pkdns {
-        crate::Pkdns::with_client(self.client.clone())
+    /// Read-only [`Pkdns`] actor (resolve `_pubky` records) using this facade’s client.
+    pub fn pkdns(&self) -> Pkdns {
+        Pkdns::with_client(self.client.clone())
     }
 
     /// Resolve current homeserver host for a user public key via Pkarr.
     ///
     /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
     /// or `None` if the record is missing/unresolvable. Uses an internal
-    /// read-only PKDNS actor
+    /// read-only [`Pkdns`] actor.
     pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<String> {
         Pkdns::with_client(self.client.clone())
             .get_homeserver_of(user_public_key)

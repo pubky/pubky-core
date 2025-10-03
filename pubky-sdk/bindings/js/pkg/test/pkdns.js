@@ -19,7 +19,7 @@ test("pkdns: getHomeserver not found", async (t) => {
   const fresh = Keypair.random();
   const pubkey = fresh.publicKey;
 
-  const hs = await sdk.pkdns.getHomeserverOf(pubkey);
+  const hs = await sdk.getHomeserverOf(pubkey);
 
   t.equal(hs, undefined, "no homeserver for a fresh keypair");
   t.end();
@@ -42,7 +42,7 @@ test("pkdns: getHomeserver success", async (t) => {
   const pubkey = signer.publicKey;
 
   // Read-only resolver
-  const hs = await sdk.pkdns.getHomeserverOf(pubkey);
+  const hs = await sdk.getHomeserverOf(pubkey);
   t.equal(hs, HOMESERVER_PUBLICKEY.z32(), "resolver matches homeserver z32");
 
   // Self resolver (signer-bound)
@@ -68,8 +68,7 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   const userPk = session.info.publicKey;
 
-  const publisherPkdns = signer.pkdns;
-  const readOnlyPkdns = sdk.pkdns;
+  const publisher = signer.pkdns;
 
   const altHost1 = PublicKey.from(
     "m14ckuxretmbwb3cfuucxa8g3o1yzkxu5dx5b5iowxb1onfn6t4o",
@@ -80,7 +79,7 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
 
   // Sanity: initial host matches homeserver
   {
-    const initialHost = await readOnlyPkdns.getHomeserverOf(userPk);
+    const initialHost = await sdk.getHomeserverOf(userPk);
     t.equal(
       initialHost,
       HOMESERVER_PUBLICKEY.z32(),
@@ -90,8 +89,8 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
 
   // 2) IfStale with override should NOT change a fresh record
   {
-    await publisherPkdns.publishHomeserverIfStale(altHost1); // fresh -> no-op
-    const host = await readOnlyPkdns.getHomeserverOf(userPk);
+    await publisher.publishHomeserverIfStale(altHost1); // fresh -> no-op
+    const host = await sdk.getHomeserverOf(userPk);
     t.equal(
       host,
       HOMESERVER_PUBLICKEY.z32(),
@@ -102,8 +101,8 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   // 3) Force should override immediately regardless of age
   {
     const altHost2z32 = altHost2.z32();
-    await publisherPkdns.publishHomeserverForce(altHost2);
-    const host = await readOnlyPkdns.getHomeserverOf(userPk);
+    await publisher.publishHomeserverForce(altHost2);
+    const host = await sdk.getHomeserverOf(userPk);
     t.equal(host, altHost2z32, "force publish overrides regardless of age");
   }
 

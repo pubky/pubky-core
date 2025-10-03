@@ -257,9 +257,7 @@ import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 const pubky = new Pubky();
 
 // Read-only resolver
-const homeserver = await pubky.pkdns.getHomeserverOf(
-  PublicKey.from("<user-z32>")
-); // string | undefined
+const homeserver = await pubky.getHomeserverOf(PublicKey.from("<user-z32>")); // string | undefined
 
 // With keys (signer-bound)
 const signer = pubky.signer(Keypair.random());
@@ -268,6 +266,8 @@ const signer = pubky.signer(Keypair.random());
 await signer.pkdns.publishHomeserverIfStale();
 // Or force an override now:
 await signer.pkdns.publishHomeserverForce(/* optional override homeserver*/);
+// Resolve your own homeserver:
+await signer.pkdns.getHomeserver();
 ```
 
 ---

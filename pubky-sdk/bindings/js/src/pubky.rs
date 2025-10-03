@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
-use crate::actors::{auth_flow::AuthFlow, pkdns::Pkdns, signer::Signer, storage::PublicStorage};
+use crate::actors::{auth_flow::AuthFlow, signer::Signer, storage::PublicStorage};
+use crate::wrappers::keys::PublicKey;
 use crate::{client::constructor::Client, js_error::JsResult, wrappers::keys::Keypair};
 
 /// High-level entrypoint to the Pubky SDK.
@@ -109,15 +110,15 @@ impl Pubky {
         PublicStorage(self.0.public_storage())
     }
 
-    /// Read-only PKDNS (Pkarr) resolver.
+    /// Resolve the homeserver for a given public key (read-only).
     ///
-    /// @returns {Pkdns}
+    /// Uses an internal read-only Pkdns actor.
     ///
-    /// @example
-    /// const homeserver = await pubky.pkdns.getHomeserverOf(userPk);
-    #[wasm_bindgen(getter)]
-    pub fn pkdns(&self) -> Pkdns {
-        Pkdns(self.0.pkdns())
+    /// @param {PublicKey} user
+    /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
+    #[wasm_bindgen(js_name = "getHomeserverOf")]
+    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<String> {
+        self.0.get_homeserver_of(user_public_key.as_inner()).await
     }
 
     /// Access the underlying HTTP client (advanced).
