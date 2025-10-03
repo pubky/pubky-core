@@ -28,18 +28,21 @@ impl Pkdns {
     /// Resolve the homeserver for a given public key (read-only).
     ///
     /// @param {PublicKey} user
-    /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
+    /// @returns {Promise<PublicKey|undefined>} Homeserver public key or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
-    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<String> {
-        self.0.get_homeserver_of(pubky.as_inner()).await
+    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<PublicKey> {
+        self.0
+            .get_homeserver_of(pubky.as_inner())
+            .await
+            .map(Into::into)
     }
 
     /// Resolve the homeserver for **this** user (requires keypair).
     ///
-    /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
+    /// @returns {Promise<PublicKey|undefined>} Homeserver public key or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserver")]
-    pub async fn get_homeserver(&self) -> JsResult<Option<String>> {
-        Ok(self.0.get_homeserver().await?)
+    pub async fn get_homeserver(&self) -> JsResult<Option<PublicKey>> {
+        Ok(self.0.get_homeserver().await?.map(Into::into))
     }
 
     // -------------------- Publishing --------------------

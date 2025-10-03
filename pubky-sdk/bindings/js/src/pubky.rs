@@ -92,7 +92,7 @@ impl Pubky {
     /// const signer = pubky.signer(Keypair.random());
     /// const session = await signer.signup(homeserverPk, null);
     #[wasm_bindgen(js_name = "signer")]
-    pub fn signer(&self, keypair: Keypair) -> Signer {
+    pub fn signer(&self, keypair: &Keypair) -> Signer {
         Signer(self.0.signer(keypair.as_inner().clone()))
     }
 
@@ -115,10 +115,13 @@ impl Pubky {
     /// Uses an internal read-only Pkdns actor.
     ///
     /// @param {PublicKey} user
-    /// @returns {Promise<string|undefined>} Homeserver public key (z32) or `undefined` if not found.
+    /// @returns {Promise<PublicKey|undefined>} Homeserver public key (z32) or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
-    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<String> {
-        self.0.get_homeserver_of(user_public_key.as_inner()).await
+    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
+        self.0
+            .get_homeserver_of(user_public_key.as_inner())
+            .await
+            .map(Into::into)
     }
 
     /// Access the underlying HTTP client (advanced).

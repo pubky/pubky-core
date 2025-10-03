@@ -29,7 +29,7 @@ test("pkdns: getHomeserver not found", async (t) => {
  * PKDNS: signup publishes _pubky; both read-only and signer-bound resolvers agree.
  * Flow:
  *  - facade -> signer -> signup -> server publishes _pubky(host=homeserver)
- *  - read-only resolver returns homeserver z32
+ *  - read-only resolver returns homeserver public key
  *  - signer-bound resolver returns the same
  */
 test("pkdns: getHomeserver success", async (t) => {
@@ -43,11 +43,11 @@ test("pkdns: getHomeserver success", async (t) => {
 
   // Read-only resolver
   const hs = await sdk.getHomeserverOf(pubkey);
-  t.equal(hs, HOMESERVER_PUBLICKEY.z32(), "resolver matches homeserver z32");
+  t.equal(hs.z32, HOMESERVER_PUBLICKEY.z32, "resolver matches homeserver public key");
 
   // Self resolver (signer-bound)
   const hsSelf = await signer.pkdns.getHomeserver();
-  t.equal(hsSelf, HOMESERVER_PUBLICKEY.z32(), "self getHomeserver matches");
+  t.equal(hsSelf.z32, HOMESERVER_PUBLICKEY.z32, "self getHomeserver matches");
 
   t.end();
 });
@@ -81,7 +81,7 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   {
     const initialHost = await sdk.getHomeserverOf(userPk);
     t.equal(
-      initialHost,
+      initialHost.z32(),
       HOMESERVER_PUBLICKEY.z32(),
       "initial homeserver matches signup",
     );
@@ -92,7 +92,7 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
     await publisher.publishHomeserverIfStale(altHost1); // fresh -> no-op
     const host = await sdk.getHomeserverOf(userPk);
     t.equal(
-      host,
+      host.z32(),
       HOMESERVER_PUBLICKEY.z32(),
       "ifStale did not override fresh record",
     );
@@ -103,7 +103,7 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
     const altHost2z32 = altHost2.z32();
     await publisher.publishHomeserverForce(altHost2);
     const host = await sdk.getHomeserverOf(userPk);
-    t.equal(host, altHost2z32, "force publish overrides regardless of age");
+    t.equal(host.z32(), altHost2z32, "force publish overrides regardless of age");
   }
 
   t.end();

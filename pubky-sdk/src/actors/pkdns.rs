@@ -135,9 +135,10 @@ impl Pkdns {
     ///
     /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
     /// or `None` if the record is missing/unresolvable.
-    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<String> {
+    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
         let packet = self.client.pkarr().resolve(user_public_key).await?;
-        extract_host_from_packet(&packet)
+        let s = extract_host_from_packet(&packet)?;
+        PublicKey::try_from(s).ok()
     }
 
     /// Convenience: resolve the homeserver for **this** user (requires keypair on `Pkdns`).
@@ -146,7 +147,7 @@ impl Pkdns {
     /// - `Ok(Some(host))` if resolvable,
     /// - `Ok(None)` if no record is found,
     /// - `Err(_)` only for transport errors.
-    pub async fn get_homeserver(&self) -> Result<Option<String>> {
+    pub async fn get_homeserver(&self) -> Result<Option<PublicKey>> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
             Error::from(AuthError::Validation(
                 "get_homeserver() requires a keypair; use Pkdns::new_with_keypair() or signer.pkdns()".into(),

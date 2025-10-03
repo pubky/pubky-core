@@ -121,7 +121,7 @@ impl Pubky {
     /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
     /// or `None` if the record is missing/unresolvable. Uses an internal
     /// read-only [`Pkdns`] actor.
-    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<String> {
+    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
         Pkdns::with_client(self.client.clone())
             .get_homeserver_of(user_public_key)
             .await
