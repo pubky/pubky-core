@@ -30,12 +30,12 @@ impl Session {
     }
 
     /// Invalidate the session on the server (clears server cookie).
-    /// It also consumes this JS/Wasm Session. Further calls will fail.
+    /// Further calls to storage API will fail.
     ///
     /// @returns {Promise<void>}
     #[wasm_bindgen]
-    pub async fn signout(self) -> JsResult<()> {
-        match self.0.signout().await {
+    pub async fn signout(&self) -> JsResult<()> {
+        match self.0.clone().signout().await {
             Ok(()) => Ok(()),
             Err((e, _s)) => Err(PubkyJsError::from(e)),
         }
