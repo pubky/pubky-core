@@ -73,8 +73,8 @@ const authFlow = pubky.startAuthFlow("/pub/my.app/:rw");
 // Public storage (read-only)
 const publicStorage = pubky.publicStorage;
 
-// PKDNS resolver (read-only)
-const pkdns = pubky.pkdns;
+// Pkdns resolver
+const pkdns = pubky.getHomeserverOf(publicKey);
 
 // Optional: raw HTTP client for advanced use
 const client = pubky.client;

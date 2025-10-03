@@ -78,10 +78,10 @@ Session (authenticated):
 ```rust no_run
 use pubky::{Pubky, Keypair};
 
-# async fn run() -> pubky::Result<()> {
+# async fn run(keypair: Keypair) -> pubky::Result<()> {
 
 let pubky = Pubky::new()?;
-let session = pubky.signer(Keypair::random()).signin().await?;
+let session = pubky.signer(keypair).signin().await?;
 
 let storage = session.storage();
 storage.put("/pub/my.app/data.txt", "hi").await?;
