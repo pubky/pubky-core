@@ -8,7 +8,7 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 );
 
 test("session: putJson/getJson/delete, public: getJson", async (t) => {
-  // 0) Use the façade pre-wired for local testnet (PKARR + WASM http mapping)
+  // 0) Use the facade pre-wired for local testnet (PKARR + WASM http mapping)
   const sdk = Pubky.testnet();
 
   // 1) Signer & signup -> ready session (cookie managed by fetch)

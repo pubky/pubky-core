@@ -26,7 +26,7 @@ if (!recoveryPath || !authUrl) {
   process.exit(1);
 }
 
-// 1) Choose façade (mainnet or testnet)
+// 1) Choose facade (mainnet or testnet)
 const pubky = a.testnet ? Pubky.testnet() : new Pubky();
 
 // 2) Decrypt recovery -> Signer

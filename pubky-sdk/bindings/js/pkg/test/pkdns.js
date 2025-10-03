@@ -9,7 +9,7 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 /**
  * PKDNS: fresh key has no _pubky record.
  * Flow:
- *  - façade -> read-only pkdns resolver
+ *  - facade -> read-only pkdns resolver
  *  - generate keypair without publishing any record
  *  - resolver returns undefined
  */
@@ -28,7 +28,7 @@ test("pkdns: getHomeserver not found", async (t) => {
 /**
  * PKDNS: signup publishes _pubky; both read-only and signer-bound resolvers agree.
  * Flow:
- *  - façade -> signer -> signup -> server publishes _pubky(host=homeserver)
+ *  - facade -> signer -> signup -> server publishes _pubky(host=homeserver)
  *  - read-only resolver returns homeserver z32
  *  - signer-bound resolver returns the same
  */

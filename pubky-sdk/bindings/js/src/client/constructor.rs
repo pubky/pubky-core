@@ -38,7 +38,7 @@ pub struct PubkyClientConfig {
     // NOTE: user_max_record_age belonged to the old client — removed here.
 }
 
-/// Low-level HTTP bridge used by the Pubky façade and actors.
+/// Low-level HTTP bridge used by the Pubky facade and actors.
 ///
 /// - Supports `pubky://<user-z32>/<abs-path>` and `http(s)://` URLs.
 /// - In browsers/undici, passes `credentials: "include"` to send cookies.

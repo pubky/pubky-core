@@ -56,7 +56,7 @@ export class PubkyAuthWidget extends LitElement {
     this.open = false;
     this.caps = this.caps || "";
 
-    // Share one façade across flows
+    // Share one facade across flows
     this._sdk = new pubky.Pubky();
 
     // internal
@@ -87,7 +87,7 @@ export class PubkyAuthWidget extends LitElement {
     const relay =
       this.relay || (this.testnet ? TESTNET_HTTP_RELAY : DEFAULT_HTTP_RELAY);
 
-    // Start the flow with the façade’s client
+    // Start the flow with the facade’s client
     const flow = this._sdk.startAuthFlow(this.caps, relay);
 
     // Capture the deep link *before* awaiting (await will consume the flow handle)

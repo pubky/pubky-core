@@ -9,10 +9,10 @@ pub struct Pubky(pub(crate) pubky::Pubky);
 
 #[wasm_bindgen]
 impl Pubky {
-    /// Create a Pubky façade wired for **mainnet** defaults (public relays).
+    /// Create a Pubky facade wired for **mainnet** defaults (public relays).
     ///
     /// @returns {Pubky}
-    /// A new façade instance. Use this to create signers, start auth flows, etc.
+    /// A new facade instance. Use this to create signers, start auth flows, etc.
     ///
     /// @example
     /// const pubky = new Pubky();
@@ -23,7 +23,7 @@ impl Pubky {
         Ok(Pubky(pubky::Pubky::with_client(client.0)))
     }
 
-    /// Create a Pubky façade preconfigured for a **local testnet**.
+    /// Create a Pubky facade preconfigured for a **local testnet**.
     ///
     /// If `host` is provided, PKARR and HTTP endpoints are derived as `http://<host>:ports/...`.
     /// If omitted, `"localhost"` is assumed (handy for `cargo install pubky-testnet`).
@@ -40,7 +40,7 @@ impl Pubky {
         Ok(Pubky(pubky::Pubky::with_client(client.0)))
     }
 
-    /// Wrap an existing configured HTTP client into a Pubky façade.
+    /// Wrap an existing configured HTTP client into a Pubky facade.
     ///
     /// @param {Client} client A previously constructed client.
     /// @returns {Pubky}

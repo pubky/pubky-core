@@ -20,7 +20,7 @@ pub struct AuthFlow(pub(crate) pubky::PubkyAuthFlow);
 #[wasm_bindgen]
 impl AuthFlow {
     /// Start a flow (standalone).
-    /// Prefer `pubky.startAuthFlow()` to reuse a façade client.
+    /// Prefer `pubky.startAuthFlow()` to reuse a facade client.
     ///
     /// @param {string} capabilities
     /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.

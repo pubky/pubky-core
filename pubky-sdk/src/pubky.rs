@@ -1,4 +1,4 @@
-//! High-level façade for the Pubky crate.
+//! High-level facade for the Pubky crate.
 //!
 //! ## Mental model
 //! - `Pubky` - your entrypoint/handle to the SDK. Owns a `PubkyHttpClient`.
@@ -58,7 +58,7 @@ use crate::{
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
-/// High-level façade. Owns a `PubkyHttpClient` and constructs the main actors.
+/// High-level facade. Owns a `PubkyHttpClient` and constructs the main actors.
 #[derive(Clone, Debug)]
 pub struct Pubky {
     client: PubkyHttpClient,
@@ -102,14 +102,14 @@ impl Pubky {
         }
     }
 
-    /// Create a public, unauthenticated storage handle using this façade’s client.
+    /// Create a public, unauthenticated storage handle using this facade’s client.
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage {
             client: self.client.clone(),
         }
     }
 
-    /// Read-only PKDNS actor (resolve `_pubky` records) using this façade’s client.
+    /// Read-only PKDNS actor (resolve `_pubky` records) using this facade’s client.
     pub fn pkdns(&self) -> crate::Pkdns {
         crate::Pkdns::with_client(self.client.clone())
     }

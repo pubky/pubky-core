@@ -1,6 +1,6 @@
 # Pubky SDK
 
-Ergonomic building blocks for Pubky apps: one façade (`Pubky`) plus focused actors for sessions, storage API, signer helpers, and QR auth flow for keyless apps.
+Ergonomic building blocks for Pubky apps: one facade (`Pubky`) plus focused actors for sessions, storage API, signer helpers, and QR auth flow for keyless apps.
 
 Rust implementation of [Pubky](https://github.com/pubky/pubky-core) SDK.
 
@@ -59,7 +59,7 @@ println!("Your current homeserver: {:?}", resolved);
 
 ## Mental model
 
-- `Pubky` - façade, always start here! Owns the transport and constructs actors.
+- `Pubky` - facade, always start here! Owns the transport and constructs actors.
 - `PubkySigner` - local key holder. Can `signup`, `signin`, approve QR auth, publish PKDNS.
 - `PubkySession` - authenticated “as me” handle. Exposes session-scoped storage.
 - `PublicStorage` - unauthenticated reads of others’ public data.

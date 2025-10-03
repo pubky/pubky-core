@@ -100,7 +100,7 @@ npm run request -- \
 
 ## Concepts you’ll bump into
 
-- **Pubky** façade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).
+- **Pubky** facade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).
 - **Signer** -> **Session**: `signer.signin(homeserver, invite?)` -> returns `session`.
 - **SessionStorage** (read/write): absolute paths like `"/pub/my.app/file.txt"`.
 - **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my.app/file.txt"`.
