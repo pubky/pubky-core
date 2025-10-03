@@ -250,8 +250,10 @@ impl Pkdns {
         }
 
         let svcb = SVCB::new(0, host.try_into().map_err(PkarrError::from)?);
+        let pubky_name = "_pubky".try_into().map_err(PkarrError::from)?;
+
         let signed_packet = builder
-            .https("_pubky".try_into().unwrap(), svcb, 60 * 60)
+            .https(pubky_name, svcb, 60 * 60)
             .sign(keypair)
             .map_err(PkarrError::from)?;
 
