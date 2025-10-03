@@ -123,15 +123,16 @@ use pubky::{Pubky, PublicKey, Keypair};
 # async fn run(other: PublicKey, new_homeserver_id: PublicKey) -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 
-// read-only resolver
-let pkdns = pubky.pkdns();
-let host = pkdns.get_homeserver_of(&other).await;
+// read-only homeserver resolver
+let host = pubky.get_homeserver_of(&other).await;
 
 // publish with your key
 let signer = pubky.signer(Keypair::random());
 signer.pkdns().publish_homeserver_if_stale(None).await?;
 // or force republish (e.g. homeserver migration)
 signer.pkdns().publish_homeserver_force(Some(&new_homeserver_id)).await?;
+// resolve your own homeserver
+signer.pkdns().get_homeserver().await?;
 
 # Ok(()) }
 ```

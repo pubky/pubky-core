@@ -131,12 +131,12 @@ impl Pkdns {
 
     // -------------------- Reads --------------------
 
-    /// Resolve current homeserver host for **any** `pubky` via Pkarr (no keypair required).
+    /// Resolve current homeserver host for a user public key via Pkarr (no keypair required).
     ///
     /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
     /// or `None` if the record is missing/unresolvable.
-    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<String> {
-        let packet = self.client.pkarr().resolve_most_recent(pubky).await?;
+    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<String> {
+        let packet = self.client.pkarr().resolve(user_public_key).await?;
         extract_host_from_packet(&packet)
     }
 
