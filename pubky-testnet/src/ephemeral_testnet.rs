@@ -1,5 +1,6 @@
 use crate::Testnet;
 use http_relay::HttpRelay;
+use pubky::Pubky;
 
 /// A simple testnet with random ports assigned for all components.
 ///
@@ -42,13 +43,20 @@ impl EphemeralTestnet {
     }
 
     /// Create a new pubky client builder.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
-        self.testnet.pubky_client_builder()
+    pub fn client_builder(&self) -> pubky::PubkyHttpClientBuilder {
+        self.testnet.client_builder()
     }
 
-    /// Creates a `pubky::Client` pre-configured to use this test network.
-    pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
-        self.testnet.pubky_client()
+    /// Creates a [`pubky::PubkyHttpClient`] pre-configured to use this test network.
+    pub fn client(&self) -> Result<pubky::PubkyHttpClient, pubky::BuildError> {
+        self.testnet.client()
+    }
+
+    /// Creates a [`pubky::Pubky`] SDK facade pre-configured to use this test network.
+    ///
+    /// This is a convenience method that builds a client from `Self::client_builder`.
+    pub fn sdk(&self) -> Result<Pubky, pubky::BuildError> {
+        self.testnet.sdk()
     }
 
     /// Create a new pkarr client builder.
@@ -57,7 +65,7 @@ impl EphemeralTestnet {
     }
 
     /// Get the homeserver in the testnet.
-    pub fn homeserver_suite(&self) -> &pubky_homeserver::HomeserverSuite {
+    pub fn homeserver(&self) -> &pubky_homeserver::HomeserverSuite {
         self.testnet
             .homeservers
             .first()

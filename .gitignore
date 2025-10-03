@@ -1,5 +1,5 @@
 target/
-storage/
+./storage
 .continuerules
 .cursorrules
 .cursor/*

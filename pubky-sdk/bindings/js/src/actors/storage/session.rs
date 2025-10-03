@@ -1,0 +1,146 @@
+// js/src/client/storage/session.rs
+use js_sys::Uint8Array;
+use serde::Serialize;
+use wasm_bindgen::prelude::*;
+
+use super::stats::ResourceStats;
+use crate::js_error::JsResult;
+
+/// Read/write storage scoped to **your** session (absolute paths: `/pub/...`).
+#[wasm_bindgen]
+pub struct SessionStorage(pub(crate) pubky::SessionStorage);
+
+#[wasm_bindgen]
+impl SessionStorage {
+    /// List a directory (absolute session path). Returns `pubky://…` URLs.
+    ///
+    /// @param {string} path Must end with `/`.
+    /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
+    /// @param {boolean=} reverse Default `false`.
+    /// @param {number=} limit Optional result limit.
+    /// @param {boolean=} shallow Default `false`.
+    /// @returns {Promise<string[]>}
+    #[wasm_bindgen]
+    pub async fn list(
+        &self,
+        path: &str,
+        cursor: Option<String>,
+        reverse: Option<bool>,
+        limit: Option<u16>,
+        shallow: Option<bool>,
+    ) -> JsResult<Vec<String>> {
+        let mut b = self.0.list(path)?;
+        if let Some(c) = cursor {
+            b = b.cursor(&c);
+        }
+        if let Some(r) = reverse {
+            b = b.reverse(r);
+        }
+        if let Some(l) = limit {
+            b = b.limit(l);
+        }
+        if let Some(s) = shallow {
+            b = b.shallow(s);
+        }
+        let urls = b.send().await?.into_iter().map(|u| u.to_string()).collect();
+        Ok(urls)
+    }
+
+    /// GET bytes from an absolute session path.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<Uint8Array>}
+    #[wasm_bindgen(js_name = "getBytes")]
+    pub async fn get_bytes(&self, path: &str) -> JsResult<Uint8Array> {
+        let resp = self.0.get(path).await?;
+        let bytes = resp.bytes().await?;
+        Ok(Uint8Array::from(bytes.as_ref()))
+    }
+
+    /// GET text from an absolute session path.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<string>}
+    #[wasm_bindgen(js_name = "getText")]
+    pub async fn get_text(&self, path: &str) -> JsResult<String> {
+        let resp = self.0.get(path).await?;
+        Ok(resp.text().await?)
+    }
+
+    /// GET JSON from an absolute session path.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<any>}
+    #[wasm_bindgen(js_name = "getJson")]
+    pub async fn get_json(&self, addr: &str) -> JsResult<JsValue> {
+        let v: serde_json::Value = self.0.get_json(addr).await?;
+        let ser = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+        Ok(v.serialize(&ser)?)
+    }
+
+    /// Check existence.
+    ///
+    /// @param {string} path
+    /// @returns {Promise<boolean>}
+    #[wasm_bindgen]
+    pub async fn exists(&self, path: &str) -> JsResult<bool> {
+        Ok(self.0.exists(path).await?)
+    }
+
+    /// Get metadata for an absolute, session-scoped path (e.g. `"/pub/app/file.json"`).
+    ///
+    /// @param {string} path Absolute path under your user (starts with `/`).
+    /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
+    /// @throws {PubkyJsError} On invalid input or transport/server errors.
+    #[wasm_bindgen(js_name = "stats")]
+    pub async fn stats(&self, path: &str) -> JsResult<Option<ResourceStats>> {
+        match self.0.stats(path).await? {
+            Some(stats) => Ok(Some(ResourceStats::from(stats))),
+            None => Ok(None),
+        }
+    }
+
+    /// PUT binary at an absolute session path.
+    ///
+    /// @param {string} path
+    /// @param {Uint8Array} bytes
+    /// @returns {Promise<void>}
+    #[wasm_bindgen(js_name = "putBytes")]
+    pub async fn put_bytes(&self, path: &str, body: &[u8]) -> JsResult<()> {
+        self.0.put(path, body.to_vec()).await?;
+        Ok(())
+    }
+
+    /// PUT text at an absolute session path.
+    ///
+    /// @param {string} path
+    /// @param {string} text
+    /// @returns {Promise<void>}
+    #[wasm_bindgen(js_name = "putText")]
+    pub async fn put_text(&self, path: &str, body: &str) -> JsResult<()> {
+        self.0.put(path, body.as_bytes().to_vec()).await?;
+        Ok(())
+    }
+
+    /// PUT JSON at an absolute session path.
+    ///
+    /// @param {string} path Absolute path (e.g. `"/pub/app/data.json"`).
+    /// @param {any} value JSON-serializable value.
+    /// @returns {Promise<void>}
+    #[wasm_bindgen(js_name = "putJson")]
+    pub async fn put_json(&self, path: &str, body: JsValue) -> JsResult<()> {
+        let v: serde_json::Value = serde_wasm_bindgen::from_value(body)?;
+        self.0.put_json(path, &v).await?;
+        Ok(())
+    }
+
+    /// Delete a path (file or empty directory).
+    ///
+    /// @param {string} path
+    /// @returns {Promise<void>}
+    #[wasm_bindgen]
+    pub async fn delete(&self, path: &str) -> JsResult<()> {
+        self.0.delete(path).await?;
+        Ok(())
+    }
+}
