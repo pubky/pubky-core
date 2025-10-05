@@ -28,7 +28,7 @@ const signer = pubky.signer(keypair);
 
 // 2) Sign up at a homeserver (optionally with an invite)
 const homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
 const signupToken = "<your-invite-code-or-null>";
 const session = await signer.signup(homeserver, signupToken);
@@ -182,6 +182,39 @@ renderQr(flow.authorizationUrl); // show to user
 // Blocks until the signer approves; returns a ready Session
 const session = await flow.awaitApproval();
 ```
+
+#### Validate and normalize capabilities
+
+If you accept capability strings from user input (forms, CLI arguments, etc.),
+use `validateCapabilities` before calling `startAuthFlow`. The helper returns a
+normalized string (ordering actions like `:rw`) and throws a structured error
+when the input is malformed.
+
+```js
+import { Pubky, validateCapabilities } from "@synonymdev/pubky";
+
+const pubky = new Pubky();
+
+const rawCaps = formData.get("caps");
+
+try {
+  const caps = validateCapabilities(rawCaps ?? "");
+  const flow = pubky.startAuthFlow(caps);
+  renderQr(flow.authorizationUrl);
+  const session = await flow.awaitApproval();
+  // ...
+} catch (error) {
+  if (error.name === "InvalidInput") {
+    surfaceValidationError(error.message);
+    return;
+  }
+  throw error;
+}
+```
+
+On invalid input, `validateCapabilities` throws a `PubkyJsError` with
+`{ name: "InvalidInput", message: "Invalid capability entries: …" }`, so you can
+surface precise feedback to the user.
 
 #### Http Relay & reliability
 
