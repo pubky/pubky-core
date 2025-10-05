@@ -13,7 +13,7 @@ cargo run --bin storage <user pubky>/pub/<path>
 For example, at the time of writing, the following command returns the content of a user's social post.
 
 ```bash
-cargo run --bin storage operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG`
+cargo run --bin storage operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 ```
 
 ### Testnet
