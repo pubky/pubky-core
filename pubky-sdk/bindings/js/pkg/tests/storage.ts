@@ -350,7 +350,7 @@ test("list shallow under /pub/", async (t) => {
       "shallow forward list with limit",
     );
   }
-{
+  {
     const list = await session.storage.list(
       dirPath,
       "example.con",
@@ -394,13 +394,7 @@ test("list shallow under /pub/", async (t) => {
   }
 
   {
-    const list = await session.storage.list(
-      dirPath,
-      "file2",
-      true,
-      3,
-      true,
-    );
+    const list = await session.storage.list(dirPath, "file2", true, 3, true);
     t.deepEqual(
       list,
       [
@@ -613,7 +607,11 @@ test("stats & exists: missing resource", async (t) => {
     sdk.publicStorage.stats(addr),
   ]);
 
-  t.equal(sessionStats, undefined, "session stats is undefined for missing path");
+  t.equal(
+    sessionStats,
+    undefined,
+    "session stats is undefined for missing path",
+  );
   t.equal(publicStats, undefined, "public stats is undefined for missing path");
 
   t.end();
