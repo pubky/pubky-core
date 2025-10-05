@@ -53,10 +53,11 @@
 use pkarr::PublicKey;
 
 use crate::{
-    Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage,
-    Result, errors::RequestError,
+    Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{PubkySession, errors::RequestError};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
