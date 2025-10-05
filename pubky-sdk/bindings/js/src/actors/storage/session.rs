@@ -6,6 +6,11 @@ use wasm_bindgen::prelude::*;
 use super::stats::ResourceStats;
 use crate::js_error::JsResult;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_PATH: &'static str = r#"
+    export type Path = `/pub/${string}`;
+    "#;
+
 /// Read/write storage scoped to **your** session (absolute paths: `/pub/...`).
 #[wasm_bindgen]
 pub struct SessionStorage(pub(crate) pubky::SessionStorage);
@@ -14,7 +19,7 @@ pub struct SessionStorage(pub(crate) pubky::SessionStorage);
 impl SessionStorage {
     /// List a directory (absolute session path). Returns `pubky://…` URLs.
     ///
-    /// @param {string} path Must end with `/`.
+    /// @param {Path} path Must end with `/`.
     /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
     /// @param {boolean=} reverse Default `false`.
     /// @param {number=} limit Optional result limit.
@@ -23,7 +28,7 @@ impl SessionStorage {
     #[wasm_bindgen]
     pub async fn list(
         &self,
-        path: &str,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
         cursor: Option<String>,
         reverse: Option<bool>,
         limit: Option<u16>,
@@ -48,10 +53,13 @@ impl SessionStorage {
 
     /// GET bytes from an absolute session path.
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @returns {Promise<Uint8Array>}
     #[wasm_bindgen(js_name = "getBytes")]
-    pub async fn get_bytes(&self, path: &str) -> JsResult<Uint8Array> {
+    pub async fn get_bytes(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<Uint8Array> {
         let resp = self.0.get(path).await?;
         let bytes = resp.bytes().await?;
         Ok(Uint8Array::from(bytes.as_ref()))
@@ -59,17 +67,20 @@ impl SessionStorage {
 
     /// GET text from an absolute session path.
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @returns {Promise<string>}
     #[wasm_bindgen(js_name = "getText")]
-    pub async fn get_text(&self, path: &str) -> JsResult<String> {
+    pub async fn get_text(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<String> {
         let resp = self.0.get(path).await?;
         Ok(resp.text().await?)
     }
 
     /// GET JSON from an absolute session path.
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @returns {Promise<any>}
     #[wasm_bindgen(js_name = "getJson")]
     pub async fn get_json(&self, addr: &str) -> JsResult<JsValue> {
@@ -80,20 +91,26 @@ impl SessionStorage {
 
     /// Check existence.
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @returns {Promise<boolean>}
     #[wasm_bindgen]
-    pub async fn exists(&self, path: &str) -> JsResult<bool> {
+    pub async fn exists(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<bool> {
         Ok(self.0.exists(path).await?)
     }
 
     /// Get metadata for an absolute, session-scoped path (e.g. `"/pub/app/file.json"`).
     ///
-    /// @param {string} path Absolute path under your user (starts with `/`).
+    /// @param {Path} path Absolute path under your user (starts with `/`).
     /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
-    pub async fn stats(&self, path: &str) -> JsResult<Option<ResourceStats>> {
+    pub async fn stats(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<Option<ResourceStats>> {
         match self.0.stats(path).await? {
             Some(stats) => Ok(Some(ResourceStats::from(stats))),
             None => Ok(None),
@@ -102,33 +119,45 @@ impl SessionStorage {
 
     /// PUT binary at an absolute session path.
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @param {Uint8Array} bytes
     /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "putBytes")]
-    pub async fn put_bytes(&self, path: &str, body: &[u8]) -> JsResult<()> {
+    pub async fn put_bytes(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+        body: &[u8],
+    ) -> JsResult<()> {
         self.0.put(path, body.to_vec()).await?;
         Ok(())
     }
 
     /// PUT text at an absolute session path.
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @param {string} text
     /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "putText")]
-    pub async fn put_text(&self, path: &str, body: &str) -> JsResult<()> {
+    pub async fn put_text(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+        body: &str,
+    ) -> JsResult<()> {
         self.0.put(path, body.as_bytes().to_vec()).await?;
         Ok(())
     }
 
     /// PUT JSON at an absolute session path.
     ///
-    /// @param {string} path Absolute path (e.g. `"/pub/app/data.json"`).
+    /// @param {Path} path Absolute path (e.g. `"/pub/app/data.json"`).
     /// @param {any} value JSON-serializable value.
     /// @returns {Promise<void>}
     #[wasm_bindgen(js_name = "putJson")]
-    pub async fn put_json(&self, path: &str, body: JsValue) -> JsResult<()> {
+    pub async fn put_json(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+        body: JsValue,
+    ) -> JsResult<()> {
         let v: serde_json::Value = serde_wasm_bindgen::from_value(body)?;
         self.0.put_json(path, &v).await?;
         Ok(())
@@ -136,10 +165,13 @@ impl SessionStorage {
 
     /// Delete a path (file or empty directory).
     ///
-    /// @param {string} path
+    /// @param {Path} path
     /// @returns {Promise<void>}
     #[wasm_bindgen]
-    pub async fn delete(&self, path: &str) -> JsResult<()> {
+    pub async fn delete(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<()> {
         self.0.delete(path).await?;
         Ok(())
     }

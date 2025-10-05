@@ -6,6 +6,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error::JsResult;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_ADRESS: &'static str = r#"
+    export type Address = `${string}/pub/${string}` | `pubky://${string}/pub/${string}`;
+    "#;
+
 /// Read-only public storage using addressed paths (`"<user-z32>/pub/...")`.
 #[wasm_bindgen]
 pub struct PublicStorage(pub(crate) pubky::PublicStorage);
@@ -20,7 +25,7 @@ impl PublicStorage {
 
     /// List a directory. Results are `pubky://…` absolute URLs.
     ///
-    /// @param {string} address Addressed directory (must end with `/`).
+    /// @param {Address} address Addressed directory (must end with `/`).
     /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
     /// @param {boolean=} reverse Default `false`. When `true`, newest/lexicographically-last first.
     /// @param {number=} limit Optional result limit.
@@ -29,7 +34,7 @@ impl PublicStorage {
     #[wasm_bindgen]
     pub async fn list(
         &self,
-        address: &str,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
         cursor: Option<String>,
         reverse: Option<bool>,
         limit: Option<u16>,
@@ -55,10 +60,13 @@ impl PublicStorage {
 
     /// Fetch bytes from an addressed path.
     ///
-    /// @param {string} address
+    /// @param {Address} address
     /// @returns {Promise<Uint8Array>}
     #[wasm_bindgen(js_name = "getBytes")]
-    pub async fn get_bytes(&self, address: &str) -> JsResult<Uint8Array> {
+    pub async fn get_bytes(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
+    ) -> JsResult<Uint8Array> {
         let resp = self.0.get(address).await?;
         let bytes = resp.bytes().await?;
         Ok(Uint8Array::from(bytes.as_ref()))
@@ -66,20 +74,26 @@ impl PublicStorage {
 
     /// Fetch text from an addressed path as UTF-8 text.
     ///
-    /// @param {string} address
+    /// @param {Address} address
     /// @returns {Promise<string>}
     #[wasm_bindgen(js_name = "getText")]
-    pub async fn get_text(&self, address: &str) -> JsResult<String> {
+    pub async fn get_text(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
+    ) -> JsResult<String> {
         let resp = self.0.get(address).await?;
         Ok(resp.text().await?)
     }
 
     /// Fetch JSON from an addressed path.
     ///
-    /// @param {string} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
+    /// @param {Address} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
     /// @returns {Promise<any>}
     #[wasm_bindgen(js_name = "getJson")]
-    pub async fn get_json(&self, address: &str) -> JsResult<JsValue> {
+    pub async fn get_json(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
+    ) -> JsResult<JsValue> {
         let v: serde_json::Value = self.0.get_json(address).await?;
         let ser = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
         Ok(v.serialize(&ser)?)
@@ -87,20 +101,26 @@ impl PublicStorage {
 
     /// Check if a path exists.
     ///
-    /// @param {string} address
+    /// @param {Address} address
     /// @returns {Promise<boolean>}
     #[wasm_bindgen]
-    pub async fn exists(&self, address: &str) -> JsResult<bool> {
+    pub async fn exists(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
+    ) -> JsResult<bool> {
         Ok(self.0.exists(address).await?)
     }
 
     /// Get metadata for an address
     ///
-    /// @param {string} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
+    /// @param {Address} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
     /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
-    pub async fn stats(&self, address: &str) -> JsResult<Option<ResourceStats>> {
+    pub async fn stats(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
+    ) -> JsResult<Option<ResourceStats>> {
         match self.0.stats(address).await? {
             Some(stats) => Ok(Some(ResourceStats::from(stats))),
             None => Ok(None),

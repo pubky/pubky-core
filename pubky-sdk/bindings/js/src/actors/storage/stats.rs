@@ -26,18 +26,22 @@ use wasm_bindgen::prelude::*;
 pub struct ResourceStats {
     /// Size in bytes of the stored object.
     #[tsify(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_length: Option<u64>,
 
     /// Media type of the stored object (e.g., `"application/json"`).
     #[tsify(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
 
     /// Unix epoch **milliseconds** for the last modification time.
     #[tsify(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_modified_ms: Option<u64>,
 
     /// Opaque entity tag identifying the current stored version.
     #[tsify(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub etag: Option<String>,
 }
 
