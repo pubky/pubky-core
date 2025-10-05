@@ -1,6 +1,6 @@
 import test from "tape";
-import { Pubky, Keypair, PublicKey } from "../index.cjs";
-import { createSignupToken } from "./utils.js";
+import { Keypair, Pubky, PublicKey } from "../index.js";
+import { Assert, IsExact, createSignupToken } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
@@ -15,6 +15,10 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
  */
 test("pkdns: getHomeserver not found", async (t) => {
   const sdk = Pubky.testnet();
+  type Sdk = typeof sdk;
+  const _resolver: Assert<
+    IsExact<Awaited<ReturnType<Sdk["getHomeserverOf"]>>, PublicKey | undefined>
+  > = true;
 
   const fresh = Keypair.random();
   const pubkey = fresh.publicKey;
@@ -43,11 +47,21 @@ test("pkdns: getHomeserver success", async (t) => {
 
   // Read-only resolver
   const hs = await sdk.getHomeserverOf(pubkey);
-  t.equal(hs.z32, HOMESERVER_PUBLICKEY.z32, "resolver matches homeserver public key");
+  t.ok(hs, "resolver returns homeserver public key");
+  t.equal(
+    hs?.z32(),
+    HOMESERVER_PUBLICKEY.z32(),
+    "resolver matches homeserver public key",
+  );
 
   // Self resolver (signer-bound)
   const hsSelf = await signer.pkdns.getHomeserver();
-  t.equal(hsSelf.z32, HOMESERVER_PUBLICKEY.z32, "self getHomeserver matches");
+  t.ok(hsSelf, "signer resolver returns homeserver public key");
+  t.equal(
+    hsSelf?.z32(),
+    HOMESERVER_PUBLICKEY.z32(),
+    "self getHomeserver matches",
+  );
 
   t.end();
 });
@@ -80,8 +94,9 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   // Sanity: initial host matches homeserver
   {
     const initialHost = await sdk.getHomeserverOf(userPk);
+    t.ok(initialHost, "initial record exists");
     t.equal(
-      initialHost.z32(),
+      initialHost?.z32(),
       HOMESERVER_PUBLICKEY.z32(),
       "initial homeserver matches signup",
     );
@@ -91,8 +106,9 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   {
     await publisher.publishHomeserverIfStale(altHost1); // fresh -> no-op
     const host = await sdk.getHomeserverOf(userPk);
+    t.ok(host, "ifStale returns homeserver");
     t.equal(
-      host.z32(),
+      host?.z32(),
       HOMESERVER_PUBLICKEY.z32(),
       "ifStale did not override fresh record",
     );
@@ -103,7 +119,12 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
     const altHost2z32 = altHost2.z32();
     await publisher.publishHomeserverForce(altHost2);
     const host = await sdk.getHomeserverOf(userPk);
-    t.equal(host.z32(), altHost2z32, "force publish overrides regardless of age");
+    t.ok(host, "force publish returns homeserver");
+    t.equal(
+      host?.z32(),
+      altHost2z32,
+      "force publish overrides regardless of age",
+    );
   }
 
   t.end();

@@ -1,6 +1,17 @@
 import test from "tape";
-import { PublicKey, Pubky, validateCapabilities, Keypair } from "../index.cjs";
-import { createSignupToken } from "./utils.js";
+import {
+  Keypair,
+  Pubky,
+  PublicKey,
+  SessionInfo,
+  validateCapabilities,
+} from "../index.js";
+import {
+  Assert,
+  IsExact,
+  assertErrorLike,
+  createSignupToken,
+} from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
@@ -17,6 +28,13 @@ test("Auth: 3rd party signin", async (t) => {
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
   const flow = sdk.startAuthFlow(capabilities, TESTNET_HTTP_RELAY);
+
+  type Flow = typeof flow;
+  type SessionPromise = ReturnType<Flow["awaitApproval"]>;
+  type Session = Awaited<SessionPromise>;
+
+  const _flowUrl: Assert<IsExact<Flow["authorizationUrl"], string>> = true;
+  const _sessionInfo: Assert<IsExact<Session["info"], SessionInfo>> = true;
 
   {
     const signupToken = await createSignupToken();
@@ -47,14 +65,16 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   try {
     sdk.startAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", TESTNET_HTTP_RELAY);
     t.fail("startAuthFlow() should throw on malformed capability entries");
-  } catch (e) {
-    t.equal(e.name, "InvalidInput", "invalid caps -> InvalidInput");
+  } catch (error) {
+    assertErrorLike(t, error);
+    t.equal(error.name, "InvalidInput", "invalid caps -> InvalidInput");
     t.ok(
-      /Invalid capability entries/i.test(e.message),
+      /Invalid capability entries/i.test(error.message),
       "error message lists invalid entries",
     );
     t.ok(
-      e.message.includes("not/a/cap") && e.message.includes("/also:bad:x"),
+      error.message.includes("not/a/cap") &&
+        error.message.includes("/also:bad:x"),
       "message includes concrete bad entries",
     );
   }
@@ -96,10 +116,11 @@ test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
   try {
     validateCapabilities("/pub/a/:rw,/x:y,/pub/b/:x");
     t.fail("validateCapabilities should throw on malformed entries");
-  } catch (e) {
-    t.equal(e.name, "InvalidInput", "throws InvalidInput on bad entries");
+  } catch (error) {
+    assertErrorLike(t, error);
+    t.equal(error.name, "InvalidInput", "throws InvalidInput on bad entries");
     t.ok(
-      e.message.includes("/x:y") && e.message.includes("/pub/b/:x"),
+      error.message.includes("/x:y") && error.message.includes("/pub/b/:x"),
       "message lists all offending entries",
     );
   }

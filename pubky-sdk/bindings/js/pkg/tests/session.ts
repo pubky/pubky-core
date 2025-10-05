@@ -1,10 +1,40 @@
 import test from "tape";
-import { Pubky, PublicKey, Keypair } from "../index.cjs";
-import { createSignupToken } from "./utils.js";
+
+import {
+  Keypair,
+  Pubky,
+  PublicKey,
+  type Address,
+  type Path,
+} from "../index.js";
+import {
+  Assert,
+  IsExact,
+  assertErrorLike,
+  createSignupToken,
+} from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
+
+type Facade = ReturnType<typeof Pubky.testnet>;
+type Signer = ReturnType<Facade["signer"]>;
+type SignupSession = Awaited<ReturnType<Signer["signup"]>>;
+type SessionStorageType = SignupSession["storage"];
+type PublicStorageType = Facade["publicStorage"];
+
+type _StoragePutText = Assert<
+  IsExact<Parameters<SessionStorageType["putText"]>, [Path, string]>
+>;
+type _StorageGetBytes = Assert<
+  IsExact<ReturnType<SessionStorageType["getBytes"]>, Promise<Uint8Array>>
+>;
+type _PublicGetText = Assert<
+  IsExact<ReturnType<PublicStorageType["getText"]>, Promise<string>>
+>;
+
+const PATH_AUTH_BASIC: Path = "/pub/example.com/auth-basic.txt";
 
 /**
  * Basic auth lifecycle:
@@ -24,17 +54,20 @@ test("Auth: basic", async (t) => {
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   t.ok(session, "signup returned a session");
   const userPk = session.info.publicKey.z32();
-  const path = "/pub/example.com/auth-basic.txt";
 
   // 2) Write while logged in
-  await session.storage.putText(path, "hello world");
+  await session.storage.putText(PATH_AUTH_BASIC, "hello world");
 
   // 3) Sign out (server clears cookie)
   await session.signout();
 
   // Info remains readable and stable after signout
   t.ok(session.info, "info getter still works after signout");
-  t.equal(session.info.publicKey.z32(), userPk, "Session is not null pointer after signout");
+  t.equal(
+    session.info.publicKey.z32(),
+    userPk,
+    "Session is not null pointer after signout",
+  );
 
   // TODO: Storage access must now fail
   // It seems to return "hello world";
@@ -45,7 +78,7 @@ test("Auth: basic", async (t) => {
   t.pass("second signout is a no-op");
 
   // 4) Unauthorized write should now fail with 401
-  const url = `pubky://${userPk}${path}`;
+  const url = `pubky://${userPk}${PATH_AUTH_BASIC}`;
   const res401 = await sdk.client.fetch(url, {
     method: "PUT",
     body: "should fail",
@@ -58,7 +91,7 @@ test("Auth: basic", async (t) => {
   t.ok(session2, "signin returned a new session");
 
   // 6) Write succeeds again
-  await session2.storage.putText(path, "hello again");
+  await session2.storage.putText(PATH_AUTH_BASIC, "hello again");
 
   t.end();
 });
@@ -149,7 +182,7 @@ test("Auth: multi-user (cookies)", async (t) => {
  * or the cookie jar gets mismatched, we should see 401/403 or wrong-user data.
  */
 test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
-  const sdk = Pubky.testnet(); // local testnet wiring
+  const sdk = Pubky.testnet();
 
   // Create two users & sign them up — both cookies end up in the same jar.
   const alice = sdk.signer(Keypair.random());
@@ -164,14 +197,15 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
   const A = aliceSession.info.publicKey.z32();
   const B = bobSession.info.publicKey.z32();
 
-  // Helpers
-  const readTextPublic = async (user, relPath) => {
-    const text = await sdk.publicStorage.getText(`${user}${relPath}`);
-    return text;
+  const readTextPublic = async (
+    user: string,
+    relPath: Path,
+  ): Promise<string> => {
+    const address = `${user}${relPath}` as Address;
+    return sdk.publicStorage.getText(address);
   };
 
-  // Paths are identical per-user; results must not cross.
-  const P = "/pub/example.com/owner.txt";
+  const P: Path = "/pub/example.com/owner.txt";
 
   // 1) Alice writes via SessionStorage (absolute path)
   await aliceSession.storage.putText(P, "alice#1");
@@ -188,16 +222,24 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
   // 3) Interleave in reverse order (ensure no global “current user” leakage)
   await bobSession.storage.putText(P, "bob#2");
   await aliceSession.storage.putText(P, "alice#2");
-  t.equal(await readTextPublic(A, P), "alice#2", "alice second write still under alice");
-  t.equal(await readTextPublic(B, P), "bob#2", "bob second write still under bob");
+  t.equal(
+    await readTextPublic(A, P),
+    "alice#2",
+    "alice second write still under alice",
+  );
+  t.equal(
+    await readTextPublic(B, P),
+    "bob#2",
+    "bob second write still under bob",
+  );
 
-  // 4) Raw client.fetch using addressed pubky:// URLs (exercises header derivation path)
+  // 4) Raw client.fetch using addressed pubky:// URLs
   {
     const urlA = `pubky://${A}${P}`;
     const r = await sdk.client.fetch(urlA, {
       method: "PUT",
       body: "alice#3",
-      credentials: "include", // send cookies for this host
+      credentials: "include",
     });
     t.ok(r.ok, "client.fetch PUT for alice ok");
   }
@@ -214,21 +256,31 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
   t.equal(await readTextPublic(A, P), "alice#3", "client.fetch wrote to alice");
   t.equal(await readTextPublic(B, P), "bob#3", "client.fetch wrote to bob");
 
-  // 5) Stale-handle safety: Create a *third* user; ensure earlier Session handles still write correctly.
+  // 5) Stale-handle safety: Create a third user; ensure earlier Session handles still write correctly.
   const carol = sdk.signer(Keypair.random());
   const carolToken = await createSignupToken();
   const carolSession = await carol.signup(HOMESERVER_PUBLICKEY, carolToken);
   const C = carolSession.info.publicKey.z32();
 
-  // Write using *old* alice handle, then *old* bob handle, after a *new* signup happened.
   await aliceSession.storage.putText(P, "alice#4");
   await bobSession.storage.putText(P, "bob#4");
-  t.equal(await readTextPublic(A, P), "alice#4", "stale alice handle still targets alice");
-  t.equal(await readTextPublic(B, P), "bob#4", "stale bob handle still targets bob");
+  t.equal(
+    await readTextPublic(A, P),
+    "alice#4",
+    "stale alice handle still targets alice",
+  );
+  t.equal(
+    await readTextPublic(B, P),
+    "bob#4",
+    "stale bob handle still targets bob",
+  );
 
-  // Carol writes too (control).
   await carolSession.storage.putText(P, "carol#1");
-  t.equal(await readTextPublic(C, P), "carol#1", "carol write lands under carol");
+  t.equal(
+    await readTextPublic(C, P),
+    "carol#1",
+    "carol write lands under carol",
+  );
 
   t.end();
 });
@@ -245,10 +297,13 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
 test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
   const sdk = Pubky.testnet();
 
-  const P = "/pub/example.com/loop.txt";
+  const P: Path = "/pub/example.com/loop.txt";
 
-  // Helper to sign up a fresh user and write a marker for that user
-  async function signupAndMark(label) {
+  async function signupAndMark(label: string): Promise<{
+    signer: ReturnType<Facade["signer"]>;
+    session: SignupSession;
+    user: string;
+  }> {
     const signer = sdk.signer(Keypair.random());
     const token = await createSignupToken();
     const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
@@ -257,17 +312,15 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     return { signer, session, user };
   }
 
-  // Loop twice to mimic repeated flows
   const u1 = await signupAndMark("user#1:hello");
   t.equal(
-    await sdk.publicStorage.getText(`${u1.user}${P}`),
+    await sdk.publicStorage.getText(`${u1.user}${P}` as Address),
     "user#1:hello",
     "first user marked",
   );
 
   await u1.session.signout();
 
-  // Confirm user#1 cannot write via low-level fetch anymore (401)
   {
     const url = `pubky://${u1.user}${P}`;
     const r = await sdk.client.fetch(url, {
@@ -278,23 +331,21 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     t.equal(r.status, 401, "signed-out user cannot write");
   }
 
-  // Second user joins
   const u2 = await signupAndMark("user#2:hello");
   t.equal(
-    await sdk.publicStorage.getText(`${u2.user}${P}`),
+    await sdk.publicStorage.getText(`${u2.user}${P}` as Address),
     "user#2:hello",
     "second user marked",
   );
 
-  // Old handle shouldn’t suddenly write for the new user;
   try {
     await u1.session.storage.putText(P, "nope");
     t.fail("stale user#1 session should not be able to write after signout");
-  } catch (e) {
-    t.equal(e.name, "RequestError", "stale handle write -> Error");
+  } catch (error) {
+    assertErrorLike(t, error);
+    t.equal(error.name, "RequestError", "stale handle write -> Error");
   }
 
-  // Interleave a bit: use low-level client for u2 (ensures header/URL are aligned)
   {
     const url = `pubky://${u2.user}${P}`;
     const r = await sdk.client.fetch(url, {
@@ -305,7 +356,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     t.ok(r.ok, "low-level client PUT for user#2 ok");
   }
   t.equal(
-    await sdk.publicStorage.getText(`${u2.user}${P}`),
+    await sdk.publicStorage.getText(`${u2.user}${P}` as Address),
     "user#2:via-client",
     "low-level client wrote under user#2",
   );

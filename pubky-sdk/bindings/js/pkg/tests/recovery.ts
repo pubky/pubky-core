@@ -1,6 +1,6 @@
 import test from "tape";
 
-import { Keypair } from "../index.cjs";
+import { Keypair } from "../index.js";
 
 test("recovery", async (t) => {
   const keypair = Keypair.random();

@@ -1,6 +1,17 @@
 import test from "tape";
 
-import { Keypair, PublicKey } from "../index.cjs";
+import { Keypair, PublicKey } from "../index.js";
+import { Assert, IsExact } from "./utils.js";
+
+type KeypairClass = typeof Keypair;
+type PublicKeyClass = typeof PublicKey;
+
+const _keypairReturn: Assert<
+  IsExact<ReturnType<KeypairClass["fromSecretKey"]>, Keypair>
+> = true;
+const _publicKeyReturn: Assert<
+  IsExact<ReturnType<PublicKeyClass["from"]>, PublicKey>
+> = true;
 
 test("generate keys from a seed", async (t) => {
   const secretkey = Buffer.from(
@@ -10,14 +21,17 @@ test("generate keys from a seed", async (t) => {
 
   const keypair = Keypair.fromSecretKey(secretkey);
 
-  t.is(keypair.publicKey.z32(), "gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o");
+  t.is(
+    keypair.publicKey.z32(),
+    "gcumbhd7sqit6nn457jxmrwqx9pyymqwamnarekgo3xppqo6a19o",
+  );
 });
 
 test("fromSecretKey error", async (t) => {
   const secretkey = Buffer.from("5aa93b299a343aa2691739771f2b5b", "hex");
 
   t.throws(
-    () => Keypair.fromSecretKey(null),
+    () => Keypair.fromSecretKey(null as unknown as Uint8Array),
     "Expected secret_key to be an instance of Uint8Array",
   );
   t.throws(

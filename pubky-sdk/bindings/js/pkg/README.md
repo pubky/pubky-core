@@ -28,7 +28,7 @@ const signer = pubky.signer(keypair);
 
 // 2) Sign up at a homeserver (optionally with an invite)
 const homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
 const signupToken = "<your-invite-code-or-null>";
 const session = await signer.signup(homeserver, signupToken);

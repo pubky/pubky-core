@@ -1,5 +1,5 @@
 import test from "tape";
-import { Client } from "../index.cjs";
+import { Client } from "../index.js";
 
 const TLD = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
@@ -22,6 +22,9 @@ test("basic fetch", async (t) => {
   }
 
   const client = Client.testnet();
+  type ClientInstance = typeof client;
+  type FetchResult = Awaited<ReturnType<ClientInstance["fetch"]>>;
+  void (null as unknown as FetchResult);
 
   // ICANN domain
   {
@@ -45,7 +48,7 @@ test("fetch failed", async (t) => {
   {
     const response = await client
       .fetch("https://nonexistent.domain/")
-      .catch((e) => e);
+      .catch((error: unknown) => error);
     t.ok(response instanceof Error, "ICANN fetch error bubbled to JS");
   }
 
@@ -53,7 +56,7 @@ test("fetch failed", async (t) => {
   {
     const response = await client
       .fetch("https://1pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ew1/")
-      .catch((e) => e);
+      .catch((error: unknown) => error);
     t.ok(response instanceof Error, "pubky fetch error bubbled to JS");
   }
 
