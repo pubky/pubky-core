@@ -158,6 +158,21 @@ const storage = session.storage; // -> This User's storage API (absolute paths)
 await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
 ```
 
+#### Restore a session later
+
+> [!WARNING] > `session.exportSecret()` returns a bearer secret that restores the session cookie.
+> Store it encrypted or in a secure vault. Anyone who obtains the token can act as
+> that user until it expires or is revoked.
+
+```js
+import { Session } from "@synonymdev/pubky";
+
+// Persist the session across restarts
+const secret = session.exportSecret();
+await saveSecretSomewhere(secret);
+const restored = await Session.importSecret(secret, pubky.client);
+```
+
 ---
 
 ### AuthFlow (pubkyauth)
@@ -302,6 +317,18 @@ await signer.pkdns.publishHomeserverForce(/* optional override homeserver*/);
 // Resolve your own homeserver:
 await signer.pkdns.getHomeserver();
 ```
+
+## Logging
+
+The SDK ships with a WASM logger that bridges Rust `log` output into the browser or Node console. Call `setLogLevel` **once at application start**, before constructing `Pubky` or other SDK actors, to choose how verbose the logs should be.
+
+```js
+import { setLogLevel } from "@synonymdev/pubky";
+
+setLogLevel("debug"); // "error" | "warn" | "info" | "debug" | "trace"
+```
+
+If the logger is already initialized, calling `setLogLevel` again will throw. Pick the most verbose level (`"debug"` or `"trace"`) while developing to see pkarr resolution, network requests and storage operations in the console.
 
 ---
 

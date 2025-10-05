@@ -2,6 +2,8 @@
 
 Tiny CLI scripts that teach the **@synonymdev/pubky** SDK with real flows.
 
+> Tip: call `setLogLevel("debug")` when exploring the scripts to surface SDK logs in your console.
+
 ## Prerequisites
 
 - **Node 20+** (fetch + WebCrypto)
