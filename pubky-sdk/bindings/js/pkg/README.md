@@ -44,7 +44,7 @@ const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
 const authFlow = pubky.startAuthFlow("/pub/my.app/:rw"); // require permissions to read and write into `my.app`
-renderQr(flow.authorizationUrl); // show to user
+renderQr(authFlow.authorizationUrl); // show to user
 const session = await authFlow.awaitApproval();
 ```
 
