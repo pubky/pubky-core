@@ -616,3 +616,80 @@ test("stats & exists: missing resource", async (t) => {
 
   t.end();
 });
+
+test("storage.get streams a Web Response for session/public storage", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const decoder = new TextDecoder();
+  const userPk = session.info.publicKey.z32();
+  const path: Path = "/pub/example.com/streaming.txt";
+  const address = toAddress(userPk, path);
+  const payload = `stream-me-${Date.now()}`;
+
+  await session.storage.putText(path, payload);
+
+  async function readResponseBody(response: Response): Promise<Uint8Array> {
+    const body = response.body;
+    t.ok(body, "response.body is present");
+    if (!body) {
+      return new Uint8Array();
+    }
+
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value) {
+        chunks.push(value);
+      }
+    }
+
+    reader.releaseLock();
+
+    const total = chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+    const joined = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      joined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    return joined;
+  }
+
+  {
+    const response = await session.storage.get(path);
+    t.equal(response.status, 200, "session storage.get returns HTTP 200");
+    t.equal(response.bodyUsed, false, "body is initially unused");
+    const body = await readResponseBody(response);
+    t.equal(response.bodyUsed, true, "bodyUsed toggles after reading");
+    t.equal(
+      decoder.decode(body),
+      payload,
+      "session storage.get streams payload",
+    );
+  }
+
+  {
+    const response = await sdk.publicStorage.get(address);
+    t.equal(response.status, 200, "public storage.get returns HTTP 200");
+    const body = await readResponseBody(response);
+    t.equal(
+      decoder.decode(body),
+      payload,
+      "public storage.get streams payload",
+    );
+  }
+
+  await session.storage.delete(path);
+
+  t.end();
+});

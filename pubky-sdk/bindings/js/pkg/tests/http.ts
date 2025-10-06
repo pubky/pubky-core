@@ -68,6 +68,6 @@ test("fetch failed", async (t) => {
       "pubky fetch error bubbled to JS",
     );
   }
-  
+
   t.end();
 });

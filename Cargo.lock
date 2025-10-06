@@ -2968,6 +2968,7 @@ name = "pubky-wasm"
 version = "0.6.0-rc.5"
 dependencies = [
  "console_log",
+ "futures-util",
  "getrandom 0.3.3",
  "js-sys",
  "log",
@@ -2982,6 +2983,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
 ]
 

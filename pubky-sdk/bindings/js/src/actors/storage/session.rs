@@ -2,6 +2,7 @@
 use js_sys::Uint8Array;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use web_sys::Response;
 
 use super::stats::ResourceStats;
 use crate::js_error::JsResult;
@@ -49,6 +50,19 @@ impl SessionStorage {
         }
         let urls = b.send().await?.into_iter().map(|u| u.to_string()).collect();
         Ok(urls)
+    }
+
+    /// GET a streaming response for an absolute session path.
+    ///
+    /// @param {Path} path
+    /// @returns {Promise<Response>}
+    #[wasm_bindgen]
+    pub async fn get(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<Response> {
+        let resp = self.0.get(path).await?;
+        super::response_to_web_response(resp)
     }
 
     /// GET bytes from an absolute session path.

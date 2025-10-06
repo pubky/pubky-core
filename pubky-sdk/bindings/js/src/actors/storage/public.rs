@@ -3,6 +3,7 @@ use super::stats::ResourceStats;
 use js_sys::Uint8Array;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use web_sys::Response;
 
 use crate::js_error::JsResult;
 
@@ -56,6 +57,19 @@ impl PublicStorage {
 
         let urls = b.send().await?.into_iter().map(|u| u.to_string()).collect();
         Ok(urls)
+    }
+
+    /// Perform a streaming `GET` and expose the raw `Response` object.
+    ///
+    /// @param {Address} address
+    /// @returns {Promise<Response>}
+    #[wasm_bindgen]
+    pub async fn get(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
+    ) -> JsResult<Response> {
+        let resp = self.0.get(address).await?;
+        super::response_to_web_response(resp)
     }
 
     /// Fetch bytes from an addressed path.
