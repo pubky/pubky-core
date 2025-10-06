@@ -46,6 +46,7 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "Request",
     "RequestInit",
     "RequestCredentials",
+    "Response",
     "Headers",
     "ServiceWorkerGlobalScope",
 ] }

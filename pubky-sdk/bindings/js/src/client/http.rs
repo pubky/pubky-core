@@ -2,11 +2,14 @@
 
 use js_sys::{Promise, Reflect};
 use url::Url;
-use wasm_bindgen::prelude::*;
-use web_sys::{Headers, Request, RequestCredentials, RequestInit, ServiceWorkerGlobalScope};
+use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{
+    Headers, Request, RequestCredentials, RequestInit, Response, ServiceWorkerGlobalScope,
+};
 
 use super::constructor::Client;
-use crate::js_error::JsResult;
+use crate::js_error::{JsResult, PubkyJsError};
 
 #[wasm_bindgen]
 impl Client {
@@ -19,8 +22,11 @@ impl Client {
     /// @example
     /// const client = pubky.client();
     /// const res = await client.fetch(`pubky://${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
-    #[wasm_bindgen]
-    pub async fn fetch(&self, url: &str, init: Option<RequestInit>) -> JsResult<Promise> {
+    pub async fn fetch(
+        &self,
+        url: &str,
+        #[wasm_bindgen(unchecked_param_type = "RequestInit")] init: Option<RequestInit>,
+    ) -> JsResult<Response> {
         // 1) Parse URL
         let mut url = Url::parse(url)?;
 
@@ -67,7 +73,9 @@ impl Client {
             .map_err(|_| JsValue::from_str("invalid RequestInit"))?;
 
         // 6) Dispatch using the proper global (SW or Window)
-        Ok(js_fetch(&js_req))
+        let promise = js_fetch(&js_req);
+        let value = JsFuture::from(promise).await?;
+        value.dyn_into::<Response>().map_err(PubkyJsError::from)
     }
 }
 
