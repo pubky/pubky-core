@@ -1,6 +1,6 @@
 import test from "tape";
 import { Client } from "../index.js";
-import type { PubkyJsError } from "../index.js";
+import type { PubkyError } from "../index.js";
 
 const TLD = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
@@ -49,9 +49,9 @@ test("fetch failed", async (t) => {
   {
     const response = await client
       .fetch("https://nonexistent.domain/")
-      .catch((error: unknown) => error as PubkyJsError);
+      .catch((error: unknown) => error as PubkyError);
     t.equal(
-      (response as PubkyJsError).name,
+      (response as PubkyError).name,
       "RequestError",
       "ICANN fetch error bubbled to JS",
     );
@@ -61,9 +61,9 @@ test("fetch failed", async (t) => {
   {
     const response = await client
       .fetch("https://1pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ew1/")
-      .catch((error: unknown) => error as PubkyJsError);
+      .catch((error: unknown) => error as PubkyError);
     t.equal(
-      (response as PubkyJsError).name,
+      (response as PubkyError).name,
       "RequestError",
       "pubky fetch error bubbled to JS",
     );

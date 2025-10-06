@@ -8,9 +8,7 @@ use super::stats::ResourceStats;
 use crate::js_error::JsResult;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_PATH: &'static str = r#"
-    export type Path = `/pub/${string}`;
-    "#;
+const TS_PATH: &'static str = r#"export type Path = `/pub/${string}`;"#;
 
 /// Read/write storage scoped to **your** session (absolute paths: `/pub/...`).
 #[wasm_bindgen]
@@ -126,7 +124,7 @@ impl SessionStorage {
     ///
     /// @param {Path} path Absolute path under your user (starts with `/`).
     /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
-    /// @throws {PubkyJsError} On invalid input or transport/server errors.
+    /// @throws {PubkyError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]
     pub async fn stats(
         &self,

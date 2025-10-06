@@ -36,7 +36,7 @@ impl AuthFlow {
     /// @returns {AuthFlow}
     /// A running auth flow. Call `authorizationUrl()` to show the deep link,
     /// then `awaitApproval()` to receive a `Session`.
-    /// @throws {PubkyJsError}
+    /// @throws {PubkyError}
     /// - `{ name: "InvalidInput", message: string }` if any capability entry is invalid
     ///     or for an invalid relay URL.
     /// @example
@@ -90,7 +90,7 @@ impl AuthFlow {
     /// @returns {Promise<Session>}
     /// Resolves when approved; rejects on timeout/cancel/network errors.
     ///
-    /// @throws {PubkyJsError}
+    /// @throws {PubkyError}
     /// - `RequestError` if relay/network fails
     /// - `AuthenticationError` if approval is denied/invalid
     #[wasm_bindgen(js_name = "awaitApproval")]
@@ -103,7 +103,7 @@ impl AuthFlow {
     /// @returns {Promise<AuthToken>}
     /// Resolves when approved; rejects on timeout/cancel/network errors.
     ///
-    /// @throws {PubkyJsError}
+    /// @throws {PubkyError}
     /// - `RequestError` if relay/network fails
     #[wasm_bindgen(js_name = "awaitToken")]
     pub async fn await_token(self) -> JsResult<AuthToken> {

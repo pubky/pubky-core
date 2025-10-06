@@ -10,7 +10,7 @@ import {
 import {
   Assert,
   IsExact,
-  assertErrorLike,
+  assertPubkyError,
   createSignupToken,
 } from "./utils.js";
 
@@ -342,7 +342,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     await u1.session.storage.putText(P, "nope");
     t.fail("stale user#1 session should not be able to write after signout");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "stale handle write -> Error");
   }
 

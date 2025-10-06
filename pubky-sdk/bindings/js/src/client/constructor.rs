@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
+use crate::js_error::{JsResult, PubkyErrorName, PubkyError};
 
 // ------------------------------------------------------------------------------------------------
 // JS style config objects for the client.
@@ -86,7 +86,7 @@ impl Client {
                         p
                     });
                     if let Some(msg) = relay_set_error {
-                        return Err(PubkyJsError::new(PubkyErrorName::InvalidInput, msg));
+                        return Err(PubkyError::new(PubkyErrorName::InvalidInput, msg));
                     }
                 }
                 // Timeout

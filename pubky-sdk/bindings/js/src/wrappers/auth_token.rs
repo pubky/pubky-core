@@ -79,7 +79,7 @@ impl AuthToken {
     #[wasm_bindgen(js_name = "verify")]
     pub fn verify_js(bytes: js_sys::Uint8Array) -> JsResult<AuthToken> {
         let vec = bytes.to_vec();
-        let token = pubky::AuthToken::verify(&vec)?; // maps to PubkyJsError on failure
+        let token = pubky::AuthToken::verify(&vec)?; // maps to PubkyError on failure
         Ok(AuthToken(token))
     }
 

@@ -213,7 +213,7 @@ try {
 }
 ```
 
-On invalid input, `validateCapabilities` throws a `PubkyJsError` with
+On invalid input, `validateCapabilities` throws a `PubkyError` with
 `{ name: "InvalidInput", message: "Invalid capability entries: …" }`, so you can
 surface precise feedback to the user.
 
@@ -334,10 +334,10 @@ Both `pubky<pk>/…` (preferred) and `pubky://<pk>/…` resolve to the same HTTP
 
 ## Errors
 
-All async methods throw a structured `PubkyJsError`:
+All async methods throw a structured `PubkyError`:
 
 ```ts
-type PubkyJsError = {
+interface PubkyError extends Error {
   name:
     | "RequestError" // network/server/validation/JSON
     | "InvalidInput"
@@ -345,8 +345,8 @@ type PubkyJsError = {
     | "PkarrError"
     | "InternalError";
   message: string;
-  statusCode?: number; // present for HTTP server errors (4xx/5xx)
-};
+  data?: unknown; // structured context when available (e.g. { statusCode: number })
+}
 ```
 
 Example:
@@ -355,7 +355,15 @@ Example:
 try {
   await publicStorage.getJson(`${pk}/pub/example.com/missing.json`);
 } catch (e) {
-  if (e.name === "RequestError" && e.statusCode === 404) {
+  const error = e as PubkyError;
+  if (
+    error.name === "RequestError" &&
+    typeof error.data === "object" &&
+    error.data !== null &&
+    "statusCode" in error.data &&
+    typeof (error.data as { statusCode?: number }).statusCode === "number" &&
+    (error.data as { statusCode?: number }).statusCode === 404
+  ) {
     // handle not found
   }
 }

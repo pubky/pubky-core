@@ -41,7 +41,7 @@ impl Signer {
     /// @param {string|null} signupToken Invite/registration token or `null`.
     /// @returns {Promise<Session>}
     ///
-    /// @throws {PubkyJsError}
+    /// @throws {PubkyError}
     /// - `AuthenticationError` (bad/expired token)
     /// - `RequestError` (network/server)
     #[wasm_bindgen]
@@ -63,7 +63,7 @@ impl Signer {
     ///
     /// @returns {Promise<Session>}
     ///
-    /// @throws {PubkyJsError}
+    /// @throws {PubkyError}
     #[wasm_bindgen]
     pub async fn signin(&self) -> JsResult<Session> {
         Ok(Session(self.0.signin().await?))

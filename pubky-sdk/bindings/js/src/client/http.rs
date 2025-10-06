@@ -9,7 +9,7 @@ use web_sys::{
 };
 
 use super::constructor::Client;
-use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
+use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 
 #[wasm_bindgen]
 impl Client {
@@ -27,7 +27,7 @@ impl Client {
         let mut url = Url::parse(url)?;
 
         if url.scheme() == "pubky" {
-            return Err(PubkyJsError::new(
+            return Err(PubkyError::new(
                 PubkyErrorName::InvalidInput,
                 "pubky:// URLs are not supported; resolve them before transport",
             ));
@@ -80,18 +80,18 @@ impl Client {
         // 6) Dispatch using the proper global (SW or Window)
         let promise = js_fetch(&js_req);
         let value = JsFuture::from(promise).await.map_err(map_fetch_error)?;
-        value.dyn_into::<Response>().map_err(PubkyJsError::from)
+        value.dyn_into::<Response>().map_err(PubkyError::from)
     }
 }
 
-fn map_fetch_error(err: JsValue) -> PubkyJsError {
+fn map_fetch_error(err: JsValue) -> PubkyError {
     if err.is_instance_of::<js_sys::Error>() {
         let js_err: js_sys::Error = err.unchecked_into();
         let message = js_err
             .to_string()
             .as_string()
             .unwrap_or_else(|| "fetch failed".to_string());
-        return PubkyJsError::new(PubkyErrorName::RequestError, message);
+        return PubkyError::new(PubkyErrorName::RequestError, message);
     }
 
     let message = err
@@ -99,7 +99,7 @@ fn map_fetch_error(err: JsValue) -> PubkyJsError {
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "fetch failed".to_string());
 
-    PubkyJsError::new(PubkyErrorName::RequestError, message)
+    PubkyError::new(PubkyErrorName::RequestError, message)
 }
 
 #[wasm_bindgen]

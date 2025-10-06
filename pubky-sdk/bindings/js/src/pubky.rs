@@ -69,7 +69,7 @@ impl Pubky {
     /// A running auth flow. Show `authorizationUrl` as QR/deeplink,
     /// then `awaitApproval()` to obtain a `Session`.
     ///
-    /// @throws {PubkyJsError}
+    /// @throws {PubkyError}
     /// - `{ name: "InvalidInput" }` for malformed capabilities or bad relay URL
     /// - `{ name: "RequestError" }` if the flow cannot be started (network/relay)
     ///

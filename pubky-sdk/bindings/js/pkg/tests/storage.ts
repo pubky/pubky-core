@@ -11,8 +11,9 @@ import {
 import {
   Assert,
   IsExact,
-  assertErrorLike,
+  assertPubkyError,
   createSignupToken,
+  getStatusCode,
   sleep,
 } from "./utils.js";
 
@@ -74,9 +75,9 @@ test("session: putJson/getJson/delete, public: getJson", async (t) => {
     await sdk.publicStorage.getJson(addr);
     t.fail("public getJson after delete should 404");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "mapped error name");
-    t.equal(error.statusCode, 404, "status code 404");
+    t.equal(getStatusCode(error), 404, "status code 404");
   }
 
   t.end();
@@ -112,9 +113,9 @@ test("session: putText/getText/delete, public: getText", async (t) => {
     await sdk.publicStorage.getText(addr);
     t.fail("public getText after delete should 404");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "mapped error name");
-    t.equal(error.statusCode, 404, "status code 404");
+    t.equal(getStatusCode(error), 404, "status code 404");
   }
 
   t.end();
@@ -151,9 +152,9 @@ test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
     await sdk.publicStorage.getBytes(addr);
     t.fail("public getBytes after delete should 404");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "mapped error name");
-    t.equal(error.statusCode, 404, "status code 404");
+    t.equal(getStatusCode(error), 404, "status code 404");
   }
 
   t.end();
@@ -171,9 +172,9 @@ test("forbidden: writing outside /pub returns 403", async (t) => {
     await session.storage.putText(forbiddenPath as unknown as Path, "Hello");
     t.fail("putText to /priv should fail with 403");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "mapped error name");
-    t.equal(error.statusCode, 403, "status code 403");
+    t.equal(getStatusCode(error), 403, "status code 403");
     t.ok(
       String(error.message || "").includes(
         "Writing to directories other than '/pub/'",
@@ -441,9 +442,9 @@ test("not found", async (t) => {
     await sdk.publicStorage.getJson(addr);
     t.fail("getJson() should throw on missing");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "mapped error name");
-    t.equal(error.statusCode, 404, "status code 404");
+    t.equal(getStatusCode(error), 404, "status code 404");
   }
 
   t.end();

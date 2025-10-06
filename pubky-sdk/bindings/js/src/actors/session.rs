@@ -2,7 +2,7 @@
 use wasm_bindgen::prelude::*;
 
 use super::storage::SessionStorage;
-use crate::js_error::{JsResult, PubkyJsError};
+use crate::js_error::{JsResult, PubkyError};
 use crate::wrappers::session_info::SessionInfo;
 
 /// An authenticated context “as the user”.
@@ -37,7 +37,7 @@ impl Session {
     pub async fn signout(&self) -> JsResult<()> {
         match self.0.clone().signout().await {
             Ok(()) => Ok(()),
-            Err((e, _s)) => Err(PubkyJsError::from(e)),
+            Err((e, _s)) => Err(PubkyError::from(e)),
         }
     }
 }

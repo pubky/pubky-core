@@ -9,7 +9,7 @@ import {
 import {
   Assert,
   IsExact,
-  assertErrorLike,
+  assertPubkyError,
   createSignupToken,
 } from "./utils.js";
 
@@ -67,7 +67,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
     sdk.startAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", TESTNET_HTTP_RELAY);
     t.fail("startAuthFlow() should throw on malformed capability entries");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "InvalidInput", "invalid caps -> InvalidInput");
     t.ok(
       /Invalid capability entries/i.test(error.message),
@@ -121,7 +121,7 @@ test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
     validateCapabilities("/pub/a/:rw,/x:y,/pub/b/:x");
     t.fail("validateCapabilities should throw on malformed entries");
   } catch (error) {
-    assertErrorLike(t, error);
+    assertPubkyError(t, error);
     t.equal(error.name, "InvalidInput", "throws InvalidInput on bad entries");
     t.ok(
       error.message.includes("/x:y") && error.message.includes("/pub/b/:x"),
