@@ -846,7 +846,7 @@ async fn read_after_event() {
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write one file
-    let url = format!("pubky{public_key}/pub/a.com/a.txt");
+    let url = format!("pubky://{public_key}/pub/a.com/a.txt");
     session
         .storage()
         .put("/pub/a.com/a.txt", vec![0])
