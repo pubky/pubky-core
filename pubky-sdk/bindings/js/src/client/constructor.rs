@@ -7,8 +7,6 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
 
-static TESTNET_RELAY_PORT: &str = "15411";
-
 // ------------------------------------------------------------------------------------------------
 // JS style config objects for the client.
 // ------------------------------------------------------------------------------------------------
@@ -109,7 +107,7 @@ impl Client {
 
     /// Create a client wired for **local testnet**.
     ///
-    /// Sets PKARR relays to `http://<host>:15411/` and enables WASM `pubky://`
+    /// Configures PKARR relays for the testnet and enables WASM `pubky://`
     /// mapping for that host.
     ///
     /// @param {string} [host="localhost"]
@@ -127,11 +125,9 @@ impl Client {
     #[wasm_bindgen]
     pub fn testnet(host: Option<String>) -> JsResult<Self> {
         let hostname = host.unwrap_or_else(|| "localhost".to_string());
-        let relay = format!("http://{}:{}/", hostname, TESTNET_RELAY_PORT);
 
         let mut builder = pubky::PubkyHttpClient::builder();
-        builder.pkarr(|p| p.relays(&[relay.as_str()]).expect("valid testnet relay"));
-        builder.testnet_host(Some(hostname));
+        builder.testnet_with_host(&hostname);
 
         let client = builder.build()?;
         log::debug!("Client created: {:?}", client);

@@ -54,12 +54,12 @@ pub struct PubkyHttpClientBuilder {
 }
 
 impl PubkyHttpClientBuilder {
-    #[cfg(not(target_arch = "wasm32"))]
     /// Configure this builder to talk to a **local Pubky testnet** on `localhost`.
     ///
     /// Concretely:
     /// - **DHT bootstrap** to the local testnet node at: `"localhost:6881"`
     /// - **PKARR relay** base URL: `"http://localhost:15411"`
+    /// - **WASM builds** additionally remember the hostname to rewrite `pubky://` URLs.
     ///
     /// # Examples
     /// ```no_run
@@ -74,15 +74,15 @@ impl PubkyHttpClientBuilder {
         self.testnet_with_host("localhost")
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     /// Configure this builder to talk to a **Pubky testnet** reachable at a custom host.
     ///
     /// Use this when your testnet stack isn’t on `localhost` (e.g. running in Docker,
     /// a remote VM, or LAN machine).
     ///
-    /// Concretely (native):
-    /// - DHT bootstrap peer: `"<host>:6881"`
+    /// Concretely:
+    /// - DHT bootstrap peer: `"<host>:6881"` (native only)
     /// - PKARR relay base:   `"http://<host>:15411"`
+    /// - WASM remembers `<host>` to adjust URL rewriting for the browser environment.
     ///
     /// # Examples
     /// ```
@@ -98,12 +98,16 @@ impl PubkyHttpClientBuilder {
     /// - These ports come from `pubky_common::constants::testnet_ports::{ BOOTSTRAP, PKARR_RELAY }`.
     /// - Ensure your testnet exposes them from that host (and they’re reachable from where this code runs).
     pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
-        self.pkarr
-            .bootstrap(&[format!(
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.pkarr.bootstrap(&[format!(
                 "{}:{}",
                 host,
                 pubky_common::constants::testnet_ports::BOOTSTRAP
-            )])
+            )]);
+        }
+
+        self.pkarr
             .relays(&[format!(
                 "http://{}:{}",
                 host,
@@ -111,24 +115,10 @@ impl PubkyHttpClientBuilder {
             )])
             .expect("relays urls infallible");
 
-        self
-    }
-
-    /// Sets the testnet host. This is only used for WASM builds.
-    /// TODO: remove from the API surface of native configs without triggering clippy
-    /// errors on the JS bindings package.
-    pub fn testnet_host(&mut self, host: Option<String>) -> &mut Self {
-        // The field itself is still conditional, so the logic is gated.
         #[cfg(target_arch = "wasm32")]
         {
-            self.testnet_host = match host {
-                Some(h) => Some(h),
-                None => Some("localhost".to_string()),
-            };
+            self.testnet_host = Some(host.to_string());
         }
-        // This avoids an "unused parameter" warning on non-WASM builds.
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = host;
 
         self
     }
@@ -353,13 +343,7 @@ impl PubkyHttpClient {
     /// - [`PubkyHttpClientBuilder::testnet_with_host`] to target a non-`localhost` host.
     pub fn testnet() -> Result<PubkyHttpClient, BuildError> {
         let mut builder = Self::builder();
-
-        #[cfg(not(target_arch = "wasm32"))]
         builder.testnet();
-
-        #[cfg(target_arch = "wasm32")]
-        builder.testnet_host(Some("localhost".to_string()));
-
         builder.build()
     }
 
