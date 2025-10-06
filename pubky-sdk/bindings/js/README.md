@@ -9,16 +9,22 @@ For deeper dives, check out the
 [examples/javascript](../../../examples/javascript) scripts and the
 [npm package documentation](pkg/README.md).
 
-## How To Build/Test the NPM Package
+## Development quick start
 
-Make sure rust and wasm-pack are available.
+Prerequisites:
+
+- Rust toolchain (via [`rustup`](https://rustup.rs/)).
+- [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/) on your `$PATH`.
+- Node.js v20+.
+
+Then from `pubky-sdk/bindings/js/pkg`:
 
 ```bash
-curl https://sh.rustup.rs -sSf | sh
-curl https://drager.github.io/wasm-pack/installer/init.sh -sSf | sh
+npm install          # grab JS deps once
+npm run build        # compile wasm + patch bundle
+npm run testnet      # start local DHT + relay + homeserver (in another terminal)
+npm run test         # run tape tests against the testnet + browser harness
 ```
 
-1. Go to `pubky-sdk/bindings/js/pkg`.
-2. Run `npm run build`.
-3. Run a testnet mainline DHT, Pkarr relay and Homeserver `npm run testnet`
-4. Run tests with `npm run test`.
+The `build` step will produce an isomorphic bundle (`index.js` / `index.cjs`) and
+TypeScript definitions under `pkg/`.
