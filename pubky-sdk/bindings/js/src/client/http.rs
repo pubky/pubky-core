@@ -16,17 +16,13 @@ impl Client {
     /// Perform a raw fetch. Works with `pubky://` or `http(s)://` URLs.
     ///
     /// @param {string} url
-    /// @param {RequestInit=} init Standard fetch options; `credentials: "include"` recommended for session I/O.
+    /// @param {RequestInit} init Standard fetch options; `credentials: "include"` recommended for session I/O.
     /// @returns {Promise<Response>}
     ///
     /// @example
     /// const client = pubky.client();
     /// const res = await client.fetch(`pubky://${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
-    pub async fn fetch(
-        &self,
-        url: &str,
-        #[wasm_bindgen(unchecked_param_type = "RequestInit")] init: Option<RequestInit>,
-    ) -> JsResult<Response> {
+    pub async fn fetch(&self, url: &str, init: Option<RequestInit>) -> JsResult<Response> {
         // 1) Parse URL
         let mut url = Url::parse(url)?;
 
