@@ -41,29 +41,29 @@ impl Session {
     /// @example
     /// const secret = session.exportSecret();
     /// await localStorage.setItem("pubky-session", secret);
-    #[wasm_bindgen(js_name = "exportSecret")]
-    pub fn export_secret(&self) -> String {
-        self.0.export_secret()
-    }
+    // #[wasm_bindgen(js_name = "exportSecret")]
+    // pub fn export_secret(&self) -> String {
+    //     self.0.export_secret()
+    // }
 
-    /// Restore a previously exported session secret.
-    ///
-    /// Performs a `/session` validation round-trip; if the secret is expired or
-    /// revoked the returned promise rejects with `{ name: "AuthenticationError" }`.
-    ///
-    /// @param {string} token Secret returned by {@link Session#exportSecret}.
-    /// @param {Client=} client Optional HTTP client to reuse cookies and relay
-    ///                         configuration. Defaults to a new client.
-    /// @returns {Promise<Session>}
-    ///
-    /// @example
-    /// const token = await localStorage.getItem("pubky-session");
-    /// const session = await Session.importSecret(token, pubky.client);
-    #[wasm_bindgen(js_name = "importSecret")]
-    pub async fn import_secret(token: String, client: Option<Client>) -> JsResult<Session> {
-        let session = pubky::PubkySession::import_secret(&token, client.map(|c| c.0)).await?;
-        Ok(Session(session))
-    }
+    // /// Restore a previously exported session secret.
+    // ///
+    // /// Performs a `/session` validation round-trip; if the secret is expired or
+    // /// revoked the returned promise rejects with `{ name: "AuthenticationError" }`.
+    // ///
+    // /// @param {string} token Secret returned by {@link Session#exportSecret}.
+    // /// @param {Client=} client Optional HTTP client to reuse cookies and relay
+    // ///                         configuration. Defaults to a new client.
+    // /// @returns {Promise<Session>}
+    // ///
+    // /// @example
+    // /// const token = await localStorage.getItem("pubky-session");
+    // /// const session = await Session.importSecret(token, pubky.client);
+    // #[wasm_bindgen(js_name = "importSecret")]
+    // pub async fn import_secret(token: String, client: Option<Client>) -> JsResult<Session> {
+    //     let session = pubky::PubkySession::import_secret(&token, client.map(|c| c.0)).await?;
+    //     Ok(Session(session))
+    // }
 
     /// Invalidate the session on the server (clears server cookie).
     /// Further calls to storage API will fail.

@@ -26,6 +26,7 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
             "--out-name",
             "pubky",
         ])
+        .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()?;
@@ -43,6 +44,7 @@ fn patch() -> io::Result<ExitStatus> {
     println!("{manifest_dir}/scripts/patch.mjs");
     let status = Command::new("node")
         .args([format!("{manifest_dir}/scripts/patch.mjs")])
+        .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()?;

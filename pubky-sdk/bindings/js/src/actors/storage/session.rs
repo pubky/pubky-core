@@ -83,8 +83,11 @@ impl SessionStorage {
     /// @param {Path} path
     /// @returns {Promise<any>}
     #[wasm_bindgen(js_name = "getJson")]
-    pub async fn get_json(&self, addr: &str) -> JsResult<JsValue> {
-        let v: serde_json::Value = self.0.get_json(addr).await?;
+    pub async fn get_json(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
+    ) -> JsResult<JsValue> {
+        let v: serde_json::Value = self.0.get_json(path).await?;
         let ser = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
         Ok(v.serialize(&ser)?)
     }

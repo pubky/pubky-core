@@ -22,7 +22,6 @@
 //    - version, signature, allowed timestamp window, replay protection (if using `AuthVerifier` on server).
 //
 
-use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::js_error::JsResult;
@@ -122,12 +121,12 @@ impl AuthToken {
     ///
     /// Example entry: `"/pub/my.app/:rw"`
     #[wasm_bindgen(getter)]
-    pub fn capabilities(&self) -> Array {
-        let arr = Array::new();
-        for cap in self.0.capabilities().iter() {
-            arr.push(&JsValue::from_str(&cap.to_string()));
-        }
-        arr
+    pub fn capabilities(&self) -> Vec<String> {
+        self.0
+            .capabilities()
+            .iter()
+            .map(|cap| cap.to_string())
+            .collect()
     }
 
     /// Serialize the token to a `Uint8Array` in its **canonical** (postcard) binary format.
