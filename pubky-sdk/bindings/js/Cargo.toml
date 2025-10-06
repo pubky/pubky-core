@@ -59,3 +59,6 @@ reqwest = { version = "0.12.12", default-features = false, features = [
     "stream",
 ] }
 wasm-streams = "0.4"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

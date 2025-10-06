@@ -63,17 +63,19 @@ impl SessionStorage {
         let url = self.to_url(path)?;
         let rb = self.client.cross_request(method, url).await?;
 
-        // Always attach session cookie on native; this handle is scoped to *my* user.
         #[cfg(not(target_arch = "wasm32"))]
-        let rb = {
-            let cookie_name = self.user.to_string();
-            rb.header(
-                reqwest::header::COOKIE,
-                format!("{cookie_name}={}", self.cookie),
-            )
-        };
+        let rb = self.with_session_cookie(rb);
 
         Ok(rb)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn with_session_cookie(&self, rb: RequestBuilder) -> RequestBuilder {
+        let cookie_name = self.user.to_string();
+        rb.header(
+            reqwest::header::COOKIE,
+            format!("{cookie_name}={}", self.cookie),
+        )
     }
 }
 

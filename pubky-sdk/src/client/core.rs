@@ -1,5 +1,5 @@
-use std::fmt::Debug;
 use std::time::Duration;
+use std::{borrow::Cow, fmt::Debug};
 
 use crate::errors::BuildError;
 
@@ -169,21 +169,23 @@ impl PubkyHttpClientBuilder {
         let pkarr = self.pkarr.build()?;
 
         // Compose user agent with optional extra part.
-        let user_agent = match &self.user_agent_extra {
-            Some(extra) if !extra.trim().is_empty() => {
-                &format!("{DEFAULT_USER_AGENT} {}", extra.trim())
-            }
-            _ => DEFAULT_USER_AGENT,
-        };
+        let user_agent = self
+            .user_agent_extra
+            .as_deref()
+            .map(str::trim)
+            .filter(|extra| !extra.is_empty())
+            .map(|extra| Cow::Owned(format!("{DEFAULT_USER_AGENT} {extra}")))
+            .unwrap_or_else(|| Cow::Borrowed(DEFAULT_USER_AGENT));
 
         #[cfg(not(target_arch = "wasm32"))]
-        let mut http_builder = reqwest::ClientBuilder::from(pkarr.clone()).user_agent(user_agent);
+        let mut http_builder =
+            reqwest::ClientBuilder::from(pkarr.clone()).user_agent(user_agent.as_ref());
 
         #[cfg(target_arch = "wasm32")]
-        let http_builder = reqwest::Client::builder().user_agent(user_agent);
+        let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
         #[cfg(not(target_arch = "wasm32"))]
-        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent);
+        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
@@ -357,18 +359,27 @@ impl PubkyHttpClient {
 
 #[cfg(test)]
 mod test {
-    use reqwest::Method;
+    use httpmock::MockServer;
+    use reqwest::{Method, StatusCode};
 
     use super::*;
 
     #[tokio::test]
     async fn test_fetch() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method("GET").path("/health");
+            then.status(200).body("ok");
+        });
+
         let client = PubkyHttpClient::new().unwrap();
         let response = client
-            .request(Method::GET, "https://example.com/")
+            .request(Method::GET, &server.url("/health"))
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 200);
+
+        assert_eq!(response.status(), StatusCode::OK);
+        mock.assert();
     }
 }

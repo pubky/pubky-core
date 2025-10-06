@@ -1,6 +1,5 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::Method;
-use std::collections::HashMap;
 use url::Url;
 
 use pubky_common::{
@@ -30,17 +29,22 @@ impl PubkySigner {
     pub async fn approve_auth(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
         let pubkyauth_url = Url::parse(pubkyauth_url.as_ref())?;
 
-        // 1) Extract query params
-        let query_params: HashMap<String, String> =
-            pubkyauth_url.query_pairs().into_owned().collect();
+        // 1) Extract query params (only the fields we care about)
+        let mut relay_param: Option<String> = None;
+        let mut secret_param: Option<String> = None;
+        for (key, value) in pubkyauth_url.query_pairs() {
+            match key.as_ref() {
+                "relay" if relay_param.is_none() => relay_param = Some(value.into_owned()),
+                "secret" if secret_param.is_none() => secret_param = Some(value.into_owned()),
+                _ => {}
+            }
+        }
 
-        let relay_str = query_params
-            .get("relay")
+        let relay_str = relay_param
             .ok_or_else(|| AuthError::Validation("Missing 'relay' query parameter".to_string()))?;
-        let relay = Url::parse(relay_str)?;
+        let relay = Url::parse(&relay_str)?;
 
-        let secret_str = query_params
-            .get("secret")
+        let secret_str = secret_param
             .ok_or_else(|| AuthError::Validation("Missing 'secret' query parameter".to_string()))?;
 
         // 2) Decode client secret

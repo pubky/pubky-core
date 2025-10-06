@@ -163,13 +163,7 @@ impl<'a> ListBuilder<'a> {
                     .cross_request(Method::GET, url.clone())
                     .await?;
                 #[cfg(not(target_arch = "wasm32"))]
-                let rb = {
-                    let cookie_name = storage.user.to_string();
-                    rb.header(
-                        reqwest::header::COOKIE,
-                        format!("{cookie_name}={}", storage.cookie),
-                    )
-                };
+                let rb = storage.with_session_cookie(rb);
                 rb
             }
         };
