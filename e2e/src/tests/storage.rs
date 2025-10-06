@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, Error, Keypair, Method, StatusCode},
+    pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
@@ -30,7 +30,7 @@ async fn put_get_delete() {
     // Use Pubky native method to get data from homeserver
     let response = pubky
         .public_storage()
-        .get(format!("{public_key}/{path}"))
+        .get(format!("pubky{public_key}/{path}"))
         .await
         .unwrap();
 
@@ -111,7 +111,7 @@ async fn put_then_get_json_roundtrip() {
     // Read back as strongly-typed JSON and assert equality.
     let got: Payload = pubky
         .public_storage()
-        .get_json(format!("{}/{path}", public_key))
+        .get_json(format!("pubky{}/{path}", public_key))
         .await
         .unwrap();
     assert_eq!(got, expected);
@@ -220,14 +220,22 @@ async fn unauthorized_put_delete() {
 
     // Someone tries to write to owner's namespace -> 401 Unauthorized
     let owner_url = format!(
-        "pubky://{}/{}",
+        "pubky{}/{}",
         owner_session.info().public_key(),
         path.trim_start_matches('/')
     );
 
     let response = pubky
         .client()
-        .request(Method::PUT, &owner_url)
+        .request(
+            Method::PUT,
+            owner_url
+                .clone()
+                .into_pubky_resource()
+                .unwrap()
+                .to_transport_url()
+                .unwrap(),
+        )
         .body(vec![0, 1, 2, 3, 4])
         .send()
         .await
@@ -246,7 +254,14 @@ async fn unauthorized_put_delete() {
     // Other tries to delete owner's file → 401 Unauthorized
     let response = pubky
         .client()
-        .request(Method::DELETE, &owner_url)
+        .request(
+            Method::DELETE,
+            owner_url
+                .into_pubky_resource()
+                .unwrap()
+                .to_transport_url()
+                .unwrap(),
+        )
         .send()
         .await
         .unwrap();
@@ -300,11 +315,11 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/a.txt"),
-                format!("pubky://{public_key}/pub/example.com/b.txt"),
-                format!("pubky://{public_key}/pub/example.com/c.txt"),
-                format!("pubky://{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{public_key}/pub/example.com/d.txt"),
+                format!("pubky{public_key}/pub/example.com/a.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky{public_key}/pub/example.com/d.txt"),
             ],
             "normal list with no limit or cursor"
         );
@@ -324,8 +339,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/a.txt"),
-                format!("pubky://{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/a.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt"),
             ],
             "normal list with limit but no cursor"
         );
@@ -334,7 +349,7 @@ async fn list() {
     {
         let list = pubky
             .public_storage()
-            .list(format!("{public_key}{path}"))
+            .list(format!("pubky{public_key}{path}"))
             .unwrap()
             .limit(2)
             .cursor("a.txt")
@@ -346,8 +361,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/b.txt"),
-                format!("pubky://{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/c.txt"),
             ],
             "normal list with limit and a file cursor"
         );
@@ -368,8 +383,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{public_key}/pub/example.com/d.txt"),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky{public_key}/pub/example.com/d.txt"),
             ],
             "normal list with limit and a directory cursor"
         );
@@ -378,10 +393,10 @@ async fn list() {
     {
         let list = pubky
             .public_storage()
-            .list(format!("{public_key}{path}"))
+            .list(format!("pubky{public_key}{path}"))
             .unwrap()
             .limit(2)
-            .cursor(&format!("pubky://{public_key}/pub/example.com/a.txt"))
+            .cursor(&format!("pubky{public_key}/pub/example.com/a.txt"))
             .send()
             .await
             .unwrap();
@@ -390,8 +405,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/b.txt"),
-                format!("pubky://{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/c.txt"),
             ],
             "normal list with limit and a full url cursor"
         );
@@ -412,8 +427,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/b.txt"),
-                format!("pubky://{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/c.txt"),
             ],
             "normal list with limit and a leading / cursor"
         );
@@ -433,11 +448,11 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/d.txt"),
-                format!("pubky://{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{public_key}/pub/example.com/c.txt"),
-                format!("pubky://{public_key}/pub/example.com/b.txt"),
-                format!("pubky://{public_key}/pub/example.com/a.txt"),
+                format!("pubky{public_key}/pub/example.com/d.txt"),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/a.txt"),
             ],
             "reverse list with no limit or cursor"
         );
@@ -458,8 +473,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/d.txt"),
-                format!("pubky://{public_key}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky{public_key}/pub/example.com/d.txt"),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
             ],
             "reverse list with limit but no cursor"
         );
@@ -481,8 +496,8 @@ async fn list() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky://{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
+                format!("pubky{public_key}/pub/example.com/c.txt"),
             ],
             "reverse list with limit and cursor"
         );
@@ -523,7 +538,7 @@ async fn list_shallow() {
     {
         let list = pubky
             .public_storage()
-            .list(format!("{public_key}/{path}"))
+            .list(format!("pubky{public_key}/{path}"))
             .unwrap()
             .shallow(true)
             .send()
@@ -534,13 +549,13 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/a.com/"),
-                format!("pubky://{public_key}/pub/example.com/"),
-                format!("pubky://{public_key}/pub/example.xyz"),
-                format!("pubky://{public_key}/pub/example.xyz/"),
-                format!("pubky://{public_key}/pub/file"),
-                format!("pubky://{public_key}/pub/file2"),
-                format!("pubky://{public_key}/pub/z.com/"),
+                format!("pubky{public_key}/pub/a.com/"),
+                format!("pubky{public_key}/pub/example.com/"),
+                format!("pubky{public_key}/pub/example.xyz"),
+                format!("pubky{public_key}/pub/example.xyz/"),
+                format!("pubky{public_key}/pub/file"),
+                format!("pubky{public_key}/pub/file2"),
+                format!("pubky{public_key}/pub/z.com/"),
             ],
             "normal list shallow"
         );
@@ -562,8 +577,8 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/a.com/"),
-                format!("pubky://{public_key}/pub/example.com/"),
+                format!("pubky{public_key}/pub/a.com/"),
+                format!("pubky{public_key}/pub/example.com/"),
             ],
             "normal list shallow with limit but no cursor"
         );
@@ -586,8 +601,8 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.com/"),
-                format!("pubky://{public_key}/pub/example.xyz"),
+                format!("pubky{public_key}/pub/example.com/"),
+                format!("pubky{public_key}/pub/example.xyz"),
             ],
             "normal list shallow with limit and a file cursor"
         );
@@ -610,9 +625,9 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.xyz"),
-                format!("pubky://{public_key}/pub/example.xyz/"),
-                format!("pubky://{public_key}/pub/file"),
+                format!("pubky{public_key}/pub/example.xyz"),
+                format!("pubky{public_key}/pub/example.xyz/"),
+                format!("pubky{public_key}/pub/file"),
             ],
             "normal list shallow with limit and a directory cursor"
         );
@@ -634,13 +649,13 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/z.com/"),
-                format!("pubky://{public_key}/pub/file2"),
-                format!("pubky://{public_key}/pub/file"),
-                format!("pubky://{public_key}/pub/example.xyz/"),
-                format!("pubky://{public_key}/pub/example.xyz"),
-                format!("pubky://{public_key}/pub/example.com/"),
-                format!("pubky://{public_key}/pub/a.com/"),
+                format!("pubky{public_key}/pub/z.com/"),
+                format!("pubky{public_key}/pub/file2"),
+                format!("pubky{public_key}/pub/file"),
+                format!("pubky{public_key}/pub/example.xyz/"),
+                format!("pubky{public_key}/pub/example.xyz"),
+                format!("pubky{public_key}/pub/example.com/"),
+                format!("pubky{public_key}/pub/a.com/"),
             ],
             "reverse list shallow"
         );
@@ -663,8 +678,8 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/z.com/"),
-                format!("pubky://{public_key}/pub/file2"),
+                format!("pubky{public_key}/pub/z.com/"),
+                format!("pubky{public_key}/pub/file2"),
             ],
             "reverse list shallow with limit but no cursor"
         );
@@ -688,8 +703,8 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/file"),
-                format!("pubky://{public_key}/pub/example.xyz/"),
+                format!("pubky{public_key}/pub/file"),
+                format!("pubky{public_key}/pub/example.xyz/"),
             ],
             "reverse list shallow with limit and a file cursor"
         );
@@ -713,8 +728,8 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky://{public_key}/pub/example.xyz"),
-                format!("pubky://{public_key}/pub/example.com/"),
+                format!("pubky{public_key}/pub/example.xyz"),
+                format!("pubky{public_key}/pub/example.com/"),
             ],
             "reverse list shallow with limit and a directory cursor"
         );
@@ -831,7 +846,7 @@ async fn read_after_event() {
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write one file
-    let url = format!("pubky://{public_key}/pub/a.com/a.txt");
+    let url = format!("pubky{public_key}/pub/a.com/a.txt");
     session
         .storage()
         .put("/pub/a.com/a.txt", vec![0])

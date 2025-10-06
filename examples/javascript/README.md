@@ -82,7 +82,7 @@ npm run storage -- operrr8w.../pub/pubky.app/posts/0033X02JAN0SG
 
 Shows **exists**, **stats**, and downloads the content.
 
-### 5) Raw HTTP request (pubky:// or https://)
+### 5) Raw HTTP request (https://\_pubky.<public_key>)
 
 Low-level fetch through the Pubky client. Handy for debugging.
 
@@ -90,7 +90,7 @@ Low-level fetch through the Pubky client. Handy for debugging.
 npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 # pubky:// read (testnet)
-npm run request -- GET pubky://q5oo7ma.../pub/my.app/info.json --testnet
+npm run request -- GET https://_pubky.q5oo7ma.../pub/my.app/info.json --testnet
 
 # https:// JSON POST
 npm run request -- \
@@ -106,7 +106,7 @@ npm run request -- \
 - **Signer** -> **Session**: `signer.signin(homeserver, invite?)` -> returns `session`.
 - **SessionStorage** (read/write): absolute paths like `"/pub/my.app/file.txt"`.
 - **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my.app/file.txt"`.
-- **pubky:// scheme**: `pubky://<pubky>/<abs-path>`, supported by the Pubky client.
+- **https://\_pubky.<key> subdomains and key TLDs**: `https://_pubky.<public_key>/<abs-path>`, supported by the Pubky client.
 - **Recovery file**: encrypted root secret; decrypted with a passphrase to get a `Keypair`.
 
 ## Quick troubleshooting
