@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::js_error::{JsResult, PubkyErrorName, PubkyError};
+use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 
 // ------------------------------------------------------------------------------------------------
 // JS style config objects for the client.

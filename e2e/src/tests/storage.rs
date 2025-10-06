@@ -393,10 +393,10 @@ async fn list() {
     {
         let list = pubky
             .public_storage()
-            .list(format!("pubky{public_key}{path}"))
+            .list(format!("pubky://{public_key}{path}"))
             .unwrap()
             .limit(2)
-            .cursor(&format!("pubky{public_key}/pub/example.com/a.txt"))
+            .cursor(&format!("pubky://{public_key}/pub/example.com/a.txt"))
             .send()
             .await
             .unwrap();
@@ -437,7 +437,7 @@ async fn list() {
     {
         let list = pubky
             .public_storage()
-            .list(format!("{public_key}{path}"))
+            .list(format!("pubky://{public_key}{path}"))
             .unwrap()
             .reverse(true)
             .send()
@@ -461,7 +461,7 @@ async fn list() {
     {
         let list = pubky
             .public_storage()
-            .list(format!("{public_key}{path}"))
+            .list(format!("pubky{public_key}{path}"))
             .unwrap()
             .reverse(true)
             .limit(2)
