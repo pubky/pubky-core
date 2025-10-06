@@ -22,7 +22,7 @@ impl Client {
     /// @example
     /// const client = pubky.client();
     /// const res = await client.fetch(`pubky://${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
-    pub async fn fetch(&self, url: &str, init: Option<RequestInit>) -> JsResult<Response> {
+    pub async fn fetch(&self, url: &str, init: Option<RequestInitArg>) -> JsResult<Response> {
         // 1) Parse URL
         let mut url = Url::parse(url)?;
 
@@ -31,7 +31,9 @@ impl Client {
         let pubky_host = self.0.prepare_request(&mut url).await?;
 
         // 3) Start from caller's init; DO NOT clobber headers.
-        let req_init = init.unwrap_or_default();
+        let req_init = init
+            .map(|init| RequestInit::from(JsValue::from(init)))
+            .unwrap_or_else(RequestInit::new);
 
         // 3a) If needed, ensure `pubky-host` is present in *init.headers* BEFORE Request creation.
         if let Some(host) = pubky_host.as_deref() {
@@ -77,6 +79,9 @@ impl Client {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "RequestInit")]
+    pub type RequestInitArg;
+
     #[wasm_bindgen(js_name = fetch)]
     fn fetch_with_request(input: &web_sys::Request) -> Promise;
 }
