@@ -158,21 +158,6 @@ const storage = session.storage; // -> This User's storage API (absolute paths)
 await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
 ```
 
-#### Restore a session later
-
-> [!WARNING] > `session.exportSecret()` returns a bearer secret that restores the session cookie.
-> Store it encrypted or in a secure vault. Anyone who obtains the token can act as
-> that user until it expires or is revoked.
-
-```js
-import { Session } from "@synonymdev/pubky";
-
-// Persist the session across restarts
-const secret = session.exportSecret();
-await saveSecretSomewhere(secret);
-const restored = await Session.importSecret(secret, pubky.client);
-```
-
 ---
 
 ### AuthFlow (pubkyauth)
