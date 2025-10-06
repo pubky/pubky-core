@@ -9,7 +9,7 @@ use web_sys::{
 };
 
 use super::constructor::Client;
-use crate::js_error::{JsResult, PubkyJsError};
+use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
 
 #[wasm_bindgen]
 impl Client {
@@ -72,9 +72,27 @@ impl Client {
 
         // 6) Dispatch using the proper global (SW or Window)
         let promise = js_fetch(&js_req);
-        let value = JsFuture::from(promise).await?;
+        let value = JsFuture::from(promise).await.map_err(map_fetch_error)?;
         value.dyn_into::<Response>().map_err(PubkyJsError::from)
     }
+}
+
+fn map_fetch_error(err: JsValue) -> PubkyJsError {
+    if err.is_instance_of::<js_sys::Error>() {
+        let js_err: js_sys::Error = err.unchecked_into();
+        let message = js_err
+            .to_string()
+            .as_string()
+            .unwrap_or_else(|| "fetch failed".to_string());
+        return PubkyJsError::new(PubkyErrorName::RequestError, message);
+    }
+
+    let message = err
+        .as_string()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "fetch failed".to_string());
+
+    PubkyJsError::new(PubkyErrorName::RequestError, message)
 }
 
 #[wasm_bindgen]

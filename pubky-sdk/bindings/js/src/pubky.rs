@@ -78,7 +78,11 @@ impl Pubky {
     /// renderQr(flow.authorizationUrl);
     /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "startAuthFlow")]
-    pub fn start_auth_flow(&self, capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
+    pub fn start_auth_flow(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        relay: Option<String>,
+    ) -> JsResult<AuthFlow> {
         let flow = AuthFlow::start_with_client(capabilities, relay, Some(self.0.client().clone()))?;
         Ok(flow)
     }

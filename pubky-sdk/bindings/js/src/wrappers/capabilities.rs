@@ -8,6 +8,18 @@ use wasm_bindgen::prelude::*;
 use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
 use pubky_common::capabilities::{Capabilities, Capability};
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_CAPABILITIES: &str = r#"
+export type CapabilityAction = "r" | "w" | "rw";
+export type CapabilityScope = `/${string}`;
+export type CapabilityEntry = `${CapabilityScope}:${CapabilityAction}`;
+export type Capabilities =
+  | ""
+  | CapabilityEntry
+  | `${CapabilityEntry},${CapabilityEntry}`
+  | `${CapabilityEntry},${CapabilityEntry},${string}`;
+"#;
+
 /// Internal helper: normalizes capabilities and collects invalid tokens.
 fn normalize_and_collect(input: &str) -> (String, Vec<String>) {
     let mut valid = Vec::new();

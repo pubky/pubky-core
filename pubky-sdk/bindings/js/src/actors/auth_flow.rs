@@ -44,18 +44,21 @@ impl AuthFlow {
     /// renderQRCode(flow.authorizationUrl());
     /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "start")]
-    pub fn start(capabilities: &str, relay: Option<String>) -> JsResult<AuthFlow> {
+    pub fn start(
+        #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        relay: Option<String>,
+    ) -> JsResult<AuthFlow> {
         Self::start_with_client(capabilities, relay, None)
     }
 
     /// Internal helper that threads an explicit transport.
     pub(crate) fn start_with_client(
-        capabilities: &str,
+        capabilities: String,
         relay: Option<String>,
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<AuthFlow> {
         // 1) Validate & normalize capability string
-        let normalized = validate_caps_for_start(capabilities)?;
+        let normalized = validate_caps_for_start(capabilities.as_str())?;
         // 2) Build native Capabilities
         let caps = Capabilities::try_from(normalized.as_str())?;
 
@@ -109,7 +112,7 @@ impl AuthFlow {
 
     /// Non-blocking single poll step (advanced UIs).
     ///
-    /// @returns {Promise<Session|null>} A session if the approval arrived, otherwise `null`.
+    /// @returns {Promise<Session|undefined>} A session if the approval arrived, otherwise `undefined`.
     #[wasm_bindgen(js_name = "tryPollOnce")]
     pub async fn try_poll_once(&self) -> JsResult<Option<Session>> {
         Ok(self.0.try_poll_once().await?.map(Session))
