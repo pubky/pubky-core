@@ -1,1 +1,1 @@
-export * from "./pubky";
+export * from "./pubky.js";
