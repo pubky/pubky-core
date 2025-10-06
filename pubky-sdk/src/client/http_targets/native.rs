@@ -49,8 +49,8 @@ impl PubkyHttpClient {
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
         let url_str = url.as_str();
 
-        if let Ok(parsed) = Url::parse(url_str) {
-            if let Some(host) = parsed.host_str() {
+        if let Ok(parsed) = Url::parse(url_str)
+            && let Some(host) = parsed.host_str() {
                 if let Some(pk_host) = host.strip_prefix("_pubky.") {
                     if PublicKey::try_from(pk_host).is_ok() {
                         return self.http.request(method, url_str);
@@ -61,7 +61,6 @@ impl PubkyHttpClient {
                     return self.icann_http.request(method, url_str);
                 }
             }
-        }
 
         self.http.request(method, url_str)
     }
