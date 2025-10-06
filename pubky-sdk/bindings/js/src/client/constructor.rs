@@ -58,7 +58,7 @@ impl Client {
     /// `{ pkarr?: { relays?: string[], request_timeout?: number } }`.
     ///
     /// @returns {Client}
-    /// A configured low-level client. Prefer `new Pubky().client()` unless you
+    /// A configured low-level client. Prefer `new Pubky().client` unless you
     /// need custom relays/timeouts.
     ///
     /// @throws {InvalidInput}

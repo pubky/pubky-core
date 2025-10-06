@@ -20,8 +20,13 @@ impl Client {
     /// @returns {Promise<Response>}
     ///
     /// @example
+<<<<<<< ours
     /// const client = pubky.client();
     /// const res = await client.fetch(`https://_pubky.${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
+=======
+    /// const client = pubky.client;
+    /// const res = await client.fetch(`pubky://${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
+>>>>>>> theirs
     pub async fn fetch(&self, url: &str, init: Option<RequestInitArg>) -> JsResult<Response> {
         // 1) Parse URL
         let mut url = Url::parse(url)?;

@@ -6,7 +6,7 @@ use crate::js_error::{JsResult, PubkyJsError};
 use crate::wrappers::session_info::SessionInfo;
 
 /// An authenticated context “as the user”.
-/// - Use `storage()` for reads/writes (absolute paths like `/pub/app/file.txt`)
+/// - Use `storage` for reads/writes (absolute paths like `/pub/app/file.txt`)
 /// - Cookie is managed automatically by the underlying fetch client
 #[wasm_bindgen]
 pub struct Session(pub(crate) pubky::PubkySession);
