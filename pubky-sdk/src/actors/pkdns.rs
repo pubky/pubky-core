@@ -239,23 +239,7 @@ impl Pkdns {
         host: &str,
         existing: Option<SignedPacket>,
     ) -> Result<()> {
-        // Keep previous records that are *not* `_pubky.*`, then write `_pubky` HTTPS/SVCB.
-        let mut builder = SignedPacket::builder();
-        if let Some(ref packet) = existing {
-            for answer in packet.resource_records("_pubky") {
-                if !answer.name.to_string().starts_with("_pubky") {
-                    builder = builder.record(answer.to_owned());
-                }
-            }
-        }
-
-        let svcb = SVCB::new(0, host.try_into().map_err(PkarrError::from)?);
-        let pubky_name = "_pubky".try_into().map_err(PkarrError::from)?;
-
-        let signed_packet = builder
-            .https(pubky_name, svcb, 60 * 60)
-            .sign(keypair)
-            .map_err(PkarrError::from)?;
+        let signed_packet = Self::build_homeserver_packet(keypair, host, existing.as_ref())?;
 
         self.client
             .pkarr()
@@ -264,6 +248,30 @@ impl Pkdns {
             .map_err(PkarrError::from)?;
 
         Ok(())
+    }
+
+    fn build_homeserver_packet(
+        keypair: &Keypair,
+        host: &str,
+        existing: Option<&SignedPacket>,
+    ) -> Result<SignedPacket> {
+        // Keep previous records that are *not* `_pubky.*`, then write `_pubky` HTTPS/SVCB.
+        let mut builder = SignedPacket::builder();
+        if let Some(packet) = existing {
+            for record in packet.all_resource_records() {
+                if !record.name.to_string().starts_with("_pubky") {
+                    builder = builder.record(record.to_owned());
+                }
+            }
+        }
+
+        let svcb = SVCB::new(0, host.try_into().map_err(PkarrError::from)?);
+        let pubky_name = "_pubky".try_into().map_err(PkarrError::from)?;
+
+        Ok(builder
+            .https(pubky_name, svcb, 60 * 60)
+            .sign(keypair)
+            .map_err(PkarrError::from)?)
     }
 }
 
@@ -294,4 +302,67 @@ pub(crate) fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> 
             RData::HTTPS(https) => Some(https.0.target.to_string()),
             _ => None,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pkarr::dns::rdata::TXT;
+
+    #[test]
+    fn republish_preserves_non_pubky_records() {
+        let keypair = Keypair::random();
+        let original_host = Keypair::random().public_key().to_string();
+
+        let mut dnslink_txt = TXT::new();
+        dnslink_txt
+            .add_string("dnslink=/ipfs/example")
+            .expect("valid dnslink string");
+
+        let existing_packet = SignedPacket::builder()
+            .https(
+                "_pubky".try_into().expect("_pubky name"),
+                SVCB::new(
+                    0,
+                    original_host
+                        .as_str()
+                        .try_into()
+                        .expect("host name conversion"),
+                ),
+                3600,
+            )
+            .txt(
+                "_dnslink".try_into().expect("_dnslink name"),
+                dnslink_txt,
+                3600,
+            )
+            .sign(&keypair)
+            .expect("signed existing packet");
+
+        let new_host = Keypair::random().public_key().to_string();
+
+        let republished =
+            Pkdns::build_homeserver_packet(&keypair, &new_host, Some(&existing_packet))
+                .expect("republished packet");
+
+        assert_eq!(
+            extract_host_from_packet(&republished),
+            Some(new_host.clone())
+        );
+
+        let original_dnslink = existing_packet
+            .all_resource_records()
+            .find(|rr| rr.name.to_string().starts_with("_dnslink"))
+            .map(|rr| rr.to_owned())
+            .expect("original _dnslink record");
+
+        let republished_dnslink = republished
+            .all_resource_records()
+            .find(|rr| rr.name.to_string().starts_with("_dnslink"))
+            .map(|rr| rr.to_owned())
+            .expect("republished _dnslink record");
+
+        assert_eq!(republished_dnslink.ttl, original_dnslink.ttl);
+        assert_eq!(republished_dnslink.rdata, original_dnslink.rdata);
+    }
 }
