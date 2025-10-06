@@ -48,7 +48,11 @@ impl SessionStorage {
         if let Some(s) = shallow {
             b = b.shallow(s);
         }
-        let urls = b.send().await?.into_iter().map(|u| u.to_string()).collect();
+        let entries = b.send().await?;
+        let urls = entries
+            .into_iter()
+            .map(|entry| entry.to_pubky_url())
+            .collect();
         Ok(urls)
     }
 

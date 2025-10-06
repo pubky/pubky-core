@@ -59,7 +59,7 @@ impl PubkyHttpClientBuilder {
     /// Concretely:
     /// - **DHT bootstrap** to the local testnet node at: `"localhost:6881"`
     /// - **PKARR relay** base URL: `"http://localhost:15411"`
-    /// - **WASM builds** additionally remember the hostname to rewrite `pubky://` URLs.
+    /// - **WASM builds** additionally remember the hostname when resolving `_pubky.<pk>` targets.
     ///
     /// # Examples
     /// ```no_run
@@ -216,8 +216,6 @@ impl PubkyHttpClientBuilder {
 /// - One or more reqwest HTTP clients (platform-specific).
 ///
 /// ### What it does
-/// - Understands `pubky://<user>/<path>` and rewrites it to the correct HTTPS
-///   form for requests.
 /// - Detects pkarr public-key hosts and resolves them to concrete endpoints.
 /// - Internally, uses a unified `cross_request(..)` that works the same on native rust and
 ///   WASM (WASM performs endpoint resolution & header injection; native is a thin wrapper).
@@ -238,7 +236,7 @@ impl PubkyHttpClientBuilder {
 /// ### Platform notes
 /// - **Native (rust, not WASM target):**
 ///   - ICANN domains use standard X.509 TLS via the `icann_http` client.
-///   - Pubky/PKDNS hosts (public-key hostnames / `pubky://…`) use **PubkyTLS**
+///   - Pubky/PKDNS hosts (public-key hostnames or `_pubky.<pk>` domains) use **PubkyTLS**
 ///     (TLS with RFC 7250 Raw Public Keys), verifying the connection against the
 ///     target public key—no CA chain involved.
 /// - **WASM:**
@@ -267,7 +265,7 @@ impl PubkyHttpClientBuilder {
 /// # Ok(()) }
 /// ```
 ///
-/// Resolving and fetching a `pubky://` resource directly:
+/// Fetching a Pubky resource via its transport URL:
 /// ```no_run
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
@@ -275,7 +273,7 @@ impl PubkyHttpClientBuilder {
 /// let client = PubkyHttpClient::new()?;
 /// // Pubky App profile of user Pubky https://pubky.app/profile/ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y
 /// let user = "ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y";
-/// let url = format!("pubky://{user}/pub/pubky.app/profile.json");
+/// let url = format!("https://_pubky.{user}/pub/pubky.app/profile.json");
 /// let resp = client.request(Method::GET, &url).send().await?;
 /// let info = resp.text().await?;
 /// # Ok(()) }
@@ -335,7 +333,7 @@ impl PubkyHttpClient {
     ///
     /// # async fn run() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::testnet()?;
-    /// // Now all pubky:// and https://<pubkey>/... requests resolve via the local testnet
+    /// // Now all https://_pubky.<pubkey>/... requests resolve via the local testnet
     /// // DHT/PKARR, and hit the local homeserver.
     /// # Ok(()) }
     /// ```

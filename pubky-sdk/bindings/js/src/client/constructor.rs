@@ -38,7 +38,7 @@ pub struct PubkyClientConfig {
 
 /// Low-level HTTP bridge used by the Pubky facade and actors.
 ///
-/// - Supports `pubky://<user-z32>/<abs-path>` and `http(s)://` URLs.
+/// - Supports `http(s)://` URLs targeting Pubky or ICANN hosts.
 /// - In browsers/undici, passes `credentials: "include"` to send cookies.
 #[wasm_bindgen]
 pub struct Client(pub(crate) pubky::PubkyHttpClient);
@@ -107,8 +107,7 @@ impl Client {
 
     /// Create a client wired for **local testnet**.
     ///
-    /// Configures PKARR relays for the testnet and enables WASM `pubky://`
-    /// mapping for that host.
+    /// Configures PKARR relays for the testnet and remembers the hostname for WASM `_pubky` mapping.
     ///
     /// @param {string} [host="localhost"]
     /// Testnet hostname or IP.

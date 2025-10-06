@@ -32,7 +32,7 @@ pub use errors::{BuildError, Error, Result};
 // Export common types and constants
 pub use crate::actors::storage::{
     list::ListBuilder,
-    resource::{IntoPubkyResource, IntoResourcePath},
+    resource::{IntoPubkyResource, IntoResourcePath, resolve_pubky},
     resource::{PubkyResource, ResourcePath},
     stats::ResourceStats,
 };

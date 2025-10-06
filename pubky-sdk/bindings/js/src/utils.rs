@@ -1,5 +1,7 @@
 use wasm_bindgen::prelude::*;
 
+use crate::js_error::JsResult;
+
 /// An enum representing the available verbosity levels of the logger.
 #[wasm_bindgen]
 pub enum Level {
@@ -48,4 +50,13 @@ pub fn set_log_level(level: Level) -> Result<(), JsValue> {
     console_log::init_with_level(level.into()).map_err(|e| JsValue::from_str(&e.to_string()))?;
     log::info!("Log level set to: {level_str}");
     Ok(())
+}
+
+/// Resolve a `pubky://` or `pubky<pk>/…` identifier into the homeserver transport URL.
+///
+/// @param {string} identifier Either `pubky<pk>/...` (preferred) or `pubky://<pk>/...`.
+/// @returns {string} HTTPS URL in the form `https://_pubky.<pk>/...`.
+#[wasm_bindgen(js_name = "resolvePubky")]
+pub fn resolve_pubky(identifier: &str) -> JsResult<String> {
+    Ok(pubky::resolve_pubky(identifier)?.to_string())
 }

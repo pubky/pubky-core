@@ -79,7 +79,7 @@ impl SessionStorage {
 //
 
 impl PublicStorage {
-    /// HTTP `GET` for an **addressed resource** (`<pk>/<abs-path>` or `pubky://…`).
+    /// HTTP `GET` for an **addressed resource** (`pubky<pk>/<abs-path>`, `<pk>/<abs-path>`, or `pubky://…`).
     ///
     /// # Example
     /// ```no_run

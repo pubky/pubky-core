@@ -45,7 +45,7 @@
 //! # async fn run(user: pubky::PublicKey) -> pubky::Result<()> {
 //! let pubky = Pubky::new()?;
 //! let public = pubky.public_storage();
-//! let addr = format!("{}/pub/site/index.html", user);
+//! let addr = format!("pubky{}/pub/site/index.html", user);
 //! let html = public.get(addr).await?.text().await?;
 //! # Ok(()) }
 //! ```

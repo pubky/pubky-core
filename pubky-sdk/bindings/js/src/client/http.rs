@@ -1,4 +1,4 @@
-//! Fetch method handling HTTP and Pubky urls with Pkarr TLD.
+//! Fetch method handling HTTP(S) URLs with Pkarr TLD support.
 
 use js_sys::{Promise, Reflect};
 use url::Url;
@@ -13,7 +13,7 @@ use crate::js_error::{JsResult, PubkyErrorName, PubkyJsError};
 
 #[wasm_bindgen]
 impl Client {
-    /// Perform a raw fetch. Works with `pubky://` or `http(s)://` URLs.
+    /// Perform a raw fetch. Works with `http(s)://` URLs.
     ///
     /// @param {string} url
     /// @param {RequestInit} init Standard fetch options; `credentials: "include"` recommended for session I/O.
@@ -21,13 +21,20 @@ impl Client {
     ///
     /// @example
     /// const client = pubky.client();
-    /// const res = await client.fetch(`pubky://${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
+    /// const res = await client.fetch(`https://_pubky.${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
     pub async fn fetch(&self, url: &str, init: Option<RequestInitArg>) -> JsResult<Response> {
         // 1) Parse URL
         let mut url = Url::parse(url)?;
 
-        // 2) Ask the SDK to prepare (rewrite pubky://, resolve pkarr, etc.)
-        //    Returns Some(<z32>) iff this is a pubky:// request.
+        if url.scheme() == "pubky" {
+            return Err(PubkyJsError::new(
+                PubkyErrorName::InvalidInput,
+                "pubky:// URLs are not supported; resolve them before transport",
+            ));
+        }
+
+        // 2) Ask the SDK to prepare (resolve pkarr, adjust host, etc.)
+        //    Returns Some(<z32>) iff this targets a Pubky host.
         let pubky_host = self.0.prepare_request(&mut url).await?;
 
         // 3) Start from caller's init; DO NOT clobber headers.
@@ -126,12 +133,12 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    // Ensure we expose pubky-host AND set credentials=include for pubky:// URLs
+    // Ensure we expose pubky-host AND set credentials=include for Pubky URLs
     #[wasm_bindgen_test(async)]
     async fn prepare_sets_pubky_host_and_credentials() {
         let client = Client::testnet(None);
         let pk = Keypair::random().public_key().to_string();
-        let mut url = Url::parse(&format!("pubky://{}/pub/file.txt", pk)).unwrap();
+        let mut url = Url::parse(&format!("https://_pubky.{}/pub/file.txt", pk)).unwrap();
 
         // Mirror the `fetch()` code path (but don't actually dispatch fetch)
         let mut req_init = RequestInit::new();

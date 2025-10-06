@@ -1,4 +1,4 @@
-//! HTTP methods that support `https://` with Pkarr domains, and `pubky://` URLs
+//! HTTP methods that support `https://` with Pkarr domains, including `_pubky.<pk>` URLs
 
 use crate::PubkyHttpClient;
 use crate::errors::{PkarrError, Result};
@@ -32,23 +32,20 @@ impl PubkyHttpClient {
         }
     }
 
-    /// - Transforms pubky:// url to http(s):// urls
     /// - Resolves a clearnet host to call with fetch
     /// - Returns the `pubky-host` value if available
     pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("").to_string();
 
-        if url.scheme() == "pubky" {
-            *url = Url::parse(&format!("https{}", &url.as_str()[5..]))?;
-            url.set_host(Some(&format!("_pubky.{}", url.host_str().unwrap_or(""))))
-                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
-        }
-
         let mut pubky_host = None;
 
-        if PublicKey::try_from(host.clone()).is_ok() {
+        if let Some(stripped) = host.strip_prefix("_pubky.") {
+            if PublicKey::try_from(stripped).is_ok() {
+                self.transform_url(url).await?;
+                pubky_host = Some(stripped.to_string());
+            }
+        } else if PublicKey::try_from(host.clone()).is_ok() {
             self.transform_url(url).await?;
-
             pubky_host = Some(host);
         };
 

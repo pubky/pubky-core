@@ -38,7 +38,7 @@ assert_eq!(&body, "hello");
 
 // 4) Public read of another user’s file
 let txt = pubky.public_storage()
-  .get(format!("{}/pub/my.app/hello.txt", session.info().public_key()))
+  .get(format!("pubky{}/pub/my.app/hello.txt", session.info().public_key()))
   .await?
   .text().await?;
 assert_eq!(txt, "hello");
@@ -100,7 +100,20 @@ use pubky::{Pubky, PublicKey};
 let pubky = Pubky::new()?;
 let public = pubky.public_storage();
 
-let file = public.get(format!("{user_id}/pub/acme.app/file.bin")).await?.bytes().await?;
+let file = public
+    .get(format!("pubky{user_id}/pub/acme.app/file.bin"))
+    .await?
+    .bytes()
+    .await?;
+
+let entries = public
+    .list(format!("pubky{user_id}/pub/acme.app/"))?
+    .limit(10)
+    .send()
+    .await?;
+for entry in entries {
+    println!("{}", entry.to_pubky_url());
+}
 
 # Ok(()) }
 ```
@@ -110,9 +123,25 @@ See the [Public Storage example](https://github.com/pubky/pubky-core/tree/main/e
 Path rules:
 
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
-- Public storage uses **addressed** form `<user>/pub/app/file.txt` (or `pubky://<user>/...`).
+- Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
+
+### Resolve identifiers into transport URLs
+
+Need to feed a public resource into a raw HTTP client? Use [`resolve_pubky`] to transform the human-facing identifier into the HTTPS homeserver URL:
+
+```rust
+# use pubky::resolve_pubky;
+# fn main() -> pubky::Result<()> {
+let url = resolve_pubky("pubkyoperrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG")?;
+assert_eq!(
+    url.as_str(),
+    "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG"
+);
+# Ok(())
+# }
+```
 
 ## PKDNS (Pkarr)
 

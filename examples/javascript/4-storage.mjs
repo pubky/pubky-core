@@ -5,11 +5,11 @@ import { args } from "./_cli.mjs";
 
 const usage = `
 Usage:
-  npm run storage -- <pubky>/<absolute-path> [--testnet]
+  npm run storage -- pubky<user>/<absolute-path> [--testnet]
 
 Example:
-  npm run storage -- q5oo7majwe3mbkj6p49osws8o748b186bbojdxdn3asnn63enk6y/pub/my.app/hello.txt --testnet
-  npm run storage -- operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
+  npm run storage -- pubkyq5oo7majwe3mbkj6p49osws8o748b186bbojdxdn3asnn63enk6y/pub/my.app/hello.txt --testnet
+  npm run storage -- pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 `;
 
 const a = args(process.argv.slice(2), { usage });
@@ -21,7 +21,7 @@ if (!resource) {
 
 const pubky = a.testnet ? Pubky.testnet() : new Pubky();
 
-// PublicStorage reads from addressed "<pk>/<abs-path>"
+// PublicStorage reads from addressed `pubky<pk>/<abs-path>` or `pubky://<pk>/<abs-path>` values
 const exists = await pubky.publicStorage.exists(resource);
 console.log(`Exists: ${exists ? "yes" : "no"}`);
 

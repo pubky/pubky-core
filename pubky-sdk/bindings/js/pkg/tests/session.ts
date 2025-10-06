@@ -78,7 +78,7 @@ test("Auth: basic", async (t) => {
   t.pass("second signout is a no-op");
 
   // 4) Unauthorized write should now fail with 401
-  const url = `pubky://${userPk}${PATH_AUTH_BASIC}`;
+  const url = `https://_pubky.${userPk}${PATH_AUTH_BASIC}`;
   const res401 = await sdk.client.fetch(url, {
     method: "PUT",
     body: "should fail",
@@ -124,7 +124,7 @@ test("Auth: multi-user (cookies)", async (t) => {
 
   // 3) Write for Bob via generic client.fetch
   {
-    const url = `pubky://${bobPk}/pub/example.com/multi-bob.txt`;
+    const url = `https://_pubky.${bobPk}/pub/example.com/multi-bob.txt`;
     const r = await sdk.client.fetch(url, {
       method: "PUT",
       body: "bob-data",
@@ -135,7 +135,7 @@ test("Auth: multi-user (cookies)", async (t) => {
 
   // 4) Alice still authenticated and can write too
   {
-    const url = `pubky://${alicePk}/pub/example.com/multi-alice.txt`;
+    const url = `https://_pubky.${alicePk}/pub/example.com/multi-alice.txt`;
     const r = await sdk.client.fetch(url, {
       method: "PUT",
       body: "alice-data",
@@ -149,7 +149,7 @@ test("Auth: multi-user (cookies)", async (t) => {
 
   // 6) Alice still authenticated after Bob signs out
   {
-    const url = `pubky://${alicePk}/pub/example.com/multi-alice-2.txt`;
+    const url = `https://_pubky.${alicePk}/pub/example.com/multi-alice-2.txt`;
     const r = await sdk.client.fetch(url, {
       method: "PUT",
       body: "alice-still-ok",
@@ -160,7 +160,7 @@ test("Auth: multi-user (cookies)", async (t) => {
 
   // 7) Bob can no longer write
   {
-    const url = `pubky://${bobPk}/pub/example.com/multi-bob-2.txt`;
+    const url = `https://_pubky.${bobPk}/pub/example.com/multi-bob-2.txt`;
     const r = await sdk.client.fetch(url, {
       method: "PUT",
       body: "should-fail",
@@ -175,7 +175,7 @@ test("Auth: multi-user (cookies)", async (t) => {
 /**
  * - Have *two* valid sessions (cookies for both users in one process).
  * - Interleave writes across both users, using BOTH high-level SessionStorage (absolute paths)
- *   and low-level Client.fetch (addressed `pubky://...` URLs).
+ *   and low-level Client.fetch (transport URLs).
  * - Ensure each write lands under the correct user regardless of recent activity or order.
  *
  * If the WASM client ever derives `pubky-host` from a stale/global identity,
@@ -201,7 +201,7 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
     user: string,
     relPath: Path,
   ): Promise<string> => {
-    const address = `${user}${relPath}` as Address;
+    const address = `pubky${user}${relPath}` as Address;
     return sdk.publicStorage.getText(address);
   };
 
@@ -233,9 +233,9 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
     "bob second write still under bob",
   );
 
-  // 4) Raw client.fetch using addressed pubky:// URLs
+  // 4) Raw client.fetch using transport URLs
   {
-    const urlA = `pubky://${A}${P}`;
+    const urlA = `https://_pubky.${A}${P}`;
     const r = await sdk.client.fetch(urlA, {
       method: "PUT",
       body: "alice#3",
@@ -244,7 +244,7 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
     t.ok(r.ok, "client.fetch PUT for alice ok");
   }
   {
-    const urlB = `pubky://${B}${P}`;
+    const urlB = `https://_pubky.${B}${P}`;
     const r = await sdk.client.fetch(urlB, {
       method: "PUT",
       body: "bob#3",
@@ -314,7 +314,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
 
   const u1 = await signupAndMark("user#1:hello");
   t.equal(
-    await sdk.publicStorage.getText(`${u1.user}${P}` as Address),
+    await sdk.publicStorage.getText(`pubky${u1.user}${P}` as Address),
     "user#1:hello",
     "first user marked",
   );
@@ -322,7 +322,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
   await u1.session.signout();
 
   {
-    const url = `pubky://${u1.user}${P}`;
+    const url = `https://_pubky.${u1.user}${P}`;
     const r = await sdk.client.fetch(url, {
       method: "PUT",
       body: "should-401",
@@ -333,7 +333,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
 
   const u2 = await signupAndMark("user#2:hello");
   t.equal(
-    await sdk.publicStorage.getText(`${u2.user}${P}` as Address),
+    await sdk.publicStorage.getText(`pubky${u2.user}${P}` as Address),
     "user#2:hello",
     "second user marked",
   );
@@ -347,7 +347,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
   }
 
   {
-    const url = `pubky://${u2.user}${P}`;
+    const url = `https://_pubky.${u2.user}${P}`;
     const r = await sdk.client.fetch(url, {
       method: "PUT",
       body: "user#2:via-client",
@@ -356,7 +356,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     t.ok(r.ok, "low-level client PUT for user#2 ok");
   }
   t.equal(
-    await sdk.publicStorage.getText(`${u2.user}${P}` as Address),
+    await sdk.publicStorage.getText(`pubky${u2.user}${P}` as Address),
     "user#2:via-client",
     "low-level client wrote under user#2",
   );

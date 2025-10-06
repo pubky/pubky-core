@@ -7,7 +7,7 @@ use pubky::Pubky;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Pubky Resource
+    /// Pubky resource (e.g. `pubky<user>/pub/...` or `pubky://<user>/pub/...`)
     resource: String,
     /// Use testnet mode
     #[clap(long)]

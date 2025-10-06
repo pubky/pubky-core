@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Raw request using the Pubky HTTP client (supports pubky:// and https://).
+// Raw request using the Pubky HTTP client (expects resolved https:// transport URLs).
 import { Pubky } from "@synonymdev/pubky";
 import { args, printHttpResponse } from "./_cli.mjs";
 
@@ -8,13 +8,13 @@ Usage:
   npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 Examples:
-  npm run request -- GET pubky://<user>/pub/my.app/info.json --testnet
+  npm run request -- GET https://_pubky.<user>/pub/my.app/info.json --testnet
   npm run request -- \\
     -H "Content-Type: application/json" \\
     -H "Accept: application/json" \\
     -d '{"msg":"hello"}' \\
     POST https://example.com/data.json
-  npm run request -- GET pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
+  npm run request -- GET https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 `;
 
 const a = args(process.argv.slice(2), {

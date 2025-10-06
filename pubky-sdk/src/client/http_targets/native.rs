@@ -12,11 +12,9 @@ impl PubkyHttpClient {
     /// Constructs a [`reqwest::RequestBuilder`] for the given HTTP `method` and `url`,
     /// routing through the client’s unified request path.
     ///
-    /// This method ensures that special Pubky and pkarr URL schemes or hosts are
-    /// normalized and resolved according to platform-specific rules (native or WASM),
-    /// including:
-    /// - Translating `pubky://` URLs into the appropriate HTTPS form.
-    /// - Detecting pkarr public key hostnames and applying the correct resolution/TLS handling.
+    /// This method ensures that special Pubky and pkarr hosts are resolved according to
+    /// platform-specific rules (native or WASM), including:
+    /// - Detecting `_pubky.<public-key>` hosts and applying the correct TLS handling.
     /// - Routing standard ICANN domains through the `icann_http` client on native builds.
     ///
     /// On native targets, this is effectively a thin wrapper around [`PubkyHttpClient::request`],
@@ -40,30 +38,31 @@ impl PubkyHttpClient {
     /// the request body before sending.
     ///
     /// Differs from [reqwest::Client::request], in that it can make requests to:
-    /// 1. HTTPs URLs with a [pkarr::PublicKey] as Top Level Domain, by resolving
+    /// 1. HTTPS URLs with a [pkarr::PublicKey] as top-level domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
-    /// 2. Pubky URLs like `pubky://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    ///    by converting the url into `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    /// 2. `_pubky.<public-key>` URLs like `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     ///
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        let url = url.as_str();
+        let url_str = url.as_str();
 
-        if url.starts_with("pubky://") {
-            // Rewrite pubky:// urls to https://_pubky.
-            let url = format!("https://_pubky.{}", url.split_at(8).1);
-
-            return self.http.request(method, url);
-            // PublicKey has methods to extract a publickey from a well-formed URL
-        } else if url.starts_with("https://") && PublicKey::try_from(url).is_err() {
-            // TODO: remove icann_http when we can control reqwest connection
-            // and or create a tls config per connection.
-            return self.icann_http.request(method, url);
+        if let Ok(parsed) = Url::parse(url_str) {
+            if let Some(host) = parsed.host_str() {
+                if let Some(pk_host) = host.strip_prefix("_pubky.") {
+                    if PublicKey::try_from(pk_host).is_ok() {
+                        return self.http.request(method, url_str);
+                    }
+                } else if PublicKey::try_from(host).is_err() {
+                    // TODO: remove icann_http when we can control reqwest connection
+                    // and or create a tls config per connection.
+                    return self.icann_http.request(method, url_str);
+                }
+            }
         }
 
-        self.http.request(method, url)
+        self.http.request(method, url_str)
     }
 }

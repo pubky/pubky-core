@@ -4,6 +4,7 @@ import {
   Keypair,
   Pubky,
   PublicKey,
+  resolvePubky,
   type Address,
   type Path,
 } from "../index.js";
@@ -30,7 +31,18 @@ type _StorageDelete = Assert<
 >;
 
 const toAddress = (user: string, relPath: Path): Address =>
-  `${user}${relPath}` as Address;
+  `pubky${user}${relPath}` as Address;
+
+test("resolvePubky helper", (t) => {
+  const pk = HOMESERVER_PUBLICKEY.z32();
+  const preferred = `pubky${pk}/pub/example.com/data.txt`;
+  const deeplink = `pubky://${pk}/pub/example.com/data.txt`;
+  const expected = `https://_pubky.${pk}/pub/example.com/data.txt`;
+
+  t.equal(resolvePubky(preferred), expected, "preferred format resolves");
+  t.equal(resolvePubky(deeplink), expected, "deeplink format resolves");
+  t.end();
+});
 
 test("session: putJson/getJson/delete, public: getJson", async (t) => {
   const sdk = Pubky.testnet();
@@ -192,7 +204,7 @@ test("list (public dir listing with limit/cursor/reverse)", async (t) => {
   await mk(`/pub/example.wrong/d.txt` as Path);
   await mk(`/pub/z.wrong/a.txt` as Path);
 
-  const dir: Address = `${userPk}/pub/example.com/` as Address;
+  const dir: Address = `pubky${userPk}/pub/example.com/` as Address;
 
   {
     const list = await sdk.publicStorage.list(dir);
@@ -417,7 +429,7 @@ test("not found", async (t) => {
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
   const userPk = session.info.publicKey.z32();
-  const addr = `${userPk}/pub/example.com/definitely-missing.json` as Address;
+  const addr = `pubky${userPk}/pub/example.com/definitely-missing.json` as Address;
 
   t.equal(
     await sdk.publicStorage.exists(addr),
@@ -445,7 +457,7 @@ test("unauthorized (no cookie) PUT returns 401", async (t) => {
   const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
   const userPk = session.info.publicKey.z32();
-  const url = `pubky://${userPk}/pub/example.com/unauth.json`;
+  const url = `https://_pubky.${userPk}/pub/example.com/unauth.json`;
 
   await session.signout();
 

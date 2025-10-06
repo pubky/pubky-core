@@ -9,7 +9,7 @@ use crate::js_error::JsResult;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_ADRESS: &'static str = r#"
-    export type Address = `${string}/pub/${string}` | `pubky://${string}/pub/${string}`;
+    export type Address = `pubky${string}/pub/${string}` | `pubky://${string}/pub/${string}`;
     "#;
 
 /// Read-only public storage using addressed paths (`"<user-z32>/pub/...")`.
@@ -24,7 +24,7 @@ impl PublicStorage {
         Ok(PublicStorage(pubky::PublicStorage::new()?))
     }
 
-    /// List a directory. Results are `pubky://…` absolute URLs.
+    /// List a directory. Results are `pubky://…` identifier URLs.
     ///
     /// @param {Address} address Addressed directory (must end with `/`).
     /// @param {string|null=} cursor Optional suffix or full URL to start **after**.
@@ -55,7 +55,11 @@ impl PublicStorage {
             b = b.shallow(s);
         }
 
-        let urls = b.send().await?.into_iter().map(|u| u.to_string()).collect();
+        let entries = b.send().await?;
+        let urls = entries
+            .into_iter()
+            .map(|entry| entry.to_pubky_url())
+            .collect();
         Ok(urls)
     }
 
@@ -101,7 +105,7 @@ impl PublicStorage {
 
     /// Fetch JSON from an addressed path.
     ///
-    /// @param {Address} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
+    /// @param {Address} address `"pubky<user>/pub/.../file.json"` (preferred) or `pubky://<user>/pub/...`.
     /// @returns {Promise<any>}
     #[wasm_bindgen(js_name = "getJson")]
     pub async fn get_json(
@@ -127,7 +131,7 @@ impl PublicStorage {
 
     /// Get metadata for an address
     ///
-    /// @param {Address} address `"<user-z32>/pub/.../file.json"` or `pubky://<user>/pub/...`.
+    /// @param {Address} address `"pubky<user>/pub/.../file.json"` (preferred) or `pubky://<user>/pub/...`.
     /// @returns {Promise<ResourceStats|undefined>} `undefined` if the resource does not exist.
     /// @throws {PubkyJsError} On invalid input or transport/server errors.
     #[wasm_bindgen(js_name = "stats")]

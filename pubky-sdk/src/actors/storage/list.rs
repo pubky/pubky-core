@@ -3,7 +3,9 @@ use url::Url;
 
 use super::core::{PublicStorage, SessionStorage, dir_trailing_slash_error};
 use crate::Result;
-use crate::actors::storage::resource::{IntoPubkyResource, IntoResourcePath};
+use crate::actors::storage::resource::{
+    IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath,
+};
 use crate::util::check_http_status;
 
 impl SessionStorage {
@@ -12,26 +14,30 @@ impl SessionStorage {
     /// Requirements:
     /// - Path **must** point to a directory and **must end with `/`**.
     ///
-    /// Returns absolute entry URLs.
+    /// Returns addressed [`PubkyResource`] entries.
     ///
     /// # Example
     /// ```no_run
     /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
-    /// let urls = session
+    /// let entries = session
     ///     .storage()
     ///     .list("/pub/my.app/")?
     ///     .limit(100)
     ///     .shallow(true)
     ///     .send()
     ///     .await?;
-    /// for u in urls { println!("{u}"); }
+    /// for entry in entries {
+    ///     println!("{}", entry.to_pubky_url());
+    /// }
     /// # Ok(()) }
     /// ```
     pub fn list<P: IntoResourcePath>(&self, path: P) -> Result<ListBuilder<'_>> {
-        let url = self.to_url(path)?;
-        if !url.path().ends_with('/') {
+        let path: ResourcePath = path.into_abs_path()?;
+        if !path.as_str().ends_with('/') {
             return Err(dir_trailing_slash_error().into());
         }
+        let resource = PubkyResource::new(self.user.clone(), path.as_str())?;
+        let url = resource.to_transport_url()?;
         Ok(ListBuilder::session(self, url))
     }
 }
@@ -42,12 +48,13 @@ impl PublicStorage {
     /// Requirements:
     /// - Address **must** point to a directory and **must end with `/`**.
     ///
-    /// Returns absolute entry URLs.
+    /// Returns addressed [`PubkyResource`] entries.
     pub fn list<A: IntoPubkyResource>(&self, addr: A) -> Result<ListBuilder<'_>> {
-        let url = self.to_url(addr)?;
-        if !url.path().ends_with('/') {
+        let resource: PubkyResource = addr.into_pubky_resource()?;
+        if !resource.path.as_str().ends_with('/') {
             return Err(dir_trailing_slash_error().into());
         }
+        let url = resource.to_transport_url()?;
         Ok(ListBuilder::public(self, url))
     }
 }
@@ -64,7 +71,7 @@ enum ListScope<'a> {
 /// Configure optional flags like `reverse`, `shallow`, `limit`, and `cursor`,
 /// then call [`send`](Self::send) to perform the request.
 ///
-/// Returned entries are absolute `Url`s.
+/// Returned entries are [`PubkyResource`] values.
 ///
 /// Built via:
 /// - [`SessionStorage::list`] for authenticated “as me” listings.
@@ -129,8 +136,8 @@ impl<'a> ListBuilder<'a> {
         self
     }
 
-    /// Execute the LIST request and return entry URLs.
-    pub async fn send(self) -> Result<Vec<Url>> {
+    /// Execute the LIST request and return addressed entries.
+    pub async fn send(self) -> Result<Vec<PubkyResource>> {
         // 1) Build query params
         let mut url = self.url;
         {
@@ -175,7 +182,16 @@ impl<'a> ListBuilder<'a> {
         let bytes = resp.bytes().await?;
         let mut out = Vec::new();
         for line in String::from_utf8_lossy(&bytes).lines() {
-            out.push(Url::parse(line)?);
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            if line.starts_with("http://") || line.starts_with("https://") {
+                let url = Url::parse(line)?;
+                out.push(PubkyResource::from_transport_url(&url)?);
+            } else {
+                out.push(line.parse()?);
+            }
         }
         Ok(out)
     }

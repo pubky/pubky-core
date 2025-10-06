@@ -39,7 +39,7 @@ await session.storage.putJson(path, { hello: "world" });
 
 // 4) Read it publicly (no auth needed)
 const userPk = session.info.publicKey.z32();
-const addr = `${userPk}/pub/example.com/hello.json`;
+const addr = `pubky${userPk}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
@@ -83,12 +83,13 @@ const client = pubky.client;
 ### Client (HTTP bridge)
 
 ```js
-import { Client } from "@synonymdev/pubky";
+import { Client, resolvePubky } from "@synonymdev/pubky";
 
 const client = new Client(); // or: pubky.client.fetch(); instead of constructing a client manually
 
-// Works with both pubky:// and http(s)://
-const res = await client.fetch("pubky://<pubky>/pub/example.com/file.txt");
+// Convert the identifier into a transport URL before fetching.
+const url = resolvePubky("pubky<pubky>/pub/example.com/file.txt");
+const res = await client.fetch(url);
 ```
 
 ---
@@ -232,17 +233,17 @@ surface precise feedback to the user.
 const pub = pubky.publicStorage;
 
 // Reads
-await pub.getJson(`${userPk.z32()}/pub/example.com/data.json`);
-await pub.getText(`${userPk.z32()}/pub/example.com/readme.txt`);
-await pub.getBytes(`${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
+await pub.getJson(`pubky${userPk.z32()}/pub/example.com/data.json`);
+await pub.getText(`pubky${userPk.z32()}/pub/example.com/readme.txt`);
+await pub.getBytes(`pubky${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
 
 // Metadata
-await pub.exists(`${userPk.z32()}/pub/example.com/foo`); // boolean
-await pub.stats(`${userPk.z32()}/pub/example.com/foo`); // { content_length, content_type, etag, last_modified } | null
+await pub.exists(`pubky${userPk.z32()}/pub/example.com/foo`); // boolean
+await pub.stats(`pubky${userPk.z32()}/pub/example.com/foo`); // { content_length, content_type, etag, last_modified } | null
 
 // List directory (addressed path "<pubky>/pub/.../") must include trailing `/`.
 // list(addr, cursor=null|suffix|fullUrl, reverse=false, limit?, shallow=false)
-await pub.list(`${userPk.z32()}/pub/example.com/`, null, false, 100, false);
+await pub.list(`pubky${userPk.z32()}/pub/example.com/`, null, false, 100, false);
 ```
 
 #### SessionStorage (read/write; uses cookies)
@@ -274,7 +275,7 @@ await s.delete("/pub/example.com/data.json");
 Path rules:
 
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
-- Public storage uses **addressed** form `<user>/pub/app/file.txt` (or `pubky://<user>/...`).
+- Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
 
@@ -314,6 +315,20 @@ setLogLevel("debug"); // "error" | "warn" | "info" | "debug" | "trace"
 ```
 
 If the logger is already initialized, calling `setLogLevel` again will throw. Pick the most verbose level (`"debug"` or `"trace"`) while developing to see pkarr resolution, network requests and storage operations in the console.
+
+#### Resolve `pubky` identifiers into transport URLs
+
+Use `resolvePubky()` when you need to feed an addressed resource into a raw HTTP client:
+
+```js
+import { resolvePubky } from "@synonymdev/pubky";
+
+const identifier = "pubkyoperrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG";
+const url = resolvePubky(identifier);
+// -> "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG"
+```
+
+Both `pubky<pk>/…` (preferred) and `pubky://<pk>/…` resolve to the same HTTPS endpoint.
 
 ---
 

@@ -2,6 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use pubky_common::session::SessionInfo;
 
+use crate::actors::storage::resource::resolve_pubky;
 use crate::{AuthToken, Error, PubkyHttpClient, Result, SessionStorage, util::check_http_status};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -16,7 +17,7 @@ use crate::errors::AuthError;
 ///
 /// What it does:
 /// - Attaches the correct session cookie to requests that target this agent’s homeserver
-///   (`pubky://<pubky>/...` or `https://_pubky.<pubky>/...`), and to nothing else.
+///   (`https://_pubky.<pubky>/...`), and to nothing else.
 /// - Exposes homeserver verbs (`get/put/post/patch/delete/head`) scoped to this identity.
 /// - Implements identity flows: `signup`, `signin`, `signout`, `session`, and pubkyauth.
 ///
@@ -41,12 +42,13 @@ pub struct PubkySession {
 impl PubkySession {
     /// Establish a session from a signed [`AuthToken`].
     ///
-    /// This POSTs `pubky://{user}/session` with the token, validates the response
+    /// This POSTs the resolved homeserver session endpoint with the token, validates the response
     /// and constructs a new session-bound [`PubkySession`]
     pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<PubkySession> {
         let url = format!("pubky://{}/session", token.public_key());
+        let resolved = resolve_pubky(&url)?;
         let response = client
-            .cross_request(Method::POST, url)
+            .cross_request(Method::POST, resolved)
             .await?
             .body(token.serialize())
             .send()
