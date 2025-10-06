@@ -14,7 +14,7 @@ For deeper dives, check out the
 Prerequisites:
 
 - Rust toolchain (via [`rustup`](https://rustup.rs/)).
-- [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/) on your `$PATH`.
+- Wasm-pack `cargo install wasm-pack`.
 - Node.js v20+.
 
 Then from `pubky-sdk/bindings/js/pkg`:
