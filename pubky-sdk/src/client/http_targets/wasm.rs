@@ -56,7 +56,7 @@ impl PubkyHttpClient {
 
     async fn transform_url(&self, url: &mut Url) -> Result<()> {
         let clone = url.clone();
-        let qname = clone.host_str().unwrap_or("");
+        let qname = clone.host_str().unwrap_or("").to_string();
         log::debug!("Prepare request {}", url.as_str());
 
         let stream = self.pkarr.resolve_https_endpoints(qname);
@@ -130,8 +130,15 @@ impl PubkyHttpClient {
             // TODO: didn't find any domain, what to do?
             //  return an error.
             log::debug!("Could not resolve host: {}", qname);
+            let host_display = if qname.is_empty() {
+                "<empty host>".to_string()
+            } else {
+                qname.clone()
+            };
             return Err(PkarrError::InvalidRecord(format!(
-                "could not resolve domain endpoint for {qname}"
+                "No HTTPS endpoints found in PKARR record for `{host}` (original URL: {url})",
+                host = host_display,
+                url = clone.as_str()
             ))
             .into());
         }

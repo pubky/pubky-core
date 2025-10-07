@@ -135,40 +135,26 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    fn seed_pkarr_testnet_endpoint(client: &Client, keypair: &Keypair, domain: &str, port: u16) {
-        let mut svcb = SVCB::new(0, domain.try_into().unwrap());
-        svcb.set_param(
-            pubky_common::constants::reserved_param_keys::HTTP_PORT,
-            &port.to_be_bytes(),
-        )
-        .unwrap();
-
-        let packet = SignedPacket::builder()
-            .https("_pubky".try_into().unwrap(), svcb, 60)
-            .sign(keypair)
-            .unwrap();
-
-        let cache = client.0.pkarr.cache().expect("pkarr cache available");
-        let cache_key: CacheKey = keypair.public_key().into();
-        cache.put(&cache_key, &packet);
-    }
-
-    // Ensure we expose pubky-host AND set credentials=include for Pubky URLs
+    // Missing PKARR endpoints must surface a descriptive error so callers can react.
     #[wasm_bindgen_test(async)]
-    async fn prepare_sets_pubky_host_and_credentials() {
+    async fn prepare_missing_endpoint_returns_error() {
         let client = Client::testnet(None);
         let keypair = Keypair::random();
         seed_pkarr_testnet_endpoint(&client, &keypair, "localhost", 15411);
         let pk = keypair.public_key().to_string();
         let mut url = Url::parse(&format!("https://_pubky.{}/pub/file.txt", pk)).unwrap();
 
-        // Mirror the `fetch()` code path (but don't actually dispatch fetch)
-        let mut req_init = RequestInit::new();
-        let host_opt = client.0.prepare_request(&mut url).await.unwrap();
-        assert_eq!(host_opt.as_deref(), Some(pk.as_str()));
-
-        req_init.set_credentials(RequestCredentials::Include);
-        assert_eq!(req_init.credentials(), Some(RequestCredentials::Include));
+        let err = client.0.prepare_request(&mut url).await.unwrap_err();
+        match err {
+            pubky::errors::Error::Pkarr(pubky::errors::PkarrError::InvalidRecord(message)) => {
+                assert!(message.contains("No HTTPS endpoints"), "message: {message}");
+                assert!(
+                    message.contains(&pk),
+                    "error message should reference the requested public key: {message}"
+                );
+            }
+            other => panic!("expected InvalidRecord error, got {other:?}"),
+        }
     }
 
     // ICANN URL must not require pubky-host but should still allow credentials=include

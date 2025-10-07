@@ -45,7 +45,9 @@ impl SessionStorage {
     /// Retrieve metadata via `HEAD` for an **absolute path** (no body).
     pub async fn stats<P: IntoResourcePath>(&self, path: P) -> Result<Option<ResourceStats>> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
-        Ok(interpret_head(resp).await?.map(|resp| ResourceStats::from_headers(resp.headers())))
+        Ok(interpret_head(resp)
+            .await?
+            .map(|resp| ResourceStats::from_headers(resp.headers())))
     }
 
     /// HTTP `PUT` (write) for an **absolute path**.
@@ -101,6 +103,8 @@ impl PublicStorage {
     /// Metadata via `HEAD` for an addressed resource (no body).
     pub async fn stats<A: IntoPubkyResource>(&self, addr: A) -> Result<Option<ResourceStats>> {
         let resp = self.request(Method::HEAD, addr).await?.send().await?;
-        Ok(interpret_head(resp).await?.map(|resp| ResourceStats::from_headers(resp.headers())))
+        Ok(interpret_head(resp)
+            .await?
+            .map(|resp| ResourceStats::from_headers(resp.headers())))
     }
 }

@@ -139,10 +139,14 @@ jobs:
           node-version: "22"
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: cargo install wasm-pack
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
+
+      - name: Run wasm-pack unit tests
+        working-directory: pubky-sdk/bindings/js
+        run: wasm-pack test --node
 
       - name: Install Electron/X deps
         run: |
