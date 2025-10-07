@@ -128,16 +128,38 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use pkarr::Keypair;
+    use pkarr::client::cache::CacheKey;
+    use pkarr::dns::rdata::SVCB;
+    use pkarr::{Keypair, SignedPacket};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
+
+    fn seed_pkarr_testnet_endpoint(client: &Client, keypair: &Keypair, domain: &str, port: u16) {
+        let mut svcb = SVCB::new(0, domain.try_into().unwrap());
+        svcb.set_param(
+            pubky_common::constants::reserved_param_keys::HTTP_PORT,
+            &port.to_be_bytes(),
+        )
+        .unwrap();
+
+        let packet = SignedPacket::builder()
+            .https("_pubky".try_into().unwrap(), svcb, 60)
+            .sign(keypair)
+            .unwrap();
+
+        let cache = client.0.pkarr.cache().expect("pkarr cache available");
+        let cache_key: CacheKey = keypair.public_key().into();
+        cache.put(&cache_key, &packet);
+    }
 
     // Ensure we expose pubky-host AND set credentials=include for Pubky URLs
     #[wasm_bindgen_test(async)]
     async fn prepare_sets_pubky_host_and_credentials() {
         let client = Client::testnet(None);
-        let pk = Keypair::random().public_key().to_string();
+        let keypair = Keypair::random();
+        seed_pkarr_testnet_endpoint(&client, &keypair, "localhost", 15411);
+        let pk = keypair.public_key().to_string();
         let mut url = Url::parse(&format!("https://_pubky.{}/pub/file.txt", pk)).unwrap();
 
         // Mirror the `fetch()` code path (but don't actually dispatch fetch)

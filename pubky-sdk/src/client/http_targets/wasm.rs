@@ -18,18 +18,20 @@ impl PubkyHttpClient {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url)?;
 
-        if let Some(pubky_host) = self.prepare_request(&mut url).await? {
-            Ok(self
-                .http
-                .request(method, url.clone())
-                .header("pubky-host", pubky_host)
-                .fetch_credentials_include())
+        let pubky_host = self.prepare_request(&mut url).await?;
+
+        let builder = self
+            .http
+            .request(method, url.clone())
+            .fetch_credentials_include();
+
+        let builder = if let Some(pubky_host) = pubky_host {
+            builder.header("pubky-host", pubky_host)
         } else {
-            Ok(self
-                .http
-                .request(method, url.clone())
-                .fetch_credentials_include())
-        }
+            builder
+        };
+
+        Ok(builder)
     }
 
     /// - Resolves a clearnet host to call with fetch
@@ -57,8 +59,20 @@ impl PubkyHttpClient {
         let qname = clone.host_str().unwrap_or("");
         log::debug!("Prepare request {}", url.as_str());
 
-        let mut stream = self.pkarr.resolve_https_endpoints(qname);
+        let stream = self.pkarr.resolve_https_endpoints(qname);
 
+        self.transform_url_with_stream(url, qname, stream).await
+    }
+
+    async fn transform_url_with_stream<S>(
+        &self,
+        url: &mut Url,
+        qname: &str,
+        mut stream: S,
+    ) -> Result<()>
+    where
+        S: futures_lite::Stream<Item = Endpoint> + Unpin,
+    {
         let mut so_far: Option<Endpoint> = None;
 
         while let Some(endpoint) = stream.next().await {
@@ -116,8 +130,41 @@ impl PubkyHttpClient {
             // TODO: didn't find any domain, what to do?
             //  return an error.
             log::debug!("Could not resolve host: {}", qname);
+            return Err(PkarrError::InvalidRecord(format!(
+                "could not resolve domain endpoint for {qname}"
+            ))
+            .into());
         }
 
         Ok(())
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use super::*;
+    use futures_lite::stream;
+    use pkarr::Keypair;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test(async)]
+    async fn transform_url_errors_when_no_domain_is_found() {
+        let client = PubkyHttpClient::new().unwrap();
+        let pk = Keypair::random().public_key().to_string();
+        let mut url = Url::parse(&format!("https://_pubky.{pk}/pub/app/file.txt")).unwrap();
+
+        let result = client
+            .transform_url_with_stream(&mut url, url.host_str().unwrap(), stream::empty())
+            .await;
+
+        let err = result.expect_err("transform_url should fail when no endpoint is resolved");
+
+        let crate::errors::Error::Pkarr(PkarrError::InvalidRecord(message)) = err else {
+            panic!("expected pkarr invalid record error, got {err:?}");
+        };
+
+        assert!(message.contains("could not resolve domain endpoint"));
     }
 }
