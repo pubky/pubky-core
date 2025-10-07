@@ -12,6 +12,19 @@ pub enum Level {
     Trace = "trace",
 }
 
+impl Level {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+            Self::__Invalid => unreachable!("Invalid Level variant"),
+        }
+    }
+}
+
 impl Into<log::Level> for Level {
     fn into(self) -> log::Level {
         match self {
@@ -20,7 +33,7 @@ impl Into<log::Level> for Level {
             Self::Info => log::Level::Info,
             Self::Debug => log::Level::Debug,
             Self::Trace => log::Level::Trace,
-            _ => log::Level::Info,
+            Self::__Invalid => unreachable!("Invalid Level variant"),
         }
     }
 }
@@ -46,7 +59,7 @@ impl Into<log::Level> for Level {
 ///   Call once at application startup, before invoking other SDK APIs.
 #[wasm_bindgen(js_name = "setLogLevel")]
 pub fn set_log_level(level: Level) -> Result<(), JsValue> {
-    let level_str = level.to_str();
+    let level_str = level.as_str();
     console_log::init_with_level(level.into()).map_err(|e| JsValue::from_str(&e.to_string()))?;
     log::info!("Log level set to: {level_str}");
     Ok(())
