@@ -6,6 +6,15 @@ use super::stats::ResourceStats;
 use crate::Result;
 use crate::util::check_http_status;
 
+/// Interpret the result of a `HEAD` request into a shared outcome used by both
+/// session and public storage clients.
+async fn interpret_head(resp: Response) -> Result<Option<Response>> {
+    match resp.status() {
+        StatusCode::NOT_FOUND | StatusCode::GONE => Ok(None),
+        _ => Ok(Some(check_http_status(resp).await?)),
+    }
+}
+
 //
 // SessionStorage (authenticated, as-me)
 //
@@ -30,24 +39,16 @@ impl SessionStorage {
     /// Lightweight existence check (HEAD) for an **absolute path**.
     pub async fn exists<P: IntoResourcePath>(&self, path: P) -> Result<bool> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
-        match resp.status() {
-            s if s.is_success() => Ok(true),
-            StatusCode::NOT_FOUND | StatusCode::GONE => Ok(false),
-            _ => {
-                let _ = check_http_status(resp).await?;
-                Ok(false)
-            }
-        }
+        Ok(interpret_head(resp).await?.is_some())
     }
 
     /// Retrieve metadata via `HEAD` for an **absolute path** (no body).
     pub async fn stats<P: IntoResourcePath>(&self, path: P) -> Result<Option<ResourceStats>> {
         let resp = self.request(Method::HEAD, path).await?.send().await?;
-        if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
-            return Ok(None);
-        }
-        let resp = check_http_status(resp).await?;
-        Ok(Some(ResourceStats::from_headers(resp.headers())))
+        Ok(match interpret_head(resp).await? {
+            Some(resp) => Some(ResourceStats::from_headers(resp.headers())),
+            None => None,
+        })
     }
 
     /// HTTP `PUT` (write) for an **absolute path**.
@@ -97,23 +98,15 @@ impl PublicStorage {
     /// HEAD existence check for an addressed resource.
     pub async fn exists<A: IntoPubkyResource>(&self, addr: A) -> Result<bool> {
         let resp = self.request(Method::HEAD, addr).await?.send().await?;
-        match resp.status() {
-            s if s.is_success() => Ok(true),
-            StatusCode::NOT_FOUND | StatusCode::GONE => Ok(false),
-            _ => {
-                let _ = check_http_status(resp).await?;
-                Ok(false)
-            }
-        }
+        Ok(interpret_head(resp).await?.is_some())
     }
 
     /// Metadata via `HEAD` for an addressed resource (no body).
     pub async fn stats<A: IntoPubkyResource>(&self, addr: A) -> Result<Option<ResourceStats>> {
         let resp = self.request(Method::HEAD, addr).await?.send().await?;
-        if resp.status() == StatusCode::NOT_FOUND || resp.status() == StatusCode::GONE {
-            return Ok(None);
-        }
-        let resp = check_http_status(resp).await?;
-        Ok(Some(ResourceStats::from_headers(resp.headers())))
+        Ok(match interpret_head(resp).await? {
+            Some(resp) => Some(ResourceStats::from_headers(resp.headers())),
+            None => None,
+        })
     }
 }
