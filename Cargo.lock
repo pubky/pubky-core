@@ -3310,9 +3310,7 @@ name = "pubky"
 version = "0.6.0-rc.5"
 dependencies = [
  "anyhow",
- "arc-swap",
  "base64 0.22.1",
- "bytes",
  "cookie",
  "flume",
  "futures-lite",

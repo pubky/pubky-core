@@ -31,7 +31,6 @@ json = ["dep:serde", "dep:serde_json", "reqwest/json"]
 pubky-common = { path = "../pubky-common", version = "0.6.0-rc.5" }
 thiserror = "2.0.11"
 url = "2.5.4"
-bytes = "^1.10.0"
 base64 = "0.22.1"
 pkarr = { workspace = true, features = ["full"] }
 cookie = "0.18.1"
@@ -39,7 +38,6 @@ flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-arc-swap = "1.7.1"
 httpdate = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
