@@ -283,12 +283,17 @@ impl PubkyAuthFlowBuilder {
 
         // 2) Generate client secret and build pubkyauth:// URL (caps + secret + relay).
         let client_secret = random_bytes::<32>();
-        let auth_url = Url::parse(&format!(
-            "pubkyauth:///?caps={}&secret={}&relay={}",
-            self.caps,
-            URL_SAFE_NO_PAD.encode(client_secret),
-            relay
-        ))?;
+        let caps_str = self.caps.to_string();
+        let secret_b64 = URL_SAFE_NO_PAD.encode(client_secret);
+        let relay_str = relay.as_str().to_owned();
+
+        let mut auth_url = Url::parse("pubkyauth:///")?;
+        {
+            let mut query = auth_url.query_pairs_mut();
+            query.append_pair("caps", &caps_str);
+            query.append_pair("secret", &secret_b64);
+            query.append_pair("relay", &relay_str);
+        }
 
         // 3) Append derived channel id to the relay URL.
         //    channel_id = base64url( hash(client_secret) )
