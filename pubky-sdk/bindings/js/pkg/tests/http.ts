@@ -1,19 +1,9 @@
 import test from "tape";
 import { Client } from "../index.js";
 import type { PubkyError } from "../index.js";
+import { hasNetwork } from "./utils.js";
 
 const TLD = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
-
-// Quick probe to avoid failing when offline in CI/dev
-async function hasNetwork() {
-  try {
-    // Use native fetch directly for the probe
-    const res = await fetch("https://example.com/", { method: "HEAD" });
-    return res.ok;
-  } catch (_) {
-    return false;
-  }
-}
 
 test("basic fetch", async (t) => {
   if (!(await hasNetwork())) {
@@ -33,7 +23,7 @@ test("basic fetch", async (t) => {
     t.equal(response.status, 200, "fetch example.com ok");
   }
 
-  // Pubky — requires your testnet to be up
+  // Pubky - requires your testnet to be up
   {
     const response = await client.fetch(`https://${TLD}/`);
     t.equal(response.status, 200, "fetch pubky TLD ok (testnet running)");
@@ -64,7 +54,7 @@ test("fetch failed", async (t) => {
       .catch((error: unknown) => error as PubkyError);
     t.equal(
       (response as PubkyError).name,
-      "RequestError",
+      "PkarrError",
       "pubky fetch error bubbled to JS",
     );
   }

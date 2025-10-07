@@ -41,6 +41,17 @@ export async function createSignupToken(
   return body;
 }
 
+// Quick probe to avoid failing when offline in CI/dev
+export async function hasNetwork() {
+  try {
+    // Use native fetch directly for the probe
+    const res = await fetch("https://example.com/", { method: "HEAD" });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
 export function assertPubkyError(
   t: Test,
   error: unknown,
