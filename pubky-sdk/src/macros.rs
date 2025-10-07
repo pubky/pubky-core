@@ -1,7 +1,7 @@
 /// Cross-platform logging macro with explicit level selection.
 ///
 /// On native (non-WASM) builds it forwards to [`tracing`] macros.
-/// In WASM builds (e.g. browsers) it forwards to [`log`] macros.
+/// In WASM builds (e.g. browsers) it forwards to log crate macros.
 /// During tests it prints to `stdout`, preserving the log level for context.
 ///
 /// This allows shared instrumentation across targets without conditional
@@ -24,13 +24,5 @@ macro_rules! cross_log {
         tracing::$level!($($arg)*);
         #[cfg(test)]
         println!("[{}] {}", stringify!($level), format_args!($($arg)*));
-    };
-}
-
-/// Backwards-compatible wrapper for the old `cross_debug!` macro.
-#[macro_export]
-macro_rules! cross_debug {
-    ($($arg:tt)*) => {
-        $crate::cross_log!(debug, $($arg)*);
     };
 }
