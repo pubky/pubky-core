@@ -114,14 +114,19 @@ impl PubkyAuthFlow {
     /// This awaits the background poller’s result, verifies/decrypts the token,
     /// and completes the `/session` exchange to return a ready-to-use [`PubkySession`].
     pub async fn await_approval(self) -> Result<PubkySession> {
-        let token = self.clone().await_token().await?;
-        PubkySession::new(&token, self.client.clone()).await
+        let client = self.client.clone();
+        let token = self.recv_token().await?;
+        PubkySession::new(&token, client).await
     }
 
     /// Block until the signer approves and we receive an [`AuthToken`].
     ///
     /// This awaits the background poller’s result.
     pub async fn await_token(self) -> Result<AuthToken> {
+        self.recv_token().await
+    }
+
+    async fn recv_token(&self) -> Result<AuthToken> {
         match self.rx.recv_async().await {
             Ok(res) => res,
             Err(_) => Err(AuthError::RequestExpired.into()),
