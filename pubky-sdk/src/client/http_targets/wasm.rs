@@ -55,19 +55,21 @@ impl PubkyHttpClient {
     }
 
     async fn transform_url(&self, url: &mut Url) -> Result<()> {
-        let clone = url.clone();
-        let qname = clone.host_str().unwrap_or("").to_string();
+        let original_url = url.clone();
+        let qname = original_url.host_str().unwrap_or("").to_string();
         log::debug!("Prepare request {}", url.as_str());
 
         let stream = self.pkarr.resolve_https_endpoints(&qname);
 
-        self.transform_url_with_stream(url, &qname, stream).await
+        self.transform_url_with_stream(url, &qname, &original_url, stream)
+            .await
     }
 
     async fn transform_url_with_stream<S>(
         &self,
         url: &mut Url,
         qname: &str,
+        original_url: &Url,
         mut stream: S,
     ) -> Result<()>
     where
@@ -162,9 +164,15 @@ mod tests {
         let client = PubkyHttpClient::new().unwrap();
         let pk = Keypair::random().public_key().to_string();
         let mut url = Url::parse(&format!("https://_pubky.{pk}/pub/app/file.txt")).unwrap();
+        let original = url.clone();
 
         let result = client
-            .transform_url_with_stream(&mut url, url.host_str().unwrap(), stream::empty())
+            .transform_url_with_stream(
+                &mut url,
+                url.host_str().unwrap(),
+                &original,
+                stream::empty(),
+            )
             .await;
 
         let err = result.expect_err("transform_url should fail when no endpoint is resolved");

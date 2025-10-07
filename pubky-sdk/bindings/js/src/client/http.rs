@@ -35,7 +35,11 @@ impl Client {
 
         // 2) Ask the SDK to prepare (resolve pkarr, adjust host, etc.)
         //    Returns Some(<z32>) iff this targets a Pubky host.
+        #[cfg(target_arch = "wasm32")]
         let pubky_host = self.0.prepare_request(&mut url).await?;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let pubky_host: Option<String> = None;
 
         // 3) Start from caller's init; DO NOT clobber headers.
         let req_init = init

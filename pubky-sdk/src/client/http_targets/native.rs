@@ -3,12 +3,6 @@ use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
 impl PubkyHttpClient {
-    /// No-op. Unused. This `pub` function exists only to avoid a clippy error on the `binding/js` crate.
-    /// TODO: find a better solution to this.
-    pub async fn prepare_request(&self, _url: &mut Url) -> Result<Option<String>> {
-        Ok(None)
-    }
-
     /// Constructs a [`reqwest::RequestBuilder`] for the given HTTP `method` and `url`,
     /// routing through the client’s unified request path.
     ///
