@@ -55,7 +55,7 @@ use pubky_common::{
 
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession,
-    errors::{AuthError, Result},
+    errors::{AuthError, Error, Result},
     util::check_http_status,
 };
 
@@ -163,57 +163,69 @@ impl PubkyAuthFlow {
         client_secret: [u8; 32],
         tx: flume::Sender<Result<AuthToken>>,
     ) {
+        let result = Self::poll_for_token(&client, &relay_channel_url, &client_secret).await;
+        let _ = tx.send(result);
+    }
+}
+
+impl PubkyAuthFlow {
+    async fn poll_for_token(
+        client: &PubkyHttpClient,
+        relay_channel_url: &Url,
+        client_secret: &[u8; 32],
+    ) -> Result<AuthToken> {
         use reqwest::StatusCode;
 
-        // Simple retry-on-timeout loop.
-        let response = loop {
-            let req = client.cross_request(Method::GET, relay_channel_url.clone());
-            let resp = match req.await {
-                Ok(rb) => rb.send().await,
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
-            };
-            match resp {
-                Ok(r) => break r,
-                Err(e) if e.is_timeout() => continue,
-                Err(e) => {
-                    let _ = tx.send(Err(e.into()));
-                    return;
-                }
-            }
-        };
+        let response = Self::poll_channel(client, relay_channel_url).await?;
 
-        if response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::GONE {
-            let _ = tx.send(Err(AuthError::RequestExpired.into()));
-            return;
+        if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+            return Err(AuthError::RequestExpired.into());
         }
 
-        let response = match check_http_status(response).await {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = tx.send(Err(e));
-                return;
-            }
-        };
+        let response = check_http_status(response).await?;
+        let encrypted = response.bytes().await?;
 
-        let encrypted = match response.bytes().await {
-            Ok(b) => b,
-            Err(e) => {
-                let _ = tx.send(Err(e.into()));
-                return;
-            }
-        };
-
-        let token = (|| -> Result<AuthToken> {
-            let token_bytes = decrypt(&encrypted, &client_secret)?;
-            let token = AuthToken::verify(&token_bytes)?;
-            Ok(token)
-        })();
-
-        let _ = tx.send(token);
+        Self::decode_token(&encrypted, client_secret)
     }
+
+    async fn poll_channel(
+        client: &PubkyHttpClient,
+        relay_channel_url: &Url,
+    ) -> Result<reqwest::Response> {
+        loop {
+            match Self::poll_channel_once(client, relay_channel_url).await {
+                Ok(response) => return Ok(response),
+                Err(PollError::Timeout) => continue,
+                Err(PollError::Failure(err)) => return Err(err),
+            }
+        }
+    }
+
+    async fn poll_channel_once(
+        client: &PubkyHttpClient,
+        relay_channel_url: &Url,
+    ) -> std::result::Result<reqwest::Response, PollError> {
+        let request = client
+            .cross_request(Method::GET, relay_channel_url.clone())
+            .await
+            .map_err(PollError::Failure)?;
+
+        match request.send().await {
+            Ok(response) => Ok(response),
+            Err(err) if err.is_timeout() => Err(PollError::Timeout),
+            Err(err) => Err(PollError::Failure(err.into())),
+        }
+    }
+
+    fn decode_token(encrypted: &[u8], client_secret: &[u8; 32]) -> Result<AuthToken> {
+        let token_bytes = decrypt(encrypted, client_secret)?;
+        Ok(AuthToken::verify(&token_bytes)?)
+    }
+}
+
+enum PollError {
+    Timeout,
+    Failure(Error),
 }
 
 impl Drop for PubkyAuthFlow {
