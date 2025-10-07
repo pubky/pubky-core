@@ -180,17 +180,22 @@ impl<'a> ListBuilder<'a> {
         let bytes = resp.bytes().await?;
         let mut out = Vec::new();
         for line in String::from_utf8_lossy(&bytes).lines() {
-            if line.trim().is_empty() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
                 continue;
             }
 
-            if line.starts_with("http://") || line.starts_with("https://") {
-                let url = Url::parse(line)?;
-                out.push(PubkyResource::from_transport_url(&url)?);
-            } else {
-                out.push(line.parse()?);
-            }
+            out.push(Self::parse_resource_line(trimmed)?);
         }
         Ok(out)
+    }
+
+    fn parse_resource_line(line: &str) -> Result<PubkyResource> {
+        if line.starts_with("http://") || line.starts_with("https://") {
+            let url = Url::parse(line)?;
+            PubkyResource::from_transport_url(&url)
+        } else {
+            line.parse()
+        }
     }
 }
