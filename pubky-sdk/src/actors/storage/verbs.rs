@@ -3,27 +3,38 @@ use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use super::core::{PublicStorage, SessionStorage};
 use super::resource::{IntoPubkyResource, IntoResourcePath};
 use super::stats::ResourceStats;
-use crate::Result;
-use crate::util::check_http_status;
+use crate::{Result, cross_log, util::check_http_status};
 
 /// Interpret the result of a `HEAD` request into a shared outcome used by both
 /// session and public storage clients.
 async fn interpret_head(resp: Response) -> Result<Option<Response>> {
     match resp.status() {
-        StatusCode::NOT_FOUND | StatusCode::GONE => Ok(None),
-        _ => Ok(Some(check_http_status(resp).await?)),
+        StatusCode::NOT_FOUND | StatusCode::GONE => {
+            cross_log!(info, "HEAD request returned {}", resp.status());
+            Ok(None)
+        }
+        _ => {
+            cross_log!(debug, "HEAD request returned {}", resp.status());
+            Ok(Some(check_http_status(resp).await?))
+        }
     }
 }
 
 /// Send a prepared request and ensure the HTTP status indicates success.
 async fn send_checked(rb: RequestBuilder) -> Result<Response> {
     let resp = rb.send().await?;
+    cross_log!(debug, "Request completed with status {}", resp.status());
     check_http_status(resp).await
 }
 
 /// Send a prepared `HEAD` request and interpret the outcome.
 async fn send_head(rb: RequestBuilder) -> Result<Option<Response>> {
     let resp = rb.send().await?;
+    cross_log!(
+        debug,
+        "HEAD request completed with status {}",
+        resp.status()
+    );
     interpret_head(resp).await
 }
 

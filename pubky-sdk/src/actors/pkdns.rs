@@ -13,7 +13,7 @@ use pkarr::{
 };
 
 use crate::{
-    PubkyHttpClient, PubkySigner,
+    PubkyHttpClient, PubkySigner, cross_log,
     errors::{AuthError, Error, PkarrError, Result},
 };
 
@@ -136,9 +136,21 @@ impl Pkdns {
     /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
     /// or `None` if the record is missing/unresolvable.
     pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
+        cross_log!(
+            info,
+            "Resolving homeserver for public key {} via PKARR",
+            user_public_key
+        );
         let packet = self.client.pkarr().resolve(user_public_key).await?;
         let s = extract_host_from_packet(&packet)?;
-        PublicKey::try_from(s).ok()
+        let result = PublicKey::try_from(s).ok();
+        cross_log!(
+            debug,
+            "Homeserver resolution for {} yielded {:?}",
+            user_public_key,
+            result
+        );
+        result
     }
 
     /// Convenience: resolve the homeserver for **this** user (requires keypair on `Pkdns`).
@@ -192,12 +204,25 @@ impl Pkdns {
         let pubky = kp.public_key();
 
         // 1) Resolve the most recent record once.
+        cross_log!(
+            info,
+            "Preparing to publish homeserver record for {} with mode {:?}",
+            pubky,
+            mode
+        );
         let existing = self.client.pkarr().resolve_most_recent(&pubky).await;
 
         // 2) Decide host string to publish.
         let host_str = match determine_host(host_override, existing.as_ref()) {
             Some(h) => h,
-            None => return Ok(()), // nothing to do
+            None => {
+                cross_log!(
+                    info,
+                    "No existing host found for {}; skipping publish",
+                    pubky
+                );
+                return Ok(());
+            } // nothing to do
         };
 
         // 3) Age check (for IfStale).
@@ -207,12 +232,25 @@ impl Pkdns {
             let elapsed = Timestamp::now() - record.timestamp();
             let age = Duration::from_micros(elapsed.as_u64());
             if age <= self.stale_after {
+                cross_log!(
+                    info,
+                    "Skipping publish for {}: record age {:?} <= stale_after {:?}",
+                    pubky,
+                    age,
+                    self.stale_after
+                );
                 return Ok(());
             }
         }
 
         // 4) Publish with small retry loop on retryable pkarr errors.
         for attempt in 1..=3 {
+            cross_log!(
+                info,
+                "Publishing homeserver for {} (attempt {attempt}) -> host {}",
+                pubky,
+                host_str
+            );
             match self
                 .publish_homeserver_inner(kp, &host_str, existing.clone())
                 .await
@@ -223,8 +261,15 @@ impl Pkdns {
                         && pk.is_retryable()
                         && attempt < 3
                     {
+                        cross_log!(
+                            warn,
+                            "Retryable PKARR error while publishing {}: {}; retrying",
+                            pubky,
+                            pk
+                        );
                         continue;
                     }
+                    cross_log!(error, "Failed to publish homeserver for {}: {}", pubky, e);
                     return Err(e);
                 }
             }
@@ -241,12 +286,24 @@ impl Pkdns {
     ) -> Result<()> {
         let signed_packet = Self::build_homeserver_packet(keypair, host, existing.as_ref())?;
 
+        cross_log!(
+            debug,
+            "Publishing `_pubky` packet for {} targeting host {}",
+            keypair.public_key(),
+            host
+        );
+
         self.client
             .pkarr()
             .publish(&signed_packet, existing.map(|s| s.timestamp()))
             .await
             .map_err(PkarrError::from)?;
 
+        cross_log!(
+            info,
+            "Successfully published `_pubky` packet for {}",
+            keypair.public_key()
+        );
         Ok(())
     }
 
@@ -288,8 +345,10 @@ fn determine_host(
     dht_packet: Option<&SignedPacket>,
 ) -> Option<String> {
     if let Some(host) = override_host {
+        cross_log!(info, "Using override host {} for `_pubky` publish", host);
         return Some(host.to_string());
     }
+    cross_log!(debug, "Deriving publish host from existing `_pubky` record");
     dht_packet.and_then(extract_host_from_packet)
 }
 

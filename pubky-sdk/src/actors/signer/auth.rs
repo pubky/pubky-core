@@ -8,7 +8,7 @@ use pubky_common::{
 };
 
 use crate::{
-    Capabilities,
+    Capabilities, cross_log,
     errors::{AuthError, Result},
     util::check_http_status,
 };
@@ -43,6 +43,7 @@ impl PubkySigner {
         let relay_str = relay_param
             .ok_or_else(|| AuthError::Validation("Missing 'relay' query parameter".to_string()))?;
         let relay = Url::parse(&relay_str)?;
+        cross_log!(info, "Approving auth flow via relay {relay}");
 
         let secret_str = secret_param
             .ok_or_else(|| AuthError::Validation("Missing 'secret' query parameter".to_string()))?;
@@ -58,6 +59,11 @@ impl PubkySigner {
 
         // 3) Build token with requested capabilities parsed from URL
         let capabilities = Capabilities::from(&pubkyauth_url);
+        cross_log!(
+            info,
+            "Signing capabilities {:?} for auth approval",
+            capabilities
+        );
 
         let token = AuthToken::sign(&self.keypair, capabilities);
         let encrypted_token = encrypt(&token.serialize(), &client_secret);
@@ -71,6 +77,11 @@ impl PubkySigner {
         let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
         path_segments.push(&channel_id);
         drop(path_segments);
+        cross_log!(
+            info,
+            "Posting encrypted auth token to relay channel {}",
+            callback_url
+        );
 
         // 5) POST encrypted token
         let response = self
@@ -82,6 +93,7 @@ impl PubkySigner {
             .await?;
 
         check_http_status(response).await?;
+        cross_log!(info, "Auth token delivered successfully");
         Ok(())
     }
 }

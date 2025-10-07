@@ -3,7 +3,9 @@ use reqwest::{Method, StatusCode};
 use pubky_common::session::SessionInfo;
 
 use crate::actors::storage::resource::resolve_pubky;
-use crate::{AuthToken, Error, PubkyHttpClient, Result, SessionStorage, util::check_http_status};
+use crate::{
+    AuthToken, Error, PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http_status,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
@@ -46,6 +48,11 @@ impl PubkySession {
     /// and constructs a new session-bound [`PubkySession`]
     pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<PubkySession> {
         let url = format!("pubky://{}/session", token.public_key());
+        cross_log!(
+            info,
+            "Establishing new session exchange for {}",
+            token.public_key()
+        );
         let resolved = resolve_pubky(&url)?;
         let response = client
             .cross_request(Method::POST, resolved)
@@ -55,6 +62,11 @@ impl PubkySession {
             .await?;
 
         let response = check_http_status(response).await?;
+        cross_log!(
+            info,
+            "Session exchange for {} succeeded; constructing session",
+            token.public_key()
+        );
         Self::new_from_response(client.clone(), response).await
     }
 
@@ -71,6 +83,7 @@ impl PubkySession {
             // WASM: cookies are browser-managed; just parse the session body.
             let bytes = response.bytes().await?;
             let info = SessionInfo::deserialize(&bytes)?;
+            cross_log!(info, "Hydrated WASM session for {}", info.public_key());
             return Ok(PubkySession { client, info });
         }
 
@@ -101,6 +114,7 @@ impl PubkySession {
                 .map(|c| c.value().to_string())
                 .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
 
+            cross_log!(info, "Hydrated native session for {}", info.public_key());
             Ok(PubkySession {
                 client,
                 info,
@@ -130,6 +144,7 @@ impl PubkySession {
     ///
     /// This does *not* mutate the session; it’s a sanity/validity check.
     pub async fn revalidate(&self) -> Result<Option<SessionInfo>> {
+        cross_log!(info, "Revalidating session for {}", self.info.public_key());
         let response = self
             .storage()
             .request(Method::GET, "/session")
@@ -137,10 +152,16 @@ impl PubkySession {
             .send()
             .await?;
         if response.status() == StatusCode::NOT_FOUND {
+            cross_log!(
+                warn,
+                "Session for {} no longer valid (404)",
+                self.info.public_key()
+            );
             return Ok(None);
         }
         let response = check_http_status(response).await?;
         let bytes = response.bytes().await?;
+        cross_log!(info, "Session for {} remains valid", self.info.public_key());
         Ok(Some(SessionInfo::deserialize(&bytes)?))
     }
 
@@ -149,13 +170,21 @@ impl PubkySession {
     /// - **On success:** the session is consumed (dropped).
     /// - **On failure:** you get `(Error, Self)` back so you can retry or inspect.
     pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
+        cross_log!(info, "Signing out session for {}", self.info.public_key());
         let resp = match self.storage().delete("/session").await {
             Ok(r) => r,
             Err(e) => return Err((e, self)),
         };
         if let Err(e) = check_http_status(resp).await {
+            cross_log!(
+                error,
+                "Signout for {} failed: {}",
+                self.info.public_key(),
+                e
+            );
             return Err((e, self));
         }
+        cross_log!(info, "Session for {} signed out", self.info.public_key());
         Ok(()) // success => `self` is consumed
     }
 
@@ -167,6 +196,11 @@ impl PubkySession {
     ///
     /// See [`SessionStorage`] for usage examples.
     pub fn storage(&self) -> SessionStorage {
+        cross_log!(
+            debug,
+            "Creating session storage handle for {}",
+            self.info.public_key()
+        );
         SessionStorage::new(self)
     }
 }

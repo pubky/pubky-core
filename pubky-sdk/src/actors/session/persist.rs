@@ -5,7 +5,7 @@ use pubky_common::session::SessionInfo;
 
 use super::core::PubkySession;
 use crate::{
-    Capabilities, PubkyHttpClient, Result,
+    Capabilities, PubkyHttpClient, Result, cross_log,
     errors::{AuthError, RequestError},
 };
 
@@ -21,6 +21,7 @@ impl PubkySession {
     pub fn export_secret(&self) -> String {
         let public_key = self.info().public_key().to_string();
         let cookie = self.cookie.clone();
+        cross_log!(info, "Exporting session secret for {}", public_key);
         format!("{public_key}:{cookie}")
     }
 
@@ -48,6 +49,7 @@ impl PubkySession {
         let public_key = PublicKey::try_from(pk_str).map_err(|_| RequestError::Validation {
             message: "invalid public key".into(),
         })?;
+        cross_log!(info, "Importing session secret for {}", public_key);
 
         // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.
         let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
@@ -63,6 +65,11 @@ impl PubkySession {
             .await?
             .ok_or(AuthError::RequestExpired)?;
         session.info = info;
+        cross_log!(
+            info,
+            "Successfully imported session secret for {}",
+            public_key
+        );
 
         Ok(session)
     }
@@ -97,6 +104,12 @@ impl PubkySession {
         };
 
         std::fs::write(&target, token)?;
+        cross_log!(
+            info,
+            "Wrote session secret for {} to {}",
+            self.info().public_key(),
+            target.display()
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -152,6 +165,11 @@ impl PubkySession {
             std::fs::read_to_string(secret_file_path).map_err(|e| RequestError::Validation {
                 message: format!("failed to read session secret file: {e}"),
             })?;
+        cross_log!(
+            info,
+            "Loading session secret from {}",
+            secret_file_path.display()
+        );
         Self::import_secret(token.trim(), client).await
     }
 }

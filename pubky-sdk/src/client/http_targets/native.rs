@@ -1,4 +1,4 @@
-use crate::{PubkyHttpClient, PublicKey, Result};
+use crate::{PubkyHttpClient, PublicKey, Result, cross_log};
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
@@ -48,13 +48,33 @@ impl PubkyHttpClient {
         {
             if let Some(pk_host) = host.strip_prefix("_pubky.") {
                 if PublicKey::try_from(pk_host).is_ok() {
+                    cross_log!(
+                        debug,
+                        "Routing request for resolved _pubky host {} via Pubky TLS",
+                        host
+                    );
                     return self.http.request(method, url_str);
                 }
             } else if PublicKey::try_from(host).is_err() {
                 // TODO: remove icann_http when we can control reqwest connection
                 // and or create a tls config per connection.
+                cross_log!(
+                    debug,
+                    "Routing request for ICANN host {} via standard TLS",
+                    host
+                );
                 return self.icann_http.request(method, url_str);
             }
+        }
+
+        if let Ok(parsed) = Url::parse(url_str)
+            && let Some(host) = parsed.host_str()
+        {
+            cross_log!(
+                debug,
+                "Routing request for pubky host {} via PubkyTLS",
+                host
+            );
         }
 
         self.http.request(method, url_str)

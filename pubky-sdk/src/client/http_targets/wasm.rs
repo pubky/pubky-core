@@ -1,7 +1,7 @@
 //! HTTP methods that support `https://` with Pkarr domains, including `_pubky.<pk>` URLs
 
-use crate::PubkyHttpClient;
 use crate::errors::{PkarrError, Result};
+use crate::{PubkyHttpClient, cross_log};
 use futures_lite::StreamExt;
 use pkarr::PublicKey;
 use pkarr::extra::endpoints::Endpoint;
@@ -57,7 +57,7 @@ impl PubkyHttpClient {
     async fn transform_url(&self, url: &mut Url) -> Result<()> {
         let original_url = url.clone();
         let qname = original_url.host_str().unwrap_or("").to_string();
-        log::debug!("Prepare request {}", url.as_str());
+        cross_log!(debug, "Prepare WASM request {}", url.as_str());
 
         let stream = self.pkarr.resolve_https_endpoints(&qname);
 
@@ -76,7 +76,7 @@ impl PubkyHttpClient {
         S: futures_lite::Stream<Item = Endpoint> + Unpin,
     {
         let Some(endpoint) = Self::select_first_usable_endpoint(&mut stream).await else {
-            log::debug!("Could not resolve host: {}", qname);
+            cross_log!(error, "Could not resolve host {qname}");
             let host_display = if qname.is_empty() {
                 "<empty host>".to_string()
             } else {
@@ -92,7 +92,7 @@ impl PubkyHttpClient {
 
         self.apply_endpoint_to_url(url, &endpoint)?;
 
-        log::debug!("Transformed URL to: {}", url.as_str());
+        cross_log!(debug, "Transformed URL to {}", url.as_str());
 
         Ok(())
     }

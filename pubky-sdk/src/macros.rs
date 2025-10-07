@@ -1,27 +1,36 @@
-/// Cross-platform `debug!` logging macro.
+/// Cross-platform logging macro with explicit level selection.
 ///
-/// On native (non-WASM) builds it forwards to [`tracing::debug!`].  
-/// In WASM builds (e.g. browsers) it forwards to `log::debug!`.  
-/// In tests it prints to `stdout`.
+/// On native (non-WASM) builds it forwards to [`tracing`] macros.
+/// In WASM builds (e.g. browsers) it forwards to [`log`] macros.
+/// During tests it prints to `stdout`, preserving the log level for context.
 ///
-/// Useful when writing code that runs on both native and WASM without
-/// pulling platform-specific logging crates into your app.
+/// This allows shared instrumentation across targets without conditional
+/// compilation around the logging backend.
 ///
 /// # Examples
 /// ```
-/// use pubky::cross_debug;
+/// use pubky::cross_log;
 /// # fn main() {
-/// cross_debug!("listing {} entries", 42);
+/// cross_log!(info, "listing {} entries", 42);
+/// cross_log!(warn, "slow response from {}", "relay");
 /// # }
 /// ```
 #[macro_export]
+macro_rules! cross_log {
+    ($level:ident, $($arg:tt)*) => {
+        #[cfg(all(not(test), target_arch = "wasm32"))]
+        log::$level!($($arg)*);
+        #[cfg(all(not(test), not(target_arch = "wasm32")))]
+        tracing::$level!($($arg)*);
+        #[cfg(test)]
+        println!("[{}] {}", stringify!($level), format_args!($($arg)*));
+    };
+}
+
+/// Backwards-compatible wrapper for the old `cross_debug!` macro.
+#[macro_export]
 macro_rules! cross_debug {
     ($($arg:tt)*) => {
-        #[cfg(all(not(test), target_arch = "wasm32"))]
-        log::debug!($($arg)*);
-        #[cfg(all(not(test), not(target_arch = "wasm32")))]
-        tracing::debug!($($arg)*);
-        #[cfg(test)]
-        println!($($arg)*);
+        $crate::cross_log!(debug, $($arg)*);
     };
 }

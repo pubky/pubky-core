@@ -3,8 +3,11 @@ use reqwest::Method;
 use url::Url;
 
 use super::PubkySigner;
-use crate::{Capabilities, Capability, PubkySession, PublicKey, Result, util::check_http_status};
+use crate::{
+    Capabilities, Capability, PubkySession, PublicKey, Result, cross_log, util::check_http_status,
+};
 
+#[derive(Debug, Clone, Copy)]
 enum PublishMode {
     Background,
     Blocking,
@@ -28,6 +31,7 @@ impl PubkySigner {
         if let Some(token) = signup_token {
             url.query_pairs_mut().append_pair("signup_token", token);
         }
+        cross_log!(info, "Signing up new account on homeserver {}", homeserver);
 
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let auth_token = AuthToken::sign(&self.keypair, capabilities);
@@ -42,10 +46,20 @@ impl PubkySigner {
 
         // Map non-2xx into our error type; keep body/headers intact for the caller.
         let response = check_http_status(response).await?;
+        cross_log!(
+            info,
+            "Signup request for {} succeeded; publishing homeserver",
+            self.keypair.public_key()
+        );
 
         self.pkdns()
             .publish_homeserver_force(Some(homeserver))
             .await?;
+        cross_log!(
+            info,
+            "Signup homeserver publish complete for {}",
+            self.keypair.public_key()
+        );
         PubkySession::new_from_response(self.client.clone(), response).await
     }
 
@@ -75,16 +89,37 @@ impl PubkySigner {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
         let session = PubkySession::new(&token, self.client.clone()).await?;
+        cross_log!(
+            info,
+            "Signin completed for {}; mode {:?}",
+            self.keypair.public_key(),
+            mode
+        );
 
         match mode {
             PublishMode::Blocking => {
+                cross_log!(
+                    info,
+                    "Publishing homeserver for {} in blocking mode",
+                    self.keypair.public_key()
+                );
                 self.pkdns().publish_homeserver_if_stale(None).await?;
             }
             PublishMode::Background => {
                 // Fire-and-forget path: refresh in the background
                 let signer = self.clone();
                 let fut = async move {
+                    cross_log!(
+                        info,
+                        "Background publish of homeserver for {} started",
+                        signer.keypair.public_key()
+                    );
                     let _ = signer.pkdns().publish_homeserver_if_stale(None).await;
+                    cross_log!(
+                        info,
+                        "Background publish task for {} completed",
+                        signer.keypair.public_key()
+                    );
                 };
                 #[cfg(not(target_arch = "wasm32"))]
                 tokio::spawn(fut);

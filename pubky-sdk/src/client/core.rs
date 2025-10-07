@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::{borrow::Cow, fmt::Debug};
 
-use crate::errors::BuildError;
+use crate::{cross_log, errors::BuildError};
 
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
@@ -98,6 +98,7 @@ impl PubkyHttpClientBuilder {
     /// - These ports come from `pubky_common::constants::testnet_ports::{ BOOTSTRAP, PKARR_RELAY }`.
     /// - Ensure your testnet exposes them from that host (and they’re reachable from where this code runs).
     pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
+        cross_log!(info, "Configuring testnet builders for host {host}");
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.pkarr.bootstrap(&[format!(
@@ -176,6 +177,13 @@ impl PubkyHttpClientBuilder {
             .filter(|extra| !extra.is_empty())
             .map(|extra| Cow::Owned(format!("{DEFAULT_USER_AGENT} {extra}")))
             .unwrap_or_else(|| Cow::Borrowed(DEFAULT_USER_AGENT));
+
+        cross_log!(
+            info,
+            "Building PubkyHttpClient (timeout: {:?}, user_agent: {})",
+            self.http_request_timeout,
+            user_agent
+        );
 
         #[cfg(not(target_arch = "wasm32"))]
         let mut http_builder =
@@ -297,6 +305,10 @@ pub struct PubkyHttpClient {
 impl PubkyHttpClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
     pub fn new() -> Result<PubkyHttpClient, BuildError> {
+        cross_log!(
+            info,
+            "Constructing PubkyHttpClient with default configuration"
+        );
         Self::builder().build()
     }
 
@@ -342,6 +354,10 @@ impl PubkyHttpClient {
     /// - [`PubkyHttpClientBuilder::testnet`] to tweak additional settings first.
     /// - [`PubkyHttpClientBuilder::testnet_with_host`] to target a non-`localhost` host.
     pub fn testnet() -> Result<PubkyHttpClient, BuildError> {
+        cross_log!(
+            info,
+            "Constructing PubkyHttpClient configured for local testnet"
+        );
         let mut builder = Self::builder();
         builder.testnet();
         builder.build()

@@ -3,7 +3,7 @@ use reqwest::{Method, RequestBuilder};
 
 use super::resource::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath};
 use crate::{
-    PubkyHttpClient, PubkySession,
+    PubkyHttpClient, PubkySession, cross_log,
     errors::{RequestError, Result},
 };
 
@@ -54,6 +54,7 @@ impl SessionStorage {
         let path: ResourcePath = path.into_abs_path()?;
         let resource = PubkyResource::new(self.user.clone(), path.as_str())?;
         let url = resource.to_transport_url()?;
+        cross_log!(debug, "Session storage {} request {}", method, url);
         let rb = self.client.cross_request(method, url).await?;
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -97,6 +98,7 @@ impl PublicStorage {
     ) -> Result<RequestBuilder> {
         let resource: PubkyResource = addr.into_pubky_resource()?;
         let url = resource.to_transport_url()?;
+        cross_log!(debug, "Public storage {} request {}", method, url);
         let rb = self.client.cross_request(method, url).await?;
         Ok(rb)
     }

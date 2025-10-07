@@ -54,7 +54,7 @@ use pubky_common::{
 };
 
 use crate::{
-    AuthToken, Capabilities, PubkyHttpClient, PubkySession,
+    AuthToken, Capabilities, PubkyHttpClient, PubkySession, cross_log,
     errors::{AuthError, Error, Result},
     util::check_http_status,
 };
@@ -163,12 +163,24 @@ impl PubkyAuthFlow {
         client_secret: [u8; 32],
         tx: flume::Sender<Result<AuthToken>>,
     ) {
+        cross_log!(
+            info,
+            "Starting auth flow polling for relay channel {}",
+            relay_channel_url
+        );
         let result = Self::poll_for_token(&client, &relay_channel_url, &client_secret).await;
+
+        if result.is_ok() {
+            cross_log!(
+                info,
+                "Auth flow successfully decrypted token for relay channel {}",
+                relay_channel_url
+            );
+        }
+
         let _ = tx.send(result);
     }
-}
 
-impl PubkyAuthFlow {
     async fn poll_for_token(
         client: &PubkyHttpClient,
         relay_channel_url: &Url,
@@ -179,6 +191,12 @@ impl PubkyAuthFlow {
         let response = Self::poll_channel(client, relay_channel_url).await?;
 
         if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+            cross_log!(
+                warn,
+                "Auth flow relay channel {} expired (status: {})",
+                relay_channel_url,
+                response.status()
+            );
             return Err(AuthError::RequestExpired.into());
         }
 
@@ -192,11 +210,35 @@ impl PubkyAuthFlow {
         client: &PubkyHttpClient,
         relay_channel_url: &Url,
     ) -> Result<reqwest::Response> {
+        let mut attempt: u32 = 0;
         loop {
+            attempt += 1;
+            cross_log!(
+                debug,
+                "Auth flow polling attempt {attempt} requesting {}",
+                relay_channel_url
+            );
             match Self::poll_channel_once(client, relay_channel_url).await {
-                Ok(response) => return Ok(response),
-                Err(PollError::Timeout) => continue,
-                Err(PollError::Failure(err)) => return Err(err),
+                Ok(response) => {
+                    cross_log!(
+                        debug,
+                        "Received response for auth flow polling attempt {attempt}: status {}",
+                        response.status()
+                    );
+
+                    return Ok(response);
+                }
+                Err(PollError::Timeout) => {
+                    cross_log!(
+                        warn,
+                        "Auth flow polling attempt {attempt} timed out; retrying"
+                    );
+                    continue;
+                }
+                Err(PollError::Failure(err)) => {
+                    cross_log!(error, "Auth flow polling attempt {attempt} failed: {err}");
+                    return Err(err);
+                }
             }
         }
     }
@@ -306,6 +348,8 @@ impl PubkyAuthFlowBuilder {
             segs.push(&channel_id);
         }
 
+        cross_log!(info, "Auth flow derived relay channel {}", relay);
+
         // 4) Spawn background polling (single-shot delivery)
         let (tx, rx) = flume::bounded(1);
         let (abort_handle, abort_reg) = AbortHandle::new_pair();
@@ -314,6 +358,7 @@ impl PubkyAuthFlowBuilder {
         let bg_secret = client_secret;
 
         let fut = async move {
+            cross_log!(info, "Spawning auth flow polling task");
             PubkyAuthFlow::poll_for_token_loop(bg_client, bg_relay, bg_secret, tx).await;
         };
 
