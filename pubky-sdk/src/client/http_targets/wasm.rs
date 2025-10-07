@@ -75,63 +75,7 @@ impl PubkyHttpClient {
     where
         S: futures_lite::Stream<Item = Endpoint> + Unpin,
     {
-        let original_url = url.clone();
-        let mut so_far: Option<Endpoint> = None;
-
-        while let Some(endpoint) = stream.next().await {
-            if endpoint.domain().is_some() {
-                so_far = Some(endpoint);
-
-                // TODO: currently we return the first thing we can see,
-                // in the future we might want to failover to other endpoints
-                break;
-            }
-        }
-
-        if let Some(e) = so_far {
-            // Check if the resolved domain is a testnet domain. It is if it's "localhost"
-            // or if it matches the testnet_host configured in the client.
-            let is_testnet_domain = e.domain().map_or(false, |domain| {
-                if domain == "localhost" {
-                    return true;
-                }
-                if let Some(test_host) = &self.testnet_host {
-                    return domain == test_host;
-                }
-                false
-            });
-
-            // TODO: detect loopback IPs and other equivalent to localhost
-            if is_testnet_domain {
-                url.set_scheme("http")
-                    .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
-
-                let http_port = e
-                    .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
-                    .and_then(|x| <[u8; 2]>::try_from(x).ok())
-                    .map(u16::from_be_bytes)
-                    .ok_or_else(|| {
-                        PkarrError::InvalidRecord(
-                            "could not find HTTP_PORT service param in Pkarr record".to_string(),
-                        )
-                    })?;
-
-                url.set_port(Some(http_port))
-                    .map_err(|_| url::ParseError::InvalidPort)?;
-            } else if let Some(port) = e.port() {
-                url.set_port(Some(port))
-                    .map_err(|_| url::ParseError::InvalidPort)?;
-            }
-
-            if let Some(domain) = e.domain() {
-                url.set_host(Some(domain))
-                    .map_err(|_| url::ParseError::SetHostOnCannotBeABaseUrl)?;
-            }
-
-            log::debug!("Transformed URL to: {}", url.as_str());
-        } else {
-            // TODO: didn't find any domain, what to do?
-            //  return an error.
+        let Some(endpoint) = Self::select_first_usable_endpoint(&mut stream).await else {
             log::debug!("Could not resolve host: {}", qname);
             let host_display = if qname.is_empty() {
                 "<empty host>".to_string()
@@ -144,6 +88,64 @@ impl PubkyHttpClient {
                 url = original_url.as_str()
             ))
             .into());
+        };
+
+        self.apply_endpoint_to_url(url, &endpoint)?;
+
+        log::debug!("Transformed URL to: {}", url.as_str());
+
+        Ok(())
+    }
+
+    async fn select_first_usable_endpoint<S>(stream: &mut S) -> Option<Endpoint>
+    where
+        S: futures_lite::Stream<Item = Endpoint> + Unpin,
+    {
+        while let Some(endpoint) = stream.next().await {
+            if endpoint.domain().is_some() {
+                return Some(endpoint);
+            }
+        }
+
+        None
+    }
+
+    fn apply_endpoint_to_url(&self, url: &mut Url, endpoint: &Endpoint) -> Result<()> {
+        let is_testnet_domain = endpoint.domain().map_or(false, |domain| {
+            if domain == "localhost" {
+                return true;
+            }
+            if let Some(test_host) = &self.testnet_host {
+                return domain == test_host;
+            }
+            false
+        });
+
+        if is_testnet_domain {
+            url.set_scheme("http")
+                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+
+            let http_port = endpoint
+                .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
+                .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+                .map(u16::from_be_bytes)
+                .ok_or_else(|| {
+                    PkarrError::InvalidRecord(
+                        "Pkarr record missing required HTTP_PORT parameter for testnet endpoint"
+                            .to_string(),
+                    )
+                })?;
+
+            url.set_port(Some(http_port))
+                .map_err(|_| url::ParseError::InvalidPort)?;
+        } else if let Some(port) = endpoint.port() {
+            url.set_port(Some(port))
+                .map_err(|_| url::ParseError::InvalidPort)?;
+        }
+
+        if let Some(domain) = endpoint.domain() {
+            url.set_host(Some(domain))
+                .map_err(|_| url::ParseError::SetHostOnCannotBeABaseUrl)?;
         }
 
         Ok(())
@@ -181,6 +183,15 @@ mod tests {
             panic!("expected pkarr invalid record error, got {err:?}");
         };
 
-        assert!(message.contains("could not resolve domain endpoint"));
+        assert!(message.contains("No HTTPS endpoints found"));
+    }
+
+    #[wasm_bindgen_test(async)]
+    async fn select_first_usable_endpoint_is_none_for_empty_stream() {
+        let mut empty = stream::empty();
+
+        let result = PubkyHttpClient::select_first_usable_endpoint(&mut empty).await;
+
+        assert!(result.is_none());
     }
 }
