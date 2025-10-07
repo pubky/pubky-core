@@ -89,9 +89,9 @@ pub struct ListBuilder<'a> {
 
 impl<'a> ListBuilder<'a> {
     #[inline]
-    fn session(storage: &'a SessionStorage, url: Url) -> Self {
+    fn new(scope: ListScope<'a>, url: Url) -> Self {
         Self {
-            scope: ListScope::Session(storage),
+            scope,
             url,
             reverse: false,
             shallow: false,
@@ -101,15 +101,13 @@ impl<'a> ListBuilder<'a> {
     }
 
     #[inline]
+    fn session(storage: &'a SessionStorage, url: Url) -> Self {
+        Self::new(ListScope::Session(storage), url)
+    }
+
+    #[inline]
     fn public(storage: &'a PublicStorage, url: Url) -> Self {
-        Self {
-            scope: ListScope::Public(storage),
-            url,
-            reverse: false,
-            shallow: false,
-            limit: None,
-            cursor: None,
-        }
+        Self::new(ListScope::Public(storage), url)
     }
 
     /// List newest-first instead of oldest-first.
