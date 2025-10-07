@@ -1,4 +1,4 @@
-use reqwest::{Method, Response, StatusCode};
+use reqwest::{Method, RequestBuilder, Response, StatusCode};
 
 use super::core::{PublicStorage, SessionStorage};
 use super::resource::{IntoPubkyResource, IntoResourcePath};
@@ -13,6 +13,18 @@ async fn interpret_head(resp: Response) -> Result<Option<Response>> {
         StatusCode::NOT_FOUND | StatusCode::GONE => Ok(None),
         _ => Ok(Some(check_http_status(resp).await?)),
     }
+}
+
+/// Send a prepared request and ensure the HTTP status indicates success.
+async fn send_checked(rb: RequestBuilder) -> Result<Response> {
+    let resp = rb.send().await?;
+    check_http_status(resp).await
+}
+
+/// Send a prepared `HEAD` request and interpret the outcome.
+async fn send_head(rb: RequestBuilder) -> Result<Option<Response>> {
+    let resp = rb.send().await?;
+    interpret_head(resp).await
 }
 
 //
@@ -32,20 +44,20 @@ impl SessionStorage {
     /// # Ok(()) }
     /// ```
     pub async fn get<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
-        let resp = self.request(Method::GET, path).await?.send().await?;
-        check_http_status(resp).await
+        let rb = self.request(Method::GET, path).await?;
+        send_checked(rb).await
     }
 
     /// Lightweight existence check (HEAD) for an **absolute path**.
     pub async fn exists<P: IntoResourcePath>(&self, path: P) -> Result<bool> {
-        let resp = self.request(Method::HEAD, path).await?.send().await?;
-        Ok(interpret_head(resp).await?.is_some())
+        let rb = self.request(Method::HEAD, path).await?;
+        Ok(send_head(rb).await?.is_some())
     }
 
     /// Retrieve metadata via `HEAD` for an **absolute path** (no body).
     pub async fn stats<P: IntoResourcePath>(&self, path: P) -> Result<Option<ResourceStats>> {
-        let resp = self.request(Method::HEAD, path).await?.send().await?;
-        Ok(interpret_head(resp)
+        let rb = self.request(Method::HEAD, path).await?;
+        Ok(send_head(rb)
             .await?
             .map(|resp| ResourceStats::from_headers(resp.headers())))
     }
@@ -58,19 +70,14 @@ impl SessionStorage {
         P: IntoResourcePath,
         B: Into<reqwest::Body>,
     {
-        let resp = self
-            .request(Method::PUT, path)
-            .await?
-            .body(body)
-            .send()
-            .await?;
-        check_http_status(resp).await
+        let rb = self.request(Method::PUT, path).await?.body(body);
+        send_checked(rb).await
     }
 
     /// HTTP `DELETE` for an **absolute path**.
     pub async fn delete<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
-        let resp = self.request(Method::DELETE, path).await?.send().await?;
-        check_http_status(resp).await
+        let rb = self.request(Method::DELETE, path).await?;
+        send_checked(rb).await
     }
 }
 
@@ -90,20 +97,20 @@ impl PublicStorage {
     /// # Ok(()) }
     /// ```
     pub async fn get<A: IntoPubkyResource>(&self, addr: A) -> Result<Response> {
-        let resp = self.request(Method::GET, addr).await?.send().await?;
-        check_http_status(resp).await
+        let rb = self.request(Method::GET, addr).await?;
+        send_checked(rb).await
     }
 
     /// HEAD existence check for an addressed resource.
     pub async fn exists<A: IntoPubkyResource>(&self, addr: A) -> Result<bool> {
-        let resp = self.request(Method::HEAD, addr).await?.send().await?;
-        Ok(interpret_head(resp).await?.is_some())
+        let rb = self.request(Method::HEAD, addr).await?;
+        Ok(send_head(rb).await?.is_some())
     }
 
     /// Metadata via `HEAD` for an addressed resource (no body).
     pub async fn stats<A: IntoPubkyResource>(&self, addr: A) -> Result<Option<ResourceStats>> {
-        let resp = self.request(Method::HEAD, addr).await?.send().await?;
-        Ok(interpret_head(resp)
+        let rb = self.request(Method::HEAD, addr).await?;
+        Ok(send_head(rb)
             .await?
             .map(|resp| ResourceStats::from_headers(resp.headers())))
     }
