@@ -19,10 +19,9 @@ impl Signer {
     /// @param {Keypair} keypair
     /// @returns {Signer}
     #[wasm_bindgen(js_name = "fromKeypair")]
-    pub fn new(keypair: &Keypair) -> Signer {
-        let signer = pubky::PubkySigner::new(keypair.as_inner().clone())
-            .expect("Signer construction should not fail with a valid keypair");
-        Signer(signer)
+    pub fn new(keypair: &Keypair) -> JsResult<Signer> {
+        let signer = pubky::PubkySigner::new(keypair.as_inner().clone())?;
+        Ok(Signer(signer))
     }
 
     /// Get the public key of this signer.
