@@ -128,9 +128,7 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use pkarr::client::cache::CacheKey;
-    use pkarr::dns::rdata::SVCB;
-    use pkarr::{Keypair, SignedPacket};
+    use pkarr::{CacheKey, Keypair, SignedPacket};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -138,7 +136,7 @@ mod tests {
     // Missing PKARR endpoints must surface a descriptive error so callers can react.
     #[wasm_bindgen_test(async)]
     async fn prepare_missing_endpoint_returns_error() {
-        let client = Client::testnet(None);
+        let client = Client::testnet(None).unwrap();
         let keypair = Keypair::random();
         seed_pkarr_testnet_endpoint(&client, &keypair, "localhost", 15411);
         let pk = keypair.public_key().to_string();
@@ -165,5 +163,19 @@ mod tests {
 
         let host_opt = client.0.prepare_request(&mut url).await.unwrap();
         assert!(host_opt.is_none());
+    }
+
+    fn seed_pkarr_testnet_endpoint(client: &Client, keypair: &Keypair, _host: &str, _port: u16) {
+        let pkarr_client = client.0.pkarr();
+        let cache = pkarr_client
+            .cache()
+            .expect("pkarr client should expose a cache for tests");
+
+        let cache_key: CacheKey = keypair.public_key().into();
+        let signed_packet = SignedPacket::builder()
+            .sign(keypair)
+            .expect("sign empty packet");
+
+        cache.put(&cache_key, &signed_packet);
     }
 }

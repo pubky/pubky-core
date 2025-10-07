@@ -59,9 +59,9 @@ impl PubkyHttpClient {
         let qname = clone.host_str().unwrap_or("").to_string();
         log::debug!("Prepare request {}", url.as_str());
 
-        let stream = self.pkarr.resolve_https_endpoints(qname);
+        let stream = self.pkarr.resolve_https_endpoints(&qname);
 
-        self.transform_url_with_stream(url, qname, stream).await
+        self.transform_url_with_stream(url, &qname, stream).await
     }
 
     async fn transform_url_with_stream<S>(
@@ -73,6 +73,7 @@ impl PubkyHttpClient {
     where
         S: futures_lite::Stream<Item = Endpoint> + Unpin,
     {
+        let original_url = url.clone();
         let mut so_far: Option<Endpoint> = None;
 
         while let Some(endpoint) = stream.next().await {
@@ -133,12 +134,12 @@ impl PubkyHttpClient {
             let host_display = if qname.is_empty() {
                 "<empty host>".to_string()
             } else {
-                qname.clone()
+                qname.to_string()
             };
             return Err(PkarrError::InvalidRecord(format!(
                 "No HTTPS endpoints found in PKARR record for `{host}` (original URL: {url})",
                 host = host_display,
-                url = clone.as_str()
+                url = original_url.as_str()
             ))
             .into());
         }
