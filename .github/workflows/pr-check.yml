@@ -34,7 +34,7 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Lint with Clippy
-        run: cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   test:
     strategy:
