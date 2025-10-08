@@ -43,9 +43,10 @@ impl PubkyHttpClient {
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
         let url_str = url.as_str();
 
-        if let Ok(parsed) = Url::parse(url_str)
-            && let Some(host) = parsed.host_str()
-        {
+        let parsed = Url::parse(url_str);
+        let host = parsed.as_ref().ok().and_then(|url| url.host_str());
+
+        if let Some(host) = host {
             if let Some(pk_host) = host.strip_prefix("_pubky.") {
                 if PublicKey::try_from(pk_host).is_ok() {
                     cross_log!(
@@ -67,9 +68,7 @@ impl PubkyHttpClient {
             }
         }
 
-        if let Ok(parsed) = Url::parse(url_str)
-            && let Some(host) = parsed.host_str()
-        {
+        if let Some(host) = host {
             cross_log!(
                 debug,
                 "Routing request for pubky host {} via PubkyTLS",
