@@ -73,29 +73,29 @@ impl Client {
     pub fn new(config_opt: Option<PubkyClientConfig>) -> JsResult<Self> {
         let mut builder = pubky::PubkyHttpClient::builder();
 
-        if let Some(config) = config_opt {
-            if let Some(pkarr) = config.pkarr {
-                // Relays
-                if let Some(relays) = pkarr.relays {
-                    let mut relay_set_error: Option<String> = None;
-                    builder.pkarr(|p| {
-                        p.no_relays();
-                        if let Err(e) = p.relays(&relays) {
-                            relay_set_error = Some(e.to_string());
-                        }
-                        p
-                    });
-                    if let Some(msg) = relay_set_error {
-                        return Err(PubkyError::new(PubkyErrorName::InvalidInput, msg));
+        if let Some(config) = config_opt
+            && let Some(pkarr) = config.pkarr
+        {
+            // Relays
+            if let Some(relays) = pkarr.relays {
+                let mut relay_set_error: Option<String> = None;
+                builder.pkarr(|p| {
+                    p.no_relays();
+                    if let Err(e) = p.relays(&relays) {
+                        relay_set_error = Some(e.to_string());
                     }
+                    p
+                });
+                if let Some(msg) = relay_set_error {
+                    return Err(PubkyError::new(PubkyErrorName::InvalidInput, msg));
                 }
-                // Timeout
-                if let Some(timeout_ms) = pkarr.request_timeout {
-                    builder.pkarr(|p| {
-                        p.request_timeout(Duration::from_millis(timeout_ms));
-                        p
-                    });
-                }
+            }
+            // Timeout
+            if let Some(timeout_ms) = pkarr.request_timeout {
+                builder.pkarr(|p| {
+                    p.request_timeout(Duration::from_millis(timeout_ms));
+                    p
+                });
             }
         }
 

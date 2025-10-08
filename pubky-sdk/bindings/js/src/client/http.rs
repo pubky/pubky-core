@@ -24,7 +24,7 @@ impl Client {
     /// const res = await client.fetch(`https://_pubky.${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
     pub async fn fetch(&self, url: &str, init: Option<RequestInitArg>) -> JsResult<Response> {
         // 1) Parse URL
-        let mut url = Url::parse(url)?;
+        let url = Url::parse(url)?;
 
         if url.scheme() == "pubky" {
             return Err(PubkyError::new(
@@ -44,7 +44,7 @@ impl Client {
         // 3) Start from caller's init; DO NOT clobber headers.
         let req_init = init
             .map(|init| RequestInit::from(JsValue::from(init)))
-            .unwrap_or_else(RequestInit::new);
+            .unwrap_or_default();
 
         // 3a) If needed, ensure `pubky-host` is present in *init.headers* BEFORE Request creation.
         if let Some(host) = pubky_host.as_deref() {

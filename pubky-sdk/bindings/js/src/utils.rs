@@ -25,15 +25,15 @@ impl Level {
     }
 }
 
-impl Into<log::Level> for Level {
-    fn into(self) -> log::Level {
-        match self {
-            Self::Error => log::Level::Error,
-            Self::Warn => log::Level::Warn,
-            Self::Info => log::Level::Info,
-            Self::Debug => log::Level::Debug,
-            Self::Trace => log::Level::Trace,
-            Self::__Invalid => unreachable!("Invalid Level variant"),
+impl From<Level> for log::Level {
+    fn from(val: Level) -> Self {
+        match val {
+            Level::Error => log::Level::Error,
+            Level::Warn => log::Level::Warn,
+            Level::Info => log::Level::Info,
+            Level::Debug => log::Level::Debug,
+            Level::Trace => log::Level::Trace,
+            Level::__Invalid => unreachable!("Invalid Level variant"),
         }
     }
 }
