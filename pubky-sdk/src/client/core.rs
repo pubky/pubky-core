@@ -62,7 +62,7 @@ impl PubkyHttpClientBuilder {
     /// - **WASM builds** additionally remember the hostname when resolving `_pubky.<pk>` targets.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::builder()
@@ -340,14 +340,13 @@ impl PubkyHttpClient {
     /// ```
     ///
     /// # Examples
-    /// ```no_run
+    /// ```
     /// use pubky::PubkyHttpClient;
     ///
-    /// # async fn run() -> pubky::Result<()> {
     /// let client = PubkyHttpClient::testnet()?;
     /// // Now all https://_pubky.<pubkey>/... requests resolve via the local testnet
     /// // DHT/PKARR, and hit the local homeserver.
-    /// # Ok(()) }
+    /// # Ok::<_, pubky::BuildError>(())
     /// ```
     ///
     /// # See also

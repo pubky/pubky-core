@@ -48,7 +48,7 @@ fn invalid(msg: impl Into<String>) -> Error {
 /// absolute form.
 ///
 /// ### Examples
-/// ```no_run
+/// ```
 /// # use pubky::ResourcePath;
 /// // Parse from &str (relative becomes absolute)
 /// let p = ResourcePath::parse("pub/my.app/file")?;
@@ -159,7 +159,7 @@ impl fmt::Display for ResourcePath {
 /// Display renders as `pubky<public_key>/<abs-path>` for quick visual identification.
 ///
 /// ### Examples
-/// ```no_run
+/// ```
 /// # use pkarr::Keypair;
 /// # use pubky::{PubkyResource, ResourcePath};
 /// // Build from parts
@@ -303,7 +303,7 @@ pub fn resolve_pubky<S: AsRef<str>>(input: S) -> Result<Url, Error> {
 /// the current user and therefore do **not** need a `PublicKey`.
 ///
 /// ### Examples
-/// ```no_run
+/// ```
 /// # use pubky::{IntoResourcePath, ResourcePath};
 /// fn takes_abs<P: IntoResourcePath>(p: P) -> pubky::Result<ResourcePath> {
 ///     p.into_abs_path()
@@ -358,7 +358,7 @@ impl IntoResourcePath for &String {
 /// reference **another user’s** data explicitly.
 ///
 /// ### Examples
-/// ```no_run
+/// ```
 /// # use pkarr::Keypair;
 /// # use pubky::{IntoPubkyResource, PubkyResource};
 /// let user = Keypair::random().public_key();
