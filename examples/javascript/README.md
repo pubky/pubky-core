@@ -30,6 +30,16 @@ npm install
 
 Each script is a single, commented file under the project root. Run with `npm run <name> -- <args…>`.
 
+### 0) Logging and verbosity
+
+Demonstrates how to use `setLogLevel()` to surface the SDK's internal tracing while performing a quick storage roundtrip.
+
+```bash
+npm run logging -- --testnet --level debug
+```
+
+Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
+
 ### 1) Testnet End-to-end roundtrip (signup -> write -> read)
 
 Creates a random user, signs up on the local testnet, writes a file to `/pub/my.app/hello.txt`, and reads it back.

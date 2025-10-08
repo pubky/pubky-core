@@ -1356,6 +1356,7 @@ dependencies = [
  "reqwest",
  "rpassword",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "url",
 ]

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{PubkySigner, PublicKey};
+use pubky::{Pubky, PublicKey};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -14,6 +14,10 @@ struct Cli {
 
     /// Signup code (optional)
     signup_code: Option<String>,
+
+    /// Use the local testnet defaults instead of mainnet relays.
+    #[arg(long)]
+    testnet: bool,
 }
 
 #[tokio::main]
@@ -32,7 +36,13 @@ async fn main() -> Result<()> {
 
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
-    let signer = PubkySigner::new(keypair)?;
+    let pubky = if cli.testnet {
+        Pubky::testnet()?
+    } else {
+        Pubky::new()?
+    };
+
+    let signer = pubky.signer(keypair);
     let session = signer
         .signup(homeserver, cli.signup_code.as_deref())
         .await?;

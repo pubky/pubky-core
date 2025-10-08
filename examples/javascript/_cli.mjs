@@ -31,7 +31,9 @@ export function args(argv, { aliases = {}, defaults = {}, usage } = {}) {
  * @returns {Promise<string>}
  */
 export function promptHidden(message) {
-  return prompt(message, { method: "hide" });
+  return prompt(message, { method: "hide" }).then((value) =>
+    value.replace(/[\r\n]+$/u, ""),
+  );
 }
 
 /**

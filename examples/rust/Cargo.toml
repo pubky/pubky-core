@@ -9,6 +9,10 @@ name = "testnet"
 path = "./1-testnet/main.rs"
 
 [[bin]]
+name = "logging"
+path = "./0-logging/main.rs"
+
+[[bin]]
 name = "signup"
 path = "./2-signup/signup.rs"
 
@@ -35,4 +39,5 @@ reqwest = "0.12.23"
 rpassword = "7.4.0"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing = "0.1.41"
 url = "2.5.4"

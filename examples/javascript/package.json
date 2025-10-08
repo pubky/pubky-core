@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "logging": "node 0-logging.mjs",
     "testnet": "node 1-testnet.mjs",
     "signup": "node 2-signup.mjs",
     "authenticator": "node 3-authenticator.mjs",
