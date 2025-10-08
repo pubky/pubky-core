@@ -8,7 +8,7 @@ use web_sys::Response;
 use crate::js_error::JsResult;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_ADRESS: &'static str =
+const TS_ADDRESS: &'static str =
     r#"export type Address = `pubky${string}/pub/${string}` | `pubky://${string}/pub/${string}`;"#;
 
 /// Read-only public storage using addressed paths (`"<user-z32>/pub/...")`.
@@ -40,26 +40,8 @@ impl PublicStorage {
         limit: Option<u16>,
         shallow: Option<bool>,
     ) -> JsResult<Vec<String>> {
-        let mut b = self.0.list(address)?;
-        if let Some(c) = cursor {
-            b = b.cursor(&c);
-        }
-        if let Some(r) = reverse {
-            b = b.reverse(r);
-        }
-        if let Some(l) = limit {
-            b = b.limit(l);
-        }
-        if let Some(s) = shallow {
-            b = b.shallow(s);
-        }
-
-        let entries = b.send().await?;
-        let urls = entries
-            .into_iter()
-            .map(|entry| entry.to_pubky_url())
-            .collect();
-        Ok(urls)
+        let builder = self.0.list(address)?;
+        super::utils::apply_list_options(builder, cursor, reverse, limit, shallow).await
     }
 
     /// Perform a streaming `GET` and expose the raw `Response` object.
@@ -72,7 +54,7 @@ impl PublicStorage {
         #[wasm_bindgen(unchecked_param_type = "Address")] address: String,
     ) -> JsResult<Response> {
         let resp = self.0.get(address).await?;
-        super::response_to_web_response(resp)
+        super::utils::response_to_web_response(resp)
     }
 
     /// Fetch bytes from an addressed path.

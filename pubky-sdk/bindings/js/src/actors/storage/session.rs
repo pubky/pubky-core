@@ -33,25 +33,8 @@ impl SessionStorage {
         limit: Option<u16>,
         shallow: Option<bool>,
     ) -> JsResult<Vec<String>> {
-        let mut b = self.0.list(path)?;
-        if let Some(c) = cursor {
-            b = b.cursor(&c);
-        }
-        if let Some(r) = reverse {
-            b = b.reverse(r);
-        }
-        if let Some(l) = limit {
-            b = b.limit(l);
-        }
-        if let Some(s) = shallow {
-            b = b.shallow(s);
-        }
-        let entries = b.send().await?;
-        let urls = entries
-            .into_iter()
-            .map(|entry| entry.to_pubky_url())
-            .collect();
-        Ok(urls)
+        let builder = self.0.list(path)?;
+        super::utils::apply_list_options(builder, cursor, reverse, limit, shallow).await
     }
 
     /// GET a streaming response for an absolute session path.
@@ -64,7 +47,7 @@ impl SessionStorage {
         #[wasm_bindgen(unchecked_param_type = "Path")] path: String,
     ) -> JsResult<Response> {
         let resp = self.0.get(path).await?;
-        super::response_to_web_response(resp)
+        super::utils::response_to_web_response(resp)
     }
 
     /// GET bytes from an absolute session path.
