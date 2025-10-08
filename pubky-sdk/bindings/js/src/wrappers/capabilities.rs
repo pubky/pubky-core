@@ -2,11 +2,11 @@
 // but we still want parsing/validation and failing fast from wrong capabilities
 // strings
 
-use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use pubky_common::capabilities::{Capabilities, Capability};
+use serde_json::json;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_CAPABILITIES: &str = r#"export type CapabilityAction = "r" | "w" | "rw";
@@ -39,6 +39,7 @@ fn normalize_and_collect(input: &str) -> (String, Vec<String>) {
 /// @param {string} input
 /// @returns {string} Normalized string (same shape as input).
 /// @throws {PubkyError} `{ name: "InvalidInput" }` with a helpful message.
+/// The error's `data` field is `{ invalidEntries: string[] }` listing malformed tokens.
 #[wasm_bindgen(js_name = "validateCapabilities")]
 pub fn validate_capabilities(input: &str) -> JsResult<String> {
     let (normalized, invalid) = normalize_and_collect(input);
@@ -48,15 +49,13 @@ pub fn validate_capabilities(input: &str) -> JsResult<String> {
         let joined = invalid.join(", ");
 
         // Structured payload for programmatic handling
-        let arr = Array::new();
-        for s in invalid {
-            arr.push(&JsValue::from_str(&s));
-        }
+        let data = json!({ "invalidEntries": invalid });
 
         return Err(PubkyError::new(
             PubkyErrorName::InvalidInput,
             format!("Invalid capability entries: {joined}"),
-        ));
+        )
+        .with_data(data));
     }
 
     Ok(normalized)

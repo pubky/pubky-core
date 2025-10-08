@@ -78,6 +78,23 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
         error.message.includes("/also:bad:x"),
       "message includes concrete bad entries",
     );
+    t.ok(
+      error.data &&
+        typeof error.data === "object" &&
+        Array.isArray((error.data as { invalidEntries?: unknown }).invalidEntries),
+      "error.data exposes invalidEntries array",
+    );
+    if (
+      error.data &&
+      typeof error.data === "object" &&
+      Array.isArray((error.data as { invalidEntries?: unknown }).invalidEntries)
+    ) {
+      t.deepEqual(
+        (error.data as { invalidEntries: string[] }).invalidEntries,
+        ["not/a/cap", "/also:bad:x"],
+        "invalidEntries matches malformed tokens",
+      );
+    }
   }
 
   // 2) Valid entry with unordered actions -> normalized in URL (wr -> rw)
@@ -127,6 +144,23 @@ test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {
       error.message.includes("/x:y") && error.message.includes("/pub/b/:x"),
       "message lists all offending entries",
     );
+    t.ok(
+      error.data &&
+        typeof error.data === "object" &&
+        Array.isArray((error.data as { invalidEntries?: unknown }).invalidEntries),
+      "error.data exposes invalidEntries array",
+    );
+    if (
+      error.data &&
+      typeof error.data === "object" &&
+      Array.isArray((error.data as { invalidEntries?: unknown }).invalidEntries)
+    ) {
+      t.deepEqual(
+        (error.data as { invalidEntries: string[] }).invalidEntries,
+        ["/x:y", "/pub/b/:x"],
+        "invalidEntries matches malformed tokens",
+      );
+    }
   }
 
   t.end();
