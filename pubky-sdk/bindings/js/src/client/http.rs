@@ -90,8 +90,26 @@ impl Client {
             }
         }
 
-        // 4) Always include credentials (cookies)
-        req_init.set_credentials(RequestCredentials::Include);
+        // 4) Respect caller-provided credentials, but default to cookies when needed.
+        //    We peek at the raw JS value because `RequestInit::credentials()` always
+        //    returns a concrete enum, which does not let us distinguish between an
+        //    explicit value and an omitted field.
+        let credentials_js = Reflect::get(req_init.as_ref(), &JsValue::from_str("credentials"))
+            .unwrap_or(JsValue::UNDEFINED);
+        let credentials_provided =
+            !(credentials_js.is_undefined() || credentials_js.is_null());
+
+        if pubky_host.is_some() {
+            // Pubky hosts rely on cookies for authentication/session I/O. If the caller
+            // omitted a credential mode, fall back to `include`.
+            if !credentials_provided {
+                req_init.set_credentials(RequestCredentials::Include);
+            }
+        } else if !credentials_provided {
+            // Non-Pubky requests keep the old default of including cookies unless the
+            // caller picked something else explicitly.
+            req_init.set_credentials(RequestCredentials::Include);
+        }
 
         // 5) Build the Request *after* headers/credentials are set
         let js_req = Request::new_with_str_and_init(url.as_str(), &req_init)

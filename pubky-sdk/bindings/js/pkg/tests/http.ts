@@ -167,3 +167,37 @@ test("fetch failed", async (t) => {
 
   t.end();
 });
+
+test("fetch respects credential overrides", async (t) => {
+  const client = Client.testnet();
+  const originalFetch = globalThis.fetch;
+  const captured: Request[] = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+
+    const isExample = request.url.startsWith("https://example.com/");
+    const isPubkyRequest = request.headers.get("pubky-host") === TLD;
+
+    if (isExample || isPubkyRequest) {
+      captured.push(request);
+      return new Response(null, { status: 200 });
+    }
+
+    return originalFetch(input as RequestInfo, init);
+  }) as typeof fetch;
+
+  try {
+    await client.fetch("https://example.com/", { credentials: "omit" });
+    const icannRequest = captured.shift();
+    t.equal(icannRequest?.credentials, "omit", "non-Pubky URL keeps caller credentials");
+
+    await client.fetch(`https://${TLD}/`);
+    const pubkyRequest = captured.pop();
+    t.equal(pubkyRequest?.credentials, "include", "Pubky URL defaults credentials to include");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  t.end();
+});
