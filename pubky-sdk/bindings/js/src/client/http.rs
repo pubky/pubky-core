@@ -24,7 +24,7 @@ impl Client {
     /// const res = await client.fetch(`https://_pubky.${user}/pub/app/file.txt`, { method: "PUT", body: "hi", credentials: "include" });
     pub async fn fetch(&self, url: &str, init: Option<RequestInitArg>) -> JsResult<Response> {
         // 1) Parse URL
-        let url = Url::parse(url)?;
+        let mut url = Url::parse(url)?;
 
         if url.scheme() == "pubky" {
             return Err(PubkyError::new(
@@ -34,12 +34,8 @@ impl Client {
         }
 
         // 2) Ask the SDK to prepare (resolve pkarr, adjust host, etc.)
-        //    Returns Some(<z32>) iff this targets a Pubky host.
-        #[cfg(target_arch = "wasm32")]
+        //    Returns Some(<z32>) if this targets a Pubky host.
         let pubky_host = self.0.prepare_request(&mut url).await?;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let pubky_host: Option<String> = None;
 
         // 3) Start from caller's init; DO NOT clobber headers.
         let req_init = init
@@ -129,7 +125,7 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
     }
 }
 
-#[cfg(all(test, target_arch = "wasm32"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use pkarr::{CacheKey, Keypair, SignedPacket};
