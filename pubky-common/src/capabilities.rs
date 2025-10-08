@@ -121,6 +121,17 @@ impl Capability {
             actions: BTreeSet::new(),
         }
     }
+
+    fn covers(&self, other: &Capability) -> bool {
+        if !scope_covers(&self.scope, &other.scope) {
+            return false;
+        }
+
+        other
+            .actions
+            .iter()
+            .all(|action| self.actions.contains(action))
+    }
 }
 
 /// Fluent builder for a single [`Capability`].
@@ -359,7 +370,7 @@ impl Capabilities {
             .filter_map(|s| Capability::try_from(s).ok())
             .collect();
 
-        Capabilities(caps)
+        Capabilities(sanitize_caps(caps))
     }
 
     /// Start a fluent builder for multiple capabilities.
@@ -439,7 +450,7 @@ impl CapsBuilder {
 
     /// Finalize and produce the [`Capabilities`] list.
     pub fn finish(self) -> Capabilities {
-        Capabilities(self.caps)
+        Capabilities(sanitize_caps(self.caps))
     }
 }
 
@@ -467,7 +478,7 @@ impl TryFrom<&str> for Capabilities {
             };
         }
 
-        Ok(Capabilities(caps))
+        Ok(Capabilities(sanitize_caps(caps)))
     }
 }
 
@@ -522,7 +533,7 @@ impl<'de> Deserialize<'de> for Capabilities {
             };
         }
 
-        Ok(Capabilities(caps))
+        Ok(Capabilities(sanitize_caps(caps)))
     }
 }
 
@@ -535,9 +546,59 @@ fn normalize_scope(mut s: String) -> String {
     s
 }
 
+fn scope_covers(parent: &str, child: &str) -> bool {
+    if parent == child {
+        return true;
+    }
+
+    if !parent.ends_with('/') {
+        return false;
+    }
+
+    child.starts_with(parent)
+}
+
+fn sanitize_caps(caps: Vec<Capability>) -> Vec<Capability> {
+    let mut merged: Vec<Capability> = Vec::new();
+
+    for mut cap in caps {
+        if let Some(existing) = merged
+            .iter_mut()
+            .find(|existing| existing.scope == cap.scope)
+        {
+            let actions: BTreeSet<Action> = existing
+                .actions
+                .iter()
+                .copied()
+                .chain(cap.actions.iter().copied())
+                .collect();
+            existing.actions = actions.into_iter().collect();
+            continue;
+        }
+
+        let actions: BTreeSet<Action> = cap.actions.iter().copied().collect();
+        cap.actions = actions.into_iter().collect();
+        merged.push(cap);
+    }
+
+    let mut sanitized: Vec<Capability> = Vec::new();
+
+    'outer: for cap in merged.into_iter() {
+        if sanitized.iter().any(|existing| existing.covers(&cap)) {
+            continue 'outer;
+        }
+
+        sanitized.retain(|existing| !cap.covers(existing));
+        sanitized.push(cap);
+    }
+
+    sanitized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use url::Url;
 
     #[test]
     fn pubky_caps() {
@@ -663,6 +724,53 @@ mod tests {
         // Invalid action:
         let e = Capability::try_from("/pub/my.app:rx").unwrap_err();
         assert!(matches!(e, Error::InvalidAction));
+    }
+
+    #[test]
+    fn redundant_capabilities_builder_dedup() {
+        let caps = Capabilities::builder()
+            .read_write("/pub/example.com/")
+            .read_write("/pub/example.com/")
+            .write("/pub/example.com/subfolder")
+            .finish();
+
+        assert_eq!(caps.to_string(), "/pub/example.com/:rw");
+    }
+
+    #[test]
+    fn redundant_capabilities_string_dedup() {
+        let parsed = Capabilities::try_from(
+            "/pub/example.com/:rw,/pub/example.com/:rw,/pub/example.com/subfolder:w",
+        )
+        .unwrap();
+
+        let caps = Capabilities::builder()
+            .read_write("/pub/example.com/")
+            .finish();
+
+        assert_eq!(caps.to_string(), "/pub/example.com/:rw");
+        assert_eq!(parsed, caps);
+    }
+
+    #[test]
+    fn redundant_capabilities_from_url_dedup() {
+        let url = Url::parse(
+            "https://example.test?caps=/pub/example.com/:rw,/pub/example.com/documents:w",
+        )
+        .unwrap();
+        let caps = Capabilities::from_url(&url);
+
+        assert_eq!(caps.to_string(), "/pub/example.com/:rw");
+    }
+
+    #[test]
+    fn redundant_capabilities_merge_actions() {
+        let caps = Capabilities::builder()
+            .read("/pub/example.com/")
+            .write("/pub/example.com/")
+            .finish();
+
+        assert_eq!(caps.to_string(), "/pub/example.com/:rw");
     }
 
     #[test]
