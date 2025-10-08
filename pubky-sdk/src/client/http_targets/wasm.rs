@@ -111,7 +111,7 @@ impl PubkyHttpClient {
     }
 
     fn apply_endpoint_to_url(&self, url: &mut Url, endpoint: &Endpoint) -> Result<()> {
-        let is_testnet_domain = endpoint.domain().map_or(false, |domain| {
+        let is_testnet_domain = endpoint.domain().is_some_and(|domain| {
             if domain == "localhost" {
                 return true;
             }

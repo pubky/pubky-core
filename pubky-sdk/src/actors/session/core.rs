@@ -84,7 +84,7 @@ impl PubkySession {
             let bytes = response.bytes().await?;
             let info = SessionInfo::deserialize(&bytes)?;
             cross_log!(info, "Hydrated WASM session for {}", info.public_key());
-            return Ok(PubkySession { client, info });
+            Ok(PubkySession { client, info })
         }
 
         #[cfg(not(target_arch = "wasm32"))]

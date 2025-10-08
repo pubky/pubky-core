@@ -33,8 +33,15 @@ jobs:
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Lint with Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: Lint (host targets)
+        run: cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Lint wasm crate (wasm32)
+        run: cargo clippy -p pubky-wasm --target wasm32-unknown-unknown -- -D warnings
 
   test:
     strategy:
