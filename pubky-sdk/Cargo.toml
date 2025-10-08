@@ -25,7 +25,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-json = ["dep:serde", "dep:serde_json", "reqwest/json"]
+json = ["dep:serde", "reqwest/json"]
 
 [dependencies]
 pubky-common = { path = "../pubky-common", version = "0.6.0-rc.5" }
@@ -37,7 +37,6 @@ cookie = "0.18.1"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
 serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
 httpdate = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -56,10 +55,6 @@ wasm-bindgen-futures = "0.4.50"
 futures-lite = { version = "2.6.0", default-features = false }
 
 [dev-dependencies]
-anyhow = "1.0.95"
-futures-lite = "2.6.0"
-tracing-subscriber = "0.3.19"
-mainline = { version = "5.4.0" }
 pubky-testnet = { path = "../pubky-testnet" } # used in docstring tests
 httpmock = "0.7"
 

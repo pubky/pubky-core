@@ -3309,7 +3309,6 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 name = "pubky"
 version = "0.6.0-rc.5"
 dependencies = [
- "anyhow",
  "base64 0.22.1",
  "cookie",
  "flume",
@@ -3318,17 +3317,14 @@ dependencies = [
  "httpdate",
  "httpmock",
  "log",
- "mainline",
  "pkarr",
  "pubky-common",
  "pubky-testnet",
  "reqwest",
  "serde",
- "serde_json",
  "thiserror 2.0.16",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "url",
  "wasm-bindgen-futures",
 ]
