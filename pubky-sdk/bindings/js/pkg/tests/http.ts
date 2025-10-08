@@ -93,6 +93,51 @@ test("basic fetch", async (t) => {
   t.end();
 });
 
+test("fetch merges plain object headers", async (t) => {
+  const client = Client.testnet();
+  const originalFetch = globalThis.fetch;
+
+  t.teardown(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  let seenRequest: Request | undefined;
+  let fetchCalls = 0;
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls += 1;
+
+    if (input instanceof Request) {
+      if (input.headers.has("pubky-host")) {
+        seenRequest = input;
+      }
+    } else {
+      const request = new Request(input, init);
+      if (request.headers.has("pubky-host")) {
+        seenRequest = request;
+      }
+    }
+
+    return originalFetch(input as RequestInfo | URL, init);
+  }) as typeof fetch;
+
+  const response = await client.fetch(`https://${TLD}/`, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  t.ok(fetchCalls >= 1, "fetch invoked");
+  t.ok(seenRequest, "fetch received a Request instance");
+
+  const headers = seenRequest!.headers;
+  t.equal(headers.get("content-type"), "application/json", "caller header preserved");
+  t.equal(headers.get("pubky-host"), TLD, "pubky-host header appended");
+  t.equal(response.status, 200, "fetch responded with success");
+
+  t.end();
+});
+
 test("fetch failed", async (t) => {
   const client = Client.testnet();
 

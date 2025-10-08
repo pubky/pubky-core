@@ -1,6 +1,6 @@
 //! Fetch method handling HTTP(S) URLs with Pkarr TLD support.
 
-use js_sys::{Promise, Reflect};
+use js_sys::{JsString, Object, Promise, Reflect};
 use url::Url;
 use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
@@ -62,9 +62,29 @@ impl Client {
                 // No need to set_headers again; we mutated the same object.
             } else {
                 // Some non-`Headers` thing (e.g., plain object/array).
-                // Safest is to replace with a real `Headers` that includes `pubky-host`.
-                // (Our SDK paths pass a `Headers` already.)
+                // Clone caller-provided entries into a fresh `Headers` before appending ours.
                 let headers = Headers::new()?;
+                let entries = Object::entries(headers_js.unchecked_ref());
+
+                for entry in entries.iter() {
+                    let tuple = js_sys::Array::from(&entry);
+                    let key = tuple.get(0);
+                    let value = tuple.get(1);
+
+                    if key.is_undefined() || value.is_undefined() {
+                        continue;
+                    }
+
+                    let key_string = key
+                        .as_string()
+                        .unwrap_or_else(|| JsString::from(key.clone()).into());
+                    let value_string = value
+                        .as_string()
+                        .unwrap_or_else(|| JsString::from(value.clone()).into());
+
+                    headers.append(&key_string, &value_string)?;
+                }
+
                 headers.set("pubky-host", host)?;
                 req_init.set_headers(&headers.into());
             }
