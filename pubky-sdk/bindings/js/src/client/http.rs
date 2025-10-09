@@ -96,8 +96,7 @@ impl Client {
         //    explicit value and an omitted field.
         let credentials_js = Reflect::get(req_init.as_ref(), &JsValue::from_str("credentials"))
             .unwrap_or(JsValue::UNDEFINED);
-        let credentials_provided =
-            !(credentials_js.is_undefined() || credentials_js.is_null());
+        let credentials_provided = !(credentials_js.is_undefined() || credentials_js.is_null());
 
         if pubky_host.is_some() {
             // Pubky hosts rely on cookies for authentication/session I/O. If the caller

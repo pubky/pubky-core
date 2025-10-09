@@ -1,6 +1,6 @@
 [package]
 name = "examples"
-version = "0.6.0-rc.5"
+version = "0.6.0-rc.6"
 edition.workspace = true
 publish = false
 
@@ -32,9 +32,9 @@ path = "./5-request/main.rs"
 anyhow = "1.0.99"
 base64 = "0.22.1"
 clap = { version = "4.5.46", features = ["derive"] }
-pubky = { path = "../../pubky-sdk", version = "0.6.0-rc.5" }
-pubky-testnet = { path = "../../pubky-testnet", version = "0.6.0-rc.5" }
-pubky-common = { path = "../../pubky-common", version = "0.6.0-rc.5" }
+pubky = { path = "../../pubky-sdk", version = "0.6.0-rc.6" }
+pubky-testnet = { path = "../../pubky-testnet", version = "0.6.0-rc.6" }
+pubky-common = { path = "../../pubky-common", version = "0.6.0-rc.6" }
 reqwest = "0.12.23"
 rpassword = "7.4.0"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
