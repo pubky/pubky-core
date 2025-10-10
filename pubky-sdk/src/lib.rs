@@ -38,13 +38,17 @@ pub use crate::actors::storage::{
 };
 pub use actors::auth_flow::DEFAULT_HTTP_RELAY;
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
+#[doc(inline)]
 pub use pkarr::DEFAULT_RELAYS;
 
 // Re-exports
+#[doc(inline)]
 pub use pkarr::{Keypair, PublicKey};
+#[doc(inline)]
 pub use pubky_common::{
     auth::AuthToken,
     capabilities::{Capabilities, Capability},
     recovery_file,
 };
+#[doc(inline)]
 pub use reqwest::{Method, StatusCode};
