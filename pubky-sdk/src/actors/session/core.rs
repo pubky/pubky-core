@@ -46,7 +46,7 @@ impl PubkySession {
     ///
     /// This POSTs the resolved homeserver session endpoint with the token, validates the response
     /// and constructs a new session-bound [`PubkySession`]
-    pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<PubkySession> {
+    pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<Self> {
         let url = format!("pubky://{}/session", token.public_key());
         cross_log!(
             info,
@@ -55,7 +55,7 @@ impl PubkySession {
         );
         let resolved = resolve_pubky(&url)?;
         let response = client
-            .cross_request(Method::POST, resolved)
+            .cross_request(Method::POST, &resolved)
             .await?
             .body(token.serialize())
             .send()
@@ -77,7 +77,7 @@ impl PubkySession {
     pub(crate) async fn new_from_response(
         client: PubkyHttpClient,
         response: reqwest::Response,
-    ) -> Result<PubkySession> {
+    ) -> Result<Self> {
         #[cfg(target_arch = "wasm32")]
         {
             // WASM: cookies are browser-managed; just parse the session body.
@@ -91,11 +91,7 @@ impl PubkySession {
         {
             // 1) Snapshot all Set-Cookie header values before consuming the body.
             let mut raw_set_cookies = Vec::new();
-            for val in response
-                .headers()
-                .get_all(reqwest::header::SET_COOKIE)
-                .iter()
-            {
+            for val in &response.headers().get_all(reqwest::header::SET_COOKIE) {
                 if let Ok(raw) = std::str::from_utf8(val.as_bytes()) {
                     raw_set_cookies.push(raw.to_owned());
                 }
@@ -115,7 +111,7 @@ impl PubkySession {
                 .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
 
             cross_log!(info, "Hydrated native session for {}", info.public_key());
-            Ok(PubkySession {
+            Ok(Self {
                 client,
                 info,
                 cookie,
@@ -124,14 +120,16 @@ impl PubkySession {
     }
 
     /// Returns the session info
-    pub fn info(&self) -> &SessionInfo {
+    #[must_use]
+    pub const fn info(&self) -> &SessionInfo {
         &self.info
     }
 
     /// Returns a reference to the internal `PubkyHttpClient`
     /// Raw transport handle. No per-session cookie injection. Use `storage()` for
     /// authenticated, session-scoped requests.
-    pub fn client(&self) -> &PubkyHttpClient {
+    #[must_use]
+    pub const fn client(&self) -> &PubkyHttpClient {
         &self.client
     }
 
@@ -211,10 +209,7 @@ impl std::fmt::Debug for PubkySession {
         ds.field("client", &self.client);
         ds.field("info", &self.info);
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            // Do not leak the bearer cookie secret in debug output.
-            ds.field("cookie", &"<redacted>");
-        }
+        ds.field("cookie", &"<redacted>");
         ds.finish()
     }
 }

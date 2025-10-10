@@ -62,7 +62,9 @@ httpmock = "0.7"
 all-features = true
 
 
-# At the top level of Cargo.toml
+# We are aiming to stick with microsoft/rust-guidelines
+# https://github.com/microsoft/rust-guidelines
+# currently dissabled.
 
 [lints.rust]
 # Baseline compiler lints

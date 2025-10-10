@@ -8,7 +8,7 @@ pub struct PubkySigner {
 }
 
 impl PubkySigner {
-    /// Construct a new PubkySigner.
+    /// Construct a new `PubkySigner`.
     ///
     /// This is your entry point to keychain managing tooling.
     ///
@@ -28,13 +28,15 @@ impl PubkySigner {
 
     /// Public key of this signer.
     #[inline]
+    #[must_use]
     pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
 
     /// Borrow the signer's keypair.
     #[inline]
-    pub fn keypair(&self) -> &Keypair {
+    #[must_use]
+    pub const fn keypair(&self) -> &Keypair {
         &self.keypair
     }
 }

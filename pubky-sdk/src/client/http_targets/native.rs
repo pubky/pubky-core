@@ -21,7 +21,7 @@ impl PubkyHttpClient {
     pub(crate) async fn cross_request<U: IntoUrl>(
         &self,
         method: Method,
-        url: U,
+        url: &U,
     ) -> Result<RequestBuilder> {
         Ok(self.request(method, url))
     }
@@ -31,8 +31,8 @@ impl PubkyHttpClient {
     /// Returns a `RequestBuilder`, which will allow setting headers and
     /// the request body before sending.
     ///
-    /// Differs from [reqwest::Client::request], in that it can make requests to:
-    /// 1. HTTPS URLs with a [pkarr::PublicKey] as top-level domain, by resolving
+    /// Differs from [`reqwest::Client::request`], in that it can make requests to:
+    /// 1. HTTPS URLs with a [`pkarr::PublicKey`] as top-level domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. `_pubky.<public-key>` URLs like `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
@@ -40,7 +40,7 @@ impl PubkyHttpClient {
     /// # Errors
     ///
     /// This method fails whenever the supplied `Url` cannot be parsed.
-    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
+    pub fn request<U: IntoUrl>(&self, method: Method, url: &U) -> RequestBuilder {
         let url_str = url.as_str();
 
         let parsed = Url::parse(url_str);

@@ -72,7 +72,7 @@ impl PubkySigner {
         let mut callback_url = relay.clone();
         let mut path_segments = callback_url
             .path_segments_mut()
-            .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+            .map_err(|()| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
         path_segments.pop_if_empty();
         let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
         path_segments.push(&channel_id);
@@ -86,7 +86,7 @@ impl PubkySigner {
         // 5) POST encrypted token
         let response = self
             .client
-            .cross_request(Method::POST, callback_url)
+            .cross_request(Method::POST, &callback_url)
             .await?
             .body(encrypted_token)
             .send()

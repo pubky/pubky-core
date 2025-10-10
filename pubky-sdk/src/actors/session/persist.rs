@@ -53,7 +53,7 @@ impl PubkySession {
 
         // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.
         let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
-        let mut session = PubkySession {
+        let mut session = Self {
             client,
             info: placeholder,
             cookie: cookie.to_string(),
@@ -114,7 +114,7 @@ impl PubkySession {
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600))?;
-        }
+        };
         Ok(())
     }
 

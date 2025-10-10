@@ -89,7 +89,7 @@ pub struct ListBuilder<'a> {
 
 impl<'a> ListBuilder<'a> {
     #[inline]
-    fn new(scope: ListScope<'a>, url: Url) -> Self {
+    const fn new(scope: ListScope<'a>, url: Url) -> Self {
         Self {
             scope,
             url,
@@ -101,29 +101,29 @@ impl<'a> ListBuilder<'a> {
     }
 
     #[inline]
-    fn session(storage: &'a SessionStorage, url: Url) -> Self {
+    const fn session(storage: &'a SessionStorage, url: Url) -> Self {
         Self::new(ListScope::Session(storage), url)
     }
 
     #[inline]
-    fn public(storage: &'a PublicStorage, url: Url) -> Self {
+    const fn public(storage: &'a PublicStorage, url: Url) -> Self {
         Self::new(ListScope::Public(storage), url)
     }
 
     /// List newest-first instead of oldest-first.
-    pub fn reverse(mut self, reverse: bool) -> Self {
+    pub const fn reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
         self
     }
 
     /// Do not recurse into subdirectories.
-    pub fn shallow(mut self, shallow: bool) -> Self {
+    pub const fn shallow(mut self, shallow: bool) -> Self {
         self.shallow = shallow;
         self
     }
 
     /// Maximum number of entries to return (homeserver may cap).
-    pub fn limit(mut self, limit: u16) -> Self {
+    pub const fn limit(mut self, limit: u16) -> Self {
         self.limit = Some(limit);
         self
     }
@@ -156,17 +156,9 @@ impl<'a> ListBuilder<'a> {
 
         // 2) Build request per scope
         let rb = match self.scope {
-            ListScope::Public(storage) => {
-                storage
-                    .client
-                    .cross_request(Method::GET, url.clone())
-                    .await?
-            }
+            ListScope::Public(storage) => storage.client.cross_request(Method::GET, &url).await?,
             ListScope::Session(storage) => {
-                let rb = storage
-                    .client
-                    .cross_request(Method::GET, url.clone())
-                    .await?;
+                let rb = storage.client.cross_request(Method::GET, &url).await?;
                 #[cfg(not(target_arch = "wasm32"))]
                 let rb = storage.with_session_cookie(rb);
                 rb

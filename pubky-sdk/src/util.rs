@@ -7,7 +7,7 @@ use crate::errors::{Error, RequestError, Result};
 /// If the status is successful (2xx), the original response is returned.
 /// If the status is an error (4xx or 5xx), the response body is consumed
 /// to create a `PubkyError::Request(RequestError::Server)` and returned as an `Err`.
-pub(crate) async fn check_http_status(response: Response) -> Result<Response> {
+pub async fn check_http_status(response: Response) -> Result<Response> {
     if response.status().is_success() {
         return Ok(response);
     }

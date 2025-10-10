@@ -10,7 +10,7 @@ pub struct ResourceStats {
     pub content_type: Option<String>,
     /// `Last-Modified` parsed into `SystemTime` (RFC7231).
     pub last_modified: Option<SystemTime>,
-    /// ETag string.
+    /// `ETag` string.
     pub etag: Option<String>,
 }
 
@@ -25,7 +25,7 @@ impl ResourceStats {
         let content_type = h
             .get(CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         let last_modified = h
             .get(LAST_MODIFIED)

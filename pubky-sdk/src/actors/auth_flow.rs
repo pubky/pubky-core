@@ -98,14 +98,16 @@ impl PubkyAuthFlow {
     }
 
     /// Create a builder to override **relay** and/or provide a custom **client**.
+    #[must_use]
     pub fn builder(caps: &Capabilities) -> PubkyAuthFlowBuilder {
         PubkyAuthFlowBuilder::new(caps.clone())
     }
 
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
     ///
-    /// Contains the **capabilities**, **client_secret** (base64url), and **relay** base.
-    pub fn authorization_url(&self) -> &Url {
+    /// Contains the **capabilities**, **`client_secret`** (base64url), and **relay** base.
+    #[must_use]
+    pub const fn authorization_url(&self) -> &Url {
         &self.auth_url
     }
 
@@ -150,6 +152,7 @@ impl PubkyAuthFlow {
     /// - `Some(Ok(AuthToken))` when ready.
     /// - `Some(Err(_))` if the background task failed (expired/transport error).
     /// - `None` if not yet delivered.
+    #[must_use]
     pub fn try_token(&self) -> Option<Result<AuthToken>> {
         self.rx.try_recv().ok()
     }
@@ -233,7 +236,6 @@ impl PubkyAuthFlow {
                         debug,
                         "Auth flow polling attempt {attempt} timed out; retrying"
                     );
-                    continue;
                 }
                 Err(PollError::Failure(err)) => {
                     cross_log!(error, "Auth flow polling attempt {attempt} failed: {err}");
@@ -248,7 +250,7 @@ impl PubkyAuthFlow {
         relay_channel_url: &Url,
     ) -> std::result::Result<reqwest::Response, PollError> {
         let request = client
-            .cross_request(Method::GET, relay_channel_url.clone())
+            .cross_request(Method::GET, relay_channel_url)
             .await
             .map_err(PollError::Failure)?;
 
@@ -288,7 +290,7 @@ pub struct PubkyAuthFlowBuilder {
 }
 
 impl PubkyAuthFlowBuilder {
-    pub(crate) fn new(caps: Capabilities) -> Self {
+    pub(crate) const fn new(caps: Capabilities) -> Self {
         Self {
             caps,
             relay: None,
@@ -334,19 +336,19 @@ impl PubkyAuthFlowBuilder {
             let mut query = auth_url.query_pairs_mut();
             query.append_pair("caps", &caps_str);
             query.append_pair("secret", &secret_b64);
-            query.append_pair("relay", &relay_str);
-        }
+            query.append_pair("relay", &relay_str)
+        };
 
         // 3) Append derived channel id to the relay URL.
         //    channel_id = base64url( hash(client_secret) )
         {
             let mut segs = relay
                 .path_segments_mut()
-                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+                .map_err(|()| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
             segs.pop_if_empty(); // normalize trailing slash
             let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
-            segs.push(&channel_id);
-        }
+            segs.push(&channel_id)
+        };
 
         cross_log!(info, "Auth flow derived relay channel {}", relay);
 

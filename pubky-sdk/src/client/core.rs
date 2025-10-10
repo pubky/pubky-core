@@ -1,5 +1,6 @@
+use std::borrow::Cow;
+use std::fmt::Debug;
 use std::time::Duration;
-use std::{borrow::Cow, fmt::Debug};
 
 use crate::{cross_log, errors::BuildError};
 
@@ -97,16 +98,17 @@ impl PubkyHttpClientBuilder {
     /// # Notes
     /// - These ports come from `pubky_common::constants::testnet_ports::{ BOOTSTRAP, PKARR_RELAY }`.
     /// - Ensure your testnet exposes them from that host (and they’re reachable from where this code runs).
+    ///
+    /// # Panics
+    /// If the testnet cannot because the given host leads to an invalid relay URL.
     pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
         cross_log!(info, "Configuring testnet builders for host {host}");
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.pkarr.bootstrap(&[format!(
-                "{}:{}",
-                host,
-                pubky_common::constants::testnet_ports::BOOTSTRAP
-            )]);
-        }
+        self.pkarr.bootstrap(&[format!(
+            "{}:{}",
+            host,
+            pubky_common::constants::testnet_ports::BOOTSTRAP
+        )]);
 
         self.pkarr
             .relays(&[format!(
@@ -124,7 +126,7 @@ impl PubkyHttpClientBuilder {
         self
     }
 
-    /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
+    /// Allows mutating the internal [`pkarr::ClientBuilder`] with a callback function.
     ///
     /// Use this to influence PKARR resolution inputs (relays, bootstrap nodes,
     /// timeouts, etc.) *before* building the client. There are no per-request
@@ -151,7 +153,7 @@ impl PubkyHttpClientBuilder {
     }
 
     /// Set HTTP requests timeout.
-    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
+    pub const fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.http_request_timeout = Some(timeout);
 
         self
@@ -186,8 +188,10 @@ impl PubkyHttpClientBuilder {
             .as_deref()
             .map(str::trim)
             .filter(|extra| !extra.is_empty())
-            .map(|extra| Cow::Owned(format!("{DEFAULT_USER_AGENT} {extra}")))
-            .unwrap_or_else(|| Cow::Borrowed(DEFAULT_USER_AGENT));
+            .map_or_else(
+                || Cow::Borrowed(DEFAULT_USER_AGENT),
+                |extra| Cow::Owned(format!("{DEFAULT_USER_AGENT} {extra}")),
+            );
 
         cross_log!(
             info,
@@ -244,7 +248,7 @@ impl PubkyHttpClientBuilder {
 ///   For authenticated per-user flows use [`crate::PubkySession`].
 ///
 /// ### When to use
-/// - You want direct control over the PubkyHttpClient (power users, libs).
+/// - You want direct control over the `PubkyHttpClient` (power users, libs).
 /// - You’re wiring custom flows/tests and don’t need the high-level ergonomics.
 ///
 /// ### Construction
@@ -255,7 +259,7 @@ impl PubkyHttpClientBuilder {
 /// ### Platform notes
 /// - **Native (rust, not WASM target):**
 ///   - ICANN domains use standard X.509 TLS via the `icann_http` client.
-///   - Pubky/PKDNS hosts (public-key hostnames or `_pubky.<pk>` domains) use **PubkyTLS**
+///   - Pubky/PKDNS hosts (public-key hostnames or `_pubky.<pk>` domains) use **`PubkyTLS`**
 ///     (TLS with RFC 7250 Raw Public Keys), verifying the connection against the
 ///     target public key—no CA chain involved.
 /// - **WASM:**
@@ -319,7 +323,7 @@ pub struct PubkyHttpClient {
 
 impl PubkyHttpClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
-    pub fn new() -> Result<PubkyHttpClient, BuildError> {
+    pub fn new() -> Result<Self, BuildError> {
         cross_log!(
             info,
             "Constructing PubkyHttpClient with default configuration"
@@ -367,7 +371,7 @@ impl PubkyHttpClient {
     /// # See also
     /// - [`PubkyHttpClientBuilder::testnet`] to tweak additional settings first.
     /// - [`PubkyHttpClientBuilder::testnet_with_host`] to target a non-`localhost` host.
-    pub fn testnet() -> Result<PubkyHttpClient, BuildError> {
+    pub fn testnet() -> Result<Self, BuildError> {
         cross_log!(
             info,
             "Constructing PubkyHttpClient configured for local testnet"
@@ -380,7 +384,8 @@ impl PubkyHttpClient {
     // === Getters ===
 
     /// Returns a reference to the internal Pkarr Client.
-    pub fn pkarr(&self) -> &pkarr::Client {
+    #[must_use]
+    pub const fn pkarr(&self) -> &pkarr::Client {
         &self.pkarr
     }
 }

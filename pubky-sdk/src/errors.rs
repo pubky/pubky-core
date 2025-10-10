@@ -84,8 +84,9 @@ pub enum PkarrError {
 
 impl PkarrError {
     /// Returns true if the error is from a DHT operation that might succeed by simply retrying.
-    pub fn is_retryable(&self) -> bool {
-        matches!(self, PkarrError::Publish(_) | PkarrError::Query(_))
+    #[must_use]
+    pub const fn is_retryable(&self) -> bool {
+        matches!(self, Self::Publish(_) | Self::Query(_))
     }
 }
 
@@ -94,7 +95,7 @@ impl PkarrError {
 /// Errors originating from authentication flows (sessions, tokens, crypto).
 #[derive(Debug, Error)]
 pub enum AuthError {
-    /// SessionInfo (de)serialization or validation failed.
+    /// `SessionInfo` (de)serialization or validation failed.
     #[error("SessionInfo handling failed: {0}")]
     SessionInfo(#[from] pubky_common::session::Error),
 

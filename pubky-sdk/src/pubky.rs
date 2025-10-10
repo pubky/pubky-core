@@ -83,7 +83,8 @@ impl Pubky {
     }
 
     /// Construct from an already-configured transport.
-    pub fn with_client(client: PubkyHttpClient) -> Self {
+    #[must_use]
+    pub const fn with_client(client: PubkyHttpClient) -> Self {
         Self { client }
     }
 
@@ -102,6 +103,7 @@ impl Pubky {
     }
 
     /// Create a `PubkySigner` for a given keypair.
+    #[must_use]
     pub fn signer(&self, keypair: crate::Keypair) -> PubkySigner {
         PubkySigner {
             client: self.client.clone(),
@@ -110,6 +112,7 @@ impl Pubky {
     }
 
     /// Create a public, unauthenticated storage handle using this facade’s client.
+    #[must_use]
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage {
             client: self.client.clone(),
@@ -117,6 +120,7 @@ impl Pubky {
     }
 
     /// Read-only [`Pkdns`] actor (resolve `_pubky` records) using this facade’s client.
+    #[must_use]
     pub fn pkdns(&self) -> Pkdns {
         Pkdns::with_client(self.client.clone())
     }
@@ -163,7 +167,8 @@ impl Pubky {
 
     /// Access the underlying transport (advanced use).
     #[inline]
-    pub fn client(&self) -> &PubkyHttpClient {
+    #[must_use]
+    pub const fn client(&self) -> &PubkyHttpClient {
         &self.client
     }
 }

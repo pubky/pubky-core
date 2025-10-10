@@ -26,7 +26,7 @@ impl PubkySigner {
         homeserver: &PublicKey,
         signup_token: Option<&str>,
     ) -> Result<PubkySession> {
-        let mut url = Url::parse(&format!("https://{}", homeserver))?;
+        let mut url = Url::parse(&format!("https://{homeserver}"))?;
         url.set_path("/signup");
         if let Some(token) = signup_token {
             url.query_pairs_mut().append_pair("signup_token", token);
@@ -38,7 +38,7 @@ impl PubkySigner {
 
         let response = self
             .client
-            .cross_request(Method::POST, url)
+            .cross_request(Method::POST, &url)
             .await?
             .body(auth_token.serialize())
             .send()

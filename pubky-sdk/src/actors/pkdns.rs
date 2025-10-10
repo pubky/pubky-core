@@ -62,6 +62,7 @@ pub struct Pkdns {
 impl PubkySigner {
     /// Get a PKDNS actor bound to this signer's client and keypair (publishing enabled).
     #[inline]
+    #[must_use]
     pub fn pkdns(&self) -> Pkdns {
         crate::Pkdns::with_client_and_keypair(self.client.clone(), self.keypair.clone())
     }
@@ -88,7 +89,7 @@ impl Pkdns {
 
     /// Infallible constructor with client + keypair (publishing enabled).
     /// Used internally for `signer.pkdns()`
-    fn with_client_and_keypair(client: PubkyHttpClient, keypair: Keypair) -> Self {
+    const fn with_client_and_keypair(client: PubkyHttpClient, keypair: Keypair) -> Self {
         Self {
             client,
             keypair: Some(keypair),
@@ -98,7 +99,7 @@ impl Pkdns {
 
     /// Create a read-only PKDNS actor bound to a specific client.
     /// No keypair attached; publishing is disabled.
-    pub(crate) fn with_client(client: PubkyHttpClient) -> Self {
+    pub(crate) const fn with_client(client: PubkyHttpClient) -> Self {
         Self {
             client,
             keypair: None,
@@ -111,7 +112,7 @@ impl Pkdns {
     /// If the current record’s age is **≤ this duration**, [`Self::publish_homeserver_if_stale`]
     /// is a no-op; otherwise the record is (re)published.
     ///
-    /// Defaults to 1 hour [DEFAULT_STALE_AFTER].
+    /// Defaults to 1 hour [`DEFAULT_STALE_AFTER`].
     ///
     /// # Examples
     /// ```no_run
@@ -124,7 +125,8 @@ impl Pkdns {
     /// pkdns.publish_homeserver_if_stale(None).await?;
     /// # Ok(()) }
     /// ```
-    pub fn set_stale_after(mut self, d: Duration) -> Self {
+    #[must_use]
+    pub const fn set_stale_after(mut self, d: Duration) -> Self {
         self.stale_after = d;
         self
     }
@@ -361,7 +363,7 @@ fn determine_host(
 }
 
 /// Extract `_pubky` SVCB/HTTPS target from a signed Pkarr packet.
-pub(crate) fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
+pub fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
     packet
         .resource_records("_pubky")
         .find_map(|rr| match &rr.rdata {

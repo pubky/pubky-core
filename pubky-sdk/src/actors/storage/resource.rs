@@ -89,7 +89,7 @@ impl ResourcePath {
             format!("/{raw}")
         };
         if input == "/" {
-            return Ok(ResourcePath("/".to_string()));
+            return Ok(Self("/".to_string()));
         }
         let wants_trailing = input.ends_with('/');
 
@@ -98,7 +98,7 @@ impl ResourcePath {
         {
             let mut segs = u
                 .path_segments_mut()
-                .map_err(|_| invalid("internal URL path handling failed"))?;
+                .map_err(|()| invalid("internal URL path handling failed"))?;
             segs.clear();
 
             let mut parts = input.trim_start_matches('/').split('/').peekable();
@@ -120,11 +120,12 @@ impl ResourcePath {
             }
         }
 
-        Ok(ResourcePath(u.path().to_string()))
+        Ok(Self(u.path().to_string()))
     }
 
     /// Borrow the normalized absolute path as `&str`.
     #[inline]
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -196,6 +197,7 @@ impl PubkyResource {
     /// owner’s public key. The returned string never contains a leading
     /// double-slash in the path (`pubky://<pk>//...`) because [`ResourcePath`]
     /// is always normalized.
+    #[must_use]
     pub fn to_pubky_url(&self) -> String {
         let rel = self.path.as_str().trim_start_matches('/');
         format!("pubky://{}/{}", self.owner, rel)
@@ -231,7 +233,7 @@ impl PubkyResource {
         } else {
             url.path()
         };
-        PubkyResource::new(public_key, path)
+        Self::new(public_key, path)
     }
 
     /// Render as the identifier form `pubky<owner>/<abs-path>`.
@@ -252,7 +254,7 @@ impl FromStr for PubkyResource {
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
             let user = PublicKey::try_from(user_str)
                 .map_err(|_| invalid(format!("invalid user public key: {user_str}")))?;
-            return PubkyResource::new(user, path);
+            return Self::new(user, path);
         }
 
         // 2) pubky<user>/<path>
@@ -261,7 +263,7 @@ impl FromStr for PubkyResource {
                 let user = PublicKey::try_from(user_id).map_err(|_| {
                     invalid("expected `pubky<user>/<path>` or `pubky://<user>/<path>`")
                 })?;
-                return PubkyResource::new(user, path);
+                return Self::new(user, path);
             }
             return Err(invalid(
                 "expected `pubky<user>/<path>` or `pubky://<user>/<path>`",

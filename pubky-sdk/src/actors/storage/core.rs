@@ -25,8 +25,9 @@ impl SessionStorage {
     /// Construct from an existing session.
     ///
     /// Equivalent to `session.storage()`.
-    pub fn new(session: &PubkySession) -> SessionStorage {
-        SessionStorage {
+    #[must_use]
+    pub fn new(session: &PubkySession) -> Self {
+        Self {
             client: session.client.clone(),
             user: session.info.public_key().clone(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -35,6 +36,7 @@ impl SessionStorage {
     }
 
     /// Convenience: unauthenticated public reader using the same client.
+    #[must_use]
     pub fn public(&self) -> PublicStorage {
         PublicStorage {
             client: self.client.clone(),
@@ -55,7 +57,7 @@ impl SessionStorage {
         let resource = PubkyResource::new(self.user.clone(), path.as_str())?;
         let url = resource.to_transport_url()?;
         cross_log!(debug, "Session storage {} request {}", method, url);
-        let rb = self.client.cross_request(method, url).await?;
+        let rb = self.client.cross_request(method, &url).await?;
 
         #[cfg(not(target_arch = "wasm32"))]
         let rb = self.with_session_cookie(rb);
@@ -87,8 +89,8 @@ impl PublicStorage {
     ///
     /// Tip: If you already have a `Pubky` facade, prefer `pubky.public_storage()`
     /// to reuse its underlying client and configuration.
-    pub fn new() -> Result<PublicStorage> {
-        Ok(PublicStorage {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             client: PubkyHttpClient::new()?,
         })
     }
@@ -102,14 +104,14 @@ impl PublicStorage {
         let resource: PubkyResource = addr.into_pubky_resource()?;
         let url = resource.to_transport_url()?;
         cross_log!(debug, "Public storage {} request {}", method, url);
-        let rb = self.client.cross_request(method, url).await?;
+        let rb = self.client.cross_request(method, &url).await?;
         Ok(rb)
     }
 }
 
 /// Helper: validation error for directory listings without trailing slash.
 #[inline]
-pub(crate) fn dir_trailing_slash_error() -> RequestError {
+pub fn dir_trailing_slash_error() -> RequestError {
     RequestError::Validation {
         message: "directory listings must end with `/`".into(),
     }
