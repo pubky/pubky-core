@@ -173,6 +173,10 @@ impl Pkdns {
     /// Publish `_pubky` **forcing** a refresh.
     ///
     /// If `host_override` is `None`, reuses the host found in the existing record (if any).
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Authentication`] if called without a keypair or validation fails.
+    /// - [`crate::errors::Error::Pkarr`] if PKARR/DHT resolution or publish fails.
     pub async fn publish_homeserver_force(&self, host_override: Option<&PublicKey>) -> Result<()> {
         self.publish_homeserver(host_override, PublishMode::Force)
             .await
@@ -181,6 +185,10 @@ impl Pkdns {
     /// Publish `_pubky` **only if stale/missing**.
     ///
     /// If `host_override` is `None`, reuses the host found in the existing record (if any).
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Authentication`] if called without a keypair or validation fails.
+    /// - [`crate::errors::Error::Pkarr`] if PKARR/DHT resolution or publish fails.
     pub async fn publish_homeserver_if_stale(
         &self,
         host_override: Option<&PublicKey>,

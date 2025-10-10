@@ -165,7 +165,18 @@ impl PubkyHttpClientBuilder {
         self
     }
 
-    /// Build [PubkyHttpClient]
+    /// Build a [`PubkyHttpClient`].
+    ///
+    /// # Errors
+    /// - [`crate::errors::BuildError::Pkarr`] if building the PKARR client fails.
+    /// - [`crate::errors::BuildError::Http`] if constructing the HTTP client fails.
+    ///
+    /// # Examples
+    /// ```
+    /// # use pubky::PubkyHttpClient;
+    /// let client = PubkyHttpClient::builder().build()?;
+    /// # Ok::<_, pubky::BuildError>(())
+    /// ```
     pub fn build(&self) -> Result<PubkyHttpClient, BuildError> {
         let pkarr = self.pkarr.build()?;
 

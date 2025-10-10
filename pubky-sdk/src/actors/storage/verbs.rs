@@ -45,7 +45,7 @@ async fn send_head(rb: RequestBuilder) -> Result<Option<Response>> {
 impl SessionStorage {
     /// HTTP `GET` (as me) for an **absolute path**.
     ///
-    /// # Example
+    /// # Examples
     /// ```no_run
     /// # async fn ex(session: pubky::PubkySession) -> pubky::Result<()> {
     /// let text = session
@@ -54,6 +54,12 @@ impl SessionStorage {
     ///     .text().await?;
     /// # Ok(()) }
     /// ```
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Request`] on HTTP transport failures or when the server
+    ///   responds with a non-success status (the server message is captured).
+    /// - [`crate::errors::Error::Parse`] if `path` cannot be converted into a valid
+    ///   resource/URL.
     pub async fn get<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
         let rb = self.request(Method::GET, path).await?;
         send_checked(rb).await
@@ -76,6 +82,12 @@ impl SessionStorage {
     /// HTTP `PUT` (write) for an **absolute path**.
     ///
     /// Requires a valid session; this handle is authenticated already.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Request`] on HTTP transport failures or when the server
+    ///   responds with a non-success status (the server message is captured).
+    /// - [`crate::errors::Error::Parse`] if `path` cannot be converted into a valid
+    ///   resource/URL.
     pub async fn put<P, B>(&self, path: P, body: B) -> Result<Response>
     where
         P: IntoResourcePath,
@@ -86,6 +98,12 @@ impl SessionStorage {
     }
 
     /// HTTP `DELETE` for an **absolute path**.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Request`] on HTTP transport failures or when the server
+    ///   responds with a non-success status (the server message is captured).
+    /// - [`crate::errors::Error::Parse`] if `path` cannot be converted into a valid
+    ///   resource/URL.
     pub async fn delete<P: IntoResourcePath>(&self, path: P) -> Result<Response> {
         let rb = self.request(Method::DELETE, path).await?;
         send_checked(rb).await
@@ -99,7 +117,7 @@ impl SessionStorage {
 impl PublicStorage {
     /// HTTP `GET` for an **addressed resource** (`pubky<pk>/<abs-path>`, `<pk>/<abs-path>`, or `pubky://…`).
     ///
-    /// # Example
+    /// # Examples
     /// ```no_run
     /// # async fn ex() -> pubky::Result<()> {
     /// let storage = pubky::PublicStorage::new()?;
@@ -107,6 +125,12 @@ impl PublicStorage {
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
     /// ```
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Request`] on HTTP transport failures or when the server
+    ///   responds with a non-success status (the server message is captured).
+    /// - [`crate::errors::Error::Parse`] if `addr` cannot be converted into a valid
+    ///   addressed resource/URL.
     pub async fn get<A: IntoPubkyResource>(&self, addr: A) -> Result<Response> {
         let rb = self.request(Method::GET, addr).await?;
         send_checked(rb).await

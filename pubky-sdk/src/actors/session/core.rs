@@ -29,7 +29,7 @@ use crate::errors::AuthError;
 ///
 /// Concurrency:
 /// - `PubkySession` is cheap to clone and thread-safe; it shares the underlying `PubkyHttpClient`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PubkySession {
     pub(crate) client: PubkyHttpClient,
 
@@ -202,5 +202,19 @@ impl PubkySession {
             self.info.public_key()
         );
         SessionStorage::new(self)
+    }
+}
+
+impl std::fmt::Debug for PubkySession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("PubkySession");
+        ds.field("client", &self.client);
+        ds.field("info", &self.info);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // Do not leak the bearer cookie secret in debug output.
+            ds.field("cookie", &"<redacted>");
+        }
+        ds.finish()
     }
 }

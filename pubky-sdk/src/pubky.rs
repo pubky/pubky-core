@@ -91,6 +91,10 @@ impl Pubky {
     ///
     /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
     /// or `try_poll_once()` (non-blocking UI loops).
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
+    ///   fails (e.g., malformed relay URL when configured via the builder).
     pub fn start_auth_flow(&self, caps: &Capabilities) -> Result<PubkyAuthFlow> {
         PubkyAuthFlow::builder(caps)
             .client(self.client.clone())
