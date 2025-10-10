@@ -2,6 +2,24 @@ use crate::{PubkyHttpClient, PublicKey, Result, cross_log};
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostKind {
+    ResolvedPubky,
+    Icann,
+    Pubky,
+}
+
+fn classify_host(host: &str) -> HostKind {
+    if let Some(pk_host) = host.strip_prefix("_pubky.") {
+        if PublicKey::try_from(pk_host).is_ok() {
+            return HostKind::ResolvedPubky;
+        }
+    } else if PublicKey::try_from(host).is_err() {
+        return HostKind::Icann;
+    }
+    HostKind::Pubky
+}
+
 impl PubkyHttpClient {
     /// Constructs a [`reqwest::RequestBuilder`] for the given HTTP `method` and `url`,
     /// routing through the client’s unified request path.
@@ -43,12 +61,13 @@ impl PubkyHttpClient {
     pub fn request<U: IntoUrl>(&self, method: Method, url: &U) -> RequestBuilder {
         let url_str = url.as_str();
 
-        let parsed = Url::parse(url_str);
-        let host = parsed.as_ref().ok().and_then(|url| url.host_str());
+        let host = Url::parse(url_str)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned));
 
-        if let Some(host) = host {
-            if let Some(pk_host) = host.strip_prefix("_pubky.") {
-                if PublicKey::try_from(pk_host).is_ok() {
+        if let Some(ref host) = host {
+            match classify_host(host) {
+                HostKind::ResolvedPubky => {
                     cross_log!(
                         debug,
                         "Routing request for resolved _pubky host {} via Pubky TLS",
@@ -56,24 +75,24 @@ impl PubkyHttpClient {
                     );
                     return self.http.request(method, url_str);
                 }
-            } else if PublicKey::try_from(host).is_err() {
-                // TODO: remove icann_http when we can control reqwest connection
-                // and or create a tls config per connection.
-                cross_log!(
-                    debug,
-                    "Routing request for ICANN host {} via standard TLS",
-                    host
-                );
-                return self.icann_http.request(method, url_str);
+                HostKind::Icann => {
+                    // TODO: remove icann_http when we can control reqwest connection
+                    // and or create a tls config per connection.
+                    cross_log!(
+                        debug,
+                        "Routing request for ICANN host {} via standard TLS",
+                        host
+                    );
+                    return self.icann_http.request(method, url_str);
+                }
+                HostKind::Pubky => {
+                    cross_log!(
+                        debug,
+                        "Routing request for pubky host {} via PubkyTLS",
+                        host
+                    );
+                }
             }
-        }
-
-        if let Some(host) = host {
-            cross_log!(
-                debug,
-                "Routing request for pubky host {} via PubkyTLS",
-                host
-            );
         }
 
         self.http.request(method, url_str)

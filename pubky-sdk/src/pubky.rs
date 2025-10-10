@@ -150,7 +150,7 @@ impl Pubky {
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Request`] if the secret file cannot be read.
-    /// - Returns [`crate::errors::Error::Validation`] when the file contents are malformed.
+    /// - Returns [`crate::errors::RequestError::Validation`] when the file contents are malformed.
     /// - Propagates transport errors from [`PubkySession::from_secret_file`] if the client
     ///   cannot be prepared.
     #[cfg(not(target_arch = "wasm32"))]

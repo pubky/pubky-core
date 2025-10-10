@@ -121,9 +121,9 @@ impl PubkyAuthFlow {
     /// and completes the `/session` exchange to return a ready-to-use [`PubkySession`].
     ///
     /// # Errors
-    /// - Returns [`crate::errors::Error::Auth`] if the relay channel expires before approval.
+    /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expires before approval.
     /// - Propagates HTTP/transport failures while polling the relay.
-    /// - Propagates errors from [`PubkySession::new`] if the session exchange fails.
+    /// - Propagates errors from the internal session exchange if it fails.
     pub async fn await_approval(self) -> Result<PubkySession> {
         let client = self.client.clone();
         let token = self.recv_token().await?;
@@ -135,7 +135,7 @@ impl PubkyAuthFlow {
     /// This awaits the background poller’s result.
     ///
     /// # Errors
-    /// - Returns [`crate::errors::Error::Auth`] if the relay channel expires before approval.
+    /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expires before approval.
     /// - Propagates HTTP/transport failures encountered while polling the relay.
     pub async fn await_token(self) -> Result<AuthToken> {
         self.recv_token().await
@@ -154,8 +154,8 @@ impl PubkyAuthFlow {
     /// - `Err(e)` on transport/server errors or if the channel expired.
     ///
     /// # Errors
-    /// - Returns [`crate::errors::Error::Auth`] if the relay channel expired before a token arrived.
-    /// - Propagates HTTP/transport failures from `PubkySession::new`.
+    /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expired before a token arrived.
+    /// - Propagates HTTP/transport failures from constructing the session.
     pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
         if let Some(tok) = self.try_token() {
             let token = tok?;
@@ -238,26 +238,43 @@ impl PubkyAuthFlow {
                 "Auth flow polling attempt {attempt} requesting {}",
                 relay_channel_url
             );
-            match Self::poll_channel_once(client, relay_channel_url).await {
-                Ok(response) => {
-                    cross_log!(
-                        debug,
-                        "Received response for auth flow polling attempt {attempt}: status {}",
-                        response.status()
-                    );
 
-                    return Ok(response);
-                }
-                Err(PollError::Timeout) => {
-                    cross_log!(
-                        debug,
-                        "Auth flow polling attempt {attempt} timed out; retrying"
-                    );
-                }
-                Err(PollError::Failure(err)) => {
-                    cross_log!(error, "Auth flow polling attempt {attempt} failed: {err}");
-                    return Err(err);
-                }
+            let result = Self::poll_channel_once(client, relay_channel_url).await;
+            if let Some(response) = Self::interpret_poll_result(attempt, relay_channel_url, result)?
+            {
+                return Ok(response);
+            }
+        }
+    }
+
+    fn interpret_poll_result(
+        attempt: u32,
+        relay_channel_url: &Url,
+        result: std::result::Result<reqwest::Response, PollError>,
+    ) -> Result<Option<reqwest::Response>> {
+        match result {
+            Ok(response) => {
+                cross_log!(
+                    debug,
+                    "Received response for auth flow polling attempt {attempt}: status {}",
+                    response.status()
+                );
+                Ok(Some(response))
+            }
+            Err(PollError::Timeout) => {
+                cross_log!(
+                    debug,
+                    "Auth flow polling attempt {attempt} timed out; retrying"
+                );
+                Ok(None)
+            }
+            Err(PollError::Failure(err)) => {
+                cross_log!(
+                    error,
+                    "Auth flow polling attempt {attempt} failed at {}: {err}",
+                    relay_channel_url
+                );
+                Err(err)
             }
         }
     }
@@ -399,7 +416,6 @@ impl PubkyAuthFlowBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Capabilities;
 
     #[tokio::test]
     async fn constructs_urls_and_channel() {

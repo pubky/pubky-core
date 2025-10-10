@@ -25,46 +25,21 @@ impl PubkySigner {
     /// # Errors
     /// - Returns [`crate::errors::Error::Parse`] if the homeserver URL cannot be constructed.
     /// - Propagates transport failures while creating the account or publishing the homeserver record.
-    /// - Propagates validation errors from [`PubkySession::new_from_response`].
+    /// - Propagates validation errors from the session hydration step.
     pub async fn signup(
         &self,
         homeserver: &PublicKey,
         signup_token: Option<&str>,
     ) -> Result<PubkySession> {
-        let mut url = Url::parse(&format!("https://{homeserver}"))?;
-        url.set_path("/signup");
-        if let Some(token) = signup_token {
-            url.query_pairs_mut().append_pair("signup_token", token);
-        }
+        let url = Self::build_signup_url(homeserver, signup_token)?;
         cross_log!(info, "Signing up new account on homeserver {}", homeserver);
 
-        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
-        let auth_token = AuthToken::sign(&self.keypair, capabilities);
-
+        let auth_token = self.root_capability_token();
         let response = self
-            .client
-            .cross_request(Method::POST, url)
-            .await?
-            .body(auth_token.serialize())
-            .send()
+            .send_signup_request(url, auth_token.serialize())
             .await?;
 
-        // Map non-2xx into our error type; keep body/headers intact for the caller.
-        let response = check_http_status(response).await?;
-        cross_log!(
-            info,
-            "Signup request for {} succeeded; publishing homeserver",
-            self.keypair.public_key()
-        );
-
-        self.pkdns()
-            .publish_homeserver_force(Some(homeserver))
-            .await?;
-        cross_log!(
-            info,
-            "Signup homeserver publish complete for {}",
-            self.keypair.public_key()
-        );
+        self.publish_signup_homeserver(homeserver).await?;
         PubkySession::new_from_response(self.client.clone(), response).await
     }
 
@@ -79,7 +54,7 @@ impl PubkySigner {
     ///
     /// # Errors
     /// - Propagates transport failures during the session exchange.
-    /// - Propagates validation errors from [`PubkySession::new`] or PKDNS publishing.
+    /// - Propagates validation errors from the session exchange or PKDNS publishing.
     pub async fn signin(&self) -> Result<PubkySession> {
         self.signin_with_publish(PublishMode::Background).await
     }
@@ -92,7 +67,7 @@ impl PubkySigner {
     ///
     /// # Errors
     /// - Propagates transport failures during the session exchange.
-    /// - Propagates validation errors from [`PubkySession::new`] or PKDNS publishing.
+    /// - Propagates validation errors from the session exchange or PKDNS publishing.
     pub async fn signin_blocking(&self) -> Result<PubkySession> {
         self.signin_with_publish(PublishMode::Blocking).await
     }
@@ -142,5 +117,51 @@ impl PubkySigner {
         }
 
         Ok(session)
+    }
+
+    fn build_signup_url(homeserver: &PublicKey, signup_token: Option<&str>) -> Result<Url> {
+        let mut url = Url::parse(&format!("https://{homeserver}"))?;
+        url.set_path("/signup");
+        if let Some(token) = signup_token {
+            url.query_pairs_mut().append_pair("signup_token", token);
+        }
+        Ok(url)
+    }
+
+    fn root_capability_token(&self) -> AuthToken {
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
+        AuthToken::sign(&self.keypair, capabilities)
+    }
+
+    async fn send_signup_request(&self, url: Url, body: Vec<u8>) -> Result<reqwest::Response> {
+        let response = self
+            .client
+            .cross_request(Method::POST, url)
+            .await?
+            .body(body)
+            .send()
+            .await?;
+
+        // Map non-2xx into our error type; keep body/headers intact for the caller.
+        check_http_status(response).await
+    }
+
+    async fn publish_signup_homeserver(&self, homeserver: &PublicKey) -> Result<()> {
+        cross_log!(
+            info,
+            "Signup request for {} succeeded; publishing homeserver",
+            self.keypair.public_key()
+        );
+
+        self.pkdns()
+            .publish_homeserver_force(Some(homeserver))
+            .await?;
+
+        cross_log!(
+            info,
+            "Signup homeserver publish complete for {}",
+            self.keypair.public_key()
+        );
+        Ok(())
     }
 }

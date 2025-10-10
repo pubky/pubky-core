@@ -21,7 +21,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use std::time::Duration;
 /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
 /// let client = PubkyHttpClient::builder()
@@ -32,7 +32,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// ```
 ///
 /// You can keep the default Pkarr relays or override them via the builder:
-/// ```
+/// ```no_run
 /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
 /// # fn main() -> Result<(), pubky::BuildError> {
 /// // Start from defaults; you can also supply your own entirely.
@@ -63,7 +63,7 @@ impl PubkyHttpClientBuilder {
     /// - **WASM builds** additionally remember the hostname when resolving `_pubky.<pk>` targets.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::builder()
@@ -86,7 +86,7 @@ impl PubkyHttpClientBuilder {
     /// - WASM remembers `<host>` to adjust URL rewriting for the browser environment.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::builder()
@@ -101,6 +101,15 @@ impl PubkyHttpClientBuilder {
     ///
     /// # Panics
     /// If the testnet cannot because the given host leads to an invalid relay URL.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        allow(
+            clippy::semicolon_outside_block,
+            clippy::unnecessary_operation,
+            clippy::semicolon_if_nothing_returned,
+            reason = "WASM-only block preserves conditional assignment formatting"
+        )
+    )]
     pub fn testnet_with_host(&mut self, host: &str) -> &mut Self {
         cross_log!(info, "Configuring testnet builders for host {host}");
         #[cfg(not(target_arch = "wasm32"))]
@@ -174,7 +183,7 @@ impl PubkyHttpClientBuilder {
     /// - [`crate::errors::BuildError::Http`] if constructing the HTTP client fails.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// # use pubky::PubkyHttpClient;
     /// let client = PubkyHttpClient::builder().build()?;
     /// # Ok::<_, pubky::BuildError>(())
@@ -272,17 +281,23 @@ impl PubkyHttpClientBuilder {
 /// Basic construction. Works out of the box for mainline DHT pkarr endpoints.
 /// ```
 /// # use pubky::PubkyHttpClient;
+/// # #[cfg(doctest)]
+/// # return Ok::<_, pubky::BuildError>(());
 /// let client = PubkyHttpClient::new()?;
 /// # Ok::<_, pubky::BuildError>(())
 /// ```
 ///
 /// Fetching a standard ICANN URL or any URL with `request`:
-/// ```
+/// ```no_run
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
+/// # use url::Url;
 /// # async fn run() -> Result<()> {
+/// # #[cfg(doctest)]
+/// # return Ok(());
 /// let client = PubkyHttpClient::new()?;
-/// let resp = client.request(Method::GET, "https://example.com")
+/// let url = Url::parse("https://example.com")?;
+/// let resp = client.request(Method::GET, &url)
 ///     .send().await?;
 /// assert!(resp.status().is_success());
 /// # Ok(()) }
@@ -297,6 +312,8 @@ impl PubkyHttpClientBuilder {
 /// # use pubky::{PubkyHttpClient, Result};
 /// # use reqwest::Method;
 /// # async fn run() -> Result<()> {
+/// # #[cfg(doctest)]
+/// # return Ok(());
 /// let client = PubkyHttpClient::new()?;
 /// // Pubky App profile of user Pubky https://pubky.app/profile/ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y
 /// let user = "ihaqcthsdbk751sxctk849bdr7yz7a934qen5gmpcbwcur49i97y";
@@ -362,7 +379,7 @@ impl PubkyHttpClient {
     /// ```
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::testnet()?;

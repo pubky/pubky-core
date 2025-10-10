@@ -5,6 +5,10 @@
     clippy::multiple_crate_versions,
     reason = "workspace dependencies still require distinct versions"
 )]
+#![cfg_attr(
+    target_arch = "wasm32",
+    allow(clippy::future_not_send, reason = "WASM futures are single-threaded")
+)]
 
 mod pubky;
 

@@ -9,7 +9,7 @@ use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
 impl PubkyHttpClient {
-    /// A wrapper around [PubkyHttpClient::request], with the same signature between native and wasm.
+    /// A wrapper around [`PubkyHttpClient::request`], with the same signature between native and WASM.
     pub(crate) async fn cross_request<T: IntoUrl>(
         &self,
         method: Method,
@@ -36,6 +36,9 @@ impl PubkyHttpClient {
 
     /// - Resolves a clearnet host to call with fetch
     /// - Returns the `pubky-host` value if available
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::PkarrError`] when PKARR resolution fails or produces invalid endpoints.
     pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("").to_string();
 
@@ -49,7 +52,7 @@ impl PubkyHttpClient {
         } else if PublicKey::try_from(host.clone()).is_ok() {
             self.transform_url(url).await?;
             pubky_host = Some(host);
-        };
+        }
 
         Ok(pubky_host)
     }

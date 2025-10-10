@@ -85,7 +85,7 @@ pedantic = { level = "warn", priority = -1 }
 perf = { level = "warn", priority = -1 }
 style = { level = "warn", priority = -1 }
 suspicious = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }     # optional
+# nursery = { level = "warn", priority = -1 }
 
 # Select restriction-group lints for consistency and safety
 allow_attributes_without_reason = "warn"

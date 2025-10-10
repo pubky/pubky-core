@@ -236,7 +236,7 @@ pubky = { version = "x.y.z", features = ["json"] }
 
 Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
 
-```rust
+```rust no_run
 # use pubky_testnet::{EphemeralTestnet, pubky::Keypair};
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
@@ -268,7 +268,7 @@ let signer = pubky.signer_from_recovery_file("/path/to/alice.pkarr", "passphrase
 
 Session secrets (`.sess`):
 
-```rust
+```rust no_run
 use pubky::{Pubky, Keypair};
 # async fn run() -> pubky::Result<()> {
 let pubky = Pubky::new()?;

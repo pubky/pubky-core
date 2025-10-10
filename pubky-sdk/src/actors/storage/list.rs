@@ -33,7 +33,7 @@ impl SessionStorage {
     /// ```
     ///
     /// # Errors
-    /// - Returns [`crate::errors::Error::Validation`] if `path` cannot be converted into an absolute resource path ending with `/`.
+    /// - Returns [`crate::errors::RequestError::Validation`] if `path` cannot be converted into an absolute resource path ending with `/`.
     /// - Propagates transport preparation failures when building the request URL.
     pub fn list<P: IntoResourcePath>(&self, path: P) -> Result<ListBuilder<'_>> {
         let path: ResourcePath = path.into_abs_path()?;
@@ -55,7 +55,7 @@ impl PublicStorage {
     /// Returns addressed [`PubkyResource`] entries.
     ///
     /// # Errors
-    /// - Returns [`crate::errors::Error::Validation`] if `addr` cannot be converted into an addressed directory ending with `/`.
+    /// - Returns [`crate::errors::RequestError::Validation`] if `addr` cannot be converted into an addressed directory ending with `/`.
     /// - Propagates transport preparation failures when building the request URL.
     pub fn list<A: IntoPubkyResource>(&self, addr: A) -> Result<ListBuilder<'_>> {
         let resource: PubkyResource = addr.into_pubky_resource()?;
@@ -146,7 +146,7 @@ impl<'a> ListBuilder<'a> {
     ///
     /// # Errors
     /// - Propagates transport failures while issuing the HTTP request.
-    /// - Returns [`crate::errors::Error::Validation`] if any resource line returned by the server is invalid.
+    /// - Returns [`crate::errors::RequestError::Validation`] if any resource line returned by the server is invalid.
     pub async fn send(self) -> Result<Vec<PubkyResource>> {
         // 1) Build query params
         let mut url = self.url;

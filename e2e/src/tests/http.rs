@@ -8,8 +8,9 @@ async fn http_get_pubky() {
 
     let client = testnet.client().unwrap();
 
+    let pubky_url = format!("https://{}/", server.public_key());
     let response = client
-        .request(Method::GET, format!("https://{}/", server.public_key()))
+        .request(Method::GET, &pubky_url)
         .send()
         .await
         .unwrap();
@@ -23,8 +24,10 @@ async fn http_get_icann() {
 
     let client = testnet.client().unwrap();
 
+    let icann_url = "https://google.com/".to_string();
+
     let response = client
-        .request(Method::GET, "https://google.com/")
+        .request(Method::GET, &icann_url)
         .send()
         .await
         .unwrap();

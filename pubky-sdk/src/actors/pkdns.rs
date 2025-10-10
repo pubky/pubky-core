@@ -169,7 +169,7 @@ impl Pkdns {
     /// - `Err(_)` only for transport errors.
     ///
     /// # Errors
-    /// - Returns [`crate::errors::Error::Auth`] if called without an attached keypair.
+    /// - Returns [`crate::errors::Error::Authentication`] if called without an attached keypair.
     /// - Propagates transport failures from PKARR resolution.
     pub async fn get_homeserver(&self) -> Result<Option<PublicKey>> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
@@ -216,11 +216,7 @@ impl Pkdns {
         host_override: Option<&PublicKey>,
         mode: PublishMode,
     ) -> Result<()> {
-        let kp = self.keypair.as_ref().ok_or_else(|| {
-            Error::from(AuthError::Validation(
-                "publishing `_pubky` requires a keypair (use Pkdns::new_with_keypair or signer.pkdns())".into(),
-            ))
-        })?;
+        let kp = self.keypair_ref()?;
         let pubky = kp.public_key();
 
         // 1) Resolve the most recent record once.
@@ -233,66 +229,18 @@ impl Pkdns {
         let existing = self.client.pkarr().resolve_most_recent(&pubky).await;
 
         // 2) Decide host string to publish.
-        let Some(host_str) = determine_host(host_override, existing.as_ref()) else {
-            cross_log!(
-                info,
-                "No existing host found for {}; skipping publish",
-                pubky
-            );
-            return Ok(()); // nothing to do
+        let Some(host_str) = Self::select_host(&pubky, host_override, existing.as_ref()) else {
+            return Ok(());
         };
 
         // 3) Age check (for IfStale).
-        if matches!(mode, PublishMode::IfStale)
-            && let Some(ref record) = existing
-        {
-            let elapsed = Timestamp::now() - record.timestamp();
-            let age = Duration::from_micros(elapsed.as_u64());
-            if age <= self.stale_after {
-                cross_log!(
-                    info,
-                    "Skipping publish for {}: record age {:?} <= stale_after {:?}",
-                    pubky,
-                    age,
-                    self.stale_after
-                );
-                return Ok(());
-            }
+        if self.should_skip_due_to_age(mode, existing.as_ref(), &pubky) {
+            return Ok(());
         }
 
         // 4) Publish with small retry loop on retryable pkarr errors.
-        for attempt in 1..=3 {
-            cross_log!(
-                info,
-                "Publishing homeserver for {} (attempt {attempt}) -> host {}",
-                pubky,
-                host_str
-            );
-            match self
-                .publish_homeserver_inner(kp, &host_str, existing.clone())
-                .await
-            {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    if let Error::Pkarr(pk) = &e
-                        && pk.is_retryable()
-                        && attempt < 3
-                    {
-                        cross_log!(
-                            warn,
-                            "Retryable PKARR error while publishing {}: {}; retrying",
-                            pubky,
-                            pk
-                        );
-                        continue;
-                    }
-                    cross_log!(error, "Failed to publish homeserver for {}: {}", pubky, e);
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(())
+        self.publish_with_retries(kp, &pubky, &host_str, existing)
+            .await
     }
 
     async fn publish_homeserver_inner(
@@ -322,6 +270,110 @@ impl Pkdns {
             keypair.public_key()
         );
         Ok(())
+    }
+
+    fn keypair_ref(&self) -> Result<&Keypair> {
+        self.keypair.as_ref().ok_or_else(|| {
+            Error::from(AuthError::Validation(
+                "publishing `_pubky` requires a keypair (use Pkdns::new_with_keypair or signer.pkdns())".into(),
+            ))
+        })
+    }
+
+    fn select_host(
+        pubky: &PublicKey,
+        host_override: Option<&PublicKey>,
+        existing: Option<&SignedPacket>,
+    ) -> Option<String> {
+        determine_host(host_override, existing).map_or_else(
+            || {
+                cross_log!(
+                    info,
+                    "No existing host found for {}; skipping publish",
+                    pubky
+                );
+                None
+            },
+            |h| {
+                cross_log!(
+                    info,
+                    "Selected host {} for `_pubky` publish of {}",
+                    h,
+                    pubky
+                );
+                Some(h)
+            },
+        )
+    }
+
+    fn should_skip_due_to_age(
+        &self,
+        mode: PublishMode,
+        existing: Option<&SignedPacket>,
+        pubky: &PublicKey,
+    ) -> bool {
+        if !matches!(mode, PublishMode::IfStale) {
+            return false;
+        }
+        let Some(record) = existing else {
+            return false;
+        };
+
+        let elapsed = Timestamp::now() - record.timestamp();
+        let age = Duration::from_micros(elapsed.as_u64());
+        if age <= self.stale_after {
+            cross_log!(
+                info,
+                "Skipping publish for {}: record age {:?} <= stale_after {:?}",
+                pubky,
+                age,
+                self.stale_after
+            );
+            return true;
+        }
+
+        false
+    }
+
+    async fn publish_with_retries(
+        &self,
+        keypair: &Keypair,
+        pubky: &PublicKey,
+        host: &str,
+        existing: Option<SignedPacket>,
+    ) -> Result<()> {
+        for attempt in 1..=3 {
+            cross_log!(
+                info,
+                "Publishing homeserver for {} (attempt {attempt}) -> host {}",
+                pubky,
+                host
+            );
+            match self
+                .publish_homeserver_inner(keypair, host, existing.clone())
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(err) if Self::should_retry(&err, attempt) => {
+                    cross_log!(
+                        warn,
+                        "Retryable PKARR error while publishing {}: {}; retrying",
+                        pubky,
+                        err
+                    );
+                }
+                Err(err) => {
+                    cross_log!(error, "Failed to publish homeserver for {}: {}", pubky, err);
+                    return Err(err);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    const fn should_retry(err: &Error, attempt: u32) -> bool {
+        matches!(err, Error::Pkarr(pk) if pk.is_retryable() && attempt < 3)
     }
 
     fn build_homeserver_packet(

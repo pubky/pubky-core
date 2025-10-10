@@ -84,7 +84,7 @@ impl PubkySession {
             let bytes = response.bytes().await?;
             let info = SessionInfo::deserialize(&bytes)?;
             cross_log!(info, "Hydrated WASM session for {}", info.public_key());
-            Ok(PubkySession { client, info })
+            Ok(Self { client, info })
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -144,16 +144,11 @@ impl PubkySession {
     ///
     /// # Errors
     /// - Propagates transport failures from the session endpoint.
-    /// - Returns [`crate::errors::Error::Auth`] if the homeserver rejects the request.
+    /// - Returns [`crate::errors::Error::Authentication`] if the homeserver rejects the request.
     pub async fn revalidate(&self) -> Result<Option<SessionInfo>> {
         cross_log!(info, "Revalidating session for {}", self.info.public_key());
-        let response = self
-            .storage()
-            .request(Method::GET, "/session")
-            .await?
-            .send()
-            .await?;
-        if response.status() == StatusCode::NOT_FOUND {
+        let response = self.send_revalidate_request().await?;
+        if Self::session_missing(&response) {
             cross_log!(
                 warn,
                 "Session for {} no longer valid (404)",
@@ -161,10 +156,28 @@ impl PubkySession {
             );
             return Ok(None);
         }
+        let info = Self::parse_session_info(response).await?;
+        cross_log!(info, "Session for {} remains valid", self.info.public_key());
+        Ok(Some(info))
+    }
+
+    async fn send_revalidate_request(&self) -> Result<reqwest::Response> {
+        self.storage()
+            .request(Method::GET, "/session")
+            .await?
+            .send()
+            .await
+            .map_err(Error::from)
+    }
+
+    fn session_missing(response: &reqwest::Response) -> bool {
+        response.status() == StatusCode::NOT_FOUND
+    }
+
+    async fn parse_session_info(response: reqwest::Response) -> Result<SessionInfo> {
         let response = check_http_status(response).await?;
         let bytes = response.bytes().await?;
-        cross_log!(info, "Session for {} remains valid", self.info.public_key());
-        Ok(Some(SessionInfo::deserialize(&bytes)?))
+        Ok(SessionInfo::deserialize(&bytes)?)
     }
 
     /// Sign out and invalidate this session server-side.
@@ -201,6 +214,7 @@ impl PubkySession {
     ///   session cookie.
     ///
     /// See [`SessionStorage`] for usage examples.
+    #[must_use]
     pub fn storage(&self) -> SessionStorage {
         cross_log!(
             debug,

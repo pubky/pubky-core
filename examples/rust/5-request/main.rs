@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
         PubkyHttpClient::new()?
     };
 
-    let mut rb = client.request(args.method.clone(), args.url);
+    let mut rb = client.request(args.method.clone(), &args.url);
 
     // Apply headers
     for h in &args.header {

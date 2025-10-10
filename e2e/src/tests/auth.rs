@@ -57,11 +57,9 @@ async fn disabled_user() {
     // Disable the user via admin API
     let admin_socket = server.admin().listen_socket();
     let admin_client = PubkyHttpClient::new().unwrap();
+    let disable_url = format!("http://{admin_socket}/users/{pubky}/disable");
     let resp = admin_client
-        .request(
-            Method::POST,
-            format!("http://{admin_socket}/users/{pubky}/disable"),
-        )
+        .request(Method::POST, &disable_url)
         .header("X-Admin-Password", "admin")
         .send()
         .await

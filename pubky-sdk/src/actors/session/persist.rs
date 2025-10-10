@@ -33,7 +33,7 @@ impl PubkySession {
     /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
     /// # Errors
-    /// - Returns [`crate::errors::Error::Validation`] if the token is malformed or contains an invalid public key.
+    /// - Returns [`crate::errors::RequestError::Validation`] if the token is malformed or contains an invalid public key.
     /// - Propagates transport failures while validating the session with the homeserver.
     pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
         // 1) Get the transport for this session
@@ -130,8 +130,8 @@ impl PubkySession {
     /// - `.pkarr` — rejected with a clear error message pointing to `Keypair::from_secret_file`.
     /// - Any other or missing extension — rejected with a `.sess`-specific error.
     /// # Errors
-    /// - Returns [`crate::errors::Error::Validation`] when the file extension is not `.sess`.
-    /// - Returns [`crate::errors::Error::Validation`] if the file cannot be read.
+    /// - Returns [`crate::errors::RequestError::Validation`] when the file extension is not `.sess`.
+    /// - Returns [`crate::errors::RequestError::Validation`] if the file cannot be read.
     /// - Propagates errors from [`Self::import_secret`] when the stored token is invalid or when the session cannot be revalidated.
     pub async fn from_secret_file(
         secret_file_path: &Path,

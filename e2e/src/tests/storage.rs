@@ -53,7 +53,7 @@ async fn put_get_delete() {
     // the wrong tenant user
     let response = session
         .client()
-        .request(Method::GET, regular_url)
+        .request(Method::GET, &regular_url)
         .header("Host", "non.pubky.host")
         .send()
         .await
@@ -225,17 +225,16 @@ async fn unauthorized_put_delete() {
         path.trim_start_matches('/')
     );
 
+    let owner_transport_url = owner_url
+        .clone()
+        .into_pubky_resource()
+        .unwrap()
+        .to_transport_url()
+        .unwrap();
+
     let response = pubky
         .client()
-        .request(
-            Method::PUT,
-            owner_url
-                .clone()
-                .into_pubky_resource()
-                .unwrap()
-                .to_transport_url()
-                .unwrap(),
-        )
+        .request(Method::PUT, &owner_transport_url)
         .body(vec![0, 1, 2, 3, 4])
         .send()
         .await
@@ -254,14 +253,7 @@ async fn unauthorized_put_delete() {
     // Other tries to delete owner's file → 401 Unauthorized
     let response = pubky
         .client()
-        .request(
-            Method::DELETE,
-            owner_url
-                .into_pubky_resource()
-                .unwrap()
-                .to_transport_url()
-                .unwrap(),
-        )
+        .request(Method::DELETE, &owner_transport_url)
         .send()
         .await
         .unwrap();
@@ -770,9 +762,10 @@ async fn list_events() {
 
     // Page 1
     let cursor: String = {
+        let page1_url = format!("{feed_url}?limit=10");
         let resp = session
             .client()
-            .request(Method::GET, format!("{feed_url}?limit=10"))
+            .request(Method::GET, &page1_url)
             .send()
             .await
             .unwrap();
@@ -805,9 +798,10 @@ async fn list_events() {
 
     // Page 2 (using cursor)
     {
+        let page2_url = format!("{feed_url}?limit=10&cursor={cursor}");
         let resp = session
             .client()
-            .request(Method::GET, format!("{feed_url}?limit=10&cursor={cursor}"))
+            .request(Method::GET, &page2_url)
             .send()
             .await
             .unwrap();
@@ -856,9 +850,10 @@ async fn read_after_event() {
     // Events page 1
     let feed_url = format!("https://{}/events/", server.public_key());
     {
+        let page_url = format!("{feed_url}?limit=10");
         let resp = pubky
             .client()
-            .request(Method::GET, format!("{feed_url}?limit=10"))
+            .request(Method::GET, &page_url)
             .send()
             .await
             .unwrap();
@@ -920,7 +915,7 @@ async fn dont_delete_shared_blobs() {
     let feed_url = format!("https://{}/events/", homeserver.public_key());
     let resp = pubky
         .client()
-        .request(Method::GET, feed_url)
+        .request(Method::GET, &feed_url)
         .send()
         .await
         .unwrap()
