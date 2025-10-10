@@ -10,7 +10,7 @@ use crate::{Result, cross_log, util::check_http_status};
 async fn interpret_head(resp: Response) -> Result<Option<Response>> {
     match resp.status() {
         StatusCode::NOT_FOUND | StatusCode::GONE => {
-            cross_log!(info, "HEAD request returned {}", resp.status());
+            cross_log!(debug, "HEAD request returned {}", resp.status());
             Ok(None)
         }
         _ => {

@@ -2,11 +2,11 @@ use reqwest::Method;
 use url::Url;
 
 use super::core::{PublicStorage, SessionStorage, dir_trailing_slash_error};
-use crate::Result;
 use crate::actors::storage::resource::{
     IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath,
 };
 use crate::util::check_http_status;
+use crate::{Result, cross_log};
 
 impl SessionStorage {
     /// Directory listing **as me** (authenticated).
@@ -175,6 +175,12 @@ impl<'a> ListBuilder<'a> {
 
         // 3) Send and parse
         let resp = rb.send().await?;
+        cross_log!(
+            debug,
+            "Request completed with status {} (LIST {})",
+            resp.status(),
+            resp.url()
+        );
         let resp = check_http_status(resp).await?;
 
         let bytes = resp.bytes().await?;
