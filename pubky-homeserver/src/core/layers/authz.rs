@@ -108,7 +108,7 @@ fn authorize(
         // Checking (or deleting) one's session is ok for everyone
         return Ok(());
     } else if path.starts_with("/pub/") {
-        if method == Method::GET {
+        if method == Method::GET || method == Method::HEAD {
             return Ok(());
         }
     } else {
@@ -149,14 +149,14 @@ fn authorize(
         }
     };
 
-    if session.pubky() != public_key {
+    if session.public_key() != public_key {
         tracing::warn!(
-            "Session public key does not match pubky-host: {} != {}",
-            session.pubky(),
+            "SessionInfo public key does not match pubky-host: {} != {}",
+            session.public_key(),
             public_key
         );
         return Err(HttpError::unauthorized_with_message(
-            "Session public key does not match pubky-host",
+            "SessionInfo public key does not match pubky-host",
         ));
     }
 
@@ -169,13 +169,13 @@ fn authorize(
         Ok(())
     } else {
         tracing::warn!(
-            "Session {} pubkey {} does not have write access to {}. Access forbidden",
+            "SessionInfo {} pubkey {} does not have write access to {}. Access forbidden",
             session_secret,
             public_key,
             path
         );
         Err(HttpError::forbidden_with_message(
-            "Session does not have write access to path",
+            "SessionInfo does not have write access to path",
         ))
     }
 }
