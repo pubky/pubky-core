@@ -273,6 +273,10 @@ impl PubkyHttpClientBuilder {
 /// # Ok(()) }
 /// ```
 ///
+/// Note: `request(..)` is available on native targets. On WASM, use the high-level
+/// actors (e.g., `Pubky`, `SessionStorage`, `PublicStorage`) or the JS bindings’
+/// `client.fetch(..)` provided in `bindings/js`.
+///
 /// Fetching a Pubky resource via its transport URL:
 /// ```no_run
 /// # use pubky::{PubkyHttpClient, Result};

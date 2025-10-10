@@ -83,7 +83,10 @@ pub struct PublicStorage {
 }
 
 impl PublicStorage {
-    /// Create a public (unauthenticated) storage handle using the global client.
+    /// Create a public (unauthenticated) storage handle using a new client.
+    ///
+    /// Tip: If you already have a `Pubky` facade, prefer `pubky.public_storage()`
+    /// to reuse its underlying client and configuration.
     pub fn new() -> Result<PublicStorage> {
         Ok(PublicStorage {
             client: PubkyHttpClient::new()?,

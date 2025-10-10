@@ -81,7 +81,7 @@ pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link/";
 ///
 /// Background polling **starts immediately** at construction. Dropping this value cancels
 /// the background task; the relay channel itself expires server-side after its TTL.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PubkyAuthFlow {
     client: PubkyHttpClient,
     auth_url: Url,
@@ -230,7 +230,7 @@ impl PubkyAuthFlow {
                 }
                 Err(PollError::Timeout) => {
                     cross_log!(
-                        warn,
+                        debug,
                         "Auth flow polling attempt {attempt} timed out; retrying"
                     );
                     continue;
