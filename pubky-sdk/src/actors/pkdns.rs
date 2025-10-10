@@ -69,7 +69,10 @@ impl PubkySigner {
 }
 
 impl Pkdns {
-    /// Construct a Read-only PKDNS actor.
+    /// Construct a read-only PKDNS actor.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error`] if the underlying [`PubkyHttpClient`] cannot be created.
     pub fn new() -> Result<Self> {
         Ok(Self {
             client: PubkyHttpClient::new()?,
@@ -79,6 +82,9 @@ impl Pkdns {
     }
 
     /// Construct a publishing-capable PKDNS actor.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error`] if the underlying [`PubkyHttpClient`] cannot be created.
     pub fn new_with_keypair(keypair: Keypair) -> Result<Self> {
         Ok(Self {
             client: PubkyHttpClient::new()?,
@@ -161,6 +167,10 @@ impl Pkdns {
     /// - `Ok(Some(host))` if resolvable,
     /// - `Ok(None)` if no record is found,
     /// - `Err(_)` only for transport errors.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Auth`] if called without an attached keypair.
+    /// - Propagates transport failures from PKARR resolution.
     pub async fn get_homeserver(&self) -> Result<Option<PublicKey>> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
             Error::from(AuthError::Validation(
@@ -223,16 +233,13 @@ impl Pkdns {
         let existing = self.client.pkarr().resolve_most_recent(&pubky).await;
 
         // 2) Decide host string to publish.
-        let host_str = match determine_host(host_override, existing.as_ref()) {
-            Some(h) => h,
-            None => {
-                cross_log!(
-                    info,
-                    "No existing host found for {}; skipping publish",
-                    pubky
-                );
-                return Ok(());
-            } // nothing to do
+        let Some(host_str) = determine_host(host_override, existing.as_ref()) else {
+            cross_log!(
+                info,
+                "No existing host found for {}; skipping publish",
+                pubky
+            );
+            return Ok(()); // nothing to do
         };
 
         // 3) Age check (for IfStale).

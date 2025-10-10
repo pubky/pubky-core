@@ -55,7 +55,7 @@ impl PubkySession {
         );
         let resolved = resolve_pubky(&url)?;
         let response = client
-            .cross_request(Method::POST, &resolved)
+            .cross_request(Method::POST, resolved)
             .await?
             .body(token.serialize())
             .send()
@@ -141,6 +141,10 @@ impl PubkySession {
     /// - `Err(_)` for transport or server errors unrelated to validity.
     ///
     /// This does *not* mutate the session; it’s a sanity/validity check.
+    ///
+    /// # Errors
+    /// - Propagates transport failures from the session endpoint.
+    /// - Returns [`crate::errors::Error::Auth`] if the homeserver rejects the request.
     pub async fn revalidate(&self) -> Result<Option<SessionInfo>> {
         cross_log!(info, "Revalidating session for {}", self.info.public_key());
         let response = self
@@ -167,6 +171,10 @@ impl PubkySession {
     ///
     /// - **On success:** the session is consumed (dropped).
     /// - **On failure:** you get `(Error, Self)` back so you can retry or inspect.
+    ///
+    /// # Errors
+    /// - Returns the original [`crate::errors::Error`] alongside `self` when the transport
+    ///   request fails or the homeserver responds with a non-success status.
     pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
         cross_log!(info, "Signing out session for {}", self.info.public_key());
         let resp = match self.storage().delete("/session").await {

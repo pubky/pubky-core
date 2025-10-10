@@ -19,6 +19,9 @@ impl PubkySigner {
     /// let app  = PubkySigner::new(keypair)?;
     /// # Ok::<_, pubky::BuildError>(())
     /// ```
+    ///
+    /// # Errors
+    /// - Returns [`crate::BuildError`] if the underlying [`PubkyHttpClient`] cannot be constructed.
     pub fn new(keypair: Keypair) -> std::result::Result<Self, BuildError> {
         Ok(Self {
             client: PubkyHttpClient::new()?,

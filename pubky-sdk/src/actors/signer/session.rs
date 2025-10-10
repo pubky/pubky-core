@@ -21,6 +21,11 @@ impl PubkySigner {
     ///
     /// Notes:
     /// - Uses a **root** capability token (sufficient for signup).
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Parse`] if the homeserver URL cannot be constructed.
+    /// - Propagates transport failures while creating the account or publishing the homeserver record.
+    /// - Propagates validation errors from [`PubkySession::new_from_response`].
     pub async fn signup(
         &self,
         homeserver: &PublicKey,
@@ -38,7 +43,7 @@ impl PubkySigner {
 
         let response = self
             .client
-            .cross_request(Method::POST, &url)
+            .cross_request(Method::POST, url)
             .await?
             .body(auth_token.serialize())
             .send()
@@ -71,6 +76,10 @@ impl PubkySigner {
     /// In case the users pkdns records are stale, this call with republish them in the background.
     ///
     /// Prefer this signin for best user experience, it returns fast.
+    ///
+    /// # Errors
+    /// - Propagates transport failures during the session exchange.
+    /// - Propagates validation errors from [`PubkySession::new`] or PKDNS publishing.
     pub async fn signin(&self) -> Result<PubkySession> {
         self.signin_with_publish(PublishMode::Background).await
     }
@@ -80,6 +89,10 @@ impl PubkySigner {
     ///
     /// Prefer this signin for highest guarantees of discoverability from Dht and pkarr relays,
     /// it returns slow (~3-5 seconds).
+    ///
+    /// # Errors
+    /// - Propagates transport failures during the session exchange.
+    /// - Propagates validation errors from [`PubkySession::new`] or PKDNS publishing.
     pub async fn signin_blocking(&self) -> Result<PubkySession> {
         self.signin_with_publish(PublishMode::Blocking).await
     }

@@ -323,6 +323,9 @@ pub struct PubkyHttpClient {
 
 impl PubkyHttpClient {
     /// Creates a client configured for public mainline DHT and pkarr relays.
+    ///
+    /// # Errors
+    /// - Returns [`BuildError`] if the underlying HTTP clients cannot be constructed or configured.
     pub fn new() -> Result<Self, BuildError> {
         cross_log!(
             info,
@@ -371,6 +374,9 @@ impl PubkyHttpClient {
     /// # See also
     /// - [`PubkyHttpClientBuilder::testnet`] to tweak additional settings first.
     /// - [`PubkyHttpClientBuilder::testnet_with_host`] to target a non-`localhost` host.
+    ///
+    /// # Errors
+    /// - Returns [`BuildError`] if the underlying HTTP clients cannot be constructed or configured for the testnet settings.
     pub fn testnet() -> Result<Self, BuildError> {
         cross_log!(
             info,

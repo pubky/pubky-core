@@ -32,6 +32,9 @@ impl PubkySession {
     ///
     /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
     /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Validation`] if the token is malformed or contains an invalid public key.
+    /// - Propagates transport failures while validating the session with the homeserver.
     pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
         // 1) Get the transport for this session
         let client = match client {
@@ -46,7 +49,7 @@ impl PubkySession {
                 message: "invalid secret: expected `<pubkey>:<cookie>`".into(),
             })?;
 
-        let public_key = PublicKey::try_from(pk_str).map_err(|_| RequestError::Validation {
+        let public_key = PublicKey::try_from(pk_str).map_err(|_err| RequestError::Validation {
             message: "invalid public key".into(),
         })?;
         cross_log!(info, "Importing session secret for {}", public_key);
@@ -82,6 +85,8 @@ impl PubkySession {
     /// - If it has a different extension, `.<ext>.sess` is appended (e.g., `foo.txt.sess`).
     ///
     /// On Unix, permissions are set to `0o600`.
+    /// # Errors
+    /// - Returns [`std::io::Error`] if the file cannot be written or permissions cannot be set.
     pub fn write_secret_file<P: AsRef<Path>>(&self, secret_file_path: P) -> std::io::Result<()> {
         let token = self.export_secret();
         let p = secret_file_path.as_ref();
@@ -124,6 +129,10 @@ impl PubkySession {
     /// - `.sess` — valid; file is read and parsed.
     /// - `.pkarr` — rejected with a clear error message pointing to `Keypair::from_secret_file`.
     /// - Any other or missing extension — rejected with a `.sess`-specific error.
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Validation`] when the file extension is not `.sess`.
+    /// - Returns [`crate::errors::Error::Validation`] if the file cannot be read.
+    /// - Propagates errors from [`Self::import_secret`] when the stored token is invalid or when the session cannot be revalidated.
     pub async fn from_secret_file(
         secret_file_path: &Path,
         client: Option<PubkyHttpClient>,

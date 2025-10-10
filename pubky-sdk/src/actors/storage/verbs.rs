@@ -66,12 +66,20 @@ impl SessionStorage {
     }
 
     /// Lightweight existence check (HEAD) for an **absolute path**.
+    ///
+    /// # Errors
+    /// - Propagates transport failures while issuing the `HEAD` request.
+    /// - Returns [`crate::errors::Error::Parse`] if `path` cannot be converted into a valid resource.
     pub async fn exists<P: IntoResourcePath>(&self, path: P) -> Result<bool> {
         let rb = self.request(Method::HEAD, path).await?;
         Ok(send_head(rb).await?.is_some())
     }
 
     /// Retrieve metadata via `HEAD` for an **absolute path** (no body).
+    ///
+    /// # Errors
+    /// - Propagates transport failures while issuing the `HEAD` request.
+    /// - Returns [`crate::errors::Error::Parse`] if `path` cannot be converted into a valid resource.
     pub async fn stats<P: IntoResourcePath>(&self, path: P) -> Result<Option<ResourceStats>> {
         let rb = self.request(Method::HEAD, path).await?;
         Ok(send_head(rb)
@@ -137,12 +145,20 @@ impl PublicStorage {
     }
 
     /// HEAD existence check for an addressed resource.
+    ///
+    /// # Errors
+    /// - Propagates transport failures while issuing the `HEAD` request.
+    /// - Returns [`crate::errors::Error::Parse`] if `addr` cannot be converted into a valid addressed resource.
     pub async fn exists<A: IntoPubkyResource>(&self, addr: A) -> Result<bool> {
         let rb = self.request(Method::HEAD, addr).await?;
         Ok(send_head(rb).await?.is_some())
     }
 
     /// Metadata via `HEAD` for an addressed resource (no body).
+    ///
+    /// # Errors
+    /// - Propagates transport failures while issuing the `HEAD` request.
+    /// - Returns [`crate::errors::Error::Parse`] if `addr` cannot be converted into a valid addressed resource.
     pub async fn stats<A: IntoPubkyResource>(&self, addr: A) -> Result<Option<ResourceStats>> {
         let rb = self.request(Method::HEAD, addr).await?;
         Ok(send_head(rb)

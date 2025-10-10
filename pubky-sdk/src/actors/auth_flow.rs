@@ -93,6 +93,10 @@ impl PubkyAuthFlow {
     /// Start a flow with the default HTTP relay.
     ///
     /// Spawns the background poller immediately and returns a handle.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error`] if constructing the backing [`PubkyHttpClient`]
+    ///   or generating the relay URL fails.
     pub fn start(caps: &Capabilities) -> Result<Self> {
         PubkyAuthFlowBuilder::new(caps.clone()).start()
     }
@@ -115,6 +119,11 @@ impl PubkyAuthFlow {
     ///
     /// This awaits the background poller’s result, verifies/decrypts the token,
     /// and completes the `/session` exchange to return a ready-to-use [`PubkySession`].
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Auth`] if the relay channel expires before approval.
+    /// - Propagates HTTP/transport failures while polling the relay.
+    /// - Propagates errors from [`PubkySession::new`] if the session exchange fails.
     pub async fn await_approval(self) -> Result<PubkySession> {
         let client = self.client.clone();
         let token = self.recv_token().await?;
@@ -124,21 +133,29 @@ impl PubkyAuthFlow {
     /// Block until the signer approves and we receive an [`AuthToken`].
     ///
     /// This awaits the background poller’s result.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Auth`] if the relay channel expires before approval.
+    /// - Propagates HTTP/transport failures encountered while polling the relay.
     pub async fn await_token(self) -> Result<AuthToken> {
         self.recv_token().await
     }
 
     async fn recv_token(&self) -> Result<AuthToken> {
-        match self.rx.recv_async().await {
-            Ok(res) => res,
-            Err(_) => Err(AuthError::RequestExpired.into()),
-        }
+        self.rx
+            .recv_async()
+            .await
+            .map_err(|_err| AuthError::RequestExpired)?
     }
 
     /// Non-blocking probe (single step) that **consumes any ready token** and returns:
     /// - `Ok(Some(session))` when a token was delivered and the session established.
     /// - `Ok(None)` if no payload yet (keep polling later).
     /// - `Err(e)` on transport/server errors or if the channel expired.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Auth`] if the relay channel expired before a token arrived.
+    /// - Propagates HTTP/transport failures from `PubkySession::new`.
     pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
         if let Some(tok) = self.try_token() {
             let token = tok?;
@@ -250,7 +267,7 @@ impl PubkyAuthFlow {
         relay_channel_url: &Url,
     ) -> std::result::Result<reqwest::Response, PollError> {
         let request = client
-            .cross_request(Method::GET, relay_channel_url)
+            .cross_request(Method::GET, relay_channel_url.clone())
             .await
             .map_err(PollError::Failure)?;
 

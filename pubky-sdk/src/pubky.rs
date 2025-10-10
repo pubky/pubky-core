@@ -69,6 +69,10 @@ pub struct Pubky {
 
 impl Pubky {
     /// Construct with defaults (mainnet relays, standard timeouts).
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error`] when the underlying [`PubkyHttpClient`] fails to
+    ///   initialize (e.g., TLS configuration or relay/bootstrap setup issues).
     pub fn new() -> Result<Self> {
         Ok(Self {
             client: PubkyHttpClient::new()?,
@@ -76,6 +80,10 @@ impl Pubky {
     }
 
     /// Construct preconfigured for a local Pubky testnet.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error`] when the testnet-configured [`PubkyHttpClient`]
+    ///   cannot be created (for example, invalid local relay/testnet configuration).
     pub fn testnet() -> Result<Self> {
         Ok(Self {
             client: PubkyHttpClient::testnet()?,
@@ -138,13 +146,23 @@ impl Pubky {
 
     // ------ Persistance helpers ----------
 
-    /// Restore a session from a `.sess` secret file
+    /// Restore a session from a `.sess` secret file.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Request`] if the secret file cannot be read.
+    /// - Returns [`crate::errors::Error::Validation`] when the file contents are malformed.
+    /// - Propagates transport errors from [`PubkySession::from_secret_file`] if the client
+    ///   cannot be prepared.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn session_from_file<P: AsRef<Path>>(&self, path: P) -> Result<PubkySession> {
         PubkySession::from_secret_file(path.as_ref(), Some(self.client.clone())).await
     }
 
     /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Request`] when reading the recovery file fails.
+    /// - Returns [`crate::errors::Error::Request`] when decryption fails (invalid passphrase or corrupted file).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn signer_from_recovery_file<P: AsRef<Path>>(
         &self,

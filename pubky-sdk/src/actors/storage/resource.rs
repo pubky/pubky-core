@@ -76,6 +76,10 @@ impl ResourcePath {
     /// Parse, validate, and normalize to an absolute HTTP-safe path.
     ///
     /// See type docs for rules and examples.
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] when the input is empty, contains `.`/`..`, or has empty segments (`//`).
+    /// - Returns [`Error::Request`] if internal URL handling fails while normalizing the path.
     pub fn parse<S: AsRef<str>>(s: S) -> Result<Self, Error> {
         let raw = s.as_ref();
         if raw.is_empty() {
@@ -94,11 +98,11 @@ impl ResourcePath {
         let wants_trailing = input.ends_with('/');
 
         // Build via URL path segments (handles percent-encoding).
-        let mut u = Url::parse("dummy:///").map_err(|_| invalid("internal URL setup failed"))?;
+        let mut u = Url::parse("dummy:///").map_err(|_err| invalid("internal URL setup failed"))?;
         {
             let mut segs = u
                 .path_segments_mut()
-                .map_err(|()| invalid("internal URL path handling failed"))?;
+                .map_err(|_err| invalid("internal URL path handling failed"))?;
             segs.clear();
 
             let mut parts = input.trim_start_matches('/').split('/').peekable();
@@ -184,6 +188,9 @@ pub struct PubkyResource {
 
 impl PubkyResource {
     /// Construct from `owner` and a path-like value (normalized to [`ResourcePath`]).
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] if the provided path cannot be normalized into an absolute [`ResourcePath`].
     pub fn new<S: AsRef<str>>(owner: PublicKey, path: S) -> Result<Self, Error> {
         Ok(Self {
             owner,
@@ -208,6 +215,9 @@ impl PubkyResource {
     /// This converts the addressed resource into the actual homeserver URL used
     /// by the transport layer. It is the same mapping performed by
     /// [`resolve_pubky`].
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] if the constructed transport URL is invalid.
     pub fn to_transport_url(&self) -> Result<Url, Error> {
         let rel = self.path.as_str().trim_start_matches('/');
         let https = format!("https://_pubky.{}/{}", self.owner, rel);
@@ -218,6 +228,10 @@ impl PubkyResource {
     ///
     /// Accepts either `https://_pubky.<owner>/...` or `http://_pubky.<owner>/...`
     /// (the latter is mainly useful in local testnets).
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] if the URL is missing the expected `_pubky.<owner>` host.
+    /// - Returns [`Error::Request`] if the host does not contain a valid public key.
     pub fn from_transport_url(url: &Url) -> Result<Self, Error> {
         let host = url
             .host_str()
@@ -226,7 +240,7 @@ impl PubkyResource {
             .strip_prefix("_pubky.")
             .ok_or_else(|| invalid("transport URL host must start with '_pubky.'"))?;
         let public_key = PublicKey::try_from(owner)
-            .map_err(|_| invalid("transport URL host does not contain a valid public key"))?;
+            .map_err(|_err| invalid("transport URL host does not contain a valid public key"))?;
 
         let path = if url.path().is_empty() {
             "/"
@@ -253,14 +267,14 @@ impl FromStr for PubkyResource {
                 .split_once('/')
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
             let user = PublicKey::try_from(user_str)
-                .map_err(|_| invalid(format!("invalid user public key: {user_str}")))?;
+                .map_err(|_err| invalid(format!("invalid user public key: {user_str}")))?;
             return Self::new(user, path);
         }
 
         // 2) pubky<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky") {
             if let Some((user_id, path)) = rest.split_once('/') {
-                let user = PublicKey::try_from(user_id).map_err(|_| {
+                let user = PublicKey::try_from(user_id).map_err(|_err| {
                     invalid("expected `pubky<user>/<path>` or `pubky://<user>/<path>`")
                 })?;
                 return Self::new(user, path);
@@ -286,6 +300,10 @@ impl fmt::Display for PubkyResource {
 ///
 /// Returns the same URL as [`PubkyResource::to_transport_url`], making it easy to
 /// bridge human-facing identifiers with low-level HTTP clients.
+///
+/// # Errors
+/// - Returns [`Error::Request`] if the identifier cannot be parsed into a [`PubkyResource`].
+/// - Propagates errors from [`PubkyResource::to_transport_url`] when building the transport URL.
 pub fn resolve_pubky<S: AsRef<str>>(input: S) -> Result<Url, Error> {
     let resource: PubkyResource = input.as_ref().parse()?;
     resource.to_transport_url()
@@ -318,6 +336,9 @@ pub fn resolve_pubky<S: AsRef<str>>(input: S) -> Result<Url, Error> {
 /// ```
 pub trait IntoResourcePath {
     /// Convert into a validated, normalized absolute [`ResourcePath`].
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] if the input cannot be normalized into a valid absolute path.
     fn into_abs_path(self) -> Result<ResourcePath, Error>;
 }
 
@@ -377,6 +398,9 @@ impl IntoResourcePath for &String {
 /// ```
 pub trait IntoPubkyResource {
     /// Convert into a validated, normalized [`PubkyResource`].
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] if the input cannot be parsed into an addressed resource.
     fn into_pubky_resource(self) -> Result<PubkyResource, Error>;
 }
 

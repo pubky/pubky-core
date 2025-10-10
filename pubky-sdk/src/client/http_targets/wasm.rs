@@ -123,7 +123,7 @@ impl PubkyHttpClient {
 
         if is_testnet_domain {
             url.set_scheme("http")
-                .map_err(|_| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
+                .map_err(|_err| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
 
             let http_port = endpoint
                 .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
@@ -137,15 +137,15 @@ impl PubkyHttpClient {
                 })?;
 
             url.set_port(Some(http_port))
-                .map_err(|_| url::ParseError::InvalidPort)?;
+                .map_err(|_err| url::ParseError::InvalidPort)?;
         } else if let Some(port) = endpoint.port() {
             url.set_port(Some(port))
-                .map_err(|_| url::ParseError::InvalidPort)?;
+                .map_err(|_err| url::ParseError::InvalidPort)?;
         }
 
         if let Some(domain) = endpoint.domain() {
             url.set_host(Some(domain))
-                .map_err(|_| url::ParseError::SetHostOnCannotBeABaseUrl)?;
+                .map_err(|_err| url::ParseError::SetHostOnCannotBeABaseUrl)?;
         }
 
         Ok(())

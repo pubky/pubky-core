@@ -18,12 +18,12 @@ impl PubkyHttpClient {
     /// parsing error if the supplied `url` is invalid.
     ///
     /// [`PubkyHttpClient::request`]: crate::PubkyHttpClient::request
-    pub(crate) async fn cross_request<U: IntoUrl>(
-        &self,
-        method: Method,
-        url: &U,
-    ) -> Result<RequestBuilder> {
-        Ok(self.request(method, url))
+    #[allow(
+        clippy::unused_async,
+        reason = "native implementation stays async to share the same signature as the WASM backend"
+    )]
+    pub(crate) async fn cross_request(&self, method: Method, url: Url) -> Result<RequestBuilder> {
+        Ok(self.request(method, &url))
     }
 
     /// Start building a `Request` with the `Method` and `Url` (native-only)

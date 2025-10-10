@@ -26,6 +26,11 @@ impl PubkySigner {
     /// Requirements:
     /// - `pubkyauth:///?caps=…&secret=<b64url>&relay=<relay_base>`
     /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Auth`] if the `pubkyauth://` URL is malformed or missing required parameters.
+    /// - Returns [`crate::errors::Error::Auth`] if the secret cannot be decoded or has the wrong length.
+    /// - Propagates transport failures when posting to the relay or if the relay responds with a non-success status.
     pub async fn approve_auth(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
         let pubkyauth_url = Url::parse(pubkyauth_url.as_ref())?;
 
@@ -55,7 +60,7 @@ impl PubkySigner {
 
         let client_secret: [u8; 32] = secret_bytes
             .try_into()
-            .map_err(|_| AuthError::Validation("Client secret must be 32 bytes".to_string()))?;
+            .map_err(|_err| AuthError::Validation("Client secret must be 32 bytes".to_string()))?;
 
         // 3) Build token with requested capabilities parsed from URL
         let capabilities = Capabilities::from(&pubkyauth_url);
@@ -86,7 +91,7 @@ impl PubkySigner {
         // 5) POST encrypted token
         let response = self
             .client
-            .cross_request(Method::POST, &callback_url)
+            .cross_request(Method::POST, callback_url)
             .await?
             .body(encrypted_token)
             .send()

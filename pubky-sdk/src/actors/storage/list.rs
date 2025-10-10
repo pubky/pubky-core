@@ -31,6 +31,10 @@ impl SessionStorage {
     /// }
     /// # Ok(()) }
     /// ```
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Validation`] if `path` cannot be converted into an absolute resource path ending with `/`.
+    /// - Propagates transport preparation failures when building the request URL.
     pub fn list<P: IntoResourcePath>(&self, path: P) -> Result<ListBuilder<'_>> {
         let path: ResourcePath = path.into_abs_path()?;
         if !path.as_str().ends_with('/') {
@@ -49,6 +53,10 @@ impl PublicStorage {
     /// - Address **must** point to a directory and **must end with `/`**.
     ///
     /// Returns addressed [`PubkyResource`] entries.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Validation`] if `addr` cannot be converted into an addressed directory ending with `/`.
+    /// - Propagates transport preparation failures when building the request URL.
     pub fn list<A: IntoPubkyResource>(&self, addr: A) -> Result<ListBuilder<'_>> {
         let resource: PubkyResource = addr.into_pubky_resource()?;
         if !resource.path.as_str().ends_with('/') {
@@ -135,6 +143,10 @@ impl<'a> ListBuilder<'a> {
     }
 
     /// Execute the LIST request and return addressed entries.
+    ///
+    /// # Errors
+    /// - Propagates transport failures while issuing the HTTP request.
+    /// - Returns [`crate::errors::Error::Validation`] if any resource line returned by the server is invalid.
     pub async fn send(self) -> Result<Vec<PubkyResource>> {
         // 1) Build query params
         let mut url = self.url;
@@ -156,9 +168,17 @@ impl<'a> ListBuilder<'a> {
 
         // 2) Build request per scope
         let rb = match self.scope {
-            ListScope::Public(storage) => storage.client.cross_request(Method::GET, &url).await?,
+            ListScope::Public(storage) => {
+                storage
+                    .client
+                    .cross_request(Method::GET, url.clone())
+                    .await?
+            }
             ListScope::Session(storage) => {
-                let rb = storage.client.cross_request(Method::GET, &url).await?;
+                let rb = storage
+                    .client
+                    .cross_request(Method::GET, url.clone())
+                    .await?;
                 #[cfg(not(target_arch = "wasm32"))]
                 let rb = storage.with_session_cookie(rb);
                 rb
