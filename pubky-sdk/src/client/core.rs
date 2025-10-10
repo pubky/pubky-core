@@ -63,7 +63,7 @@ impl PubkyHttpClientBuilder {
     /// - **WASM builds** additionally remember the hostname when resolving `_pubky.<pk>` targets.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::builder()
@@ -86,7 +86,7 @@ impl PubkyHttpClientBuilder {
     /// - WASM remembers `<host>` to adjust URL rewriting for the browser environment.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::builder()
@@ -183,7 +183,7 @@ impl PubkyHttpClientBuilder {
     /// - [`crate::errors::BuildError::Http`] if constructing the HTTP client fails.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// # use pubky::PubkyHttpClient;
     /// let client = PubkyHttpClient::builder().build()?;
     /// # Ok::<_, pubky::BuildError>(())
@@ -379,7 +379,7 @@ impl PubkyHttpClient {
     /// ```
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// use pubky::PubkyHttpClient;
     ///
     /// let client = PubkyHttpClient::testnet()?;

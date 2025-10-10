@@ -98,15 +98,9 @@ impl Client {
             .unwrap_or(JsValue::UNDEFINED);
         let credentials_provided = !(credentials_js.is_undefined() || credentials_js.is_null());
 
-        if pubky_host.is_some() {
+        if pubky_host.is_some() && !credentials_provided {
             // Pubky hosts rely on cookies for authentication/session I/O. If the caller
             // omitted a credential mode, fall back to `include`.
-            if !credentials_provided {
-                req_init.set_credentials(RequestCredentials::Include);
-            }
-        } else if !credentials_provided {
-            // Non-Pubky requests keep the old default of including cookies unless the
-            // caller picked something else explicitly.
             req_init.set_credentials(RequestCredentials::Include);
         }
 

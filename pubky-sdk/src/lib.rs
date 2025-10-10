@@ -23,27 +23,38 @@ pub mod prelude;
 
 // --- PUBLIC API EXPORTS ---
 // SDK facade
+#[doc(inline)]
 pub use pubky::Pubky;
 // Transport
+#[doc(inline)]
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 // High level actors
+#[doc(inline)]
 pub use actors::Pkdns;
+#[doc(inline)]
 pub use actors::PubkyAuthFlow;
+#[doc(inline)]
 pub use actors::PubkySession;
+#[doc(inline)]
 pub use actors::PubkySigner;
+#[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
 // Error and global client
+#[doc(inline)]
 pub use errors::{BuildError, Error, Result};
 
 // Export common types and constants
+#[doc(inline)]
 pub use crate::actors::storage::{
     list::ListBuilder,
     resource::{IntoPubkyResource, IntoResourcePath, resolve_pubky},
     resource::{PubkyResource, ResourcePath},
     stats::ResourceStats,
 };
+#[doc(inline)]
 pub use actors::auth_flow::DEFAULT_HTTP_RELAY;
+#[doc(inline)]
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
 #[doc(inline)]
 pub use pkarr::DEFAULT_RELAYS;
@@ -57,5 +68,4 @@ pub use pubky_common::{
     capabilities::{Capabilities, Capability},
     recovery_file,
 };
-#[doc(inline)]
 pub use reqwest::{Method, StatusCode};

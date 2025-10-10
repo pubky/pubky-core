@@ -213,14 +213,19 @@ See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-
 **Custom relay example**
 
 ```rust
-# use pubky::{PubkyAuthFlow, Capabilities};
+# use pubky::{Pubky, PubkyAuthFlow, Capabilities};
 # async fn custom_relay() -> pubky::Result<()> {
+let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read("pub/acme.app/").finish();
 let auth_flow = PubkyAuthFlow::builder(&caps)
+    .client(pubky.client().clone())
     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
     .start()?;
 # Ok(()) }
 ```
+
+> Tip: reuse `pubky.client()` when customising the relay so the flow shares
+> TLS and pkarr configuration with the rest of your application.
 
 ## Features
 
