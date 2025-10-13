@@ -1,5 +1,8 @@
 name: PR Check
 
+env:
+  INSTALL_SYSTEM_DEPS: "false"
+
 on:
   pull_request:
   push:
@@ -129,6 +132,8 @@ jobs:
 
   wasm-test:
     runs-on: ubuntu-latest
+    env:
+      INSTALL_SYSTEM_DEPS: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -156,6 +161,7 @@ jobs:
         run: wasm-pack test --node
 
       - name: Install Electron/X deps
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: |
           set -eux
           sudo apt-get update
@@ -177,19 +183,23 @@ jobs:
           sudo apt-get install -y --no-install-recommends libasound2
 
       - name: Sanity Check (Electron works)
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: xvfb-run -a npx electron --no-sandbox --version
 
       - name: Build WASM
         working-directory: pubky-sdk/bindings/js/pkg
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: |
           npm install
           npm run build
 
       - name: Run the testnet
         working-directory: pubky-sdk/bindings/js/pkg
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: npm run testnet > testnet.log 2>&1 &
 
       - name: Wait for testnet homeserver
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: |
           timeout=180
           count=0
@@ -206,19 +216,21 @@ jobs:
 
       - name: Node tests
         working-directory: pubky-sdk/bindings/js/pkg
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: npm run test-nodejs
 
       - name: Browser tests (Electron under Xvfb)
         working-directory: pubky-sdk/bindings/js/pkg
         env:
           ELECTRON_DISABLE_SANDBOX: "1" # CI-safe
+        if: env.INSTALL_SYSTEM_DEPS == 'true'
         run: |
           npx electron --version || true
           xvfb-run -a npm run test-browser:ci
 
       - name: Show testnet logs if tests fail
         working-directory: pubky-sdk/bindings/js/pkg
-        if: failure()
+        if: env.INSTALL_SYSTEM_DEPS == 'true' && failure()
         run: cat testnet.log
 
   docker-build:
