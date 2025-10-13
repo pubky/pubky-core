@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use pubky_homeserver::{tracing::init_tracing_logs_if_set, HomeserverSuite};
+use pubky_homeserver::{tracing::init_tracing_logs_if_set, HomeserverSuite, PersistentDataDir};
 
 fn default_config_dir_path() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".pubky")
+    PersistentDataDir::default_path()
 }
 
 /// Validate that the data_dir path is a directory.
@@ -21,7 +21,7 @@ fn validate_config_dir_path(path: &str) -> Result<PathBuf, String> {
 #[derive(Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
-    /// Path to config file. Defaults to ~/.pubky/config.toml
+    /// Path to config file. Defaults to the platform-specific Pubky data directory.
     #[clap(short, long, default_value_os_t = default_config_dir_path(), value_parser = validate_config_dir_path)]
     data_dir: PathBuf,
 }

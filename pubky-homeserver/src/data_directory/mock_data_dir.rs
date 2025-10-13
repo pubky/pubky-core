@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::DataDir;
+use crate::platform;
 
 /// Mock data directory for testing.
 ///
@@ -26,7 +27,7 @@ impl MockDataDir {
     ) -> anyhow::Result<Self> {
         let keypair = keypair.unwrap_or_else(pkarr::Keypair::random);
         Ok(Self {
-            temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?),
+            temp_dir: std::sync::Arc::new(platform::create_temp_dir("pubky-mock")?),
             config_toml,
             keypair,
         })

@@ -10,7 +10,8 @@ use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
 use pubky_homeserver::{
-    storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
+    platform, storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite,
+    MockDataDir,
 };
 use url::Url;
 
@@ -97,7 +98,7 @@ impl Testnet {
     ///
     /// You can access the list of relays at [Self::pkarr_relays].
     pub async fn create_pkarr_relay(&mut self) -> Result<Url> {
-        let dir = tempfile::tempdir()?;
+        let dir = platform::create_temp_dir("pubky-pkarr")?;
         let mut builder = pkarr_relay::Relay::builder();
         builder
             .disable_rate_limiter()

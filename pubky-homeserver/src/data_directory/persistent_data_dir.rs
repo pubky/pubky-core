@@ -1,4 +1,5 @@
 use super::{data_dir::DataDir, ConfigToml};
+use crate::platform;
 
 use std::{
     io::Write,
@@ -21,6 +22,12 @@ impl PersistentDataDir {
         Self {
             expanded_path: Self::expand_home_dir(path),
         }
+    }
+
+    /// Returns the default path for persistent homeserver data on the current
+    /// platform.
+    pub fn default_path() -> PathBuf {
+        platform::default_data_dir_path()
     }
 
     /// Expands the data directory to the home directory if it starts with "~".
@@ -65,7 +72,7 @@ impl PersistentDataDir {
 
 impl Default for PersistentDataDir {
     fn default() -> Self {
-        Self::new(PathBuf::from("~/.pubky"))
+        Self::new(Self::default_path())
     }
 }
 

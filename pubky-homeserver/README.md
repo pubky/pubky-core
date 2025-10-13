@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Binary
 
-Use `cargo run -- --data-dir=~/.pubky`.
+Use `cargo run -- --data-dir=~/.pubky` on desktop platforms. Mobile builds default to the sandboxed application storage.
 
 ## Signup Token
 

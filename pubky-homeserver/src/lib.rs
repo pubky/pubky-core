@@ -18,6 +18,8 @@ mod core;
 mod data_directory;
 mod homeserver_suite;
 mod persistence;
+/// Platform-specific helpers such as filesystem paths and temporary storage.
+pub mod platform;
 mod shared;
 pub mod tracing;
 

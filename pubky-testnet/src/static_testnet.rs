@@ -7,7 +7,7 @@ use std::{
 use crate::Testnet;
 use http_relay::HttpRelay;
 use pubky::Pubky;
-use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
+use pubky_homeserver::{platform, ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
 
 /// A simple testnet with
 ///
@@ -157,7 +157,7 @@ impl StaticTestnet {
 
     /// Creates a fixed pkarr relay on port 15411 with a temporary storage directory.
     async fn run_fixed_pkarr_relays(&mut self) -> anyhow::Result<()> {
-        let temp_dir = tempfile::tempdir()?; // Gets cleaned up automatically when it drops
+        let temp_dir = platform::create_temp_dir("pubky-pkarr-static")?; // Gets cleaned up automatically when it drops
         let mut builder = pkarr_relay::Relay::builder();
         builder
             .http_port(15411)
