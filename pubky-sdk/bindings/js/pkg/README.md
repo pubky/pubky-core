@@ -233,6 +233,7 @@ surface precise feedback to the user.
 const pub = pubky.publicStorage;
 
 // Reads
+const response = await pub.get(`pubky${userPk.z32()}/pub/example.com/data.json`); // -> Response (stream it)
 await pub.getJson(`pubky${userPk.z32()}/pub/example.com/data.json`);
 await pub.getText(`pubky${userPk.z32()}/pub/example.com/readme.txt`);
 await pub.getBytes(`pubky${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
@@ -246,6 +247,8 @@ await pub.stats(`pubky${userPk.z32()}/pub/example.com/foo`); // { content_length
 await pub.list(`pubky${userPk.z32()}/pub/example.com/`, null, false, 100, false);
 ```
 
+Use `get()` when you need the raw `Response` for streaming or custom parsing.
+
 #### SessionStorage (read/write; uses cookies)
 
 ```js
@@ -257,6 +260,7 @@ await s.putText("/pub/example.com/note.txt", "hello");
 await s.putBytes("/pub/example.com/img.bin", new Uint8Array([1, 2, 3]));
 
 // Reads
+const response = await s.get("/pub/example.com/data.json"); // -> Response (stream it)
 await s.getJson("/pub/example.com/data.json");
 await s.getText("/pub/example.com/note.txt");
 await s.getBytes("/pub/example.com/img.bin");
@@ -271,6 +275,8 @@ await s.list("/pub/example.com/", null, false, 100, false);
 // Delete
 await s.delete("/pub/example.com/data.json");
 ```
+
+`get()` exposes the underlying `Response`, which is handy for streaming bodies or inspecting headers before consuming content.
 
 Path rules:
 
