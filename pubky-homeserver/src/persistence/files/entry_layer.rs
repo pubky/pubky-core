@@ -273,7 +273,7 @@ mod tests {
                 .await
                 .expect("Entry should exist");
             assert_eq!(entry.content_length, 10);
-            let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
                 .expect("Should succeed");
             assert_eq!(events.len(), 1);
@@ -292,7 +292,7 @@ mod tests {
                 .await
                 .expect("Entry should exist");
             assert_eq!(entry.content_length, 20);
-            let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
                 .expect("Should succeed");
             assert_eq!(events.len(), 2);
@@ -310,7 +310,7 @@ mod tests {
             let _entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
                 .await
                 .expect_err("Entry should not exist");
-            let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
                 .expect("Should succeed");
             assert_eq!(events.len(), 3);
