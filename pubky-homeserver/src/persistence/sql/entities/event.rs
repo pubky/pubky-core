@@ -33,9 +33,9 @@ impl EventRepository {
     pub async fn create<'a>(
         user_id: i32,
         event_type: EventType,
-        path: &WebDavPath,
+        path: &EntryPath,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<i64, sqlx::Error> {
+    ) -> Result<EventEntity, sqlx::Error> {
         Self::create_with_timestamp(user_id, event_type, path, &Utc::now(), executor).await
     }
 
@@ -44,10 +44,10 @@ impl EventRepository {
     pub async fn create_with_timestamp<'a>(
         user_id: i32,
         event_type: EventType,
-        path: &WebDavPath,
+        path: &EntryPath,
         created_at: &DateTime<Utc>,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<i64, sqlx::Error> {
+    ) -> Result<EventEntity, sqlx::Error> {
         let statement = Query::insert()
             .into_table(EVENT_TABLE)
             .columns([
@@ -59,7 +59,7 @@ impl EventRepository {
             .values(vec![
                 SimpleExpr::Value(event_type.to_string().into()),
                 SimpleExpr::Value(user_id.into()),
-                SimpleExpr::Value(path.as_str().into()),
+                SimpleExpr::Value(path.path().as_str().into()),
                 SimpleExpr::Value(created_at.naive_utc().into()),
             ])
             .expect("Failed to build insert statement")
@@ -71,7 +71,14 @@ impl EventRepository {
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
-        Ok(event_id)
+        Ok(EventEntity {
+            id: event_id,
+            user_id,
+            user_pubkey: path.pubkey().clone(),
+            event_type,
+            path: path.clone(),
+            created_at: created_at.naive_utc(),
+        })
     }
 
     /// Parse the cursor to the event id.
@@ -242,14 +249,10 @@ mod tests {
 
         // Test create session
         for _ in 0..10 {
-            let _ = EventRepository::create(
-                user.id,
-                EventType::Put,
-                &WebDavPath::new("/test").unwrap(),
-                &mut db.pool().into(),
-            )
-            .await
-            .unwrap();
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
+            let _ = EventRepository::create(user.id, EventType::Put, &path, &mut db.pool().into())
+                .await
+                .unwrap();
         }
 
         // Test get session
@@ -282,16 +285,17 @@ mod tests {
         for i in 0..10 {
             let timestamp = Timestamp::now().add(1_000_000 * i); // Add 1s for each event
             let created_at = timestamp_to_sqlx_datetime(&timestamp);
-            let event_id = EventRepository::create_with_timestamp(
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
+            let event = EventRepository::create_with_timestamp(
                 user.id,
                 EventType::Put,
-                &WebDavPath::new("/test").unwrap(),
+                &path,
                 &created_at,
                 &mut db.pool().into(),
             )
             .await
             .unwrap();
-            timestamp_events.push((timestamp, event_id));
+            timestamp_events.push((timestamp, event.id));
         }
 
         // Test get session

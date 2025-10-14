@@ -714,3 +714,293 @@ async fn stream() {
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_long_polling_timeout() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create an event first to get a cursor
+    let url = format!("pubky://{pubky}/pub/test.txt");
+    client.put(&url).body(vec![0]).send().await.unwrap();
+
+    let feed_url = format!("https://{}/events/", server.public_key());
+
+    // Get current cursor
+    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
+    let text = response.text().await.unwrap();
+    let cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
+
+    // Test timeout with no new events - should return in ~2 seconds
+    let start = std::time::Instant::now();
+    let response = client
+        .request(Method::GET, format!("{feed_url}?timeout=2&cursor={cursor}"))
+        .send()
+        .await
+        .unwrap();
+    let elapsed = start.elapsed().as_secs();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        elapsed >= 2 && elapsed < 4,
+        "Expected ~2 seconds, got {}",
+        elapsed
+    );
+
+    let text = response.text().await.unwrap();
+    // Should return empty response with same cursor
+    assert_eq!(text, format!("cursor: {}", cursor));
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_long_polling_immediate_return() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+    let feed_url = format!("https://{}/events/", server.public_key());
+
+    // Get initial cursor (should be 0)
+    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
+    let text = response.text().await.unwrap();
+    let initial_cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
+
+    // Create an event
+    let url = format!("pubky://{pubky}/pub/test.txt");
+    client.put(&url).body(vec![0]).send().await.unwrap();
+
+    // Request with old cursor and timeout - should return immediately with new event
+    let start = std::time::Instant::now();
+    let response = client
+        .request(
+            Method::GET,
+            format!("{feed_url}?timeout=30&cursor={initial_cursor}"),
+        )
+        .send()
+        .await
+        .unwrap();
+    let elapsed = start.elapsed().as_secs();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        elapsed < 2,
+        "Expected immediate return, got {} seconds",
+        elapsed
+    );
+
+    let text = response.text().await.unwrap();
+    let lines: Vec<&str> = text.split('\n').collect();
+
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].starts_with("PUT"));
+    assert!(lines[0].contains(&format!("pubky://{pubky}/pub/test.txt")));
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_long_polling_with_concurrent_event() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+    let feed_url = format!("https://{}/events/", server.public_key());
+
+    // Get initial cursor
+    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
+    let text = response.text().await.unwrap();
+    let cursor = text
+        .split('\n')
+        .last()
+        .unwrap()
+        .split(" ")
+        .last()
+        .unwrap()
+        .to_string();
+
+    // Start long polling request
+    let feed_url_clone = feed_url.clone();
+    let cursor_clone = cursor.clone();
+    let client_clone = client.clone();
+    let poll_handle = tokio::spawn(async move {
+        let start = std::time::Instant::now();
+        let response = client_clone
+            .request(
+                Method::GET,
+                format!("{feed_url_clone}?timeout=30&cursor={cursor_clone}"),
+            )
+            .send()
+            .await
+            .unwrap();
+        (response, start.elapsed())
+    });
+
+    // Wait a bit then create an event
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let url = format!("pubky://{pubky}/pub/test.txt");
+    client.put(&url).body(vec![0]).send().await.unwrap();
+
+    // Wait for long poll to complete
+    let (response, elapsed) = poll_handle.await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        elapsed.as_millis() >= 500 && elapsed.as_secs() < 5,
+        "Expected ~0.5-1 seconds, got {:?}",
+        elapsed
+    );
+
+    let text = response.text().await.unwrap();
+    let lines: Vec<&str> = text.split('\n').collect();
+
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].starts_with("PUT"));
+    assert!(lines[0].contains(&format!("pubky://{pubky}/pub/test.txt")));
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_long_polling_user_filter() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    // Create two users
+    let keypair1 = Keypair::random();
+    let keypair2 = Keypair::random();
+
+    client
+        .signup(&keypair1, &server.public_key(), None)
+        .await
+        .unwrap();
+    client
+        .signup(&keypair2, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky1 = keypair1.public_key();
+    let pubky2 = keypair2.public_key();
+    let feed_url = format!("https://{}/events/", server.public_key());
+
+    // Get initial cursor
+    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
+    let text = response.text().await.unwrap();
+    let cursor = text
+        .split('\n')
+        .last()
+        .unwrap()
+        .split(" ")
+        .last()
+        .unwrap()
+        .to_string();
+
+    // Start long polling for user1 only
+    let feed_url_clone = feed_url.clone();
+    let cursor_clone = cursor.clone();
+    let client_clone = client.clone();
+    let pubky1_str = pubky1.to_string();
+    let poll_handle = tokio::spawn(async move {
+        let start = std::time::Instant::now();
+        let response = client_clone
+            .request(
+                Method::GET,
+                format!("{feed_url_clone}?timeout=5&cursor={cursor_clone}&user={pubky1_str}"),
+            )
+            .send()
+            .await
+            .unwrap();
+        (response, start.elapsed())
+    });
+
+    // Wait a bit then create event for user2 (should be ignored)
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let url2 = format!("pubky://{pubky2}/pub/test.txt");
+    client.put(&url2).body(vec![0]).send().await.unwrap();
+
+    // Wait a bit more then create event for user1 (should trigger return)
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let url1 = format!("pubky://{pubky1}/pub/test.txt");
+    client.put(&url1).body(vec![0]).send().await.unwrap();
+
+    // Wait for long poll to complete
+    let (response, elapsed) = poll_handle.await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        elapsed.as_millis() >= 1000 && elapsed.as_secs() < 5,
+        "Expected ~1-2 seconds, got {:?}",
+        elapsed
+    );
+
+    let text = response.text().await.unwrap();
+    let lines: Vec<&str> = text.split('\n').collect();
+
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].starts_with("PUT"));
+    assert!(lines[0].contains(&format!("pubky://{pubky1}/pub/test.txt")));
+    assert!(!text.contains(&pubky2.to_string()));
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_long_polling_no_timeout() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let feed_url = format!("https://{}/events/", server.public_key());
+
+    // Get initial cursor
+    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
+    let text = response.text().await.unwrap();
+    let cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
+
+    // Request with timeout=0 should return immediately even if no events
+    let start = std::time::Instant::now();
+    let response = client
+        .request(Method::GET, format!("{feed_url}?timeout=0&cursor={cursor}"))
+        .send()
+        .await
+        .unwrap();
+    let elapsed = start.elapsed().as_millis();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        elapsed < 500,
+        "Expected immediate return, got {} ms",
+        elapsed
+    );
+
+    let text = response.text().await.unwrap();
+    assert_eq!(text, format!("cursor: {}", cursor));
+}
