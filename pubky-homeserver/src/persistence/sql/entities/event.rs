@@ -6,7 +6,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
-    types::chrono::{DateTime, Utc},
+    types::chrono::{DateTime, NaiveDateTime, Utc},
     FromRow, Row,
 };
 
@@ -23,6 +23,30 @@ use crate::{
 };
 
 pub const EVENT_TABLE: &str = "events";
+
+/// Cursor for pagination in event queries.
+/// Format: "timestamp:id" where timestamp is a NaiveDateTime and id is the event ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventCursor {
+    pub timestamp: NaiveDateTime,
+    pub id: i64,
+}
+
+impl EventCursor {
+    pub fn new(timestamp: NaiveDateTime, id: i64) -> Self {
+        Self { timestamp, id }
+    }
+}
+
+impl Display for EventCursor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Format: timestamp:id (e.g., "00331BD814YCT:42")
+        // Convert NaiveDateTime to Timestamp string format
+        let micros = self.timestamp.and_utc().timestamp_micros() as u64;
+        let timestamp: Timestamp = micros.into();
+        write!(f, "{}:{}", timestamp, self.id)
+    }
+}
 
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository;
@@ -81,21 +105,28 @@ impl EventRepository {
         })
     }
 
-    /// Parse the cursor to the event id.
-    /// The cursor can be either a new cursor format or a legacy cursor format.
-    /// The new cursor format is a u64.
-    /// The legacy cursor format is a timestamp.
-    /// The cursor is the id of the last event in the list.
-    /// If you don't to use the cursor, set it to "0".
+    /// Parse the cursor to an EventCursor.
+    /// The cursor can be in multiple formats for backwards compatibility:
+    /// 1. New format: "timestamp:id" (e.g., "00331BD814YCT:42")
+    /// 2. Legacy format (timestamp only): A timestamp that needs to be looked up in the database
+    /// If you don't want to use a cursor, set it to "0".
     pub async fn parse_cursor<'a>(
         cursor: &str,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<i64, sqlx::Error> {
-        if let Ok(cursor) = cursor.parse::<u64>() {
-            // Is new cursor format
-            return Ok(cursor as i64);
+    ) -> Result<EventCursor, sqlx::Error> {
+        // Try parsing as new format: "timestamp:id"
+        if let Some((timestamp_str, id_str)) = cursor.split_once(':') {
+            // Try to parse the timestamp part as a Timestamp
+            if let Ok(timestamp) = timestamp_str.to_string().try_into() {
+                if let Ok(id) = id_str.parse::<i64>() {
+                    let timestamp: Timestamp = timestamp;
+                    let datetime = timestamp_to_sqlx_datetime(&timestamp);
+                    return Ok(EventCursor::new(datetime.naive_utc(), id));
+                }
+            }
         }
-        // Check for the legacy cursor format
+
+        // Try parsing as legacy format (timestamp only)
         let timestamp: Timestamp = match cursor.to_string().try_into() {
             Ok(timestamp) => timestamp,
             Err(e) => return Err(sqlx::Error::Decode(e.into())),
@@ -104,31 +135,31 @@ impl EventRepository {
         // Check the timestamp with the database to convert it to the event id
         let datetime = timestamp_to_sqlx_datetime(&timestamp);
         let statement = Query::select()
-            .column((EVENT_TABLE, EventIden::Id))
+            .columns([(EVENT_TABLE, EventIden::Id), (EVENT_TABLE, EventIden::CreatedAt)])
             .from(EVENT_TABLE)
-            .and_where(Expr::col((EVENT_TABLE, EventIden::CreatedAt)).eq(datetime))
+            .and_where(Expr::col((EVENT_TABLE, EventIden::CreatedAt)).eq(datetime.naive_utc()))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
-        Ok(event_id)
+        let created_at: NaiveDateTime = ret_row.try_get(EventIden::CreatedAt.to_string().as_str())?;
+        Ok(EventCursor::new(created_at, event_id))
     }
 
-    /// Get a list of events by the cursor. The cursor is the id of the last event in the list.
-    /// If you don't to use the cursor, set it to 0.
+    /// Get a list of events by the cursor. The cursor contains both timestamp and id.
     /// The limit is the maximum number of events to return.
     /// The executor can either be db.pool() or a transaction.
+    /// This uses the (user, created_at, id) index for efficient querying.
     pub async fn get_by_cursor<'a>(
-        cursor: Option<i64>,
+        cursor: Option<EventCursor>,
         limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-        let cursor = cursor.unwrap_or(0);
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
 
-        let statement = Query::select()
+        let mut statement = Query::select()
             .columns([
                 (EVENT_TABLE, EventIden::Id),
                 (EVENT_TABLE, EventIden::User),
@@ -143,9 +174,29 @@ impl EventRepository {
                 USER_TABLE,
                 Expr::col((EVENT_TABLE, EventIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
-            .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor))
+            .to_owned();
+
+        // Add cursor condition to use the index: (created_at, id) > (cursor.timestamp, cursor.id)
+        if let Some(cursor) = cursor {
+            statement = statement
+                .and_where(
+                    Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                        .gt(cursor.timestamp)
+                        .or(
+                            Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                .eq(cursor.timestamp)
+                                .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))
+                        )
+                )
+                .to_owned();
+        }
+
+        statement = statement
+            .order_by((EVENT_TABLE, EventIden::CreatedAt), sea_query::Order::Asc)
+            .order_by((EVENT_TABLE, EventIden::Id), sea_query::Order::Asc)
             .limit(limit as u64)
             .to_owned();
+
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
@@ -255,8 +306,18 @@ mod tests {
                 .unwrap();
         }
 
-        // Test get session
-        let events = EventRepository::get_by_cursor(Some(5), Some(4), &mut db.pool().into())
+        // Test get session - Get event with id=5 to create cursor from it
+        let event5_cursor = EventRepository::get_by_cursor(Some(EventCursor::new(
+            DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            4
+        )), Some(1), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(event5_cursor[0].id, 5);
+
+        let cursor = EventCursor::new(event5_cursor[0].created_at, event5_cursor[0].id);
+
+        let events = EventRepository::get_by_cursor(Some(cursor), Some(4), &mut db.pool().into())
             .await
             .unwrap();
         assert_eq!(events.len(), 4);
@@ -295,16 +356,128 @@ mod tests {
             )
             .await
             .unwrap();
-            timestamp_events.push((timestamp, event.id));
+            timestamp_events.push((timestamp, event.id, event.created_at));
         }
 
-        // Test get session
-        for (timestamp, should_be_event_id) in timestamp_events {
-            let event_id =
+        // Test legacy timestamp format parsing
+        for (timestamp, should_be_event_id, should_be_timestamp) in timestamp_events {
+            let cursor =
                 EventRepository::parse_cursor(&timestamp.to_string(), &mut db.pool().into())
                     .await
                     .unwrap();
-            assert_eq!(should_be_event_id, event_id);
+            assert_eq!(should_be_event_id, cursor.id);
+            assert_eq!(should_be_timestamp, cursor.timestamp);
         }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_parse_cursor_backwards_compatibility() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Create test events with specific timestamps
+        let mut events = Vec::new();
+        for i in 0..5 {
+            let timestamp = Timestamp::now().add(1_000_000 * i); // Add 1s for each event
+            let created_at = timestamp_to_sqlx_datetime(&timestamp);
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
+            let event = EventRepository::create_with_timestamp(
+                user.id,
+                EventType::Put,
+                &path,
+                &created_at,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+            events.push((event, timestamp));
+        }
+
+        let test_event = &events[2].0; // Use the third event for testing
+        let test_timestamp = &events[2].1;
+
+        // Test 1: New format "timestamp:id"
+        let new_format_cursor = format!("{}:{}", test_timestamp, test_event.id);
+        let parsed_new = EventRepository::parse_cursor(&new_format_cursor, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(parsed_new.id, test_event.id);
+        assert_eq!(parsed_new.timestamp, test_event.created_at);
+
+        // Test 2: Legacy format - timestamp only
+        let legacy_timestamp_format = test_timestamp.to_string();
+        let parsed_timestamp =
+            EventRepository::parse_cursor(&legacy_timestamp_format, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(parsed_timestamp.id, test_event.id);
+        assert_eq!(parsed_timestamp.timestamp, test_event.created_at);
+
+        // Test 3: Use parsed cursors in get_by_cursor to verify they work correctly
+        for (cursor_str, test_name) in [
+            (new_format_cursor, "new format"),
+            (legacy_timestamp_format, "legacy timestamp"),
+        ] {
+            let cursor = EventRepository::parse_cursor(&cursor_str, &mut db.pool().into())
+                .await
+                .unwrap();
+
+            let events_after =
+                EventRepository::get_by_cursor(Some(cursor), None, &mut db.pool().into())
+                    .await
+                    .unwrap();
+
+            // Should get events after the cursor (events[3] and events[4])
+            assert_eq!(
+                events_after.len(),
+                2,
+                "Failed for cursor format: {}",
+                test_name
+            );
+            assert_eq!(
+                events_after[0].id,
+                events[3].0.id,
+                "Failed for cursor format: {}",
+                test_name
+            );
+            assert_eq!(
+                events_after[1].id,
+                events[4].0.id,
+                "Failed for cursor format: {}",
+                test_name
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_cursor_display_format() {
+        let timestamp = DateTime::from_timestamp(1234567890, 123456000)
+            .unwrap()
+            .naive_utc();
+        let id = 42;
+        let cursor = EventCursor::new(timestamp, id);
+
+        let cursor_str = cursor.to_string();
+
+        // Verify format is "timestamp:id"
+        assert!(cursor_str.contains(':'));
+        let parts: Vec<&str> = cursor_str.split(':').collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[1], "42"); // ID should be at the end
+
+        // Verify the timestamp part is a valid Timestamp string
+        let timestamp_part: Result<Timestamp, _> = parts[0].to_string().try_into();
+        assert!(timestamp_part.is_ok(), "Timestamp part should be a valid Timestamp");
+
+        // Verify the timestamp matches what we expect
+        let expected_timestamp: Timestamp = (timestamp.and_utc().timestamp_micros() as u64).into();
+        assert_eq!(timestamp_part.unwrap().as_u64(), expected_timestamp.as_u64());
     }
 }

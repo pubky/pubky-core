@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crate::{
     core::{extractors::ListQueryParams, AppState},
-    persistence::sql::{event::EventRepository, user::UserRepository},
+    persistence::sql::{event::{EventCursor, EventRepository}, user::UserRepository},
     shared::{HttpError, HttpResult},
 };
 
@@ -43,18 +43,19 @@ pub async fn feed(
     let timeout_secs = params.timeout.unwrap_or(0).min(60);
 
     // Fetch existing events
-    let events = if let Some(user_id) = user_id_filter {
-        EventRepository::get_by_user_and_cursor(
-            user_id,
-            Some(cursor),
-            params.limit,
-            &mut state.sql_db.pool().into(),
-        )
-        .await?
-    } else {
+    let events = 
+    // if let Some(user_id) = user_id_filter {
+    //     EventRepository::get_by_user_and_cursor(
+    //         user_id,
+    //         Some(cursor),
+    //         params.limit,
+    //         &mut state.sql_db.pool().into(),
+    //     )
+    //     .await?
+    // } else {
         EventRepository::get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
-            .await?
-    };
+            .await?;
+    // };
 
     // If we have events, return immediately
     if !events.is_empty() {
@@ -77,13 +78,17 @@ pub async fn feed(
             event_result = rx.recv() => {
                 match event_result {
                     Ok(event) => {
-                        if event.id <= cursor {
-                            continue; // Too old
-                        }
                         if let Some(user_id) = user_id_filter {
                             if event.user_id != user_id {
                                 continue; // Wrong user
                             }
+                        }
+                        // Check if event is after cursor (timestamp, id) comparison
+                        let is_after_cursor = event.created_at > cursor.timestamp
+                            || (event.created_at == cursor.timestamp && event.id > cursor.id);
+
+                        if !is_after_cursor {
+                            continue; // Too old
                         }
                         return Ok(format_response(&vec![event]));
                     }
@@ -112,7 +117,8 @@ fn format_response(events: &[crate::persistence::sql::event::EventEntity]) -> Re
         .collect::<Vec<String>>();
 
     // Get cursor from last event (guaranteed to exist due to assertion)
-    let next_cursor = events.last().unwrap().id.to_string();
+    let last_event = events.last().unwrap();
+    let next_cursor = EventCursor::new(last_event.created_at, last_event.id);
     result.push(format!("cursor: {}", next_cursor));
 
     Response::builder()
@@ -122,7 +128,7 @@ fn format_response(events: &[crate::persistence::sql::event::EventEntity]) -> Re
         .unwrap()
 }
 
-fn empty_response(cursor: i64) -> Response<Body> {
+fn empty_response(cursor: EventCursor) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
@@ -181,13 +187,15 @@ mod tests {
         assert!(lines[0].starts_with("PUT pubky://"));
         assert!(lines[0].contains("/pub/test.txt"));
         assert!(lines[1].starts_with("DEL pubky://"));
-        assert_eq!(lines[2], "cursor: 2");
+        assert!(lines[2].starts_with("cursor: "));
+        assert!(lines[2].contains(":2")); // Should end with :2 (the event ID)
     }
 
     #[tokio::test]
     async fn test_empty_response() {
-        let cursor = 42;
-        let response = empty_response(cursor);
+        let timestamp = sqlx::types::chrono::Utc::now().naive_utc();
+        let cursor = EventCursor::new(timestamp, 42);
+        let response = empty_response(cursor.clone());
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -198,12 +206,14 @@ mod tests {
         let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
 
-        assert_eq!(body_str, "cursor: 42");
+        assert_eq!(body_str, format!("cursor: {}", cursor));
     }
 
     #[test]
     fn test_empty_response_different_cursors() {
-        for cursor in [0, 1, 100, 999999] {
+        let timestamp = sqlx::types::chrono::Utc::now().naive_utc();
+        for id in [0, 1, 100, 999999] {
+            let cursor = EventCursor::new(timestamp, id);
             let response = empty_response(cursor);
             assert_eq!(response.status(), StatusCode::OK);
         }
