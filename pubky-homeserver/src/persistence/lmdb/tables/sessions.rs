@@ -2,17 +2,17 @@ use heed::{
     types::{Bytes, Str},
     Database,
 };
-use pubky_common::session::Session;
+use pubky_common::session::SessionInfo;
 
 use super::super::LmDB;
 
-/// session secret => Session.
+/// session secret => SessionInfo.
 pub type SessionsTable = Database<Str, Bytes>;
 
 pub const SESSIONS_TABLE: &str = "sessions";
 
 impl LmDB {
-    pub fn get_session(&self, session_secret: &str) -> anyhow::Result<Option<Session>> {
+    pub fn get_session(&self, session_secret: &str) -> anyhow::Result<Option<SessionInfo>> {
         let rtxn = self.env.read_txn()?;
 
         let session = self
@@ -24,7 +24,7 @@ impl LmDB {
         rtxn.commit()?;
 
         if let Some(bytes) = session {
-            return Ok(Some(Session::deserialize(&bytes)?));
+            return Ok(Some(SessionInfo::deserialize(&bytes)?));
         };
 
         Ok(None)

@@ -12,7 +12,8 @@ use axum_extra::{extract::Host, headers::UserAgent, TypedHeader};
 use base32::{encode, Alphabet};
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
+use pubky_common::capabilities::Capabilities;
+use pubky_common::{crypto::random_bytes, session::SessionInfo};
 use std::collections::HashMap;
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
@@ -35,7 +36,7 @@ pub async fn signup(
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify AuthToken from request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.pubky();
+    let public_key = token.public_key();
 
     // 2) Ensure the user does *not* already exist
     let txn = state.db.env.read_txn()?;
@@ -108,7 +109,7 @@ pub async fn signin(
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify the AuthToken in the request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.pubky();
+    let public_key = token.public_key();
 
     // 2) Ensure user *does* exist
     let txn = state.db.env.read_txn()?;
@@ -139,16 +140,16 @@ fn create_session_and_cookie(
     cookies: Cookies,
     host: &str,
     public_key: &PublicKey,
-    capabilities: &[Capability],
+    capabilities: &Capabilities,
     user_agent: Option<TypedHeader<UserAgent>>,
 ) -> HttpResult<impl IntoResponse> {
     err_if_user_is_invalid(public_key, &state.db, false)?;
 
     // 1) Create session
     let session_secret = encode(Alphabet::Crockford, &random_bytes::<16>());
-    let session = Session::new(
+    let session = SessionInfo::new(
         public_key,
-        capabilities,
+        capabilities.clone(),
         user_agent.map(|ua| ua.to_string()),
     )
     .serialize();
