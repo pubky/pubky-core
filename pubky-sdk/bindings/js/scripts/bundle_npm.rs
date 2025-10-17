@@ -25,6 +25,7 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
             &format!("pkg/{}", target),
             "--out-name",
             "pubky",
+            "--no-opt",
         ])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())

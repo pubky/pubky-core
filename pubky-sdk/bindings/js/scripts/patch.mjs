@@ -22,7 +22,9 @@ const content = await readFile(
   "utf8",
 );
 
-const patched = content
+const needsNamedExport = new Set();
+
+let patched = content
   // use global TextDecoder TextEncoder
   .replace("require(`util`)", "globalThis")
   // attach to `imports` instead of module.exports
@@ -31,16 +33,39 @@ const patched = content
   .replace(/\nclass (.*?) \{/g, "\n export class $1 {")
   // Export functions
   .replace(
-    /\nmodule.exports.(.*?) = function/g,
-    "\nimports.$1 = $1;\nexport function $1",
+    /\n(?:module\.exports|exports)\.(\w+)\s*=\s*function/g,
+    (_match, fn) => {
+      needsNamedExport.delete(fn);
+      return `\nimports.${fn} = ${fn};\nexport function ${fn}`;
+    },
   )
   // Add exports to 'imports'
-  .replace(/\nmodule\.exports\.(.*?)\s+/g, "\nimports.$1")
-  // Export default
-  .replace(/$/, "export default imports")
+  .replace(
+    /\n(?:module\.exports|exports)\.(\w+)\s*=\s*([^;\n]+)(;?)/g,
+    (_match, name, value, suffix) => {
+      const trimmed = value.trim();
+      if (trimmed === name) {
+        needsNamedExport.add(name);
+      }
+      return `\nimports.${name} = ${trimmed}${suffix}`;
+    },
+  )
+  .replace(/= exports\./g, "= imports.");
+
+for (const name of needsNamedExport) {
+  if (
+    name !== "default" &&
+    !new RegExp(`export (?:class|function|const|let|var) ${name}\\b`).test(patched)
+  ) {
+    patched += `\nexport { ${name} };`;
+  }
+}
+
+patched += "\nexport default imports";
+patched = patched
   // inline wasm bytes
   .replace(
-    /\nconst path.*\nconst bytes.*\n/,
+    /\nconst (?:path.*\nconst bytes.*|wasmPath.*\nconst wasmBytes.*)\nconst wasmModule.*\n/,
     `
 var __toBinary = /* @__PURE__ */ (() => {
   var table = new Uint8Array(128);
@@ -65,6 +90,7 @@ const bytes = __toBinary(${JSON.stringify(
         "base64",
       ),
     )});
+const wasmModule = new WebAssembly.Module(bytes);
 `,
   );
 
