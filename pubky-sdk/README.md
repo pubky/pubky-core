@@ -67,7 +67,7 @@ println!("Your current homeserver: {:?}", resolved);
 
 #### Transport:
 
-- **`PubkyHttpClient`** stateless transport: handles requests to pubky public-key hosts.
+- **`PubkyHttpClient`** : handles requests to pubky public-key hosts.
 
 ## Examples
 
