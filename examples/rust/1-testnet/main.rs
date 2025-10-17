@@ -16,7 +16,10 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     // Write a file
-    session.storage().put("/pub/my-cool-app/hello.txt", "hi").await?;
+    session
+        .storage()
+        .put("/pub/my-cool-app/hello.txt", "hi")
+        .await?;
 
     // Read it back
     let txt = session

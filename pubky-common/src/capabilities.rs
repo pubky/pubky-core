@@ -628,7 +628,10 @@ mod tests {
     #[test]
     fn single_capability_via_builder_and_shortcuts() {
         // Full builder:
-        let cap1 = Capability::builder("/pub/my-cool-app/").read().write().finish();
+        let cap1 = Capability::builder("/pub/my-cool-app/")
+            .read()
+            .write()
+            .finish();
         assert_eq!(cap1.to_string(), "/pub/my-cool-app/:rw");
 
         // Shortcuts:
