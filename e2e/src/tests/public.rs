@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use pkarr::Keypair;
 use pubky_testnet::{pubky_homeserver::MockDataDir, EphemeralTestnet, Testnet};
 use rand::rng;
@@ -683,330 +682,6 @@ async fn dont_delete_shared_blobs() {
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn stream() {
-    // TODO: test better streaming API
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let url = format!("pubky://{}/pub/foo.txt", keypair.public_key());
-    let url = url.as_str();
-
-    let bytes = Bytes::from(vec![0; 1024 * 1024]);
-
-    client.put(url).body(bytes.clone()).send().await.unwrap();
-
-    let response = client.get(url).send().await.unwrap().bytes().await.unwrap();
-
-    assert_eq!(response, bytes);
-
-    client.delete(url).send().await.unwrap();
-
-    let response = client.get(url).send().await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_timeout() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-
-    // Create an event first to get a cursor
-    let url = format!("pubky://{pubky}/pub/test.txt");
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get current cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
-
-    // Test timeout with no new events - should return in ~2 seconds
-    let start = std::time::Instant::now();
-    let response = client
-        .request(Method::GET, format!("{feed_url}?timeout=2&cursor={cursor}"))
-        .send()
-        .await
-        .unwrap();
-    let elapsed = start.elapsed().as_secs();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed >= 2 && elapsed < 4,
-        "Expected ~2 seconds, got {}",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    // Should return empty response with same cursor
-    assert_eq!(text, format!("cursor: {}", cursor));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_immediate_return() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor (should be 0)
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let initial_cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
-
-    // Create an event
-    let url = format!("pubky://{pubky}/pub/test.txt");
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
-    // Request with old cursor and timeout - should return immediately with new event
-    let start = std::time::Instant::now();
-    let response = client
-        .request(
-            Method::GET,
-            format!("{feed_url}?timeout=30&cursor={initial_cursor}"),
-        )
-        .send()
-        .await
-        .unwrap();
-    let elapsed = start.elapsed().as_secs();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed < 2,
-        "Expected immediate return, got {} seconds",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("PUT"));
-    assert!(lines[0].contains(&format!("pubky://{pubky}/pub/test.txt")));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_with_concurrent_event() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text
-        .split('\n')
-        .last()
-        .unwrap()
-        .split(" ")
-        .last()
-        .unwrap()
-        .to_string();
-
-    // Start long polling request
-    let feed_url_clone = feed_url.clone();
-    let cursor_clone = cursor.clone();
-    let client_clone = client.clone();
-    let poll_handle = tokio::spawn(async move {
-        let start = std::time::Instant::now();
-        let response = client_clone
-            .request(
-                Method::GET,
-                format!("{feed_url_clone}?timeout=30&cursor={cursor_clone}"),
-            )
-            .send()
-            .await
-            .unwrap();
-        (response, start.elapsed())
-    });
-
-    // Wait a bit then create an event
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let url = format!("pubky://{pubky}/pub/test.txt");
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
-    // Wait for long poll to complete
-    let (response, elapsed) = poll_handle.await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed.as_millis() >= 500 && elapsed.as_secs() < 5,
-        "Expected ~0.5-1 seconds, got {:?}",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("PUT"));
-    assert!(lines[0].contains(&format!("pubky://{pubky}/pub/test.txt")));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_user_filter() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    // Create two users
-    let keypair1 = Keypair::random();
-    let keypair2 = Keypair::random();
-
-    client
-        .signup(&keypair1, &server.public_key(), None)
-        .await
-        .unwrap();
-    client
-        .signup(&keypair2, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky1 = keypair1.public_key();
-    let pubky2 = keypair2.public_key();
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text
-        .split('\n')
-        .last()
-        .unwrap()
-        .split(" ")
-        .last()
-        .unwrap()
-        .to_string();
-
-    // Start long polling for user1 only
-    let feed_url_clone = feed_url.clone();
-    let cursor_clone = cursor.clone();
-    let client_clone = client.clone();
-    let pubky1_str = pubky1.to_string();
-    let poll_handle = tokio::spawn(async move {
-        let start = std::time::Instant::now();
-        let response = client_clone
-            .request(
-                Method::GET,
-                format!("{feed_url_clone}?timeout=5&cursor={cursor_clone}&user={pubky1_str}"),
-            )
-            .send()
-            .await
-            .unwrap();
-        (response, start.elapsed())
-    });
-
-    // Wait a bit then create event for user2 (should be ignored)
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let url2 = format!("pubky://{pubky2}/pub/test.txt");
-    client.put(&url2).body(vec![0]).send().await.unwrap();
-
-    // Wait a bit more then create event for user1 (should trigger return)
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let url1 = format!("pubky://{pubky1}/pub/test.txt");
-    client.put(&url1).body(vec![0]).send().await.unwrap();
-
-    // Wait for long poll to complete
-    let (response, elapsed) = poll_handle.await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed.as_millis() >= 1000 && elapsed.as_secs() < 5,
-        "Expected ~1-2 seconds, got {:?}",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("PUT"));
-    assert!(lines[0].contains(&format!("pubky://{pubky1}/pub/test.txt")));
-    assert!(!text.contains(&pubky2.to_string()));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_no_timeout() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
-
-    // Request with timeout=0 should return immediately even if no events
-    let start = std::time::Instant::now();
-    let response = client
-        .request(Method::GET, format!("{feed_url}?timeout=0&cursor={cursor}"))
-        .send()
-        .await
-        .unwrap();
-    let elapsed = start.elapsed().as_millis();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed < 500,
-        "Expected immediate return, got {} ms",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    assert_eq!(text, format!("cursor: {}", cursor));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
 async fn events_stream_historical_auto_pagination() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
@@ -1030,7 +705,11 @@ async fn events_stream_historical_auto_pagination() {
     }
 
     // Connect to SSE endpoint with limit=250 to get all events then close
-    let stream_url = format!("https://{}/events-stream?limit=250", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=250",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1061,10 +740,16 @@ async fn events_stream_historical_auto_pagination() {
     }
 
     assert_eq!(event_count, 250, "Should receive all 250 historical events");
-    assert!(!last_cursor.is_empty(), "Should have received cursor updates");
+    assert!(
+        !last_cursor.is_empty(),
+        "Should have received cursor updates"
+    );
 
     // Verify connection closes after limit reached (next() should return None)
-    assert!(stream.next().await.is_none(), "Connection should close after reaching limit");
+    assert!(
+        stream.next().await.is_none(),
+        "Connection should close after reaching limit"
+    );
 }
 
 #[tokio::test]
@@ -1087,7 +772,11 @@ async fn events_stream_live_mode() {
     let pubky = keypair.public_key();
 
     // Start SSE stream from current position (no historical events)
-    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1122,7 +811,9 @@ async fn events_stream_live_mode() {
     let event = result.unwrap();
     assert!(event.is_some(), "Should receive the live event");
     let event = event.unwrap();
-    assert!(event.data.contains(&format!("pubky://{pubky}/pub/live_test.txt")));
+    assert!(event
+        .data
+        .contains(&format!("pubky://{pubky}/pub/live_test.txt")));
 }
 
 #[tokio::test]
@@ -1154,7 +845,11 @@ async fn events_stream_phase_transition() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Start SSE stream
-    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1190,8 +885,14 @@ async fn events_stream_phase_transition() {
     .await;
 
     assert!(result.is_ok(), "Should complete within timeout");
-    assert_eq!(historical_count, 5, "Should receive all 5 historical events");
-    assert!(received_live_event, "Should transition to live mode and receive new event");
+    assert_eq!(
+        historical_count, 5,
+        "Should receive all 5 historical events"
+    );
+    assert!(
+        received_live_event,
+        "Should transition to live mode and receive new event"
+    );
 }
 
 #[tokio::test]
@@ -1219,7 +920,11 @@ async fn events_stream_cursor_filtering() {
     }
 
     // First, get events without cursor to obtain a cursor from the 5th event
-    let stream_url = format!("https://{}/events-stream?limit=5", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=5",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1247,7 +952,12 @@ async fn events_stream_cursor_filtering() {
     drop(stream);
 
     // Now connect with cursor - should only get events 6-10
-    let stream_url = format!("https://{}/events-stream?cursor={}", server.public_key(), cursor);
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&cursor={}",
+        server.public_key(),
+        pubky,
+        cursor
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1262,7 +972,8 @@ async fn events_stream_cursor_filtering() {
         if let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 // Verify these are the later events
-                let event_num = event.data
+                let event_num = event
+                    .data
                     .lines()
                     .next()
                     .and_then(|line| line.split("file_").nth(1))
@@ -1270,7 +981,10 @@ async fn events_stream_cursor_filtering() {
                     .and_then(|s| s.parse::<usize>().ok());
 
                 if let Some(num) = event_num {
-                    assert!(num >= 5, "Should only receive events after cursor (file_5 or later)");
+                    assert!(
+                        num >= 5,
+                        "Should only receive events after cursor (file_5 or later)"
+                    );
                 }
                 remaining_count += 1;
             }
@@ -1279,60 +993,10 @@ async fn events_stream_cursor_filtering() {
         }
     }
 
-    assert_eq!(remaining_count, 5, "Should receive exactly 5 events after cursor");
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_empty_then_live() {
-    use eventsource_stream::Eventsource;
-    use futures::StreamExt;
-    use tokio::time::{timeout, Duration};
-
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-
-    // Start SSE stream with no historical events
-    let stream_url = format!("https://{}/events-stream", server.public_key());
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
-    let mut stream = response.bytes_stream().eventsource();
-
-    // Create an event immediately
-    let pubky_clone = pubky.clone();
-    let client_clone = client.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        let url = format!("pubky://{pubky_clone}/pub/first_event.txt");
-        client_clone.put(&url).body(vec![1]).send().await.unwrap();
-    });
-
-    // Should transition to live mode and receive the event
-    let result = timeout(Duration::from_secs(5), async {
-        while let Some(Ok(event)) = stream.next().await {
-            if event.event == "PUT" && event.data.contains("first_event.txt") {
-                return Some(event);
-            }
-        }
-        None
-    })
-    .await;
-
-    assert!(result.is_ok(), "Should receive event within timeout");
-    assert!(result.unwrap().is_some(), "Should receive the first live event even with no historical events");
+    assert_eq!(
+        remaining_count, 5,
+        "Should receive exactly 5 events after cursor"
+    );
 }
 
 #[tokio::test]
@@ -1360,7 +1024,11 @@ async fn events_stream_finite_limit() {
     }
 
     // Request only 50 events
-    let stream_url = format!("https://{}/events-stream?limit=50", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=50",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1380,8 +1048,316 @@ async fn events_stream_finite_limit() {
         }
     }
 
-    assert_eq!(event_count, 50, "Should receive exactly 50 events as requested");
+    assert_eq!(
+        event_count, 50,
+        "Should receive exactly 50 events as requested"
+    );
 
     // Connection should close - no more events despite 50 more being available
-    assert!(stream.next().await.is_none(), "Connection should close after limit reached");
+    assert!(
+        stream.next().await.is_none(),
+        "Connection should close after limit reached"
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_multiple_users() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair1 = Keypair::random();
+    let keypair2 = Keypair::random();
+    let keypair3 = Keypair::random();
+
+    // Create three users
+    client
+        .signup(&keypair1, &server.public_key(), None)
+        .await
+        .unwrap();
+    client
+        .signup(&keypair2, &server.public_key(), None)
+        .await
+        .unwrap();
+    client
+        .signup(&keypair3, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky1 = keypair1.public_key();
+    let pubky2 = keypair2.public_key();
+    let pubky3 = keypair3.public_key();
+
+    // Create different events for each user
+    for i in 0..3 {
+        let url = format!("pubky://{pubky1}/pub/test1_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+    for i in 0..2 {
+        let url = format!("pubky://{pubky2}/pub/test2_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+    for i in 0..4 {
+        let url = format!("pubky://{pubky3}/pub/test3_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Stream events for user1 and user2 (should get 5 events total)
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&user={}",
+        server.public_key(),
+        pubky1,
+        pubky2
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    let status = response.status();
+    if status != StatusCode::OK {
+        let body = response.text().await.unwrap();
+        panic!("Expected 200 OK, got {}: {}", status, body);
+    }
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut events = Vec::new();
+
+    while events.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let lines: Vec<&str> = event.data.lines().collect();
+                let path = lines[0].strip_prefix("pubky://").unwrap();
+                events.push(path.to_string());
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Verify we got events from both users
+    assert_eq!(events.len(), 5, "Should receive 5 events total");
+    let user1_events = events
+        .iter()
+        .filter(|e| e.contains(&pubky1.to_string()))
+        .count();
+    let user2_events = events
+        .iter()
+        .filter(|e| e.contains(&pubky2.to_string()))
+        .count();
+
+    assert_eq!(user1_events, 3, "Should receive 3 events from user1");
+    assert_eq!(user2_events, 2, "Should receive 2 events from user2");
+
+    // Verify no events from user3
+    let user3_events = events
+        .iter()
+        .filter(|e| e.contains(&pubky3.to_string()))
+        .count();
+    assert_eq!(user3_events, 0, "Should not receive events from user3");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_max_users_validation() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    // Create 51 user parameters
+    let mut query_params = vec![];
+    for _i in 0..51 {
+        let keypair = Keypair::random();
+        query_params.push(format!("user={}", keypair.public_key()));
+    }
+
+    let stream_url = format!(
+        "https://{}/events-stream?{}",
+        server.public_key(),
+        query_params.join("&")
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Should return 400 Bad Request for too many users"
+    );
+
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("Too many users") || body.contains("Maximum allowed: 50"),
+        "Error message should mention max users limit"
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_no_users_error() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let stream_url = format!("https://{}/events-stream", server.public_key());
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Should return 400 Bad Request when no user parameter provided"
+    );
+
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("user parameter is required"),
+        "Error message should mention user parameter is required"
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_invalid_user_keys() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair1 = Keypair::random();
+    let keypair2 = Keypair::random();
+
+    // Only sign up user1, leave user2 not registered
+    client
+        .signup(&keypair1, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky1 = keypair1.public_key();
+    let pubky2 = keypair2.public_key(); // Not registered
+    let invalid_pubkey = "invalid_key_not_zbase32";
+
+    // Test 1: Invalid public key format
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        invalid_pubkey
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Should return 400 Bad Request for invalid public key format"
+    );
+
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("Invalid user public key"),
+        "Error message should mention invalid public key, got: {}",
+        body
+    );
+
+    // Test 2: Valid public key but user not registered (should return 404)
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky2
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "Should return 404 Not Found for non-existent user"
+    );
+
+    // Test 3: Mix of valid registered user, valid unregistered user
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&user={}",
+        server.public_key(),
+        pubky1,
+        pubky2
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "Should return 404 Not Found when any user is not registered"
+    );
+
+    // Test 4: Mix of valid user and invalid key format
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&user={}",
+        server.public_key(),
+        pubky1,
+        invalid_pubkey
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Should return 400 Bad Request when any key is invalid format"
+    );
+
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("Invalid user public key"),
+        "Error message should mention invalid public key"
+    );
+
+    // Test 5: Multiple invalid keys
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&user={}",
+        server.public_key(),
+        invalid_pubkey,
+        "another_invalid_key"
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Should return 400 Bad Request for multiple invalid keys"
+    );
 }

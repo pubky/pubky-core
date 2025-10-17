@@ -2,11 +2,11 @@ use std::{collections::HashMap, fmt::Display};
 
 use axum::{
     body::Body,
-    extract::{FromRequestParts, Query},
+    extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
-    RequestPartsExt,
 };
+use url::form_urlencoded;
 
 use pkarr::PublicKey;
 
@@ -52,27 +52,10 @@ pub struct ListQueryParams {
     pub cursor: Option<String>,
     pub shallow: bool,
     pub reverse: bool,
-    pub user: Option<String>,
+    pub users: Vec<String>,
 }
 
-impl ListQueryParams {
-    /// Extracts the cursor from the query parameters.
-    /// If the cursor is not a valid EntryPath, returns None.
-    /// If the cursor is empty, returns None.
-    pub fn extract_cursor(params: &Query<HashMap<String, String>>) -> Option<String> {
-        let value = params.get("cursor")?;
-        if value.is_empty() {
-            // Treat `cursor=` as None
-            return None;
-        }
-
-        let mut value = value.as_str();
-        if let Some(stripped_value) = value.strip_prefix("pubky://") {
-            value = stripped_value;
-        }
-        Some(value.to_string())
-    }
-}
+impl ListQueryParams {}
 
 /// Parse a boolean value from a string.
 /// Returns an error if the value is not a valid boolean.
@@ -101,38 +84,66 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let params: Query<HashMap<String, String>> =
-            parts.extract().await.map_err(IntoResponse::into_response)?;
+        // Single-value params go in single_params, multi-value params (like "user") go in multi_params
+        let query = parts.uri.query().unwrap_or("");
+        let mut single_params: HashMap<String, String> = HashMap::new();
+        let mut multi_params: HashMap<String, Vec<String>> = HashMap::new();
 
-        let reverse = if let Some(reverse) = params.get("reverse") {
-            parse_bool(reverse).map_err(|e| *e)?
+        for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+            let key_str = key.as_ref();
+            if key_str == "user" {
+                // "user" can be repeated multiple times
+                multi_params
+                    .entry(key.into_owned())
+                    .or_default()
+                    .push(value.into_owned());
+            } else {
+                // All other params are single-value (last one wins if repeated)
+                single_params.insert(key.into_owned(), value.into_owned());
+            }
+        }
+
+        let reverse = if let Some(reverse_str) = single_params.get("reverse") {
+            parse_bool(reverse_str).map_err(|e| *e)?
         } else {
             false
         };
 
-        let shallow = if let Some(shallow) = params.get("shallow") {
-            parse_bool(shallow).map_err(|e| *e)?
+        let shallow = if let Some(shallow_str) = single_params.get("shallow") {
+            parse_bool(shallow_str).map_err(|e| *e)?
         } else {
             false
         };
 
-        let limit = params
+        let limit = single_params
             .get("limit")
             // Treat `limit=` as None
             .and_then(|l| if l.is_empty() { None } else { Some(l) })
             .and_then(|l| l.parse::<u16>().ok());
-        let cursor = Self::extract_cursor(&params);
 
-        let user = params
+        let cursor = single_params
+            .get("cursor")
+            // Treat `cursor=` as None
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string());
+
+        let users = multi_params
             .get("user")
-            .and_then(|u| if u.is_empty() { None } else { Some(u.clone()) });
+            .map(|users| {
+                users
+                    .iter()
+                    .filter(|u| !u.is_empty())
+                    .cloned()
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
 
         Ok(ListQueryParams {
             shallow,
             limit,
             cursor,
             reverse,
-            user,
+            users,
         })
     }
 }

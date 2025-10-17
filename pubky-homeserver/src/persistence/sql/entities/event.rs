@@ -135,7 +135,10 @@ impl EventRepository {
         // Check the timestamp with the database to convert it to the event id
         let datetime = timestamp_to_sqlx_datetime(&timestamp);
         let statement = Query::select()
-            .columns([(EVENT_TABLE, EventIden::Id), (EVENT_TABLE, EventIden::CreatedAt)])
+            .columns([
+                (EVENT_TABLE, EventIden::Id),
+                (EVENT_TABLE, EventIden::CreatedAt),
+            ])
             .from(EVENT_TABLE)
             .and_where(Expr::col((EVENT_TABLE, EventIden::CreatedAt)).eq(datetime.naive_utc()))
             .to_owned();
@@ -143,15 +146,17 @@ impl EventRepository {
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
-        let created_at: NaiveDateTime = ret_row.try_get(EventIden::CreatedAt.to_string().as_str())?;
+        let created_at: NaiveDateTime =
+            ret_row.try_get(EventIden::CreatedAt.to_string().as_str())?;
         Ok(EventCursor::new(created_at, event_id))
     }
 
     /// Get a list of events by the cursor. The cursor contains both timestamp and id.
     /// The limit is the maximum number of events to return.
     /// The executor can either be db.pool() or a transaction.
-    /// This uses the (user, created_at, id) index for efficient querying.
+    /// This uses the (user, created_at, id) index for efficient querying when user_id is provided.
     pub async fn get_by_cursor<'a>(
+        user_ids: Option<Vec<i32>>,
         cursor: Option<EventCursor>,
         limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
@@ -176,17 +181,22 @@ impl EventRepository {
             )
             .to_owned();
 
+        // Filter by users if provided (uses idx_events_user_timestamp_id index)
+        if let Some(uids) = user_ids {
+            statement = statement
+                .and_where(Expr::col((EVENT_TABLE, EventIden::User)).is_in(uids))
+                .to_owned();
+        }
+
         // Add cursor condition to use the index: (created_at, id) > (cursor.timestamp, cursor.id)
         if let Some(cursor) = cursor {
             statement = statement
                 .and_where(
                     Expr::col((EVENT_TABLE, EventIden::CreatedAt))
                         .gt(cursor.timestamp)
-                        .or(
-                            Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                .eq(cursor.timestamp)
-                                .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))
-                        )
+                        .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                            .eq(cursor.timestamp)
+                            .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))),
                 )
                 .to_owned();
         }
@@ -298,7 +308,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Test create session
+        // Test create session - First get the 4th event to establish our cursor
         for _ in 0..10 {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
             let _ = EventRepository::create(user.id, EventType::Put, &path, &mut db.pool().into())
@@ -306,22 +316,33 @@ mod tests {
                 .unwrap();
         }
 
-        // Test get session - Get event with id=5 to create cursor from it
-        let event5_cursor = EventRepository::get_by_cursor(Some(EventCursor::new(
-            DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
-            4
-        )), Some(1), &mut db.pool().into())
-            .await
-            .unwrap();
-        assert_eq!(event5_cursor[0].id, 5);
+        // Get first 4 events to establish cursor from the 4th event
+        let first_4_events =
+            EventRepository::get_by_cursor(None, None, Some(4), &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(first_4_events.len(), 4);
+        let cursor_event = &first_4_events[3]; // 4th event (0-indexed)
+
+        // Test get session - Get event with id=5 using cursor from 4th event
+        let event5_cursor = EventRepository::get_by_cursor(
+            None,
+            Some(EventCursor::new(cursor_event.created_at, cursor_event.id)),
+            Some(1),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(event5_cursor[0].id, cursor_event.id + 1);
 
         let cursor = EventCursor::new(event5_cursor[0].created_at, event5_cursor[0].id);
 
-        let events = EventRepository::get_by_cursor(Some(cursor), Some(4), &mut db.pool().into())
-            .await
-            .unwrap();
+        let events =
+            EventRepository::get_by_cursor(None, Some(cursor), Some(4), &mut db.pool().into())
+                .await
+                .unwrap();
         assert_eq!(events.len(), 4);
-        assert_eq!(events[0].id, 6);
+        assert_eq!(events[0].id, cursor.id + 1);
         assert_eq!(events[0].user_id, user.id);
         assert_eq!(
             events[0].path,
@@ -429,7 +450,7 @@ mod tests {
                 .unwrap();
 
             let events_after =
-                EventRepository::get_by_cursor(Some(cursor), None, &mut db.pool().into())
+                EventRepository::get_by_cursor(None, Some(cursor), None, &mut db.pool().into())
                     .await
                     .unwrap();
 
@@ -441,14 +462,12 @@ mod tests {
                 test_name
             );
             assert_eq!(
-                events_after[0].id,
-                events[3].0.id,
+                events_after[0].id, events[3].0.id,
                 "Failed for cursor format: {}",
                 test_name
             );
             assert_eq!(
-                events_after[1].id,
-                events[4].0.id,
+                events_after[1].id, events[4].0.id,
                 "Failed for cursor format: {}",
                 test_name
             );
@@ -474,10 +493,16 @@ mod tests {
 
         // Verify the timestamp part is a valid Timestamp string
         let timestamp_part: Result<Timestamp, _> = parts[0].to_string().try_into();
-        assert!(timestamp_part.is_ok(), "Timestamp part should be a valid Timestamp");
+        assert!(
+            timestamp_part.is_ok(),
+            "Timestamp part should be a valid Timestamp"
+        );
 
         // Verify the timestamp matches what we expect
         let expected_timestamp: Timestamp = (timestamp.and_utc().timestamp_micros() as u64).into();
-        assert_eq!(timestamp_part.unwrap().as_u64(), expected_timestamp.as_u64());
+        assert_eq!(
+            timestamp_part.unwrap().as_u64(),
+            expected_timestamp.as_u64()
+        );
     }
 }
