@@ -69,7 +69,7 @@ mod tests {
         EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
             .await
             .expect_err("Should be deleted");
-        let events = EventRepository::get_by_cursor(None, Some(10), &mut db.pool().into())
+        let events = EventRepository::get_by_cursor(None, None, Some(10), &mut db.pool().into())
             .await
             .unwrap();
 

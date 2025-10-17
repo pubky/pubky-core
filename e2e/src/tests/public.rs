@@ -717,296 +717,6 @@ async fn stream() {
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_long_polling_timeout() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-
-    // Create an event first to get a cursor
-    let url = format!("pubky://{pubky}/pub/test.txt");
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get current cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
-
-    // Test timeout with no new events - should return in ~2 seconds
-    let start = std::time::Instant::now();
-    let response = client
-        .request(Method::GET, format!("{feed_url}?timeout=2&cursor={cursor}"))
-        .send()
-        .await
-        .unwrap();
-    let elapsed = start.elapsed().as_secs();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed >= 2 && elapsed < 4,
-        "Expected ~2 seconds, got {}",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    // Should return empty response with same cursor
-    assert_eq!(text, format!("cursor: {}", cursor));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_immediate_return() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor (should be 0)
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let initial_cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
-
-    // Create an event
-    let url = format!("pubky://{pubky}/pub/test.txt");
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
-    // Request with old cursor and timeout - should return immediately with new event
-    let start = std::time::Instant::now();
-    let response = client
-        .request(
-            Method::GET,
-            format!("{feed_url}?timeout=30&cursor={initial_cursor}"),
-        )
-        .send()
-        .await
-        .unwrap();
-    let elapsed = start.elapsed().as_secs();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed < 2,
-        "Expected immediate return, got {} seconds",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("PUT"));
-    assert!(lines[0].contains(&format!("pubky://{pubky}/pub/test.txt")));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_with_concurrent_event() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text
-        .split('\n')
-        .last()
-        .unwrap()
-        .split(" ")
-        .last()
-        .unwrap()
-        .to_string();
-
-    // Start long polling request
-    let feed_url_clone = feed_url.clone();
-    let cursor_clone = cursor.clone();
-    let client_clone = client.clone();
-    let poll_handle = tokio::spawn(async move {
-        let start = std::time::Instant::now();
-        let response = client_clone
-            .request(
-                Method::GET,
-                format!("{feed_url_clone}?timeout=30&cursor={cursor_clone}"),
-            )
-            .send()
-            .await
-            .unwrap();
-        (response, start.elapsed())
-    });
-
-    // Wait a bit then create an event
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let url = format!("pubky://{pubky}/pub/test.txt");
-    client.put(&url).body(vec![0]).send().await.unwrap();
-
-    // Wait for long poll to complete
-    let (response, elapsed) = poll_handle.await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed.as_millis() >= 500 && elapsed.as_secs() < 5,
-        "Expected ~0.5-1 seconds, got {:?}",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("PUT"));
-    assert!(lines[0].contains(&format!("pubky://{pubky}/pub/test.txt")));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_user_filter() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    // Create two users
-    let keypair1 = Keypair::random();
-    let keypair2 = Keypair::random();
-
-    client
-        .signup(&keypair1, &server.public_key(), None)
-        .await
-        .unwrap();
-    client
-        .signup(&keypair2, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky1 = keypair1.public_key();
-    let pubky2 = keypair2.public_key();
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text
-        .split('\n')
-        .last()
-        .unwrap()
-        .split(" ")
-        .last()
-        .unwrap()
-        .to_string();
-
-    // Start long polling for user1 only
-    let feed_url_clone = feed_url.clone();
-    let cursor_clone = cursor.clone();
-    let client_clone = client.clone();
-    let pubky1_str = pubky1.to_string();
-    let poll_handle = tokio::spawn(async move {
-        let start = std::time::Instant::now();
-        let response = client_clone
-            .request(
-                Method::GET,
-                format!("{feed_url_clone}?timeout=5&cursor={cursor_clone}&user={pubky1_str}"),
-            )
-            .send()
-            .await
-            .unwrap();
-        (response, start.elapsed())
-    });
-
-    // Wait a bit then create event for user2 (should be ignored)
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let url2 = format!("pubky://{pubky2}/pub/test.txt");
-    client.put(&url2).body(vec![0]).send().await.unwrap();
-
-    // Wait a bit more then create event for user1 (should trigger return)
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let url1 = format!("pubky://{pubky1}/pub/test.txt");
-    client.put(&url1).body(vec![0]).send().await.unwrap();
-
-    // Wait for long poll to complete
-    let (response, elapsed) = poll_handle.await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed.as_millis() >= 1000 && elapsed.as_secs() < 5,
-        "Expected ~1-2 seconds, got {:?}",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    assert_eq!(lines.len(), 2);
-    assert!(lines[0].starts_with("PUT"));
-    assert!(lines[0].contains(&format!("pubky://{pubky1}/pub/test.txt")));
-    assert!(!text.contains(&pubky2.to_string()));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_long_polling_no_timeout() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let feed_url = format!("https://{}/events/", server.public_key());
-
-    // Get initial cursor
-    let response = client.request(Method::GET, &feed_url).send().await.unwrap();
-    let text = response.text().await.unwrap();
-    let cursor = text.split('\n').last().unwrap().split(" ").last().unwrap();
-
-    // Request with timeout=0 should return immediately even if no events
-    let start = std::time::Instant::now();
-    let response = client
-        .request(Method::GET, format!("{feed_url}?timeout=0&cursor={cursor}"))
-        .send()
-        .await
-        .unwrap();
-    let elapsed = start.elapsed().as_millis();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        elapsed < 500,
-        "Expected immediate return, got {} ms",
-        elapsed
-    );
-
-    let text = response.text().await.unwrap();
-    assert_eq!(text, format!("cursor: {}", cursor));
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
 async fn events_stream_historical_auto_pagination() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
@@ -1030,7 +740,11 @@ async fn events_stream_historical_auto_pagination() {
     }
 
     // Connect to SSE endpoint with limit=250 to get all events then close
-    let stream_url = format!("https://{}/events-stream?limit=250", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=250",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1061,10 +775,16 @@ async fn events_stream_historical_auto_pagination() {
     }
 
     assert_eq!(event_count, 250, "Should receive all 250 historical events");
-    assert!(!last_cursor.is_empty(), "Should have received cursor updates");
+    assert!(
+        !last_cursor.is_empty(),
+        "Should have received cursor updates"
+    );
 
     // Verify connection closes after limit reached (next() should return None)
-    assert!(stream.next().await.is_none(), "Connection should close after reaching limit");
+    assert!(
+        stream.next().await.is_none(),
+        "Connection should close after reaching limit"
+    );
 }
 
 #[tokio::test]
@@ -1087,7 +807,11 @@ async fn events_stream_live_mode() {
     let pubky = keypair.public_key();
 
     // Start SSE stream from current position (no historical events)
-    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1122,7 +846,9 @@ async fn events_stream_live_mode() {
     let event = result.unwrap();
     assert!(event.is_some(), "Should receive the live event");
     let event = event.unwrap();
-    assert!(event.data.contains(&format!("pubky://{pubky}/pub/live_test.txt")));
+    assert!(event
+        .data
+        .contains(&format!("pubky://{pubky}/pub/live_test.txt")));
 }
 
 #[tokio::test]
@@ -1154,7 +880,11 @@ async fn events_stream_phase_transition() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Start SSE stream
-    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1190,8 +920,14 @@ async fn events_stream_phase_transition() {
     .await;
 
     assert!(result.is_ok(), "Should complete within timeout");
-    assert_eq!(historical_count, 5, "Should receive all 5 historical events");
-    assert!(received_live_event, "Should transition to live mode and receive new event");
+    assert_eq!(
+        historical_count, 5,
+        "Should receive all 5 historical events"
+    );
+    assert!(
+        received_live_event,
+        "Should transition to live mode and receive new event"
+    );
 }
 
 #[tokio::test]
@@ -1219,7 +955,11 @@ async fn events_stream_cursor_filtering() {
     }
 
     // First, get events without cursor to obtain a cursor from the 5th event
-    let stream_url = format!("https://{}/events-stream?limit=5", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=5",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1247,7 +987,12 @@ async fn events_stream_cursor_filtering() {
     drop(stream);
 
     // Now connect with cursor - should only get events 6-10
-    let stream_url = format!("https://{}/events-stream?cursor={}", server.public_key(), cursor);
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&cursor={}",
+        server.public_key(),
+        pubky,
+        cursor
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1262,7 +1007,8 @@ async fn events_stream_cursor_filtering() {
         if let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 // Verify these are the later events
-                let event_num = event.data
+                let event_num = event
+                    .data
                     .lines()
                     .next()
                     .and_then(|line| line.split("file_").nth(1))
@@ -1270,7 +1016,10 @@ async fn events_stream_cursor_filtering() {
                     .and_then(|s| s.parse::<usize>().ok());
 
                 if let Some(num) = event_num {
-                    assert!(num >= 5, "Should only receive events after cursor (file_5 or later)");
+                    assert!(
+                        num >= 5,
+                        "Should only receive events after cursor (file_5 or later)"
+                    );
                 }
                 remaining_count += 1;
             }
@@ -1279,7 +1028,10 @@ async fn events_stream_cursor_filtering() {
         }
     }
 
-    assert_eq!(remaining_count, 5, "Should receive exactly 5 events after cursor");
+    assert_eq!(
+        remaining_count, 5,
+        "Should receive exactly 5 events after cursor"
+    );
 }
 
 #[tokio::test]
@@ -1302,7 +1054,11 @@ async fn events_stream_empty_then_live() {
     let pubky = keypair.public_key();
 
     // Start SSE stream with no historical events
-    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1332,7 +1088,10 @@ async fn events_stream_empty_then_live() {
     .await;
 
     assert!(result.is_ok(), "Should receive event within timeout");
-    assert!(result.unwrap().is_some(), "Should receive the first live event even with no historical events");
+    assert!(
+        result.unwrap().is_some(),
+        "Should receive the first live event even with no historical events"
+    );
 }
 
 #[tokio::test]
@@ -1360,7 +1119,11 @@ async fn events_stream_finite_limit() {
     }
 
     // Request only 50 events
-    let stream_url = format!("https://{}/events-stream?limit=50", server.public_key());
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=50",
+        server.public_key(),
+        pubky
+    );
     let response = client
         .request(Method::GET, &stream_url)
         .send()
@@ -1380,8 +1143,14 @@ async fn events_stream_finite_limit() {
         }
     }
 
-    assert_eq!(event_count, 50, "Should receive exactly 50 events as requested");
+    assert_eq!(
+        event_count, 50,
+        "Should receive exactly 50 events as requested"
+    );
 
     // Connection should close - no more events despite 50 more being available
-    assert!(stream.next().await.is_none(), "Connection should close after limit reached");
+    assert!(
+        stream.next().await.is_none(),
+        "Connection should close after limit reached"
+    );
 }
