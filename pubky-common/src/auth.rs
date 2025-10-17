@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    capabilities::{Capabilities, Capability},
+    capabilities::Capabilities,
     crypto::{Keypair, PublicKey, Signature},
     namespaces::PUBKY_AUTH,
     timestamp::Timestamp,
@@ -30,13 +30,13 @@ pub struct AuthToken {
     ///
     /// Version 0:
     /// - Signer is implicitly the same as the root keypair for
-    ///   the [AuthToken::pubky], without any delegation.
+    ///   the [AuthToken::public_key], without any delegation.
     /// - Capabilities are only meant for resoucres on the homeserver.
     version: u8,
     /// Timestamp
     timestamp: Timestamp,
     /// The [PublicKey] of the owner of the resources being accessed by this token.
-    pubky: PublicKey,
+    public_key: PublicKey,
     // Variable length capabilities
     capabilities: Capabilities,
 }
@@ -51,7 +51,7 @@ impl AuthToken {
             namespace: *PUBKY_AUTH,
             version: 0,
             timestamp,
-            pubky: keypair.public_key(),
+            public_key: keypair.public_key(),
             capabilities: capabilities.into(),
         };
 
@@ -65,13 +65,13 @@ impl AuthToken {
     // === Getters ===
 
     /// Returns the pubky that is providing this AuthToken
-    pub fn pubky(&self) -> &PublicKey {
-        &self.pubky
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
     /// Returns the capabilities in this AuthToken.
-    pub fn capabilities(&self) -> &[Capability] {
-        &self.capabilities.0
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
     }
 
     // === Public Methods ===
@@ -98,7 +98,7 @@ impl AuthToken {
                 }
 
                 token
-                    .pubky
+                    .public_key
                     .verify(AuthToken::signable(token.version, bytes), &token.signature)
                     .map_err(|_| Error::InvalidSignature)?;
 
@@ -119,9 +119,9 @@ impl AuthToken {
     }
 
     /// Returns the unique ID for this [AuthToken], which is a concatenation of
-    /// [AuthToken::pubky] and [AuthToken::timestamp].
+    /// [AuthToken::public_key] and [AuthToken::timestamp].
     ///
-    /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::pubky].
+    /// Assuming that [AuthToken::timestamp] is unique for every [AuthToken::public_key].
     fn id(version: u8, bytes: &[u8]) -> Box<[u8]> {
         match version {
             0 => bytes[75..115].into(),
@@ -268,7 +268,7 @@ mod tests {
             namespace: *PUBKY_AUTH,
             version: 0,
             timestamp,
-            pubky: signer.public_key(),
+            public_key: signer.public_key(),
             capabilities,
         };
 

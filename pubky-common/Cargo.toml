@@ -1,7 +1,7 @@
 [package]
 name = "pubky-common"
 description = "Types and struct in common between Pubky client and homeserver"
-version = "0.5.4"
+version = "0.6.0-rc.6"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -23,9 +23,11 @@ argon2 = { version = "0.5.3", features = ["std"] }
 pubky-timestamp = { version = "0.4.0", features = ["full"] }
 serde = { version = "1.0.217", features = ["derive"] }
 pkarr = { workspace = true, features = ["keys"] }
+url = "2.5.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.77"
 
 [dev-dependencies]
 postcard = "1.1.1"
+serde_json = "1"

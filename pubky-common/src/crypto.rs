@@ -42,7 +42,7 @@ pub fn encrypt(plain_text: &[u8], encryption_key: &[u8; 32]) -> Vec<u8> {
         .expect("XSalsa20Poly1305 encrypt should be infallible");
 
     let mut out: Vec<u8> = Vec::with_capacity(nonce.len() + ciphertext.len());
-    out.extend_from_slice(nonce.as_slice());
+    out.extend_from_slice(nonce.as_ref());
     out.extend_from_slice(&ciphertext);
 
     out

@@ -4,11 +4,11 @@ Pubky Auth is a protocol for using user's [root key](../concepts/rootkey.md) to 
 
 ### Glossary
 1. **Authenticator**: An application holding the Keypair used in authentication. Eg [Pubky Ring](https://github.com/pubky/pubky-ring).
-1. **Pubky**: The public key (pubky) identifying the user.
-1. **Homeserver**: The public key (pubky) identifying the receiver of the authentication request, usually a server.
-1. **3rd Party App**: An application trying to get authorized to access some resources belonging to the **Pubky**.
-1. **Capabilities**: A list of strings specifying scopes and the actions that can be performed on them.
-1. **HTTP relay**: An independent HTTP relay (or the backend of the 3rd Party App) forwarding the [`AuthToken`](#authtoken-encoding) to the frontend.  
+2. **Pubky**: The public key (pubky) identifying the user.
+3. **Homeserver**: The public key (pubky) identifying the receiver of the authentication request, usually a server.
+4. **3rd Party App**: An application trying to get authorized to access some resources belonging to the **Pubky**.
+5. **Capabilities**: A list of strings specifying scopes and the actions that can be performed on them.
+6. **HTTP relay**: An independent HTTP relay (or the backend of the 3rd Party App) forwarding the [`AuthToken`](#authtoken-encoding) to the frontend.  
 
 ## Flow
 
@@ -46,8 +46,8 @@ sequenceDiagram
 ```
 
 1. `3rd Party App` generates a unique (32 bytes) `client_secret`.
-1. `3rd Party App` uses the `base64url(hash(client_secret))` as a `channel_id` and subscribe to that channel on the `HTTP Relay` it is using.
-1. `3rd Party App` formats a Pubky Auth url:
+2. `3rd Party App` uses the `base64url(hash(client_secret))` as a `channel_id` and subscribe to that channel on the `HTTP Relay` it is using.
+3. `3rd Party App` formats a Pubky Auth url:
 ```
 pubkyauth:///
    ?relay=<HTTP Relay base (without channel_id)>
@@ -63,15 +63,15 @@ pubkyauth:///
  ```
  and finally show that URL as a QR code to the user.
 1. The `Authenticator` app scans that QR code, parses the URL and shows a consent form for the user.
-1. The user decides whether or not to grant these capabilities to the `3rd Party App`.
-1. If the user approves, the `Authenticator` uses their Keypair to sign an [`AuthToken`](#authtoken-encoding), then encrypts that token with the `client_secret`. The `channel_id` is then calculated by hashing that secret and the encrypted token is sent to the callback url, which is the `relay` + `channel_id`.
-1. `HTTP Relay` forwards the encrypted `AuthToken` to the `3rd Party App` frontend and confirms the delivery with the `Authenticator`.
-1. `3rd Party App` decrypts the AuthToken using its `client_secret`, reads the `pubky` in it and sends it to their `Homeserver` to obtain a session.
-1. `Homeserver` verifies the session and stores the corresponding `capabilities`.
-1. `Homeserver` returns a session Id to the frontend to use in subsequent requests.
-1. `3rd Party App` uses the session Id to access some resource at the Homeserver.
-1. `Homeserver` checks the session capabilities to see if it is allowed to access that resource.
-1. `Homeserver` responds to the `3rd Party App` with the resource.
+2. The user decides whether or not to grant these capabilities to the `3rd Party App`.
+3. If the user approves, the `Authenticator` uses their Keypair to sign an [`AuthToken`](#authtoken-encoding), then encrypts that token with the `client_secret`. The `channel_id` is then calculated by hashing that secret and the encrypted token is sent to the callback url, which is the `relay` + `channel_id`.
+4. `HTTP Relay` forwards the encrypted `AuthToken` to the `3rd Party App` frontend and confirms the delivery with the `Authenticator`.
+5. `3rd Party App` decrypts the AuthToken using its `client_secret`, reads the `pubky` in it and sends it to their `Homeserver` to obtain a session.
+6. `Homeserver` verifies the session and stores the corresponding `capabilities`.
+7. `Homeserver` returns a session Id to the frontend to use in subsequent requests.
+8. `3rd Party App` uses the session Id to access some resource at the Homeserver.
+9. `Homeserver` checks the session capabilities to see if it is allowed to access that resource.
+10. `Homeserver` responds to the `3rd Party App` with the resource.
 
 ### AuthToken encoding
 ```abnf
@@ -97,10 +97,10 @@ action        = "r" / "w" ; Read or write (more actions can be specified later)
 ### AuthToken verification
 To verify a token the `Homeserver` should:
 1. Check the 75th byte (version) and make sure it is `0` for this spec.
-1. Deserialize the token
-1. Verify that the `timestamp` is within a window from the local time: the default should be 45 seconds in the past and 45 seconds in the future to handle latency and drifts.
-1. Verify that the `pubky` is the signer of the `signature` over the rest of the serialized token after the signature (`serialized_token[65..]`).
-1. To avoid reuse of the token the `Homeserver` should consider the `timestamp` and `pubky`  (`serialized_token[75..115]`) as a unique sortable ID, and store it in a sortable key value store, rejecting any token that has the same ID, and removing all IDs that start with a timestamp that is older than the window mentioned in step 3.
+2. Deserialize the token
+3. Verify that the `timestamp` is within a window from the local time: the default should be 45 seconds in the past and 45 seconds in the future to handle latency and drifts.
+4. Verify that the `pubky` is the signer of the `signature` over the rest of the serialized token after the signature (`serialized_token[65..]`).
+5. To avoid reuse of the token the `Homeserver` should consider the `timestamp` and `pubky`  (`serialized_token[75..115]`) as a unique sortable ID, and store it in a sortable key value store, rejecting any token that has the same ID, and removing all IDs that start with a timestamp that is older than the window mentioned in step 3.
 
 ## Unhosted Apps and Relays
 Callback URLs work fine for full-stack applications. There are however many cases where you would want to develop an application without a backend, yet you still would like to let users sign in and bring their own backend. The idea of [Unhosted](https://unhosted.org/) applications is one of the main reasons we are developing Homeservers.

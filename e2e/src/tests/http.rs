@@ -1,15 +1,16 @@
+use pubky_testnet::pubky::Method;
 use pubky_testnet::EphemeralTestnet;
-use reqwest::Method;
 
 #[tokio::test]
 async fn http_get_pubky() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
 
-    let client = testnet.pubky_client().unwrap();
+    let client = testnet.client().unwrap();
 
+    let pubky_url = format!("https://{}/", server.public_key());
     let response = client
-        .get(format!("https://{}/", server.public_key()))
+        .request(Method::GET, &pubky_url)
         .send()
         .await
         .unwrap();
@@ -21,10 +22,12 @@ async fn http_get_pubky() {
 async fn http_get_icann() {
     let testnet = EphemeralTestnet::start().await.unwrap();
 
-    let client = testnet.pubky_client().unwrap();
+    let client = testnet.client().unwrap();
+
+    let icann_url = "https://google.com/".to_string();
 
     let response = client
-        .request(Method::GET, "https://google.com/")
+        .request(Method::GET, &icann_url)
         .send()
         .await
         .unwrap();

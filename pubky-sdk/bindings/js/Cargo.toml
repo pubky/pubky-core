@@ -1,0 +1,64 @@
+[package]
+name = "pubky-wasm"
+version = "0.6.0-rc.6"
+edition = "2024"
+description = "Pubky-Core Client WASM bindings"
+authors = [
+    "SeverinAlexB <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+    "Nuh <nuh@nuh.dev>",
+]
+license = "MIT"
+homepage = "https://github.com/pubky/pubky-core"
+repository = "https://github.com/pubky/pubky-core"
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
+categories = [
+    "network-programming",
+    "cryptography",
+    "web-programming",
+    "authentication",
+]
+publish = false # Do not publish to crates.io, only publish to npmjs.com
+
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "bundle_npm"
+path = "scripts/bundle_npm.rs"
+
+[dependencies]
+wasm-bindgen = "0.2.100"
+console_log = { version = "1.0.0", features = ["color"] }
+log = "0.4.28"
+js-sys = "0.3.77"
+wasm-bindgen-futures = "0.4.54"
+futures-util = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+tsify = "0.5.5"
+pubky = { path = "../../../pubky-sdk", default-features = false, features = [
+    "json",
+] }
+pubky-common = { path = "../../../pubky-common" }
+pkarr = { workspace = true, default-features = false }
+web-sys = { version = "0.3.77", default-features = false, features = [
+    "Request",
+    "RequestInit",
+    "RequestCredentials",
+    "Response",
+    "ReadableStream",
+    "ResponseInit",
+    "Headers",
+    "ServiceWorkerGlobalScope",
+] }
+url = "2.5.4"
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
+reqwest = { version = "0.12.12", default-features = false, features = [
+    "stream",
+] }
+wasm-streams = "0.4"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
