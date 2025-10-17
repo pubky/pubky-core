@@ -50,7 +50,7 @@ impl SessionStorage {
     /// # async fn ex(session: pubky::PubkySession) -> pubky::Result<()> {
     /// let text = session
     ///     .storage()
-    ///     .get("/pub/my.app/hello.txt").await?
+    ///     .get("/pub/my-cool-app/hello.txt").await?
     ///     .text().await?;
     /// # Ok(()) }
     /// ```
@@ -129,7 +129,7 @@ impl PublicStorage {
     /// ```no_run
     /// # async fn ex() -> pubky::Result<()> {
     /// let storage = pubky::PublicStorage::new()?;
-    /// let resp = storage.get("{other_pk}/pub/my.app/file.txt").await?;
+    /// let resp = storage.get("{other_pk}/pub/my-cool-app/file.txt").await?;
     /// let bytes = resp.bytes().await?;
     /// # Ok(()) }
     /// ```

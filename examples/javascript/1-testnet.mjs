@@ -17,7 +17,7 @@ const session = await signer.signup(homeserver, null);
 console.log("Signed up succeeded for user:", session.info.publicKey.z32());
 
 // 3) Write then read a file under /pub/<your.app>/
-const path = "/pub/my.app/hello.txt";
+const path = "/pub/my-cool-app/hello.txt";
 await session.storage.putText(path, "hi");
 console.log("Data write succeeded on path:", path);
 

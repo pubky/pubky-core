@@ -119,7 +119,7 @@ impl AuthToken {
     ///
     /// Returns: `string[]`, where each item is the canonical entry `"<scope>:<actions>"`.
     ///
-    /// Example entry: `"/pub/my.app/:rw"`
+    /// Example entry: `"/pub/my-cool-app/:rw"`
     #[wasm_bindgen(getter)]
     pub fn capabilities(&self) -> Vec<String> {
         self.0

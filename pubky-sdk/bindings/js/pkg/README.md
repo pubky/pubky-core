@@ -28,7 +28,7 @@ const signer = pubky.signer(keypair);
 
 // 2) Sign up at a homeserver (optionally with an invite)
 const homeserver = PublicKey.from(
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
 const signupToken = "<your-invite-code-or-null>";
 const session = await signer.signup(homeserver, signupToken);
@@ -43,7 +43,7 @@ const addr = `pubky${userPk}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
-const authFlow = pubky.startAuthFlow("/pub/my.app/:rw"); // require permissions to read and write into `my.app`
+const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw"); // require permissions to read and write into `my.app`
 renderQr(authFlow.authorizationUrl); // show to user
 const session = await authFlow.awaitApproval();
 ```
@@ -68,7 +68,7 @@ const pubkyLocal = Pubky.testnet("localhost");
 const signer = pubky.signer(Keypair.random());
 
 // Pubky Auth flow (with capabilities)
-const authFlow = pubky.startAuthFlow("/pub/my.app/:rw");
+const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
 
 // Public storage (read-only)
 const publicStorage = pubky.publicStorage;
@@ -170,7 +170,7 @@ import { Pubky } from "@synonymdev/pubky";
 const pubky = new Pubky();
 
 // Comma-separated capabilities string
-const caps = "/pub/my.app/:rw,/pub/another.app/folder/:w";
+const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 
 // Optional relay; defaults to Synonym-hosted relay if omitted
 const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this)
@@ -233,7 +233,9 @@ surface precise feedback to the user.
 const pub = pubky.publicStorage;
 
 // Reads
-const response = await pub.get(`pubky${userPk.z32()}/pub/example.com/data.json`); // -> Response (stream it)
+const response = await pub.get(
+  `pubky${userPk.z32()}/pub/example.com/data.json`
+); // -> Response (stream it)
 await pub.getJson(`pubky${userPk.z32()}/pub/example.com/data.json`);
 await pub.getText(`pubky${userPk.z32()}/pub/example.com/readme.txt`);
 await pub.getBytes(`pubky${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
@@ -244,7 +246,13 @@ await pub.stats(`pubky${userPk.z32()}/pub/example.com/foo`); // { content_length
 
 // List directory (addressed path "<pubky>/pub/.../") must include trailing `/`.
 // list(addr, cursor=null|suffix|fullUrl, reverse=false, limit?, shallow=false)
-await pub.list(`pubky${userPk.z32()}/pub/example.com/`, null, false, 100, false);
+await pub.list(
+  `pubky${userPk.z32()}/pub/example.com/`,
+  null,
+  false,
+  100,
+  false
+);
 ```
 
 Use `get()` when you need the raw `Response` for streaming or custom parsing.
@@ -283,7 +291,7 @@ Path rules:
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
 - Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
 
-**Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
+**Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/my-new-app/`.
 
 ---
 
@@ -329,7 +337,8 @@ Use `resolvePubky()` when you need to feed an addressed resource into a raw HTTP
 ```js
 import { resolvePubky } from "@synonymdev/pubky";
 
-const identifier = "pubkyoperrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG";
+const identifier =
+  "pubkyoperrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG";
 const url = resolvePubky(identifier);
 // -> "https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG"
 ```

@@ -9,7 +9,7 @@ Usage:
   npm run authenticator -- </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
 
 Example:
-  npm run authenticator -- ./alice.pkarr "pubkyauth:///?caps=/pub/my.app/:rw&secret=...&relay=http://localhost:15412/link" --testnet
+  npm run authenticator -- ./alice.pkarr "pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=...&relay=http://localhost:15412/link" --testnet
 
 You can try this out with the example backend-less third party browser application in /examples/rust/3-auth_flow/3rd-party-app
 `;

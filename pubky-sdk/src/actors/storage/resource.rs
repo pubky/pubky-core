@@ -3,12 +3,12 @@
 //! # Why two address shapes?
 //! Pubky paths come in two *disjoint* forms, each used by a different part of the API:
 //!
-//! - [`ResourcePath`]: an **absolute**, URL-safe path like `"/pub/my.app/file"`.
+//! - [`ResourcePath`]: an **absolute**, URL-safe path like `"/pub/my-cool-app/file"`.
 //!   It contains **no user** information and is used by *session-scoped* (authenticated)
-//!   operations that act “as me”. Example: `session.storage().get("/pub/my.app/file")`.
+//!   operations that act “as me”. Example: `session.storage().get("/pub/my-cool-app/file")`.
 //!
 //! - [`PubkyResource`]: an **addressed resource** that pairs a user with an absolute path,
-//!   e.g. `"pubky<public_key>/pub/my.app/file"` (preferred) or `pubky://<public_key>/pub/my.app/file`.
+//!   e.g. `"pubky<public_key>/pub/my-cool-app/file"` (preferred) or `pubky://<public_key>/pub/my-cool-app/file`.
 //!   It is used by *public* (unauthenticated) operations and any API that must
 //!   target **another user’s** data. Example: `public.get("pubky<pk>/pub/site/index.html")`.
 //!
@@ -44,19 +44,19 @@ fn invalid(msg: impl Into<String>) -> Error {
 /// - Rejects empty **internal** segments (i.e., `//`); preserves a trailing `/`.
 /// - Percent-encodes segments using `url::Url` rules (UTF-8).
 ///
-/// Accepts both `"pub/my.app/file"` and `"/pub/my.app/file"` and normalizes to an
+/// Accepts both `"pub/my-cool-app/file"` and `"/pub/my-cool-app/file"` and normalizes to an
 /// absolute form.
 ///
 /// ### Examples
 /// ```
 /// # use pubky::ResourcePath;
 /// // Parse from &str (relative becomes absolute)
-/// let p = ResourcePath::parse("pub/my.app/file")?;
-/// assert_eq!(p.to_string(), "/pub/my.app/file");
+/// let p = ResourcePath::parse("pub/my-cool-app/file")?;
+/// assert_eq!(p.to_string(), "/pub/my-cool-app/file");
 ///
 /// // Trailing slash is preserved
-/// let dir = ResourcePath::parse("/pub/my.app/")?;
-/// assert_eq!(dir.to_string(), "/pub/my.app/");
+/// let dir = ResourcePath::parse("/pub/my-cool-app/")?;
+/// assert_eq!(dir.to_string(), "/pub/my-cool-app/");
 ///
 /// // Percent-encoding
 /// let enc = ResourcePath::parse("pub/My File.txt")?;
@@ -329,8 +329,8 @@ pub fn resolve_pubky<S: AsRef<str>>(input: S) -> Result<Url, Error> {
 ///     p.into_abs_path()
 /// }
 ///
-/// let a = takes_abs("/pub/my.app/file")?;
-/// let b = takes_abs("pub/my.app/file")?;
+/// let a = takes_abs("/pub/my-cool-app/file")?;
+/// let b = takes_abs("pub/my-cool-app/file")?;
 /// assert_eq!(a, b);
 /// # Ok::<(), pubky::Error>(())
 /// ```
@@ -475,16 +475,16 @@ mod tests {
     fn parse_addressed_user_both_forms() {
         let kp = Keypair::random();
         let user = kp.public_key();
-        let s1 = format!("pubky://{}/pub/my.app/file", user);
-        let s3 = format!("pubky{}/pub/my.app/file", user);
+        let s1 = format!("pubky://{}/pub/my-cool-app/file", user);
+        let s3 = format!("pubky{}/pub/my-cool-app/file", user);
 
         let p1 = PubkyResource::from_str(&s1).unwrap();
         let p3 = PubkyResource::from_str(&s3).unwrap();
 
         assert_eq!(p1.owner, user);
         assert_eq!(p3.owner, user);
-        assert_eq!(p1.path.as_str(), "/pub/my.app/file");
-        assert_eq!(p3.path.as_str(), "/pub/my.app/file");
+        assert_eq!(p1.path.as_str(), "/pub/my-cool-app/file");
+        assert_eq!(p3.path.as_str(), "/pub/my-cool-app/file");
 
         // Display: identifier form
         assert_eq!(p1.to_string(), s3);
@@ -496,12 +496,12 @@ mod tests {
     #[test]
     fn session_scoped_paths_and_rendering() {
         // Session-scoped absolute path is represented by ResourcePath
-        let p_abs = ResourcePath::parse("/pub/my.app/file").unwrap();
-        assert_eq!(p_abs.as_str(), "/pub/my.app/file");
+        let p_abs = ResourcePath::parse("/pub/my-cool-app/file").unwrap();
+        assert_eq!(p_abs.as_str(), "/pub/my-cool-app/file");
 
         // PubkyResource::from_str("/...") must fail (owner is required)
         assert!(matches!(
-            PubkyResource::from_str("/pub/my.app/file"),
+            PubkyResource::from_str("/pub/my-cool-app/file"),
             Err(Error::Request(RequestError::Validation { .. }))
         ));
 
@@ -511,7 +511,7 @@ mod tests {
         let r = PubkyResource::new(user.clone(), p_abs.as_str()).unwrap();
         assert_eq!(
             r.to_pubky_url(),
-            format!("pubky://{}/pub/my.app/file", user)
+            format!("pubky://{}/pub/my-cool-app/file", user)
         );
     }
 
@@ -551,8 +551,8 @@ mod tests {
         assert!(ResourcePath::parse("/a/./b").is_err());
         assert!(ResourcePath::parse("/a/../b").is_err());
         assert_eq!(
-            ResourcePath::parse("/pub/my.app/").unwrap().as_str(),
-            "/pub/my.app/"
+            ResourcePath::parse("/pub/my-cool-app/").unwrap().as_str(),
+            "/pub/my-cool-app/"
         );
     }
 

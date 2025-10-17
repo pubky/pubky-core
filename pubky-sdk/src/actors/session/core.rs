@@ -209,7 +209,7 @@ impl PubkySession {
 
     /// Create a **session-mode** Storage bound to this user session.
     ///
-    /// - Relative paths (e.g. `"pub/my.app/file"`) are resolved to **this** user.
+    /// - Relative paths (e.g. `"pub/my-cool-app/file"`) are resolved to **this** user.
     /// - Requests that target this user’s homeserver automatically carry the
     ///   session cookie.
     ///

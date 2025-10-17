@@ -59,7 +59,7 @@ impl Pubky {
     /// Provide a **capabilities string** and (optionally) a relay base URL.
     /// The capabilities string is a comma-separated list of entries:
     /// `"<scope>:<actions>"`, where:
-    /// - `scope` starts with `/` (e.g. `/pub/example.app/`).
+    /// - `scope` starts with `/` (e.g. `/pub/example.com/`).
     /// - `actions` is any combo of `r` and/or `w` (order normalized; `wr` -> `rw`).
     /// Pass `""` for no scopes (read-only public session).
     ///
@@ -74,7 +74,7 @@ impl Pubky {
     /// - `{ name: "RequestError" }` if the flow cannot be started (network/relay)
     ///
     /// @example
-    /// const flow = pubky.startAuthFlow("/pub/my.app/:rw");
+    /// const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
     /// renderQr(flow.authorizationUrl);
     /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "startAuthFlow")]

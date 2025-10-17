@@ -32,19 +32,19 @@ let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
 let session = signer.signup(&homeserver, None).await?;
 
 // 3) Read/Write as the signed-in user
-session.storage().put("/pub/my.app/hello.txt", "hello").await?;
-let body = session.storage().get("/pub/my.app/hello.txt").await?.text().await?;
+session.storage().put("/pub/my-cool-app/hello.txt", "hello").await?;
+let body = session.storage().get("/pub/my-cool-app/hello.txt").await?.text().await?;
 assert_eq!(&body, "hello");
 
 // 4) Public read of another user’s file
 let txt = pubky.public_storage()
-  .get(format!("pubky{}/pub/my.app/hello.txt", session.info().public_key()))
+  .get(format!("pubky{}/pub/my-cool-app/hello.txt", session.info().public_key()))
   .await?
   .text().await?;
 assert_eq!(txt, "hello");
 
 // 5) Keyless app flow (QR/deeplink)
-let caps = Capabilities::builder().write("/pub/acme.app/").finish();
+let caps = Capabilities::builder().write("/pub/example.com/").finish();
 let flow = pubky.start_auth_flow(&caps)?;
 println!("Scan to sign in: {}", flow.authorization_url());
 let app_session = flow.await_approval().await?;
@@ -84,8 +84,8 @@ let pubky = Pubky::new()?;
 let session = pubky.signer(keypair).signin().await?;
 
 let storage = session.storage();
-storage.put("/pub/my.app/data.txt", "hi").await?;
-let text = storage.get("/pub/my.app/data.txt").await?.text().await?;
+storage.put("/pub/my-cool-app/data.txt", "hi").await?;
+let text = storage.get("/pub/my-cool-app/data.txt").await?.text().await?;
 
 # Ok(()) }
 ```
@@ -101,13 +101,13 @@ let pubky = Pubky::new()?;
 let public = pubky.public_storage();
 
 let file = public
-    .get(format!("pubky{user_id}/pub/acme.app/file.bin"))
+    .get(format!("pubky{user_id}/pub/example.com/file.bin"))
     .await?
     .bytes()
     .await?;
 
 let entries = public
-    .list(format!("pubky{user_id}/pub/acme.app/"))?
+    .list(format!("pubky{user_id}/pub/example.com/"))?
     .limit(10)
     .send()
     .await?;
@@ -125,7 +125,7 @@ Path rules:
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
 - Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
 
-**Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/mycoolnew.app/`.
+**Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/my-new-app/`.
 
 ### Resolve identifiers into transport URLs
 
@@ -182,7 +182,7 @@ Request an authorization URL and await approval.
 
 let pubky = Pubky::new()?;
 // Read/Write capabilities for acme.app route
-let caps = Capabilities::builder().read_write("pub/acme.app/").finish();
+let caps = Capabilities::builder().read_write("pub/example.com/").finish();
 
 // Start the flow using the default relay (see “Relay & reliability” below)
 let flow = pubky.start_auth_flow(&caps)?;
@@ -216,7 +216,7 @@ See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-
 # use pubky::{Pubky, PubkyAuthFlow, Capabilities};
 # async fn custom_relay() -> pubky::Result<()> {
 let pubky = Pubky::new()?;
-let caps = Capabilities::builder().read("pub/acme.app/").finish();
+let caps = Capabilities::builder().read("pub/example.com/").finish();
 let auth_flow = PubkyAuthFlow::builder(&caps)
     .client(pubky.client().clone())
     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
@@ -252,8 +252,8 @@ let pubky = testnet.sdk()?;
 let signer = pubky.signer(Keypair::random());
 let session  = signer.signup(&homeserver.public_key(), None).await?;
 
-session.storage().put("/pub/my.app/hello.txt", "hi").await?;
-let s = session.storage().get("/pub/my.app/hello.txt").await?.text().await?;
+session.storage().put("/pub/my-cool-app/hello.txt", "hi").await?;
+let s = session.storage().get("/pub/my-cool-app/hello.txt").await?.text().await?;
 assert_eq!(s, "hi");
 
 # Ok(()) }

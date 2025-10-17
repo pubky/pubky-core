@@ -8,7 +8,7 @@ Usage:
   npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 Examples:
-  npm run request -- GET https://_pubky.<user>/pub/my.app/info.json --testnet
+  npm run request -- GET https://_pubky.<user>/pub/my-cool-app/info.json --testnet
   npm run request -- \\
     -H "Content-Type: application/json" \\
     -H "Accept: application/json" \\

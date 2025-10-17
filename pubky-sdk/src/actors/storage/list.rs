@@ -21,7 +21,7 @@ impl SessionStorage {
     /// # async fn example(session: pubky::PubkySession) -> pubky::Result<()> {
     /// let entries = session
     ///     .storage()
-    ///     .list("/pub/my.app/")?
+    ///     .list("/pub/my-cool-app/")?
     ///     .limit(100)
     ///     .shallow(true)
     ///     .send()

@@ -25,7 +25,7 @@ impl AuthFlow {
     /// @param {string} capabilities
     /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.
     /// Each entry must be `"<scope>:<actions>"`, where:
-    /// - `scope` starts with `/` (e.g. `/pub/example.app/`)
+    /// - `scope` starts with `/` (e.g. `/pub/example.com/`)
     /// - `actions` is any combo of `r` and/or `w` (order is normalized; `wr` -> `rw`)
     /// Empty string is allowed (no scopes).
     ///
@@ -40,7 +40,7 @@ impl AuthFlow {
     /// - `{ name: "InvalidInput", message: string }` if any capability entry is invalid
     ///     or for an invalid relay URL.
     /// @example
-    /// const flow = AuthFlow.start("/pub/my.app/:rw,/pub/pubky.app/:w");
+    /// const flow = AuthFlow.start("/pub/my-cool-app/:rw,/pub/pubky.app/:w");
     /// renderQRCode(flow.authorizationUrl());
     /// const session = await flow.awaitApproval();
     #[wasm_bindgen(js_name = "start")]

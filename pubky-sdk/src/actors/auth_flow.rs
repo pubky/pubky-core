@@ -75,7 +75,7 @@ use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 /// # use pubky::{Capabilities, Pubky, PubkyAuthFlow};
 /// # async fn run() -> pubky::Result<()> {
 /// let pubky = Pubky::new()?;
-/// let caps = Capabilities::builder().read("pub/acme.app/").finish();
+/// let caps = Capabilities::builder().read("pub/example.com/").finish();
 /// let flow = PubkyAuthFlow::builder(&caps)
 ///     .client(pubky.client().clone())
 ///     .relay(url::Url::parse("http://localhost:8080/link/")?)

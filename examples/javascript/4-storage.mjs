@@ -8,7 +8,7 @@ Usage:
   npm run storage -- pubky<user>/<absolute-path> [--testnet]
 
 Example:
-  npm run storage -- pubkyq5oo7majwe3mbkj6p49osws8o748b186bbojdxdn3asnn63enk6y/pub/my.app/hello.txt --testnet
+  npm run storage -- pubkyq5oo7majwe3mbkj6p49osws8o748b186bbojdxdn3asnn63enk6y/pub/my-cool-app/hello.txt --testnet
   npm run storage -- pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 `;
 

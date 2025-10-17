@@ -18,7 +18,7 @@ cargo run --bin request -- <METHOD> <URL> [--testnet] [-H "Name: value"] [-d DAT
 
 ```bash
 # HTTPS to the _pubky (homeserver) subdomain form
-cargo run --bin request -- GET https://_pubky.<user_pubky>/pub/my.app/info.json
+cargo run --bin request -- GET https://_pubky.<user_pubky>/pub/my-cool-app/info.json
 
 # JSON POST with headers
 cargo run --bin request -- \
@@ -28,7 +28,7 @@ cargo run --bin request -- \
   POST https://example.com/data.json
 
 # Use local testnet endpoints
-cargo run --bin request -- --testnet GET https://_pubky.<user_pubky>/pub/my.app/hello.txt
+cargo run --bin request -- --testnet GET https://_pubky.<user_pubky>/pub/my-cool-app/hello.txt
 ```
 
 For example, at the time of writing, the following command returns the content of a user's social post from his pubky homeserver.

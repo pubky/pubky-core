@@ -42,7 +42,7 @@ Override `--homeserver` when pointing at mainnet infrastructure, or change `--le
 
 ### 1) Testnet End-to-end roundtrip (signup -> write -> read)
 
-Creates a random user, signs up on the local testnet, writes a file to `/pub/my.app/hello.txt`, and reads it back.
+Creates a random user, signs up on the local testnet, writes a file to `/pub/my-cool-app/hello.txt`, and reads it back.
 
 ```bash
 npm run testnet
@@ -73,20 +73,20 @@ npm run authenticator -- </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--ho
 Example URL looks like:
 
 ```
-pubkyauth:///?caps=/pub/my.app/:rw&secret=<...>&relay=http://localhost:15412/link
+pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=<...>&relay=http://localhost:15412/link
 ```
 
 You can run a Browser 3rd party app that requires authentication with [**3rd-party-app**](/examples/rust/3-auth_flow/3rd-party-app)
 
 ### 4) Public storage read (no auth)
 
-Reads a public resource via the **addressed** form: `<pubky>/pub/my.app/path/to/file.txt`.
+Reads a public resource via the **addressed** form: `<pubky>/pub/my-cool-app/path/to/file.txt`.
 
 ```bash
 npm run storage -- <pubky>/<absolute-path> [--testnet]
 
 # examples
-npm run storage -- q5oo7ma.../pub/my.app/hello.txt --testnet
+npm run storage -- q5oo7ma.../pub/my-cool-app/hello.txt --testnet
 npm run storage -- operrr8w.../pub/pubky.app/posts/0033X02JAN0SG
 ```
 
@@ -100,7 +100,7 @@ Low-level fetch through the Pubky client. Handy for debugging.
 npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 # pubky:// read (testnet)
-npm run request -- GET https://_pubky.q5oo7ma.../pub/my.app/info.json --testnet
+npm run request -- GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
 
 # https:// JSON POST
 npm run request -- \
@@ -114,8 +114,8 @@ npm run request -- \
 
 - **Pubky** facade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).
 - **Signer** -> **Session**: `signer.signin(homeserver, invite?)` -> returns `session`.
-- **SessionStorage** (read/write): absolute paths like `"/pub/my.app/file.txt"`.
-- **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my.app/file.txt"`.
+- **SessionStorage** (read/write): absolute paths like `"/pub/my-cool-app/file.txt"`.
+- **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my-cool-app/file.txt"`.
 - **https://\_pubky.<key> subdomains and key TLDs**: `https://_pubky.<public_key>/<abs-path>`, supported by the Pubky client.
 - **Recovery file**: encrypted root secret; decrypted with a passphrase to get a `Keypair`.
 

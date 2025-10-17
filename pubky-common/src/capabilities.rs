@@ -4,7 +4,7 @@
 //!
 //! A single capability is serialized as: `"<scope>:<actions>"`
 //!
-//! - `scope` must start with `/` (e.g. `"/pub/my.app/"`, `"/"`).
+//! - `scope` must start with `/` (e.g. `"/pub/my-cool-app/"`, `"/"`).
 //! - `actions` is a compact string of letters, currently:
 //!   - `r` => read (GET)
 //!   - `w` => write (PUT/POST/DELETE)
@@ -13,10 +13,10 @@
 //!
 //! - Read+write everything: `"/:rw"`
 //! - Read-only a file: `"/pub/foo.txt:r"`
-//! - Read-write a directory: `"/pub/my.app/:rw"`
+//! - Read-write a directory: `"/pub/my-cool-app/:rw"`
 //!
 //! Multiple capabilities are serialized as a comma-separated list,
-//! e.g. `"/pub/my.app/:rw,/pub/foo.txt:r"`.
+//! e.g. `"/pub/my-cool-app/:rw,/pub/foo.txt:r"`.
 //!
 //! ## Builder ergonomics
 //!
@@ -24,18 +24,18 @@
 //! use pubky_common::capabilities::{Capability, Capabilities};
 //!
 //! // Single-cap builder
-//! let cap = Capability::builder("/pub/my.app/")
+//! let cap = Capability::builder("/pub/my-cool-app/")
 //!     .read()
 //!     .write()
 //!     .finish();
-//! assert_eq!(cap.to_string(), "/pub/my.app/:rw");
+//! assert_eq!(cap.to_string(), "/pub/my-cool-app/:rw");
 //!
 //! // Multiple caps builder
 //! let caps = Capabilities::builder()
-//!     .read_write("/pub/my.app/")
+//!     .read_write("/pub/my-cool-app/")
 //!     .read("/pub/foo.txt")
 //!     .finish();
-//! assert_eq!(caps.to_string(), "/pub/my.app/:rw,/pub/foo.txt:r");
+//! assert_eq!(caps.to_string(), "/pub/my-cool-app/:rw,/pub/foo.txt:r");
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -235,8 +235,8 @@ impl TryFrom<&str> for Capability {
     ///
     /// ```
     /// use pubky_common::capabilities::Capability;
-    /// let cap: Capability = "/pub/my.app/:rw".try_into().unwrap();
-    /// assert_eq!(cap.to_string(), "/pub/my.app/:rw");
+    /// let cap: Capability = "/pub/my-cool-app/:rw".try_into().unwrap();
+    /// assert_eq!(cap.to_string(), "/pub/my-cool-app/:rw");
     /// ```
     fn try_from(value: &str) -> Result<Self, Error> {
         if value.matches(':').count() != 1 {
@@ -310,7 +310,7 @@ pub enum Error {
 /// A wrapper around `Vec<Capability>` that controls how capabilities are
 /// serialized and built.
 ///
-/// Serialization is a single comma-separated string (e.g. `"/:rw,/pub/my.app/:r"`),
+/// Serialization is a single comma-separated string (e.g. `"/:rw,/pub/my-cool-app/:r"`),
 /// which is convenient for logs, URLs, or compact text payloads. It also comes
 /// with a fluent builder (`Capabilities::builder()`).
 ///
@@ -345,7 +345,7 @@ impl Capabilities {
     /// Parse capabilities from the `caps` query parameter.
     ///
     /// Expects a comma-separated list of capability strings, e.g.:
-    /// `?caps=/pub/my.app/:rw,/foo:r`
+    /// `?caps=/pub/my-cool-app/:rw,/foo:r`
     ///
     /// Invalid entries are ignored.
     ///
@@ -353,7 +353,7 @@ impl Capabilities {
     /// ```
     /// # use url::Url;
     /// # use pubky_common::capabilities::Capabilities;
-    /// let url = Url::parse("https://example/app?caps=/pub/my.app/:rw,/foo:r").unwrap();
+    /// let url = Url::parse("https://example/app?caps=/pub/my-cool-app/:rw,/foo:r").unwrap();
     /// let caps = Capabilities::from_url(&url);
     /// assert!(!caps.is_empty());
     /// ```
@@ -411,9 +411,9 @@ impl CapsBuilder {
     /// ```
     /// use pubky_common::capabilities::Capabilities;
     /// let caps = Capabilities::builder()
-    ///     .capability("/pub/my.app/", |b| b.read().write())
+    ///     .capability("/pub/my-cool-app/", |b| b.read().write())
     ///     .finish();
-    /// assert_eq!(caps.to_string(), "/pub/my.app/:rw");
+    /// assert_eq!(caps.to_string(), "/pub/my-cool-app/:rw");
     /// ```
     pub fn capability<F>(mut self, scope: impl Into<String>, f: F) -> Self
     where
@@ -628,11 +628,11 @@ mod tests {
     #[test]
     fn single_capability_via_builder_and_shortcuts() {
         // Full builder:
-        let cap1 = Capability::builder("/pub/my.app/").read().write().finish();
-        assert_eq!(cap1.to_string(), "/pub/my.app/:rw");
+        let cap1 = Capability::builder("/pub/my-cool-app/").read().write().finish();
+        assert_eq!(cap1.to_string(), "/pub/my-cool-app/:rw");
 
         // Shortcuts:
-        let cap_rw = Capability::read_write("/pub/my.app/");
+        let cap_rw = Capability::read_write("/pub/my-cool-app/");
         let cap_r = Capability::read("/pub/file.txt");
         let cap_w = Capability::write("/pub/uploads/");
 
@@ -644,21 +644,21 @@ mod tests {
     #[test]
     fn multiple_caps_with_capsbuilder() {
         let caps = Capabilities::builder()
-            .read("/pub/my.app/") // "/pub/my.app/:r"
+            .read("/pub/my-cool-app/") // "/pub/my-cool-app/:r"
             .write("/pub/uploads/") // "/pub/uploads/:w"
-            .read_write("/pub/my.app/data/") // "/pub/my.app/data/:rw"
+            .read_write("/pub/my-cool-app/data/") // "/pub/my-cool-app/data/:rw"
             .finish();
 
         // String form is comma-separated, in insertion order:
         assert_eq!(
             caps.to_string(),
-            "/pub/my.app/:r,/pub/uploads/:w,/pub/my.app/data/:rw"
+            "/pub/my-cool-app/:r,/pub/uploads/:w,/pub/my-cool-app/data/:rw"
         );
 
         // Contains checks:
-        assert!(caps.contains(&Capability::read("/pub/my.app/")));
+        assert!(caps.contains(&Capability::read("/pub/my-cool-app/")));
         assert!(caps.contains(&Capability::write("/pub/uploads/")));
-        assert!(caps.contains(&Capability::read_write("/pub/my.app/data/")));
+        assert!(caps.contains(&Capability::read_write("/pub/my-cool-app/data/")));
         assert!(!caps.contains(&Capability::write("/nope")));
     }
 
@@ -666,10 +666,10 @@ mod tests {
     fn build_with_inline_capability_closure() {
         // Build a capability inline with fine-grained control, then push it:
         let caps = Capabilities::builder()
-            .capability("/pub/my.app/", |c| c.read().write())
+            .capability("/pub/my-cool-app/", |c| c.read().write())
             .finish();
 
-        assert_eq!(caps.to_string(), "/pub/my.app/:rw");
+        assert_eq!(caps.to_string(), "/pub/my-cool-app/:rw");
     }
 
     #[test]
@@ -694,18 +694,18 @@ mod tests {
 
         // CapsBuilder helpers also normalize:
         let caps = Capabilities::builder()
-            .read_write("pub/my.app/data")
+            .read_write("pub/my-cool-app/data")
             .finish();
-        assert_eq!(caps.to_string(), "/pub/my.app/data:rw");
+        assert_eq!(caps.to_string(), "/pub/my-cool-app/data:rw");
     }
 
     #[test]
     fn parse_from_string_list() {
         // From a comma-separated string:
-        let parsed = Capabilities::try_from("/:rw,/pub/my.app/:r").unwrap();
+        let parsed = Capabilities::try_from("/:rw,/pub/my-cool-app/:r").unwrap();
         let built = Capabilities::builder()
             .read_write("/") // "/:rw"
-            .read("/pub/my.app/") // "/pub/my.app/:r"
+            .read("/pub/my-cool-app/") // "/pub/my-cool-app/:r"
             .finish();
 
         assert_eq!(parsed, built);
@@ -788,13 +788,13 @@ mod tests {
     #[test]
     fn serde_roundtrip_as_string() {
         let caps = Capabilities::builder()
-            .read_write("/pub/my.app/")
+            .read_write("/pub/my-cool-app/")
             .read("/pub/file.txt")
             .finish();
 
         let json = serde_json::to_string(&caps).unwrap();
         // Serialized as a single string:
-        assert_eq!(json, "\"/pub/my.app/:rw,/pub/file.txt:r\"");
+        assert_eq!(json, "\"/pub/my-cool-app/:rw,/pub/file.txt:r\"");
 
         let back: Capabilities = serde_json::from_str(&json).unwrap();
         assert_eq!(back, caps);
