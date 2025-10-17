@@ -26,7 +26,7 @@ crate-type = ["cdylib"]
 [dependencies]
 wasm-bindgen = "0.2.100"
 console_log = { version = "1.0.0", features = ["color"] }
-log = "0.4.27"
+log = "0.4.28"
 js-sys = "0.3.77"
 wasm-bindgen-futures = "0.4.54"
 serde = { version = "1.0", features = ["derive"] }
