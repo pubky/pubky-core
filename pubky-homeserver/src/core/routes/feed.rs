@@ -32,9 +32,13 @@ pub async fn feed(
             Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
         };
 
-    let events =
-        EventRepository::get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
-            .await?;
+    let events = EventRepository::get_by_cursor(
+        None,
+        Some(cursor),
+        params.limit,
+        &mut state.sql_db.pool().into(),
+    )
+    .await?;
     let mut result = events
         .iter()
         .map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str()))
@@ -70,12 +74,17 @@ pub async fn feed(
 /// - **Note:** Only entered if `limit` parameter is omitted (infinite stream)
 ///
 /// ## Query Parameters
+/// - `user` (**REQUIRED**): One or more user public keys to filter events for. Can be repeated multiple times.
+///   - Format: z-base-32 encoded public key (e.g., "o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")
+///   - Single user: `?user=pubkey1`
+///   - Multiple users: `?user=pubkey1&user=pubkey2&user=pubkey3`
+///   - Maximum: 50 users per request
+///   - The endpoint uses the `(user, created_at, id)` database index for efficient querying
 /// - `cursor` (optional): Starting point for event stream. Format: "timestamp:id" or legacy timestamp.
 ///   Default: "0" (start from beginning)
 /// - `limit` (optional): Maximum total events to send before closing connection.
 ///   - If **omitted**: Stream all historical events + enter live mode (infinite stream)
 ///   - If **specified**: Send up to N events total, then close connection
-/// - `user` (optional): Reserved for future user-specific filtering (currently unused)
 ///
 /// ## SSE Response Format
 /// Each event is sent as:
@@ -88,19 +97,53 @@ pub async fn feed_stream(
     State(state): State<AppState>,
     params: ListQueryParams,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    let cursor = match params.cursor {
-        Some(cursor) => cursor,
-        None => "0".to_string(),
+    use crate::constants::MAX_EVENT_STREAM_USERS;
+    use crate::persistence::sql::user::UserRepository;
+    use pkarr::PublicKey;
+    use std::str::FromStr;
+
+    // User parameter is REQUIRED for events-stream
+    if params.users.is_empty() {
+        return Err(HttpError::bad_request("user parameter is required"));
+    }
+
+    // Validate max users
+    if params.users.len() > MAX_EVENT_STREAM_USERS {
+        return Err(HttpError::bad_request(&format!(
+            "Too many users. Maximum allowed: {}",
+            MAX_EVENT_STREAM_USERS
+        )));
+    }
+
+    // Parse all pubkeys and get user IDs
+    let mut user_ids = Vec::new();
+    for user_pubkey_str in &params.users {
+        let user_pubkey = PublicKey::from_str(user_pubkey_str)
+            .map_err(|_| HttpError::bad_request("Invalid user public key"))?;
+
+        let user_id = UserRepository::get_id(&user_pubkey, &mut state.sql_db.pool().into())
+            .await
+            .map_err(|e| match e {
+                sqlx::Error::RowNotFound => HttpError::not_found(),
+                _ => HttpError::from(e),
+            })?;
+        user_ids.push(user_id);
+    }
+
+    let mut cursor = match params.cursor {
+        Some(cursor_str) => {
+            // Parse the provided cursor
+            match EventRepository::parse_cursor(&cursor_str, &mut state.sql_db.pool().into()).await
+            {
+                Ok(cursor) => Some(cursor),
+                Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
+            }
+        }
+        // No cursor means start from the beginning
+        None => None,
     };
 
-    let mut cursor =
-        match EventRepository::parse_cursor(cursor.as_str(), &mut state.sql_db.pool().into()).await
-        {
-            Ok(cursor) => cursor,
-            Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
-        };
-
-    // Internal batch size for DB queries. We may want to allow caller to specify this.
+    // Internal batch size for DB queries
     const BATCH_SIZE: u16 = 100;
 
     // Maximum total events to send (None = infinite)
@@ -112,7 +155,8 @@ pub async fn feed_stream(
         // Fetch all historical events in batches until caught up
         loop {
             let events = match EventRepository::get_by_cursor(
-                Some(cursor),
+                Some(user_ids.clone()),
+                cursor,
                 Some(BATCH_SIZE),
                 &mut state.sql_db.pool().into(),
             )
@@ -126,11 +170,12 @@ pub async fn feed_stream(
 
             // Stream each historical event
             for event in events {
-                cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
+                let event_cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
+                cursor = Some(event_cursor);
                 let event_data = format!(
                     "pubky://{}\ncursor: {}",
                     event.path.as_str(),
-                    cursor
+                    event_cursor
                 );
                 yield Ok(Event::default()
                     .event(event.event_type.to_string())
@@ -164,19 +209,27 @@ pub async fn feed_stream(
             loop {
                 match rx.recv().await {
                     Ok(event) => {
-                        // Only send events after our cursor
-                        let is_after_cursor = event.created_at > cursor.timestamp
-                            || (event.created_at == cursor.timestamp && event.id > cursor.id);
-
-                        if !is_after_cursor {
+                        // Filter by user_ids
+                        if !user_ids.contains(&event.user_id) {
                             continue;
                         }
 
-                        cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
+                        // Only send events after our cursor (if we have one)
+                        if let Some(ref c) = cursor {
+                            let is_after_cursor = event.created_at > c.timestamp
+                                || (event.created_at == c.timestamp && event.id > c.id);
+
+                            if !is_after_cursor {
+                                continue;
+                            }
+                        }
+
+                        let event_cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
+                        cursor = Some(event_cursor);
                         let event_data = format!(
                             "pubky://{}\ncursor: {}",
                             event.path.as_str(),
-                            cursor
+                            event_cursor
                         );
                         yield Ok(Event::default()
                             .event(event.event_type.to_string())
