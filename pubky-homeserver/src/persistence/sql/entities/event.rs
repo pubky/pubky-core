@@ -1,6 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use pkarr::PublicKey;
+use pubky_common::crypto::Hash;
 use pubky_common::timestamp::Timestamp;
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
@@ -23,6 +24,50 @@ use crate::{
 };
 
 pub const EVENT_TABLE: &str = "events";
+
+/// Response structure for event streams.
+/// This represents the data format returned by the `/events-stream` endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventResponse {
+    /// The type of event (PUT or DEL)
+    pub event_type: EventType,
+    /// The full pubky path (e.g., "pubky://user_pubkey/pub/example.txt")
+    pub path: String,
+    /// Cursor for pagination (timestamp:id format)
+    pub cursor: String,
+    /// Optional content hash (blake3) in hex format
+    pub content_hash: Option<String>,
+}
+
+impl EventResponse {
+    /// Create an EventResponse from an EventEntity
+    pub fn from_entity(entity: &EventEntity) -> Self {
+        let cursor = EventCursor::new(entity.created_at, entity.id);
+        Self {
+            event_type: entity.event_type.clone(),
+            path: format!("pubky://{}", entity.path.as_str()),
+            cursor: cursor.to_string(),
+            content_hash: entity.content_hash.map(|h| h.to_hex().to_string()),
+        }
+    }
+
+    /// Format as SSE event data.
+    /// Returns the multiline data field content.
+    /// Each line will be prefixed with "data: " by the SSE library.
+    /// Format:
+    /// ```text
+    /// data: pubky://user_pubkey/pub/example.txt
+    /// data: cursor: 00331BD814YCT:42
+    /// data: content_hash: abc123... (optional, only if present)
+    /// ```
+    pub fn to_sse_data(&self) -> String {
+        let mut lines = vec![self.path.clone(), format!("cursor: {}", self.cursor)];
+        if let Some(hash) = &self.content_hash {
+            lines.push(format!("content_hash: {}", hash));
+        }
+        lines.join("\n")
+    }
+}
 
 /// Cursor for pagination in event queries.
 /// Format: "timestamp:id" where timestamp is a NaiveDateTime and id is the event ID.
@@ -58,9 +103,18 @@ impl EventRepository {
         user_id: i32,
         event_type: EventType,
         path: &EntryPath,
+        content_hash: Option<Hash>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EventEntity, sqlx::Error> {
-        Self::create_with_timestamp(user_id, event_type, path, &Utc::now(), executor).await
+        Self::create_with_timestamp(
+            user_id,
+            event_type,
+            path,
+            content_hash,
+            &Utc::now(),
+            executor,
+        )
+        .await
     }
 
     /// Create a new event with a specific timestamp.
@@ -69,23 +123,32 @@ impl EventRepository {
         user_id: i32,
         event_type: EventType,
         path: &EntryPath,
+        content_hash: Option<Hash>,
         created_at: &DateTime<Utc>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EventEntity, sqlx::Error> {
+        let mut columns = vec![
+            EventIden::Type,
+            EventIden::User,
+            EventIden::Path,
+            EventIden::CreatedAt,
+        ];
+        let mut values = vec![
+            SimpleExpr::Value(event_type.to_string().into()),
+            SimpleExpr::Value(user_id.into()),
+            SimpleExpr::Value(path.path().as_str().into()),
+            SimpleExpr::Value(created_at.naive_utc().into()),
+        ];
+
+        if let Some(hash) = content_hash {
+            columns.push(EventIden::ContentHash);
+            values.push(SimpleExpr::Value(hash.as_bytes().to_vec().into()));
+        }
+
         let statement = Query::insert()
             .into_table(EVENT_TABLE)
-            .columns([
-                EventIden::Type,
-                EventIden::User,
-                EventIden::Path,
-                EventIden::CreatedAt,
-            ])
-            .values(vec![
-                SimpleExpr::Value(event_type.to_string().into()),
-                SimpleExpr::Value(user_id.into()),
-                SimpleExpr::Value(path.path().as_str().into()),
-                SimpleExpr::Value(created_at.naive_utc().into()),
-            ])
+            .columns(columns)
+            .values(values)
             .expect("Failed to build insert statement")
             .returning_col(EventIden::Id)
             .to_owned();
@@ -102,6 +165,7 @@ impl EventRepository {
             event_type,
             path: path.clone(),
             created_at: created_at.naive_utc(),
+            content_hash,
         })
     }
 
@@ -109,6 +173,7 @@ impl EventRepository {
     /// The cursor can be in multiple formats for backwards compatibility:
     /// 1. New format: "timestamp:id" (e.g., "00331BD814YCT:42")
     /// 2. Legacy format (timestamp only): A timestamp that needs to be looked up in the database
+    ///
     /// If you don't want to use a cursor, set it to "0".
     pub async fn parse_cursor<'a>(
         cursor: &str,
@@ -172,6 +237,7 @@ impl EventRepository {
                 (EVENT_TABLE, EventIden::User),
                 (EVENT_TABLE, EventIden::Path),
                 (EVENT_TABLE, EventIden::CreatedAt),
+                (EVENT_TABLE, EventIden::ContentHash),
             ])
             .column((USER_TABLE, UserIden::PublicKey))
             .from(EVENT_TABLE)
@@ -221,6 +287,7 @@ pub enum EventIden {
     User,
     Path,
     CreatedAt,
+    ContentHash,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -259,6 +326,7 @@ pub struct EventEntity {
     pub event_type: EventType,
     pub path: EntryPath,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
+    pub content_hash: Option<Hash>,
 }
 
 impl FromRow<'_, PgRow> for EventEntity {
@@ -278,6 +346,15 @@ impl FromRow<'_, PgRow> for EventEntity {
         let path = WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(EventIden::CreatedAt.to_string().as_str())?;
+
+        // Read optional content_hash
+        let content_hash: Option<Vec<u8>> =
+            row.try_get(EventIden::ContentHash.to_string().as_str())?;
+        let content_hash = content_hash.and_then(|bytes| {
+            let hash_bytes: [u8; 32] = bytes.try_into().ok()?;
+            Some(Hash::from_bytes(hash_bytes))
+        });
+
         Ok(EventEntity {
             id,
             event_type,
@@ -285,6 +362,7 @@ impl FromRow<'_, PgRow> for EventEntity {
             user_pubkey,
             path: EntryPath::new(user_public_key, path),
             created_at,
+            content_hash,
         })
     }
 }
@@ -311,9 +389,15 @@ mod tests {
         // Test create session - First get the 4th event to establish our cursor
         for _ in 0..10 {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
-            let _ = EventRepository::create(user.id, EventType::Put, &path, &mut db.pool().into())
-                .await
-                .unwrap();
+            let _ = EventRepository::create(
+                user.id,
+                EventType::Put,
+                &path,
+                None,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
         }
 
         // Get first 4 events to establish cursor from the 4th event
@@ -372,6 +456,7 @@ mod tests {
                 user.id,
                 EventType::Put,
                 &path,
+                None,
                 &created_at,
                 &mut db.pool().into(),
             )
@@ -412,6 +497,7 @@ mod tests {
                 user.id,
                 EventType::Put,
                 &path,
+                None,
                 &created_at,
                 &mut db.pool().into(),
             )
@@ -504,5 +590,71 @@ mod tests {
             timestamp_part.unwrap().as_u64(),
             expected_timestamp.as_u64()
         );
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_event_response_formatting() {
+        use pubky_common::crypto::Hash;
+
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Create event with content_hash
+        let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test.txt").unwrap());
+        let content_hash = Hash::from_bytes([42u8; 32]);
+        let event_with_hash = EventRepository::create(
+            user.id,
+            EventType::Put,
+            &path,
+            Some(content_hash),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+
+        // Test EventResponse with content_hash
+        let response = EventResponse::from_entity(&event_with_hash);
+        assert_eq!(response.event_type, EventType::Put);
+        assert!(response.path.starts_with("pubky://"));
+        assert!(response.path.contains("/test.txt"));
+        assert!(response.content_hash.is_some());
+        assert_eq!(
+            response.content_hash.as_ref().unwrap(),
+            &content_hash.to_hex().to_string()
+        );
+
+        // Test SSE data formatting with hash
+        let sse_data = response.to_sse_data();
+        assert!(sse_data.contains("pubky://"));
+        assert!(sse_data.contains("cursor:"));
+        assert!(sse_data.contains("content_hash:"));
+
+        // Create event without content_hash (DELETE)
+        let event_without_hash = EventRepository::create(
+            user.id,
+            EventType::Delete,
+            &path,
+            None,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+
+        // Test EventResponse without content_hash
+        let response_no_hash = EventResponse::from_entity(&event_without_hash);
+        assert_eq!(response_no_hash.event_type, EventType::Delete);
+        assert!(response_no_hash.content_hash.is_none());
+
+        // Test SSE data formatting without hash
+        let sse_data_no_hash = response_no_hash.to_sse_data();
+        assert!(sse_data_no_hash.contains("pubky://"));
+        assert!(sse_data_no_hash.contains("cursor:"));
+        assert!(!sse_data_no_hash.contains("content_hash:"));
     }
 }

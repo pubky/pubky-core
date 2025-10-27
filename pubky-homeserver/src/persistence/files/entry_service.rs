@@ -54,7 +54,14 @@ impl EntryService {
         };
 
         // Create event and broadcast
-        let event = EventRepository::create(entry.user_id, EventType::Put, path, executor).await?;
+        let event = EventRepository::create(
+            entry.user_id,
+            EventType::Put,
+            path,
+            Some(metadata.hash),
+            executor,
+        )
+        .await?;
         // Broadcast to any listening clients.
         match self.event_tx.send(event) {
             Ok(_) => {}
@@ -123,7 +130,7 @@ impl EntryService {
 
         // Create event and broadcast
         let event =
-            EventRepository::create(entry.user_id, EventType::Delete, path, executor).await?;
+            EventRepository::create(entry.user_id, EventType::Delete, path, None, executor).await?;
         // Broadcast to any listening clients.
         match self.event_tx.send(event) {
             Ok(_) => {} // Successfully broadcast to receivers

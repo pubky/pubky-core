@@ -8,6 +8,7 @@ use crate::persistence::sql::{
         M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,
         M20250813CreateSessionMigration, M20250814CreateEventMigration,
         M20250815CreateEntryMigration, M20251014AddEventsUserTimestampIdIndexMigration,
+        M20251027AddEventContentHashMigration,
     },
     sql_db::SqlDb,
 };
@@ -37,6 +38,7 @@ impl<'a> Migrator<'a> {
             Box::new(M20250814CreateEventMigration),
             Box::new(M20250815CreateEntryMigration),
             Box::new(M20251014AddEventsUserTimestampIdIndexMigration),
+            Box::new(M20251027AddEventContentHashMigration),
         ]
     }
 
