@@ -12,7 +12,7 @@ use std::convert::Infallible;
 
 use crate::{
     core::{extractors::ListQueryParams, AppState},
-    persistence::sql::event::EventRepository,
+    persistence::sql::event::{EventRepository, EventResponse},
     shared::{HttpError, HttpResult},
 };
 
@@ -87,12 +87,23 @@ pub async fn feed(
 ///   - If **specified**: Send up to N events total, then close connection
 ///
 /// ## SSE Response Format
-/// Each event is sent as:
+/// Each event is sent as an SSE message with the event type and multiline data:
 /// ```text
 /// event: PUT
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 00331BD814YCT:42
+/// data: content_hash: af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
 /// ```
+///
+/// Or for DELETE events (no content_hash):
+/// ```text
+/// event: DEL
+/// data: pubky://user_pubkey/pub/example.txt
+/// data: cursor: 00331BD814YCT:43
+/// ```
+///
+/// **Note**: The `content_hash` field is optional and only included for PUT events when the hash is available.
+/// Legacy events created before the content_hash feature was added will not have this field.
 pub async fn feed_stream(
     State(state): State<AppState>,
     params: ListQueryParams,
@@ -109,7 +120,7 @@ pub async fn feed_stream(
 
     // Validate max users
     if params.users.len() > MAX_EVENT_STREAM_USERS {
-        return Err(HttpError::bad_request(&format!(
+        return Err(HttpError::bad_request(format!(
             "Too many users. Maximum allowed: {}",
             MAX_EVENT_STREAM_USERS
         )));
@@ -172,14 +183,11 @@ pub async fn feed_stream(
             for event in events {
                 let event_cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
                 cursor = Some(event_cursor);
-                let event_data = format!(
-                    "pubky://{}\ncursor: {}",
-                    event.path.as_str(),
-                    event_cursor
-                );
+
+                let response = EventResponse::from_entity(&event);
                 yield Ok(Event::default()
-                    .event(event.event_type.to_string())
-                    .data(event_data));
+                    .event(response.event_type.to_string())
+                    .data(response.to_sse_data()));
 
                 total_sent += 1;
 
@@ -206,40 +214,29 @@ pub async fn feed_stream(
         // Only enter if no limit was specified (infinite stream)
         if max_events.is_none() {
             let mut rx = state.event_tx.subscribe();
-            loop {
-                match rx.recv().await {
-                    Ok(event) => {
-                        // Filter by user_ids
-                        if !user_ids.contains(&event.user_id) {
-                            continue;
-                        }
+            while let Ok(event) = rx.recv().await {
+                // Filter by user_ids
+                if !user_ids.contains(&event.user_id) {
+                    continue;
+                }
 
-                        // Only send events after our cursor (if we have one)
-                        if let Some(ref c) = cursor {
-                            let is_after_cursor = event.created_at > c.timestamp
-                                || (event.created_at == c.timestamp && event.id > c.id);
+                // Only send events after our cursor (if we have one)
+                if let Some(ref c) = cursor {
+                    let is_after_cursor = event.created_at > c.timestamp
+                        || (event.created_at == c.timestamp && event.id > c.id);
 
-                            if !is_after_cursor {
-                                continue;
-                            }
-                        }
-
-                        let event_cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
-                        cursor = Some(event_cursor);
-                        let event_data = format!(
-                            "pubky://{}\ncursor: {}",
-                            event.path.as_str(),
-                            event_cursor
-                        );
-                        yield Ok(Event::default()
-                            .event(event.event_type.to_string())
-                            .data(event_data));
-                    }
-                    Err(_) => {
-                        // Channel closed or lagged - connection will close
-                        break;
+                    if !is_after_cursor {
+                        continue;
                     }
                 }
+
+                let event_cursor = crate::persistence::sql::event::EventCursor::new(event.created_at, event.id);
+                cursor = Some(event_cursor);
+
+                let response = EventResponse::from_entity(&event);
+                yield Ok(Event::default()
+                    .event(response.event_type.to_string())
+                    .data(response.to_sse_data()));
             }
         }
     };
