@@ -1165,74 +1165,7 @@ async fn events_stream_multiple_users() {
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_max_users_validation() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    // Create 51 user parameters
-    let mut query_params = vec![];
-    for _i in 0..51 {
-        let keypair = Keypair::random();
-        query_params.push(format!("user={}", keypair.public_key()));
-    }
-
-    let stream_url = format!(
-        "https://{}/events-stream?{}",
-        server.public_key(),
-        query_params.join("&")
-    );
-
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(
-        response.status(),
-        StatusCode::BAD_REQUEST,
-        "Should return 400 Bad Request for too many users"
-    );
-
-    let body = response.text().await.unwrap();
-    assert!(
-        body.contains("Too many users") || body.contains("Maximum allowed: 50"),
-        "Error message should mention max users limit"
-    );
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_no_users_error() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let stream_url = format!("https://{}/events-stream", server.public_key());
-
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(
-        response.status(),
-        StatusCode::BAD_REQUEST,
-        "Should return 400 Bad Request when no user parameter provided"
-    );
-
-    let body = response.text().await.unwrap();
-    assert!(
-        body.contains("user parameter is required"),
-        "Error message should mention user parameter is required"
-    );
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_invalid_user_keys() {
+async fn events_stream_validation_errors() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
     let client = testnet.pubky_client().unwrap();
@@ -1240,7 +1173,7 @@ async fn events_stream_invalid_user_keys() {
     let keypair1 = Keypair::random();
     let keypair2 = Keypair::random();
 
-    // Only sign up user1, leave user2 not registered
+    // Sign up user1, leave user2 not registered
     client
         .signup(&keypair1, &server.public_key(), None)
         .await
@@ -1250,114 +1183,290 @@ async fn events_stream_invalid_user_keys() {
     let pubky2 = keypair2.public_key(); // Not registered
     let invalid_pubkey = "invalid_key_not_zbase32";
 
-    // Test 1: Invalid public key format
+    // Test 1: No user parameter
+    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "No user parameter"
+    );
+    let body = response.text().await.unwrap();
+    assert!(body.contains("user parameter is required"));
+
+    // Test 2: Too many users (>50)
+    let mut query_params = vec![];
+    for _i in 0..51 {
+        let keypair = Keypair::random();
+        query_params.push(format!("user={}", keypair.public_key()));
+    }
+    let stream_url = format!(
+        "https://{}/events-stream?{}",
+        server.public_key(),
+        query_params.join("&")
+    );
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Too many users");
+    let body = response.text().await.unwrap();
+    assert!(body.contains("Too many users") || body.contains("Maximum allowed: 50"));
+
+    // Test 3: Invalid public key format
     let stream_url = format!(
         "https://{}/events-stream?user={}",
         server.public_key(),
         invalid_pubkey
     );
-
     let response = client
         .request(Method::GET, &stream_url)
         .send()
         .await
         .unwrap();
-
     assert_eq!(
         response.status(),
         StatusCode::BAD_REQUEST,
-        "Should return 400 Bad Request for invalid public key format"
+        "Invalid key format"
     );
-
     let body = response.text().await.unwrap();
-    assert!(
-        body.contains("Invalid user public key"),
-        "Error message should mention invalid public key, got: {}",
-        body
-    );
+    assert!(body.contains("Invalid user public key"));
 
-    // Test 2: Valid public key but user not registered (should return 404)
+    // Test 4: Valid key but user not registered
     let stream_url = format!(
         "https://{}/events-stream?user={}",
         server.public_key(),
         pubky2
     );
-
     let response = client
         .request(Method::GET, &stream_url)
         .send()
         .await
         .unwrap();
-
     assert_eq!(
         response.status(),
         StatusCode::NOT_FOUND,
-        "Should return 404 Not Found for non-existent user"
+        "User not registered"
     );
 
-    // Test 3: Mix of valid registered user, valid unregistered user
+    // Test 5: Mix of valid registered and unregistered user
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
         server.public_key(),
         pubky1,
         pubky2
     );
-
     let response = client
         .request(Method::GET, &stream_url)
         .send()
         .await
         .unwrap();
-
     assert_eq!(
         response.status(),
         StatusCode::NOT_FOUND,
-        "Should return 404 Not Found when any user is not registered"
+        "Mixed valid/unregistered"
     );
 
-    // Test 4: Mix of valid user and invalid key format
+    // Test 6: Mix of valid user and invalid key format
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
         server.public_key(),
         pubky1,
         invalid_pubkey
     );
-
     let response = client
         .request(Method::GET, &stream_url)
         .send()
         .await
         .unwrap();
-
     assert_eq!(
         response.status(),
         StatusCode::BAD_REQUEST,
-        "Should return 400 Bad Request when any key is invalid format"
+        "Mixed valid/invalid"
     );
-
     let body = response.text().await.unwrap();
-    assert!(
-        body.contains("Invalid user public key"),
-        "Error message should mention invalid public key"
-    );
+    assert!(body.contains("Invalid user public key"));
 
-    // Test 5: Multiple invalid keys
+    // Test 7: Multiple invalid keys
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
         server.public_key(),
         invalid_pubkey,
         "another_invalid_key"
     );
-
     let response = client
         .request(Method::GET, &stream_url)
         .send()
         .await
         .unwrap();
-
     assert_eq!(
         response.status(),
         StatusCode::BAD_REQUEST,
-        "Should return 400 Bad Request for multiple invalid keys"
+        "Multiple invalid keys"
     );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_reverse() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create 10 events with identifiable content
+    for i in 0..10 {
+        let url = format!("pubky://{pubky}/pub/file_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Test forward order (reverse=false) - should get oldest first
+    let stream_url_forward = format!(
+        "https://{}/events-stream?user={}&limit=10",
+        server.public_key(),
+        pubky
+    );
+    let response = client
+        .request(Method::GET, &stream_url_forward)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut forward_files = Vec::new();
+    let mut event_count = 0;
+
+    while event_count < 10 {
+        if let Some(Ok(event)) = stream.next().await {
+            for line in event.data.lines() {
+                if line.contains("/pub/file_") {
+                    if let Some(filename) = line.split("/pub/").nth(1) {
+                        forward_files.push(filename.to_string());
+                    }
+                }
+            }
+            event_count += 1;
+        } else {
+            println!("Forward stream ended at event {}", event_count);
+            break;
+        }
+    }
+
+    assert_eq!(
+        forward_files.len(),
+        10,
+        "Should receive 10 events in forward order"
+    );
+    assert_eq!(
+        forward_files[0], "file_0.txt",
+        "First event should be file_0"
+    );
+    assert_eq!(
+        forward_files[9], "file_9.txt",
+        "Last event should be file_9"
+    );
+
+    // Test reverse order (reverse=true) - should get newest first
+    let stream_url_reverse = format!(
+        "https://{}/events-stream?user={}&reverse=true&limit=10",
+        server.public_key(),
+        pubky
+    );
+    let response = client
+        .request(Method::GET, &stream_url_reverse)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut reverse_files = Vec::new();
+    let mut event_count = 0;
+
+    while event_count < 10 {
+        if let Some(Ok(event)) = stream.next().await {
+            for line in event.data.lines() {
+                if line.contains("/pub/file_") {
+                    if let Some(filename) = line.split("/pub/").nth(1) {
+                        reverse_files.push(filename.to_string());
+                    }
+                }
+            }
+            event_count += 1;
+        } else {
+            println!("Reverse stream ended at event {}", event_count);
+            break;
+        }
+    }
+
+    assert_eq!(
+        reverse_files.len(),
+        10,
+        "Should receive 10 events in reverse order"
+    );
+    assert_eq!(
+        reverse_files[0], "file_9.txt",
+        "First event should be file_9 (newest)"
+    );
+    assert_eq!(
+        reverse_files[9], "file_0.txt",
+        "Last event should be file_0 (oldest)"
+    );
+
+    // Verify reverse order is exactly the reverse of forward order
+    let mut forward_reversed = forward_files.clone();
+    forward_reversed.reverse();
+    assert_eq!(
+        reverse_files, forward_reversed,
+        "Reverse order should be exactly the reverse of forward order"
+    );
+
+    // Test that stream closes after all events are fetched with reverse=true
+    // (i.e., phase 2 of SSE is not entered)
+    let stream_url_close_test = format!(
+        "https://{}/events-stream?user={}&reverse=true&limit=10",
+        server.public_key(),
+        pubky
+    );
+    let response = client
+        .request(Method::GET, &stream_url_close_test)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut event_count = 0;
+
+    // Collect all events
+    while let Some(result) = stream.next().await {
+        if result.is_ok() {
+            event_count += 1;
+        }
+    }
+
+    assert_eq!(event_count, 10, "Should receive exactly 10 events");
+
+    // Try to read one more event - stream should be closed
+    let next_event = stream.next().await;
+    assert!(next_event.is_none(), "Stream should close after all events are fetched with reverse=true (phase 2 should not be entered)");
 }

@@ -163,7 +163,7 @@ mod tests {
 
         // Check
         let events: Vec<crate::persistence::sql::event::EventEntity> =
-            EventRepository::get_by_cursor(None, None, Some(10), &mut sql_db.pool().into())
+            EventRepository::get_by_cursor(None, None, Some(10), false, &mut sql_db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(events.len(), 3);
