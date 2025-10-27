@@ -218,12 +218,14 @@ impl EventRepository {
 
     /// Get a list of events by the cursor.
     /// The limit is the maximum number of events to return.
+    /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
     /// The executor can either be db.pool() or a transaction.
     /// This uses the (user, created_at, id) index for efficient querying when user_id is provided.
     pub async fn get_by_cursor<'a>(
         user_ids: Option<Vec<i32>>,
         cursor: Option<EventCursor>,
         limit: Option<u16>,
+        reverse: bool,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
@@ -254,22 +256,42 @@ impl EventRepository {
                 .to_owned();
         }
 
-        // Add cursor condition to use the index: (created_at, id) > (cursor.timestamp, cursor.id)
+        // Add cursor condition based on ordering direction
         if let Some(cursor) = cursor {
-            statement = statement
-                .and_where(
-                    Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                        .gt(cursor.timestamp)
-                        .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                            .eq(cursor.timestamp)
-                            .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))),
-                )
-                .to_owned();
+            if reverse {
+                // For reverse order, get events before the cursor: (created_at, id) < (cursor.timestamp, cursor.id)
+                statement = statement
+                    .and_where(
+                        Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                            .lt(cursor.timestamp)
+                            .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                .eq(cursor.timestamp)
+                                .and(Expr::col((EVENT_TABLE, EventIden::Id)).lt(cursor.id))),
+                    )
+                    .to_owned();
+            } else {
+                // For normal order, get events after the cursor: (created_at, id) > (cursor.timestamp, cursor.id)
+                statement = statement
+                    .and_where(
+                        Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                            .gt(cursor.timestamp)
+                            .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                .eq(cursor.timestamp)
+                                .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))),
+                    )
+                    .to_owned();
+            }
         }
 
+        let order = if reverse {
+            sea_query::Order::Desc
+        } else {
+            sea_query::Order::Asc
+        };
+
         statement = statement
-            .order_by((EVENT_TABLE, EventIden::CreatedAt), sea_query::Order::Asc)
-            .order_by((EVENT_TABLE, EventIden::Id), sea_query::Order::Asc)
+            .order_by((EVENT_TABLE, EventIden::CreatedAt), order.clone())
+            .order_by((EVENT_TABLE, EventIden::Id), order)
             .limit(limit as u64)
             .to_owned();
 
@@ -402,7 +424,7 @@ mod tests {
 
         // Get first 4 events to establish cursor from the 4th event
         let first_4_events =
-            EventRepository::get_by_cursor(None, None, Some(4), &mut db.pool().into())
+            EventRepository::get_by_cursor(None, None, Some(4), false, &mut db.pool().into())
                 .await
                 .unwrap();
         assert_eq!(first_4_events.len(), 4);
@@ -413,6 +435,7 @@ mod tests {
             None,
             Some(EventCursor::new(cursor_event.created_at, cursor_event.id)),
             Some(1),
+            false,
             &mut db.pool().into(),
         )
         .await
@@ -421,10 +444,15 @@ mod tests {
 
         let cursor = EventCursor::new(event5_cursor[0].created_at, event5_cursor[0].id);
 
-        let events =
-            EventRepository::get_by_cursor(None, Some(cursor), Some(4), &mut db.pool().into())
-                .await
-                .unwrap();
+        let events = EventRepository::get_by_cursor(
+            None,
+            Some(cursor),
+            Some(4),
+            false,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].id, cursor.id + 1);
         assert_eq!(events[0].user_id, user.id);
@@ -535,10 +563,15 @@ mod tests {
                 .await
                 .unwrap();
 
-            let events_after =
-                EventRepository::get_by_cursor(None, Some(cursor), None, &mut db.pool().into())
-                    .await
-                    .unwrap();
+            let events_after = EventRepository::get_by_cursor(
+                None,
+                Some(cursor),
+                None,
+                false,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
 
             // Should get events after the cursor (events[3] and events[4])
             assert_eq!(

@@ -39,6 +39,7 @@ pub async fn feed(
         None,
         Some(cursor),
         params.limit,
+        false,
         &mut state.sql_db.pool().into(),
     )
     .await?;
@@ -74,7 +75,7 @@ pub async fn feed(
 /// - Streams new events in real-time as they occur
 /// - Connection stays open indefinitely
 /// - Each event includes updated cursor for client state tracking
-/// - **Note:** Only entered if `limit` parameter is omitted (infinite stream)
+/// - **Note:** Only entered if `limit` parameter is omitted (infinite stream) AND `reverse` is false
 ///
 /// ## Query Parameters
 /// - `user` (**REQUIRED**): One or more user public keys to filter events for. Can be repeated multiple times.
@@ -86,8 +87,12 @@ pub async fn feed(
 /// - `cursor` (optional): Starting point for event stream. Format: "timestamp:id" or legacy timestamp.
 ///   Default: "0" (start from beginning)
 /// - `limit` (optional): Maximum total events to send before closing connection.
-///   - If **omitted**: Stream all historical events + enter live mode (infinite stream)
+///   - If **omitted**: Stream all historical events + enter live mode (infinite stream, unless `reverse=true`)
 ///   - If **specified**: Send up to N events total, then close connection
+/// - `reverse` (optional): Return events in reverse chronological order (newest first).
+///   Default: false (oldest first)
+///   - When `true`, only historical events are returned (connection closes after reaching earliest event)
+///   - Live mode is not available with `reverse=true` (doesn't make sense to stream backwards in time)
 ///
 /// ## SSE Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
@@ -172,6 +177,7 @@ pub async fn feed_stream(
                 Some(user_ids.clone()),
                 cursor,
                 Some(BATCH_SIZE),
+                params.reverse,
                 &mut state.sql_db.pool().into(),
             )
             .await
@@ -208,14 +214,18 @@ pub async fn feed_stream(
                 if max_events.is_some() {
                     return;
                 }
+                // If reverse mode, we've reached the end of historical data - close connection
+                if params.reverse {
+                    return;
+                }
                 // Otherwise, transition to live mode
                 break;
             }
         }
 
         // Phase 2: Live mode - stream new events from broadcast channel
-        // Only enter if no limit was specified (infinite stream)
-        if max_events.is_none() {
+        // Only enter if no limit was specified (infinite stream) and not in reverse mode
+        if max_events.is_none() && !params.reverse {
             let mut rx = state.event_tx.subscribe();
             while let Ok(event) = rx.recv().await {
                 // Filter by user_ids
