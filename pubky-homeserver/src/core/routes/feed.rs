@@ -11,7 +11,10 @@ use futures_util::stream::Stream;
 use std::convert::Infallible;
 
 use crate::{
-    core::{extractors::ListQueryParams, AppState},
+    core::{
+        extractors::{EventStreamQueryParams, ListQueryParams},
+        AppState,
+    },
     persistence::sql::event::{EventRepository, EventResponse},
     shared::{HttpError, HttpResult},
 };
@@ -106,7 +109,7 @@ pub async fn feed(
 /// Legacy events created before the content_hash feature was added will not have this field.
 pub async fn feed_stream(
     State(state): State<AppState>,
-    params: ListQueryParams,
+    params: EventStreamQueryParams,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     use crate::constants::MAX_EVENT_STREAM_USERS;
     use crate::persistence::sql::user::UserRepository;

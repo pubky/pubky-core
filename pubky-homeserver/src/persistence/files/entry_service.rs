@@ -66,7 +66,7 @@ impl EntryService {
         match self.event_tx.send(event) {
             Ok(_) => {}
             Err(SendError(_)) => {
-                // No active receivers - this is expected when no clients are long-polling
+                // No active receivers - this is expected when no clients are listening to Server-Side Events
             }
         }
         Ok(entry)
@@ -135,7 +135,7 @@ impl EntryService {
         match self.event_tx.send(event) {
             Ok(_) => {} // Successfully broadcast to receivers
             Err(SendError(_)) => {
-                // No active receivers - this is expected when no clients are long-polling
+                // No active receivers - this is expected when no clients are listening to Server-Side Events
             }
         }
 

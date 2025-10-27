@@ -216,7 +216,7 @@ impl EventRepository {
         Ok(EventCursor::new(created_at, event_id))
     }
 
-    /// Get a list of events by the cursor. The cursor contains both timestamp and id.
+    /// Get a list of events by the cursor.
     /// The limit is the maximum number of events to return.
     /// The executor can either be db.pool() or a transaction.
     /// This uses the (user, created_at, id) index for efficient querying when user_id is provided.
