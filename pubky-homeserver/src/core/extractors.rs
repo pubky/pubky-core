@@ -81,6 +81,9 @@ pub struct EventStreamQueryParams {
     /// Vec of (user_pubkey, optional_cursor) pairs
     /// Parsed from `user=pubkey` or `user=pubkey:cursor` format
     pub user_cursors: Vec<(String, Option<String>)>,
+    /// Optional path prefix filter (without pubky:// scheme)
+    /// E.g., "pub/files" to only return events under that directory
+    pub filter_dir: Option<String>,
 }
 
 impl EventStreamQueryParams {}
@@ -194,10 +197,20 @@ where
             })
             .collect::<Vec<(String, Option<String>)>>();
 
+        // Parse filter_dir parameter
+        let filter_dir = single_params.get("filter_dir").and_then(|fd| {
+            if fd.is_empty() {
+                None
+            } else {
+                Some(fd.clone())
+            }
+        });
+
         Ok(EventStreamQueryParams {
             limit,
             reverse,
             user_cursors,
+            filter_dir,
         })
     }
 }

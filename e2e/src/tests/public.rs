@@ -1592,3 +1592,55 @@ async fn events_stream_reverse() {
     let next_event = stream.next().await;
     assert!(next_event.is_none(), "Stream should close after all events are fetched with reverse=true (phase 2 should not be entered)");
 }
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_filter_dir() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create events in different directories
+    // /pub/files/ - 3 files
+    for i in 0..3 {
+        let url = format!("pubky://{pubky}/pub/files/doc_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // /pub/photos/ - 2 files
+    for i in 0..2 {
+        let url = format!("pubky://{pubky}/pub/photos/pic_{i}.jpg");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // /pub/ root - 2 files
+    for i in 0..2 {
+        let url = format!("pubky://{pubky}/pub/root_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Test with filter_dir parameter
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&filter_dir=/pub/files/",
+        server.public_key(),
+        pubky
+    );
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "filter_dir parameter should be accepted"
+    );
+}
