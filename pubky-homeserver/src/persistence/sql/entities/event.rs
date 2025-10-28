@@ -216,6 +216,119 @@ impl EventRepository {
         Ok(EventCursor::new(created_at, event_id))
     }
 
+    /// Get a list of events with per-user cursors.
+    /// Each user has their own cursor position.
+    /// The limit is the maximum total number of events to return across all users.
+    /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
+    /// The executor can either be db.pool() or a transaction.
+    /// This uses the (user, created_at, id) index for efficient querying.
+    pub async fn get_by_user_cursors<'a>(
+        user_cursors: Vec<(i32, Option<EventCursor>)>,
+        limit: Option<u16>,
+        reverse: bool,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<Vec<EventEntity>, sqlx::Error> {
+        if user_cursors.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
+        let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
+
+        // Build a UNION query for each user with their individual cursor
+        // This ensures we get events after each user's last seen position
+        let order = if reverse {
+            sea_query::Order::Desc
+        } else {
+            sea_query::Order::Asc
+        };
+
+        let mut union_queries = Vec::new();
+
+        for (user_id, cursor) in user_cursors {
+            let mut statement = Query::select()
+                .columns([
+                    (EVENT_TABLE, EventIden::Id),
+                    (EVENT_TABLE, EventIden::User),
+                    (EVENT_TABLE, EventIden::Type),
+                    (EVENT_TABLE, EventIden::Path),
+                    (EVENT_TABLE, EventIden::CreatedAt),
+                    (EVENT_TABLE, EventIden::ContentHash),
+                ])
+                .column((USER_TABLE, UserIden::PublicKey))
+                .from(EVENT_TABLE)
+                .left_join(
+                    USER_TABLE,
+                    Expr::col((EVENT_TABLE, EventIden::User))
+                        .eq(Expr::col((USER_TABLE, UserIden::Id))),
+                )
+                .and_where(Expr::col((EVENT_TABLE, EventIden::User)).eq(user_id))
+                .to_owned();
+
+            // Add cursor condition for this specific user
+            if let Some(cursor) = cursor {
+                if reverse {
+                    // For reverse order, get events before the cursor
+                    statement = statement
+                        .and_where(
+                            Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                .lt(cursor.timestamp)
+                                .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                    .eq(cursor.timestamp)
+                                    .and(Expr::col((EVENT_TABLE, EventIden::Id)).lt(cursor.id))),
+                        )
+                        .to_owned();
+                } else {
+                    // For normal order, get events after the cursor
+                    statement = statement
+                        .and_where(
+                            Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                .gt(cursor.timestamp)
+                                .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
+                                    .eq(cursor.timestamp)
+                                    .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))),
+                        )
+                        .to_owned();
+                }
+            }
+
+            union_queries.push(statement);
+        }
+
+        // Combine all user queries with UNION ALL and wrap in subquery
+        let mut combined_query = union_queries[0].clone();
+        for query in union_queries.iter().skip(1) {
+            combined_query = combined_query
+                .union(sea_query::UnionType::All, query.clone())
+                .to_owned();
+        }
+
+        // Wrap the UNION in a subquery and apply ordering and limit
+        // This is necessary because we can't order UNION results directly
+        let subquery_alias = sea_query::Alias::new("union_result");
+        combined_query = Query::select()
+            .from_subquery(combined_query, subquery_alias.clone())
+            .column((subquery_alias.clone(), EventIden::Id))
+            .column((subquery_alias.clone(), EventIden::User))
+            .column((subquery_alias.clone(), EventIden::Type))
+            .column((subquery_alias.clone(), EventIden::Path))
+            .column((subquery_alias.clone(), EventIden::CreatedAt))
+            .column((subquery_alias.clone(), EventIden::ContentHash))
+            .column((subquery_alias.clone(), UserIden::PublicKey))
+            .order_by(
+                (subquery_alias.clone(), EventIden::CreatedAt),
+                order.clone(),
+            )
+            .order_by((subquery_alias, EventIden::Id), order)
+            .limit(limit as u64)
+            .to_owned();
+
+        let (query, values) = combined_query.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
+        Ok(events)
+    }
+
     /// Get a list of events by the cursor.
     /// The limit is the maximum number of events to return.
     /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).

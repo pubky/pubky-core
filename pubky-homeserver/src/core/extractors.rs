@@ -76,10 +76,11 @@ impl ListQueryParams {
 
 #[derive(Debug, Clone)]
 pub struct EventStreamQueryParams {
-    pub cursor: Option<String>,
     pub limit: Option<u16>,
     pub reverse: bool,
-    pub users: Vec<String>,
+    /// Vec of (user_pubkey, optional_cursor) pairs
+    /// Parsed from `user=pubkey` or `user=pubkey:cursor` format
+    pub user_cursors: Vec<(String, Option<String>)>,
 }
 
 impl EventStreamQueryParams {}
@@ -151,16 +152,16 @@ where
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let query = parts.uri.query().unwrap_or("");
         let mut single_params: HashMap<String, String> = HashMap::new();
-        let mut multi_params: HashMap<String, Vec<String>> = HashMap::new();
+        let mut user_values: Vec<String> = Vec::new();
 
         for (key, value) in form_urlencoded::parse(query.as_bytes()) {
             let key_str = key.as_ref();
             if key_str == "user" {
                 // "user" can be repeated multiple times
-                multi_params
-                    .entry(key.into_owned())
-                    .or_default()
-                    .push(value.into_owned());
+                // Format: "user=pubkey" or "user=pubkey:cursor"
+                if !value.is_empty() {
+                    user_values.push(value.into_owned());
+                }
             } else {
                 // All other params are single-value (last one wins if repeated)
                 single_params.insert(key.into_owned(), value.into_owned());
@@ -179,28 +180,24 @@ where
             .and_then(|l| if l.is_empty() { None } else { Some(l) })
             .and_then(|l| l.parse::<u16>().ok());
 
-        let cursor = single_params
-            .get("cursor")
-            // Treat `cursor=` as None
-            .filter(|value| !value.is_empty())
-            .map(|value| value.to_string());
-
-        let users = multi_params
-            .get("user")
-            .map(|users| {
-                users
-                    .iter()
-                    .filter(|u| !u.is_empty())
-                    .cloned()
-                    .collect::<Vec<String>>()
+        // Parse user values into (pubkey, optional_cursor) pairs
+        // Format: "pubkey" or "pubkey:cursor"
+        let user_cursors = user_values
+            .into_iter()
+            .map(|value| {
+                // Split on first colon to separate pubkey from cursor
+                if let Some((pubkey, cursor)) = value.split_once(':') {
+                    (pubkey.to_string(), Some(cursor.to_string()))
+                } else {
+                    (value, None)
+                }
             })
-            .unwrap_or_default();
+            .collect::<Vec<(String, Option<String>)>>();
 
         Ok(EventStreamQueryParams {
             limit,
-            cursor,
             reverse,
-            users,
+            user_cursors,
         })
     }
 }

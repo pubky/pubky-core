@@ -953,7 +953,7 @@ async fn events_stream_cursor_filtering() {
 
     // Now connect with cursor - should only get events 6-10
     let stream_url = format!(
-        "https://{}/events-stream?user={}&cursor={}",
+        "https://{}/events-stream?user={}:{}",
         server.public_key(),
         pubky,
         cursor
@@ -1161,6 +1161,128 @@ async fn events_stream_multiple_users() {
         .filter(|e| e.contains(&pubky3.to_string()))
         .count();
     assert_eq!(user3_events, 0, "Should not receive events from user3");
+
+    // Now test that returned cursor values are correct with per-user cursors
+    // Get the first 2 events and track cursor per user
+    let stream_url_for_cursor = format!(
+        "https://{}/events-stream?user={}&user={}&limit=2",
+        server.public_key(),
+        pubky1,
+        pubky2
+    );
+
+    let response = client
+        .request(Method::GET, &stream_url_for_cursor)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut user1_cursor = String::new();
+    let mut user2_cursor = String::new();
+    let mut first_two_events = Vec::new();
+
+    while first_two_events.len() < 2 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let lines: Vec<&str> = event.data.lines().collect();
+                let path = lines[0].strip_prefix("pubky://").unwrap();
+                first_two_events.push(path.to_string());
+
+                // Extract cursor and associate with the user
+                if let Some(cursor_line) = lines.iter().find(|l| l.starts_with("cursor: ")) {
+                    let cursor = cursor_line.strip_prefix("cursor: ").unwrap().to_string();
+
+                    // Determine which user this event belongs to
+                    if lines[0].contains(&pubky1.to_string()) {
+                        user1_cursor = cursor;
+                    } else if lines[0].contains(&pubky2.to_string()) {
+                        user2_cursor = cursor;
+                    }
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    drop(stream);
+
+    assert_eq!(first_two_events.len(), 2, "Should get first 2 events");
+
+    // Now request the remaining events using per-user cursors
+    // This should properly handle the case where each user has a different cursor position
+    // Build the URL conditionally based on whether we have cursors
+    let mut url_parts = vec![format!("https://{}/events-stream?", server.public_key())];
+
+    if !user1_cursor.is_empty() {
+        url_parts.push(format!("user={}:{}", pubky1, user1_cursor));
+    } else {
+        url_parts.push(format!("user={}", pubky1));
+    }
+
+    if !user2_cursor.is_empty() {
+        url_parts.push(format!("&user={}:{}", pubky2, user2_cursor));
+    } else {
+        url_parts.push(format!("&user={}", pubky2));
+    }
+
+    let stream_url_with_cursor = url_parts.join("");
+
+    let response = client
+        .request(Method::GET, &stream_url_with_cursor)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut remaining_events = Vec::new();
+
+    while remaining_events.len() < 3 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let lines: Vec<&str> = event.data.lines().collect();
+                let path = lines[0].strip_prefix("pubky://").unwrap();
+                remaining_events.push(path.to_string());
+            }
+        } else {
+            break;
+        }
+    }
+
+    // We should get exactly 3 remaining events (1 from user1, 2 from user2)
+    // This will FAIL if the cursor implementation is broken for multiple users
+    assert_eq!(
+        remaining_events.len(),
+        3,
+        "Should receive all remaining events after cursor. Got: {:?}",
+        remaining_events
+    );
+
+    let user1_remaining = remaining_events
+        .iter()
+        .filter(|e| e.contains(&pubky1.to_string()))
+        .count();
+    let user2_remaining = remaining_events
+        .iter()
+        .filter(|e| e.contains(&pubky2.to_string()))
+        .count();
+
+    // With per-user cursors, each user's position is tracked independently:
+    // - First 2 events were: test1_0, test1_1 (both from user1)
+    // - User1 cursor is at test1_1, so we should get: test1_2 (1 event)
+    // - User2 cursor is empty (none of user2's events were in first batch), so we get: test2_0, test2_1 (2 events)
+    // Total remaining: 3 events
+    assert_eq!(
+        user1_remaining, 1,
+        "Should get 1 remaining event from user1 (test1_2). Got events: {:?}",
+        remaining_events
+    );
+    assert_eq!(
+        user2_remaining, 2,
+        "Should get 2 remaining events from user2 (test2_0, test2_1). Got events: {:?}",
+        remaining_events
+    );
 }
 
 #[tokio::test]
