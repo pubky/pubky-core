@@ -680,81 +680,14 @@ async fn dont_delete_shared_blobs() {
     );
 }
 
+/// Comprehensive test for single-user event streaming modes:
+/// - Historical event pagination (>100 events across internal batches)
+/// - Live event streaming (no historical events)
+/// - Phase transition (historical -> live)
+/// - Finite limit enforcement
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_historical_auto_pagination() {
-    use eventsource_stream::Eventsource;
-    use futures::StreamExt;
-
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-
-    // Create 250 events (internal batch size is 100, so this tests pagination)
-    for i in 0..250 {
-        let url = format!("pubky://{pubky}/pub/file_{i}.txt");
-        client.put(&url).body(vec![i as u8]).send().await.unwrap();
-    }
-
-    // Connect to SSE endpoint with limit=250 to get all events then close
-    let stream_url = format!(
-        "https://{}/events-stream?user={}&limit=250",
-        server.public_key(),
-        pubky
-    );
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let mut stream = response.bytes_stream().eventsource();
-    let mut event_count = 0;
-    let mut last_cursor = String::new();
-
-    // Collect all 250 historical events
-    while event_count < 250 {
-        if let Some(Ok(event)) = stream.next().await {
-            assert_eq!(event.event, "PUT");
-            assert!(event.data.contains("pubky://"));
-
-            // Extract cursor from data
-            if let Some(cursor_line) = event.data.lines().find(|l| l.starts_with("cursor: ")) {
-                last_cursor = cursor_line.strip_prefix("cursor: ").unwrap().to_string();
-            }
-
-            event_count += 1;
-        } else {
-            break;
-        }
-    }
-
-    assert_eq!(event_count, 250, "Should receive all 250 historical events");
-    assert!(
-        !last_cursor.is_empty(),
-        "Should have received cursor updates"
-    );
-
-    // Verify connection closes after limit reached (next() should return None)
-    assert!(
-        stream.next().await.is_none(),
-        "Connection should close after reaching limit"
-    );
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_live_mode() {
+async fn events_stream_basic_modes() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
     use tokio::time::{timeout, Duration};
@@ -763,40 +696,75 @@ async fn events_stream_live_mode() {
     let server = testnet.homeserver_suite();
     let client = testnet.pubky_client().unwrap();
 
-    let keypair = Keypair::random();
+    // ==== Test 1: Historical auto-pagination (>100 events) ====
+    let keypair1 = Keypair::random();
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair1, &server.public_key(), None)
         .await
         .unwrap();
+    let pubky1 = keypair1.public_key();
 
-    let pubky = keypair.public_key();
+    // Create 250 events (internal batch size is 100, tests pagination)
+    for i in 0..250 {
+        let url = format!("pubky://{pubky1}/pub/file_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
 
-    // Start SSE stream from current position (no historical events)
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=250",
+        server.public_key(),
+        pubky1
+    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut event_count = 0;
+    let mut last_cursor = String::new();
+
+    while event_count < 250 {
+        if let Some(Ok(event)) = stream.next().await {
+            assert_eq!(event.event, "PUT");
+            if let Some(cursor_line) = event.data.lines().find(|l| l.starts_with("cursor: ")) {
+                last_cursor = cursor_line.strip_prefix("cursor: ").unwrap().to_string();
+            }
+            event_count += 1;
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(event_count, 250, "Historical: Should receive all 250 events");
+    assert!(!last_cursor.is_empty(), "Historical: Should have cursor");
+    assert!(stream.next().await.is_none(), "Historical: Should close after limit");
+
+    // ==== Test 2: Live mode (no historical events) ====
+    let keypair2 = Keypair::random();
+    client
+        .signup(&keypair2, &server.public_key(), None)
+        .await
+        .unwrap();
+    let pubky2 = keypair2.public_key();
+
     let stream_url = format!(
         "https://{}/events-stream?user={}",
         server.public_key(),
-        pubky
+        pubky2
     );
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     let mut stream = response.bytes_stream().eventsource();
 
-    // Create a new event in another task
-    let pubky_clone = pubky.clone();
+    // Create live event
+    let pubky2_clone = pubky2.clone();
     let client_clone = client.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        let url = format!("pubky://{pubky_clone}/pub/live_test.txt");
+        let url = format!("pubky://{pubky2_clone}/pub/live_test.txt");
         client_clone.put(&url).body(vec![42]).send().await.unwrap();
     });
 
-    // Wait for the live event (with timeout)
     let result = timeout(Duration::from_secs(5), async {
         while let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" && event.data.contains("live_test.txt") {
@@ -804,100 +772,101 @@ async fn events_stream_live_mode() {
             }
         }
         None
-    })
-    .await;
+    }).await;
 
-    assert!(result.is_ok(), "Should receive event within timeout");
-    let event = result.unwrap();
-    assert!(event.is_some(), "Should receive the live event");
-    let event = event.unwrap();
-    assert!(event
-        .data
-        .contains(&format!("pubky://{pubky}/pub/live_test.txt")));
-}
+    assert!(result.is_ok(), "Live: Should receive event within timeout");
+    assert!(result.unwrap().is_some(), "Live: Should receive the live event");
 
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_phase_transition() {
-    use eventsource_stream::Eventsource;
-    use futures::StreamExt;
-    use tokio::time::{timeout, Duration};
-
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
+    // ==== Test 3: Phase transition (historical -> live) ====
+    let keypair3 = Keypair::random();
     client
-        .signup(&keypair, &server.public_key(), None)
+        .signup(&keypair3, &server.public_key(), None)
         .await
         .unwrap();
+    let pubky3 = keypair3.public_key();
 
-    let pubky = keypair.public_key();
-
-    // Create 5 historical events
+    // Create historical events
     for i in 0..5 {
-        let url = format!("pubky://{pubky}/pub/historical_{i}.txt");
+        let url = format!("pubky://{pubky3}/pub/historical_{i}.txt");
         client.put(&url).body(vec![i as u8]).send().await.unwrap();
     }
-
-    // Small delay to ensure events are committed
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Start SSE stream
     let stream_url = format!(
         "https://{}/events-stream?user={}",
         server.public_key(),
-        pubky
+        pubky3
     );
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
     let mut stream = response.bytes_stream().eventsource();
-    let mut historical_count = 0;
-    let mut received_live_event = false;
 
-    // Schedule a live event to be created after we receive historical events
-    let pubky_clone = pubky.clone();
+    // Schedule live event
+    let pubky3_clone = pubky3.clone();
     let client_clone = client.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let url = format!("pubky://{pubky_clone}/pub/live_after_historical.txt");
+        let url = format!("pubky://{pubky3_clone}/pub/live_after_historical.txt");
         client_clone.put(&url).body(vec![99]).send().await.unwrap();
     });
 
-    // Collect events with timeout
+    let mut historical_count = 0;
+    let mut received_live = false;
+
     let result = timeout(Duration::from_secs(10), async {
         while let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 if event.data.contains("historical_") {
                     historical_count += 1;
                 } else if event.data.contains("live_after_historical") {
-                    received_live_event = true;
+                    received_live = true;
                     break;
                 }
             }
         }
-    })
-    .await;
+    }).await;
 
-    assert!(result.is_ok(), "Should complete within timeout");
-    assert_eq!(
-        historical_count, 5,
-        "Should receive all 5 historical events"
+    assert!(result.is_ok(), "Transition: Should complete within timeout");
+    assert_eq!(historical_count, 5, "Transition: Should get 5 historical events");
+    assert!(received_live, "Transition: Should get live event after historical");
+
+    // ==== Test 4: Finite limit enforcement ====
+    let keypair4 = Keypair::random();
+    client
+        .signup(&keypair4, &server.public_key(), None)
+        .await
+        .unwrap();
+    let pubky4 = keypair4.public_key();
+
+    for i in 0..100 {
+        let url = format!("pubky://{pubky4}/pub/file_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=50",
+        server.public_key(),
+        pubky4
     );
-    assert!(
-        received_live_event,
-        "Should transition to live mode and receive new event"
-    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut event_count = 0;
+
+    while event_count < 50 {
+        if let Some(Ok(event)) = stream.next().await {
+            assert_eq!(event.event, "PUT");
+            event_count += 1;
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(event_count, 50, "Limit: Should receive exactly 50 events");
+    assert!(stream.next().await.is_none(), "Limit: Should close after limit");
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_cursor_filtering() {
+async fn events_stream_cursor_pagination() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
@@ -996,67 +965,6 @@ async fn events_stream_cursor_filtering() {
     assert_eq!(
         remaining_count, 5,
         "Should receive exactly 5 events after cursor"
-    );
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_finite_limit() {
-    use eventsource_stream::Eventsource;
-    use futures::StreamExt;
-
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
-    let client = testnet.pubky_client().unwrap();
-
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
-
-    // Create 100 events
-    for i in 0..100 {
-        let url = format!("pubky://{pubky}/pub/file_{i}.txt");
-        client.put(&url).body(vec![i as u8]).send().await.unwrap();
-    }
-
-    // Request only 50 events
-    let stream_url = format!(
-        "https://{}/events-stream?user={}&limit=50",
-        server.public_key(),
-        pubky
-    );
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-
-    let mut stream = response.bytes_stream().eventsource();
-    let mut event_count = 0;
-
-    // Should receive exactly 50 events
-    while event_count < 50 {
-        if let Some(Ok(event)) = stream.next().await {
-            assert_eq!(event.event, "PUT");
-            event_count += 1;
-        } else {
-            break;
-        }
-    }
-
-    assert_eq!(
-        event_count, 50,
-        "Should receive exactly 50 events as requested"
-    );
-
-    // Connection should close - no more events despite 50 more being available
-    assert!(
-        stream.next().await.is_none(),
-        "Connection should close after limit reached"
     );
 }
 
@@ -1593,54 +1501,236 @@ async fn events_stream_reverse() {
     assert!(next_event.is_none(), "Stream should close after all events are fetched with reverse=true (phase 2 should not be entered)");
 }
 
+/// Comprehensive test for directory filtering (`filter_dir` parameter):
+/// - Basic filtering by different directory paths
+/// - Filter with cursor pagination
+/// - Filter with multiple users
+/// - Filter with reverse ordering
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_filter_dir() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_suite();
     let client = testnet.pubky_client().unwrap();
 
-    let keypair = Keypair::random();
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let pubky = keypair.public_key();
+    // ==== Test 1: Basic filtering ====
+    let keypair1 = Keypair::random();
+    client.signup(&keypair1, &server.public_key(), None).await.unwrap();
+    let pubky1 = keypair1.public_key();
 
     // Create events in different directories
-    // /pub/files/ - 3 files
     for i in 0..3 {
-        let url = format!("pubky://{pubky}/pub/files/doc_{i}.txt");
+        let url = format!("pubky://{pubky1}/pub/files/doc_{i}.txt");
         client.put(&url).body(vec![i as u8]).send().await.unwrap();
     }
-
-    // /pub/photos/ - 2 files
     for i in 0..2 {
-        let url = format!("pubky://{pubky}/pub/photos/pic_{i}.jpg");
+        let url = format!("pubky://{pubky1}/pub/photos/pic_{i}.jpg");
         client.put(&url).body(vec![i as u8]).send().await.unwrap();
     }
-
-    // /pub/ root - 2 files
     for i in 0..2 {
-        let url = format!("pubky://{pubky}/pub/root_{i}.txt");
+        let url = format!("pubky://{pubky1}/pub/root_{i}.txt");
         client.put(&url).body(vec![i as u8]).send().await.unwrap();
     }
 
-    // Test with filter_dir parameter
+    // Filter by /pub/files/ - expect 3 events
     let stream_url = format!(
         "https://{}/events-stream?user={}&filter_dir=/pub/files/",
-        server.public_key(),
-        pubky
+        server.public_key(), pubky1
     );
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "filter_dir parameter should be accepted"
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut files_events = Vec::new();
+    while files_events.len() < 3 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let path = event.data.lines().next().unwrap();
+                assert!(path.contains("/pub/files/"), "Filter: Expected /pub/files/, got: {}", path);
+                files_events.push(path.to_string());
+            }
+        } else { break; }
+    }
+    assert_eq!(files_events.len(), 3, "Filter: Should get 3 events from /pub/files/");
+
+    // Filter by broader /pub/ - expect 7 events total
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&filter_dir=/pub/",
+        server.public_key(), pubky1
     );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut pub_events = Vec::new();
+    while pub_events.len() < 7 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                pub_events.push(event.data.lines().next().unwrap().to_string());
+            }
+        } else { break; }
+    }
+    assert_eq!(pub_events.len(), 7, "Filter: Should get 7 events from /pub/");
+
+    // ==== Test 2: Filter with cursor pagination ====
+    let keypair2 = Keypair::random();
+    client.signup(&keypair2, &server.public_key(), None).await.unwrap();
+    let pubky2 = keypair2.public_key();
+
+    for i in 0..10 {
+        let url = format!("pubky://{pubky2}/pub/files/doc_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+    for i in 0..5 {
+        let url = format!("pubky://{pubky2}/pub/photos/pic_{i}.jpg");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Get first 5 with cursor
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&filter_dir=/pub/files/&limit=5",
+        server.public_key(), pubky2
+    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut first_batch = Vec::new();
+    let mut cursor = String::new();
+
+    while first_batch.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let lines: Vec<&str> = event.data.lines().collect();
+                assert!(lines[0].contains("/pub/files/"), "Cursor: Expected filtered path");
+                first_batch.push(lines[0].to_string());
+                if let Some(c) = lines.iter().find(|l| l.starts_with("cursor: ")) {
+                    cursor = c.strip_prefix("cursor: ").unwrap().to_string();
+                }
+            }
+        } else { break; }
+    }
+    drop(stream);
+    assert_eq!(first_batch.len(), 5, "Cursor: Should get first 5 events");
+
+    // Get remaining 5 with cursor
+    let stream_url = format!(
+        "https://{}/events-stream?user={}:{}&filter_dir=/pub/files/",
+        server.public_key(), pubky2, cursor
+    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut second_batch = Vec::new();
+
+    while second_batch.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let path = event.data.lines().next().unwrap();
+                assert!(!first_batch.contains(&path.to_string()), "Cursor: Duplicate event");
+                second_batch.push(path.to_string());
+            }
+        } else { break; }
+    }
+    assert_eq!(second_batch.len(), 5, "Cursor: Should get remaining 5 events");
+
+    // ==== Test 3: Filter with multiple users ====
+    let keypair3 = Keypair::random();
+    client.signup(&keypair3, &server.public_key(), None).await.unwrap();
+    let pubky3 = keypair3.public_key();
+
+    // User 2: 3 in files, 2 in photos
+    for i in 0..3 {
+        let url = format!("pubky://{pubky2}/pub/data/files/item_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+    for i in 0..2 {
+        let url = format!("pubky://{pubky2}/pub/data/photos/pic_{i}.jpg");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // User 3: 2 in files, 3 in photos
+    for i in 0..2 {
+        let url = format!("pubky://{pubky3}/pub/data/files/item_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+    for i in 0..3 {
+        let url = format!("pubky://{pubky3}/pub/data/photos/pic_{i}.jpg");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Filter both users by files directory
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&user={}&filter_dir=/pub/data/files/",
+        server.public_key(), pubky2, pubky3
+    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut multi_events = Vec::new();
+
+    while multi_events.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                let path = event.data.lines().next().unwrap();
+                assert!(path.contains("/pub/data/files/"), "Multi-user: Expected filtered path");
+                multi_events.push(path.to_string());
+            }
+        } else { break; }
+    }
+
+    assert_eq!(multi_events.len(), 5, "Multi-user: Should get 5 filtered events");
+    let user2_count = multi_events.iter().filter(|e| e.contains(&pubky2.to_string())).count();
+    let user3_count = multi_events.iter().filter(|e| e.contains(&pubky3.to_string())).count();
+    assert_eq!(user2_count, 3, "Multi-user: Should get 3 from user2");
+    assert_eq!(user3_count, 2, "Multi-user: Should get 2 from user3");
+
+    // ==== Test 4: Filter with reverse ordering ====
+    let keypair4 = Keypair::random();
+    client.signup(&keypair4, &server.public_key(), None).await.unwrap();
+    let pubky4 = keypair4.public_key();
+
+    for i in 0..5 {
+        let url = format!("pubky://{pubky4}/pub/files/doc_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+    for i in 0..3 {
+        let url = format!("pubky://{pubky4}/pub/photos/pic_{i}.jpg");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Forward order
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&filter_dir=/pub/files/&limit=5",
+        server.public_key(), pubky4
+    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut forward = Vec::new();
+    while forward.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if let Some(fname) = event.data.lines().next().and_then(|p| p.split("/pub/files/").nth(1)) {
+                forward.push(fname.to_string());
+            }
+        } else { break; }
+    }
+
+    // Reverse order
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&filter_dir=/pub/files/&reverse=true&limit=5",
+        server.public_key(), pubky4
+    );
+    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut reverse = Vec::new();
+    while reverse.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if let Some(fname) = event.data.lines().next().and_then(|p| p.split("/pub/files/").nth(1)) {
+                reverse.push(fname.to_string());
+            }
+        } else { break; }
+    }
+
+    assert_eq!(forward[0], "doc_0.txt", "Reverse: Forward first should be doc_0");
+    assert_eq!(reverse[0], "doc_4.txt", "Reverse: Reverse first should be doc_4");
+    let mut fwd_rev = forward.clone();
+    fwd_rev.reverse();
+    assert_eq!(reverse, fwd_rev, "Reverse: Should be exact reverse");
 }
