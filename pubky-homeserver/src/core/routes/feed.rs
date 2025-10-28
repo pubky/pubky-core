@@ -12,7 +12,8 @@ use std::{collections::HashMap, convert::Infallible};
 
 use crate::{
     core::{
-        AppState, extractors::{EventStreamQueryParams, ListQueryParams}
+        extractors::{EventStreamQueryParams, ListQueryParams},
+        AppState,
     },
     persistence::sql::event::{EventCursor, EventRepository, EventResponse},
     shared::{HttpError, HttpResult},
@@ -92,6 +93,11 @@ pub async fn feed(
 ///   Default: false (oldest first)
 ///   - When `true`, only historical events are returned (connection closes after reaching earliest event)
 ///   - Live mode is not available with `reverse=true` (doesn't make sense to stream backwards in time)
+/// - `filter_dir` (optional): Path prefix to filter events. Only events whose path starts with this prefix are returned.
+///   - Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
+///   - The prefix must start with "/" and is matched against the WebDAV path stored in the database
+///   - Example: `filter_dir=/pub/` will only return events under the `/pub/` directory
+///   - Example: `filter_dir=/pub/files/` will only return events under the `/pub/files/` directory
 ///
 /// ## SSE Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
@@ -180,12 +186,13 @@ pub async fn feed_stream(
         // Use per-user cursors to track position for each user independently
         loop {
             let current_user_cursors: Vec<(i32, Option<EventCursor>)> =
-                user_cursor_map.iter().map(|(k, v)| (*k, *v)).collect();
+                user_cursor_map.iter().map(|(k, cursor)| (*k, *cursor)).collect();
 
             let events = match EventRepository::get_by_user_cursors(
                 current_user_cursors,
                 Some(BATCH_SIZE),
                 params.reverse,
+                params.filter_dir.as_deref(),
                 &mut state.sql_db.pool().into(),
             )
             .await
@@ -243,6 +250,14 @@ pub async fn feed_stream(
                 // Filter by user_ids
                 if !user_ids.contains(&event.user_id) {
                     continue;
+                }
+
+                // Filter by path prefix if specified
+                if let Some(ref filter_dir) = params.filter_dir {
+                    let path_suffix = event.path.path().as_str();
+                    if !path_suffix.starts_with(filter_dir) {
+                        continue;
+                    }
                 }
 
                 // Filter out events we already sent in Phase 1

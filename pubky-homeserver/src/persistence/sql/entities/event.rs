@@ -220,12 +220,14 @@ impl EventRepository {
     /// Each user has their own cursor position.
     /// The limit is the maximum total number of events to return across all users.
     /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
+    /// The filter_dir_suffix parameter filters events by path prefix (e.g., "pub/files/" to match only events under that directory).
     /// The executor can either be db.pool() or a transaction.
     /// This uses the (user, created_at, id) index for efficient querying.
     pub async fn get_by_user_cursors<'a>(
         user_cursors: Vec<(i32, Option<EventCursor>)>,
         limit: Option<u16>,
         reverse: bool,
+        filter_dir_suffix: Option<&str>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         if user_cursors.is_empty() {
@@ -264,6 +266,15 @@ impl EventRepository {
                 )
                 .and_where(Expr::col((EVENT_TABLE, EventIden::User)).eq(user_id))
                 .to_owned();
+
+            // Add path filter if specified
+            // Note: paths in the database are stored without the user pubkey prefix (e.g., "pub/files/doc.txt")
+            if let Some(filter_suffix) = filter_dir_suffix {
+                let like_pattern = format!("{}%", filter_suffix);
+                statement = statement
+                    .and_where(Expr::col((EVENT_TABLE, EventIden::Path)).like(like_pattern))
+                    .to_owned();
+            }
 
             // Add cursor condition for this specific user
             if let Some(cursor) = cursor {
@@ -802,5 +813,80 @@ mod tests {
         assert!(sse_data_no_hash.contains("pubky://"));
         assert!(sse_data_no_hash.contains("cursor:"));
         assert!(!sse_data_no_hash.contains("content_hash:"));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_by_user_cursors_with_filter_dir() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+
+        // Create user
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Create events in different directories
+        let paths_and_names = vec![
+            ("/pub/files/doc1.txt", "pub/files/"),
+            ("/pub/files/doc2.txt", "pub/files/"),
+            ("/pub/photos/pic1.jpg", "pub/photos/"),
+            ("/pub/root.txt", "pub/"),
+            ("/private/secret.txt", "private/"),
+        ];
+
+        for (path_str, _) in &paths_and_names {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(path_str).unwrap());
+            EventRepository::create(user.id, EventType::Put, &path, None, &mut db.pool().into())
+                .await
+                .unwrap();
+        }
+
+        // Test 1: Filter by "/pub/files/" - should get 2 events
+        let user_cursors = vec![(user.id, None)];
+        let events = EventRepository::get_by_user_cursors(
+            user_cursors.clone(),
+            None,
+            false,
+            Some("/pub/files/"),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            events.len(),
+            2,
+            "Should get 2 events with /pub/files/ filter"
+        );
+        for event in &events {
+            assert!(event.path.path().as_str().starts_with("/pub/files/"));
+        }
+
+        // Test 2: Filter by "/pub/" - should get 4 events (files, photos, root)
+        let events = EventRepository::get_by_user_cursors(
+            user_cursors.clone(),
+            None,
+            false,
+            Some("/pub/"),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(events.len(), 4, "Should get 4 events with /pub/ filter");
+        for event in &events {
+            assert!(event.path.path().as_str().starts_with("/pub/"));
+        }
+
+        // Test 3: No filter - should get all 5 events
+        let events = EventRepository::get_by_user_cursors(
+            user_cursors,
+            None,
+            false,
+            None,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(events.len(), 5, "Should get all 5 events without filter");
     }
 }
