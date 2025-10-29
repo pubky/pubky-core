@@ -715,7 +715,11 @@ async fn events_stream_basic_modes() {
         server.public_key(),
         pubky1
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     let mut stream = response.bytes_stream().eventsource();
@@ -734,9 +738,15 @@ async fn events_stream_basic_modes() {
         }
     }
 
-    assert_eq!(event_count, 250, "Historical: Should receive all 250 events");
+    assert_eq!(
+        event_count, 250,
+        "Historical: Should receive all 250 events"
+    );
     assert!(!last_cursor.is_empty(), "Historical: Should have cursor");
-    assert!(stream.next().await.is_none(), "Historical: Should close after limit");
+    assert!(
+        stream.next().await.is_none(),
+        "Historical: Should close after limit"
+    );
 
     // ==== Test 2: Live mode (no historical events) ====
     let keypair2 = Keypair::random();
@@ -747,11 +757,15 @@ async fn events_stream_basic_modes() {
     let pubky2 = keypair2.public_key();
 
     let stream_url = format!(
-        "https://{}/events-stream?user={}",
+        "https://{}/events-stream?user={}&live=true",
         server.public_key(),
         pubky2
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     let mut stream = response.bytes_stream().eventsource();
@@ -772,10 +786,14 @@ async fn events_stream_basic_modes() {
             }
         }
         None
-    }).await;
+    })
+    .await;
 
     assert!(result.is_ok(), "Live: Should receive event within timeout");
-    assert!(result.unwrap().is_some(), "Live: Should receive the live event");
+    assert!(
+        result.unwrap().is_some(),
+        "Live: Should receive the live event"
+    );
 
     // ==== Test 3: Phase transition (historical -> live) ====
     let keypair3 = Keypair::random();
@@ -793,11 +811,15 @@ async fn events_stream_basic_modes() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let stream_url = format!(
-        "https://{}/events-stream?user={}",
+        "https://{}/events-stream?user={}&live=true",
         server.public_key(),
         pubky3
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
 
     // Schedule live event
@@ -823,11 +845,18 @@ async fn events_stream_basic_modes() {
                 }
             }
         }
-    }).await;
+    })
+    .await;
 
     assert!(result.is_ok(), "Transition: Should complete within timeout");
-    assert_eq!(historical_count, 5, "Transition: Should get 5 historical events");
-    assert!(received_live, "Transition: Should get live event after historical");
+    assert_eq!(
+        historical_count, 5,
+        "Transition: Should get 5 historical events"
+    );
+    assert!(
+        received_live,
+        "Transition: Should get live event after historical"
+    );
 
     // ==== Test 4: Finite limit enforcement ====
     let keypair4 = Keypair::random();
@@ -847,7 +876,11 @@ async fn events_stream_basic_modes() {
         server.public_key(),
         pubky4
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut event_count = 0;
 
@@ -861,7 +894,68 @@ async fn events_stream_basic_modes() {
     }
 
     assert_eq!(event_count, 50, "Limit: Should receive exactly 50 events");
-    assert!(stream.next().await.is_none(), "Limit: Should close after limit");
+    assert!(
+        stream.next().await.is_none(),
+        "Limit: Should close after limit"
+    );
+
+    // ==== Test 5: Batch mode (live=false) - connection closes after historical events ====
+    let keypair5 = Keypair::random();
+    client
+        .signup(&keypair5, &server.public_key(), None)
+        .await
+        .unwrap();
+    let pubky5 = keypair5.public_key();
+
+    // Create some historical events
+    for i in 0..10 {
+        let url = format!("pubky://{pubky5}/pub/batch_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Connect in batch mode (live=false or omitted)
+    let stream_url = format!(
+        "https://{}/events-stream?user={}",
+        server.public_key(),
+        pubky5
+    );
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut batch_event_count = 0;
+
+    // Collect all historical events
+    while let Some(Ok(event)) = stream.next().await {
+        if event.event == "PUT" {
+            batch_event_count += 1;
+        }
+        if batch_event_count >= 10 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        batch_event_count, 10,
+        "Batch: Should receive 10 historical events"
+    );
+
+    // Schedule a new event after connection established
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let url = format!("pubky://{pubky5}/pub/new_event.txt");
+    client.put(&url).body(vec![99]).send().await.unwrap();
+
+    // In batch mode, stream should close after historical events
+    // Try to read with timeout - should get None (connection closed)
+    let next_result = timeout(Duration::from_millis(500), stream.next()).await;
+    assert!(
+        next_result.is_ok() && next_result.unwrap().is_none(),
+        "Batch: Connection should be closed, not waiting for live events"
+    );
 }
 
 #[tokio::test]
@@ -1339,6 +1433,25 @@ async fn events_stream_validation_errors() {
         StatusCode::BAD_REQUEST,
         "Multiple invalid keys"
     );
+
+    // Test 8: Incompatible live=true with reverse=true
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&live=true&reverse=true",
+        server.public_key(),
+        pubky1
+    );
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "live+reverse incompatible"
+    );
+    let body = response.text().await.unwrap();
+    assert!(body.contains("Cannot use live mode with reverse ordering"));
 }
 
 #[tokio::test]
@@ -1518,7 +1631,10 @@ async fn events_stream_filter_dir() {
 
     // ==== Test 1: Basic filtering ====
     let keypair1 = Keypair::random();
-    client.signup(&keypair1, &server.public_key(), None).await.unwrap();
+    client
+        .signup(&keypair1, &server.public_key(), None)
+        .await
+        .unwrap();
     let pubky1 = keypair1.public_key();
 
     // Create events in different directories
@@ -1538,9 +1654,14 @@ async fn events_stream_filter_dir() {
     // Filter by /pub/files/ - expect 3 events
     let stream_url = format!(
         "https://{}/events-stream?user={}&filter_dir=/pub/files/",
-        server.public_key(), pubky1
+        server.public_key(),
+        pubky1
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     let mut stream = response.bytes_stream().eventsource();
@@ -1549,19 +1670,34 @@ async fn events_stream_filter_dir() {
         if let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 let path = event.data.lines().next().unwrap();
-                assert!(path.contains("/pub/files/"), "Filter: Expected /pub/files/, got: {}", path);
+                assert!(
+                    path.contains("/pub/files/"),
+                    "Filter: Expected /pub/files/, got: {}",
+                    path
+                );
                 files_events.push(path.to_string());
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
-    assert_eq!(files_events.len(), 3, "Filter: Should get 3 events from /pub/files/");
+    assert_eq!(
+        files_events.len(),
+        3,
+        "Filter: Should get 3 events from /pub/files/"
+    );
 
     // Filter by broader /pub/ - expect 7 events total
     let stream_url = format!(
         "https://{}/events-stream?user={}&filter_dir=/pub/",
-        server.public_key(), pubky1
+        server.public_key(),
+        pubky1
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut pub_events = Vec::new();
     while pub_events.len() < 7 {
@@ -1569,13 +1705,22 @@ async fn events_stream_filter_dir() {
             if event.event == "PUT" {
                 pub_events.push(event.data.lines().next().unwrap().to_string());
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
-    assert_eq!(pub_events.len(), 7, "Filter: Should get 7 events from /pub/");
+    assert_eq!(
+        pub_events.len(),
+        7,
+        "Filter: Should get 7 events from /pub/"
+    );
 
     // ==== Test 2: Filter with cursor pagination ====
     let keypair2 = Keypair::random();
-    client.signup(&keypair2, &server.public_key(), None).await.unwrap();
+    client
+        .signup(&keypair2, &server.public_key(), None)
+        .await
+        .unwrap();
     let pubky2 = keypair2.public_key();
 
     for i in 0..10 {
@@ -1590,9 +1735,14 @@ async fn events_stream_filter_dir() {
     // Get first 5 with cursor
     let stream_url = format!(
         "https://{}/events-stream?user={}&filter_dir=/pub/files/&limit=5",
-        server.public_key(), pubky2
+        server.public_key(),
+        pubky2
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut first_batch = Vec::new();
     let mut cursor = String::new();
@@ -1601,13 +1751,18 @@ async fn events_stream_filter_dir() {
         if let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 let lines: Vec<&str> = event.data.lines().collect();
-                assert!(lines[0].contains("/pub/files/"), "Cursor: Expected filtered path");
+                assert!(
+                    lines[0].contains("/pub/files/"),
+                    "Cursor: Expected filtered path"
+                );
                 first_batch.push(lines[0].to_string());
                 if let Some(c) = lines.iter().find(|l| l.starts_with("cursor: ")) {
                     cursor = c.strip_prefix("cursor: ").unwrap().to_string();
                 }
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
     drop(stream);
     assert_eq!(first_batch.len(), 5, "Cursor: Should get first 5 events");
@@ -1615,9 +1770,15 @@ async fn events_stream_filter_dir() {
     // Get remaining 5 with cursor
     let stream_url = format!(
         "https://{}/events-stream?user={}:{}&filter_dir=/pub/files/",
-        server.public_key(), pubky2, cursor
+        server.public_key(),
+        pubky2,
+        cursor
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut second_batch = Vec::new();
 
@@ -1625,16 +1786,28 @@ async fn events_stream_filter_dir() {
         if let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 let path = event.data.lines().next().unwrap();
-                assert!(!first_batch.contains(&path.to_string()), "Cursor: Duplicate event");
+                assert!(
+                    !first_batch.contains(&path.to_string()),
+                    "Cursor: Duplicate event"
+                );
                 second_batch.push(path.to_string());
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
-    assert_eq!(second_batch.len(), 5, "Cursor: Should get remaining 5 events");
+    assert_eq!(
+        second_batch.len(),
+        5,
+        "Cursor: Should get remaining 5 events"
+    );
 
     // ==== Test 3: Filter with multiple users ====
     let keypair3 = Keypair::random();
-    client.signup(&keypair3, &server.public_key(), None).await.unwrap();
+    client
+        .signup(&keypair3, &server.public_key(), None)
+        .await
+        .unwrap();
     let pubky3 = keypair3.public_key();
 
     // User 2: 3 in files, 2 in photos
@@ -1660,9 +1833,15 @@ async fn events_stream_filter_dir() {
     // Filter both users by files directory
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}&filter_dir=/pub/data/files/",
-        server.public_key(), pubky2, pubky3
+        server.public_key(),
+        pubky2,
+        pubky3
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut multi_events = Vec::new();
 
@@ -1670,21 +1849,39 @@ async fn events_stream_filter_dir() {
         if let Some(Ok(event)) = stream.next().await {
             if event.event == "PUT" {
                 let path = event.data.lines().next().unwrap();
-                assert!(path.contains("/pub/data/files/"), "Multi-user: Expected filtered path");
+                assert!(
+                    path.contains("/pub/data/files/"),
+                    "Multi-user: Expected filtered path"
+                );
                 multi_events.push(path.to_string());
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
 
-    assert_eq!(multi_events.len(), 5, "Multi-user: Should get 5 filtered events");
-    let user2_count = multi_events.iter().filter(|e| e.contains(&pubky2.to_string())).count();
-    let user3_count = multi_events.iter().filter(|e| e.contains(&pubky3.to_string())).count();
+    assert_eq!(
+        multi_events.len(),
+        5,
+        "Multi-user: Should get 5 filtered events"
+    );
+    let user2_count = multi_events
+        .iter()
+        .filter(|e| e.contains(&pubky2.to_string()))
+        .count();
+    let user3_count = multi_events
+        .iter()
+        .filter(|e| e.contains(&pubky3.to_string()))
+        .count();
     assert_eq!(user2_count, 3, "Multi-user: Should get 3 from user2");
     assert_eq!(user3_count, 2, "Multi-user: Should get 2 from user3");
 
     // ==== Test 4: Filter with reverse ordering ====
     let keypair4 = Keypair::random();
-    client.signup(&keypair4, &server.public_key(), None).await.unwrap();
+    client
+        .signup(&keypair4, &server.public_key(), None)
+        .await
+        .unwrap();
     let pubky4 = keypair4.public_key();
 
     for i in 0..5 {
@@ -1699,37 +1896,67 @@ async fn events_stream_filter_dir() {
     // Forward order
     let stream_url = format!(
         "https://{}/events-stream?user={}&filter_dir=/pub/files/&limit=5",
-        server.public_key(), pubky4
+        server.public_key(),
+        pubky4
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut forward = Vec::new();
     while forward.len() < 5 {
         if let Some(Ok(event)) = stream.next().await {
-            if let Some(fname) = event.data.lines().next().and_then(|p| p.split("/pub/files/").nth(1)) {
+            if let Some(fname) = event
+                .data
+                .lines()
+                .next()
+                .and_then(|p| p.split("/pub/files/").nth(1))
+            {
                 forward.push(fname.to_string());
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
 
     // Reverse order
     let stream_url = format!(
         "https://{}/events-stream?user={}&filter_dir=/pub/files/&reverse=true&limit=5",
-        server.public_key(), pubky4
+        server.public_key(),
+        pubky4
     );
-    let response = client.request(Method::GET, &stream_url).send().await.unwrap();
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
     let mut stream = response.bytes_stream().eventsource();
     let mut reverse = Vec::new();
     while reverse.len() < 5 {
         if let Some(Ok(event)) = stream.next().await {
-            if let Some(fname) = event.data.lines().next().and_then(|p| p.split("/pub/files/").nth(1)) {
+            if let Some(fname) = event
+                .data
+                .lines()
+                .next()
+                .and_then(|p| p.split("/pub/files/").nth(1))
+            {
                 reverse.push(fname.to_string());
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
 
-    assert_eq!(forward[0], "doc_0.txt", "Reverse: Forward first should be doc_0");
-    assert_eq!(reverse[0], "doc_4.txt", "Reverse: Reverse first should be doc_4");
+    assert_eq!(
+        forward[0], "doc_0.txt",
+        "Reverse: Forward first should be doc_0"
+    );
+    assert_eq!(
+        reverse[0], "doc_4.txt",
+        "Reverse: Reverse first should be doc_4"
+    );
     let mut fwd_rev = forward.clone();
     fwd_rev.reverse();
     assert_eq!(reverse, fwd_rev, "Reverse: Should be exact reverse");
