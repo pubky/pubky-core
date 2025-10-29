@@ -62,37 +62,41 @@ pub async fn feed(
 
 /// Server-Sent Events (SSE) endpoint for real-time event streaming.
 ///
-/// This endpoint implements a two-phase streaming approach:
+/// This endpoint supports two modes of operation:
 ///
-/// ## Phase 1: Historical Auto-pagination
-/// - Fetches all historical events from the cursor onwards
+/// ## Batch Mode (`live=false` or omitted)
+/// - Fetches historical events from the cursor onwards
 /// - Queries the database in batches of 100 events (internal optimization)
 /// - Streams events progressively as they're fetched
-/// - Continues until caught up (empty result or partial batch indicates end of history)
+/// - **Closes connection** when all historical events are sent (or `limit` reached)
+/// - Use case: Traditional GET request/response pattern for fetching historical events
 ///
-/// ## Phase 2: Live Mode
-/// - Subscribes to the broadcast channel for new events
+/// ## Streaming Mode (`live=true`)
+/// - **Phase 1**: Fetches historical events from cursor onwards (same as batch mode)
+/// - **Phase 2**: Subscribes to broadcast channel for new events
 /// - Streams new events in real-time as they occur
 /// - Connection stays open indefinitely
-/// - Each event includes updated cursor for client state tracking
-/// - **Note:** Only entered if `limit` parameter is omitted (infinite stream) AND `reverse` is false
 ///
 /// ## Query Parameters
 /// - `user` (**REQUIRED**): One or more user public keys to filter events for. Can be repeated multiple times.
 ///   - Format: z-base-32 encoded public key (e.g., "o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")
 ///   - Single user: `?user=pubkey1`
 ///   - Multiple users: `?user=pubkey1&user=pubkey2&user=pubkey3`
+///   - Per-user cursors: `?user=pubkey1:cursor1&user=pubkey2:cursor2`
 ///   - Maximum: 50 users per request
 ///   - The endpoint uses the `(user, created_at, id)` database index for efficient querying
-/// - `cursor` (optional): Starting point for event stream. Format: "timestamp:id" or legacy timestamp.
-///   Default: "0" (start from beginning)
+/// - `live` (optional): Enable live streaming mode. Default: `false` (batch mode)
+///   - `live=false` or omitted: Fetch historical events and close connection
+///   - `live=true`: Fetch historical events, then stream new events in real-time
+///   - **Cannot be combined with `reverse=true`** (will return 400 error)
 /// - `limit` (optional): Maximum total events to send before closing connection.
-///   - If **omitted**: Stream all historical events + enter live mode (infinite stream, unless `reverse=true`)
-///   - If **specified**: Send up to N events total, then close connection
+///   - If **omitted with `live=false`**: Send all historical events, then close
+///   - If **omitted with `live=true`**: Send all historical events, then enter live mode (infinite stream)
+///   - If **specified**: Send up to N events total, then close connection (regardless of `live` setting)
 /// - `reverse` (optional): Return events in reverse chronological order (newest first).
-///   Default: false (oldest first)
-///   - When `true`, only historical events are returned (connection closes after reaching earliest event)
-///   - Live mode is not available with `reverse=true` (doesn't make sense to stream backwards in time)
+///   Default: `false` (oldest first)
+///   - When `true`, only historical events are returned (batch mode enforced)
+///   - **Cannot be combined with `live=true`** (will return 400 error)
 /// - `filter_dir` (optional): Path prefix to filter events. Only events whose path starts with this prefix are returned.
 ///   - Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
 ///   - The prefix must start with "/" and is matched against the WebDAV path stored in the database
@@ -137,6 +141,13 @@ pub async fn feed_stream(
             "Too many users. Maximum allowed: {}",
             MAX_EVENT_STREAM_USERS
         )));
+    }
+
+    // Validate incompatible parameter combinations
+    if params.live && params.reverse {
+        return Err(HttpError::bad_request(
+            "Cannot use live mode with reverse ordering",
+        ));
     }
 
     // Parse all pubkeys, get user IDs, and parse cursors
@@ -231,8 +242,8 @@ pub async fn feed_stream(
                 if max_events.is_some() {
                     return;
                 }
-                // If reverse mode, we've reached the end of historical data - close connection
-                if params.reverse {
+                // If not in live mode, close connection (batch mode)
+                if !params.live {
                     return;
                 }
                 // Otherwise, transition to live mode
@@ -244,8 +255,8 @@ pub async fn feed_stream(
         }
 
         // Phase 2: Live mode - stream new events from broadcast channel
-        // Only enter if no limit was specified (infinite stream) and not in reverse mode
-        if max_events.is_none() && !params.reverse {
+        // Only enter if live mode is enabled and no limit was specified
+        if params.live && max_events.is_none() {
             while let Ok(event) = rx.recv().await {
                 // Filter by user_ids
                 if !user_ids.contains(&event.user_id) {

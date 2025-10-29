@@ -78,6 +78,9 @@ impl ListQueryParams {
 pub struct EventStreamQueryParams {
     pub limit: Option<u16>,
     pub reverse: bool,
+    /// If true, enter live streaming mode after historical events.
+    /// If false, close connection after historical events are exhausted.
+    pub live: bool,
     /// Vec of (user_pubkey, optional_cursor) pairs
     /// Parsed from `user=pubkey` or `user=pubkey:cursor` format
     pub user_cursors: Vec<(String, Option<String>)>,
@@ -177,6 +180,12 @@ where
             false
         };
 
+        let live = if let Some(live_str) = single_params.get("live") {
+            parse_bool(live_str).map_err(|e| *e)?
+        } else {
+            false
+        };
+
         let limit = single_params
             .get("limit")
             // Treat `limit=` as None
@@ -209,6 +218,7 @@ where
         Ok(EventStreamQueryParams {
             limit,
             reverse,
+            live,
             user_cursors,
             filter_dir,
         })
