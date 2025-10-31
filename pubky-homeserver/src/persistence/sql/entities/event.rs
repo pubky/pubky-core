@@ -7,7 +7,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
-    types::chrono::{DateTime, NaiveDateTime, Utc},
+    types::chrono::{DateTime, Utc},
     FromRow, Row,
 };
 
@@ -25,6 +25,36 @@ use crate::{
 
 pub const EVENT_TABLE: &str = "events";
 
+/// Cursor for pagination in event queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Cursor(i64);
+
+impl Cursor {
+    /// Create a new cursor from an event ID
+    pub fn new(id: i64) -> Self {
+        Self(id)
+    }
+
+    /// Get the underlying ID value
+    pub fn id(&self) -> i64 {
+        self.0
+    }
+}
+
+impl Display for Cursor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for Cursor {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Cursor(s.parse()?))
+    }
+}
+
 /// Response structure for event streams.
 /// This represents the data format returned by the `/events-stream` endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,20 +63,21 @@ pub struct EventResponse {
     pub event_type: EventType,
     /// The full pubky path (e.g., "pubky://user_pubkey/pub/example.txt")
     pub path: String,
-    /// Cursor for pagination (timestamp:id format)
+    /// Cursor for pagination (event id as string)
     pub cursor: String,
-    /// Optional content hash (blake3) in hex format
+    /// content_hash (blake3) of data in hex format
+    /// **Note**: Optional and only included for PUT events when the hash is available.
+    /// Legacy events created before the content_hash feature was added will not have this field.
     pub content_hash: Option<String>,
 }
 
 impl EventResponse {
     /// Create an EventResponse from an EventEntity
     pub fn from_entity(entity: &EventEntity) -> Self {
-        let cursor = EventCursor::new(entity.created_at, entity.id);
         Self {
             event_type: entity.event_type.clone(),
             path: format!("pubky://{}", entity.path.as_str()),
-            cursor: cursor.to_string(),
+            cursor: entity.cursor().to_string(),
             content_hash: entity.content_hash.map(|h| h.to_hex().to_string()),
         }
     }
@@ -57,7 +88,7 @@ impl EventResponse {
     /// Format:
     /// ```text
     /// data: pubky://user_pubkey/pub/example.txt
-    /// data: cursor: 00331BD814YCT:42
+    /// data: cursor: 42
     /// data: content_hash: abc123... (optional, only if present)
     /// ```
     pub fn to_sse_data(&self) -> String {
@@ -66,30 +97,6 @@ impl EventResponse {
             lines.push(format!("content_hash: {}", hash));
         }
         lines.join("\n")
-    }
-}
-
-/// Cursor for pagination in event queries.
-/// Format: "timestamp:id" where timestamp is a NaiveDateTime and id is the event ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EventCursor {
-    pub timestamp: NaiveDateTime,
-    pub id: i64,
-}
-
-impl EventCursor {
-    pub fn new(timestamp: NaiveDateTime, id: i64) -> Self {
-        Self { timestamp, id }
-    }
-}
-
-impl Display for EventCursor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Format: timestamp:id (e.g., "00331BD814YCT:42")
-        // Convert NaiveDateTime to Timestamp string format
-        let micros = self.timestamp.and_utc().timestamp_micros() as u64;
-        let timestamp: Timestamp = micros.into();
-        write!(f, "{}:{}", timestamp, self.id)
     }
 }
 
@@ -169,29 +176,21 @@ impl EventRepository {
         })
     }
 
-    /// Parse the cursor to an EventCursor.
-    /// The cursor can be in multiple formats for backwards compatibility:
-    /// 1. New format: "timestamp:id" (e.g., "00331BD814YCT:42")
-    /// 2. Legacy format (timestamp only): A timestamp that needs to be looked up in the database
-    ///
-    /// If you don't want to use a cursor, set it to "0".
+    /// Parse the cursor to a Cursor.
+    /// The cursor can be either a new cursor format or a legacy cursor format.
+    /// The new cursor format is a u64.
+    /// The legacy cursor format is a timestamp.
+    /// The cursor is the id of the last event in the list.
+    /// If you don't to use the cursor, set it to "0".
     pub async fn parse_cursor<'a>(
         cursor: &str,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<EventCursor, sqlx::Error> {
-        // Try parsing as new format: "timestamp:id"
-        if let Some((timestamp_str, id_str)) = cursor.split_once(':') {
-            // Try to parse the timestamp part as a Timestamp
-            if let Ok(timestamp) = timestamp_str.to_string().try_into() {
-                if let Ok(id) = id_str.parse::<i64>() {
-                    let timestamp: Timestamp = timestamp;
-                    let datetime = timestamp_to_sqlx_datetime(&timestamp);
-                    return Ok(EventCursor::new(datetime.naive_utc(), id));
-                }
-            }
+    ) -> Result<Cursor, sqlx::Error> {
+        if let Ok(cursor) = cursor.parse::<Cursor>() {
+            // Is new cursor format
+            return Ok(cursor);
         }
-
-        // Try parsing as legacy format (timestamp only)
+        // Check for the legacy cursor format
         let timestamp: Timestamp = match cursor.to_string().try_into() {
             Ok(timestamp) => timestamp,
             Err(e) => return Err(sqlx::Error::Decode(e.into())),
@@ -200,20 +199,15 @@ impl EventRepository {
         // Check the timestamp with the database to convert it to the event id
         let datetime = timestamp_to_sqlx_datetime(&timestamp);
         let statement = Query::select()
-            .columns([
-                (EVENT_TABLE, EventIden::Id),
-                (EVENT_TABLE, EventIden::CreatedAt),
-            ])
+            .column((EVENT_TABLE, EventIden::Id))
             .from(EVENT_TABLE)
-            .and_where(Expr::col((EVENT_TABLE, EventIden::CreatedAt)).eq(datetime.naive_utc()))
+            .and_where(Expr::col((EVENT_TABLE, EventIden::CreatedAt)).eq(datetime))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
-        let created_at: NaiveDateTime =
-            ret_row.try_get(EventIden::CreatedAt.to_string().as_str())?;
-        Ok(EventCursor::new(created_at, event_id))
+        Ok(Cursor::new(event_id))
     }
 
     /// Get a list of events with per-user cursors.
@@ -222,10 +216,9 @@ impl EventRepository {
     /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
     /// The filter_dir_suffix parameter filters events by path prefix (e.g., "pub/files/" to match only events under that directory).
     /// The executor can either be db.pool() or a transaction.
-    /// This uses the (user, created_at, id) index for efficient querying.
+    /// This uses the (user, id) index for efficient querying.
     pub async fn get_by_user_cursors<'a>(
-        user_cursors: Vec<(i32, Option<EventCursor>)>,
-        limit: Option<u16>,
+        user_cursors: Vec<(i32, Option<Cursor>)>,
         reverse: bool,
         filter_dir_suffix: Option<&str>,
         executor: &mut UnifiedExecutor<'a>,
@@ -233,9 +226,6 @@ impl EventRepository {
         if user_cursors.is_empty() {
             return Ok(Vec::new());
         }
-
-        let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
-        let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
 
         // Build a UNION query for each user with their individual cursor
         // This ensures we get events after each user's last seen position
@@ -281,24 +271,12 @@ impl EventRepository {
                 if reverse {
                     // For reverse order, get events before the cursor
                     statement = statement
-                        .and_where(
-                            Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                .lt(cursor.timestamp)
-                                .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                    .eq(cursor.timestamp)
-                                    .and(Expr::col((EVENT_TABLE, EventIden::Id)).lt(cursor.id))),
-                        )
+                        .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).lt(cursor.id()))
                         .to_owned();
                 } else {
                     // For normal order, get events after the cursor
                     statement = statement
-                        .and_where(
-                            Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                .gt(cursor.timestamp)
-                                .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                    .eq(cursor.timestamp)
-                                    .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))),
-                        )
+                        .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id()))
                         .to_owned();
                 }
             }
@@ -331,7 +309,7 @@ impl EventRepository {
                 order.clone(),
             )
             .order_by((subquery_alias, EventIden::Id), order)
-            .limit(limit as u64)
+            .limit(DEFAULT_LIST_LIMIT as u64)
             .to_owned();
 
         let (query, values) = combined_query.build_sqlx(PostgresQueryBuilder);
@@ -342,20 +320,17 @@ impl EventRepository {
 
     /// Get a list of events by the cursor.
     /// The limit is the maximum number of events to return.
-    /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
     /// The executor can either be db.pool() or a transaction.
-    /// This uses the (user, created_at, id) index for efficient querying when user_id is provided.
     pub async fn get_by_cursor<'a>(
-        user_ids: Option<Vec<i32>>,
-        cursor: Option<EventCursor>,
+        cursor: Option<Cursor>,
         limit: Option<u16>,
-        reverse: bool,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
+        let cursor = cursor.unwrap_or(Cursor::new(0));
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
 
-        let mut statement = Query::select()
+        let statement = Query::select()
             .columns([
                 (EVENT_TABLE, EventIden::Id),
                 (EVENT_TABLE, EventIden::User),
@@ -371,54 +346,9 @@ impl EventRepository {
                 USER_TABLE,
                 Expr::col((EVENT_TABLE, EventIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
-            .to_owned();
-
-        // Filter by users if provided (uses idx_events_user_timestamp_id index)
-        if let Some(uids) = user_ids {
-            statement = statement
-                .and_where(Expr::col((EVENT_TABLE, EventIden::User)).is_in(uids))
-                .to_owned();
-        }
-
-        // Add cursor condition based on ordering direction
-        if let Some(cursor) = cursor {
-            if reverse {
-                // For reverse order, get events before the cursor: (created_at, id) < (cursor.timestamp, cursor.id)
-                statement = statement
-                    .and_where(
-                        Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                            .lt(cursor.timestamp)
-                            .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                .eq(cursor.timestamp)
-                                .and(Expr::col((EVENT_TABLE, EventIden::Id)).lt(cursor.id))),
-                    )
-                    .to_owned();
-            } else {
-                // For normal order, get events after the cursor: (created_at, id) > (cursor.timestamp, cursor.id)
-                statement = statement
-                    .and_where(
-                        Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                            .gt(cursor.timestamp)
-                            .or(Expr::col((EVENT_TABLE, EventIden::CreatedAt))
-                                .eq(cursor.timestamp)
-                                .and(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id))),
-                    )
-                    .to_owned();
-            }
-        }
-
-        let order = if reverse {
-            sea_query::Order::Desc
-        } else {
-            sea_query::Order::Asc
-        };
-
-        statement = statement
-            .order_by((EVENT_TABLE, EventIden::CreatedAt), order.clone())
-            .order_by((EVENT_TABLE, EventIden::Id), order)
+            .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id()))
             .limit(limit as u64)
             .to_owned();
-
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
@@ -473,6 +403,12 @@ pub struct EventEntity {
     pub path: EntryPath,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub content_hash: Option<Hash>,
+}
+
+impl EventEntity {
+    pub fn cursor(&self) -> Cursor {
+        Cursor::new(self.id)
+    }
 }
 
 impl FromRow<'_, PgRow> for EventEntity {
@@ -532,7 +468,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Test create session - First get the 4th event to establish our cursor
+        // Test create session
         for _ in 0..10 {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
             let _ = EventRepository::create(
@@ -546,39 +482,13 @@ mod tests {
             .unwrap();
         }
 
-        // Get first 4 events to establish cursor from the 4th event
-        let first_4_events =
-            EventRepository::get_by_cursor(None, None, Some(4), false, &mut db.pool().into())
+        // Test get session
+        let events =
+            EventRepository::get_by_cursor(Some(Cursor::new(5)), Some(4), &mut db.pool().into())
                 .await
                 .unwrap();
-        assert_eq!(first_4_events.len(), 4);
-        let cursor_event = &first_4_events[3]; // 4th event (0-indexed)
-
-        // Test get session - Get event with id=5 using cursor from 4th event
-        let event5_cursor = EventRepository::get_by_cursor(
-            None,
-            Some(EventCursor::new(cursor_event.created_at, cursor_event.id)),
-            Some(1),
-            false,
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(event5_cursor[0].id, cursor_event.id + 1);
-
-        let cursor = EventCursor::new(event5_cursor[0].created_at, event5_cursor[0].id);
-
-        let events = EventRepository::get_by_cursor(
-            None,
-            Some(cursor),
-            Some(4),
-            false,
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
         assert_eq!(events.len(), 4);
-        assert_eq!(events[0].id, cursor.id + 1);
+        assert_eq!(events[0].id, 6);
         assert_eq!(events[0].user_id, user.id);
         assert_eq!(
             events[0].path,
@@ -614,17 +524,16 @@ mod tests {
             )
             .await
             .unwrap();
-            timestamp_events.push((timestamp, event.id, event.created_at));
+            timestamp_events.push((timestamp, event.id));
         }
 
-        // Test legacy timestamp format parsing
-        for (timestamp, should_be_event_id, should_be_timestamp) in timestamp_events {
+        // Test get session
+        for (timestamp, should_be_event_id) in timestamp_events {
             let cursor =
                 EventRepository::parse_cursor(&timestamp.to_string(), &mut db.pool().into())
                     .await
                     .unwrap();
-            assert_eq!(should_be_event_id, cursor.id);
-            assert_eq!(should_be_timestamp, cursor.timestamp);
+            assert_eq!(should_be_event_id, cursor.id());
         }
     }
 
@@ -661,13 +570,12 @@ mod tests {
         let test_event = &events[2].0; // Use the third event for testing
         let test_timestamp = &events[2].1;
 
-        // Test 1: New format "timestamp:id"
-        let new_format_cursor = format!("{}:{}", test_timestamp, test_event.id);
+        // Test 1: New format - just the id as string
+        let new_format_cursor = test_event.id.to_string();
         let parsed_new = EventRepository::parse_cursor(&new_format_cursor, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(parsed_new.id, test_event.id);
-        assert_eq!(parsed_new.timestamp, test_event.created_at);
+        assert_eq!(parsed_new, test_event.cursor());
 
         // Test 2: Legacy format - timestamp only
         let legacy_timestamp_format = test_timestamp.to_string();
@@ -675,27 +583,21 @@ mod tests {
             EventRepository::parse_cursor(&legacy_timestamp_format, &mut db.pool().into())
                 .await
                 .unwrap();
-        assert_eq!(parsed_timestamp.id, test_event.id);
-        assert_eq!(parsed_timestamp.timestamp, test_event.created_at);
+        assert_eq!(parsed_timestamp, test_event.cursor());
 
         // Test 3: Use parsed cursors in get_by_cursor to verify they work correctly
         for (cursor_str, test_name) in [
             (new_format_cursor, "new format"),
             (legacy_timestamp_format, "legacy timestamp"),
         ] {
-            let cursor = EventRepository::parse_cursor(&cursor_str, &mut db.pool().into())
+            let cursor_id = EventRepository::parse_cursor(&cursor_str, &mut db.pool().into())
                 .await
                 .unwrap();
 
-            let events_after = EventRepository::get_by_cursor(
-                None,
-                Some(cursor),
-                None,
-                false,
-                &mut db.pool().into(),
-            )
-            .await
-            .unwrap();
+            let events_after =
+                EventRepository::get_by_cursor(Some(cursor_id), None, &mut db.pool().into())
+                    .await
+                    .unwrap();
 
             // Should get events after the cursor (events[3] and events[4])
             assert_eq!(
@@ -720,33 +622,16 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_cursor_display_format() {
-        let timestamp = DateTime::from_timestamp(1234567890, 123456000)
-            .unwrap()
-            .naive_utc();
-        let id = 42;
-        let cursor = EventCursor::new(timestamp, id);
+        // Test that cursor is simply the event id as a string
+        let id = 42i64;
+        let cursor_str = id.to_string();
 
-        let cursor_str = cursor.to_string();
+        // Verify it's just the id
+        assert_eq!(cursor_str, "42");
 
-        // Verify format is "timestamp:id"
-        assert!(cursor_str.contains(':'));
-        let parts: Vec<&str> = cursor_str.split(':').collect();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[1], "42"); // ID should be at the end
-
-        // Verify the timestamp part is a valid Timestamp string
-        let timestamp_part: Result<Timestamp, _> = parts[0].to_string().try_into();
-        assert!(
-            timestamp_part.is_ok(),
-            "Timestamp part should be a valid Timestamp"
-        );
-
-        // Verify the timestamp matches what we expect
-        let expected_timestamp: Timestamp = (timestamp.and_utc().timestamp_micros() as u64).into();
-        assert_eq!(
-            timestamp_part.unwrap().as_u64(),
-            expected_timestamp.as_u64()
-        );
+        // Verify it can be parsed back
+        let parsed_id: i64 = cursor_str.parse().unwrap();
+        assert_eq!(parsed_id, id);
     }
 
     #[tokio::test]
@@ -846,7 +731,6 @@ mod tests {
         let user_cursors = vec![(user.id, None)];
         let events = EventRepository::get_by_user_cursors(
             user_cursors.clone(),
-            None,
             false,
             Some("/pub/files/"),
             &mut db.pool().into(),
@@ -865,7 +749,6 @@ mod tests {
         // Test 2: Filter by "/pub/" - should get 4 events (files, photos, root)
         let events = EventRepository::get_by_user_cursors(
             user_cursors.clone(),
-            None,
             false,
             Some("/pub/"),
             &mut db.pool().into(),
@@ -878,15 +761,10 @@ mod tests {
         }
 
         // Test 3: No filter - should get all 5 events
-        let events = EventRepository::get_by_user_cursors(
-            user_cursors,
-            None,
-            false,
-            None,
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        let events =
+            EventRepository::get_by_user_cursors(user_cursors, false, None, &mut db.pool().into())
+                .await
+                .unwrap();
         assert_eq!(events.len(), 5, "Should get all 5 events without filter");
     }
 }

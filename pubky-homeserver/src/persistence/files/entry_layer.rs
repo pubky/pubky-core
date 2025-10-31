@@ -273,15 +273,9 @@ mod tests {
                 .await
                 .expect("Entry should exist");
             assert_eq!(entry.content_length, 10);
-            let events = EventRepository::get_by_cursor(
-                None,
-                None,
-                Some(9999),
-                false,
-                &mut db.pool().into(),
-            )
-            .await
-            .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
+                .await
+                .expect("Should succeed");
             assert_eq!(events.len(), 1);
             let first_event = events.first().expect("Should succeed");
             assert_eq!(first_event.path, entry_path);
@@ -298,15 +292,9 @@ mod tests {
                 .await
                 .expect("Entry should exist");
             assert_eq!(entry.content_length, 20);
-            let events = EventRepository::get_by_cursor(
-                None,
-                None,
-                Some(9999),
-                false,
-                &mut db.pool().into(),
-            )
-            .await
-            .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
+                .await
+                .expect("Should succeed");
             assert_eq!(events.len(), 2);
             let second_event = events.get(1).expect("Should succeed");
             assert_eq!(second_event.path, entry_path);
@@ -322,15 +310,9 @@ mod tests {
             let _entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
                 .await
                 .expect_err("Entry should not exist");
-            let events = EventRepository::get_by_cursor(
-                None,
-                None,
-                Some(9999),
-                false,
-                &mut db.pool().into(),
-            )
-            .await
-            .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
+                .await
+                .expect("Should succeed");
             assert_eq!(events.len(), 3);
             let third_event = events.get(2).expect("Should succeed");
             assert_eq!(third_event.path, entry_path);
