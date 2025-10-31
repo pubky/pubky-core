@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     RequestPartsExt,
 };
+use url::form_urlencoded;
 
 use pkarr::PublicKey;
 
@@ -73,6 +74,26 @@ impl ListQueryParams {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct EventStreamQueryParams {
+    pub limit: Option<u16>,
+    pub reverse: bool,
+    /// If true, enter live streaming mode after historical events.
+    /// If false, close connection after historical events are exhausted.
+    pub live: bool,
+    /// Vec of (user_pubkey, optional_cursor) pairs
+    /// Format: "user=pubkey" or "user=pubkey:cursor"
+    pub user_cursors: Vec<(String, Option<String>)>,
+    /// Optional path prefix filter
+    /// Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
+    ///   - The prefix must start with "/" and is matched against the WebDAV path stored in the database
+    ///   - Example: `filter_dir=/pub/` will only return events under the `/pub/` directory
+    ///   - Example: `filter_dir=/pub/files/` will only return events under the `/pub/files/` directory
+    pub filter_dir: Option<String>,
+}
+
+impl EventStreamQueryParams {}
+
 /// Parse a boolean value from a string.
 /// Returns an error if the value is not a valid boolean.
 fn parse_bool(value: &str) -> Result<bool, Box<Response>> {
@@ -127,6 +148,78 @@ where
             limit,
             cursor,
             reverse,
+        })
+    }
+}
+
+impl<S> FromRequestParts<S> for EventStreamQueryParams
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let query = parts.uri.query().unwrap_or("");
+        let mut single_params: HashMap<String, String> = HashMap::new();
+        let mut user_values: Vec<String> = Vec::new();
+
+        for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+            let key_str = key.as_ref();
+            if key_str == "user" {
+                // "user" can be repeated multiple times
+                if !value.is_empty() {
+                    user_values.push(value.into_owned());
+                }
+            } else {
+                // All other params are single-value (last one wins if repeated)
+                single_params.insert(key.into_owned(), value.into_owned());
+            }
+        }
+
+        let reverse = if let Some(reverse_str) = single_params.get("reverse") {
+            parse_bool(reverse_str).map_err(|e| *e)?
+        } else {
+            false
+        };
+
+        let live = if let Some(live_str) = single_params.get("live") {
+            parse_bool(live_str).map_err(|e| *e)?
+        } else {
+            false
+        };
+
+        let limit = match single_params.get("limit") {
+            Some(l) if !l.is_empty() => l.parse::<u16>().ok(),
+            _ => None,
+        };
+
+        let filter_dir = single_params.get("filter_dir").and_then(|fd| {
+            if fd.is_empty() {
+                None
+            } else {
+                Some(fd.clone())
+            }
+        });
+
+        // Parse user values into (pubkey, optional_cursor) pairs
+        // Format: "pubkey" or "pubkey:cursor"
+        let user_cursors = user_values
+            .into_iter()
+            .map(|value| {
+                if let Some((pubkey, cursor)) = value.split_once(':') {
+                    (pubkey.to_string(), Some(cursor.to_string()))
+                } else {
+                    (value, None)
+                }
+            })
+            .collect::<Vec<(String, Option<String>)>>();
+
+        Ok(EventStreamQueryParams {
+            limit,
+            reverse,
+            live,
+            user_cursors,
+            filter_dir,
         })
     }
 }

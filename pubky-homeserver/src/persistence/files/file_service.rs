@@ -3,6 +3,7 @@ use crate::AppContext;
 use crate::{
     persistence::sql::{
         entry::{EntryEntity, EntryRepository},
+        event::EventEntity,
         SqlDb, UnifiedExecutor,
     },
     shared::webdav::EntryPath,
@@ -15,6 +16,7 @@ use futures_util::StreamExt;
 #[cfg(test)]
 use opendal::Buffer;
 use std::path::Path;
+use tokio::sync::broadcast;
 
 use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
 
@@ -38,6 +40,7 @@ impl FileService {
         config: &ConfigToml,
         data_directory: &Path,
         db: SqlDb,
+        event_tx: broadcast::Sender<EventEntity>,
     ) -> Result<Self, FileIoError> {
         let user_quota_bytes = match config.general.user_storage_quota_mb {
             0 => u64::MAX,
@@ -48,6 +51,7 @@ impl FileService {
             data_directory,
             &db,
             user_quota_bytes,
+            event_tx,
         )?;
         Ok(Self::new(opendal_service, db))
     }
