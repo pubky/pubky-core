@@ -795,70 +795,7 @@ async fn events_stream_basic_modes() {
         "Live: Should receive the live event"
     );
 
-    // ==== Test 3: Phase transition (historical -> live) ====
-    let keypair3 = Keypair::random();
-    client
-        .signup(&keypair3, &server.public_key(), None)
-        .await
-        .unwrap();
-    let pubky3 = keypair3.public_key();
-
-    // Create historical events
-    for i in 0..5 {
-        let url = format!("pubky://{pubky3}/pub/historical_{i}.txt");
-        client.put(&url).body(vec![i as u8]).send().await.unwrap();
-    }
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    let stream_url = format!(
-        "https://{}/events-stream?user={}&live=true",
-        server.public_key(),
-        pubky3
-    );
-    let response = client
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-    let mut stream = response.bytes_stream().eventsource();
-
-    // Schedule live event
-    let pubky3_clone = pubky3.clone();
-    let client_clone = client.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let url = format!("pubky://{pubky3_clone}/pub/live_after_historical.txt");
-        client_clone.put(&url).body(vec![99]).send().await.unwrap();
-    });
-
-    let mut historical_count = 0;
-    let mut received_live = false;
-
-    let result = timeout(Duration::from_secs(10), async {
-        while let Some(Ok(event)) = stream.next().await {
-            if event.event == "PUT" {
-                if event.data.contains("historical_") {
-                    historical_count += 1;
-                } else if event.data.contains("live_after_historical") {
-                    received_live = true;
-                    break;
-                }
-            }
-        }
-    })
-    .await;
-
-    assert!(result.is_ok(), "Transition: Should complete within timeout");
-    assert_eq!(
-        historical_count, 5,
-        "Transition: Should get 5 historical events"
-    );
-    assert!(
-        received_live,
-        "Transition: Should get live event after historical"
-    );
-
-    // ==== Test 4: Finite limit enforcement ====
+    // ==== Test 3: Finite limit enforcement ====
     let keypair4 = Keypair::random();
     client
         .signup(&keypair4, &server.public_key(), None)
@@ -897,6 +834,98 @@ async fn events_stream_basic_modes() {
     assert!(
         stream.next().await.is_none(),
         "Limit: Should close after limit"
+    );
+
+    // ==== Test 4: Live mode with limit - transitions from historical to live until limit reached ====
+    let keypair5_live = Keypair::random();
+    client
+        .signup(&keypair5_live, &server.public_key(), None)
+        .await
+        .unwrap();
+    let pubky5_live = keypair5_live.public_key();
+
+    // Create 3 historical events
+    for i in 0..3 {
+        let url = format!("pubky://{pubky5_live}/pub/historical_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Connect with live=true and limit=5 (should get 3 historical + 2 live)
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&live=true&limit=5",
+        server.public_key(),
+        pubky5_live
+    );
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+
+    // Spawn a task to create 3 live events (but we should only receive 2 due to limit)
+    let pubky5_live_clone = pubky5_live.clone();
+    let client_clone = client.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        for i in 0..3 {
+            let url = format!("pubky://{pubky5_live_clone}/pub/live_{i}.txt");
+            client_clone
+                .put(&url)
+                .body(vec![i as u8])
+                .send()
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+
+    let mut historical_count = 0;
+    let mut live_count = 0;
+    let mut total_count = 0;
+
+    let result = timeout(Duration::from_secs(5), async {
+        while let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                total_count += 1;
+                if event.data.contains("historical_") {
+                    historical_count += 1;
+                } else if event.data.contains("live_") {
+                    live_count += 1;
+                }
+
+                // Should stop at exactly 5 events
+                if total_count >= 5 {
+                    break;
+                }
+            }
+        }
+        total_count
+    })
+    .await;
+
+    assert!(result.is_ok(), "Live+Limit: Should complete within timeout");
+    assert_eq!(
+        historical_count, 3,
+        "Live+Limit: Should get 3 historical events"
+    );
+    assert_eq!(
+        live_count, 2,
+        "Live+Limit: Should get exactly 2 live events to reach limit of 5"
+    );
+    assert_eq!(
+        result.unwrap(),
+        5,
+        "Live+Limit: Should stop at exactly 5 total events"
+    );
+
+    // Verify stream is closed after limit reached
+    let next_result = timeout(Duration::from_millis(500), stream.next()).await;
+    assert!(
+        next_result.is_ok() && next_result.unwrap().is_none(),
+        "Live+Limit: Connection should close after reaching limit"
     );
 
     // ==== Test 5: Batch mode (live=false) - connection closes after historical events ====

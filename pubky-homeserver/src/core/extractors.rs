@@ -82,10 +82,13 @@ pub struct EventStreamQueryParams {
     /// If false, close connection after historical events are exhausted.
     pub live: bool,
     /// Vec of (user_pubkey, optional_cursor) pairs
-    /// Parsed from `user=pubkey` or `user=pubkey:cursor` format
+    /// Format: "user=pubkey" or "user=pubkey:cursor"
     pub user_cursors: Vec<(String, Option<String>)>,
-    /// Optional path prefix filter (without pubky:// scheme)
-    /// E.g., "pub/files" to only return events under that directory
+    /// Optional path prefix filter
+    /// Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
+    ///   - The prefix must start with "/" and is matched against the WebDAV path stored in the database
+    ///   - Example: `filter_dir=/pub/` will only return events under the `/pub/` directory
+    ///   - Example: `filter_dir=/pub/files/` will only return events under the `/pub/files/` directory
     pub filter_dir: Option<String>,
 }
 
@@ -164,7 +167,6 @@ where
             let key_str = key.as_ref();
             if key_str == "user" {
                 // "user" can be repeated multiple times
-                // Format: "user=pubkey" or "user=pubkey:cursor"
                 if !value.is_empty() {
                     user_values.push(value.into_owned());
                 }
@@ -186,27 +188,11 @@ where
             false
         };
 
-        let limit = single_params
-            .get("limit")
-            // Treat `limit=` as None
-            .and_then(|l| if l.is_empty() { None } else { Some(l) })
-            .and_then(|l| l.parse::<u16>().ok());
+        let limit = match single_params.get("limit") {
+            Some(l) if !l.is_empty() => l.parse::<u16>().ok(),
+            _ => None,
+        };
 
-        // Parse user values into (pubkey, optional_cursor) pairs
-        // Format: "pubkey" or "pubkey:cursor"
-        let user_cursors = user_values
-            .into_iter()
-            .map(|value| {
-                // Split on first colon to separate pubkey from cursor
-                if let Some((pubkey, cursor)) = value.split_once(':') {
-                    (pubkey.to_string(), Some(cursor.to_string()))
-                } else {
-                    (value, None)
-                }
-            })
-            .collect::<Vec<(String, Option<String>)>>();
-
-        // Parse filter_dir parameter
         let filter_dir = single_params.get("filter_dir").and_then(|fd| {
             if fd.is_empty() {
                 None
@@ -214,6 +200,19 @@ where
                 Some(fd.clone())
             }
         });
+
+        // Parse user values into (pubkey, optional_cursor) pairs
+        // Format: "pubkey" or "pubkey:cursor"
+        let user_cursors = user_values
+            .into_iter()
+            .map(|value| {
+                if let Some((pubkey, cursor)) = value.split_once(':') {
+                    (pubkey.to_string(), Some(cursor.to_string()))
+                } else {
+                    (value, None)
+                }
+            })
+            .collect::<Vec<(String, Option<String>)>>();
 
         Ok(EventStreamQueryParams {
             limit,

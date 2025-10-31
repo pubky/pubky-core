@@ -1,17 +1,28 @@
 use async_trait::async_trait;
-use sea_query::{ColumnDef, PostgresQueryBuilder, Table};
+use sea_query::{ColumnDef, Index, PostgresQueryBuilder, Table};
 use sqlx::Transaction;
 
 use crate::persistence::sql::{entities::event::EventIden, migration::MigrationTrait};
 
 const TABLE: &str = "events";
+const INDEX_NAME: &str = "idx_events_user_id";
 
-pub struct M20251027AddEventContentHashMigration;
+pub struct M20251014EventsTableIndexAndContentHashMigration;
 
 #[async_trait]
-impl MigrationTrait for M20251027AddEventContentHashMigration {
+impl MigrationTrait for M20251014EventsTableIndexAndContentHashMigration {
     async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
-        // Add nullable content_hash column
+        // Create index on (user, id) for efficient per-user event streaming
+        let statement = Index::create()
+            .name(INDEX_NAME)
+            .table(TABLE)
+            .col("user")
+            .col("id")
+            .to_owned();
+        let query = statement.build(PostgresQueryBuilder);
+        sqlx::query(query.as_str()).execute(&mut **tx).await?;
+
+        // Add nullable content_hash column for tracking file content hashes
         let statement = Table::alter()
             .table(TABLE)
             .add_column(ColumnDef::new(EventIden::ContentHash).binary().null())
@@ -23,7 +34,7 @@ impl MigrationTrait for M20251027AddEventContentHashMigration {
     }
 
     fn name(&self) -> &str {
-        "m20251027_add_event_content_hash"
+        "m20251014_enhance_events_table"
     }
 }
 
@@ -80,14 +91,14 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_add_event_content_hash_migration() {
+    async fn test_enhance_events_table_migration() {
         let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![
                 Box::new(M20250806CreateUserMigration),
                 Box::new(M20250814CreateEventMigration),
-                Box::new(M20251027AddEventContentHashMigration),
+                Box::new(M20251014EventsTableIndexAndContentHashMigration),
             ])
             .await
             .expect("Should run successfully");
@@ -179,5 +190,16 @@ mod tests {
         assert_eq!(events[1].user_id, 1);
         assert_eq!(events[1].path, "/test2");
         assert_eq!(events[1].content_hash, Some(hash.as_bytes().to_vec()));
+
+        // Verify index exists
+        let index_check = sqlx::query(
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'events' AND indexname = $1",
+        )
+        .bind(INDEX_NAME)
+        .fetch_optional(db.pool())
+        .await
+        .unwrap();
+
+        assert!(index_check.is_some(), "Index {} should exist", INDEX_NAME);
     }
 }
