@@ -1,0 +1,23 @@
+{
+  "name": "pubky-js-examples",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Node 20+ CLI examples for @synonymdev/pubky",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "logging": "node 0-logging.mjs",
+    "testnet": "node 1-testnet.mjs",
+    "signup": "node 2-signup.mjs",
+    "authenticator": "node 3-authenticator.mjs",
+    "storage": "node 4-storage.mjs",
+    "request": "node 5-request.mjs"
+  },
+  "dependencies": {
+    "@synonymdev/pubky": "0.6.0-rc.6",
+    "mri": "^1.2.0",
+    "password-prompt": "^1.1.3"
+  }
+}

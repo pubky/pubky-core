@@ -33,8 +33,15 @@ jobs:
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Lint with Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: Lint (host targets)
+        run: cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Lint wasm crate (wasm32)
+        run: cargo clippy -p pubky-wasm --target wasm32-unknown-unknown -- -D warnings
 
   test:
     services:
@@ -111,6 +118,40 @@ jobs:
             fi
           fi
 
+  doc:
+    strategy:
+      matrix:
+        crate: [pubky, pubky-testnet]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.89
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build docs
+        run: cargo doc -p ${{ matrix.crate }} --all-features --no-deps
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.89
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Cargo check examples
+        run: |
+          cargo check -p examples --all-features --bins
+
   wasm-test:
     services:
       postgres:
@@ -147,19 +188,47 @@ jobs:
           node-version: "22"
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: cargo install wasm-pack
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Run wasm-pack unit tests
+        working-directory: pubky-sdk/bindings/js
+        run: wasm-pack test --node
+
+      - name: Install Electron/X deps
+        run: |
+          set -eux
+          sudo apt-get update
+          # base deps (don’t include libasound here so a single missing package doesn’t abort)
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libgtk-3-0 \
+            libnss3 \
+            libxss1 \
+            libx11-xcb1 \
+            libxcb-dri3-0 \
+            libdrm2 \
+            libgbm1 \
+            libxdamage1 \
+            libxshmfence1 \
+            libxtst6
+          # asound: Ubuntu 24.04 uses libasound2t64; older images still use libasound2
+          sudo apt-get install -y --no-install-recommends libasound2t64 || \
+          sudo apt-get install -y --no-install-recommends libasound2
+
+      - name: Sanity Check (Electron works)
+        run: xvfb-run -a npx electron --no-sandbox --version
+
       - name: Build WASM
-        working-directory: pubky-client/bindings/js/pkg
+        working-directory: pubky-sdk/bindings/js/pkg
         run: |
           npm install
           npm run build
 
       - name: Run the testnet
-        working-directory: pubky-client/bindings/js/pkg
+        working-directory: pubky-sdk/bindings/js/pkg
         run: npm run testnet > testnet.log 2>&1 &
 
       - name: Wait for testnet homeserver
@@ -177,13 +246,20 @@ jobs:
           done
           echo "Testnet homeserver is ready."
 
-      - name: Run Tests (only node-js)
-        working-directory: pubky-client/bindings/js/pkg
-        # running only `test-nodjs` and not browser because of weird `exit` behavior
+      - name: Node tests
+        working-directory: pubky-sdk/bindings/js/pkg
         run: npm run test-nodejs
 
+      - name: Browser tests (Electron under Xvfb)
+        working-directory: pubky-sdk/bindings/js/pkg
+        env:
+          ELECTRON_DISABLE_SANDBOX: "1" # CI-safe
+        run: |
+          npx electron --version || true
+          xvfb-run -a npm run test-browser:ci
+
       - name: Show testnet logs if tests fail
-        working-directory: pubky-client/bindings/js/pkg
+        working-directory: pubky-sdk/bindings/js/pkg
         if: failure()
         run: cat testnet.log
 

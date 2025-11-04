@@ -1,0 +1,43 @@
+[package]
+name = "examples"
+version = "0.6.0-rc.6"
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "testnet"
+path = "./1-testnet/main.rs"
+
+[[bin]]
+name = "logging"
+path = "./0-logging/main.rs"
+
+[[bin]]
+name = "signup"
+path = "./2-signup/signup.rs"
+
+[[bin]]
+name = "authenticator"
+path = "./3-auth_flow/authenticator.rs"
+
+[[bin]]
+name = "storage"
+path = "./4-storage/main.rs"
+
+[[bin]]
+name = "request"
+path = "./5-request/main.rs"
+
+[dependencies]
+anyhow = "1.0.99"
+base64 = "0.22.1"
+clap = { version = "4.5.48", features = ["derive"] }
+pubky = { path = "../../pubky-sdk", version = "0.6.0-rc.6" }
+pubky-testnet = { path = "../../pubky-testnet", version = "0.6.0-rc.6" }
+pubky-common = { path = "../../pubky-common", version = "0.6.0-rc.6" }
+reqwest = "0.12.23"
+rpassword = "7.4.0"
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing = "0.1.41"
+url = "2.5.4"

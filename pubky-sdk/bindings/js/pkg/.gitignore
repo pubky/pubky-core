@@ -1,0 +1,10 @@
+coverage
+node_modules
+package-lock.json
+pubky.d.ts
+pubky_bg.wasm
+pubky_wasm*
+nodejs/
+dist/
+index.js
+index.cjs

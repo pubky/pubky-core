@@ -105,8 +105,7 @@ impl Entry {
     #[cfg(test)]
     pub fn serialize(&self) -> Vec<u8> {
         use postcard::to_allocvec;
-
-        to_allocvec(self).expect("Session::serialize")
+        to_allocvec(self).expect("SessionInfo::serialize")
     }
 
     pub fn deserialize(bytes: &[u8]) -> core::result::Result<Self, postcard::Error> {

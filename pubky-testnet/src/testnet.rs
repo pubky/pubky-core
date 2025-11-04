@@ -6,7 +6,7 @@
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
 use anyhow::Result;
 use http_relay::HttpRelay;
-use pubky::Keypair;
+use pubky::{Keypair, Pubky};
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, ConnectionString, DomainPort, HomeserverSuite,
     MockDataDir,
@@ -31,8 +31,6 @@ pub struct Testnet {
 
 impl Testnet {
     /// Run a new testnet with a local DHT.
-    /// Pass an optional postgres connection string to use for the homeserver.
-    /// If None, the default test connection string is used.
     pub async fn new() -> Result<Self> {
         let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet = Self {
@@ -90,7 +88,7 @@ impl Testnet {
             config.general.database_url = connection_string.clone();
         }
         let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
-        self.create_homeserver_suite_with_mock(mock_dir).await
+        self.create_homeserver_with_mock(mock_dir).await
     }
 
     /// Creates a homeserver suite using a freshly generated random keypair.
@@ -101,13 +99,13 @@ impl Testnet {
             config.general.database_url = connection_string.clone();
         }
         let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
-        self.create_homeserver_suite_with_mock(mock_dir).await
+        self.create_homeserver_with_mock(mock_dir).await
     }
 
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the configured ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
-    pub async fn create_homeserver_suite_with_mock(
+    pub async fn create_homeserver_with_mock(
         &mut self,
         mut mock_dir: MockDataDir,
     ) -> Result<&HomeserverSuite> {
@@ -139,7 +137,7 @@ impl Testnet {
 
     /// Run a new Pkarr relay.
     ///
-    /// You can access the list of relays at [Self::relays].
+    /// You can access the list of relays at [Self::pkarr_relays].
     pub async fn create_pkarr_relay(&mut self) -> Result<Url> {
         let dir = tempfile::tempdir()?;
         let mut builder = pkarr_relay::Relay::builder();
@@ -179,11 +177,11 @@ impl Testnet {
         self.pkarr_relays.iter().map(|r| r.local_url()).collect()
     }
 
-    /// Create a [ClientBuilder] and configure it to use this local test network.
-    pub fn pubky_client_builder(&self) -> pubky::ClientBuilder {
+    /// Create a [pubky::PubkyHttpClientBuilder] and configure it to use this local test network.
+    pub fn client_builder(&self) -> pubky::PubkyHttpClientBuilder {
         let relays = self.dht_relay_urls();
 
-        let mut builder = pubky::Client::builder();
+        let mut builder = pubky::PubkyHttpClient::builder();
         builder.pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&self.dht.bootstrap);
@@ -203,15 +201,18 @@ impl Testnet {
         builder
     }
 
-    /// Creates a `pubky::Client` pre-configured to use this test network.
+    /// Creates a [`pubky::PubkyHttpClient`] pre-configured to use this test network.
     ///
-    /// This is a convenience method that builds a client from `Self::pubky_client_builder`.
+    /// This is a convenience method that builds a client from `Self::client_builder`.
+    pub fn client(&self) -> Result<pubky::PubkyHttpClient, pubky::BuildError> {
+        self.client_builder().build()
+    }
+
+    /// Creates a [`pubky::Pubky`] SDK facade pre-configured to use this test network.
     ///
-    /// # Panics
-    ///
-    /// Panics if the client fails to build, which should not happen in a test context.
-    pub fn pubky_client(&self) -> Result<pubky::Client, pubky::BuildError> {
-        self.pubky_client_builder().build()
+    /// This is a convenience method that builds a client from `Self::client_builder`.
+    pub fn sdk(&self) -> Result<Pubky, pubky::BuildError> {
+        Ok(Pubky::with_client(self.client()?))
     }
 
     /// Create a [pkarr::ClientBuilder] and configure it to use this local test network.
@@ -262,16 +263,14 @@ mod test {
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver().await.unwrap();
-        let client = testnet.pubky_client_builder().build().unwrap();
-        let hs = testnet.homeservers.first().unwrap();
-        let keypair = Keypair::random();
-        let pubky = keypair.public_key();
 
-        let session = client
-            .signup(&keypair, &hs.public_key(), None)
-            .await
-            .unwrap();
-        assert_eq!(session.pubky(), &pubky);
+        let hs = testnet.homeservers.first().unwrap();
+        let sdk = testnet.sdk().unwrap();
+
+        let signer = sdk.signer(Keypair::random());
+
+        let session = signer.signup(&hs.public_key(), None).await.unwrap();
+        assert_eq!(session.info().public_key(), &signer.public_key());
     }
 
     #[tokio::test]

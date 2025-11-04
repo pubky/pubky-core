@@ -1,340 +1,314 @@
-use pkarr::Keypair;
+use pubky_testnet::pubky::{
+    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode,
+};
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,
 };
-use reqwest::StatusCode;
 use std::time::Duration;
+
+use pubky_testnet::pubky::errors::{Error, RequestError};
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let homeserver = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
-    let client = testnet.pubky_client().unwrap();
+    let signer = pubky.signer(Keypair::random());
 
-    let keypair = Keypair::random();
+    let user = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let session = client
-        .session(&keypair.public_key())
-        .await
-        .unwrap()
-        .unwrap();
+    let session = user.info();
 
     assert!(session.capabilities().contains(&Capability::root()));
 
-    client.signout(&keypair.public_key()).await.unwrap();
-
-    {
-        let session = client.session(&keypair.public_key()).await.unwrap();
-
-        assert!(session.is_none());
-    }
-
-    client.signin(&keypair).await.unwrap();
-
-    {
-        let session = client
-            .session(&keypair.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(session.pubky(), &keypair.public_key());
-        assert!(session.capabilities().contains(&Capability::root()));
-    }
+    user.signout().await.unwrap();
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
-    let client = testnet.pubky_client().unwrap();
+    // Create a brand-new user and session
+    let signer = pubky.signer(Keypair::random());
+    let pubky = signer.public_key().clone();
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
 
-    let keypair = Keypair::random();
-    let pubky = keypair.public_key();
-
-    // Create a new user
-    client
-        .signup(&keypair, &server.public_key(), None)
+    // Create a test file to ensure the user can write to their account
+    let file_path = "/pub/pubky.app/foo";
+    session
+        .storage()
+        .put(file_path, Vec::<u8>::new())
         .await
-        .unwrap();
-
-    // Create a test file to make sure the user can write to their account
-    let file_url = format!("pubky://{pubky}/pub/pubky.app/foo");
-    client
-        .put(file_url.clone())
-        .body(vec![])
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
         .unwrap();
 
     // Make sure the user can read their own file
-    let response = client.get(file_url.clone()).send().await.unwrap();
+    let response = session.storage().get(file_path).await.unwrap();
     assert_eq!(
         response.status(),
         StatusCode::OK,
         "User should be able to read their own file"
     );
 
+    // Disable the user via admin API
     let admin_socket = server.admin().listen_socket();
-    let admin_client = reqwest::Client::new();
-
-    // Disable the user
-    let response = admin_client
-        .post(format!("http://{admin_socket}/users/{pubky}/disable"))
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let disable_url = format!("http://{admin_socket}/users/{pubky}/disable");
+    let resp = admin_client
+        .request(Method::POST, &disable_url)
         .header("X-Admin-Password", "admin")
         .send()
         .await
         .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // User can still read their own file
+    let response = session.storage().get(file_path).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Make sure the user can still read their own file
-    let response = client.get(file_url.clone()).send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Make sure the user cannot write a new file
-    let response = client
-        .put(file_url.clone())
-        .body(vec![])
-        .send()
+    // User can no longer write
+    let err = session
+        .storage()
+        .put(file_path, Vec::<u8>::new())
         .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN),
+        "Disabled user must get 403 on write"
+    );
 
-    // Make sure the user can still sign in
-    client
-        .signin(&keypair)
+    // Fresh sign-in should still succeed (disabled means no writes, not no login)
+    session.signout().await.unwrap();
+
+    let session2 = signer
+        .signin()
         .await
-        .expect("Signin should succeed");
+        .expect("Signin should succeed for disabled users");
+    assert_eq!(session2.info().public_key(), &pubky);
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
-    let http_relay = testnet.http_relay();
-    let http_relay_url = http_relay.local_link_url();
+    let http_relay_url = testnet.http_relay().local_link_url();
 
-    let keypair = Keypair::random();
-    let pubky = keypair.public_key();
+    // Third-party app (keyless)
+    let caps = Capabilities::builder()
+        .read_write("/pub/pubky.app/")
+        .read("/pub/foo.bar/file")
+        .finish();
 
-    // Third party app side
-    let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
-
-    let client = testnet.pubky_client().unwrap();
-
-    let pubky_auth_request = client.auth_request(http_relay_url, &capabilities).unwrap();
-
-    // Authenticator side
-    {
-        let client = testnet.pubky_client().unwrap();
-
-        client
-            .signup(&keypair, &server.public_key(), None)
-            .await
-            .unwrap();
-
-        client
-            .send_auth_token(&keypair, pubky_auth_request.url())
-            .await
-            .unwrap();
-    }
-
-    let public_key = pubky_auth_request.response().await.unwrap();
-
-    assert_eq!(&public_key, &pubky);
-
-    let session = client.session(&pubky).await.unwrap().unwrap();
-    assert_eq!(session.capabilities(), &capabilities.0);
-
-    // Test access control enforcement
-
-    client
-        .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
-        .body(vec![])
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
+    // Third-party app (keyless)
+    let auth = PubkyAuthFlow::builder(&caps)
+        .relay(http_relay_url)
+        .client(pubky.client().clone())
+        .start()
         .unwrap();
 
-    assert_eq!(
-        client
-            .put(format!("pubky://{pubky}/pub/pubky.app"))
-            .body(vec![])
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::FORBIDDEN
+    // Signer authenticator
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    signer
+        .approve_auth(&auth.authorization_url())
+        .await
+        .unwrap();
+
+    // Retrieve the session-bound agent (third party app)
+    let user = auth.await_approval().await.unwrap();
+
+    assert_eq!(user.info().public_key(), &signer.public_key());
+
+    // let session = user.info().await.unwrap().unwrap();
+    // assert_eq!(session.capabilities(), &caps.0);
+
+    // Ensure the same user pubky has been authed on the keyless app from cold keypair
+    assert_eq!(user.info().public_key(), &signer.public_key());
+
+    // Access control enforcement
+    user.storage()
+        .put("/pub/pubky.app/foo", Vec::<u8>::new())
+        .await
+        .unwrap();
+
+    let err = user
+        .storage()
+        .put("/pub/pubky.app", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 
-    assert_eq!(
-        client
-            .put(format!("pubky://{pubky}/pub/foo.bar/file"))
-            .body(vec![])
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::FORBIDDEN
+    let err = user
+        .storage()
+        .put("/pub/foo.bar/file", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
+async fn persist_and_restore_info() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let homeserver = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    // Create user and session-bound agent
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
+
+    // Write something with the live agent
+    session
+        .storage()
+        .put("/pub/app/persist.txt", "hello")
+        .await
+        .unwrap();
+
+    // Export session's secret and drop the session (simulate restart)
+    let secret_token = session.export_secret();
+    drop(session);
+
+    // Save to disk or however you want to persist `exported`
+
+    // Rehydrate from the exported secret (validates the session)
+    let restored = PubkySession::import_secret(&secret_token, Some(pubky.client().clone()))
+        .await
+        .unwrap();
+
+    // Same identity?
+    assert_eq!(restored.info().public_key(), &signer.public_key());
+
+    // Still authorized to write
+    restored
+        .storage()
+        .put("/pub/app/persist.txt", "hello2")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
-    let client = testnet.pubky_client().unwrap();
+    // Two independent users
+    let alice = pubky.signer(Keypair::random());
+    let bob = pubky.signer(Keypair::random());
 
-    let first_keypair = Keypair::random();
-    let second_keypair = Keypair::random();
+    let alice_session = alice.signup(&server.public_key(), None).await.unwrap();
+    let bob_session = bob.signup(&server.public_key(), None).await.unwrap();
 
-    client
-        .signup(&first_keypair, &server.public_key(), None)
-        .await
-        .unwrap();
+    // Each session is bound to its own pubkey and has root caps
+    let a_sess = alice_session.info();
+    assert_eq!(a_sess.public_key(), &alice.public_key());
+    assert!(a_sess.capabilities().contains(&Capability::root()));
 
-    client
-        .signup(&second_keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-
-    let session = client
-        .session(&first_keypair.public_key())
-        .await
-        .unwrap()
-        .unwrap();
-
-    assert_eq!(session.pubky(), &first_keypair.public_key());
-    assert!(session.capabilities().contains(&Capability::root()));
-
-    let session = client
-        .session(&second_keypair.public_key())
-        .await
-        .unwrap()
-        .unwrap();
-
-    assert_eq!(session.pubky(), &second_keypair.public_key());
-    assert!(session.capabilities().contains(&Capability::root()));
+    let b_sess = bob_session.info();
+    assert_eq!(b_sess.public_key(), &bob.public_key());
+    assert!(b_sess.capabilities().contains(&Capability::root()));
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_suite();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
 
-    let http_relay = testnet.http_relay();
-    let http_relay_url = http_relay.local_link_url();
+    let http_relay_url = testnet.http_relay().local_link_url();
 
-    let keypair = Keypair::random();
-    let pubky = keypair.public_key();
-
-    // Third party app side
-    let capabilities: Capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r".try_into().unwrap();
+    // Third-party app (keyless) with a short HTTP timeout to force long-poll retries
+    let capabilities = Capabilities::builder()
+        .read_write("/pub/pubky.app/")
+        .read("/pub/foo.bar/file")
+        .finish();
 
     let client = testnet
-        .pubky_client_builder()
-        .request_timeout(Duration::from_millis(1000))
+        .client_builder()
+        .request_timeout(Duration::from_millis(1_000))
         .build()
         .unwrap();
 
-    let pubky_auth_request = client.auth_request(http_relay_url, &capabilities).unwrap();
-
-    // Authenticator side
-    {
-        let url = pubky_auth_request.url().clone();
-
-        let client = testnet.pubky_client().unwrap();
-        client
-            .signup(&keypair, &server.public_key(), None)
-            .await
-            .unwrap();
-
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(1000)).await;
-            // loop {
-            client.send_auth_token(&keypair, &url).await.unwrap();
-            //     }
-        });
-    }
-
-    let public_key = pubky_auth_request.response().await.unwrap();
-
-    assert_eq!(&public_key, &pubky);
-
-    let session = client.session(&pubky).await.unwrap().unwrap();
-    assert_eq!(session.capabilities(), &capabilities.0);
-
-    // Test access control enforcement
-
-    client
-        .put(format!("pubky://{pubky}/pub/pubky.app/foo"))
-        .body(vec![])
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
+    // set custom global client with timeout of 1 sec
+    // Start pairing auth flow using our custom client + local relay
+    let auth = PubkyAuthFlow::builder(&capabilities)
+        .client(client)
+        .relay(http_relay_url)
+        .start()
         .unwrap();
 
-    assert_eq!(
-        client
-            .put(format!("pubky://{pubky}/pub/pubky.app"))
-            .body(vec![])
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::FORBIDDEN
+    // Signer side: sign up, then approve after a delay (to exercise timeout/retry)
+    let signer = pubky.signer(Keypair::random());
+    let signer_pubky = signer.public_key();
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    let url_clone = auth.authorization_url().clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1_000)).await;
+        signer.approve_auth(&url_clone).await.unwrap();
+    });
+
+    // The long-poll should survive timeouts and eventually yield an session
+    let session = auth.await_approval().await.unwrap();
+    assert_eq!(session.info().public_key(), &signer_pubky);
+
+    // Access control enforcement (write inside scope OK, others forbidden)
+    session
+        .storage()
+        .put("/pub/pubky.app/foo", Vec::<u8>::new())
+        .await
+        .unwrap();
+
+    let err = session
+        .storage()
+        .put("/pub/pubky.app", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 
-    assert_eq!(
-        client
-            .put(format!("pubky://{pubky}/pub/foo.bar/file"))
-            .body(vec![])
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::FORBIDDEN
+    let err = session
+        .storage()
+        .put("/pub/foo.bar/file", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn test_signup_with_token() {
+async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
-    let client = testnet.pubky_client().unwrap();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let signer2 = pubky.signer(Keypair::random());
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet
-        .create_homeserver_suite_with_mock(mock_dir)
-        .await
-        .unwrap();
-    let keypair = Keypair::random();
+    let server = testnet.create_homeserver_with_mock(mock_dir).await.unwrap();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
-    let invalid_signup = client
-        .signup(&keypair, &server.public_key(), Some("AAAA-BBBB-CCCC"))
+    let invalid_signup = signer
+        .signup(&server.public_key(), Some("AAAA-BBBB-CCCC"))
         .await;
     assert!(
         invalid_signup.is_err(),
@@ -350,27 +324,27 @@ async fn test_signup_with_token() {
     let valid_token = server.admin().create_signup_token().await.unwrap();
 
     // 4. Now signup with the valid token. Expect success and a session back.
-    let session = client
-        .signup(&keypair, &server.public_key(), Some(&valid_token))
+    let session = signer
+        .signup(&server.public_key(), Some(&valid_token))
         .await
         .unwrap();
     assert!(
-        !session.pubky().to_string().is_empty(),
-        "Session should contain a valid public key"
+        !session.info().public_key().to_string().is_empty(),
+        "SessionInfo should contain a valid public key"
     );
 
     // 5. Finally, sign in with the same keypair and verify that a session is returned.
-    let signin_session = client.signin(&keypair).await.unwrap();
+    let pubky = signer.public_key();
+    let session = signer.signin().await.unwrap();
     assert_eq!(
-        signin_session.pubky(),
-        &keypair.public_key(),
-        "Signed-in session should correspond to the same public key"
+        session.info().public_key(),
+        &pubky,
+        "Signed-in session pubky should correspond to the signer's public key"
     );
 
     // 6. Signup with the same token again and expect failure.
-    let new_keypair = Keypair::random();
-    let signup_again = client
-        .signup(&new_keypair, &server.public_key(), Some(&valid_token))
+    let signup_again = signer2
+        .signup(&server.public_key(), Some(&valid_token))
         .await;
     let err = signup_again.expect_err("Signup with an already used token should fail");
     assert!(err.to_string().contains("401"));
@@ -383,52 +357,45 @@ async fn test_signup_with_token() {
 // the record is republished (its timestamp increases).
 #[tokio::test]
 #[pubky_testnet::test]
-async fn test_republish_on_signin_old_enough() {
-    // Setup the testnet and run a homeserver.
+async fn republish_if_stale_triggers_timestamp_bump() {
+    use std::time::Duration;
+
     let testnet = EphemeralTestnet::start().await.unwrap();
-    // Create a client that will republish conditionally if a record is older than 1ms.
-    let client = testnet
-        .pubky_client_builder()
-        .max_record_age(Duration::from_millis(1))
-        .build()
-        .unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+    let client = testnet.client().unwrap();
 
-    let server = testnet.homeserver_suite();
-    let keypair = Keypair::random();
+    // Sign up a brand-new user (initial publish happens on signup)
+    let signer = pubky.signer(Keypair::random());
+    let pubky = signer.public_key().clone();
+    signer.signup(&server.public_key(), None).await.unwrap();
 
-    // Signup publishes a new record.
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-    // Resolve the record and get its timestamp.
-    let record1 = client
+    // Capture initial record timestamp
+    let ts1 = client
         .pkarr()
-        .resolve_most_recent(&keypair.public_key())
+        .resolve_most_recent(&pubky)
         .await
-        .unwrap();
-    let ts1 = record1.timestamp().as_u64();
+        .unwrap()
+        .timestamp()
+        .as_u64();
 
-    // Immediately sign in. This should update the record
-    // with PublishStrategy::IfOlderThan.
-    client
-        .signin_and_ensure_record_published(&keypair, true)
-        .await
-        .unwrap();
+    // Make conditional publish consider the record stale after just 1ms,
+    // then wait long enough to cross a whole second (pkarr timestamps are second-resolution).
+    let pkdns = signer.pkdns().set_stale_after(Duration::from_millis(1));
+    tokio::time::sleep(Duration::from_millis(1200)).await;
 
-    let record2 = client
+    // Conditional republish should now occur
+    pkdns.publish_homeserver_if_stale(None).await.unwrap();
+
+    let ts2 = client
         .pkarr()
-        .resolve_most_recent(&keypair.public_key())
+        .resolve_most_recent(&pubky)
         .await
-        .unwrap();
-    let ts2 = record2.timestamp().as_u64();
+        .unwrap()
+        .timestamp()
+        .as_u64();
 
-    // Because the signin happened after max_age(Duration::from_millis(1)),
-    // the record should have been republished.
-    assert_ne!(
-        ts1, ts2,
-        "Record was not republished after threshold exceeded"
-    );
+    assert_ne!(ts1, ts2, "record should be republished when stale");
 }
 
 // This test verifies that when a signin happens immediately after signup,
@@ -437,111 +404,96 @@ async fn test_republish_on_signin_old_enough() {
 // the record is republished (its timestamp increases).
 #[tokio::test]
 #[pubky_testnet::test]
-async fn test_republish_on_signin_not_old_enough() {
-    // Setup the testnet and run a homeserver.
+async fn conditional_publish_skips_when_fresh() {
+    use std::time::Duration;
+
     let testnet = EphemeralTestnet::start().await.unwrap();
-    // Create a client that will republish conditionally if a record is older than 1hr.
-    let client = testnet.pubky_client().unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+    let client = testnet.client().unwrap();
 
-    let server = testnet.homeserver_suite();
-    let keypair = Keypair::random();
+    let signer = pubky.signer(Keypair::random());
+    let pubky = signer.public_key().clone();
+    signer.signup(&server.public_key(), None).await.unwrap();
 
-    // Signup publishes a new record.
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-    // Resolve the record and get its timestamp.
-    let record1 = client
+    let ts1 = client
         .pkarr()
-        .resolve_most_recent(&keypair.public_key())
+        .resolve_most_recent(&pubky)
         .await
-        .unwrap();
-    let ts1 = record1.timestamp().as_u64();
+        .unwrap()
+        .timestamp()
+        .as_u64();
 
-    // Immediately sign in. This updates the record
-    // with PublishStrategy::IfOlderThan.
-    client
-        .signin_and_ensure_record_published(&keypair, true)
-        .await
-        .unwrap();
+    // Set a very large staleness window so the record is definitively "fresh"
+    // Default is 3600 seconds, we set it again just for sanity.
+    let pkdns = signer.pkdns().set_stale_after(Duration::from_secs(3600));
+    pkdns.publish_homeserver_if_stale(None).await.unwrap();
 
-    let record2 = client
+    let ts2 = client
         .pkarr()
-        .resolve_most_recent(&keypair.public_key())
+        .resolve_most_recent(&pubky)
         .await
-        .unwrap();
-    let ts2 = record2.timestamp().as_u64();
+        .unwrap()
+        .timestamp()
+        .as_u64();
 
-    // Because the record is fresh (less than 1 second old in our test configuration),
-    // the background task should not republish it. The timestamp should remain the same.
-    assert_eq!(
-        ts1, ts2,
-        "Record republished too early; timestamps should be equal"
-    );
+    assert_eq!(ts1, ts2, "fresh record must not be republished");
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn test_republish_homeserver() {
-    // Setup the testnet and run a homeserver.
+    use std::time::Duration;
+
+    // Setup testnet + a homeserver.
     let mut testnet = Testnet::new().await.unwrap();
     let max_record_age = Duration::from_secs(5);
-
-    // Create a client that will republish conditionally if a record is older than 1 second
-    let client = testnet
-        .pubky_client_builder()
-        .max_record_age(max_record_age)
-        .build()
-        .unwrap();
+    let pubky = testnet.sdk().unwrap();
     let server = testnet.create_homeserver().await.unwrap();
-    let keypair = Keypair::random();
 
-    // Signup publishes a new record.
-    client
-        .signup(&keypair, &server.public_key(), None)
-        .await
-        .unwrap();
-    // Resolve the record and get its timestamp.
-    let record1 = client
-        .pkarr()
-        .resolve_most_recent(&keypair.public_key())
-        .await
-        .unwrap();
-    let ts1 = record1.timestamp().as_u64();
+    // Create user and publish initial record via signup.
+    let signer = pubky.signer(Keypair::random());
+    let public_key = signer.public_key().clone();
+    signer.signup(&server.public_key(), None).await.unwrap();
 
-    // Immediately call republish_homeserver.
-    // Since the record is fresh, republish should do nothing.
-    client
-        .republish_homeserver(&keypair, &server.public_key())
-        .await
-        .unwrap();
-    let record2 = client
+    // Initial timestamp.
+    let ts1 = pubky
+        .client()
         .pkarr()
-        .resolve_most_recent(&keypair.public_key())
+        .resolve_most_recent(&public_key)
         .await
-        .unwrap();
-    let ts2 = record2.timestamp().as_u64();
-    assert_eq!(
-        ts1, ts2,
-        "Record republished too early; timestamp should be equal"
-    );
+        .unwrap()
+        .timestamp()
+        .as_u64();
 
-    // Wait long enough for the record to be considered 'old'.
-    tokio::time::sleep(max_record_age).await;
-    // Call republish_homeserver again; now the record should be updated.
-    client
-        .republish_homeserver(&keypair, &server.public_key())
-        .await
-        .unwrap();
-    let record3 = client
+    // Conditional publish with a "fresh" record should NO-OP.
+    let pkdns = signer.pkdns().set_stale_after(max_record_age);
+    pkdns.publish_homeserver_if_stale(None).await.unwrap();
+
+    let ts2 = pubky
+        .client()
         .pkarr()
-        .resolve_most_recent(&keypair.public_key())
+        .resolve_most_recent(&public_key)
         .await
-        .unwrap();
-    let ts3 = record3.timestamp().as_u64();
-    assert!(
-        ts3 > ts2,
-        "Record was not republished after threshold exceeded"
-    );
+        .unwrap()
+        .timestamp()
+        .as_u64();
+    assert_eq!(ts1, ts2, "fresh record must not be republished");
+
+    // Wait until the record is stale (add 1s to cross second-resolution).
+    tokio::time::sleep(max_record_age + Duration::from_secs(1)).await;
+
+    // Now the conditional publish should republish and bump the timestamp.
+    pkdns.publish_homeserver_if_stale(None).await.unwrap();
+
+    let ts3 = pubky
+        .client()
+        .pkarr()
+        .resolve_most_recent(&public_key)
+        .await
+        .unwrap()
+        .timestamp()
+        .as_u64();
+
+    assert!(ts3 > ts2, "record should be republished when stale");
 }

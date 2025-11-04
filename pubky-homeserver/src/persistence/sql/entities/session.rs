@@ -1,7 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, crypto::random_bytes, session::Session};
+use pubky_common::{capabilities::{Capabilities}, crypto::random_bytes, session::SessionInfo};
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
@@ -21,7 +21,7 @@ impl SessionRepository {
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'a>(
         user_id: i32,
-        capabilities: &[Capability],
+        capabilities: &Capabilities,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SessionSecret, sqlx::Error> {
         let session_secret = base32::encode(base32::Alphabet::Crockford, &random_bytes::<16>());
@@ -36,10 +36,7 @@ impl SessionRepository {
                 SimpleExpr::Value(session_secret.into()),
                 SimpleExpr::Value(user_id.into()),
                 SimpleExpr::Value(
-                    capabilities
-                        .iter()
-                        .map(|c| c.to_string())
-                        .collect::<Vec<String>>()
+                    capabilities.to_string()
                         .into(),
                 ),
             ])
@@ -160,13 +157,13 @@ pub struct SessionEntity {
     pub secret: SessionSecret,
     pub user_id: i32,
     pub user_pubkey: PublicKey,
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Capabilities,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
 }
 
 impl SessionEntity {
-    pub fn to_legacy(&self) -> Session {
-        let mut session = Session::new(&self.user_pubkey, &self.capabilities, None);
+    pub fn to_legacy(&self) -> SessionInfo {
+        let mut session = SessionInfo::new(&self.user_pubkey, self.capabilities.clone(), None);
         session.set_created_at(self.created_at.and_utc().timestamp() as u64);
         session
     }
@@ -183,15 +180,9 @@ impl FromRow<'_, PgRow> for SessionEntity {
         let user_public_key: PublicKey = user_public_key
             .try_into()
             .map_err(|e: pkarr::errors::PublicKeyError| sqlx::Error::Decode(e.into()))?;
-        let capabilities: Vec<String> =
+        let capabilities: String =
             row.try_get(SessionIden::Capabilities.to_string().as_str())?;
-        let capabilities: Vec<Capability> = capabilities
-            .iter()
-            .map(|c| {
-                c.parse()
-                    .map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))
-            })
-            .collect::<Result<Vec<Capability>, sqlx::Error>>()?;
+        let capabilities: Capabilities = capabilities.as_str().try_into().map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
         Ok(SessionEntity {
@@ -208,6 +199,7 @@ impl FromRow<'_, PgRow> for SessionEntity {
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
+    use pubky_common::capabilities::Capability;
 
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
@@ -234,7 +226,7 @@ mod tests {
 
         // Test create session
         let secret =
-            SessionRepository::create(user.id, &[Capability::root()], &mut db.pool().into())
+            SessionRepository::create(user.id, &Capabilities::builder().cap(Capability::root()).finish(), &mut db.pool().into())
                 .await
                 .unwrap();
         let session = SessionRepository::get_by_secret(&secret, &mut db.pool().into())
@@ -246,7 +238,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(session.user_id, user.id);
-        assert_eq!(session.capabilities, vec![Capability::root()]);
+        assert_eq!(session.capabilities, Capabilities::builder().cap(Capability::root()).finish());
 
         // Test delete session
         SessionRepository::delete(&session.secret, &mut db.pool().into())

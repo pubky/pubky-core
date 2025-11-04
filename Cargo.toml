@@ -1,14 +1,14 @@
 [workspace]
 members = [
   "pubky-*",
-  "pubky-client/bindings/js",
+  "pubky-sdk/bindings/js",
   "http-relay",
   "pkarr-republisher",
-  "examples",
   "e2e", 
   "test_utils/test_macro", 
   "test_utils/drop_db_helper", 
   "test_utils/pubky_test",
+  "examples/rust",
 ]
 default-members = [
   "pubky-common",
@@ -16,7 +16,7 @@ default-members = [
   "pubky-homeserver",
   "http-relay",
   "pubky-testnet",
-  "pubky-client",
+  "pubky-sdk",
 ] # `ws publish` will only attempt to publish these ones. 
 resolver = "2"
 
@@ -43,4 +43,4 @@ opt-level = 'z'
 # Member crates that need "default-features = true" should add a "default" feature to the features list, which is equivalent.
 pkarr = { version = "3.10.0", default-features = false }
 mainline = { version = "5.4.0" }
-pkarr-relay = { version = "0.11.0" }
+pkarr-relay = { version = "0.11.1" }

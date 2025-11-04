@@ -1,4 +1,4 @@
-use pubky_common::session::Session;
+use pubky_common::session::SessionInfo;
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 
@@ -15,10 +15,10 @@ use crate::persistence::{
 /// The executor can either be db.pool() or a transaction.
 pub async fn create<'a>(
     session_secret: &str,
-    lmdb_session: &Session,
+    lmdb_session: &SessionInfo,
     executor: &mut UnifiedExecutor<'a>,
 ) -> Result<(), sqlx::Error> {
-    let sql_user = UserRepository::get(lmdb_session.pubky(), executor).await?;
+    let sql_user = UserRepository::get(lmdb_session.public_key(), executor).await?;
     let created_at =
         nano_seconds_to_timestamp(lmdb_session.created_at()).expect("Should always be valid");
     let created_at = created_at.naive_utc();
@@ -35,10 +35,7 @@ pub async fn create<'a>(
             SimpleExpr::Value(sql_user.id.into()),
             SimpleExpr::Value(
                 lmdb_session
-                    .capabilities()
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<String>>()
+                    .capabilities().to_string()
                     .into(),
             ),
             SimpleExpr::Value(created_at.into()),
@@ -62,7 +59,7 @@ pub async fn migrate_sessions<'a>(
     let mut count = 0;
     for record in lmdb.tables.sessions.iter(&lmdb_txn)? {
         let (secret, bytes) = record?;
-        let session = Session::deserialize(bytes)?;
+        let session = SessionInfo::deserialize(bytes)?;
         create(secret, &session, executor).await?;
         count += 1;
     }
@@ -75,7 +72,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use pkarr::Keypair;
-    use pubky_common::capabilities::Capability;
+    use pubky_common::capabilities::{Capabilities, Capability};
 
     use crate::persistence::sql::{
         session::{SessionRepository, SessionSecret},
@@ -103,7 +100,7 @@ mod tests {
             .unwrap()
             .as_secs()
             * 1_000_000;
-        let mut session1 = Session::new(&user1_pubkey, &[Capability::root()], None);
+        let mut session1 = SessionInfo::new(&user1_pubkey, Capabilities::builder().cap(Capability::root()).finish(), None);
         session1.set_created_at(created_at1);
         lmdb.tables
             .sessions
@@ -125,7 +122,7 @@ mod tests {
             .unwrap()
             .as_secs()
             * 1_000_000;
-        let mut session2 = Session::new(&user2_pubkey, &[], None);
+        let mut session2 = SessionInfo::new(&user2_pubkey, Capabilities::builder().finish(), None);
         session2.set_created_at(created_at2);
         lmdb.tables
             .sessions
@@ -160,7 +157,7 @@ mod tests {
                 .to_string()
         );
         assert_eq!(sql_session1.user_pubkey, user1_pubkey);
-        assert_eq!(sql_session1.capabilities, vec![Capability::root()]);
+        assert_eq!(sql_session1.capabilities, Capabilities::builder().cap(Capability::root()).finish());
         assert_eq!(sql_session1.user_pubkey, user1_pubkey);
         assert_eq!(sql_session1.secret, session1_secret);
 
@@ -180,7 +177,7 @@ mod tests {
                 .to_string()
         );
         assert_eq!(sql_session2.user_pubkey, user2_pubkey);
-        assert_eq!(sql_session2.capabilities, vec![]);
+        assert_eq!(sql_session2.capabilities, Capabilities::builder().finish());
         assert_eq!(sql_session2.user_pubkey, user2_pubkey);
         assert_eq!(sql_session2.secret, session2_secret);
     }

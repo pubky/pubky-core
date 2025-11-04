@@ -1,13 +1,13 @@
 [package]
 name = "pubky-homeserver"
 description = "Pubky core's homeserver."
-version = "0.5.4"
+version = "0.6.0-rc.6"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-keywords = ["pkarr", "sovereign", "web", "pkarr", "datastore"]
+keywords = ["web", "dht", "dns", "decentralized", "identity"]
 categories = [
     "network-programming",
     "cryptography",
@@ -33,7 +33,7 @@ hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
 pkarr = { workspace = true, features = ["dht", "lmdb-cache", "tls"] }
-pubky-common = { path = "../pubky-common", version = "0.5.4" }
+pubky-common = { path = "../pubky-common", version = "0.6.0-rc.6" }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"

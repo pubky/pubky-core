@@ -13,7 +13,8 @@ use axum::{
 use axum_extra::extract::Host;
 use bytes::Bytes;
 use pkarr::PublicKey;
-use pubky_common::{capabilities::Capability, session::Session};
+use pubky_common::capabilities::Capabilities;
+use pubky_common::session::SessionInfo;
 use std::collections::HashMap;
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
@@ -35,7 +36,7 @@ pub async fn signup(
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify AuthToken from request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.pubky();
+    let public_key = token.public_key();
 
     let mut tx = state.sql_db.pool().begin().await?;
     // 2) Ensure the user does *not* already exist
@@ -110,7 +111,7 @@ pub async fn signin(
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify the AuthToken in the request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.pubky();
+    let public_key = token.public_key();
 
     // 2) Ensure user *does* exist
     let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
@@ -125,7 +126,7 @@ async fn create_session_and_cookie(
     cookies: Cookies,
     host: &str,
     user: &UserEntity,
-    capabilities: &[Capability],
+    capabilities: &Capabilities,
 ) -> HttpResult<impl IntoResponse> {
     let session_secret =
         SessionRepository::create(user.id, capabilities, &mut state.sql_db.pool().into()).await?;
@@ -147,7 +148,7 @@ async fn create_session_and_cookie(
     cookie.set_expires(expiry);
     cookies.add(cookie);
 
-    let session = Session::new(&user.public_key, capabilities, None);
+    let session = SessionInfo::new(&user.public_key, capabilities.clone(), None);
     Ok(session.serialize())
 }
 

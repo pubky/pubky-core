@@ -1,4 +1,8 @@
-use axum::{extract::State, response::IntoResponse};
+use axum::{
+    extract::State,
+    http::{header, HeaderValue},
+    response::IntoResponse,
+};
 use tower_cookies::Cookies;
 
 use crate::{
@@ -16,14 +20,25 @@ pub async fn session(
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
-
+    
+ 
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Ok(session) =
             SessionRepository::get_by_secret(&secret, &mut state.sql_db.pool().into()).await
         {
             let legacy_session = session.to_legacy();
-            // TODO: add content-type
-            return Ok(legacy_session.serialize());
+            let mut resp = legacy_session.serialize().into_response();
+            resp.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            resp.headers_mut()
+                .insert(header::VARY, HeaderValue::from_static("cookie, pubky-host"));
+            resp.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, must-revalidate"),
+            );
+            return Ok(resp);
         };
     }
 

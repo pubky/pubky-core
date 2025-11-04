@@ -3,7 +3,7 @@ use heed::{
     Database,
 };
 
-/// session secret => Session.
+/// session secret => SessionInfo.
 pub type SessionsTable = Database<Str, Bytes>;
 
 pub const SESSIONS_TABLE: &str = "sessions";

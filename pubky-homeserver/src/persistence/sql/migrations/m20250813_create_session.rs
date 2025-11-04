@@ -34,8 +34,8 @@ impl MigrationTrait for M20250813CreateSessionMigration {
             .col(ColumnDef::new(SessionIden::User).integer().not_null())
             .col(
                 ColumnDef::new(SessionIden::Capabilities)
-                    .array(sea_query::ColumnType::Text)
-                    .not_null(),
+                    .text()
+                    .not_null()
             )
             .col(
                 ColumnDef::new(SessionIden::CreatedAt)
@@ -87,6 +87,7 @@ enum SessionIden {
 #[cfg(test)]
 mod tests {
     use pkarr::Keypair;
+    use pubky_common::capabilities::{Capabilities, Capability, CapsBuilder};
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
     use sqlx::{postgres::PgRow, FromRow, Row};
@@ -106,7 +107,7 @@ mod tests {
         pub id: i32,
         pub secret: String,
         pub user: i32,
-        pub capabilities: Vec<String>,
+        pub capabilities: Capabilities,
         pub created_at: sqlx::types::chrono::NaiveDateTime,
     }
 
@@ -115,8 +116,9 @@ mod tests {
             let id: i32 = row.try_get(SessionIden::Id.to_string().as_str())?;
             let secret: String = row.try_get(SessionIden::Secret.to_string().as_str())?;
             let user: i32 = row.try_get(SessionIden::User.to_string().as_str())?;
-            let capabilities: Vec<String> =
+            let capabilities: String =
                 row.try_get(SessionIden::Capabilities.to_string().as_str())?;
+            let capabilities: Capabilities = capabilities.as_str().try_into().map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))?;
             let created_at: sqlx::types::chrono::NaiveDateTime =
                 row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
             Ok(SessionEntity {
@@ -158,6 +160,7 @@ mod tests {
             .unwrap();
 
         // Create a session
+        let caps = CapsBuilder::new().cap(Capability::root()).finish();
         let statement = Query::insert()
             .into_table(TABLE)
             .columns([
@@ -169,11 +172,7 @@ mod tests {
                 SimpleExpr::Value(secret.into()),
                 SimpleExpr::Value(1.into()),
                 SimpleExpr::Value(
-                    vec!["read", "write"]
-                        .into_iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>()
-                        .into(),
+                    caps.to_string().into(),
                 ),
             ])
             .unwrap()
@@ -202,6 +201,6 @@ mod tests {
             .unwrap();
         assert_eq!(session.secret, secret);
         assert_eq!(session.user, 1);
-        assert_eq!(session.capabilities, vec!["read", "write"]);
+        assert_eq!(session.capabilities, caps);
     }
 }

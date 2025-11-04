@@ -7,29 +7,33 @@ use serde::{Deserialize, Serialize};
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{capabilities::Capability, timestamp::Timestamp};
+use crate::{capabilities::Capabilities, timestamp::Timestamp};
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 /// Pubky homeserver session struct.
-pub struct Session {
+pub struct SessionInfo {
     version: usize,
-    pubky: PublicKey,
+    public_key: PublicKey,
     created_at: u64,
     /// Deprecated. Will always be empty.
     name: String,
     /// Deprecated. Will always be empty.
     user_agent: String,
-    capabilities: Vec<Capability>,
+    capabilities: Capabilities,
 }
 
-impl Session {
+impl SessionInfo {
     /// Create a new session.
-    pub fn new(pubky: &PublicKey, capabilities: &[Capability], user_agent: Option<String>) -> Self {
+    pub fn new(
+        public_key: &PublicKey,
+        capabilities: Capabilities,
+        user_agent: Option<String>,
+    ) -> Self {
         Self {
             version: 0,
-            pubky: pubky.clone(),
+            public_key: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
-            capabilities: capabilities.to_vec(),
+            capabilities,
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }
@@ -37,13 +41,13 @@ impl Session {
 
     // === Getters ===
 
-    /// Returns the pubky of this session authorizes for.
-    pub fn pubky(&self) -> &PublicKey {
-        &self.pubky
+    /// Returns the public_key of this session authorizes for.
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
     /// Returns the capabilities this session provide on this session's pubky's resources.
-    pub fn capabilities(&self) -> &Vec<Capability> {
+    pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
 
@@ -54,14 +58,14 @@ impl Session {
 
     // === Setters ===
 
-    /// Set this session created at timestamp.
+    /// Set the timestamp when this session was created.
     pub fn set_created_at(&mut self, created_at: u64) -> &mut Self {
         self.created_at = created_at;
         self
     }
 
     /// Set this session's capabilities.
-    pub fn set_capabilities(&mut self, capabilities: Vec<Capability>) -> &mut Self {
+    pub fn set_capabilities(&mut self, capabilities: Capabilities) -> &mut Self {
         self.capabilities = capabilities;
 
         self
@@ -71,7 +75,7 @@ impl Session {
 
     /// Serialize this session to its canonical binary representation.
     pub fn serialize(&self) -> Vec<u8> {
-        to_allocvec(self).expect("Session::serialize")
+        to_allocvec(self).expect("SessionInfo::serialize")
     }
 
     /// Deserialize this session from its canonical binary representation.
@@ -91,7 +95,7 @@ impl Session {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
-/// Error deserializing a [Session].
+/// Error deserializing a [SessionInfo].
 pub enum Error {
     #[error("Empty payload")]
     /// Empty payload
@@ -106,20 +110,21 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::Keypair;
+    use crate::{capabilities::Capability, crypto::Keypair};
 
     use super::*;
 
     #[test]
     fn serialize() {
         let keypair = Keypair::from_secret_key(&[0; 32]);
-        let pubky = keypair.public_key();
+        let public_key = keypair.public_key();
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 
-        let session = Session {
+        let session = SessionInfo {
             user_agent: "foo".to_string(),
-            capabilities: vec![Capability::root()],
+            capabilities,
             created_at: 0,
-            pubky,
+            public_key,
             version: 0,
             name: "".to_string(),
         };
@@ -131,19 +136,20 @@ mod tests {
             [
                 0, 59, 106, 39, 188, 206, 182, 164, 45, 98, 163, 168, 208, 42, 111, 13, 115, 101,
                 50, 21, 119, 29, 226, 67, 166, 58, 192, 72, 161, 139, 89, 218, 41, 0, 0, 3, 102,
-                111, 111, 1, 4, 47, 58, 114, 119
+                111, 111, 4, 47, 58, 114, 119
             ]
         );
 
-        let deseiralized = Session::deserialize(&serialized).unwrap();
+        let deserialized = SessionInfo::deserialize(&serialized).unwrap();
 
-        assert_eq!(deseiralized, session)
+        assert_eq!(deserialized, session)
     }
 
     #[test]
     fn deserialize() {
-        let result = Session::deserialize(&[]);
+        let result = SessionInfo::deserialize(&[]);
 
         assert_eq!(result, Err(Error::EmptyPayload));
     }
 }
+
