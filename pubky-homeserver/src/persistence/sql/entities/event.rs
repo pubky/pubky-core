@@ -304,10 +304,6 @@ impl EventRepository {
             .column((subquery_alias.clone(), EventIden::CreatedAt))
             .column((subquery_alias.clone(), EventIden::ContentHash))
             .column((subquery_alias.clone(), UserIden::PublicKey))
-            .order_by(
-                (subquery_alias.clone(), EventIden::CreatedAt),
-                order.clone(),
-            )
             .order_by((subquery_alias, EventIden::Id), order)
             .limit(DEFAULT_LIST_LIMIT as u64)
             .to_owned();
