@@ -5,7 +5,7 @@ use crate::AppContext;
 use crate::{
     persistence::{
         files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
-        sql::SqlDb,
+        sql::{event::EventEntity, SqlDb},
     },
     shared::webdav::EntryPath,
     storage_config::StorageConfigToml,
@@ -15,6 +15,7 @@ use futures_util::{stream::StreamExt, Stream};
 #[cfg(test)]
 use opendal::Buffer;
 use opendal::Operator;
+use tokio::sync::broadcast;
 
 use super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
 
@@ -25,9 +26,10 @@ pub fn build_storage_operator(
     data_directory: &Path,
     db: &SqlDb,
     user_quota_bytes: u64,
+    event_tx: broadcast::Sender<EventEntity>,
 ) -> Result<Operator, FileIoError> {
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
-    let entry_layer = EntryLayer::new(db.clone());
+    let entry_layer = EntryLayer::new(db.clone(), event_tx);
     let builder = match storage_config {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -78,11 +80,14 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
         0 => u64::MAX,
         other => other * 1024 * 1024,
     };
+    // Create a test event_tx that will be dropped (no subscribers in tests)
+    let (event_tx, _rx) = broadcast::channel(100);
     build_storage_operator(
         &context.config_toml.storage,
         context.data_dir.path(),
         &context.sql_db,
         quota_bytes,
+        event_tx,
     )
 }
 
@@ -105,8 +110,10 @@ impl OpendalService {
         data_directory: &Path,
         db: &SqlDb,
         user_quota_bytes: u64,
+        event_tx: broadcast::Sender<EventEntity>,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(config, data_directory, db, user_quota_bytes)?;
+        let operator =
+            build_storage_operator(config, data_directory, db, user_quota_bytes, event_tx)?;
         Ok(Self { operator })
     }
 

@@ -3,23 +3,25 @@ use crate::{
         files::{FileIoError, FileMetadata},
         sql::{
             entry::{EntryEntity, EntryRepository},
-            event::{EventRepository, EventType},
+            event::{EventEntity, EventRepository, EventType},
             user::UserRepository,
             SqlDb, UnifiedExecutor,
         },
     },
     shared::webdav::EntryPath,
 };
+use tokio::sync::broadcast::{self, error::SendError};
 
 #[derive(Debug, Clone)]
 pub struct EntryService {
     db: SqlDb,
     // user_disk_space_quota_bytes: u64,
+    event_tx: broadcast::Sender<EventEntity>,
 }
 
 impl EntryService {
-    pub fn new(db: SqlDb) -> Self {
-        Self { db }
+    pub fn new(db: SqlDb, event_tx: broadcast::Sender<EventEntity>) -> Self {
+        Self { db, event_tx }
     }
 
     pub fn db(&self) -> &SqlDb {
@@ -51,8 +53,15 @@ impl EntryService {
             self.create_entry(path, metadata, executor).await?
         };
 
-        // Create event
-        EventRepository::create(entry.user_id, EventType::Put, path.path(), executor).await?;
+        // Create event and broadcast
+        let event = EventRepository::create(entry.user_id, EventType::Put, path, executor).await?;
+        // Broadcast to any listening clients.
+        match self.event_tx.send(event) {
+            Ok(_) => {}
+            Err(SendError(_)) => {
+                // No active receivers - this is expected when no clients are long-polling
+            }
+        }
         Ok(entry)
     }
 
@@ -112,8 +121,16 @@ impl EntryService {
 
         EntryRepository::delete(entry.id, executor).await?;
 
-        // Create event
-        EventRepository::create(entry.user_id, EventType::Delete, path.path(), executor).await?;
+        // Create event and broadcast
+        let event =
+            EventRepository::create(entry.user_id, EventType::Delete, path, executor).await?;
+        // Broadcast to any listening clients.
+        match self.event_tx.send(event) {
+            Ok(_) => {} // Successfully broadcast to receivers
+            Err(SendError(_)) => {
+                // No active receivers - this is expected when no clients are long-polling
+            }
+        }
 
         Ok(())
     }
