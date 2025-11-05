@@ -1643,14 +1643,14 @@ async fn events_stream_reverse() {
     assert!(next_event.is_none(), "Stream should close after all events are fetched with reverse=true (phase 2 should not be entered)");
 }
 
-/// Comprehensive test for directory filtering (`filter_dir` parameter):
+/// Comprehensive test for directory filtering (`path` parameter):
 /// - Basic filtering by different directory paths
 /// - Filter with cursor pagination
 /// - Filter with multiple users
 /// - Filter with reverse ordering
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_filter_dir() {
+async fn events_stream_path_filter() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
@@ -1682,7 +1682,7 @@ async fn events_stream_filter_dir() {
 
     // Filter by /pub/files/ - expect 3 events
     let stream_url = format!(
-        "https://{}/events-stream?user={}&filter_dir=/pub/files/",
+        "https://{}/events-stream?user={}&path=/pub/files/",
         server.public_key(),
         pubky1
     );
@@ -1718,7 +1718,7 @@ async fn events_stream_filter_dir() {
 
     // Filter by broader /pub/ - expect 7 events total
     let stream_url = format!(
-        "https://{}/events-stream?user={}&filter_dir=/pub/",
+        "https://{}/events-stream?user={}&path=/pub/",
         server.public_key(),
         pubky1
     );
@@ -1763,7 +1763,7 @@ async fn events_stream_filter_dir() {
 
     // Get first 5 with cursor
     let stream_url = format!(
-        "https://{}/events-stream?user={}&filter_dir=/pub/files/&limit=5",
+        "https://{}/events-stream?user={}&path=/pub/files/&limit=5",
         server.public_key(),
         pubky2
     );
@@ -1798,7 +1798,7 @@ async fn events_stream_filter_dir() {
 
     // Get remaining 5 with cursor
     let stream_url = format!(
-        "https://{}/events-stream?user={}:{}&filter_dir=/pub/files/",
+        "https://{}/events-stream?user={}:{}&path=/pub/files/",
         server.public_key(),
         pubky2,
         cursor
@@ -1861,7 +1861,7 @@ async fn events_stream_filter_dir() {
 
     // Filter both users by files directory
     let stream_url = format!(
-        "https://{}/events-stream?user={}&user={}&filter_dir=/pub/data/files/",
+        "https://{}/events-stream?user={}&user={}&path=/pub/data/files/",
         server.public_key(),
         pubky2,
         pubky3
@@ -1924,7 +1924,7 @@ async fn events_stream_filter_dir() {
 
     // Forward order
     let stream_url = format!(
-        "https://{}/events-stream?user={}&filter_dir=/pub/files/&limit=5",
+        "https://{}/events-stream?user={}&path=/pub/files/&limit=5",
         server.public_key(),
         pubky4
     );
@@ -1952,7 +1952,7 @@ async fn events_stream_filter_dir() {
 
     // Reverse order
     let stream_url = format!(
-        "https://{}/events-stream?user={}&filter_dir=/pub/files/&reverse=true&limit=5",
+        "https://{}/events-stream?user={}&path=/pub/files/&reverse=true&limit=5",
         server.public_key(),
         pubky4
     );

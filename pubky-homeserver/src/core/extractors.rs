@@ -87,9 +87,9 @@ pub struct EventStreamQueryParams {
     /// Optional path prefix filter
     /// Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
     ///   - The prefix must start with "/" and is matched against the WebDAV path stored in the database
-    ///   - Example: `filter_dir=/pub/` will only return events under the `/pub/` directory
-    ///   - Example: `filter_dir=/pub/files/` will only return events under the `/pub/files/` directory
-    pub filter_dir: Option<String>,
+    ///   - Example: `path=/pub/` will only return events under the `/pub/` directory
+    ///   - Example: `path=/pub/files/` will only return events under the `/pub/files/` directory
+    pub path: Option<String>,
 }
 
 impl EventStreamQueryParams {}
@@ -193,13 +193,16 @@ where
             _ => None,
         };
 
-        let filter_dir = single_params.get("filter_dir").and_then(|fd| {
-            if fd.is_empty() {
-                None
-            } else {
-                Some(fd.clone())
-            }
-        });
+        let path =
+            single_params.get("path").and_then(
+                |p| {
+                    if p.is_empty() {
+                        None
+                    } else {
+                        Some(p.clone())
+                    }
+                },
+            );
 
         // Parse user values into (pubkey, optional_cursor) pairs
         // Format: "pubkey" or "pubkey:cursor"
@@ -219,7 +222,7 @@ where
             reverse,
             live,
             user_cursors,
-            filter_dir,
+            path,
         })
     }
 }

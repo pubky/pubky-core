@@ -214,13 +214,13 @@ impl EventRepository {
     /// Each user has their own cursor position.
     /// The limit is the maximum total number of events to return across all users.
     /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
-    /// The filter_dir_suffix parameter filters events by path prefix (e.g., "pub/files/" to match only events under that directory).
+    /// The path_prefix parameter filters events by path prefix (e.g., "/pub/files/" to match only events under that directory).
     /// The executor can either be db.pool() or a transaction.
-    /// This uses the (user, id) index for efficient querying.
+    /// This uses the (user, path, id) index for efficient querying.
     pub async fn get_by_user_cursors<'a>(
         user_cursors: Vec<(i32, Option<Cursor>)>,
         reverse: bool,
-        filter_dir_suffix: Option<&str>,
+        path_prefix: Option<&str>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         if user_cursors.is_empty() {
@@ -258,9 +258,9 @@ impl EventRepository {
                 .to_owned();
 
             // Add path filter if specified
-            // Note: paths in the database are stored without the user pubkey prefix (e.g., "pub/files/doc.txt")
-            if let Some(filter_suffix) = filter_dir_suffix {
-                let like_pattern = format!("{}%", filter_suffix);
+            // Note: paths in the database are stored without the user pubkey prefix (e.g., "/pub/files/doc.txt")
+            if let Some(prefix) = path_prefix {
+                let like_pattern = format!("{}%", prefix);
                 statement = statement
                     .and_where(Expr::col((EVENT_TABLE, EventIden::Path)).like(like_pattern))
                     .to_owned();
@@ -698,7 +698,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_get_by_user_cursors_with_filter_dir() {
+    async fn test_get_by_user_cursors_with_path_filter() {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
 

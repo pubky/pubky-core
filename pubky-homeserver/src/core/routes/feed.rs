@@ -104,7 +104,7 @@ pub async fn feed(
 ///   Default: `false` (oldest first)
 ///   - When `true`, only historical events are returned (batch mode enforced)
 ///   - **Cannot be combined with `live=true`** (will return 400 error)
-/// - `filter_dir` (optional): Path prefix to filter events. Only events whose path starts with this prefix are returned.
+/// - `path` (optional): Path prefix to filter events. Only events whose path starts with this prefix are returned.
 ///   - Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
 ///
 /// ## SSE Response Format
@@ -182,7 +182,7 @@ pub async fn feed_stream(
             let events = match EventRepository::get_by_user_cursors(
                 current_user_cursors,
                 params.reverse,
-                params.filter_dir.as_deref(),
+                params.path.as_deref(),
                 &mut state.sql_db.pool().into(),
             )
             .await
@@ -243,9 +243,9 @@ pub async fn feed_stream(
                 }
 
                 // Filter by path prefix if specified
-                if let Some(ref filter_dir) = params.filter_dir {
+                if let Some(ref path) = params.path {
                     let path_suffix = event.path.path().as_str();
-                    if !path_suffix.starts_with(filter_dir) {
+                    if !path_suffix.starts_with(path) {
                         continue;
                     }
                 }

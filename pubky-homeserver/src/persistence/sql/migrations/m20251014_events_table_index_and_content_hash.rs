@@ -5,18 +5,19 @@ use sqlx::Transaction;
 use crate::persistence::sql::{entities::event::EventIden, migration::MigrationTrait};
 
 const TABLE: &str = "events";
-const INDEX_NAME: &str = "idx_events_user_id";
+const INDEX_NAME: &str = "idx_events_user_path_id";
 
 pub struct M20251014EventsTableIndexAndContentHashMigration;
 
 #[async_trait]
 impl MigrationTrait for M20251014EventsTableIndexAndContentHashMigration {
     async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
-        // Create index on (user, id) for efficient per-user event streaming
+        // Create index on (user, path, id) for efficient per-user event streaming with path filtering
         let statement = Index::create()
             .name(INDEX_NAME)
             .table(TABLE)
             .col("user")
+            .col("path")
             .col("id")
             .to_owned();
         let query = statement.build(PostgresQueryBuilder);
@@ -201,5 +202,24 @@ mod tests {
         .unwrap();
 
         assert!(index_check.is_some(), "Index {} should exist", INDEX_NAME);
+
+        // Verify index columns are (user, path, id)
+        let index_columns: Vec<(i16, String)> = sqlx::query_as(
+            "SELECT a.attnum, a.attname
+             FROM pg_index i
+             JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+             WHERE i.indrelid = 'events'::regclass
+             AND i.indexrelid = $1::regclass
+             ORDER BY array_position(i.indkey, a.attnum)",
+        )
+        .bind(INDEX_NAME)
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(index_columns.len(), 3, "Index should have 3 columns");
+        assert_eq!(index_columns[0].1, "user", "First column should be 'user'");
+        assert_eq!(index_columns[1].1, "path", "Second column should be 'path'");
+        assert_eq!(index_columns[2].1, "id", "Third column should be 'id'");
     }
 }
