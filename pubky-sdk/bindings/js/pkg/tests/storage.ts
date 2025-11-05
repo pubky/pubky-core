@@ -234,7 +234,7 @@ test("list (public dir listing with limit/cursor/reverse)", async (t) => {
   }
 
   {
-    const list = await sdk.publicStorage.list(dir, "a.txt", false, 2);
+    const list = await sdk.publicStorage.list(dir, `${userPk}/pub/example.com/a.txt`, false, 2);
     t.deepEqual(
       list,
       [
@@ -289,7 +289,7 @@ test("list (public dir listing with limit/cursor/reverse)", async (t) => {
   }
 
   {
-    const list = await sdk.publicStorage.list(dir, "d.txt", true, 2);
+    const list = await sdk.publicStorage.list(dir, `${userPk}/pub/example.com/d.txt`, true, 2);
     t.deepEqual(
       list,
       [
@@ -366,7 +366,7 @@ test("list shallow under /pub/", async (t) => {
   {
     const list = await session.storage.list(
       dirPath,
-      "example.con",
+      `${pubky}/pub/example.con`,
       false,
       undefined,
       true,
@@ -407,7 +407,7 @@ test("list shallow under /pub/", async (t) => {
   }
 
   {
-    const list = await session.storage.list(dirPath, "file2", true, 3, true);
+    const list = await session.storage.list(dirPath, `${pubky}/pub/file2`, true, 3, true);
     t.deepEqual(
       list,
       [
