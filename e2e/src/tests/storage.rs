@@ -7,7 +7,6 @@ use pubky_testnet::{
 use rand::rng;
 use rand::seq::SliceRandom;
 
-
 #[tokio::test]
 #[pubky_testnet::test]
 async fn put_get_delete() {
@@ -309,15 +308,31 @@ async fn list_deep() {
     // List all files with no cursor, no limit
     let url = format!("/pub/example.com/");
     {
-        let list = owner_session.storage().list(&url).unwrap().send().await.unwrap();
+        let list = owner_session
+            .storage()
+            .list(&url)
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/a.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/b.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/c.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/d.txt").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/a.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/c.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/d.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with no limit or cursor"
         );
@@ -325,12 +340,23 @@ async fn list_deep() {
 
     // List files with limit of 2
     {
-        let list = owner_session.storage().list(&url).unwrap().limit(2).send().await.unwrap();
+        let list = owner_session
+            .storage()
+            .list(&url)
+            .unwrap()
+            .limit(2)
+            .send()
+            .await
+            .unwrap();
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/a.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/b.txt").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/a.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with limit but no cursor"
         );
@@ -338,36 +364,50 @@ async fn list_deep() {
 
     // List files with limit of 2 and a file cursor
     {
-        let list = owner_session.storage()
+        let list = owner_session
+            .storage()
             .list(&url)
             .unwrap()
             .limit(2)
             .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/b.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/c.txt").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/c.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with limit and a file cursor"
         );
     }
 
     {
-        let list = owner_session.storage()
+        let list = owner_session
+            .storage()
             .list(&url)
             .unwrap()
             .limit(2)
             .cursor(&format!("{public_key}/pub/example.com/a.txt"))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/b.txt").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/c.txt").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/c.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with limit and a full url cursor"
         );
@@ -407,7 +447,8 @@ async fn list_shallow() {
     // List all files with no cursor, no limit
     let url = format!("/pub/");
     {
-        let list = owner_session.storage()
+        let list = owner_session
+            .storage()
             .list(&url)
             .unwrap()
             .shallow(true)
@@ -419,9 +460,15 @@ async fn list_shallow() {
             list,
             vec![
                 format!("pubky{public_key}/pub/a.com/").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.con").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.con/").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.con")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.con/")
+                    .parse()
+                    .unwrap(),
                 format!("pubky{public_key}/pub/file").parse().unwrap(),
                 format!("pubky{public_key}/pub/file2").parse().unwrap(),
                 format!("pubky{public_key}/pub/z.com/").parse().unwrap(),
@@ -432,7 +479,8 @@ async fn list_shallow() {
 
     // List files with limit of 2
     {
-        let list = owner_session.storage()
+        let list = owner_session
+            .storage()
             .list(&url)
             .unwrap()
             .shallow(true)
@@ -445,14 +493,17 @@ async fn list_shallow() {
             list,
             vec![
                 format!("pubky{public_key}/pub/a.com/").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list shallow with limit but no cursor"
         );
     }
 
     // List files with limit of 2 and a file cursor
-    let list1 = owner_session.storage()
+    let list1 = owner_session
+        .storage()
         .list(&url)
         .unwrap()
         .shallow(true)
@@ -465,19 +516,26 @@ async fn list_shallow() {
     assert_eq!(
         list1,
         vec![
-            format!("pubky{public_key}/pub/example.con").parse().unwrap(),
-            format!("pubky{public_key}/pub/example.con/").parse().unwrap(),
+            format!("pubky{public_key}/pub/example.con")
+                .parse()
+                .unwrap(),
+            format!("pubky{public_key}/pub/example.con/")
+                .parse()
+                .unwrap(),
         ],
         "normal list shallow with limit and a file cursor"
     );
     // Do the same again but without the pubky:// prefix
-    let list2 = owner_session.storage()
+    let list2 = owner_session
+        .storage()
         .list(&url)
         .unwrap()
-            .shallow(true)
-            .limit(2)
-            .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
-            .send().await.unwrap();
+        .shallow(true)
+        .limit(2)
+        .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(
         list2, list1,
@@ -486,7 +544,8 @@ async fn list_shallow() {
 
     // List files with limit of 3 and a directory cursor
     {
-        let list = owner_session.storage()
+        let list = owner_session
+            .storage()
             .list(&url)
             .unwrap()
             .shallow(true)
@@ -499,8 +558,12 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.con").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.con/").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.con")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.con/")
+                    .parse()
+                    .unwrap(),
                 format!("pubky{public_key}/pub/file").parse().unwrap(),
             ],
             "normal list shallow with limit and a directory cursor"

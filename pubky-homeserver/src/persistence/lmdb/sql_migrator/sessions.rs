@@ -33,11 +33,7 @@ pub async fn create<'a>(
         .values(vec![
             SimpleExpr::Value(session_secret.into()),
             SimpleExpr::Value(sql_user.id.into()),
-            SimpleExpr::Value(
-                lmdb_session
-                    .capabilities().to_string()
-                    .into(),
-            ),
+            SimpleExpr::Value(lmdb_session.capabilities().to_string().into()),
             SimpleExpr::Value(created_at.into()),
         ])
         .expect("Failed to build insert statement")
@@ -100,7 +96,11 @@ mod tests {
             .unwrap()
             .as_secs()
             * 1_000_000;
-        let mut session1 = SessionInfo::new(&user1_pubkey, Capabilities::builder().cap(Capability::root()).finish(), None);
+        let mut session1 = SessionInfo::new(
+            &user1_pubkey,
+            Capabilities::builder().cap(Capability::root()).finish(),
+            None,
+        );
         session1.set_created_at(created_at1);
         lmdb.tables
             .sessions
@@ -157,7 +157,10 @@ mod tests {
                 .to_string()
         );
         assert_eq!(sql_session1.user_pubkey, user1_pubkey);
-        assert_eq!(sql_session1.capabilities, Capabilities::builder().cap(Capability::root()).finish());
+        assert_eq!(
+            sql_session1.capabilities,
+            Capabilities::builder().cap(Capability::root()).finish()
+        );
         assert_eq!(sql_session1.user_pubkey, user1_pubkey);
         assert_eq!(sql_session1.secret, session1_secret);
 

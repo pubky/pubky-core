@@ -1,7 +1,7 @@
 use crate::Testnet;
 use http_relay::HttpRelay;
-use pubky_homeserver::ConnectionString;
 use pubky::Pubky;
+use pubky_homeserver::ConnectionString;
 
 /// A simple testnet with random ports assigned for all components.
 ///

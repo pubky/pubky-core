@@ -32,11 +32,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
                     .unique_key(),
             )
             .col(ColumnDef::new(SessionIden::User).integer().not_null())
-            .col(
-                ColumnDef::new(SessionIden::Capabilities)
-                    .text()
-                    .not_null()
-            )
+            .col(ColumnDef::new(SessionIden::Capabilities).text().not_null())
             .col(
                 ColumnDef::new(SessionIden::CreatedAt)
                     .timestamp()
@@ -118,7 +114,10 @@ mod tests {
             let user: i32 = row.try_get(SessionIden::User.to_string().as_str())?;
             let capabilities: String =
                 row.try_get(SessionIden::Capabilities.to_string().as_str())?;
-            let capabilities: Capabilities = capabilities.as_str().try_into().map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))?;
+            let capabilities: Capabilities = capabilities
+                .as_str()
+                .try_into()
+                .map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))?;
             let created_at: sqlx::types::chrono::NaiveDateTime =
                 row.try_get(SessionIden::CreatedAt.to_string().as_str())?;
             Ok(SessionEntity {
@@ -171,9 +170,7 @@ mod tests {
             .values(vec![
                 SimpleExpr::Value(secret.into()),
                 SimpleExpr::Value(1.into()),
-                SimpleExpr::Value(
-                    caps.to_string().into(),
-                ),
+                SimpleExpr::Value(caps.to_string().into()),
             ])
             .unwrap()
             .to_owned();

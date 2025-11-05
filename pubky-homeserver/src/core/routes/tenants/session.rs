@@ -20,8 +20,7 @@ pub async fn session(
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
-    
- 
+
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Ok(session) =
             SessionRepository::get_by_secret(&secret, &mut state.sql_db.pool().into()).await
