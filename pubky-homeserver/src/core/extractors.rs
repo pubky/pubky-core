@@ -52,7 +52,6 @@ pub struct ListQueryParams {
     pub cursor: Option<String>,
     pub shallow: bool,
     pub reverse: bool,
-    pub timeout: Option<u64>,
     pub user: Option<String>,
 }
 
@@ -124,11 +123,6 @@ where
             .and_then(|l| l.parse::<u16>().ok());
         let cursor = Self::extract_cursor(&params);
 
-        let timeout = params
-            .get("timeout")
-            .and_then(|t| if t.is_empty() { None } else { Some(t) })
-            .and_then(|t| t.parse::<u64>().ok());
-
         let user = params
             .get("user")
             .and_then(|u| if u.is_empty() { None } else { Some(u.clone()) });
@@ -138,7 +132,6 @@ where
             limit,
             cursor,
             reverse,
-            timeout,
             user,
         })
     }

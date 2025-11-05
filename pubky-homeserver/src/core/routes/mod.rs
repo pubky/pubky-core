@@ -34,6 +34,7 @@ fn base() -> Router<AppState> {
         .route("/session", post(auth::signin))
         // Events
         .route("/events/", get(feed::feed))
+        .route("/events-stream", get(feed::feed_stream))
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).

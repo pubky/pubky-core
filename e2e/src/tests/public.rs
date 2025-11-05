@@ -1004,3 +1004,384 @@ async fn events_long_polling_no_timeout() {
     let text = response.text().await.unwrap();
     assert_eq!(text, format!("cursor: {}", cursor));
 }
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_historical_auto_pagination() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create 250 events (internal batch size is 100, so this tests pagination)
+    for i in 0..250 {
+        let url = format!("pubky://{pubky}/pub/file_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Connect to SSE endpoint with limit=250 to get all events then close
+    let stream_url = format!("https://{}/events-stream?limit=250", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut event_count = 0;
+    let mut last_cursor = String::new();
+
+    // Collect all 250 historical events
+    while event_count < 250 {
+        if let Some(Ok(event)) = stream.next().await {
+            assert_eq!(event.event, "PUT");
+            assert!(event.data.contains("pubky://"));
+
+            // Extract cursor from data
+            if let Some(cursor_line) = event.data.lines().find(|l| l.starts_with("cursor: ")) {
+                last_cursor = cursor_line.strip_prefix("cursor: ").unwrap().to_string();
+            }
+
+            event_count += 1;
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(event_count, 250, "Should receive all 250 historical events");
+    assert!(!last_cursor.is_empty(), "Should have received cursor updates");
+
+    // Verify connection closes after limit reached (next() should return None)
+    assert!(stream.next().await.is_none(), "Connection should close after reaching limit");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_live_mode() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+    use tokio::time::{timeout, Duration};
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Start SSE stream from current position (no historical events)
+    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+
+    // Create a new event in another task
+    let pubky_clone = pubky.clone();
+    let client_clone = client.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let url = format!("pubky://{pubky_clone}/pub/live_test.txt");
+        client_clone.put(&url).body(vec![42]).send().await.unwrap();
+    });
+
+    // Wait for the live event (with timeout)
+    let result = timeout(Duration::from_secs(5), async {
+        while let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" && event.data.contains("live_test.txt") {
+                return Some(event);
+            }
+        }
+        None
+    })
+    .await;
+
+    assert!(result.is_ok(), "Should receive event within timeout");
+    let event = result.unwrap();
+    assert!(event.is_some(), "Should receive the live event");
+    let event = event.unwrap();
+    assert!(event.data.contains(&format!("pubky://{pubky}/pub/live_test.txt")));
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_phase_transition() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+    use tokio::time::{timeout, Duration};
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create 5 historical events
+    for i in 0..5 {
+        let url = format!("pubky://{pubky}/pub/historical_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Small delay to ensure events are committed
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Start SSE stream
+    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut historical_count = 0;
+    let mut received_live_event = false;
+
+    // Schedule a live event to be created after we receive historical events
+    let pubky_clone = pubky.clone();
+    let client_clone = client.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let url = format!("pubky://{pubky_clone}/pub/live_after_historical.txt");
+        client_clone.put(&url).body(vec![99]).send().await.unwrap();
+    });
+
+    // Collect events with timeout
+    let result = timeout(Duration::from_secs(10), async {
+        while let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                if event.data.contains("historical_") {
+                    historical_count += 1;
+                } else if event.data.contains("live_after_historical") {
+                    received_live_event = true;
+                    break;
+                }
+            }
+        }
+    })
+    .await;
+
+    assert!(result.is_ok(), "Should complete within timeout");
+    assert_eq!(historical_count, 5, "Should receive all 5 historical events");
+    assert!(received_live_event, "Should transition to live mode and receive new event");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_cursor_filtering() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create 10 events
+    for i in 0..10 {
+        let url = format!("pubky://{pubky}/pub/file_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // First, get events without cursor to obtain a cursor from the 5th event
+    let stream_url = format!("https://{}/events-stream?limit=5", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut cursor = String::new();
+    let mut count = 0;
+
+    // Get first 5 events and extract cursor
+    while count < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                if let Some(cursor_line) = event.data.lines().find(|l| l.starts_with("cursor: ")) {
+                    cursor = cursor_line.strip_prefix("cursor: ").unwrap().to_string();
+                }
+                count += 1;
+            }
+        } else {
+            break;
+        }
+    }
+
+    drop(stream);
+
+    // Now connect with cursor - should only get events 6-10
+    let stream_url = format!("https://{}/events-stream?cursor={}", server.public_key(), cursor);
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut remaining_count = 0;
+
+    // Collect remaining events
+    while remaining_count < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" {
+                // Verify these are the later events
+                let event_num = event.data
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split("file_").nth(1))
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok());
+
+                if let Some(num) = event_num {
+                    assert!(num >= 5, "Should only receive events after cursor (file_5 or later)");
+                }
+                remaining_count += 1;
+            }
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(remaining_count, 5, "Should receive exactly 5 events after cursor");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_empty_then_live() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+    use tokio::time::{timeout, Duration};
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Start SSE stream with no historical events
+    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+
+    // Create an event immediately
+    let pubky_clone = pubky.clone();
+    let client_clone = client.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let url = format!("pubky://{pubky_clone}/pub/first_event.txt");
+        client_clone.put(&url).body(vec![1]).send().await.unwrap();
+    });
+
+    // Should transition to live mode and receive the event
+    let result = timeout(Duration::from_secs(5), async {
+        while let Some(Ok(event)) = stream.next().await {
+            if event.event == "PUT" && event.data.contains("first_event.txt") {
+                return Some(event);
+            }
+        }
+        None
+    })
+    .await;
+
+    assert!(result.is_ok(), "Should receive event within timeout");
+    assert!(result.unwrap().is_some(), "Should receive the first live event even with no historical events");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_finite_limit() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_suite();
+    let client = testnet.pubky_client().unwrap();
+
+    let keypair = Keypair::random();
+    client
+        .signup(&keypair, &server.public_key(), None)
+        .await
+        .unwrap();
+
+    let pubky = keypair.public_key();
+
+    // Create 100 events
+    for i in 0..100 {
+        let url = format!("pubky://{pubky}/pub/file_{i}.txt");
+        client.put(&url).body(vec![i as u8]).send().await.unwrap();
+    }
+
+    // Request only 50 events
+    let stream_url = format!("https://{}/events-stream?limit=50", server.public_key());
+    let response = client
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut event_count = 0;
+
+    // Should receive exactly 50 events
+    while event_count < 50 {
+        if let Some(Ok(event)) = stream.next().await {
+            assert_eq!(event.event, "PUT");
+            event_count += 1;
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(event_count, 50, "Should receive exactly 50 events as requested");
+
+    // Connection should close - no more events despite 50 more being available
+    assert!(stream.next().await.is_none(), "Connection should close after limit reached");
+}
