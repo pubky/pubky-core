@@ -4,8 +4,11 @@ use pubky_testnet::{
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
+use rand::rng;
+use rand::seq::SliceRandom;
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn put_get_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -81,6 +84,7 @@ async fn put_get_delete() {
 use serde::{Deserialize, Serialize};
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn put_then_get_json_roundtrip() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -137,6 +141,7 @@ async fn put_then_get_json_roundtrip() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn put_quota_applied() {
     // Start a test homeserver with 1 MB user data limit
     let mut testnet = Testnet::new().await.unwrap();
@@ -207,6 +212,7 @@ async fn put_quota_applied() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn unauthorized_put_delete() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -273,462 +279,300 @@ async fn unauthorized_put_delete() {
 }
 
 #[tokio::test]
-async fn list() {
+#[pubky_testnet::test]
+async fn list_deep() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    let signer = pubky.signer(Keypair::random());
-    let public_key = signer.public_key();
-
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
-
-    let paths = vec![
-        "/pub/a.wrong/a.txt",
-        "/pub/example.com/a.txt",
-        "/pub/example.com/b.txt",
-        "/pub/example.com/cc-nested/z.txt",
-        "/pub/example.wrong/a.txt",
-        "/pub/example.com/c.txt",
-        "/pub/example.com/d.txt",
-        "/pub/z.wrong/a.txt",
+    // Owner user
+    let owner = pubky.signer(Keypair::random());
+    let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
+    let public_key = owner_session.info().public_key();
+    // Write files to the server
+    let mut paths = vec![
+        format!("/pub/a.wrong/a.txt"),
+        format!("/pub/example.com/a.txt"),
+        format!("/pub/example.com/b.txt"),
+        format!("/pub/example.com/cc-nested/z.txt"),
+        format!("/pub/example.wrong/a.txt"),
+        format!("/pub/example.com/c.txt"),
+        format!("/pub/example.com/d.txt"),
+        format!("/pub/z.wrong/a.txt"),
     ];
-
-    for path in paths {
-        session.storage().put(path, vec![0]).await.unwrap();
+    paths.shuffle(&mut rng()); // Shuffle randomly to test the order of the list
+    for url in paths {
+        owner_session.storage().put(url, vec![0]).await.unwrap();
     }
 
-    let path = "/pub/example.com/";
-
+    // List all files with no cursor, no limit
+    let url = format!("/pub/example.com/");
     {
-        let list = session.storage().list(path).unwrap().send().await.unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
+        let list = owner_session
+            .storage()
+            .list(&url)
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/a.txt"),
-                format!("pubky{public_key}/pub/example.com/b.txt"),
-                format!("pubky{public_key}/pub/example.com/c.txt"),
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky{public_key}/pub/example.com/d.txt"),
+                format!("pubky{public_key}/pub/example.com/a.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/c.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/d.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with no limit or cursor"
         );
     }
 
+    // List files with limit of 2
     {
-        let list = session
+        let list = owner_session
             .storage()
-            .list(path)
+            .list(&url)
             .unwrap()
             .limit(2)
             .send()
             .await
             .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/a.txt"),
-                format!("pubky{public_key}/pub/example.com/b.txt"),
+                format!("pubky{public_key}/pub/example.com/a.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with limit but no cursor"
         );
     }
 
+    // List files with limit of 2 and a file cursor
     {
-        let list = pubky
-            .public_storage()
-            .list(format!("pubky{public_key}{path}"))
+        let list = owner_session
+            .storage()
+            .list(&url)
             .unwrap()
             .limit(2)
-            .cursor("a.txt")
+            .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
             .send()
             .await
             .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/b.txt"),
-                format!("pubky{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/c.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with limit and a file cursor"
         );
     }
 
     {
-        let list = session
+        let list = owner_session
             .storage()
-            .list(path)
+            .list(&url)
             .unwrap()
             .limit(2)
-            .cursor("cc-nested/")
+            .cursor(&format!("{public_key}/pub/example.com/a.txt"))
             .send()
             .await
             .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky{public_key}/pub/example.com/d.txt"),
-            ],
-            "normal list with limit and a directory cursor"
-        );
-    }
-
-    {
-        let list = pubky
-            .public_storage()
-            .list(format!("pubky://{public_key}{path}"))
-            .unwrap()
-            .limit(2)
-            .cursor(&format!("pubky://{public_key}/pub/example.com/a.txt"))
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.com/b.txt"),
-                format!("pubky{public_key}/pub/example.com/c.txt"),
+                format!("pubky{public_key}/pub/example.com/b.txt")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.com/c.txt")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list with limit and a full url cursor"
-        );
-    }
-
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .limit(2)
-            .cursor("/a.txt")
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.com/b.txt"),
-                format!("pubky{public_key}/pub/example.com/c.txt"),
-            ],
-            "normal list with limit and a leading / cursor"
-        );
-    }
-
-    {
-        let list = pubky
-            .public_storage()
-            .list(format!("pubky://{public_key}{path}"))
-            .unwrap()
-            .reverse(true)
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.com/d.txt"),
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky{public_key}/pub/example.com/c.txt"),
-                format!("pubky{public_key}/pub/example.com/b.txt"),
-                format!("pubky{public_key}/pub/example.com/a.txt"),
-            ],
-            "reverse list with no limit or cursor"
-        );
-    }
-
-    {
-        let list = pubky
-            .public_storage()
-            .list(format!("pubky{public_key}{path}"))
-            .unwrap()
-            .reverse(true)
-            .limit(2)
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.com/d.txt"),
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
-            ],
-            "reverse list with limit but no cursor"
-        );
-    }
-
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .reverse(true)
-            .limit(2)
-            .cursor("d.txt")
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt"),
-                format!("pubky{public_key}/pub/example.com/c.txt"),
-            ],
-            "reverse list with limit and cursor"
         );
     }
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn list_shallow() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
     let pubky = testnet.sdk().unwrap();
 
-    // Create a user/session
-    let signer = pubky.signer(Keypair::random());
-    let public_key = signer.public_key();
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    // Owner user
+    let owner = pubky.signer(Keypair::random());
+    let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
+    let public_key = owner_session.info().public_key();
 
-    // Seed data: first-level dirs/files under /pub plus nested content.
-    let paths = vec![
-        "/pub/a.com/a.txt",
-        "/pub/example.com/a.txt",
-        "/pub/example.com/b.txt",
-        "/pub/example.com/c.txt",
-        "/pub/example.com/d.txt",
-        "/pub/example.xyz/d.txt",
-        "/pub/example.xyz", // a file at top-level named "example.xyz"
-        "/pub/file",
-        "/pub/file2",
-        "/pub/z.com/a.txt",
+    // Write files to the server
+    let mut urls = vec![
+        format!("/pub/a.com/a.txt"),
+        format!("/pub/example.com/a.txt"),
+        format!("/pub/example.com/b.txt"),
+        format!("/pub/example.com/c.txt"),
+        format!("/pub/example.com/d.txt"),
+        format!("/pub/example.con/d.txt"),
+        format!("/pub/example.con"),
+        format!("/pub/file"),
+        format!("/pub/file2"),
+        format!("/pub/z.com/a.txt"),
     ];
-    for p in paths {
-        session.storage().put(p, vec![0]).await.unwrap();
+    urls.shuffle(&mut rng()); // Shuffle randomly to test the order of the list
+    for url in urls {
+        owner_session.storage().put(url, vec![0]).await.unwrap();
     }
 
-    let path = "/pub/";
-
-    // shallow (no limit, no cursor)
+    // List all files with no cursor, no limit
+    let url = format!("/pub/");
     {
-        let list = pubky
-            .public_storage()
-            .list(format!("pubky{public_key}/{path}"))
+        let list = owner_session
+            .storage()
+            .list(&url)
             .unwrap()
             .shallow(true)
             .send()
             .await
             .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/a.com/"),
-                format!("pubky{public_key}/pub/example.com/"),
-                format!("pubky{public_key}/pub/example.xyz"),
-                format!("pubky{public_key}/pub/example.xyz/"),
-                format!("pubky{public_key}/pub/file"),
-                format!("pubky{public_key}/pub/file2"),
-                format!("pubky{public_key}/pub/z.com/"),
+                format!("pubky{public_key}/pub/a.com/").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.con")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.con/")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/file").parse().unwrap(),
+                format!("pubky{public_key}/pub/file2").parse().unwrap(),
+                format!("pubky{public_key}/pub/z.com/").parse().unwrap(),
             ],
             "normal list shallow"
         );
     }
 
-    // shallow + limit(2)
+    // List files with limit of 2
     {
-        let list = session
+        let list = owner_session
             .storage()
-            .list(path)
+            .list(&url)
             .unwrap()
             .shallow(true)
             .limit(2)
             .send()
             .await
             .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/a.com/"),
-                format!("pubky{public_key}/pub/example.com/"),
+                format!("pubky{public_key}/pub/a.com/").parse().unwrap(),
+                format!("pubky{public_key}/pub/example.com/")
+                    .parse()
+                    .unwrap(),
             ],
             "normal list shallow with limit but no cursor"
         );
     }
 
-    // shallow + limit(2) + file cursor
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .shallow(true)
-            .limit(2)
-            .cursor("example.com/a.txt")
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
+    // List files with limit of 2 and a file cursor
+    let list1 = owner_session
+        .storage()
+        .list(&url)
+        .unwrap()
+        .shallow(true)
+        .limit(2)
+        .cursor(format!("{public_key}/pub/example.com/").as_str())
+        .send()
+        .await
+        .unwrap();
 
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.com/"),
-                format!("pubky{public_key}/pub/example.xyz"),
-            ],
-            "normal list shallow with limit and a file cursor"
-        );
-    }
+    assert_eq!(
+        list1,
+        vec![
+            format!("pubky{public_key}/pub/example.con")
+                .parse()
+                .unwrap(),
+            format!("pubky{public_key}/pub/example.con/")
+                .parse()
+                .unwrap(),
+        ],
+        "normal list shallow with limit and a file cursor"
+    );
+    // Do the same again but without the pubky:// prefix
+    let list2 = owner_session
+        .storage()
+        .list(&url)
+        .unwrap()
+        .shallow(true)
+        .limit(2)
+        .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
+        .send()
+        .await
+        .unwrap();
 
-    // shallow + limit(3) + directory cursor
+    assert_eq!(
+        list2, list1,
+        "normal list shallow with limit and a file cursor without the pubky:// prefix"
+    );
+
+    // List files with limit of 3 and a directory cursor
     {
-        let list = session
+        let list = owner_session
             .storage()
-            .list(path)
+            .list(&url)
             .unwrap()
             .shallow(true)
             .limit(3)
-            .cursor("example.com/")
+            .cursor(format!("{public_key}/pub/example.com/").as_str())
             .send()
             .await
             .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
 
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.xyz"),
-                format!("pubky{public_key}/pub/example.xyz/"),
-                format!("pubky{public_key}/pub/file"),
+                format!("pubky{public_key}/pub/example.con")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/example.con/")
+                    .parse()
+                    .unwrap(),
+                format!("pubky{public_key}/pub/file").parse().unwrap(),
             ],
             "normal list shallow with limit and a directory cursor"
-        );
-    }
-
-    // shallow + reverse
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .reverse(true)
-            .shallow(true)
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/z.com/"),
-                format!("pubky{public_key}/pub/file2"),
-                format!("pubky{public_key}/pub/file"),
-                format!("pubky{public_key}/pub/example.xyz/"),
-                format!("pubky{public_key}/pub/example.xyz"),
-                format!("pubky{public_key}/pub/example.com/"),
-                format!("pubky{public_key}/pub/a.com/"),
-            ],
-            "reverse list shallow"
-        );
-    }
-
-    // shallow + reverse + limit(2)
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .reverse(true)
-            .shallow(true)
-            .limit(2)
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/z.com/"),
-                format!("pubky{public_key}/pub/file2"),
-            ],
-            "reverse list shallow with limit but no cursor"
-        );
-    }
-
-    // shallow + reverse + limit(2) + file cursor
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .shallow(true)
-            .reverse(true)
-            .limit(2)
-            .cursor("file2")
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/file"),
-                format!("pubky{public_key}/pub/example.xyz/"),
-            ],
-            "reverse list shallow with limit and a file cursor"
-        );
-    }
-
-    // shallow + reverse + limit(2) + directory cursor
-    {
-        let list = session
-            .storage()
-            .list(path)
-            .unwrap()
-            .shallow(true)
-            .reverse(true)
-            .limit(2)
-            .cursor("example.xyz/")
-            .send()
-            .await
-            .unwrap();
-        let list: Vec<String> = list.into_iter().map(|u| u.to_string()).collect();
-
-        assert_eq!(
-            list,
-            vec![
-                format!("pubky{public_key}/pub/example.xyz"),
-                format!("pubky{public_key}/pub/example.com/"),
-            ],
-            "reverse list shallow with limit and a directory cursor"
         );
     }
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn list_events() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -829,6 +673,7 @@ async fn list_events() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn read_after_event() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -880,6 +725,7 @@ async fn read_after_event() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn dont_delete_shared_blobs() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
@@ -937,6 +783,7 @@ async fn dont_delete_shared_blobs() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn stream() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -968,4 +815,114 @@ async fn stream() {
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::NOT_FOUND)
     );
+}
+
+/// Test that two users can write to the same path and the content is correctly separated.
+/// Mix file and reading between the two users.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn write_same_path_separate_users() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer_a = pubky.signer(Keypair::random());
+    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let signer_b = pubky.signer(Keypair::random());
+    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+
+    let path = "/pub/foo.txt";
+    let content1 = Bytes::from(b"content1".to_vec());
+
+    // Write to user A content1
+    session_a
+        .storage()
+        .put(path, content1.clone())
+        .await
+        .unwrap();
+    // Read back and compare
+    let response = session_a.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_a = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_a, content1);
+
+    // Write to user B content1
+    session_b
+        .storage()
+        .put(path, content1.clone())
+        .await
+        .unwrap();
+    // Read back and compare
+    let response = session_b.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_b = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_b, content1);
+
+    let content2 = Bytes::from(b"content2_long".to_vec());
+
+    // Write to user A content2
+    session_a
+        .storage()
+        .put(path, content2.clone())
+        .await
+        .unwrap();
+    // Read back and compare
+    let response = session_a.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content2.len() as u64);
+    let read_bytes_a = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_a, content2);
+
+    // Read user B content 1 again. Make sure it's the original content1.
+    let response = session_b.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_b = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_b, content1);
+
+    // Delete user A content2
+    session_a.storage().delete(path).await.unwrap();
+    // Read user B content 2 again. Make sure it's the original content1.
+    let response = session_b.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_b = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_b, content1);
 }

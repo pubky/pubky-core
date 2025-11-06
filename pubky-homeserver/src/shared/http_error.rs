@@ -90,7 +90,16 @@ impl From<std::io::Error> for HttpError {
 // LMDB errors
 impl From<heed::Error> for HttpError {
     fn from(error: heed::Error) -> Self {
-        Self::internal_server_and_log(format!("LMDB error: {}", error))
+        tracing::error!("LMDB error: {}", error);
+        Self::internal_server()
+    }
+}
+
+// SQLX errors
+impl From<sqlx::Error> for HttpError {
+    fn from(error: sqlx::Error) -> Self {
+        tracing::error!("SQLX error: {}", error);
+        Self::internal_server()
     }
 }
 

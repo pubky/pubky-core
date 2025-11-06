@@ -11,6 +11,7 @@ use std::time::Duration;
 use pubky_testnet::pubky::errors::{Error, RequestError};
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
@@ -28,6 +29,7 @@ async fn basic_authn() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -92,6 +94,7 @@ async fn disabled_user() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -157,6 +160,7 @@ async fn authz() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn persist_and_restore_info() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let homeserver = testnet.homeserver();
@@ -219,6 +223,7 @@ async fn multiple_users() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -288,6 +293,7 @@ async fn authz_timeout_reconnect() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut testnet = Testnet::new().await.unwrap();
@@ -350,6 +356,7 @@ async fn signup_with_token() {
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
 #[tokio::test]
+#[pubky_testnet::test]
 async fn republish_if_stale_triggers_timestamp_bump() {
     use std::time::Duration;
 
@@ -396,6 +403,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 // but when a signin happens after the record is “old” (in test, after 1 second),
 // the record is republished (its timestamp increases).
 #[tokio::test]
+#[pubky_testnet::test]
 async fn conditional_publish_skips_when_fresh() {
     use std::time::Duration;
 
@@ -433,7 +441,8 @@ async fn conditional_publish_skips_when_fresh() {
 }
 
 #[tokio::test]
-async fn republish_homeserver() {
+#[pubky_testnet::test]
+async fn test_republish_homeserver() {
     use std::time::Duration;
 
     // Setup testnet + a homeserver.

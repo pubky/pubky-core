@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use axum::{
+    body::Body,
     extract::{FromRequestParts, Query},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
@@ -45,12 +46,51 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ListQueryParams {
     pub limit: Option<u16>,
     pub cursor: Option<String>,
-    pub reverse: bool,
     pub shallow: bool,
+    pub reverse: bool,
+}
+
+impl ListQueryParams {
+    /// Extracts the cursor from the query parameters.
+    /// If the cursor is not a valid EntryPath, returns None.
+    /// If the cursor is empty, returns None.
+    pub fn extract_cursor(params: &Query<HashMap<String, String>>) -> Option<String> {
+        let value = params.get("cursor")?;
+        if value.is_empty() {
+            // Treat `cursor=` as None
+            return None;
+        }
+
+        let mut value = value.as_str();
+        if let Some(stripped_value) = value.strip_prefix("pubky://") {
+            value = stripped_value;
+        }
+        Some(value.to_string())
+    }
+}
+
+/// Parse a boolean value from a string.
+/// Returns an error if the value is not a valid boolean.
+fn parse_bool(value: &str) -> Result<bool, Box<Response>> {
+    match value.to_lowercase().as_str() {
+        "true" => Ok(true),
+        "yes" => Ok(true),
+        "1" => Ok(true),
+        "" => Ok(true),
+        "false" => Ok(false),
+        "no" => Ok(false),
+        "0" => Ok(false),
+        _ => Err(Box::new(
+            Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("Invalid boolean parameter"))
+                .unwrap(),
+        )),
+    }
 }
 
 impl<S> FromRequestParts<S> for ListQueryParams
@@ -63,30 +103,30 @@ where
         let params: Query<HashMap<String, String>> =
             parts.extract().await.map_err(IntoResponse::into_response)?;
 
-        let reverse = params.contains_key("reverse");
-        let shallow = params.contains_key("shallow");
+        let reverse = if let Some(reverse) = params.get("reverse") {
+            parse_bool(reverse).map_err(|e| *e)?
+        } else {
+            false
+        };
+
+        let shallow = if let Some(shallow) = params.get("shallow") {
+            parse_bool(shallow).map_err(|e| *e)?
+        } else {
+            false
+        };
+
         let limit = params
             .get("limit")
             // Treat `limit=` as None
             .and_then(|l| if l.is_empty() { None } else { Some(l) })
             .and_then(|l| l.parse::<u16>().ok());
-        let cursor = params
-            .get("cursor")
-            .map(|c| c.as_str())
-            // Treat `cursor=` as None
-            .and_then(|c| {
-                if c.is_empty() {
-                    None
-                } else {
-                    Some(c.to_string())
-                }
-            });
+        let cursor = Self::extract_cursor(&params);
 
         Ok(ListQueryParams {
-            reverse,
             shallow,
             limit,
             cursor,
+            reverse,
         })
     }
 }

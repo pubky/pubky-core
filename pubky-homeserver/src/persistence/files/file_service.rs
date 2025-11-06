@@ -1,7 +1,10 @@
 #[cfg(test)]
 use crate::AppContext;
 use crate::{
-    persistence::lmdb::{tables::entries::Entry, LmDB},
+    persistence::sql::{
+        entry::{EntryEntity, EntryRepository},
+        SqlDb, UnifiedExecutor,
+    },
     shared::webdav::EntryPath,
     ConfigToml,
 };
@@ -15,16 +18,16 @@ use std::path::Path;
 
 use super::{FileIoError, FileStream, OpendalService, WriteStreamError};
 
-/// The file service creates an abstraction layer over the LMDB and OpenDAL services.
+/// The file service creates an abstraction layer over the SqlDb and OpenDAL services.
 /// This way, files can be managed in a unified way.
 #[derive(Debug, Clone)]
 pub struct FileService {
     pub(crate) opendal: OpendalService,
-    pub(crate) db: LmDB,
+    pub(crate) db: SqlDb,
 }
 
 impl FileService {
-    pub fn new(opendal_service: OpendalService, db: LmDB) -> Self {
+    pub fn new(opendal_service: OpendalService, db: SqlDb) -> Self {
         Self {
             opendal: opendal_service,
             db,
@@ -34,7 +37,7 @@ impl FileService {
     pub fn new_from_config(
         config: &ConfigToml,
         data_directory: &Path,
-        db: LmDB,
+        db: SqlDb,
     ) -> Result<Self, FileIoError> {
         let user_quota_bytes = match config.general.user_storage_quota_mb {
             0 => u64::MAX,
@@ -50,8 +53,16 @@ impl FileService {
     }
 
     /// Get the metadata of a file.
-    pub async fn get_info(&self, path: &EntryPath) -> Result<Entry, FileIoError> {
-        self.db.get_entry(path)
+    pub async fn get_info(
+        &self,
+        path: &EntryPath,
+        executor: &mut UnifiedExecutor<'_>,
+    ) -> Result<EntryEntity, FileIoError> {
+        match EntryRepository::get_by_path(path, executor).await {
+            Ok(entry) => Ok(entry),
+            Err(sqlx::Error::RowNotFound) => Err(FileIoError::NotFound),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Get the content of a file as a stream of bytes.
@@ -67,9 +78,13 @@ impl FileService {
         &self,
         path: &EntryPath,
         stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
-    ) -> Result<Entry, FileIoError> {
+    ) -> Result<EntryEntity, FileIoError> {
         self.opendal.write_stream(path, stream).await?;
-        self.db.get_entry(path)
+        match EntryRepository::get_by_path(path, &mut self.db.pool().into()).await {
+            Ok(entry) => Ok(entry),
+            Err(sqlx::Error::RowNotFound) => Err(FileIoError::NotFound),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Delete a file.
@@ -86,7 +101,7 @@ impl FileService {
 impl FileService {
     pub fn new_from_context(context: &AppContext) -> Result<Self, FileIoError> {
         let opendal_service = OpendalService::new(context)?;
-        Ok(Self::new(opendal_service, context.db.clone()))
+        Ok(Self::new(opendal_service, context.sql_db.clone()))
     }
 
     /// Get the content of a file as bytes.
@@ -104,7 +119,7 @@ impl FileService {
     }
 
     /// Write a file to the database and storage depending on the selected target location.
-    pub async fn write(&self, path: &EntryPath, data: Buffer) -> Result<Entry, FileIoError> {
+    pub async fn write(&self, path: &EntryPath, data: Buffer) -> Result<EntryEntity, FileIoError> {
         let stream = futures_util::stream::iter(vec![Ok(Bytes::from(data.to_vec()))]);
         let entry = self.write_stream(path, stream).await?;
         Ok(entry)
@@ -114,23 +129,27 @@ impl FileService {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::files::user_quota_layer::FILE_METADATA_SIZE, shared::webdav::WebDavPath,
+        persistence::{files::user_quota_layer::FILE_METADATA_SIZE, sql::user::UserRepository},
+        shared::webdav::WebDavPath,
     };
     use futures_lite::StreamExt;
 
     use super::*;
 
     #[tokio::test]
-    async fn test_write_get_delete_lmdb_and_opendal() {
-        let context = AppContext::test();
+    #[pubky_test_utils::test]
+    async fn test_write_get_delete_db_and_opendal() {
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
         let pubkey = pkarr::Keypair::random().public_key();
 
-        db.create_user(&pubkey).unwrap();
+        let user = UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         // User should not have any data usage yet
-        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(0));
+        assert_eq!(user.used_bytes, 0);
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
 
@@ -148,9 +167,12 @@ mod tests {
 
         // Test LMDB
         file_service.write_stream(&path, stream).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64 + FILE_METADATA_SIZE),
+            user.used_bytes,
+            test_data.len() as u64 + FILE_METADATA_SIZE,
             "Data usage should be the size of the file"
         );
 
@@ -174,9 +196,11 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(0),
+            user.used_bytes, 0,
             "Data usage should be 0 after deleting file"
         );
 
@@ -188,9 +212,12 @@ mod tests {
         let chunks = vec![Ok(Bytes::from(test_data.as_slice()))];
         let stream = futures_util::stream::iter(chunks);
         file_service.write_stream(&path, stream).await.unwrap();
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64 + FILE_METADATA_SIZE),
+            user.used_bytes,
+            test_data.len() as u64 + FILE_METADATA_SIZE,
             "Data usage should be the size of the file"
         );
 
@@ -215,21 +242,26 @@ mod tests {
         file_service.delete(&path).await.unwrap();
         let result = file_service.get_stream(&path).await;
         assert!(result.is_err(), "Should error for deleted file");
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(0),
+            user.used_bytes, 0,
             "Data usage should be 0 after deleting file"
         );
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_write_get_basic() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let test_data = b"Hello, world!";
         let buffer = Buffer::from(test_data.as_slice());
@@ -251,40 +283,49 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_data_usage_update_basic() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024];
         let buffer = Buffer::from(test_data.clone());
 
         file_service.write(&path, buffer).await.unwrap();
-        assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
-        );
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(user.used_bytes, test_data.len() as u64 + FILE_METADATA_SIZE);
 
         // Delete the file and check if the data usage is updated correctly.
         file_service.delete(&path).await.unwrap();
-        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(0));
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(user.used_bytes, 0);
     }
 
     /// Override and existing entry and check if the data usage is updated correctly.
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_data_usage_override_existing_entry() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -299,21 +340,27 @@ mod tests {
         file_service.write(&path, buffer2).await.unwrap();
 
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data2.len() as u64 + FILE_METADATA_SIZE)
+            UserRepository::get(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap()
+                .used_bytes,
+            test_data2.len() as u64 + FILE_METADATA_SIZE
         );
     }
 
     /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_data_usage_exactly_to_quota() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 - FILE_METADATA_SIZE as usize];
@@ -322,20 +369,26 @@ mod tests {
         file_service.write(&path, buffer).await.unwrap();
 
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
+            UserRepository::get(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap()
+                .used_bytes,
+            test_data.len() as u64 + FILE_METADATA_SIZE
         );
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_data_usage_above_quota() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 + 1];
@@ -349,19 +402,28 @@ mod tests {
             }
         }
 
-        assert_eq!(db.get_user_data_usage(&pubkey).unwrap(), Some(0));
+        assert_eq!(
+            UserRepository::get(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap()
+                .used_bytes,
+            0
+        );
     }
 
     /// Override and existing entry and check if the data usage is updated correctly.
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_data_usage_override_existing_above_quota() {
-        let mut context = AppContext::test();
+        let mut context = AppContext::test().await;
         context.config_toml.general.user_storage_quota_mb = 1;
         let file_service = FileService::new_from_context(&context).unwrap();
-        let db = context.db.clone();
+        let db = context.sql_db.clone();
 
         let pubkey = pkarr::Keypair::random().public_key();
-        db.create_user(&pubkey).unwrap();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_lmdb.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -382,8 +444,11 @@ mod tests {
         }
 
         assert_eq!(
-            db.get_user_data_usage(&pubkey).unwrap(),
-            Some(test_data.len() as u64 + FILE_METADATA_SIZE)
+            UserRepository::get(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap()
+                .used_bytes,
+            test_data.len() as u64 + FILE_METADATA_SIZE
         );
     }
 }

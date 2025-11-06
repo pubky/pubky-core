@@ -80,7 +80,9 @@ pub struct AdminServer {
 impl AdminServer {
     /// Create a new admin server from a data directory.
     pub async fn from_data_dir(data_dir: PersistentDataDir) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::try_from(data_dir).map_err(AdminServerBuildError::DataDir)?;
+        let context = AppContext::read_from(data_dir)
+            .await
+            .map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
@@ -93,14 +95,20 @@ impl AdminServer {
     /// Create a new admin server from a mock data directory.
     #[cfg(any(test, feature = "testing"))]
     pub async fn from_mock_dir(mock_dir: MockDataDir) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::try_from(mock_dir).map_err(AdminServerBuildError::DataDir)?;
+        let context = AppContext::read_from(mock_dir)
+            .await
+            .map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
     /// Run the admin server.
     pub async fn start(context: &AppContext) -> Result<Self, AdminServerBuildError> {
         let password = context.config_toml.admin.admin_password.clone();
-        let state = AppState::new(context.db.clone(), context.file_service.clone(), &password);
+        let state = AppState::new(
+            context.sql_db.clone(),
+            context.file_service.clone(),
+            &password,
+        );
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)
@@ -164,7 +172,7 @@ mod tests {
     fn create_test_server(context: &AppContext) -> TestServer {
         TestServer::new(create_app(
             AppState::new(
-                context.db.clone(),
+                context.sql_db.clone(),
                 FileService::new_from_context(context).unwrap(),
                 "",
             ),
@@ -174,16 +182,18 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_root() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let server = create_test_server(&context);
         let response = server.get("/").expect_success().await;
         response.assert_status_ok();
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_generate_signup_token_fail() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let server = create_test_server(&context);
         // No password
         let response = server.get("/generate_signup_token").expect_failure().await;
@@ -199,8 +209,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[pubky_test_utils::test]
     async fn test_generate_signup_token_success() {
-        let context = AppContext::test();
+        let context = AppContext::test().await;
         let server = create_test_server(&context);
         let response = server
             .get("/generate_signup_token")

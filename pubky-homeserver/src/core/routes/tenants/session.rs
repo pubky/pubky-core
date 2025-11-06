@@ -7,9 +7,10 @@ use tower_cookies::Cookies;
 
 use crate::{
     core::{
-        err_if_user_is_invalid::err_if_user_is_invalid, extractors::PubkyHost,
+        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost,
         layers::authz::session_secret_from_cookies, AppState,
     },
+    persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
 };
 
@@ -18,10 +19,14 @@ pub async fn session(
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    err_if_user_is_invalid(pubky.public_key(), &state.db, false)?;
+    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
-        if let Some(session) = state.db.get_session(&secret)? {
-            let mut resp = session.serialize().into_response();
+        if let Ok(session) =
+            SessionRepository::get_by_secret(&secret, &mut state.sql_db.pool().into()).await
+        {
+            let legacy_session = session.to_legacy();
+            let mut resp = legacy_session.serialize().into_response();
             resp.headers_mut().insert(
                 header::CONTENT_TYPE,
                 HeaderValue::from_static("application/json"),
@@ -39,14 +44,14 @@ pub async fn session(
     Err(HttpError::not_found())
 }
 pub async fn signout(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
-        state.db.delete_session(&secret)?;
+        SessionRepository::delete(&secret, &mut state.sql_db.pool().into()).await?;
     }
 
     // Idempotent Success Response (200 OK)

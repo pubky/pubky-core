@@ -4,14 +4,14 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]
-use std::{str::FromStr, time::Duration};
-
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
 use pubky_homeserver::{
-    storage_config::StorageConfigToml, ConfigToml, DomainPort, HomeserverSuite, MockDataDir,
+    storage_config::StorageConfigToml, ConfigToml, ConnectionString, DomainPort, HomeserverSuite,
+    MockDataDir,
 };
+use std::{str::FromStr, time::Duration};
 use url::Url;
 
 /// A local test network for Pubky Core development.
@@ -24,13 +24,13 @@ pub struct Testnet {
     pub(crate) pkarr_relays: Vec<pkarr_relay::Relay>,
     pub(crate) http_relays: Vec<HttpRelay>,
     pub(crate) homeservers: Vec<HomeserverSuite>,
+    pub(crate) postgres_connection_string: Option<ConnectionString>,
 
     temp_dirs: Vec<tempfile::TempDir>,
 }
 
 impl Testnet {
     /// Run a new testnet with a local DHT.
-    /// Sets the process wide Pubky global client to use this testnet.
     pub async fn new() -> Result<Self> {
         let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet = Self {
@@ -39,24 +39,66 @@ impl Testnet {
             http_relays: vec![],
             homeservers: vec![],
             temp_dirs: vec![],
+            postgres_connection_string: Self::extract_postgres_connection_string_from_env_variable(
+            ),
         };
 
         Ok(testnet)
+    }
+
+    /// Run a new testnet with a local DHT.
+    /// Pass an optional postgres connection string to use for the homeserver.
+    /// If None, the default test connection string is used.
+    pub async fn new_with_custom_postgres(
+        postgres_connection_string: ConnectionString,
+    ) -> Result<Self> {
+        let dht = pkarr::mainline::Testnet::new_async(2).await?;
+        let testnet: Testnet = Self {
+            dht,
+            pkarr_relays: vec![],
+            http_relays: vec![],
+            homeservers: vec![],
+            temp_dirs: vec![],
+            postgres_connection_string: Some(postgres_connection_string),
+        };
+
+        Ok(testnet)
+    }
+
+    /// Extract the postgres connection string from the TEST_PUBKY_CONNECTION_STRING environment variable.
+    /// If the environment variable is not set, None is returned.
+    /// If the environment variable is set, but the connection string is invalid, a warning is logged and None is returned.
+    fn extract_postgres_connection_string_from_env_variable() -> Option<ConnectionString> {
+        if let Ok(raw_con_string) = std::env::var("TEST_PUBKY_CONNECTION_STRING") {
+            if let Ok(con_string) = ConnectionString::new(&raw_con_string) {
+                return Some(con_string);
+            } else {
+                tracing::warn!("Invalid database connection string in TEST_PUBKY_CONNECTION_STRING environment variable. Ignoring it.");
+            }
+        }
+        None
     }
 
     /// Run the full homeserver suite with core and admin server
     /// Automatically listens on the default ports.
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn create_homeserver(&mut self) -> Result<&HomeserverSuite> {
-        let mock_dir =
-            MockDataDir::new(ConfigToml::test(), Some(Keypair::from_secret_key(&[0; 32])))?;
+        let mut config = ConfigToml::test();
+        if let Some(connection_string) = self.postgres_connection_string.as_ref() {
+            config.general.database_url = connection_string.clone();
+        }
+        let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
         self.create_homeserver_with_mock(mock_dir).await
     }
 
     /// Creates a homeserver suite using a freshly generated random keypair.
     /// Automatically listens on the configured ports and uses this Testnet's bootstrap nodes and relays.
     pub async fn create_random_homeserver(&mut self) -> Result<&HomeserverSuite> {
-        let mock_dir = MockDataDir::new(ConfigToml::test(), Some(Keypair::random()))?;
+        let mut config = ConfigToml::test();
+        if let Some(connection_string) = self.postgres_connection_string.as_ref() {
+            config.general.database_url = connection_string.clone();
+        }
+        let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
         self.create_homeserver_with_mock(mock_dir).await
     }
 
@@ -191,12 +233,12 @@ impl Testnet {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
-
-    use crate::{pubky::Keypair, Testnet};
+    use crate::Testnet;
+    use pubky::Keypair;
 
     /// Make sure the components are kept alive even when dropped.
     #[tokio::test]
+    #[crate::test]
     async fn test_keep_relays_alive_even_when_dropped() {
         let mut testnet = Testnet::new().await.unwrap();
         {
@@ -207,6 +249,7 @@ mod test {
 
     /// Boostrap node conversion
     #[tokio::test]
+    #[crate::test]
     async fn test_boostrap_node_conversion() {
         let testnet = Testnet::new().await.unwrap();
         let nodes = testnet.dht_bootstrap_nodes();
@@ -216,6 +259,7 @@ mod test {
     /// Test that a user can signup in the testnet.
     /// This is an e2e tests to check if everything is correct.
     #[tokio::test]
+    #[crate::test]
     async fn test_signup() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_homeserver().await.unwrap();
@@ -255,53 +299,11 @@ mod test {
             .unwrap();
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_spawn_in_parallel() {
-        let mut handles = Vec::new();
-
-        for _ in 0..10 {
-            let handle = tokio::spawn(async move {
-                let mut testnet = match Testnet::new().await {
-                    Ok(testnet) => testnet,
-                    Err(e) => {
-                        panic!("Failed to create testnet: {}", e);
-                    }
-                };
-                match testnet.create_homeserver().await {
-                    Ok(hs) => hs,
-                    Err(e) => {
-                        panic!("Failed to create homeserver suite: {}", e);
-                    }
-                };
-                let hs = testnet.homeservers.first().unwrap();
-
-                let sdk = testnet.sdk().unwrap();
-
-                let signer = sdk.signer(Keypair::random());
-
-                let session = signer.signup(&hs.public_key(), None).await.unwrap();
-
-                assert_eq!(session.info().public_key(), &signer.public_key());
-                tokio::time::sleep(Duration::from_secs(3)).await;
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            match handle.await {
-                Ok(_) => {}
-                Err(e) => {
-                    panic!("{}", e);
-                }
-            }
-        }
-    }
-
     /// Test relay resolvable.
     /// This simulates pkarr clients in a browser.
     /// Made due to https://github.com/pubky/pkarr/issues/140
     #[tokio::test]
+    #[crate::test]
     async fn test_pkarr_relay_resolvable() {
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_pkarr_relay().await.unwrap();

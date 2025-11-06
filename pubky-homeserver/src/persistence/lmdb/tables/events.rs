@@ -7,12 +7,8 @@ use heed::{
     types::{Bytes, Str},
     Database,
 };
-use postcard::{from_bytes, to_allocvec};
+use postcard::from_bytes;
 use serde::{Deserialize, Serialize};
-
-use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
-
-use super::super::LmDB;
 
 /// Event [pkarr::Timestamp] base32 => Encoded event.
 pub type EventsTable = Database<Str, Bytes>;
@@ -26,15 +22,10 @@ pub enum Event {
 }
 
 impl Event {
-    pub fn put(url: &str) -> Self {
-        Self::Put(url.to_string())
-    }
-
-    pub fn delete(url: &str) -> Self {
-        Self::Delete(url.to_string())
-    }
-
+    #[cfg(test)]
     pub fn serialize(&self) -> Vec<u8> {
+        use postcard::to_allocvec;
+
         to_allocvec(self).expect("Session::serialize")
     }
 
@@ -51,57 +42,5 @@ impl Event {
             Event::Put(url) => url,
             Event::Delete(url) => url,
         }
-    }
-
-    pub fn operation(&self) -> &str {
-        match self {
-            Event::Put(_) => "PUT",
-            Event::Delete(_) => "DEL",
-        }
-    }
-}
-
-impl LmDB {
-    /// Returns a list of events formatted as `<OP> <url>`.
-    ///
-    /// - limit defaults to [crate::config::DEFAULT_LIST_LIMIT] and capped by [crate::config::DEFAULT_MAX_LIST_LIMIT]
-    /// - cursor is a 13 character string encoding of a timestamp
-    pub fn list_events(
-        &self,
-        limit: Option<u16>,
-        cursor: Option<String>,
-    ) -> anyhow::Result<Vec<String>> {
-        let txn = self.env.read_txn()?;
-
-        let limit = limit
-            .unwrap_or(DEFAULT_LIST_LIMIT)
-            .min(DEFAULT_MAX_LIST_LIMIT);
-
-        let cursor = cursor.unwrap_or("0000000000000".to_string());
-
-        let mut result: Vec<String> = vec![];
-        let mut next_cursor = cursor.to_string();
-
-        for _ in 0..limit {
-            match self.tables.events.get_greater_than(&txn, &next_cursor)? {
-                Some((timestamp, event_bytes)) => {
-                    let event = Event::deserialize(event_bytes)?;
-
-                    let line = format!("{} {}", event.operation(), event.url());
-                    next_cursor = timestamp.to_string();
-
-                    result.push(line);
-                }
-                None => break,
-            };
-        }
-
-        if !result.is_empty() {
-            result.push(format!("cursor: {next_cursor}"))
-        }
-
-        txn.commit()?;
-
-        Ok(result)
     }
 }
