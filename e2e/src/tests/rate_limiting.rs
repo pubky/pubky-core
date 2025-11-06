@@ -12,8 +12,8 @@ use pubky_testnet::{
 };
 
 #[tokio::test]
-async fn limit_signin_get_session() {
-    // Spin up a testnet and configure homeserver limits
+#[pubky_testnet::test]
+async fn test_limit_signin_get_session() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
@@ -69,7 +69,8 @@ async fn limit_signin_get_session() {
 }
 
 #[tokio::test]
-async fn limit_signin_get_session_whitelist() {
+#[pubky_testnet::test]
+async fn test_limit_signin_get_session_whitelist() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
@@ -124,7 +125,8 @@ async fn limit_signin_get_session_whitelist() {
 }
 
 #[tokio::test]
-async fn limit_events() {
+#[pubky_testnet::test]
+async fn test_limit_events() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
     let client = pubky.client();
@@ -155,7 +157,8 @@ async fn limit_events() {
 }
 
 #[tokio::test]
-async fn limit_upload() {
+#[pubky_testnet::test]
+async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
@@ -196,6 +199,7 @@ async fn limit_upload() {
 /// Concurrently writing/reading 10 files, the total time taken should be ~3s.
 /// If the concurrent writes/reads are not properly handled, the total time taken will be closer to ~25s.
 #[tokio::test]
+#[pubky_testnet::test]
 async fn test_concurrent_write_read() {
     // --- homeserver with per-user throttling on PUT/GET under /pub/**
     let mut testnet = Testnet::new().await.unwrap();

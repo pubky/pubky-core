@@ -2,9 +2,45 @@
 
 A local test network for developing Pubky Core or applications depending on it.
 
-All resources are ephemeral, databases are in the operating system's temporary directories, and all servers are closed as the testnet dropped.
+All resources are ephemeral, the database is an empheral Postgres, and all servers are cleaned up as the testnet dropped.
+
+## Quickstart 
+Requires a running Postgres.
+
+```bash
+# Example local Postgres with password auth
+docker run --name postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=pubky_homeserver \
+  -p 5432:5432 -d postgres:17
+
+# Run the testnet binary (all resources ephemeral). The environment variable must point to the postgres admin database.
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres' cargo run -p pubky-testnet
+
 
 ## Usage
+
+### Postgres
+
+For the homeserver and therefore this testnet to be used, a postgres server is required. 
+By default, testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
+`?pubky-test=true` indicates that the homeserver should create an emphemeral database.
+
+If you want to change the [connection string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS) you have 2 options.
+
+- Set the `TEST_PUBKY_CONNECTION_STRING` environment variable.
+- Set the connection string in the testnet constructor.
+
+```rust
+use pubky_testnet::{Testnet, pubky_homeserver::ConnectionString};
+
+#[tokio::main]
+async fn main () {
+  let connection_string = ConnectionString::new("postgres://localhost:5432/my_db").unwrap();
+  let testnet = Testnet::new_with_custom_postgres(connection_string).await.unwrap();
+}
+```
 
 ### Inline testing
 
@@ -12,6 +48,7 @@ All resources are ephemeral, databases are in the operating system's temporary d
 use pubky_testnet::EphemeralTestnet;
 
 #[tokio::main]
+#[pubky_testnet::test] // Makro makes sure that the empheral Postgres databases are cleaned up.
 async fn main () {
   // Run a new testnet. This creates a test dht,
   // a homeserver, and a http relay.

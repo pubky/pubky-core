@@ -1,0 +1,14 @@
+[package]
+name = "pubky_test_utils_drop_db_helper"
+version = "0.1.0"
+description = "Do not use on its own. Use pubky_test_utils instead."
+keywords = ["pubky", "test", "utilities", "drop", "database"]
+categories = ["testing"]
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+sqlx = { version = "0.8.6", features = [ "runtime-tokio", "postgres"] }

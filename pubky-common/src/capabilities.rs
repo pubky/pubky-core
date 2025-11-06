@@ -39,7 +39,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, fmt::Display};
+use std::{collections::BTreeSet, fmt::Display, str::FromStr};
 use url::Url;
 
 /// A single capability: a `scope` and the allowed `actions` within it.
@@ -226,6 +226,14 @@ impl TryFrom<String> for Capability {
 
     fn try_from(value: String) -> Result<Self, Error> {
         value.as_str().try_into()
+    }
+}
+
+impl FromStr for Capability {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Error> {
+        s.try_into()
     }
 }
 

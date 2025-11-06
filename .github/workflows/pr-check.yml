@@ -44,6 +44,24 @@ jobs:
         run: cargo clippy -p pubky-wasm --target wasm32-unknown-unknown -- -D warnings
 
   test:
+    services:
+      postgres:
+        image: postgres:17-alpine          # official image
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']                # optional – makes it reachable on localhost
+        options: >-                         # give the container a health check
+          --health-cmd="pg_isready -U test_user"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      # Your code can read these, or just use the defaults above
+      TEST_PUBKY_CONNECTION_STRING: postgres://test_user:test_pass@localhost:5432/postgres?pubky-test=true
+
     strategy:
       matrix:
         crate:
@@ -69,6 +87,13 @@ jobs:
         uses: taiki-e/install-action@nextest
       - name: Cache
         uses: Swatinem/rust-cache@v2
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..10}; do
+            pg_isready -h localhost -p 5432 -U test_user && break
+            echo "Postgres not ready yet… sleeping"
+            sleep 3
+          done
       - name: Run doctests and nextest
         run: |
           set -e
@@ -128,6 +153,23 @@ jobs:
           cargo check -p examples --all-features --bins
 
   wasm-test:
+    services:
+      postgres:
+        image: postgres:17-alpine          # official image
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: postgres
+        ports: ['5433:5432']                # optional – makes it reachable on localhost
+        options: >-                         # give the container a health check
+          --health-cmd="pg_isready -U test_user"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      # Your code can read these, or just use the defaults above
+      TEST_PUBKY_CONNECTION_STRING: postgres://test_user:test_pass@localhost:5433/postgres?pubky-test=true
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

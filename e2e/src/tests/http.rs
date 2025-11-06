@@ -2,6 +2,7 @@ use pubky_testnet::pubky::Method;
 use pubky_testnet::EphemeralTestnet;
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn http_get_pubky() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();
@@ -19,6 +20,7 @@ async fn http_get_pubky() {
 }
 
 #[tokio::test]
+#[pubky_testnet::test]
 async fn http_get_icann() {
     let testnet = EphemeralTestnet::start().await.unwrap();
 
