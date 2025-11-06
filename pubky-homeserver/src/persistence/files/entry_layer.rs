@@ -138,8 +138,8 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
     async fn close(&mut self) -> Result<opendal::Metadata> {
         self.metadata_builder
             .guess_mime_type_from_path(self.entry_path.path().as_str());
-        let metadata = self.inner.close().await?;
-        // Write successful, update the entry in the database.
+        let metadata = self.inner.close().await?; // Write the file to the storage.
+                                                  // Write successful, update the entry in the database.
         let file_metadata = self.metadata_builder.clone().finalize();
         let mut tx = self
             .entry_service
@@ -170,6 +170,13 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
                     self.entry_path,
                     e
                 );
+                return Err(opendal::Error::new(
+                    opendal::ErrorKind::Unexpected,
+                    format!(
+                        "Failed to write entry {} to database: {:?}. Potential orphaned file.",
+                        self.entry_path, e
+                    ),
+                ));
             }
         };
 

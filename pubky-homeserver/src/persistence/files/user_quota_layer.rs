@@ -214,8 +214,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
                 "User quota exceeded",
             ));
         }
-        let metadata = self.inner.close().await?;
-
+        let metadata = self.inner.close().await?; // Actually write the file to the storage.
         user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
         UserRepository::update(&user, uexecutor!(tx))
             .await

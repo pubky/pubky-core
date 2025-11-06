@@ -816,3 +816,113 @@ async fn stream() {
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::NOT_FOUND)
     );
 }
+
+/// Test that two users can write to the same path and the content is correctly separated.
+/// Mix file and reading between the two users.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn write_same_path_separate_users() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer_a = pubky.signer(Keypair::random());
+    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let signer_b = pubky.signer(Keypair::random());
+    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+
+    let path = "/pub/foo.txt";
+    let content1 = Bytes::from(b"content1".to_vec());
+
+    // Write to user A content1
+    session_a
+        .storage()
+        .put(path, content1.clone())
+        .await
+        .unwrap();
+    // Read back and compare
+    let response = session_a.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_a = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_a, content1);
+
+    // Write to user B content1
+    session_b
+        .storage()
+        .put(path, content1.clone())
+        .await
+        .unwrap();
+    // Read back and compare
+    let response = session_b.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_b = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_b, content1);
+
+    let content2 = Bytes::from(b"content2_long".to_vec());
+
+    // Write to user A content2
+    session_a
+        .storage()
+        .put(path, content2.clone())
+        .await
+        .unwrap();
+    // Read back and compare
+    let response = session_a.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content2.len() as u64);
+    let read_bytes_a = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_a, content2);
+
+    // Read user B content 1 again. Make sure it's the original content1.
+    let response = session_b.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_b = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_b, content1);
+
+    // Delete user A content2
+    session_a.storage().delete(path).await.unwrap();
+    // Read user B content 2 again. Make sure it's the original content1.
+    let response = session_b.storage().get(path).await.unwrap();
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(content_length, content1.len() as u64);
+    let read_bytes_b = response.bytes().await.unwrap();
+    assert_eq!(read_bytes_b, content1);
+}
