@@ -139,6 +139,7 @@ impl EntryRepository {
                 ),
                 (EntryIden::ModifiedAt, Expr::current_timestamp().into()),
             ])
+            .and_where(Expr::col((ENTRY_TABLE, EntryIden::Id)).eq(entry.id))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;

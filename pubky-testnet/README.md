@@ -4,13 +4,28 @@ A local test network for developing Pubky Core or applications depending on it.
 
 All resources are ephemeral, the database is an empheral Postgres, and all servers are cleaned up as the testnet dropped.
 
+## Quickstart 
+Requires a running Postgres.
+
+```bash
+# Example local Postgres with password auth
+docker run --name postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=pubky_homeserver \
+  -p 5432:5432 -d postgres:17
+
+# Run the testnet binary (all resources ephemeral). The environment variable must point to the postgres admin database.
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres' cargo run -p pubky-testnet
+
+
 ## Usage
 
 ### Postgres
 
 For the homeserver and therefore this testnet to be used, a postgres server is required. 
 By default, testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
-`?pubky_test=true` indicates that the homeserver should create an emphemeral database.
+`?pubky-test=true` indicates that the homeserver should create an emphemeral database.
 
 If you want to change the [connection string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS) you have 2 options.
 
