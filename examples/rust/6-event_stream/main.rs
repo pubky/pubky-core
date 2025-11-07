@@ -53,11 +53,11 @@ async fn main() -> Result<()> {
     }
 
     if args.live {
-        builder = builder.live(true);
+        builder = builder.live();
     }
 
     if args.reverse {
-        builder = builder.reverse(true);
+        builder = builder.reverse();
     }
 
     if let Some(path) = args.path {

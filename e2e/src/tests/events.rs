@@ -1480,7 +1480,7 @@ async fn sdk_single_user_event_stream() {
     // Test 3: Reverse order
     let mut stream = pubky
         .event_stream_for(&user_pubky)
-        .reverse(true)
+        .reverse()
         .limit(5)
         .subscribe()
         .await
@@ -1506,7 +1506,7 @@ async fn sdk_single_user_event_stream() {
     // Test 4: Live mode
     let mut stream = pubky
         .event_stream_for(&user_pubky)
-        .live(true)
+        .live()
         .limit(3)
         .subscribe()
         .await
@@ -1542,8 +1542,8 @@ async fn sdk_single_user_event_stream() {
     // Test 5: Error handling - invalid combination of live and reverse
     let result = pubky
         .event_stream_for(&user_pubky)
-        .live(true)
-        .reverse(true)
+        .live()
+        .reverse()
         .subscribe()
         .await;
 

@@ -159,7 +159,7 @@ impl Pubky {
     /// let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")?;
     ///
     /// let mut stream = pubky.event_stream_for(&user)
-    ///     .live(true)
+    ///     .live()
     ///     .limit(100)
     ///     .path("/pub/")
     ///     .subscribe()

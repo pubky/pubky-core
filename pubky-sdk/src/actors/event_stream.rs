@@ -13,7 +13,7 @@
 //! let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")?;
 //!
 //! let mut stream = pubky.event_stream_for(&user)
-//!     .live(true)
+//!     .live()
 //!     .limit(100)
 //!     .path("/pub/")
 //!     .subscribe()
@@ -115,24 +115,30 @@ impl EventStreamBuilder {
 
     /// Enable live streaming mode.
     ///
-    /// - `false` (default): Fetch historical events and close connection (batch mode)
-    /// - `true`: Fetch historical events, then stream new events in real-time
+    /// When called, the stream will:
+    /// 1. First deliver all historical events (oldest first)
+    /// 2. Then remain open to stream new events as they occur in real-time
     ///
-    /// **Note**: Cannot be combined with `reverse(true)`.
+    /// Without this flag (default): Stream only delivers historical events and closes.
+    ///
+    /// **Note**: Cannot be combined with `reverse()`.
     #[must_use]
-    pub const fn live(mut self, live: bool) -> Self {
-        self.live = live;
+    pub const fn live(mut self) -> Self {
+        self.live = true;
         self
     }
 
     /// Return events in reverse chronological order (newest first).
     ///
-    /// Default: `false` (oldest first).
+    /// When called, events are delivered from newest to oldest, then the stream closes.
+    /// This is useful for fetching recent history.
     ///
-    /// **Note**: Cannot be combined with `live(true)`.
+    /// Without this flag (default): Events are delivered oldest first.
+    ///
+    /// **Note**: Cannot be combined with `live()`.
     #[must_use]
-    pub const fn reverse(mut self, reverse: bool) -> Self {
-        self.reverse = reverse;
+    pub const fn reverse(mut self) -> Self {
+        self.reverse = true;
         self
     }
 
