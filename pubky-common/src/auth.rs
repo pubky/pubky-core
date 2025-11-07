@@ -36,7 +36,7 @@ pub struct AuthToken {
     /// Timestamp
     timestamp: Timestamp,
     /// The [PublicKey] of the owner of the resources being accessed by this token.
-    public_key: PublicKey,
+    pubky: PublicKey,
     // Variable length capabilities
     capabilities: Capabilities,
 }
@@ -51,7 +51,7 @@ impl AuthToken {
             namespace: *PUBKY_AUTH,
             version: 0,
             timestamp,
-            public_key: keypair.public_key(),
+            pubky: keypair.public_key(),
             capabilities: capabilities.into(),
         };
 
@@ -66,7 +66,7 @@ impl AuthToken {
 
     /// Returns the pubky that is providing this AuthToken
     pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
+        &self.pubky
     }
 
     /// Returns the capabilities in this AuthToken.
@@ -98,7 +98,7 @@ impl AuthToken {
                 }
 
                 token
-                    .public_key
+                    .pubky
                     .verify(AuthToken::signable(token.version, bytes), &token.signature)
                     .map_err(|_| Error::InvalidSignature)?;
 
@@ -268,7 +268,7 @@ mod tests {
             namespace: *PUBKY_AUTH,
             version: 0,
             timestamp,
-            public_key: signer.public_key(),
+            pubky: signer.public_key(),
             capabilities,
         };
 
