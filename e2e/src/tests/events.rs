@@ -1392,3 +1392,169 @@ async fn events_stream_path_filter() {
     fwd_rev.reverse();
     assert_eq!(reverse, fwd_rev, "Reverse: Should be exact reverse");
 }
+
+/// Test the SDK event stream API for single-user subscriptions.
+/// TODO: We can probably remove this and refactor the above tests to use the SDK method.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn sdk_single_user_event_stream() {
+    use futures::StreamExt;
+    use tokio::time::{timeout, Duration};
+
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    // Create a user with events
+    let keypair = Keypair::random();
+    let signer = pubky.signer(keypair);
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let user_pubky = signer.public_key();
+
+    // Create 20 events in different directories
+    for i in 0..10 {
+        let path = format!("/pub/files/doc_{i}.txt");
+        session.storage().put(path, vec![i as u8]).await.unwrap();
+    }
+    for i in 0..5 {
+        let path = format!("/pub/photos/pic_{i}.jpg");
+        session.storage().put(path, vec![i as u8]).await.unwrap();
+    }
+    for i in 0..5 {
+        let path = format!("/pub/other/item_{i}.txt");
+        session.storage().put(path, vec![i as u8]).await.unwrap();
+    }
+
+    // Test 1: Basic streaming with limit
+    let mut stream = pubky
+        .event_stream_for(&user_pubky)
+        .limit(10)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let mut count = 0;
+    let mut put_count = 0;
+    while let Some(result) = stream.next().await {
+        let event = result.unwrap();
+        assert!(
+            matches!(event.event_type, pubky_testnet::pubky::EventType::Put),
+            "Should be PUT event"
+        );
+        assert!(
+            event.path.starts_with("pubky://"),
+            "Path should be full pubky URL"
+        );
+        assert!(!event.cursor.is_empty(), "Cursor should not be empty");
+        assert!(
+            event.content_hash.is_some(),
+            "PUT events should have content_hash"
+        );
+        put_count += 1;
+        count += 1;
+    }
+
+    assert_eq!(count, 10, "Should receive exactly 10 events");
+    assert_eq!(put_count, 10, "All events should be PUT");
+
+    // Test 2: Path filter
+    let mut stream = pubky
+        .event_stream_for(&user_pubky)
+        .path("/pub/files/")
+        .subscribe()
+        .await
+        .unwrap();
+
+    let mut files_count = 0;
+    while let Some(result) = stream.next().await {
+        let event = result.unwrap();
+        assert!(
+            event.path.contains("/pub/files/"),
+            "Path should contain /pub/files/"
+        );
+        files_count += 1;
+    }
+
+    assert_eq!(files_count, 10, "Should receive 10 events from /pub/files/");
+
+    // Test 3: Reverse order
+    let mut stream = pubky
+        .event_stream_for(&user_pubky)
+        .reverse(true)
+        .limit(5)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let mut reverse_events = Vec::new();
+    while let Some(result) = stream.next().await {
+        let event = result.unwrap();
+        reverse_events.push(event.path.clone());
+    }
+
+    assert_eq!(
+        reverse_events.len(),
+        5,
+        "Should receive 5 events in reverse order"
+    );
+    // In reverse order, the last created event should come first
+    assert!(
+        reverse_events[0].contains("/pub/other/"),
+        "First event should be from /pub/other/ (most recent directory)"
+    );
+
+    // Test 4: Live mode
+    let mut stream = pubky
+        .event_stream_for(&user_pubky)
+        .live(true)
+        .limit(3)
+        .subscribe()
+        .await
+        .unwrap();
+
+    // Spawn a task to create a live event
+    let session_clone = session.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        session_clone
+            .storage()
+            .put("/pub/live_event.txt", vec![99])
+            .await
+            .unwrap();
+    });
+
+    let result = timeout(Duration::from_secs(5), async {
+        let mut live_event_found = false;
+        while let Some(result) = stream.next().await {
+            let event = result.unwrap();
+            if event.path.contains("live_event.txt") {
+                live_event_found = true;
+                break;
+            }
+        }
+        live_event_found
+    })
+    .await;
+
+    assert!(result.is_ok(), "Should complete within timeout");
+    assert!(result.unwrap(), "Should receive the live event");
+
+    // Test 5: Error handling - invalid combination of live and reverse
+    let result = pubky
+        .event_stream_for(&user_pubky)
+        .live(true)
+        .reverse(true)
+        .subscribe()
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Should return error for live+reverse combination"
+    );
+    if let Err(error) = result {
+        assert!(
+            format!("{:?}", error).contains("live mode with reverse"),
+            "Error should mention incompatible parameters"
+        );
+    }
+}

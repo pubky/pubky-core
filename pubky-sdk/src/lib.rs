@@ -38,6 +38,8 @@ pub use actors::PubkySession;
 #[doc(inline)]
 pub use actors::PubkySigner;
 #[doc(inline)]
+pub use actors::{Event, EventStreamBuilder, EventType};
+#[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
 // Error and global client

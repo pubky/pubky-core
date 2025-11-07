@@ -53,7 +53,8 @@
 use pkarr::PublicKey;
 
 use crate::{
-    Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,
+    Capabilities, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner,
+    PublicStorage, Result,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -142,6 +143,38 @@ impl Pubky {
         Pkdns::with_client(self.client.clone())
             .get_homeserver_of(user_public_key)
             .await
+    }
+
+    /// Create an event stream builder for subscribing to a user's events.
+    ///
+    /// This allows you to subscribe to Server-Sent Events (SSE) from a user's
+    /// homeserver `/events-stream` endpoint.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use pubky::{Pubky, PublicKey};
+    /// # use futures_util::StreamExt;
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")?;
+    ///
+    /// let mut stream = pubky.event_stream_for(&user)
+    ///     .live(true)
+    ///     .limit(100)
+    ///     .path("/pub/")
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?} at {}", event.event_type, event.path);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn event_stream_for(&self, user_public_key: &PublicKey) -> EventStreamBuilder {
+        EventStreamBuilder::new(self.client.clone(), user_public_key.clone())
     }
 
     // ------ Persistance helpers ----------

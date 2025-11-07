@@ -36,6 +36,7 @@ pkarr = { workspace = true, features = ["full"] }
 cookie = "0.18.1"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = "0.3.31"
+eventsource-stream = "0.2.3"
 serde = { version = "1", features = ["derive"], optional = true }
 httpdate = "1"
 
@@ -44,6 +45,7 @@ reqwest = { version = "0.12.12", default-features = false, features = [
     "cookies",
     "rustls-tls",
     "json",
+    "stream",
 ] }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing = "0.1.41"
