@@ -7,19 +7,22 @@ use serde::{Deserialize, Serialize};
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{capabilities::Capabilities, timestamp::Timestamp};
+use crate::{
+    capabilities::{Capabilities, Capability},
+    timestamp::Timestamp,
+};
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 /// Pubky homeserver session struct.
 pub struct SessionInfo {
     version: usize,
-    public_key: PublicKey,
+    pubky: PublicKey,
     created_at: u64,
     /// Deprecated. Will always be empty.
     name: String,
     /// Deprecated. Will always be empty.
     user_agent: String,
-    capabilities: Capabilities,
+    capabilities: Vec<Capability>,
 }
 
 impl SessionInfo {
@@ -31,9 +34,9 @@ impl SessionInfo {
     ) -> Self {
         Self {
             version: 0,
-            public_key: public_key.clone(),
+            pubky: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
-            capabilities,
+            capabilities: capabilities.to_vec(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }
@@ -43,11 +46,11 @@ impl SessionInfo {
 
     /// Returns the public_key of this session authorizes for.
     pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
+        &self.pubky
     }
 
     /// Returns the capabilities this session provide on this session's pubky's resources.
-    pub fn capabilities(&self) -> &Capabilities {
+    pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }
 
@@ -66,7 +69,7 @@ impl SessionInfo {
 
     /// Set this session's capabilities.
     pub fn set_capabilities(&mut self, capabilities: Capabilities) -> &mut Self {
-        self.capabilities = capabilities;
+        self.capabilities = capabilities.to_vec();
 
         self
     }
@@ -117,14 +120,14 @@ mod tests {
     #[test]
     fn serialize() {
         let keypair = Keypair::from_secret_key(&[0; 32]);
-        let public_key = keypair.public_key();
+        let pubky = keypair.public_key();
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 
         let session = SessionInfo {
             user_agent: "foo".to_string(),
-            capabilities,
+            capabilities: capabilities.to_vec(),
             created_at: 0,
-            public_key,
+            pubky,
             version: 0,
             name: "".to_string(),
         };

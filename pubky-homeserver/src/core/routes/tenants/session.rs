@@ -29,7 +29,7 @@ pub async fn session(
             let mut resp = legacy_session.serialize().into_response();
             resp.headers_mut().insert(
                 header::CONTENT_TYPE,
-                HeaderValue::from_static("application/json"),
+                HeaderValue::from_static("application/octet-stream"),
             );
             resp.headers_mut()
                 .insert(header::VARY, HeaderValue::from_static("cookie, pubky-host"));

@@ -391,6 +391,37 @@ impl Capabilities {
     pub fn builder() -> CapsBuilder {
         CapsBuilder::default()
     }
+
+    /// Borrow the inner capabilities as a slice without allocating.
+    ///
+    /// Constant-time; returns a view into the existing buffer.
+    ///
+    /// # Examples
+    /// ```
+    /// let caps = Capabilities(vec![Capability::Read, Capability::Write]);
+    /// let slice: &[Capability] = caps.as_slice();
+    /// assert_eq!(slice.len(), 2);
+    /// ```
+    #[inline]
+    pub fn as_slice(&self) -> &[Capability] {
+        &self.0
+    }
+
+    /// Clone the inner capabilities into an owned `Vec<Capability>`.
+    ///
+    /// Allocates and performs an `O(n)` clone of the elements. Use when
+    /// ownership is required by downstream APIs.
+    ///
+    /// # Examples
+    /// ```
+    /// let caps = Capabilities(vec![Capability::Read]);
+    /// let owned: Vec<Capability> = caps.to_vec();
+    /// assert_eq!(owned, vec![Capability::Read]);
+    /// ```
+    #[inline]
+    pub fn to_vec(&self) -> Vec<Capability> {
+        self.0.clone()
+    }
 }
 
 /// Fluent builder for multiple [`Capability`] entries.
