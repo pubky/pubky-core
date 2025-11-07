@@ -398,7 +398,12 @@ impl Capabilities {
     ///
     /// # Examples
     /// ```
-    /// let caps = Capabilities(vec![Capability::Read, Capability::Write]);
+    /// use pubky_common::capabilities::{Capability, Capabilities};
+    ///
+    /// let caps = Capabilities(vec![
+    ///     Capability::read("/foo"),
+    ///     Capability::write("/bar/"),
+    /// ]);
     /// let slice: &[Capability] = caps.as_slice();
     /// assert_eq!(slice.len(), 2);
     /// ```
@@ -412,11 +417,12 @@ impl Capabilities {
     /// Allocates and performs an `O(n)` clone of the elements. Use when
     /// ownership is required by downstream APIs.
     ///
-    /// # Examples
     /// ```
-    /// let caps = Capabilities(vec![Capability::Read]);
+    /// use pubky_common::capabilities::{Capability, Capabilities};
+    ///
+    /// let caps = Capabilities(vec![Capability::read("/")]);
     /// let owned: Vec<Capability> = caps.to_vec();
-    /// assert_eq!(owned, vec![Capability::Read]);
+    /// assert_eq!(owned, vec![Capability::read("/")]);
     /// ```
     #[inline]
     pub fn to_vec(&self) -> Vec<Capability> {
