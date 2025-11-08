@@ -16,7 +16,7 @@ use crate::{
 /// Pubky homeserver session struct.
 pub struct SessionInfo {
     version: usize,
-    pubky: PublicKey,
+    public_key: PublicKey,
     created_at: u64,
     /// Deprecated. Will always be empty.
     name: String,
@@ -34,7 +34,7 @@ impl SessionInfo {
     ) -> Self {
         Self {
             version: 0,
-            pubky: public_key.clone(),
+            public_key: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
             capabilities: capabilities.to_vec(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
@@ -46,10 +46,10 @@ impl SessionInfo {
 
     /// Returns the public_key of this session authorizes for.
     pub fn public_key(&self) -> &PublicKey {
-        &self.pubky
+        &self.public_key
     }
 
-    /// Returns the capabilities this session provide on this session's pubky's resources.
+    /// Returns the capabilities this session provide on this session's public_key's resources.
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }
@@ -120,14 +120,14 @@ mod tests {
     #[test]
     fn serialize() {
         let keypair = Keypair::from_secret_key(&[0; 32]);
-        let pubky = keypair.public_key();
+        let public_key = keypair.public_key();
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 
         let session = SessionInfo {
             user_agent: "foo".to_string(),
             capabilities: capabilities.to_vec(),
             created_at: 0,
-            pubky,
+            public_key,
             version: 0,
             name: "".to_string(),
         };
