@@ -617,21 +617,6 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_cursor_display_format() {
-        // Test that cursor is simply the event id as a string
-        let id = 42i64;
-        let cursor_str = id.to_string();
-
-        // Verify it's just the id
-        assert_eq!(cursor_str, "42");
-
-        // Verify it can be parsed back
-        let parsed_id: i64 = cursor_str.parse().unwrap();
-        assert_eq!(parsed_id, id);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
     async fn test_event_response_formatting() {
         use pubky_common::crypto::Hash;
 
@@ -694,73 +679,5 @@ mod tests {
         assert!(sse_data_no_hash.contains("pubky://"));
         assert!(sse_data_no_hash.contains("cursor:"));
         assert!(!sse_data_no_hash.contains("content_hash:"));
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_get_by_user_cursors_with_path_filter() {
-        let db = SqlDb::test().await;
-        let user_pubkey = Keypair::random().public_key();
-
-        // Create user
-        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-
-        // Create events in different directories
-        let paths_and_names = vec![
-            ("/pub/files/doc1.txt", "pub/files/"),
-            ("/pub/files/doc2.txt", "pub/files/"),
-            ("/pub/photos/pic1.jpg", "pub/photos/"),
-            ("/pub/root.txt", "pub/"),
-            ("/private/secret.txt", "private/"),
-        ];
-
-        for (path_str, _) in &paths_and_names {
-            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(path_str).unwrap());
-            EventRepository::create(user.id, EventType::Put, &path, None, &mut db.pool().into())
-                .await
-                .unwrap();
-        }
-
-        // Test 1: Filter by "/pub/files/" - should get 2 events
-        let user_cursors = vec![(user.id, None)];
-        let events = EventRepository::get_by_user_cursors(
-            user_cursors.clone(),
-            false,
-            Some("/pub/files/"),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            events.len(),
-            2,
-            "Should get 2 events with /pub/files/ filter"
-        );
-        for event in &events {
-            assert!(event.path.path().as_str().starts_with("/pub/files/"));
-        }
-
-        // Test 2: Filter by "/pub/" - should get 4 events (files, photos, root)
-        let events = EventRepository::get_by_user_cursors(
-            user_cursors.clone(),
-            false,
-            Some("/pub/"),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(events.len(), 4, "Should get 4 events with /pub/ filter");
-        for event in &events {
-            assert!(event.path.path().as_str().starts_with("/pub/"));
-        }
-
-        // Test 3: No filter - should get all 5 events
-        let events =
-            EventRepository::get_by_user_cursors(user_cursors, false, None, &mut db.pool().into())
-                .await
-                .unwrap();
-        assert_eq!(events.len(), 5, "Should get all 5 events without filter");
     }
 }

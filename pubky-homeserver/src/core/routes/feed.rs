@@ -86,7 +86,7 @@ pub async fn feed(
 /// - Connection stays open indefinitely
 ///
 /// ## Query Parameters
-/// - `user` (**REQUIRED**): One or more user public keys to filter events for. Can be repeated multiple times.
+/// - `user` (**REQUIRED**): One or more user public keys to filter events for.
 ///   - Format: z-base-32 encoded public key (e.g., "o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")
 ///   - Single user: `?user=pubkey1`
 ///   - Single user with cursor: `?user=pubkey1:cursor`
@@ -105,7 +105,7 @@ pub async fn feed(
 ///   - When `true`, only historical events are returned (batch mode enforced)
 ///   - **Cannot be combined with `live=true`** (will return 400 error)
 /// - `path` (optional): Path prefix to filter events. Only events whose path starts with this prefix are returned.
-///   - Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/")
+///   - Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "pub/files/")
 ///
 /// ## SSE Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
@@ -176,6 +176,9 @@ pub async fn feed_stream(
         // Phase 1: Historical auto-pagination
         // Fetch all historical events in batches until caught up
         loop {
+            // Drain any buffered events before querying as they'll be included in this or a future database query
+            while rx.try_recv().is_ok() {}
+
             let current_user_cursors: Vec<(i32, Option<Cursor>)> =
                 user_cursor_map.iter().map(|(k, cursor)| (*k, *cursor)).collect();
 
@@ -236,42 +239,54 @@ pub async fn feed_stream(
             // Extract user_ids for filtering
             let user_ids: Vec<i32> = user_cursor_map.keys().copied().collect();
 
-            while let Ok(event) = rx.recv().await {
-                // Filter by user_ids
-                if !user_ids.contains(&event.user_id) {
-                    continue;
-                }
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        // Filter by user_ids
+                        if !user_ids.contains(&event.user_id) {
+                            continue;
+                        }
 
-                // Filter by path prefix if specified
-                if let Some(ref path) = params.path {
-                    let path_suffix = event.path.path().as_str();
-                    if !path_suffix.starts_with(path) {
+                        // Filter out events we already sent in Phase 1
+                        if let Some(Some(cursor)) = user_cursor_map.get(&event.user_id) {
+                            if event.cursor() <= *cursor {
+                                continue; // Already sent this event
+                            }
+                        }
+
+                        // Filter by path prefix if specified
+                        if let Some(ref path) = params.path {
+                            let path_suffix = event.path.path().as_str();
+                            if !path_suffix.starts_with(path) {
+                                continue;
+                            }
+                        }
+
+                        // Update this user's cursor
+                        user_cursor_map.insert(event.user_id, Some(event.cursor()));
+
+                        let response = EventResponse::from_entity(&event);
+                        yield Ok(Event::default()
+                            .event(response.event_type.to_string())
+                            .data(response.to_sse_data()));
+
+                        total_sent += 1;
+
+                        // Close if we've reached limit
+                        if let Some(max) = params.limit {
+                            if total_sent >= max as usize {
+                                return; // Close connection
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::error!(
+                            "Broadcast channel lagged: {} events were skipped during historical query",
+                            skipped
+                        );
                         continue;
                     }
-                }
-
-                // Filter out events we already sent in Phase 1
-                if let Some(Some(cursor)) = user_cursor_map.get(&event.user_id) {
-                    if event.cursor() <= *cursor {
-                        continue; // Already sent this event
-                    }
-                }
-
-                // Update this user's cursor
-                user_cursor_map.insert(event.user_id, Some(event.cursor()));
-
-                let response = EventResponse::from_entity(&event);
-                yield Ok(Event::default()
-                    .event(response.event_type.to_string())
-                    .data(response.to_sse_data()));
-
-                total_sent += 1;
-
-                // Close if we've reached limit
-                if let Some(max) = params.limit {
-                    if total_sent >= max as usize {
-                        return; // Close connection
-                    }
+                    Err(_) => break, // Channel closed
                 }
             }
         }

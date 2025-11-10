@@ -92,7 +92,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_enhance_events_table_migration() {
+    async fn test_table_index_and_content_hash_migration() {
         let db = SqlDb::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator
