@@ -1,4 +1,4 @@
-use pubky_common::session::SessionInfo;
+use pubky_common::{capabilities::Capabilities, session::SessionInfo};
 use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 
@@ -33,7 +33,11 @@ pub async fn create<'a>(
         .values(vec![
             SimpleExpr::Value(session_secret.into()),
             SimpleExpr::Value(sql_user.id.into()),
-            SimpleExpr::Value(lmdb_session.capabilities().to_string().into()),
+            SimpleExpr::Value(
+                Capabilities::from(lmdb_session.capabilities().to_vec())
+                    .to_string()
+                    .into(),
+            ),
             SimpleExpr::Value(created_at.into()),
         ])
         .expect("Failed to build insert statement")

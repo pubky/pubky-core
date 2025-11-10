@@ -8,6 +8,7 @@ use crate::{core::AppState, SignupMode};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
+    http::{header, HeaderValue},
     response::IntoResponse,
 };
 use axum_extra::extract::Host;
@@ -149,7 +150,12 @@ async fn create_session_and_cookie(
     cookies.add(cookie);
 
     let session = SessionInfo::new(&user.public_key, capabilities.clone(), None);
-    Ok(session.serialize())
+    let mut resp = session.serialize().into_response();
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    Ok(resp)
 }
 
 /// Determines if the host requires secure cookie attributes.

@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{capabilities::Capabilities, timestamp::Timestamp};
+use crate::{
+    capabilities::{Capabilities, Capability},
+    timestamp::Timestamp,
+};
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 /// Pubky homeserver session struct.
@@ -19,7 +22,7 @@ pub struct SessionInfo {
     name: String,
     /// Deprecated. Will always be empty.
     user_agent: String,
-    capabilities: Capabilities,
+    capabilities: Vec<Capability>,
 }
 
 impl SessionInfo {
@@ -33,7 +36,7 @@ impl SessionInfo {
             version: 0,
             public_key: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
-            capabilities,
+            capabilities: capabilities.to_vec(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }
@@ -46,8 +49,8 @@ impl SessionInfo {
         &self.public_key
     }
 
-    /// Returns the capabilities this session provide on this session's pubky's resources.
-    pub fn capabilities(&self) -> &Capabilities {
+    /// Returns the capabilities this session provide on this session's public_key's resources.
+    pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }
 
@@ -66,7 +69,7 @@ impl SessionInfo {
 
     /// Set this session's capabilities.
     pub fn set_capabilities(&mut self, capabilities: Capabilities) -> &mut Self {
-        self.capabilities = capabilities;
+        self.capabilities = capabilities.to_vec();
 
         self
     }
@@ -122,7 +125,7 @@ mod tests {
 
         let session = SessionInfo {
             user_agent: "foo".to_string(),
-            capabilities,
+            capabilities: capabilities.to_vec(),
             created_at: 0,
             public_key,
             version: 0,
@@ -136,7 +139,7 @@ mod tests {
             [
                 0, 59, 106, 39, 188, 206, 182, 164, 45, 98, 163, 168, 208, 42, 111, 13, 115, 101,
                 50, 21, 119, 29, 226, 67, 166, 58, 192, 72, 161, 139, 89, 218, 41, 0, 0, 3, 102,
-                111, 111, 4, 47, 58, 114, 119
+                111, 111, 1, 4, 47, 58, 114, 119
             ]
         );
 
