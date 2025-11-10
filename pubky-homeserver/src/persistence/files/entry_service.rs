@@ -33,12 +33,14 @@ impl EntryService {
     /// This includes all associated operations:
     /// - Write a public [Event]
     /// - Write the entry to the database
+    ///
+    /// Returns the entry and the event. The event should be broadcast after the transaction commits.
     pub async fn write_entry<'a>(
         &self,
         path: &EntryPath,
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<EntryEntity, FileIoError> {
+    ) -> Result<(EntryEntity, EventEntity), FileIoError> {
         let existing_entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => Some(entry),
             Err(sqlx::Error::RowNotFound) => None,
@@ -53,7 +55,7 @@ impl EntryService {
             self.create_entry(path, metadata, executor).await?
         };
 
-        // Create event and broadcast
+        // Create event - broadcast happens after transaction commit
         let event = EventRepository::create(
             entry.user_id,
             EventType::Put,
@@ -62,14 +64,8 @@ impl EntryService {
             executor,
         )
         .await?;
-        // Broadcast to any listening clients.
-        match self.event_tx.send(event) {
-            Ok(_) => {}
-            Err(SendError(_)) => {
-                // No active receivers - this is expected when no clients are listening to Server-Side Events
-            }
-        }
-        Ok(entry)
+
+        Ok((entry, event))
     }
 
     /// Update an existing entry in the database.
@@ -115,11 +111,12 @@ impl EntryService {
     /// - Write a public [Event]
     /// - Delete the entry from the database
     ///
+    /// Returns the event. The event should be broadcast after the transaction commits.
     pub async fn delete_entry<'a>(
         &self,
         path: &EntryPath,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), FileIoError> {
+    ) -> Result<EventEntity, FileIoError> {
         let entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => entry,
             Err(sqlx::Error::RowNotFound) => return Err(FileIoError::NotFound),
@@ -128,17 +125,21 @@ impl EntryService {
 
         EntryRepository::delete(entry.id, executor).await?;
 
-        // Create event and broadcast
+        // Create event - broadcast happens after transaction commit
         let event =
             EventRepository::create(entry.user_id, EventType::Delete, path, None, executor).await?;
-        // Broadcast to any listening clients.
+
+        Ok(event)
+    }
+
+    /// Broadcast an event to any listening clients.
+    /// This should be called after the transaction commits.
+    pub fn broadcast_event(&self, event: EventEntity) {
         match self.event_tx.send(event) {
             Ok(_) => {} // Successfully broadcast to receivers
             Err(SendError(_)) => {
                 // No active receivers - this is expected when no clients are listening to Server-Side Events
             }
         }
-
-        Ok(())
     }
 }

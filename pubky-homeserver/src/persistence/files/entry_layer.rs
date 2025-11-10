@@ -156,11 +156,13 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
             .write_entry(&self.entry_path, &file_metadata, &mut executor)
             .await
         {
-            Ok(_) => {
+            Ok((_entry, event)) => {
                 drop(executor);
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
+                // Broadcast event after successful commit
+                self.entry_service.broadcast_event(event);
             }
             Err(e) => {
                 drop(executor);
@@ -213,11 +215,13 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
             let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
 
             match self.entry_service.delete_entry(&path, &mut executor).await {
-                Ok(()) => {
+                Ok(event) => {
                     drop(executor);
                     tx.commit().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
+                    // Broadcast event after successful commit
+                    self.entry_service.broadcast_event(event);
                 }
                 Err(e) => {
                     drop(executor);
