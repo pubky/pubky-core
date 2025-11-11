@@ -46,7 +46,7 @@ impl ConnectionString {
     /// This is a postgres database that is not real.
     /// It is used as an indicator for a empheral test database.
     pub fn default_test_db() -> Self {
-        Self::new("postgres://localhost:5432/postgres?pubky-test=true").unwrap()
+        Self::new("postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true").unwrap()
     }
 
     /// Returns true if the connection string is for a test database.
