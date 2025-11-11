@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    extract::Request,
+    extract::{Request, State},
     http::{header, HeaderValue},
     middleware::{self, Next},
     response::Response,
@@ -32,9 +32,9 @@ fn base() -> Router<AppState> {
         .route("/", get(root::handler))
         .route("/signup", post(auth::signup))
         .route("/session", post(auth::signin))
-        // Events
         .route("/events/", get(feed::feed))
         .route("/events-stream", get(feed::feed_stream))
+        .route("/metrics", get(metrics_handler))
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).
@@ -66,4 +66,9 @@ async fn add_server_header(request: Request<Body>, next: Next) -> Response {
         .insert(header::SERVER, HeaderValue::from_static(HOMESERVER_VERSION));
 
     response
+}
+
+// Handler for Prometheus metrics endpoint
+async fn metrics_handler(State(state): State<AppState>) -> String {
+    state.metrics.render()
 }

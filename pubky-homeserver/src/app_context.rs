@@ -8,6 +8,7 @@
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
+    core::Metrics,
     persistence::{
         files::{FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
@@ -71,6 +72,8 @@ pub struct AppContext {
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
     /// Broadcast channel for real-time event notifications.
     pub(crate) event_tx: broadcast::Sender<EventEntity>,
+    /// Metrics for all endpoints.
+    pub(crate) metrics: Metrics,
 }
 
 impl AppContext {
@@ -134,6 +137,7 @@ impl AppContext {
             keypair,
             data_dir: Arc::new(dir),
             event_tx,
+            metrics: Metrics::new(),
         })
     }
 }

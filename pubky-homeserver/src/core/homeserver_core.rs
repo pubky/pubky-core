@@ -4,6 +4,7 @@ use std::time::Duration;
 use super::key_republisher::HomeserverKeyRepublisher;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
+use crate::core::Metrics;
 use crate::persistence::files::FileService;
 use crate::persistence::sql::event::EventEntity;
 use crate::persistence::sql::SqlDb;
@@ -33,6 +34,8 @@ pub(crate) struct AppState {
     pub(crate) user_quota_bytes: Option<u64>,
     /// Broadcast channel for real-time event notifications.
     pub(crate) event_tx: broadcast::Sender<EventEntity>,
+    /// Metrics for all endpoints.
+    pub(crate) metrics: Metrics,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -141,6 +144,7 @@ impl HomeserverCore {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
             event_tx: context.event_tx.clone(),
+            metrics: context.metrics.clone(),
         };
         super::routes::create_app(state.clone(), context)
     }

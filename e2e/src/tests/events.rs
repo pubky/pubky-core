@@ -639,7 +639,6 @@ async fn events_stream_multiple_users() {
 async fn events_stream_validation_errors() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
-    use tokio::time::{timeout, Duration};
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver();

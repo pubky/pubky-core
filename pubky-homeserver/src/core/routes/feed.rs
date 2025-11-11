@@ -8,12 +8,12 @@ use axum::{
     },
 };
 use futures_util::stream::Stream;
-use std::{collections::HashMap, convert::Infallible};
+use std::{collections::HashMap, convert::Infallible, time::Instant};
 
 use crate::{
     core::{
         extractors::{EventStreamQueryParams, ListQueryParams},
-        AppState,
+        AppState, Metrics,
     },
     persistence::sql::event::{Cursor, EventRepository, EventResponse},
     shared::{HttpError, HttpResult},
@@ -49,9 +49,12 @@ pub async fn feed(
             Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
         };
 
+    let query_start = Instant::now();
     let events =
         EventRepository::get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
             .await?;
+    let elapsed_ms = query_start.elapsed().as_millis();
+
     let mut result = events
         .iter()
         .map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str()))
@@ -61,6 +64,13 @@ pub async fn feed(
         .map(|event| event.id.to_string())
         .unwrap_or("".to_string());
     result.push(format!("cursor: {}", next_cursor));
+
+    state.metrics.record_events_db_query(elapsed_ms);
+    tracing::debug!(
+        elapsed_ms = elapsed_ms,
+        events_returned = events.len(),
+        "/events request completed"
+    );
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -167,8 +177,21 @@ pub async fn feed_stream(
         user_cursor_map.insert(user_id, cursor);
     }
 
+    // Track connection start
+    state.metrics.increment_active_connections();
+
+    tracing::info!(
+        user_count = user_cursor_map.len(),
+        live_mode = params.live,
+        has_path_filter = params.path.is_some(),
+        "Event stream connection established"
+    );
+
     let mut total_sent: usize = 0;
     let stream = async_stream::stream! {
+        // Create guard to ensure cleanup on any exit path
+        let _guard = ConnectionGuard::new(state.metrics.clone());
+
         // Subscribe to broadcast channel immediately to prevent race condition
         // Events that occur during Phase 1 will be buffered in the channel
         let mut rx = state.event_tx.subscribe();
@@ -182,6 +205,8 @@ pub async fn feed_stream(
             let current_user_cursors: Vec<(i32, Option<Cursor>)> =
                 user_cursor_map.iter().map(|(k, cursor)| (*k, *cursor)).collect();
 
+            // TIME THE QUERY
+            let query_start = Instant::now();
             let events = match EventRepository::get_by_user_cursors(
                 current_user_cursors,
                 params.reverse,
@@ -196,6 +221,15 @@ pub async fn feed_stream(
                     break;
                 }
             };
+
+            let elapsed_ms = query_start.elapsed().as_millis();
+            state.metrics.record_event_stream_db_query(elapsed_ms);
+            tracing::debug!(
+                elapsed_ms = elapsed_ms,
+                events_fetched = events.len(),
+                user_count = user_cursor_map.len(),
+                "Phase 1 batch query completed"
+            );
 
             let event_count = events.len();
 
@@ -280,17 +314,50 @@ pub async fn feed_stream(
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        tracing::error!(
-                            "Broadcast channel lagged: {} events were skipped during historical query",
-                            skipped
+                        state.metrics.record_broadcast_lagged();
+                        tracing::warn!(
+                            missed_events = skipped,
+                            user_count = user_ids.len(),
+                            "Event stream receiver lagged behind broadcast channel"
                         );
                         continue;
                     }
-                    Err(_) => break, // Channel closed
+                    Err(_) => {
+                        tracing::info!("Broadcast channel closed, ending stream");
+                        break;
+                    }
                 }
             }
         }
     };
 
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+/// Guard to ensure connection cleanup on any exit path
+struct ConnectionGuard {
+    metrics: Metrics,
+    start: Instant,
+}
+
+impl ConnectionGuard {
+    fn new(metrics: Metrics) -> Self {
+        Self {
+            metrics,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.metrics.decrement_active_connections();
+        self.metrics
+            .record_connection_closed(self.start.elapsed().as_secs());
+
+        tracing::info!(
+            duration_s = self.start.elapsed().as_secs(),
+            "Event stream connection closed"
+        );
+    }
 }
