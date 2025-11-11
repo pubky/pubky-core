@@ -13,7 +13,7 @@ docker run --name postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
   -p 5432:5432 \
-  -d postgres:17
+  -d docker.io/postgres:17
 ```
 
 This command creates a postgres container and also automatically creates the `pubky_homeserver` database. Use this connection string in the homeserver config:
