@@ -1,6 +1,8 @@
 use wasm_bindgen::prelude::*;
 
-use crate::actors::{auth_flow::AuthFlow, signer::Signer, storage::PublicStorage};
+use crate::actors::{
+    auth_flow::AuthFlow, event_stream::EventStreamBuilder, signer::Signer, storage::PublicStorage,
+};
 use crate::wrappers::keys::PublicKey;
 use crate::{client::constructor::Client, js_error::JsResult, wrappers::keys::Keypair};
 
@@ -138,5 +140,34 @@ impl Pubky {
     #[wasm_bindgen(getter)]
     pub fn client(&self) -> Client {
         Client(self.0.client().clone())
+    }
+
+    /// Create an event stream builder for subscribing to a user's events.
+    ///
+    /// This allows you to subscribe to Server-Sent Events (SSE) from a user's
+    /// homeserver `/events-stream` endpoint.
+    ///
+    /// @param {PublicKey} user_public_key The public key of the user to subscribe to
+    /// @returns {EventStreamBuilder} A builder to configure and subscribe to the event stream
+    ///
+    /// @example
+    /// ```typescript
+    /// const user = PublicKey.from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo");
+    /// const stream = await pubky.eventStreamFor(user)
+    ///   .live()
+    ///   .limit(100)
+    ///   .path("/pub/")
+    ///   .subscribe();
+    ///
+    /// for await (const event of stream) {
+    ///   console.log(`${event.eventType}: ${event.path}`);
+    /// }
+    /// ```
+    #[wasm_bindgen(js_name = "eventStreamFor")]
+    pub fn event_stream_for(&self, user_public_key: &PublicKey) -> EventStreamBuilder {
+        crate::actors::event_stream::new_event_stream_builder(
+            self.0.client().clone(),
+            user_public_key,
+        )
     }
 }

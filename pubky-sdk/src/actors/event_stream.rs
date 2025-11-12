@@ -174,7 +174,120 @@ impl EventStreamBuilder {
     /// - Returns [`Error::Request`] if the homeserver cannot be resolved
     /// - Returns [`Error::Request`] if `live=true` and `reverse=true` (invalid combination)
     /// - Propagates HTTP request errors
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn subscribe(self) -> Result<Pin<Box<dyn Stream<Item = Result<Event>> + Send>>> {
+        // Validate parameters
+        if self.live && self.reverse {
+            return Err(Error::from(RequestError::Validation {
+                message: "Cannot use live mode with reverse ordering".into(),
+            }));
+        }
+
+        // Resolve homeserver
+        let homeserver = Pkdns::with_client(self.client.clone())
+            .get_homeserver_of(&self.user)
+            .await
+            .ok_or_else(|| {
+                Error::from(RequestError::Validation {
+                    message: format!("Could not resolve homeserver for user {}", self.user),
+                })
+            })?;
+
+        cross_log!(
+            info,
+            "Subscribing to event stream for user {} on homeserver {}",
+            self.user,
+            homeserver
+        );
+
+        // Build URL with query parameters
+        let mut url = Url::parse(&format!("https://{}/events-stream", homeserver))?;
+
+        {
+            let mut query = url.query_pairs_mut();
+
+            // Add user parameter with optional cursor
+            if let Some(cursor) = &self.cursor {
+                query.append_pair("user", &format!("{}:{}", self.user, cursor));
+            } else {
+                query.append_pair("user", &self.user.to_string());
+            }
+
+            if let Some(limit) = self.limit {
+                query.append_pair("limit", &limit.to_string());
+            }
+
+            if self.live {
+                query.append_pair("live", "true");
+            }
+
+            if self.reverse {
+                query.append_pair("reverse", "true");
+            }
+
+            if let Some(path) = &self.path {
+                query.append_pair("path", path);
+            }
+        }
+
+        cross_log!(debug, "Event stream URL: {}", url);
+
+        // Make request
+        let response = self
+            .client
+            .cross_request(Method::GET, url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let message = format!("Event stream request failed with status {}", status);
+            return Err(Error::from(RequestError::Server { status, message }));
+        }
+
+        // Create SSE stream
+        let sse_stream = response.bytes_stream().eventsource();
+
+        // Map SSE events to our Event type
+        let event_stream = sse_stream.filter_map(|result| async move {
+            match result {
+                Ok(sse_event) => {
+                    // Parse the SSE event
+                    match parse_sse_event(&sse_event) {
+                        Ok(event) => Some(Ok(event)),
+                        Err(e) => {
+                            cross_log!(warn, "Failed to parse SSE event: {}", e);
+                            Some(Err(e))
+                        }
+                    }
+                }
+                Err(e) => {
+                    cross_log!(error, "SSE stream error: {}", e);
+                    Some(Err(Error::from(RequestError::Validation {
+                        message: format!("SSE stream error: {}", e),
+                    })))
+                }
+            }
+        });
+
+        Ok(Box::pin(event_stream))
+    }
+
+    /// Subscribe to the event stream (WASM version without Send bound).
+    ///
+    /// This performs the following steps:
+    /// 1. Resolves the user's homeserver via DHT/PKDNS
+    /// 2. Constructs the `/events-stream` URL with query parameters
+    /// 3. Makes the HTTP request
+    /// 4. Returns a stream of parsed events
+    ///
+    /// # Errors
+    /// - Returns [`Error::Request`] if the homeserver cannot be resolved
+    /// - Returns [`Error::Request`] if `live=true` and `reverse=true` (invalid combination)
+    /// - Propagates HTTP request errors
+    #[cfg(target_arch = "wasm32")]
+    pub async fn subscribe(self) -> Result<Pin<Box<dyn Stream<Item = Result<Event>>>>> {
         // Validate parameters
         if self.live && self.reverse {
             return Err(Error::from(RequestError::Validation {
