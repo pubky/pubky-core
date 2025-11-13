@@ -14,14 +14,15 @@ use crate::{
     shared::{HttpError, HttpResult},
 };
 
-/// Return session information 
+/// Return session information
 /// Note: If there are multiple Cookies with valid sessions then only the first in the list will be returned.
 pub async fn session(
     State(state): State<AppState>,
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    let user = get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+    let user =
+        get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
 
     // Try each session secret until we find one that belongs to this user
     for secret in session_secrets_from_cookies(&cookies) {
