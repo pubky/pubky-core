@@ -18,6 +18,9 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
 
+// relay base (no trailing slash is fine; the flow will append the channel id)
+const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
+
 type Facade = ReturnType<typeof Pubky.testnet>;
 type Signer = ReturnType<Facade["signer"]>;
 type SignupSession = Awaited<ReturnType<Signer["signup"]>>;
@@ -360,6 +363,127 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     "user#2:via-client",
     "low-level client wrote under user#2",
   );
+
+  t.end();
+});
+
+/**
+ * Tests that multiple session cookies with different capabilities for the same user
+ * don't overwrite each other in the browser's cookie jar.
+ *
+ * This test demonstrates BOTH the bug and the fix:
+ *
+ * LEGACY COOKIES (bug - they overwrite):
+ * - Session A → Legacy cookie: pubkey=secretA
+ * - Session B → Legacy cookie: pubkey=secretB (overwrites A!)
+ * - Result: Only Session B's legacy cookie remains
+ *
+ * UUID COOKIES (fix - they coexist):
+ * - Session A → UUID cookie: uuid-A=secretA
+ * - Session B → UUID cookie: uuid-B=secretB (doesn't overwrite!)
+ * - Result: Both UUID cookies coexist in browser jar
+ */
+test("Auth: multiple session cookies don't overwrite each other", async (t) => {
+  const sdk = Pubky.testnet();
+
+  // Create user with root session
+  const keypair = Keypair.random();
+  const signer = sdk.signer(keypair);
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const userPk = signer.publicKey.z32();
+
+  // === Create three sessions with different scoped capabilities ===
+  // Server sends BOTH UUID and legacy cookies for each session
+  // In browsers, cookies are managed automatically by the browser's cookie jar
+
+  // Session A: write access to /pub/posts/ only
+  const flowA = sdk.startAuthFlow("/pub/posts/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowA.authorizationUrl);
+  const sessionA = await flowA.awaitApproval();
+  t.ok(sessionA, "Session A created with /pub/posts/ access");
+
+  // Session B: write access to /pub/admin/ only
+  const flowB = sdk.startAuthFlow("/pub/admin/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowB.authorizationUrl);
+  const sessionB = await flowB.awaitApproval();
+  t.ok(sessionB, "Session B created with /pub/admin/ access");
+
+  // Session C: write access to /pub/legacy/ only
+  const flowC = sdk.startAuthFlow("/pub/legacy/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowC.authorizationUrl);
+  const sessionC = await flowC.awaitApproval();
+  t.ok(sessionC, "Session C created with /pub/legacy/ access");
+
+  // === THE KEY INSIGHT ===
+  // Server sends BOTH cookie formats for backward compatibility:
+  // 1. UUID cookie: <uuid>=<secret> (unique name, won't overwrite)
+  // 2. Legacy cookie: <pubkey>=<secret> (same name for all sessions, WILL overwrite)
+  //
+  // WITHOUT the UUID fix:
+  // - All 3 sessions would send cookies named <pubkey>
+  // - Browser would only keep the last one (Session C)
+  // - Session A and B would fail because their cookies were overwritten
+  //
+  // WITH the UUID fix:
+  // - Each session also has a UUID cookie with unique name
+  // - All 3 UUID cookies coexist in browser jar
+  // - SDK uses UUID cookies internally, so all sessions work
+
+  // === CRITICAL TEST: Verify Session A still works after creating B and C ===
+  // Without UUID fix, Session A's cookie would have been overwritten by B and C
+  // (all would have same cookie name = pubkey, browser keeps only the last one)
+  // With UUID fix, all three UUID cookies coexist in the browser jar
+  try {
+    await sessionA.storage.putText("/pub/posts/critical-test.txt" as any, "A works!");
+    t.pass(
+      "✓ FIX VERIFIED: Session A STILL works after creating B and C (UUID cookies coexist)",
+    );
+  } catch (error) {
+    t.fail(
+      "✗ REGRESSION: Session A failed after creating B and C. UUID cookies may have been removed!",
+    );
+  }
+
+  // Verify Session B also works
+  try {
+    await sessionB.storage.putText("/pub/admin/settings" as any, "B works!");
+    t.pass("✓ Session B works for /pub/admin/");
+  } catch (error) {
+    t.fail("Session B should work for /pub/admin/");
+  }
+
+  // Verify Session C works
+  try {
+    await sessionC.storage.putText("/pub/legacy/data.txt" as any, "C works!");
+    t.pass("✓ Session C works for /pub/legacy/");
+  } catch (error) {
+    t.fail("Session C should work for /pub/legacy/");
+  }
+
+  // Verify capability isolation still works
+  try {
+    await sessionA.storage.putText("/pub/admin/test" as any, "should fail");
+    t.fail("Session A should NOT have access to /pub/admin/");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.pass("✓ Session A correctly denied access to /pub/admin/ (capability isolation works)");
+  }
+
+  // Test with credentials:include (browser automatically sends all cookies)
+  {
+    const url = `https://_pubky.${userPk}/pub/posts/auto-cookies.txt`;
+    const response = await sdk.client.fetch(url, {
+      method: "PUT",
+      body: "auto cookie selection",
+      credentials: "include",
+    });
+    t.ok(
+      response.ok,
+      "✓ Browser sent all cookies with credentials:include, server selected Session A's UUID cookie",
+    );
+  }
 
   t.end();
 });

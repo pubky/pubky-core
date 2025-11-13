@@ -17,7 +17,6 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
 
-// relay base (no trailing slash is fine; the flow will append the channel id)
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
 test("Auth: 3rd party signin", async (t) => {
