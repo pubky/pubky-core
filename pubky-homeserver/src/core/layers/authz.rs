@@ -124,82 +124,68 @@ async fn authorize(
         ));
     }
 
-    let session_secret = match session_secret_from_cookies(cookies) {
-        Some(session_secret) => session_secret,
-        None => {
-            tracing::warn!(
-                "No session secret found in cookies for pubky-host: {}",
-                public_key
-            );
-            return Err(HttpError::unauthorized_with_message(
-                "No session secret found in cookies",
-            ));
-        }
-    };
+    let session_secrets = session_secrets_from_cookies(cookies);
+    if session_secrets.is_empty() {
+        tracing::warn!(
+            "No session secret found in cookies for pubky-host: {}",
+            public_key
+        );
+        return Err(HttpError::unauthorized_with_message(
+            "No session secret found in cookies",
+        ));
+    }
 
-    let session =
-        match SessionRepository::get_by_secret(&session_secret, &mut state.sql_db.pool().into())
-            .await
+    // Try each session secret until we find one that:
+    // 1. Exists in the database
+    // 2. Belongs to the correct user
+    // 3. Has the required capabilities for the path
+    for session_secret in session_secrets {
+        let session = match SessionRepository::get_by_secret(
+            &session_secret,
+            &mut state.sql_db.pool().into(),
+        )
+        .await
         {
             Ok(session) => session,
             Err(sqlx::Error::RowNotFound) => {
-                tracing::warn!(
-                    "No session found in the database for session secret: {}, pubky: {}",
-                    session_secret,
-                    public_key
-                );
-                return Err(HttpError::unauthorized_with_message(
-                    "No session found for session secret",
-                ));
+                continue;
             }
             Err(e) => return Err(e.into()),
         };
 
-    if &session.user_pubkey != public_key {
-        tracing::warn!(
-            "SessionInfo public key does not match pubky-host: {} != {}",
-            session.user_pubkey,
-            public_key
-        );
-        return Err(HttpError::unauthorized_with_message(
-            "SessionInfo public key does not match pubky-host",
-        ));
-    }
+        if &session.user_pubkey != public_key {
+            continue;
+        }
 
-    if session.capabilities.iter().any(|cap| {
-        path.starts_with(&cap.scope)
-            && cap
-                .actions
-                .contains(&pubky_common::capabilities::Action::Write)
-    }) {
-        Ok(())
-    } else {
-        tracing::warn!(
-            "SessionInfo {} pubkey {} does not have write access to {}. Access forbidden",
-            session_secret,
-            public_key,
-            path
-        );
-        Err(HttpError::forbidden_with_message(
-            "Session does not have write access to path",
-        ))
-    }
-}
-
-/// Get the session secret from the cookies by iterating and validating.
-/// Returns None if no valid session secret is found.
-///
-/// Note: With UUID-based cookie names, we can't do direct lookup by public_key anymore.
-/// Instead, we iterate all cookies in the request and find one with a valid session secret.
-/// The caller (authorize function) validates the session belongs to the expected user.
-pub fn session_secret_from_cookies(cookies: &Cookies) -> Option<SessionSecret> {
-    for cookie in cookies.list() {
-        // Try to parse cookie value as a session secret
-        if let Ok(secret) = SessionSecret::from_str(cookie.value()) {
-            // Found a valid session secret format
-            // The caller will validate it matches the expected user via DB lookup
-            return Some(secret);
+        if session.capabilities.iter().any(|cap| {
+            path.starts_with(&cap.scope)
+                && cap
+                    .actions
+                    .contains(&pubky_common::capabilities::Action::Write)
+        }) {
+            // Found a valid session with required capabilities
+            return Ok(());
         }
     }
-    None
+
+    tracing::warn!(
+        "No session with write access to {} found for pubky-host: {}",
+        path,
+        public_key
+    );
+    Err(HttpError::forbidden_with_message(
+        "Session does not have write access to path",
+    ))
+}
+
+/// Get all session secrets from the cookies by iterating and validating.
+/// Returns a vector of all valid session secrets found.
+pub fn session_secrets_from_cookies(cookies: &Cookies) -> Vec<SessionSecret> {
+    let mut secrets = Vec::new();
+    for cookie in cookies.list() {
+        if let Ok(secret) = SessionSecret::from_str(cookie.value()) {
+            secrets.push(secret);
+        }
+    }
+    secrets
 }
