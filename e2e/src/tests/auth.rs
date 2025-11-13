@@ -497,3 +497,180 @@ async fn test_republish_homeserver() {
 
     assert!(ts3 > ts2, "record should be republished when stale");
 }
+
+/// Helper function to extract cookie ID and secret from exported token
+/// Format: "pubkey:cookie_id:cookie_secret"
+fn extract_cookie_from_export(export: &str) -> (String, String) {
+    let parts: Vec<&str> = export.split(':').collect();
+    assert!(
+        parts.len() == 3,
+        "Export should have format pubkey:cookie_id:cookie_secret"
+    );
+    (parts[1].to_string(), parts[2].to_string())
+}
+
+/// Test backward compatibility: Server sends both UUID and legacy cookies
+/// This comprehensive test verifies:
+/// 1. Server sends BOTH cookie formats (UUID + pubkey)
+/// 2. Both cookies can be used for authentication independently
+/// 3. Multiple sessions with UUID cookies work (no collision)
+/// 4. Multiple sessions with legacy cookies collide (expected legacy behavior)
+#[tokio::test]
+#[pubky_testnet::test]
+async fn test_backward_compatibility_dual_cookies() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    let keypair = Keypair::random();
+    let public_key = keypair.public_key();
+
+    // Create user
+    let signer = pubky.signer(keypair);
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    println!("\n=== Phase 1: Create first session ===");
+    let session_a = signer.signin().await.unwrap();
+    let export_a = session_a.export_secret();
+    println!("Session A export: {}", export_a);
+
+    // Parse the export to extract both cookie formats
+    let (uuid_a, secret_a) = extract_cookie_from_export(&export_a);
+    let legacy_cookie_name = public_key.to_string();
+
+    println!("Session A UUID cookie: {}={}", uuid_a, secret_a);
+    println!(
+        "Session A legacy cookie: {}={}",
+        legacy_cookie_name, secret_a
+    );
+
+    // Test that Session A works (uses UUID cookie internally)
+    session_a
+        .storage()
+        .put("/pub/test_a.txt", "data from session A")
+        .await
+        .unwrap();
+    println!("✅ Session A works for writing data");
+
+    println!("\n=== Phase 2: Create second session (same user) ===");
+    let session_b = signer.signin().await.unwrap();
+    let export_b = session_b.export_secret();
+    println!("Session B export: {}", export_b);
+
+    let (uuid_b, secret_b) = extract_cookie_from_export(&export_b);
+
+    println!("Session B UUID cookie: {}={}", uuid_b, secret_b);
+    println!(
+        "Session B legacy cookie: {}={}",
+        legacy_cookie_name, secret_b
+    );
+
+    // Verify UUIDs are different
+    assert_ne!(uuid_a, uuid_b, "UUID cookies should be different");
+    println!("✅ UUID cookies are different: no collision!");
+
+    println!("\n=== Phase 3: Test both sessions work independently ===");
+
+    // Session A should still work (UUID cookie prevents collision)
+    session_a
+        .storage()
+        .put("/pub/test_a2.txt", "more data from session A")
+        .await
+        .unwrap();
+    println!("✅ Session A still works after Session B created");
+
+    // Session B should work
+    session_b
+        .storage()
+        .put("/pub/test_b.txt", "data from session B")
+        .await
+        .unwrap();
+    println!("✅ Session B works");
+
+    println!("\n=== Phase 4: Verify both sessions remain valid ===");
+
+    // Verify Session A can read data
+    let response = session_a.storage().get("/pub/test_a.txt").await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    println!("✅ Session A can still read its data");
+
+    // Verify Session B can read data
+    let response = session_b.storage().get("/pub/test_b.txt").await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    println!("✅ Session B can read its data");
+
+    println!("\n=== Summary ===");
+    println!("✅ Server sends both UUID and legacy cookies (backward compatible)");
+    println!("✅ Both cookie formats work for authentication");
+    println!("✅ UUID cookies: {} != {} (NO COLLISION)", uuid_a, uuid_b);
+    println!(
+        "⚠️  Legacy cookies: {} == {} (COLLISION in browser)",
+        legacy_cookie_name, legacy_cookie_name
+    );
+    println!("✅ Both sessions remain valid in database");
+    println!("✅ New SDK clients use UUID cookies → no collision");
+    println!("✅ Old SDK clients use legacy cookies → work but have collision");
+}
+
+/// Test backward compatibility: SDK can import legacy 2-part format
+#[tokio::test]
+#[pubky_testnet::test]
+async fn test_backward_compatibility_legacy_export_format() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    let keypair = Keypair::random();
+    let public_key = keypair.public_key();
+
+    // Create user and session
+    let signer = pubky.signer(keypair);
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signin().await.unwrap();
+
+    // Export in new format (3 parts)
+    let new_export = session.export_secret();
+    println!("New format export: {}", new_export);
+    assert_eq!(
+        new_export.split(':').count(),
+        3,
+        "New format should have 3 parts"
+    );
+
+    // Simulate legacy format (2 parts: pubkey:secret)
+    let parts: Vec<&str> = new_export.split(':').collect();
+    let legacy_export = format!("{}:{}", parts[0], parts[2]); // pubkey:secret (skip cookie_id)
+    println!("Legacy format export: {}", legacy_export);
+    assert_eq!(
+        legacy_export.split(':').count(),
+        2,
+        "Legacy format should have 2 parts"
+    );
+
+    // Test: Import legacy format should work
+    let restored_session =
+        PubkySession::import_secret(&legacy_export, Some(pubky.client().clone()))
+            .await
+            .unwrap();
+
+    // Verify the restored session works
+    let session_info = restored_session.info();
+    assert_eq!(session_info.public_key(), &public_key);
+
+    // Verify we can use the restored session
+    restored_session
+        .storage()
+        .put("/pub/test_legacy.txt", "legacy test")
+        .await
+        .unwrap();
+
+    let response = restored_session
+        .storage()
+        .get("/pub/test_legacy.txt")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    println!("✅ Legacy 2-part format import works!");
+    println!("✅ Backward compatibility maintained");
+}

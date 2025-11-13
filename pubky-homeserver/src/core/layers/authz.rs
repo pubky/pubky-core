@@ -9,7 +9,7 @@ use axum::{
 };
 use futures_util::future::BoxFuture;
 use pkarr::PublicKey;
-use std::{convert::Infallible, task::Poll};
+use std::{convert::Infallible, str::FromStr, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
 
@@ -124,7 +124,7 @@ async fn authorize(
         ));
     }
 
-    let session_secret = match session_secret_from_cookies(cookies, public_key) {
+    let session_secret = match session_secret_from_cookies(cookies) {
         Some(session_secret) => session_secret,
         None => {
             tracing::warn!(
@@ -186,14 +186,20 @@ async fn authorize(
     }
 }
 
-/// Get the session secret from the cookies.
-/// Returns None if the session secret is not found or invalid.
-pub fn session_secret_from_cookies(
-    cookies: &Cookies,
-    public_key: &PublicKey,
-) -> Option<SessionSecret> {
-    let value = cookies
-        .get(&public_key.to_string())
-        .map(|c| c.value().to_string())?;
-    SessionSecret::new(value).ok()
+/// Get the session secret from the cookies by iterating and validating.
+/// Returns None if no valid session secret is found.
+///
+/// Note: With UUID-based cookie names, we can't do direct lookup by public_key anymore.
+/// Instead, we iterate all cookies in the request and find one with a valid session secret.
+/// The caller (authorize function) validates the session belongs to the expected user.
+pub fn session_secret_from_cookies(cookies: &Cookies) -> Option<SessionSecret> {
+    for cookie in cookies.list() {
+        // Try to parse cookie value as a session secret
+        if let Ok(secret) = SessionSecret::from_str(cookie.value()) {
+            // Found a valid session secret format
+            // The caller will validate it matches the expected user via DB lookup
+            return Some(secret);
+        }
+    }
+    None
 }
