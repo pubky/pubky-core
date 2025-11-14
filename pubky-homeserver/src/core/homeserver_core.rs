@@ -4,8 +4,8 @@ use std::time::Duration;
 use super::key_republisher::HomeserverKeyRepublisher;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
+use crate::persistence::events::EventsService;
 use crate::persistence::files::FileService;
-use crate::persistence::sql::event::EventEntity;
 use crate::persistence::sql::SqlDb;
 use crate::{app_context::AppContext, PersistentDataDir};
 use crate::{DataDir, SignupMode};
@@ -21,7 +21,6 @@ use std::{
     net::{SocketAddr, TcpListener},
     sync::Arc,
 };
-use tokio::sync::broadcast;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -31,8 +30,8 @@ pub(crate) struct AppState {
     pub(crate) signup_mode: SignupMode,
     /// If `Some(bytes)` the quota is enforced, else unlimited.
     pub(crate) user_quota_bytes: Option<u64>,
-    /// Broadcast channel for real-time event notifications.
-    pub(crate) event_tx: broadcast::Sender<EventEntity>,
+    /// Events service for managing event creation and broadcasting.
+    pub(crate) events_service: EventsService,
 }
 
 const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
@@ -140,7 +139,7 @@ impl HomeserverCore {
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
-            event_tx: context.event_tx.clone(),
+            events_service: context.events_service.clone(),
         };
         super::routes::create_app(state.clone(), context)
     }

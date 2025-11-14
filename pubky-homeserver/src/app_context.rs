@@ -9,15 +9,15 @@
 use crate::MockDataDir;
 use crate::{
     persistence::{
+        events::EventsService,
         files::{FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
-        sql::{event::EventEntity, Migrator, SqlDb},
+        sql::{Migrator, SqlDb},
     },
     ConfigToml, DataDir,
 };
 use pkarr::Keypair;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::broadcast;
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -69,8 +69,8 @@ pub struct AppContext {
     /// pkarr client builder in case we need to create a more instances.
     /// Comes ready with the correct bootstrap nodes and relays.
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
-    /// Broadcast channel for real-time event notifications.
-    pub(crate) event_tx: broadcast::Sender<EventEntity>,
+    /// Events service for managing event creation and broadcasting.
+    pub(crate) events_service: EventsService,
 }
 
 impl AppContext {
@@ -115,10 +115,10 @@ impl AppContext {
                 .map_err(AppContextConversionError::Migrations)?;
         }
 
-        let (event_tx, _rx) = broadcast::channel(100);
+        let events_service = EventsService::new(100);
 
         let file_service =
-            FileService::new_from_config(&conf, dir.path(), sql_db.clone(), event_tx.clone())
+            FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())
                 .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
 
@@ -133,7 +133,7 @@ impl AppContext {
             config_toml: conf,
             keypair,
             data_dir: Arc::new(dir),
-            event_tx,
+            events_service,
         })
     }
 }

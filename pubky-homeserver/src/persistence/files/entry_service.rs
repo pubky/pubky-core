@@ -1,27 +1,26 @@
 use crate::{
     persistence::{
+        events::EventsService,
         files::{FileIoError, FileMetadata},
         sql::{
             entry::{EntryEntity, EntryRepository},
-            event::{EventEntity, EventRepository, EventType},
+            event::{EventEntity, EventType},
             user::UserRepository,
             SqlDb, UnifiedExecutor,
         },
     },
     shared::webdav::EntryPath,
 };
-use tokio::sync::broadcast::{self, error::SendError};
 
 #[derive(Debug, Clone)]
 pub struct EntryService {
     db: SqlDb,
-    // user_disk_space_quota_bytes: u64,
-    event_tx: broadcast::Sender<EventEntity>,
+    events_service: EventsService,
 }
 
 impl EntryService {
-    pub fn new(db: SqlDb, event_tx: broadcast::Sender<EventEntity>) -> Self {
-        Self { db, event_tx }
+    pub fn new(db: SqlDb, events_service: EventsService) -> Self {
+        Self { db, events_service }
     }
 
     pub fn db(&self) -> &SqlDb {
@@ -56,14 +55,16 @@ impl EntryService {
         };
 
         // Create event - broadcast happens after transaction commit
-        let event = EventRepository::create(
-            entry.user_id,
-            EventType::Put,
-            path,
-            Some(metadata.hash),
-            executor,
-        )
-        .await?;
+        let event = self
+            .events_service
+            .create_event(
+                entry.user_id,
+                EventType::Put,
+                path,
+                Some(metadata.hash),
+                executor,
+            )
+            .await?;
 
         Ok((entry, event))
     }
@@ -126,8 +127,10 @@ impl EntryService {
         EntryRepository::delete(entry.id, executor).await?;
 
         // Create event - broadcast happens after transaction commit
-        let event =
-            EventRepository::create(entry.user_id, EventType::Delete, path, None, executor).await?;
+        let event = self
+            .events_service
+            .create_event(entry.user_id, EventType::Delete, path, None, executor)
+            .await?;
 
         Ok(event)
     }
@@ -135,11 +138,6 @@ impl EntryService {
     /// Broadcast an event to any listening clients.
     /// This should be called after the transaction commits.
     pub fn broadcast_event(&self, event: EventEntity) {
-        match self.event_tx.send(event) {
-            Ok(_) => {} // Successfully broadcast to receivers
-            Err(SendError(_)) => {
-                // No active receivers - this is expected when no clients are listening to Server-Side Events
-            }
-        }
+        self.events_service.broadcast_event(event);
     }
 }

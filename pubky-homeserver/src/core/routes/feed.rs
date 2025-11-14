@@ -11,11 +11,12 @@ use futures_util::stream::Stream;
 use std::{collections::HashMap, convert::Infallible};
 
 use crate::{
-    core::{
-        extractors::{EventStreamQueryParams, ListQueryParams},
-        AppState,
+    constants::MAX_EVENT_STREAM_USERS,
+    core::{extractors::ListQueryParams, AppState},
+    persistence::{
+        events::EventStreamQueryParams,
+        sql::event::{Cursor, EventResponse},
     },
-    persistence::sql::event::{Cursor, EventRepository, EventResponse},
     shared::{HttpError, HttpResult},
 };
 
@@ -42,16 +43,19 @@ pub async fn feed(
         None => "0".to_string(),
     };
 
-    let cursor =
-        match EventRepository::parse_cursor(cursor.as_str(), &mut state.sql_db.pool().into()).await
-        {
-            Ok(cursor) => cursor,
-            Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
-        };
+    let cursor = match state
+        .events_service
+        .parse_cursor(cursor.as_str(), &mut state.sql_db.pool().into())
+        .await
+    {
+        Ok(cursor) => cursor,
+        Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
+    };
 
-    let events =
-        EventRepository::get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
-            .await?;
+    let events = state
+        .events_service
+        .get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
+        .await?;
     let mut result = events
         .iter()
         .map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str()))
@@ -119,7 +123,6 @@ pub async fn feed_stream(
     State(state): State<AppState>,
     params: EventStreamQueryParams,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    use crate::constants::MAX_EVENT_STREAM_USERS;
     use crate::persistence::sql::user::UserRepository;
     use pkarr::PublicKey;
     use std::str::FromStr;
@@ -156,7 +159,11 @@ pub async fn feed_stream(
             })?;
 
         let cursor = if let Some(cursor_str) = cursor_str_opt {
-            match EventRepository::parse_cursor(cursor_str, &mut state.sql_db.pool().into()).await {
+            match state
+                .events_service
+                .parse_cursor(cursor_str, &mut state.sql_db.pool().into())
+                .await
+            {
                 Ok(cursor) => Some(cursor),
                 Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
             }
@@ -171,7 +178,7 @@ pub async fn feed_stream(
     let stream = async_stream::stream! {
         // Subscribe to broadcast channel immediately to prevent race condition
         // Events that occur during Phase 1 will be buffered in the channel
-        let mut rx = state.event_tx.subscribe();
+        let mut rx = state.events_service.subscribe();
 
         // Phase 1: Historical auto-pagination
         // Fetch all historical events in batches until caught up
@@ -182,13 +189,15 @@ pub async fn feed_stream(
             let current_user_cursors: Vec<(i32, Option<Cursor>)> =
                 user_cursor_map.iter().map(|(k, cursor)| (*k, *cursor)).collect();
 
-            let events = match EventRepository::get_by_user_cursors(
-                current_user_cursors,
-                params.reverse,
-                params.path.as_deref(),
-                &mut state.sql_db.pool().into(),
-            )
-            .await
+            let events = match state
+                .events_service
+                .get_by_user_cursors(
+                    current_user_cursors,
+                    params.reverse,
+                    params.path.as_deref(),
+                    &mut state.sql_db.pool().into(),
+                )
+                .await
             {
                 Ok(events) => events,
                 Err(e) => {

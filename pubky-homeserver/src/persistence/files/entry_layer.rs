@@ -1,10 +1,10 @@
+use crate::persistence::events::EventsService;
 use crate::persistence::files::entry_service::EntryService;
 use crate::persistence::files::FileMetadataBuilder;
-use crate::persistence::sql::{event::EventEntity, SqlDb, UnifiedExecutor};
+use crate::persistence::sql::{SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
-use tokio::sync::broadcast;
 
 /// Helper function to ensure that the path is a valid entry path aka
 /// starts with a pubkey.
@@ -26,12 +26,12 @@ fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
 #[derive(Clone)]
 pub struct EntryLayer {
     pub(crate) db: SqlDb,
-    pub(crate) event_tx: broadcast::Sender<EventEntity>,
+    pub(crate) events_service: EventsService,
 }
 
 impl EntryLayer {
-    pub fn new(db: SqlDb, event_tx: broadcast::Sender<EventEntity>) -> Self {
-        Self { db, event_tx }
+    pub fn new(db: SqlDb, events_service: EventsService) -> Self {
+        Self { db, events_service }
     }
 }
 
@@ -41,7 +41,7 @@ impl<A: Access> Layer<A> for EntryLayer {
     fn layer(&self, inner: A) -> Self::LayeredAccess {
         EntryAccessor {
             inner,
-            entry_service: EntryService::new(self.db.clone(), self.event_tx.clone()),
+            entry_service: EntryService::new(self.db.clone(), self.events_service.clone()),
         }
     }
 }
@@ -264,8 +264,8 @@ mod tests {
     async fn test_entry_layer() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
-            let (event_tx, _rx) = tokio::sync::broadcast::channel(100);
-            let layer = EntryLayer::new(db.clone(), event_tx);
+            let events_service = EventsService::new(100);
+            let layer = EntryLayer::new(db.clone(), events_service);
             let operator = operator.layer(layer);
 
             let pubkey = pkarr::Keypair::random().public_key();
