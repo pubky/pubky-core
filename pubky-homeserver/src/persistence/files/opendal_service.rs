@@ -4,7 +4,10 @@ use std::path::Path;
 use crate::AppContext;
 use crate::{
     persistence::{
-        files::{entry_layer::EntryLayer, user_quota_layer::UserQuotaLayer},
+        files::{
+            entry_layer::EntryLayer, events_service::EventsService,
+            user_quota_layer::UserQuotaLayer,
+        },
         sql::SqlDb,
     },
     shared::webdav::EntryPath,
@@ -25,9 +28,10 @@ pub fn build_storage_operator(
     data_directory: &Path,
     db: &SqlDb,
     user_quota_bytes: u64,
+    events_service: EventsService,
 ) -> Result<Operator, FileIoError> {
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
-    let entry_layer = EntryLayer::new(db.clone());
+    let entry_layer = EntryLayer::new(db.clone(), events_service);
     let builder = match storage_config {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -83,6 +87,7 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
         context.data_dir.path(),
         &context.sql_db,
         quota_bytes,
+        context.events_service.clone(),
     )
 }
 
@@ -105,8 +110,10 @@ impl OpendalService {
         data_directory: &Path,
         db: &SqlDb,
         user_quota_bytes: u64,
+        events_service: EventsService,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(config, data_directory, db, user_quota_bytes)?;
+        let operator =
+            build_storage_operator(config, data_directory, db, user_quota_bytes, events_service)?;
         Ok(Self { operator })
     }
 

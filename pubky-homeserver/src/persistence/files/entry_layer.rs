@@ -1,4 +1,5 @@
 use crate::persistence::files::entry_service::EntryService;
+use crate::persistence::files::events_service::EventsService;
 use crate::persistence::files::FileMetadataBuilder;
 use crate::persistence::sql::{SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
@@ -25,11 +26,12 @@ fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
 #[derive(Clone)]
 pub struct EntryLayer {
     pub(crate) db: SqlDb,
+    pub(crate) events_service: EventsService,
 }
 
 impl EntryLayer {
-    pub fn new(db: SqlDb) -> Self {
-        Self { db }
+    pub fn new(db: SqlDb, events_service: EventsService) -> Self {
+        Self { db, events_service }
     }
 }
 
@@ -39,7 +41,7 @@ impl<A: Access> Layer<A> for EntryLayer {
     fn layer(&self, inner: A) -> Self::LayeredAccess {
         EntryAccessor {
             inner,
-            entry_service: EntryService::new(self.db.clone()),
+            entry_service: EntryService::new(self.db.clone(), self.events_service.clone()),
         }
     }
 }
@@ -154,11 +156,13 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
             .write_entry(&self.entry_path, &file_metadata, &mut executor)
             .await
         {
-            Ok(_) => {
+            Ok((_entry, event)) => {
                 drop(executor);
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
+                // Broadcast event after successful commit
+                self.entry_service.broadcast_event(event);
             }
             Err(e) => {
                 drop(executor);
@@ -211,11 +215,13 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
             let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
 
             match self.entry_service.delete_entry(&path, &mut executor).await {
-                Ok(()) => {
+                Ok(event) => {
                     drop(executor);
                     tx.commit().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
+                    // Broadcast event after successful commit
+                    self.entry_service.broadcast_event(event);
                 }
                 Err(e) => {
                     drop(executor);
@@ -258,7 +264,8 @@ mod tests {
     async fn test_entry_layer() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
-            let layer = EntryLayer::new(db.clone());
+            let events_service = EventsService::new(100);
+            let layer = EntryLayer::new(db.clone(), events_service);
             let operator = operator.layer(layer);
 
             let pubkey = pkarr::Keypair::random().public_key();
@@ -277,7 +284,7 @@ mod tests {
                 .await
                 .expect("Entry should exist");
             assert_eq!(entry.content_length, 10);
-            let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
                 .expect("Should succeed");
             assert_eq!(events.len(), 1);
@@ -296,7 +303,7 @@ mod tests {
                 .await
                 .expect("Entry should exist");
             assert_eq!(entry.content_length, 20);
-            let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
                 .expect("Should succeed");
             assert_eq!(events.len(), 2);
@@ -314,7 +321,7 @@ mod tests {
             let _entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
                 .await
                 .expect_err("Entry should not exist");
-            let events = EventRepository::get_by_cursor(Some(0), Some(9999), &mut db.pool().into())
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
                 .expect("Should succeed");
             assert_eq!(events.len(), 3);

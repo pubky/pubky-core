@@ -1,9 +1,9 @@
 use crate::{
     persistence::{
-        files::{FileIoError, FileMetadata},
+        files::{events_service::EventsService, FileIoError, FileMetadata},
         sql::{
             entry::{EntryEntity, EntryRepository},
-            event::{EventRepository, EventType},
+            event::{EventEntity, EventType},
             user::UserRepository,
             SqlDb, UnifiedExecutor,
         },
@@ -14,12 +14,12 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct EntryService {
     db: SqlDb,
-    // user_disk_space_quota_bytes: u64,
+    events_service: EventsService,
 }
 
 impl EntryService {
-    pub fn new(db: SqlDb) -> Self {
-        Self { db }
+    pub fn new(db: SqlDb, events_service: EventsService) -> Self {
+        Self { db, events_service }
     }
 
     pub fn db(&self) -> &SqlDb {
@@ -31,12 +31,14 @@ impl EntryService {
     /// This includes all associated operations:
     /// - Write a public [Event]
     /// - Write the entry to the database
+    ///
+    /// Returns the entry and the event. The event should be broadcast after the transaction commits.
     pub async fn write_entry<'a>(
         &self,
         path: &EntryPath,
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<EntryEntity, FileIoError> {
+    ) -> Result<(EntryEntity, EventEntity), FileIoError> {
         let existing_entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => Some(entry),
             Err(sqlx::Error::RowNotFound) => None,
@@ -51,9 +53,19 @@ impl EntryService {
             self.create_entry(path, metadata, executor).await?
         };
 
-        // Create event
-        EventRepository::create(entry.user_id, EventType::Put, path.path(), executor).await?;
-        Ok(entry)
+        // Create event - broadcast happens after transaction commit
+        let event = self
+            .events_service
+            .create_event(
+                entry.user_id,
+                EventType::Put,
+                path,
+                Some(metadata.hash),
+                executor,
+            )
+            .await?;
+
+        Ok((entry, event))
     }
 
     /// Update an existing entry in the database.
@@ -99,11 +111,12 @@ impl EntryService {
     /// - Write a public [Event]
     /// - Delete the entry from the database
     ///
+    /// Returns the event. The event should be broadcast after the transaction commits.
     pub async fn delete_entry<'a>(
         &self,
         path: &EntryPath,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), FileIoError> {
+    ) -> Result<EventEntity, FileIoError> {
         let entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => entry,
             Err(sqlx::Error::RowNotFound) => return Err(FileIoError::NotFound),
@@ -112,9 +125,18 @@ impl EntryService {
 
         EntryRepository::delete(entry.id, executor).await?;
 
-        // Create event
-        EventRepository::create(entry.user_id, EventType::Delete, path.path(), executor).await?;
+        // Create event - broadcast happens after transaction commit
+        let event = self
+            .events_service
+            .create_event(entry.user_id, EventType::Delete, path, None, executor)
+            .await?;
 
-        Ok(())
+        Ok(event)
+    }
+
+    /// Broadcast an event to any listening clients.
+    /// This should be called after the transaction commits.
+    pub fn broadcast_event(&self, event: EventEntity) {
+        self.events_service.broadcast_event(event);
     }
 }
