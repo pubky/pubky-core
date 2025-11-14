@@ -220,6 +220,46 @@ async fn multiple_users() {
     let b_sess = bob_session.info();
     assert_eq!(b_sess.public_key(), &bob.public_key());
     assert!(b_sess.capabilities().contains(&Capability::root()));
+
+    // Export Bob's secret before signout to test later
+    let bob_secret = bob_session.export_secret();
+
+    // Both users can write
+    alice_session
+        .storage()
+        .put("/pub/test.txt", "alice-data")
+        .await
+        .unwrap();
+    bob_session
+        .storage()
+        .put("/pub/test.txt", "bob-data")
+        .await
+        .unwrap();
+
+    // Sign out Bob
+    bob_session.signout().await.unwrap();
+
+    // Alice should still be able to write (cookie isolation)
+    alice_session
+        .storage()
+        .put("/pub/test2.txt", "alice-still-works")
+        .await
+        .unwrap();
+
+    // Bob's session should no longer work - import will fail because session was deleted
+    let bob_restore_err = PubkySession::import_secret(&bob_secret, Some(pubky.client().clone()))
+        .await
+        .unwrap_err();
+
+    // Should get either Authentication error or 401 Server error (no valid session found)
+    let is_expected_error = matches!(bob_restore_err, Error::Authentication(_))
+        || matches!(bob_restore_err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::UNAUTHORIZED);
+
+    assert!(
+        is_expected_error,
+        "bob session should fail after signout, got: {:?}",
+        bob_restore_err
+    );
 }
 
 #[tokio::test]
@@ -496,4 +536,290 @@ async fn test_republish_homeserver() {
         .as_u64();
 
     assert!(ts3 > ts2, "record should be republished when stale");
+}
+
+/// Helper function to extract cookie ID and secret from exported token
+/// Format: "pubkey:cookie_id:cookie_secret"
+fn extract_cookie_from_export(export: &str) -> (String, String) {
+    let parts: Vec<&str> = export.split(':').collect();
+    assert!(
+        parts.len() == 3,
+        "Export should have format pubkey:cookie_id:cookie_secret"
+    );
+    (parts[1].to_string(), parts[2].to_string())
+}
+
+/// Helper function to extract pubkey and secret from exported token
+/// Format: "pubkey:cookie_id:cookie_secret"
+fn extract_pubkey_and_secret_from_export(export: &str) -> (String, String) {
+    let parts: Vec<&str> = export.split(':').collect();
+    assert!(
+        parts.len() == 3,
+        "Export should have format pubkey:cookie_id:cookie_secret"
+    );
+    (parts[0].to_string(), parts[2].to_string())
+}
+
+/// Test backward compatibility: SDK can import legacy 2-part format
+#[tokio::test]
+#[pubky_testnet::test]
+async fn test_backward_compatibility_legacy_export_format() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+
+    let keypair = Keypair::random();
+    let public_key = keypair.public_key();
+
+    // Create user and session
+    let signer = pubky.signer(keypair);
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signin().await.unwrap();
+
+    // Export in new format (3 parts)
+    let new_export = session.export_secret();
+    println!("New format export: {}", new_export);
+    assert_eq!(
+        new_export.split(':').count(),
+        3,
+        "New format should have 3 parts"
+    );
+
+    // Simulate legacy format (2 parts: pubkey:secret)
+    let parts: Vec<&str> = new_export.split(':').collect();
+    let legacy_export = format!("{}:{}", parts[0], parts[2]); // pubkey:secret (skip cookie_id)
+    println!("Legacy format export: {}", legacy_export);
+    assert_eq!(
+        legacy_export.split(':').count(),
+        2,
+        "Legacy format should have 2 parts"
+    );
+
+    // Test: Import legacy format should work
+    let restored_session =
+        PubkySession::import_secret(&legacy_export, Some(pubky.client().clone()))
+            .await
+            .unwrap();
+
+    // Verify the restored session works
+    let session_info = restored_session.info();
+    assert_eq!(session_info.public_key(), &public_key);
+
+    // Verify we can use the restored session
+    restored_session
+        .storage()
+        .put("/pub/test_legacy.txt", "legacy test")
+        .await
+        .unwrap();
+
+    let response = restored_session
+        .storage()
+        .get("/pub/test_legacy.txt")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+/// Test that when multiple session cookies are present in a request:
+/// 1. Invalid/malformed cookies are skipped
+/// 2. Valid cookies are tried until one with proper capabilities is found
+/// 3. First valid cookie lacking capabilities doesn't block second cookie with capabilities
+/// 4. Legacy cookies (pubkey-named) are also checked along with UUID cookies
+#[tokio::test]
+#[pubky_testnet::test]
+async fn test_multiple_session_cookies_authorization() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    let keypair = Keypair::random();
+    let public_key = keypair.public_key();
+
+    // Create user with root session
+    let signer = pubky.signer(keypair);
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    // === Phase 1: Create three sessions with different scoped capabilities ==="
+
+    // Session A: write access to /pub/posts/ only (UUID cookie)
+    let caps_a = Capabilities::builder().read_write("/pub/posts/").finish();
+
+    let auth_a = PubkyAuthFlow::builder(&caps_a)
+        .relay(http_relay_url.clone())
+        .client(pubky.client().clone())
+        .start()
+        .unwrap();
+
+    signer
+        .approve_auth(&auth_a.authorization_url())
+        .await
+        .unwrap();
+
+    let session_a = auth_a.await_approval().await.unwrap();
+    let export_a = session_a.export_secret();
+    let (cookie_name_a, cookie_secret_a) = extract_cookie_from_export(&export_a);
+
+    // Session B: write access to /pub/admin/ only (UUID cookie)
+    let caps_b = Capabilities::builder().read_write("/pub/admin/").finish();
+
+    let auth_b = PubkyAuthFlow::builder(&caps_b)
+        .relay(http_relay_url.clone())
+        .client(pubky.client().clone())
+        .start()
+        .unwrap();
+
+    signer
+        .approve_auth(&auth_b.authorization_url())
+        .await
+        .unwrap();
+
+    let session_b = auth_b.await_approval().await.unwrap();
+    let export_b = session_b.export_secret();
+    let (cookie_name_b, cookie_secret_b) = extract_cookie_from_export(&export_b);
+
+    // Session C: write access to /pub/legacy/ only using legacy cookie format
+    let caps_c = Capabilities::builder().read_write("/pub/legacy/").finish();
+
+    let auth_c = PubkyAuthFlow::builder(&caps_c)
+        .relay(http_relay_url)
+        .client(pubky.client().clone())
+        .start()
+        .unwrap();
+
+    signer
+        .approve_auth(&auth_c.authorization_url())
+        .await
+        .unwrap();
+
+    let session_c = auth_c.await_approval().await.unwrap();
+    let export_c = session_c.export_secret();
+    let (legacy_cookie_name, cookie_secret_c) = extract_pubkey_and_secret_from_export(&export_c);
+
+    // Get the homeserver HTTP URL
+    let base_url = server
+        .icann_http_url()
+        .to_string()
+        .trim_end_matches('/')
+        .to_string();
+
+    // === Phase 2: Test Case 1 - Invalid cookie before valid one ==="
+
+    // Make request to /pub/posts/file.txt with invalid cookie first, then Session A
+    let url = format!("{}/pub/posts/file.txt", base_url);
+    let client = pubky.client();
+    let response = client
+        .request(Method::PUT, &url)
+        .header(
+            "Cookie",
+            format!(
+                "invalid_uuid=garbage_secret_1234567890; {}={}; {}={}; {}={}",
+                cookie_name_a,
+                cookie_secret_a,
+                cookie_name_b,
+                cookie_secret_b,
+                legacy_cookie_name,
+                cookie_secret_c
+            ),
+        )
+        .header("Pubky-Host", public_key.to_string())
+        .body(Vec::<u8>::new())
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        response.status().is_success(),
+        "Should skip invalid cookie and use Session A for /pub/posts/"
+    );
+
+    // === Phase 3: Test Case 2 - Wrong capability cookie before right one ==="
+
+    // Make request to /pub/admin/settings with Session A first (lacks capability), then Session B
+    let url = format!("{}/pub/admin/settings", base_url);
+    let response = client
+        .request(Method::PUT, &url)
+        .header(
+            "Cookie",
+            format!(
+                "{}={}; {}={}; {}={}",
+                cookie_name_a,
+                cookie_secret_a,
+                cookie_name_b,
+                cookie_secret_b,
+                legacy_cookie_name,
+                cookie_secret_c
+            ),
+        )
+        .header("Pubky-Host", public_key.to_string())
+        .body(Vec::<u8>::new())
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        response.status().is_success(),
+        "Should skip Session A (no /pub/admin/ access) and use Session B, got: {}",
+        response.status()
+    );
+
+    // === Phase 4: Test Case 3 - Legacy cookie authorizes request ==="
+
+    // Make request to /pub/legacy/data.txt where only Session C (legacy cookie) has access
+    let url = format!("{}/pub/legacy/data.txt", base_url);
+    let response = client
+        .request(Method::PUT, &url)
+        .header(
+            "Cookie",
+            format!(
+                "{}={}; {}={}; {}={}",
+                cookie_name_a,
+                cookie_secret_a,
+                cookie_name_b,
+                cookie_secret_b,
+                legacy_cookie_name,
+                cookie_secret_c
+            ),
+        )
+        .header("Pubky-Host", public_key.to_string())
+        .body(Vec::<u8>::new())
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        response.status().is_success(),
+        "Should skip UUID sessions and use Session C (legacy cookie) for /pub/legacy/, got: {}",
+        response.status()
+    );
+
+    // === Phase 5: Test Case 4 - No valid session has capability ==="
+
+    // Make request to /pub/other/file.txt where no session has access
+    let url = format!("{}/pub/other/file.txt", base_url);
+    let response = client
+        .request(Method::PUT, &url)
+        .header(
+            "Cookie",
+            format!(
+                "{}={}; {}={}; {}={}",
+                cookie_name_a,
+                cookie_secret_a,
+                cookie_name_b,
+                cookie_secret_b,
+                legacy_cookie_name,
+                cookie_secret_c
+            ),
+        )
+        .header("Pubky-Host", public_key.to_string())
+        .body(Vec::<u8>::new())
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "Should return 403 when no session has required capability"
+    );
 }

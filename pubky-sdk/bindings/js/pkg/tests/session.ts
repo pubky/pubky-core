@@ -12,6 +12,7 @@ import {
   IsExact,
   assertPubkyError,
   createSignupToken,
+  TESTNET_HTTP_RELAY,
 } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
@@ -99,9 +100,10 @@ test("Auth: basic", async (t) => {
 /**
  * Multi-user cookie isolation in one process:
  *  - signup Alice and Bob (both cookies stored)
+ *  - create a second scoped session for Bob (tests multiple sessions per user)
  *  - generic client.fetch PUT with credentials:include writes under the correct user's host
  *  - signout Bob; Alice remains authenticated and can still write
- *  - Bob can no longer write (401)
+ *  - Bob can no longer write (both his root session AND scoped session invalidated)
  */
 test("Auth: multi-user (cookies)", async (t) => {
   const sdk = Pubky.testnet();
@@ -121,6 +123,12 @@ test("Auth: multi-user (cookies)", async (t) => {
   const bobSession = await bob.signup(HOMESERVER_PUBLICKEY, bobSignup);
   t.ok(bobSession, "bob signed up");
   const bobPk = bobSession.info.publicKey.z32();
+
+  // 2b) Create a second scoped session for Bob
+  const bobFlow = sdk.startAuthFlow("/pub/posts/:rw", TESTNET_HTTP_RELAY);
+  await bob.approveAuthRequest(bobFlow.authorizationUrl);
+  const bobSession2 = await bobFlow.awaitApproval();
+  t.ok(bobSession2, "bob created second scoped session");
 
   // 3) Write for Bob via generic client.fetch
   {
@@ -144,7 +152,11 @@ test("Auth: multi-user (cookies)", async (t) => {
     t.ok(r.ok, "alice can still write");
   }
 
-  // 5) Sign out Bob
+  // 4b) Bob's second session can also write (to /pub/posts/)
+  await bobSession2.storage.putText("/pub/posts/test.txt" as any, "bob-session2");
+  t.pass("bob's second scoped session works");
+
+  // 5) Sign out Bob (should invalidate BOTH of his sessions)
   await bobSession.signout();
 
   // 6) Alice still authenticated after Bob signs out
@@ -158,7 +170,7 @@ test("Auth: multi-user (cookies)", async (t) => {
     t.ok(r.ok, "alice still can write after bob signout");
   }
 
-  // 7) Bob can no longer write
+  // 7) Bob's root session can no longer write
   {
     const url = `https://_pubky.${bobPk}/pub/example.com/multi-bob-2.txt`;
     const r = await sdk.client.fetch(url, {
@@ -166,7 +178,18 @@ test("Auth: multi-user (cookies)", async (t) => {
       body: "should-fail",
       credentials: "include",
     });
-    t.equal(r.status, 401, "bob write fails after signout");
+    t.equal(r.status, 401, "bob's root session fails after signout");
+  }
+
+  // 7b) Bob's second session ALSO invalidated (signout removes ALL user sessions)
+  try {
+    await bobSession2.storage.putText("/pub/posts/should-fail.txt" as any, "fail");
+    t.fail("bob's second session should be invalidated after signout");
+  } catch (error: any) {
+    t.ok(
+      error.message.includes("401") || error.message.includes("Unauthorized"),
+      "bob's second session invalidated by signout",
+    );
   }
 
   t.end();
@@ -360,6 +383,219 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
     "user#2:via-client",
     "low-level client wrote under user#2",
   );
+
+  t.end();
+});
+
+/**
+ * Tests that multiple session cookies with different capabilities for the same user
+ * don't overwrite each other in the browser's cookie jar.
+ *
+ * LEGACY COOKIES (bug - they overwrite):
+ * - Session A → Legacy cookie: pubkey=secretA
+ * - Session B → Legacy cookie: pubkey=secretB (overwrites A!)
+ * - Result: Only Session B's legacy cookie remains
+ *
+ * UUID COOKIES (fix - they coexist):
+ * - Session A → UUID cookie: uuid-A=secretA
+ * - Session B → UUID cookie: uuid-B=secretB (doesn't overwrite!)
+ * - Result: Both UUID cookies coexist in browser jar
+ */
+test("Auth: multiple session cookies don't overwrite each other", async (t) => {
+  const sdk = Pubky.testnet();
+
+  // Create user with root session
+  const keypair = Keypair.random();
+  const signer = sdk.signer(keypair);
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const userPk = signer.publicKey.z32();
+
+  // === Create two sessions with different scoped capabilities ===
+  // Server sends BOTH UUID and legacy cookies for each session
+  // In browsers, cookies are managed automatically by the browser's cookie jar
+
+  // Session A: write access to /pub/posts/ only
+  const flowA = sdk.startAuthFlow("/pub/posts/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowA.authorizationUrl);
+  const sessionA = await flowA.awaitApproval();
+  t.ok(sessionA, "Session A created with /pub/posts/ access");
+
+  // Session B: write access to /pub/admin/ only
+  const flowB = sdk.startAuthFlow("/pub/admin/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowB.authorizationUrl);
+  const sessionB = await flowB.awaitApproval();
+  t.ok(sessionB, "Session B created with /pub/admin/ access");
+
+  // === Verify Cookie Jar Structure ===
+  // After creating 2 sessions for THIS user, we should have exactly 1 legacy cookie for this user (pubkey name, last one overwrites previous)
+  const jar = (globalThis as any).__cookieJar;
+  if (jar) {
+    const cookies: any[] = await new Promise((resolve, reject) => {
+      jar.getCookies(
+        "http://localhost:15411", // homeserver URL
+        (err: any, cookies: any[]) => {
+          if (err) reject(err);
+          else resolve(cookies);
+        },
+      );
+    });
+
+    const thisUserLegacyCookies = cookies.filter((c: any) => c.key === userPk);
+    // Legacy cookies overwrite (only last one survives per user)
+    t.equal(
+      thisUserLegacyCookies.length,
+      1,
+      "Exactly 1 legacy cookie for this user (last session overwrites previous)",
+    );
+  }
+
+  // Verify that both GUID cookies are still present
+  await sessionA.storage.putText("/pub/posts/critical-test.txt" as any, "A works!");
+  t.pass(
+    "Session A STILL works after creating B (UUID cookies coexist)",
+  );
+  await sessionB.storage.putText("/pub/admin/settings" as any, "B works!");
+  t.pass("Session B works for /pub/admin/");
+
+  t.end();
+});
+
+/**
+ * Test that cookie paths are set based on session capabilities,
+ * and browsers only send cookies matching the request path.
+ *
+ * With path-based scoping:
+ * - Session A with /pub/posts/:rw → cookie path=/pub/posts/
+ * - Session B with /pub/admin/:rw → cookie path=/pub/admin/
+ * - Browser only sends cookie A to /pub/posts/* requests
+ * - Browser only sends cookie B to /pub/admin/* requests
+ */
+test("Auth: cookie paths reduce transmission based on capabilities", async (t) => {
+  const sdk = Pubky.testnet();
+
+  // Create user with root session
+  const keypair = Keypair.random();
+  const signer = sdk.signer(keypair);
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  // === Create two sessions with different scoped capabilities ===
+
+  // Session A: write access to /pub/posts/ only
+  const flowA = sdk.startAuthFlow("/pub/posts/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowA.authorizationUrl);
+  const sessionA = await flowA.awaitApproval();
+  t.ok(sessionA, "Session A created with /pub/posts/ access");
+
+  // Session B: write access to /pub/admin/ only
+  const flowB = sdk.startAuthFlow("/pub/admin/:rw", TESTNET_HTTP_RELAY);
+  await signer.approveAuthRequest(flowB.authorizationUrl);
+  const sessionB = await flowB.awaitApproval();
+  t.ok(sessionB, "Session B created with /pub/admin/ access");
+
+  // === Verify Cookie Paths in Browser Jar ===
+  const jar = (globalThis as any).__cookieJar;
+  if (jar) {
+    const cookies: any[] = await new Promise((resolve, reject) => {
+      jar.getCookies(
+        "http://localhost:15411", // homeserver URL
+        (err: any, cookies: any[]) => {
+          if (err) reject(err);
+          else resolve(cookies);
+        },
+      );
+    });
+
+    // Find UUID cookies (exclude legacy pubkey-named cookie)
+    const uuidCookies = cookies.filter((c: any) =>
+      c.key !== signer.publicKey.z32() &&
+      c.key.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    );
+
+    t.ok(uuidCookies.length >= 2, "At least 2 UUID cookies exist");
+
+    // Verify that cookies have appropriate paths
+    const postsPathCookies = uuidCookies.filter((c: any) => c.path === "/pub/posts/");
+    const adminPathCookies = uuidCookies.filter((c: any) => c.path === "/pub/admin/");
+
+    t.ok(
+      postsPathCookies.length > 0,
+      "Cookie with path=/pub/posts/ exists for Session A"
+    );
+    t.ok(
+      adminPathCookies.length > 0,
+      "Cookie with path=/pub/admin/ exists for Session B"
+    );
+
+    // === Test browser cookie path matching behavior ===
+    // When making a request to /pub/posts/*, browser should only send cookies
+    // whose path is a prefix of the request path
+
+    // Get cookies that browser would send to /pub/posts/file.txt
+    const cookiesForPosts: any[] = await new Promise((resolve, reject) => {
+      jar.getCookies(
+        "http://localhost:15411/pub/posts/file.txt",
+        (err: any, cookies: any[]) => {
+          if (err) reject(err);
+          else resolve(cookies);
+        },
+      );
+    });
+
+    const postsUuidCookies = cookiesForPosts.filter((c: any) =>
+      c.key.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    );
+
+    // Get cookies that browser would send to /pub/admin/settings
+    const cookiesForAdmin: any[] = await new Promise((resolve, reject) => {
+      jar.getCookies(
+        "http://localhost:15411/pub/admin/settings",
+        (err: any, cookies: any[]) => {
+          if (err) reject(err);
+          else resolve(cookies);
+        },
+      );
+    });
+
+    const adminUuidCookies = cookiesForAdmin.filter((c: any) =>
+      c.key.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    );
+
+    t.ok(
+      postsUuidCookies.length >= 1 && postsUuidCookies.some((c: any) => c.path === "/pub/posts/"),
+      "Browser sends /pub/posts/ cookie to /pub/posts/* requests"
+    );
+
+    t.ok(
+      adminUuidCookies.length >= 1 && adminUuidCookies.some((c: any) => c.path === "/pub/admin/"),
+      "Browser sends /pub/admin/ cookie to /pub/admin/* requests"
+    );
+
+    // Verify path isolation: /pub/admin/ cookie should NOT be sent to /pub/posts/ requests
+    const adminCookieSentToPosts = postsUuidCookies.some((c: any) => c.path === "/pub/admin/");
+    t.notOk(
+      adminCookieSentToPosts,
+      "Browser does NOT send /pub/admin/ cookie to /pub/posts/* (path isolation)"
+    );
+
+    // Verify path isolation: /pub/posts/ cookie should NOT be sent to /pub/admin/ requests
+    const postsCookieSentToAdmin = adminUuidCookies.some((c: any) => c.path === "/pub/posts/");
+    t.notOk(
+      postsCookieSentToAdmin,
+      "Browser does NOT send /pub/posts/ cookie to /pub/admin/* (path isolation)"
+    );
+  } else {
+    t.skip("Cookie jar not available in this environment");
+  }
+
+  // Verify sessions still work functionally
+  await sessionA.storage.putText("/pub/posts/test.txt" as any, "A works!");
+  t.pass("Session A works for /pub/posts/");
+
+  await sessionB.storage.putText("/pub/admin/settings" as any, "B works!");
+  t.pass("Session B works for /pub/admin/");
 
   t.end();
 });

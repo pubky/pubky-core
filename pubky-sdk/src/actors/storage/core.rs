@@ -18,7 +18,7 @@ pub struct SessionStorage {
     pub(crate) client: PubkyHttpClient,
     pub(crate) user: PublicKey,
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie: String,
+    pub(crate) cookie: (String, String),
 }
 
 impl SessionStorage {
@@ -67,10 +67,10 @@ impl SessionStorage {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn with_session_cookie(&self, rb: RequestBuilder) -> RequestBuilder {
-        let cookie_name = self.user.to_string();
+        let (cookie_name, cookie_value) = &self.cookie;
         rb.header(
             reqwest::header::COOKIE,
-            format!("{cookie_name}={}", self.cookie),
+            format!("{cookie_name}={cookie_value}"),
         )
     }
 }

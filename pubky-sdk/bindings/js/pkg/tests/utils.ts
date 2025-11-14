@@ -10,6 +10,9 @@
 import type { PubkyError } from "../index.js";
 import type { Test } from "tape";
 
+// relay base (no trailing slash is fine; the flow will append the channel id)
+export const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
+
 export type PubkyErrorInstance = Error & PubkyError;
 
 export type Assert<T extends true> = T;
