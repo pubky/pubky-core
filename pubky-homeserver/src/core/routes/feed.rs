@@ -36,9 +36,11 @@ pub async fn feed(
         .collect::<Vec<String>>();
     let next_cursor = events
         .last()
-        .map(|event| event.id.to_string())
-        .unwrap_or("".to_string());
-    result.push(format!("cursor: {}", next_cursor));
+        .map(|event| event.id.to_string());
+
+    if let Some(next_cursor) = next_cursor {
+        result.push(format!("cursor: {}", next_cursor));
+    }
 
     Ok(Response::builder()
         .status(StatusCode::OK)
