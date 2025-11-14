@@ -124,39 +124,10 @@ async fn authorize(
         ));
     }
 
-    let session_secrets = session_secrets_from_cookies(cookies);
-    if session_secrets.is_empty() {
-        tracing::warn!(
-            "No session secret found in cookies for pubky-host: {}",
-            public_key
-        );
-        return Err(HttpError::unauthorized_with_message(
-            "No session secret found in cookies",
-        ));
-    }
+    let sessions = sessions_from_cookies(state, cookies, public_key).await?;
 
-    // Try each session secret until we find one that:
-    // 1. Exists in the database
-    // 2. Belongs to the correct user
-    // 3. Has the required capabilities for the path
-    for session_secret in session_secrets {
-        let session = match SessionRepository::get_by_secret(
-            &session_secret,
-            &mut state.sql_db.pool().into(),
-        )
-        .await
-        {
-            Ok(session) => session,
-            Err(sqlx::Error::RowNotFound) => {
-                continue;
-            }
-            Err(e) => return Err(e.into()),
-        };
-
-        if &session.user_pubkey != public_key {
-            continue;
-        }
-
+    // Check if any session has write access to the path
+    for session in sessions {
         if session.capabilities.iter().any(|cap| {
             path.starts_with(&cap.scope)
                 && cap
@@ -176,6 +147,60 @@ async fn authorize(
     Err(HttpError::forbidden_with_message(
         "Session does not have write access to path",
     ))
+}
+
+/// Get all valid sessions from cookies that belong to the specified user.
+///
+/// Returns 401 if no session secrets found in cookies.
+/// Returns 403 if cookies exist but no valid sessions found for the user.
+/// Returns the list of valid sessions for the user.
+pub async fn sessions_from_cookies(
+    state: &AppState,
+    cookies: &Cookies,
+    public_key: &PublicKey,
+) -> HttpResult<Vec<crate::persistence::sql::session::SessionEntity>> {
+    let session_secrets = session_secrets_from_cookies(cookies);
+    if session_secrets.is_empty() {
+        tracing::warn!(
+            "No session secret found in cookies for pubky-host: {}",
+            public_key
+        );
+        return Err(HttpError::unauthorized_with_message(
+            "No session secret found in cookies",
+        ));
+    }
+
+    // Try each session secret and collect those that:
+    // 1. Exist in the database
+    // 2. Belong to the correct user
+    let mut user_sessions = Vec::new();
+    for session_secret in session_secrets {
+        let session = match SessionRepository::get_by_secret(
+            &session_secret,
+            &mut state.sql_db.pool().into(),
+        )
+        .await
+        {
+            Ok(session) => session,
+            Err(sqlx::Error::RowNotFound) => {
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        if &session.user_pubkey == public_key {
+            user_sessions.push(session);
+        }
+    }
+
+    if user_sessions.is_empty() {
+        tracing::warn!("No valid sessions found for pubky-host: {}", public_key);
+        return Err(HttpError::forbidden_with_message(
+            "No valid session found for user",
+        ));
+    }
+
+    Ok(user_sessions)
 }
 
 /// Get all session secrets from the cookies by iterating and validating.

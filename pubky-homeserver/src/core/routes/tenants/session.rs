@@ -6,10 +6,7 @@ use axum::{
 use tower_cookies::Cookies;
 
 use crate::{
-    core::{
-        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost,
-        layers::authz::session_secrets_from_cookies, AppState,
-    },
+    core::{err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState},
     persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
 };
@@ -21,31 +18,27 @@ pub async fn session(
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    let user =
-        get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
 
-    // Try each session secret until we find one that belongs to this user
-    for secret in session_secrets_from_cookies(&cookies) {
-        if let Ok(session) =
-            SessionRepository::get_by_secret(&secret, &mut state.sql_db.pool().into()).await
-        {
-            // Check if this session belongs to the requesting user
-            if session.user_pubkey == user.public_key {
-                let legacy_session = session.to_legacy();
-                let mut resp = legacy_session.serialize().into_response();
-                resp.headers_mut().insert(
-                    header::CONTENT_TYPE,
-                    HeaderValue::from_static("application/octet-stream"),
-                );
-                resp.headers_mut()
-                    .insert(header::VARY, HeaderValue::from_static("cookie, pubky-host"));
-                resp.headers_mut().insert(
-                    header::CACHE_CONTROL,
-                    HeaderValue::from_static("private, must-revalidate"),
-                );
-                return Ok(resp);
-            }
-        };
+    let sessions =
+        crate::core::layers::authz::sessions_from_cookies(&state, &cookies, pubky.public_key())
+            .await?;
+
+    // Return the first session
+    if let Some(session) = sessions.into_iter().next() {
+        let legacy_session = session.to_legacy();
+        let mut resp = legacy_session.serialize().into_response();
+        resp.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        );
+        resp.headers_mut()
+            .insert(header::VARY, HeaderValue::from_static("cookie, pubky-host"));
+        resp.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, must-revalidate"),
+        );
+        return Ok(resp);
     }
 
     Err(HttpError::not_found())
@@ -53,13 +46,17 @@ pub async fn session(
 pub async fn signout(
     State(state): State<AppState>,
     cookies: Cookies,
+    pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
-    // Delete all sessions found in all cookies
-    for secret in session_secrets_from_cookies(&cookies) {
-        // Ignore errors - session might not exist in DB
-        let _ = SessionRepository::delete(&secret, &mut state.sql_db.pool().into()).await;
+    let sessions =
+        crate::core::layers::authz::sessions_from_cookies(&state, &cookies, pubky.public_key())
+            .await
+            .unwrap_or_default();
+
+    for session in sessions {
+        let _ = SessionRepository::delete(&session.secret, &mut state.sql_db.pool().into()).await;
     }
 
     // Idempotent Success Response (200 OK)

@@ -37,7 +37,7 @@ pub struct PubkySession {
     pub(crate) info: SessionInfo,
 
     /// Native-only, single session cookie for `_pubky.<pubky>`. Never shared across agents.
-    /// Stored as (cookie_name, cookie_value) where name is UUID and value is session secret.
+    /// Stored as (`cookie_name`, `cookie_value`) where name is UUID and value is session secret.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) cookie: (String, String),
 }

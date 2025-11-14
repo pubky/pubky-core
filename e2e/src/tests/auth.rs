@@ -220,6 +220,46 @@ async fn multiple_users() {
     let b_sess = bob_session.info();
     assert_eq!(b_sess.public_key(), &bob.public_key());
     assert!(b_sess.capabilities().contains(&Capability::root()));
+
+    // Export Bob's secret before signout to test later
+    let bob_secret = bob_session.export_secret();
+
+    // Both users can write
+    alice_session
+        .storage()
+        .put("/pub/test.txt", "alice-data")
+        .await
+        .unwrap();
+    bob_session
+        .storage()
+        .put("/pub/test.txt", "bob-data")
+        .await
+        .unwrap();
+
+    // Sign out Bob
+    bob_session.signout().await.unwrap();
+
+    // Alice should still be able to write (cookie isolation)
+    alice_session
+        .storage()
+        .put("/pub/test2.txt", "alice-still-works")
+        .await
+        .unwrap();
+
+    // Bob's session should no longer work - import will fail because session was deleted
+    let bob_restore_err = PubkySession::import_secret(&bob_secret, Some(pubky.client().clone()))
+        .await
+        .unwrap_err();
+
+    // Should get either Authentication error or 403 Server error (no valid session found)
+    let is_expected_error = matches!(bob_restore_err, Error::Authentication(_))
+        || matches!(bob_restore_err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN);
+
+    assert!(
+        is_expected_error,
+        "bob session should fail after signout, got: {:?}",
+        bob_restore_err
+    );
 }
 
 #[tokio::test]

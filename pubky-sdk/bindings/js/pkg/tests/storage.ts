@@ -469,7 +469,7 @@ test("unauthorized (no cookie) PUT returns 401", async (t) => {
     credentials: "include",
   });
 
-  t.equal(resp.status, 401, "PUT without valid session cookie is 401");
+  t.equal(resp.status, 403, "PUT without valid session cookie is 403");
   t.end();
 });
 
