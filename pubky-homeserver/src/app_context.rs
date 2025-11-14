@@ -9,8 +9,7 @@
 use crate::MockDataDir;
 use crate::{
     persistence::{
-        events::EventsService,
-        files::{FileIoError, FileService},
+        files::{EventsService, FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
         sql::{Migrator, SqlDb},
     },

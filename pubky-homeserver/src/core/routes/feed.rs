@@ -11,14 +11,64 @@ use futures_util::stream::Stream;
 use std::{collections::HashMap, convert::Infallible};
 
 use crate::{
-    constants::MAX_EVENT_STREAM_USERS,
-    core::{extractors::ListQueryParams, AppState},
+    core::{
+        extractors::{EventStreamQueryParams, ListQueryParams},
+        AppState,
+    },
     persistence::{
-        events::EventStreamQueryParams,
-        sql::event::{Cursor, EventResponse},
+        files::{EventsService, MAX_EVENT_STREAM_USERS},
+        sql::{
+            event::{Cursor, EventEntity, EventType},
+            SqlDb,
+        },
     },
     shared::{HttpError, HttpResult},
 };
+
+/// Response structure for event streams.
+/// This represents the data format returned by the `/events-stream` endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventResponse {
+    /// The type of event (PUT or DEL)
+    pub event_type: EventType,
+    /// The full pubky path (e.g., "pubky://user_pubkey/pub/example.txt")
+    pub path: String,
+    /// Cursor for pagination (event id as string)
+    pub cursor: String,
+    /// content_hash (blake3) of data in hex format
+    /// **Note**: Optional and only included for PUT events when the hash is available.
+    /// Legacy events created before the content_hash feature was added will not have this field.
+    pub content_hash: Option<String>,
+}
+
+impl EventResponse {
+    /// Create an EventResponse from an EventEntity
+    pub fn from_entity(entity: &EventEntity) -> Self {
+        Self {
+            event_type: entity.event_type.clone(),
+            path: format!("pubky://{}", entity.path.as_str()),
+            cursor: entity.cursor().to_string(),
+            content_hash: entity.content_hash.map(|h| h.to_hex().to_string()),
+        }
+    }
+
+    /// Format as SSE event data.
+    /// Returns the multiline data field content.
+    /// Each line will be prefixed with "data: " by the SSE library.
+    /// Format:
+    /// ```text
+    /// data: pubky://user_pubkey/pub/example.txt
+    /// data: cursor: 42
+    /// data: content_hash: abc123... (optional, only if present)
+    /// ```
+    pub fn to_sse_data(&self) -> String {
+        let mut lines = vec![self.path.clone(), format!("cursor: {}", self.cursor)];
+        if let Some(hash) = &self.content_hash {
+            lines.push(format!("content_hash: {}", hash));
+        }
+        lines.join("\n")
+    }
+}
 
 /// Legacy text-based endpoint for fetching historical events.
 ///
@@ -123,56 +173,12 @@ pub async fn feed_stream(
     State(state): State<AppState>,
     params: EventStreamQueryParams,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    use crate::persistence::sql::user::UserRepository;
-    use pkarr::PublicKey;
-    use std::str::FromStr;
+    // Validate parameters
+    validate_stream_params(&params)?;
 
-    if params.user_cursors.is_empty() {
-        return Err(HttpError::bad_request("user parameter is required"));
-    }
-
-    if params.user_cursors.len() > MAX_EVENT_STREAM_USERS {
-        return Err(HttpError::bad_request(format!(
-            "Too many users. Maximum allowed: {}",
-            MAX_EVENT_STREAM_USERS
-        )));
-    }
-
-    if params.live && params.reverse {
-        return Err(HttpError::bad_request(
-            "Cannot use live mode with reverse ordering",
-        ));
-    }
-
-    // Parse all pubkeys, get user IDs, and parse cursors
-    // Return Error if any keys or cursors invalid
-    let mut user_cursor_map: HashMap<i32, Option<Cursor>> = HashMap::new();
-    for (user_pubkey_str, cursor_str_opt) in &params.user_cursors {
-        let user_pubkey = PublicKey::from_str(user_pubkey_str)
-            .map_err(|_| HttpError::bad_request("Invalid user public key"))?;
-
-        let user_id = UserRepository::get_id(&user_pubkey, &mut state.sql_db.pool().into())
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => HttpError::not_found(),
-                _ => HttpError::from(e),
-            })?;
-
-        let cursor = if let Some(cursor_str) = cursor_str_opt {
-            match state
-                .events_service
-                .parse_cursor(cursor_str, &mut state.sql_db.pool().into())
-                .await
-            {
-                Ok(cursor) => Some(cursor),
-                Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
-            }
-        } else {
-            None
-        };
-
-        user_cursor_map.insert(user_id, cursor);
-    }
+    // Resolve user IDs and cursors
+    let mut user_cursor_map =
+        resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db).await?;
 
     let mut total_sent: usize = 0;
     let stream = async_stream::stream! {
@@ -251,24 +257,9 @@ pub async fn feed_stream(
             loop {
                 match rx.recv().await {
                     Ok(event) => {
-                        // Filter by user_ids
-                        if !user_ids.contains(&event.user_id) {
+                        // Filter events based on user_ids, cursors, and path
+                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, params.path.as_deref()) {
                             continue;
-                        }
-
-                        // Filter out events we already sent in Phase 1
-                        if let Some(Some(cursor)) = user_cursor_map.get(&event.user_id) {
-                            if event.cursor() <= *cursor {
-                                continue; // Already sent this event
-                            }
-                        }
-
-                        // Filter by path prefix if specified
-                        if let Some(ref path) = params.path {
-                            let path_suffix = event.path.path().as_str();
-                            if !path_suffix.starts_with(path) {
-                                continue;
-                            }
                         }
 
                         // Update this user's cursor
@@ -302,4 +293,100 @@ pub async fn feed_stream(
     };
 
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+/// Validate event stream parameters before processing.
+/// Returns error if parameters are invalid or incompatible.
+fn validate_stream_params(params: &EventStreamQueryParams) -> HttpResult<()> {
+    if params.user_cursors.is_empty() {
+        return Err(HttpError::bad_request("user parameter is required"));
+    }
+
+    if params.user_cursors.len() > MAX_EVENT_STREAM_USERS {
+        return Err(HttpError::bad_request(format!(
+            "Too many users. Maximum allowed: {}",
+            MAX_EVENT_STREAM_USERS
+        )));
+    }
+
+    if params.live && params.reverse {
+        return Err(HttpError::bad_request(
+            "Cannot use live mode with reverse ordering",
+        ));
+    }
+
+    Ok(())
+}
+
+/// Resolve user public keys to user IDs and parse their cursors.
+/// Returns a map of user_id → optional cursor position.
+async fn resolve_user_cursors(
+    user_cursors: &[(String, Option<String>)],
+    events_service: &EventsService,
+    sql_db: &SqlDb,
+) -> HttpResult<HashMap<i32, Option<Cursor>>> {
+    use crate::persistence::sql::user::UserRepository;
+    use pkarr::PublicKey;
+    use std::str::FromStr;
+
+    let mut user_cursor_map: HashMap<i32, Option<Cursor>> = HashMap::new();
+
+    for (user_pubkey_str, cursor_str_opt) in user_cursors {
+        let user_pubkey = PublicKey::from_str(user_pubkey_str)
+            .map_err(|_| HttpError::bad_request("Invalid user public key"))?;
+
+        let user_id = UserRepository::get_id(&user_pubkey, &mut sql_db.pool().into())
+            .await
+            .map_err(|e| match e {
+                sqlx::Error::RowNotFound => HttpError::not_found(),
+                _ => HttpError::from(e),
+            })?;
+
+        let cursor = if let Some(cursor_str) = cursor_str_opt {
+            match events_service
+                .parse_cursor(cursor_str, &mut sql_db.pool().into())
+                .await
+            {
+                Ok(cursor) => Some(cursor),
+                Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
+            }
+        } else {
+            None
+        };
+
+        user_cursor_map.insert(user_id, cursor);
+    }
+
+    Ok(user_cursor_map)
+}
+
+/// Filter events in live mode based on user IDs, cursors, and path prefix.
+/// Returns true if the event should be included in the stream.
+fn should_include_live_event(
+    event: &EventEntity,
+    user_ids: &[i32],
+    user_cursor_map: &HashMap<i32, Option<Cursor>>,
+    path_filter: Option<&str>,
+) -> bool {
+    // Filter by user_ids
+    if !user_ids.contains(&event.user_id) {
+        return false;
+    }
+
+    // Filter out events we already sent in Phase 1
+    if let Some(Some(cursor)) = user_cursor_map.get(&event.user_id) {
+        if event.cursor() <= *cursor {
+            return false; // Already sent this event
+        }
+    }
+
+    // Filter by path prefix if specified
+    if let Some(path) = path_filter {
+        let path_suffix = event.path.path().as_str();
+        if !path_suffix.starts_with(path) {
+            return false;
+        }
+    }
+
+    true
 }

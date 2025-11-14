@@ -1,7 +1,6 @@
 use crate::{
     persistence::{
-        events::EventsService,
-        files::{FileIoError, FileMetadata},
+        files::{events_service::EventsService, FileIoError, FileMetadata},
         sql::{
             entry::{EntryEntity, EntryRepository},
             event::{EventEntity, EventType},

@@ -55,51 +55,6 @@ impl FromStr for Cursor {
     }
 }
 
-/// Response structure for event streams.
-/// This represents the data format returned by the `/events-stream` endpoint.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventResponse {
-    /// The type of event (PUT or DEL)
-    pub event_type: EventType,
-    /// The full pubky path (e.g., "pubky://user_pubkey/pub/example.txt")
-    pub path: String,
-    /// Cursor for pagination (event id as string)
-    pub cursor: String,
-    /// content_hash (blake3) of data in hex format
-    /// **Note**: Optional and only included for PUT events when the hash is available.
-    /// Legacy events created before the content_hash feature was added will not have this field.
-    pub content_hash: Option<String>,
-}
-
-impl EventResponse {
-    /// Create an EventResponse from an EventEntity
-    pub fn from_entity(entity: &EventEntity) -> Self {
-        Self {
-            event_type: entity.event_type.clone(),
-            path: format!("pubky://{}", entity.path.as_str()),
-            cursor: entity.cursor().to_string(),
-            content_hash: entity.content_hash.map(|h| h.to_hex().to_string()),
-        }
-    }
-
-    /// Format as SSE event data.
-    /// Returns the multiline data field content.
-    /// Each line will be prefixed with "data: " by the SSE library.
-    /// Format:
-    /// ```text
-    /// data: pubky://user_pubkey/pub/example.txt
-    /// data: cursor: 42
-    /// data: content_hash: abc123... (optional, only if present)
-    /// ```
-    pub fn to_sse_data(&self) -> String {
-        let mut lines = vec![self.path.clone(), format!("cursor: {}", self.cursor)];
-        if let Some(hash) = &self.content_hash {
-            lines.push(format!("content_hash: {}", hash));
-        }
-        lines.join("\n")
-    }
-}
-
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository;
 
@@ -613,71 +568,5 @@ mod tests {
                 test_name
             );
         }
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_event_response_formatting() {
-        use pubky_common::crypto::Hash;
-
-        let db = SqlDb::test().await;
-        let user_pubkey = Keypair::random().public_key();
-
-        // Create user
-        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-
-        // Create event with content_hash
-        let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test.txt").unwrap());
-        let content_hash = Hash::from_bytes([42u8; 32]);
-        let event_with_hash = EventRepository::create(
-            user.id,
-            EventType::Put,
-            &path,
-            Some(content_hash),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-
-        // Test EventResponse with content_hash
-        let response = EventResponse::from_entity(&event_with_hash);
-        assert_eq!(response.event_type, EventType::Put);
-        assert!(response.path.starts_with("pubky://"));
-        assert!(response.path.contains("/test.txt"));
-        assert!(response.content_hash.is_some());
-        assert_eq!(
-            response.content_hash.as_ref().unwrap(),
-            &content_hash.to_hex().to_string()
-        );
-
-        // Test SSE data formatting with hash
-        let sse_data = response.to_sse_data();
-        assert!(sse_data.contains("pubky://"));
-        assert!(sse_data.contains("cursor:"));
-        assert!(sse_data.contains("content_hash:"));
-
-        // Create event without content_hash (DELETE)
-        let event_without_hash = EventRepository::create(
-            user.id,
-            EventType::Delete,
-            &path,
-            None,
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-
-        // Test EventResponse without content_hash
-        let response_no_hash = EventResponse::from_entity(&event_without_hash);
-        assert_eq!(response_no_hash.event_type, EventType::Delete);
-        assert!(response_no_hash.content_hash.is_none());
-
-        // Test SSE data formatting without hash
-        let sse_data_no_hash = response_no_hash.to_sse_data();
-        assert!(sse_data_no_hash.contains("pubky://"));
-        assert!(sse_data_no_hash.contains("cursor:"));
-        assert!(!sse_data_no_hash.contains("content_hash:"));
     }
 }

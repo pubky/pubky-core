@@ -6,6 +6,12 @@ use crate::shared::webdav::EntryPath;
 use pubky_common::crypto::Hash;
 use tokio::sync::broadcast;
 
+/// Maximum number of users allowed in a single event stream request.
+/// Based on HTTP header size limits (~4KB) and typical URL encoding:
+/// - Max users at 4KB: 3896 / 74 ≈ 52 users
+/// - Set to 50 for clean limit with safety margin for longer cursors
+pub const MAX_EVENT_STREAM_USERS: usize = 50;
+
 /// Service that handles all event-related business logic.
 /// This provides an abstraction over the event repository and broadcast channel.
 #[derive(Clone, Debug)]

@@ -1,5 +1,5 @@
-use crate::persistence::events::EventsService;
 use crate::persistence::files::entry_service::EntryService;
+use crate::persistence::files::events_service::EventsService;
 use crate::persistence::files::FileMetadataBuilder;
 use crate::persistence::sql::{SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
