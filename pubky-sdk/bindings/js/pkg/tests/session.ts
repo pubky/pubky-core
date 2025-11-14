@@ -85,7 +85,7 @@ test("Auth: basic", async (t) => {
     body: "should fail",
     credentials: "include",
   });
-  t.equal(res401.status, 403, "PUT without session returns 403");
+  t.equal(res401.status, 401, "PUT without session returns 401");
 
   // 5) Sign in again (local key proves identity)
   const session2 = await signer.signin();
@@ -178,7 +178,7 @@ test("Auth: multi-user (cookies)", async (t) => {
       body: "should-fail",
       credentials: "include",
     });
-    t.equal(r.status, 403, "bob's root session fails after signout");
+    t.equal(r.status, 401, "bob's root session fails after signout");
   }
 
   // 7b) Bob's second session ALSO invalidated (signout removes ALL user sessions)
@@ -187,7 +187,7 @@ test("Auth: multi-user (cookies)", async (t) => {
     t.fail("bob's second session should be invalidated after signout");
   } catch (error: any) {
     t.ok(
-      error.message.includes("403") || error.message.includes("Forbidden"),
+      error.message.includes("401") || error.message.includes("Unauthorized"),
       "bob's second session invalidated by signout",
     );
   }
@@ -351,7 +351,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
       body: "should-401",
       credentials: "include",
     });
-    t.equal(r.status, 403, "signed-out user cannot write");
+    t.equal(r.status, 401, "signed-out user cannot write");
   }
 
   const u2 = await signupAndMark("user#2:hello");

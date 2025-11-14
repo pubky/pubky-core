@@ -6,7 +6,10 @@ use axum::{
 use tower_cookies::Cookies;
 
 use crate::{
-    core::{err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState},
+    core::{
+        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost,
+        layers::authz::sessions_from_cookies, AppState,
+    },
     persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
 };
@@ -20,9 +23,7 @@ pub async fn session(
 ) -> HttpResult<impl IntoResponse> {
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
 
-    let sessions =
-        crate::core::layers::authz::sessions_from_cookies(&state, &cookies, pubky.public_key())
-            .await?;
+    let sessions = sessions_from_cookies(&state, &cookies, pubky.public_key()).await?;
 
     // Return the first session
     if let Some(session) = sessions.into_iter().next() {
@@ -50,13 +51,21 @@ pub async fn signout(
 ) -> HttpResult<impl IntoResponse> {
     // TODO: Set expired cookie to delete the cookie on client side.
 
-    let sessions =
-        crate::core::layers::authz::sessions_from_cookies(&state, &cookies, pubky.public_key())
-            .await
-            .unwrap_or_default();
+    let sessions = sessions_from_cookies(&state, &cookies, pubky.public_key())
+        .await
+        .unwrap_or_default();
 
     for session in sessions {
-        let _ = SessionRepository::delete(&session.secret, &mut state.sql_db.pool().into()).await;
+        if let Err(e) =
+            SessionRepository::delete(&session.secret, &mut state.sql_db.pool().into()).await
+        {
+            tracing::error!(
+                "Failed to delete session {} for user {}: {}",
+                session.secret,
+                pubky.public_key(),
+                e
+            );
+        }
     }
 
     // Idempotent Success Response (200 OK)

@@ -99,6 +99,9 @@ where
 }
 
 /// Authorize write (PUT or DELETE) for Public paths.
+///
+/// Returns 401 if no session secrets found in cookies or if no valid sessions found for user.
+/// Returns 403 if session exists for user but without required Capabilities
 async fn authorize(
     state: &AppState,
     method: &Method,
@@ -151,15 +154,20 @@ async fn authorize(
 
 /// Get all valid sessions from cookies that belong to the specified user.
 ///
-/// Returns 401 if no session secrets found in cookies.
-/// Returns 403 if cookies exist but no valid sessions found for the user.
+/// Returns 401 if no session secrets found in cookies or if no valid sessions found for user.
 /// Returns the list of valid sessions for the user.
 pub async fn sessions_from_cookies(
     state: &AppState,
     cookies: &Cookies,
     public_key: &PublicKey,
 ) -> HttpResult<Vec<crate::persistence::sql::session::SessionEntity>> {
-    let session_secrets = session_secrets_from_cookies(cookies);
+    let mut session_secrets = Vec::new();
+    for cookie in cookies.list() {
+        if let Ok(secret) = SessionSecret::from_str(cookie.value()) {
+            session_secrets.push(secret);
+        }
+    }
+
     if session_secrets.is_empty() {
         tracing::warn!(
             "No session secret found in cookies for pubky-host: {}",
@@ -195,22 +203,10 @@ pub async fn sessions_from_cookies(
 
     if user_sessions.is_empty() {
         tracing::warn!("No valid sessions found for pubky-host: {}", public_key);
-        return Err(HttpError::forbidden_with_message(
+        return Err(HttpError::unauthorized_with_message(
             "No valid session found for user",
         ));
     }
 
     Ok(user_sessions)
-}
-
-/// Get all session secrets from the cookies by iterating and validating.
-/// Returns a vector of all valid session secrets found.
-pub fn session_secrets_from_cookies(cookies: &Cookies) -> Vec<SessionSecret> {
-    let mut secrets = Vec::new();
-    for cookie in cookies.list() {
-        if let Ok(secret) = SessionSecret::from_str(cookie.value()) {
-            secrets.push(secret);
-        }
-    }
-    secrets
 }

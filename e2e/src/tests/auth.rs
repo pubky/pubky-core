@@ -251,9 +251,9 @@ async fn multiple_users() {
         .await
         .unwrap_err();
 
-    // Should get either Authentication error or 403 Server error (no valid session found)
+    // Should get either Authentication error or 401 Server error (no valid session found)
     let is_expected_error = matches!(bob_restore_err, Error::Authentication(_))
-        || matches!(bob_restore_err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN);
+        || matches!(bob_restore_err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::UNAUTHORIZED);
 
     assert!(
         is_expected_error,
