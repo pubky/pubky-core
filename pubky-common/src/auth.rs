@@ -64,7 +64,7 @@ impl AuthToken {
 
     // === Getters ===
 
-    /// Returns the pubky that is providing this AuthToken
+    /// Returns the public key that is providing this AuthToken
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
