@@ -34,9 +34,7 @@ pub async fn feed(
         .iter()
         .map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str()))
         .collect::<Vec<String>>();
-    let next_cursor = events
-        .last()
-        .map(|event| event.id.to_string());
+    let next_cursor = events.last().map(|event| event.id.to_string());
 
     if let Some(next_cursor) = next_cursor {
         result.push(format!("cursor: {}", next_cursor));
