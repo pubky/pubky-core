@@ -11,7 +11,7 @@ use crate::{
 
 impl PubkySession {
     /// Export the minimum data needed to restore this session later.
-    /// Returns a single compact secret token `<pubkey>:<cookie_secret>`
+    /// Returns a compact secret token `<pubkey>:<cookie_id>:<cookie_secret>`
     ///
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
     /// from a signer on a script restart.
@@ -20,12 +20,16 @@ impl PubkySession {
     /// securely.
     pub fn export_secret(&self) -> String {
         let public_key = self.info().public_key().to_string();
-        let cookie = self.cookie.clone();
+        let (cookie_id, cookie_secret) = &self.cookie;
         cross_log!(info, "Exporting session secret for {}", public_key);
-        format!("{public_key}:{cookie}")
+        format!("{public_key}:{cookie_id}:{cookie_secret}")
     }
 
-    /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
+    /// Rehydrate a session from a compact secret token.
+    ///
+    /// Supports both formats for backward compatibility:
+    /// - New format: `<pubkey>:<cookie_id>:<cookie_secret>` (3 parts)
+    /// - Legacy format: `<pubkey>:<cookie_secret>` (2 parts, assumes cookie name = pubkey)
     ///
     /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
     /// from a signer on a script restart.
@@ -42,16 +46,38 @@ impl PubkySession {
             None => PubkyHttpClient::new()?,
         };
 
-        // 2) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
-        let (pk_str, cookie) = token
-            .split_once(':')
-            .ok_or_else(|| RequestError::Validation {
-                message: "invalid secret: expected `<pubkey>:<cookie>`".into(),
-            })?;
+        // 2) Parse token
+        let parts: Vec<&str> = token.split(':').collect();
+        let (public_key, cookie_id, cookie_secret) = match parts.len() {
+            // New format: <pubkey>:<cookie_id>:<cookie_secret>
+            3 => {
+                let public_key =
+                    PublicKey::try_from(parts[0]).map_err(|_err| RequestError::Validation {
+                        message: "invalid public key".into(),
+                    })?;
+                (public_key, parts[1].to_string(), parts[2].to_string())
+            }
+            // Legacy format: <pubkey>:<cookie_secret> (cookie name = pubkey)
+            2 => {
+                let public_key =
+                    PublicKey::try_from(parts[0]).map_err(|_err| RequestError::Validation {
+                        message: "invalid public key".into(),
+                    })?;
+                // Legacy: cookie name was the public key
+                (
+                    public_key.clone(),
+                    public_key.to_string(),
+                    parts[1].to_string(),
+                )
+            }
+            _ => {
+                return Err(RequestError::Validation {
+                    message: "invalid secret: expected `<pubkey>:<cookie_id>:<cookie_secret>` or legacy `<pubkey>:<cookie_secret>`".into(),
+                }
+                .into());
+            }
+        };
 
-        let public_key = PublicKey::try_from(pk_str).map_err(|_err| RequestError::Validation {
-            message: "invalid public key".into(),
-        })?;
         cross_log!(info, "Importing session secret for {}", public_key);
 
         // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.
@@ -59,7 +85,7 @@ impl PubkySession {
         let mut session = Self {
             client,
             info: placeholder,
-            cookie: cookie.to_string(),
+            cookie: (cookie_id, cookie_secret),
         };
 
         // 4) Validate cookie and fetch authoritative SessionInfo

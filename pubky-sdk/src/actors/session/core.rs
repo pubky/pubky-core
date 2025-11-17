@@ -36,9 +36,10 @@ pub struct PubkySession {
     /// Known session for this session.
     pub(crate) info: SessionInfo,
 
-    /// Native-only, single session cookie secret for `_pubky.<pubky>`. Never shared across agents.
+    /// Native-only, single session cookie for `_pubky.<pubky>`. Never shared across agents.
+    /// Stored as (`cookie_name`, `cookie_value`) where name is UUID and value is session secret.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie: String,
+    pub(crate) cookie: (String, String),
 }
 
 impl PubkySession {
@@ -101,20 +102,36 @@ impl PubkySession {
             let bytes = response.bytes().await?;
             let info = SessionInfo::deserialize(&bytes)?;
 
-            // 3) Find the cookie named exactly as the user's pubky.
-            let cookie_name = info.public_key().to_string();
-            let cookie = raw_set_cookies
+            // 3) Find the session cookie
+            // Support both legacy (name = pubkey) and new (name = UUID) formats
+            // Prefer the UUID cookie if both exist
+            let parsed_cookies: Vec<_> = raw_set_cookies
                 .iter()
                 .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
-                .find(|c| c.name() == cookie_name)
-                .map(|c| c.value().to_string())
+                .collect();
+
+            // Try to find UUID-based cookie first (new format - preferred)
+            let cookie = parsed_cookies
+                .iter()
+                .find(|c| {
+                    // UUID format: name is not pubkey, value is 26 chars
+                    c.value().len() == 26 && c.name() != info.public_key().to_string()
+                })
+                // Fallback to legacy format (name = pubkey)
+                .or_else(|| {
+                    parsed_cookies.iter().find(|c| {
+                        c.name() == info.public_key().to_string() && c.value().len() == 26
+                    })
+                })
                 .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
+
+            let cookie_tuple = (cookie.name().to_string(), cookie.value().to_string());
 
             cross_log!(info, "Hydrated native session for {}", info.public_key());
             Ok(Self {
                 client,
                 info,
-                cookie,
+                cookie: cookie_tuple,
             })
         }
     }
