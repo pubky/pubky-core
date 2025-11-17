@@ -19,9 +19,11 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::files::FileService;
+    use crate::persistence::files::{
+        events::{EventRepository, EventType},
+        FileService,
+    };
     use crate::persistence::sql::entry::EntryRepository;
-    use crate::persistence::sql::event::{EventRepository, EventType};
     use crate::persistence::sql::user::UserRepository;
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use crate::AppContext;

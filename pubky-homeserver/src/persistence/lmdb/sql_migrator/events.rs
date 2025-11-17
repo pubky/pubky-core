@@ -4,12 +4,9 @@ use sea_query_binder::SqlxBinder;
 
 use crate::{
     persistence::{
+        files::events::{EventIden, EventType, EVENT_TABLE},
         lmdb::{tables::events::Event, LmDB},
-        sql::{
-            event::{EventIden, EventType, EVENT_TABLE},
-            user::UserRepository,
-            UnifiedExecutor,
-        },
+        sql::{user::UserRepository, UnifiedExecutor},
     },
     shared::{timestamp_to_sqlx_datetime, webdav::EntryPath},
 };
@@ -87,7 +84,10 @@ mod tests {
     use sqlx::types::chrono::DateTime;
 
     use crate::{
-        persistence::sql::{event::EventRepository, SqlDb},
+        persistence::{
+            files::events::{EventEntity, EventRepository},
+            sql::SqlDb,
+        },
         shared::webdav::WebDavPath,
     };
 
@@ -162,7 +162,7 @@ mod tests {
             .unwrap();
 
         // Check
-        let events: Vec<crate::persistence::sql::event::EventEntity> =
+        let events: Vec<EventEntity> =
             EventRepository::get_by_cursor(None, Some(10), &mut sql_db.pool().into())
                 .await
                 .unwrap();

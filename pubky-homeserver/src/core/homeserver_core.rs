@@ -4,7 +4,7 @@ use std::time::Duration;
 use super::key_republisher::HomeserverKeyRepublisher;
 use crate::app_context::AppContextConversionError;
 use crate::core::user_keys_republisher::UserKeysRepublisher;
-use crate::persistence::files::{EventsService, FileService};
+use crate::persistence::files::{events::EventsService, FileService};
 use crate::persistence::sql::SqlDb;
 use crate::{app_context::AppContext, PersistentDataDir};
 use crate::{DataDir, SignupMode};

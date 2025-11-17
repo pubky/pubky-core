@@ -4,10 +4,7 @@ use std::path::Path;
 use crate::AppContext;
 use crate::{
     persistence::{
-        files::{
-            entry_layer::EntryLayer, events_service::EventsService,
-            user_quota_layer::UserQuotaLayer,
-        },
+        files::{entry_layer::EntryLayer, events::EventsService, user_quota_layer::UserQuotaLayer},
         sql::SqlDb,
     },
     shared::webdav::EntryPath,

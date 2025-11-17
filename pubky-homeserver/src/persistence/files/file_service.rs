@@ -2,7 +2,7 @@
 use crate::AppContext;
 use crate::{
     persistence::{
-        files::events_service::EventsService,
+        files::events::EventsService,
         sql::{
             entry::{EntryEntity, EntryRepository},
             SqlDb, UnifiedExecutor,

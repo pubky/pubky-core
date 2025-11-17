@@ -1,5 +1,5 @@
 use crate::persistence::files::entry_service::EntryService;
-use crate::persistence::files::events_service::EventsService;
+use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileMetadataBuilder;
 use crate::persistence::sql::{SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
@@ -247,12 +247,11 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 mod tests {
     use crate::{
         persistence::{
-            files::opendal_test_operators::OpendalTestOperators,
-            sql::{
-                entry::EntryRepository,
-                event::{EventRepository, EventType},
-                user::UserRepository,
+            files::{
+                events::{EventRepository, EventType, EventsService},
+                opendal_test_operators::OpendalTestOperators,
             },
+            sql::{entry::EntryRepository, user::UserRepository},
         },
         shared::webdav::WebDavPath,
     };

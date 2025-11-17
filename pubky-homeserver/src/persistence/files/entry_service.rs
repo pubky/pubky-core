@@ -1,9 +1,11 @@
 use crate::{
     persistence::{
-        files::{events_service::EventsService, FileIoError, FileMetadata},
+        files::{
+            events::{EventEntity, EventType, EventsService},
+            FileIoError, FileMetadata,
+        },
         sql::{
             entry::{EntryEntity, EntryRepository},
-            event::{EventEntity, EventType},
             user::UserRepository,
             SqlDb, UnifiedExecutor,
         },

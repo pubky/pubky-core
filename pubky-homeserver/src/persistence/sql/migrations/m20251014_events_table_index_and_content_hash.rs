@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sea_query::{ColumnDef, Index, PostgresQueryBuilder, Table};
 use sqlx::Transaction;
 
-use crate::persistence::sql::{entities::event::EventIden, migration::MigrationTrait};
+use crate::persistence::{files::events::EventIden, sql::migration::MigrationTrait};
 
 const TABLE: &str = "events";
 const INDEX_NAME: &str = "idx_events_user_path_id";
@@ -49,7 +49,7 @@ mod tests {
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
-            entities::{event::EventIden, user::UserIden},
+            entities::user::UserIden,
             migrations::{M20250806CreateUserMigration, M20250814CreateEventMigration},
             migrator::Migrator,
             SqlDb,

@@ -1,6 +1,6 @@
-use crate::persistence::sql::{
-    event::{Cursor, EventEntity, EventRepository, EventType},
-    UnifiedExecutor,
+use crate::persistence::{
+    files::events::{repository::Cursor, EventEntity, EventRepository, EventType},
+    sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;
 use pubky_common::crypto::Hash;

@@ -1,6 +1,6 @@
 mod entry_layer;
 mod entry_service;
-mod events_service;
+pub mod events;
 mod file_io_error;
 mod file_metadata;
 mod file_service;
@@ -10,7 +10,6 @@ mod opendal_service;
 pub(crate) mod opendal_test_operators;
 mod user_quota_layer;
 
-pub use events_service::{EventsService, MAX_EVENT_STREAM_USERS};
 pub use file_io_error::{FileIoError, WriteStreamError};
 pub(crate) use file_metadata::{FileMetadata, FileMetadataBuilder};
 pub use file_service::FileService;

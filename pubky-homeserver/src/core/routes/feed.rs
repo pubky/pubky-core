@@ -16,11 +16,8 @@ use crate::{
         AppState,
     },
     persistence::{
-        files::{EventsService, MAX_EVENT_STREAM_USERS},
-        sql::{
-            event::{Cursor, EventEntity, EventType},
-            SqlDb,
-        },
+        files::events::{Cursor, EventEntity, EventType, EventsService, MAX_EVENT_STREAM_USERS},
+        sql::SqlDb,
     },
     shared::{HttpError, HttpResult},
 };
