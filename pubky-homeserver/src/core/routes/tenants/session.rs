@@ -55,6 +55,7 @@ pub async fn signout(
         .await
         .unwrap_or_default();
 
+    let mut errors = Vec::new();
     for session in sessions {
         if let Err(e) =
             SessionRepository::delete(&session.secret, &mut state.sql_db.pool().into()).await
@@ -65,7 +66,13 @@ pub async fn signout(
                 pubky.public_key(),
                 e
             );
+            errors.push(e);
         }
+    }
+
+    // If any sessions failed to delete then return the first error that occurred
+    if !errors.is_empty() {
+        return Err(errors.into_iter().next().unwrap().into());
     }
 
     // Idempotent Success Response (200 OK)
