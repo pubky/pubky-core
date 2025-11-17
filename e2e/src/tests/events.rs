@@ -1390,4 +1390,59 @@ async fn events_stream_path_filter() {
     let mut fwd_rev = forward.clone();
     fwd_rev.reverse();
     assert_eq!(reverse, fwd_rev, "Reverse: Should be exact reverse");
+
+    // ==== Test 5: Filter with special LIKE characters (_, %) ====
+    // Test that underscore in path doesn't act as wildcard
+    // Create paths with underscores and similar names
+    session1
+        .storage()
+        .put("/pub/my_folder/file.txt", vec![1])
+        .await
+        .unwrap();
+    session1
+        .storage()
+        .put("/pub/myfolder/file.txt", vec![2]) // Similar but no underscore
+        .await
+        .unwrap();
+
+    // Filter by /pub/my_folder/ - should only get files from my_folder, not myfolder
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&path=/pub/my_folder/",
+        server.public_key(),
+        pubky1
+    );
+    let response = pubky
+        .client()
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut wildcard_test_events = Vec::new();
+    // Try to read up to 2 events to ensure we don't get myfolder
+    while let Some(Ok(event)) = stream.next().await {
+        let path = event.data.lines().next().unwrap();
+        wildcard_test_events.push(path.to_string());
+        if wildcard_test_events.len() >= 2 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        wildcard_test_events.len(),
+        1,
+        "Wildcard: Should get exactly 1 event from /pub/my_folder/, not from /pub/myfolder/"
+    );
+    assert!(
+        wildcard_test_events[0].contains("/pub/my_folder/"),
+        "Wildcard: Path should contain /pub/my_folder/. Got: {}",
+        wildcard_test_events[0]
+    );
+    assert!(
+        !wildcard_test_events[0].contains("/pub/myfolder/"),
+        "Wildcard: Should not match /pub/myfolder/. Got: {}",
+        wildcard_test_events[0]
+    );
 }

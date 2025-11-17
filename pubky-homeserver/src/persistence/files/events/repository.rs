@@ -2,7 +2,7 @@ use std::{fmt::Display, str::FromStr};
 
 use pubky_common::crypto::Hash;
 use pubky_common::timestamp::Timestamp;
-use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Expr, Iden, LikeExpr, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
@@ -214,9 +214,17 @@ impl EventRepository {
             // Add path filter if specified
             // Note: paths in the database are stored without the user pubkey prefix (e.g., "/pub/files/doc.txt")
             if let Some(prefix) = path_prefix {
-                let like_pattern = format!("{}%", prefix);
+                // Escape special LIKE characters: %, _, and \
+                let escaped_prefix = prefix
+                    .replace('\\', "\\\\")
+                    .replace('_', "\\_")
+                    .replace('%', "\\%");
+                let like_pattern = format!("{}%", escaped_prefix);
                 statement = statement
-                    .and_where(Expr::col((EVENT_TABLE, EventIden::Path)).like(like_pattern))
+                    .and_where(
+                        Expr::col((EVENT_TABLE, EventIden::Path))
+                            .like(LikeExpr::new(like_pattern).escape('\\')),
+                    )
                     .to_owned();
             }
 
