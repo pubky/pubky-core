@@ -137,37 +137,32 @@ async fn create_session_and_cookie(
     // For backward compatibility we need send BOTH cookie formats:
     // - New format: UUID cookie name
     // - Legacy format: pubkey cookie name
-
-    // Determine cookie path based on capabilities to reduce unnecessary cookie transmission
-    let cookie_path = capabilities.most_specific_scope().to_owned();
-
     let cookie_id = Uuid::new_v4().to_string();
-    let mut new_cookie = Cookie::build((cookie_id, session_secret.to_string()))
-        .path(cookie_path.clone())
-        .http_only(true)
-        .max_age(Duration::days(365))
-        .expires(OffsetDateTime::now_utc() + Duration::days(365));
-
+    let mut new_cookie = Cookie::new(cookie_id, session_secret.to_string());
+    new_cookie.set_path("/");
     if is_secure(host) {
-        new_cookie = new_cookie.secure(true).same_site(SameSite::None);
+        new_cookie.set_secure(true);
+        new_cookie.set_same_site(SameSite::None);
     }
-
-    cookies.add(new_cookie.build());
+    new_cookie.set_http_only(true);
+    let one_year = Duration::days(365);
+    let expiry = OffsetDateTime::now_utc() + one_year;
+    new_cookie.set_max_age(one_year);
+    new_cookie.set_expires(expiry);
+    cookies.add(new_cookie);
 
     // LEGACY FORMAT: pubkey named cookie (for backward compatibility with old SDK clients)
     // TODO: Remove this after sufficient SDK adoption
-    let mut legacy_cookie =
-        Cookie::build((user.public_key.to_string(), session_secret.to_string()))
-            .path(cookie_path)
-            .http_only(true)
-            .max_age(Duration::days(365))
-            .expires(OffsetDateTime::now_utc() + Duration::days(365));
-
+    let mut legacy_cookie = Cookie::new(user.public_key.to_string(), session_secret.to_string());
+    legacy_cookie.set_path("/");
     if is_secure(host) {
-        legacy_cookie = legacy_cookie.secure(true).same_site(SameSite::None);
+        legacy_cookie.set_secure(true);
+        legacy_cookie.set_same_site(SameSite::None);
     }
-
-    cookies.add(legacy_cookie.build());
+    legacy_cookie.set_http_only(true);
+    legacy_cookie.set_max_age(one_year);
+    legacy_cookie.set_expires(expiry);
+    cookies.add(legacy_cookie);
 
     let session = SessionInfo::new(&user.public_key, capabilities.clone(), None);
     let mut resp = session.serialize().into_response();
