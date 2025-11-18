@@ -114,7 +114,7 @@ impl AppContext {
                 .map_err(AppContextConversionError::Migrations)?;
         }
 
-        let events_service = EventsService::new(100);
+        let events_service = EventsService::new(1000);
 
         let file_service =
             FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())

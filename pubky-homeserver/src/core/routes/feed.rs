@@ -1,26 +1,130 @@
 use axum::{
     body::Body,
-    extract::State,
-    http::{header, Response, StatusCode},
+    extract::{FromRequestParts, Query, State},
+    http::{header, request::Parts, Response, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse,
     },
+    RequestPartsExt,
 };
 use futures_util::stream::Stream;
+use pkarr::PublicKey;
 use std::{collections::HashMap, convert::Infallible};
 
 use crate::{
-    core::{
-        extractors::{EventStreamQueryParams, ListQueryParams},
-        AppState,
-    },
+    core::{extractors::ListQueryParams, AppState},
     persistence::{
         files::events::{Cursor, EventEntity, EventType, EventsService, MAX_EVENT_STREAM_USERS},
         sql::SqlDb,
     },
-    shared::{HttpError, HttpResult},
+    shared::{parse_bool, webdav::WebDavPath, HttpError, HttpResult},
 };
+
+#[derive(Debug, Clone)]
+pub struct EventStreamQueryParams {
+    pub limit: Option<u16>,
+    pub reverse: bool,
+    /// If true, enter live streaming mode after historical events.
+    /// If false, close connection after historical events are exhausted.
+    pub live: bool,
+    /// Vec of (user_pubkey, optional_cursor) pairs
+    /// Format: "user=pubkey" or "user=pubkey:cursor"
+    pub user_cursors: Vec<(PublicKey, Option<String>)>,
+    /// Optional path prefix filter
+    /// Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "pub/files/")
+    ///   - Example: `path=/pub/` will only return events under the `/pub/` directory
+    ///   - Example: `path=/pub/files/` will only return events under the `/pub/files/` directory
+    pub path: Option<WebDavPath>,
+}
+
+impl<S> FromRequestParts<S> for EventStreamQueryParams
+where
+    S: Send + Sync,
+{
+    type Rejection = Response<Body>;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let params: Query<HashMap<String, String>> =
+            parts.extract().await.map_err(IntoResponse::into_response)?;
+
+        // Manually parse the "user" parameter since it can appear multiple times
+        let query = parts.uri.query().unwrap_or("");
+        let mut user_values: Vec<String> = Vec::new();
+        for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+            if key.as_ref() == "user" && !value.is_empty() {
+                user_values.push(value.into_owned());
+            }
+        }
+
+        let reverse = if let Some(reverse_str) = params.get("reverse") {
+            parse_bool(reverse_str).map_err(|e| *e)?
+        } else {
+            false
+        };
+
+        let live = if let Some(live_str) = params.get("live") {
+            parse_bool(live_str).map_err(|e| *e)?
+        } else {
+            false
+        };
+
+        let limit = match params.get("limit") {
+            Some(l) if !l.is_empty() => l.parse::<u16>().ok(),
+            _ => None,
+        };
+
+        let path = params.get("path").and_then(|p| {
+            if p.is_empty() {
+                return None;
+            }
+
+            // Automatically prepend "/" if not present for user convenience
+            let normalized_path = if p.starts_with('/') {
+                p.clone()
+            } else {
+                format!("/{}", p)
+            };
+
+            match WebDavPath::new(&normalized_path) {
+                Ok(webdav_path) => Some(webdav_path),
+                Err(_) => None, // Invalid path, treat as if no path was provided
+            }
+        });
+
+        // Parse user values into (pubkey, optional_cursor) pairs
+        // Format: "pubkey" or "pubkey:cursor"
+        let mut user_cursors = Vec::new();
+        for value in user_values {
+            let (pubkey_str, cursor_str) = if let Some((pubkey, cursor)) = value.split_once(':') {
+                (pubkey, Some(cursor))
+            } else {
+                (value.as_str(), None)
+            };
+
+            let pubkey = match PublicKey::try_from(pubkey_str) {
+                Ok(pk) => pk,
+                Err(_) => {
+                    return Err(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from(format!("Invalid public key: {}", pubkey_str)))
+                        .unwrap()
+                        .into_response());
+                }
+            };
+
+            user_cursors.push((pubkey, cursor_str.map(|s| s.to_string())));
+        }
+
+        Ok(EventStreamQueryParams {
+            limit,
+            reverse,
+            live,
+            user_cursors,
+            path,
+        })
+    }
+}
 
 /// Response structure for event streams.
 /// This represents the data format returned by the `/events-stream` endpoint.
@@ -197,7 +301,7 @@ pub async fn feed_stream(
                 .get_by_user_cursors(
                     current_user_cursors,
                     params.reverse,
-                    params.path.as_deref(),
+                    params.path.as_ref().map(|p| p.as_str()),
                     &mut state.sql_db.pool().into(),
                 )
                 .await
@@ -255,7 +359,7 @@ pub async fn feed_stream(
                 match rx.recv().await {
                     Ok(event) => {
                         // Filter events based on user_ids, cursors, and path
-                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, params.path.as_deref()) {
+                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, params.path.as_ref()) {
                             continue;
                         }
 
@@ -318,21 +422,16 @@ fn validate_stream_params(params: &EventStreamQueryParams) -> HttpResult<()> {
 /// Resolve user public keys to user IDs and parse their cursors.
 /// Returns a map of user_id → optional cursor position.
 async fn resolve_user_cursors(
-    user_cursors: &[(String, Option<String>)],
+    user_cursors: &[(PublicKey, Option<String>)],
     events_service: &EventsService,
     sql_db: &SqlDb,
 ) -> HttpResult<HashMap<i32, Option<Cursor>>> {
     use crate::persistence::sql::user::UserRepository;
-    use pkarr::PublicKey;
-    use std::str::FromStr;
 
     let mut user_cursor_map: HashMap<i32, Option<Cursor>> = HashMap::new();
 
-    for (user_pubkey_str, cursor_str_opt) in user_cursors {
-        let user_pubkey = PublicKey::from_str(user_pubkey_str)
-            .map_err(|_| HttpError::bad_request("Invalid user public key"))?;
-
-        let user_id = UserRepository::get_id(&user_pubkey, &mut sql_db.pool().into())
+    for (user_pubkey, cursor_str_opt) in user_cursors {
+        let user_id = UserRepository::get_id(user_pubkey, &mut sql_db.pool().into())
             .await
             .map_err(|e| match e {
                 sqlx::Error::RowNotFound => HttpError::not_found(),
@@ -363,7 +462,7 @@ fn should_include_live_event(
     event: &EventEntity,
     user_ids: &[i32],
     user_cursor_map: &HashMap<i32, Option<Cursor>>,
-    path_filter: Option<&str>,
+    path_filter: Option<&WebDavPath>,
 ) -> bool {
     // Filter by user_ids
     if !user_ids.contains(&event.user_id) {
@@ -380,7 +479,7 @@ fn should_include_live_event(
     // Filter by path prefix if specified
     if let Some(path) = path_filter {
         let path_suffix = event.path.path().as_str();
-        if !path_suffix.starts_with(path) {
+        if !path_suffix.starts_with(path.as_str()) {
             return false;
         }
     }
