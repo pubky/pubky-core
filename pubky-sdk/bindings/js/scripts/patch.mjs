@@ -2,7 +2,7 @@
 //
 // Based on hacks from [this issue](https://github.com/rustwasm/wasm-pack/issues/1334)
 
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path, { dirname } from "node:path";
 
@@ -29,6 +29,13 @@ let patched = content
   .replace("require(`util`)", "globalThis")
   // attach to `imports` instead of module.exports
   .replace("= module.exports", "= imports")
+  // convert inline snippet require to ESM import
+  .replace(
+    "const { removeSessionCookie } = require(String.raw`",
+    "import { removeSessionCookie } from String.raw`",
+  )
+  .replace("from String.raw`", "from \"")
+  .replace(/inline0\.js`\);/, 'inline0.js";')
   // Export classes
   .replace(/\nclass (.*?) \{/g, "\n export class $1 {")
   // Export functions
@@ -112,6 +119,18 @@ await Promise.all(
     ),
   ),
 );
+
+const nodeSnippets = path.join(__dirname, "../pkg/nodejs/snippets");
+const pkgSnippets = path.join(__dirname, "../pkg/snippets");
+
+try {
+  await rm(pkgSnippets, { recursive: true, force: true });
+  await rename(nodeSnippets, pkgSnippets);
+} catch (error) {
+  if (error.code !== "ENOENT") {
+    throw error;
+  }
+}
 
 // Add index.cjs headers
 

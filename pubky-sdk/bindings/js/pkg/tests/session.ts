@@ -36,6 +36,54 @@ type _PublicGetText = Assert<
 
 const PATH_AUTH_BASIC: Path = "/pub/example.com/auth-basic.txt";
 
+async function listEnvironmentCookieNames(): Promise<string[]> {
+  if (typeof document !== "undefined" && typeof document.cookie === "string") {
+    return document.cookie
+      .split(";")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .map((entry) => entry.split("=")[0]?.trim() ?? "")
+      .filter((name) => name.length > 0);
+  }
+
+  const maybeFetch = globalThis.fetch as typeof fetch & { cookieJar?: unknown };
+  const jar = maybeFetch?.cookieJar as
+    | {
+        getAllCookies?: (cb: (err: unknown, cookies?: unknown) => void) => void;
+        store?: {
+          getAllCookies?: (cb: (err: unknown, cookies?: unknown) => void) => void;
+        };
+      }
+    | undefined;
+
+  const getAllCookies =
+    jar?.getAllCookies?.bind(jar) ?? jar?.store?.getAllCookies?.bind(jar.store);
+
+  if (typeof getAllCookies === "function") {
+    const cookies = (await new Promise<unknown[]>((resolve, reject) => {
+      getAllCookies((err, items) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        if (!Array.isArray(items)) {
+          resolve([]);
+          return;
+        }
+
+        resolve(items);
+      });
+    })) as Array<{ key?: unknown }>;
+
+    return cookies
+      .map((cookie) => cookie?.key)
+      .filter((name): name is string => typeof name === "string" && name.length > 0);
+  }
+
+  return [];
+}
+
 /**
  * Basic auth lifecycle:
  *  - signer -> signup -> session (cookie stored)
@@ -92,6 +140,47 @@ test("Auth: basic", async (t) => {
 
   // 6) Write succeeds again
   await session2.storage.putText(PATH_AUTH_BASIC, "hello again");
+
+  t.end();
+});
+
+test("Auth: signout removes persisted session cookies", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const sessions: Array<{ session: SignupSession; user: string }> = [];
+
+  for (let i = 0; i < 3; i += 1) {
+    const signer = sdk.signer(Keypair.random());
+    const token = await createSignupToken();
+    const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
+    const user = session.info.publicKey.z32();
+
+    sessions.push({ session, user });
+  }
+
+  {
+    const cookieNames = await listEnvironmentCookieNames();
+    const missing = sessions
+      .map(({ user }) => user)
+      .filter((user) => !cookieNames.includes(user));
+
+    t.deepEqual(missing, [], "signup should install session cookies for each user");
+  }
+
+  for (const { session } of sessions) {
+    await session.signout();
+  }
+
+  const remainingCookies = await listEnvironmentCookieNames();
+  const lingering = sessions
+    .map(({ user }) => user)
+    .filter((user) => remainingCookies.includes(user));
+
+  t.deepEqual(
+    lingering,
+    [],
+    "cookies belonging to signed-out sessions should be removed from the environment",
+  );
 
   t.end();
 });

@@ -1,7 +1,14 @@
 // js/src/wrappers/session.rs
 use wasm_bindgen::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
+#[cfg(target_arch = "wasm32")]
+use web_sys::console;
+
 use super::storage::SessionStorage;
+#[cfg(target_arch = "wasm32")]
+use crate::cookies;
 use crate::js_error::{JsResult, PubkyError};
 use crate::wrappers::session_info::SessionInfo;
 
@@ -35,8 +42,21 @@ impl Session {
     /// @returns {Promise<void>}
     #[wasm_bindgen]
     pub async fn signout(&self) -> JsResult<()> {
+        let cookie_name = self.0.info().public_key().to_string();
         match self.0.clone().signout().await {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    if let Err(err) = cookies::clear_session_cookie(&cookie_name).await {
+                        console::warn_2(
+                            &JsValue::from_str("Failed to clear session cookie locally"),
+                            &err,
+                        );
+                    }
+                }
+
+                Ok(())
+            }
             Err((e, _s)) => Err(PubkyError::from(e)),
         }
     }
