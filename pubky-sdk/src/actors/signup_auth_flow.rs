@@ -1,25 +1,28 @@
-//! Client <=> Signer authing (“pubkyauth”) as a single, self-contained flow.
+//! Client <=> Signer signup authing (“pubkysignupauth”) as a single, self-contained flow.
 //!
 //! ## TL;DR (happy path)
 //! ```no_run
-//! # use pubky::{Capabilities, PubkyAuthFlow};
+//! # use pubky::{Capabilities, PubkySignupAuthFlow};
 //! # async fn run() -> pubky::Result<()> {
 //! let caps = Capabilities::default();
-//! let flow = PubkyAuthFlow::start(&caps)?; // starts background polling immediately
-//! println!("Scan to sign in: {}", flow.authorization_url());
+//! let invite_code = "1234567890";
+//! let homeserver_public_key: PublicKey = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo".parse().unwrap();
+//! let flow = PubkySignupAuthFlow::builder(&caps, homeserver_public_key).invite_code(invite_code.to_string()).start()?;  // starts background polling immediately
+//! println!("Scan to sign up: {}", flow.authorization_url());
 //!
 //! // Blocks until the signer (e.g., Pubky Ring) approves and server issues a session.
 //! let session = flow.await_approval().await?;
-//! println!("Signed in as {}", session.info().public_key());
+//! println!("Signed up as {}", session.info().public_key());
 //! # Ok(()) }
 //! ```
 //!
 //! ## Custom relay / non-blocking UI
 //! ```no_run
-//! # use pubky::{Capabilities, PubkyAuthFlow};
+//! # use pubky::{Capabilities, PubkySignupAuthFlow};
 //! # use std::time::Duration;
 //! # async fn ui() -> pubky::Result<()> {
-//! let flow = PubkyAuthFlow::builder(&Capabilities::default())
+//! let homeserver_public_key: PublicKey = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo".parse().unwrap();
+//! let flow = PubkySignupAuthFlow::builder(&Capabilities::default(), homeserver_public_key)
 //!     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
 //!     .start()?; // starts background polling immediately
 //!
@@ -45,6 +48,7 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::future::{AbortHandle, Abortable};
 
+use pkarr::PublicKey;
 use reqwest::Method;
 use url::Url;
 
@@ -73,14 +77,14 @@ use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 /// Background polling **starts immediately** at construction. Dropping this value cancels
 /// the background task; the relay channel itself expires server-side after its TTL.
 #[derive(Debug)]
-pub struct PubkyAuthFlow {
+pub struct PubkySignupAuthFlow {
     client: PubkyHttpClient,
     auth_url: Url,
     rx: flume::Receiver<Result<AuthToken>>,
     abort: AbortHandle,
 }
 
-impl PubkyAuthFlow {
+impl PubkySignupAuthFlow {
     /// Start a flow with the default HTTP relay.
     ///
     /// Spawns the background poller immediately and returns a handle.
@@ -88,14 +92,17 @@ impl PubkyAuthFlow {
     /// # Errors
     /// - Returns [`crate::errors::Error`] if constructing the backing [`PubkyHttpClient`]
     ///   or generating the relay URL fails.
-    pub fn start(caps: &Capabilities) -> Result<Self> {
-        PubkyAuthFlowBuilder::new(caps.clone()).start()
+    pub fn start(caps: &Capabilities, homeserver_public_key: PublicKey) -> Result<Self> {
+        PubkySignupAuthFlowBuilder::new(caps.clone(), homeserver_public_key).start()
     }
 
     /// Create a builder to override **relay** and/or provide a custom **client**.
     #[must_use]
-    pub fn builder(caps: &Capabilities) -> PubkyAuthFlowBuilder {
-        PubkyAuthFlowBuilder::new(caps.clone())
+    pub fn builder(
+        caps: &Capabilities,
+        homeserver_public_key: PublicKey,
+    ) -> PubkySignupAuthFlowBuilder {
+        PubkySignupAuthFlowBuilder::new(caps.clone(), homeserver_public_key)
     }
 
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
@@ -176,7 +183,7 @@ impl PubkyAuthFlow {
     ) {
         cross_log!(
             info,
-            "Starting auth flow polling for relay channel {}",
+            "Starting auth signup flow polling for relay channel {}",
             relay_channel_url
         );
         let result = Self::poll_for_token(&client, &relay_channel_url, &client_secret).await;
@@ -184,7 +191,7 @@ impl PubkyAuthFlow {
         if result.is_ok() {
             cross_log!(
                 info,
-                "Auth flow successfully decrypted token for relay channel {}",
+                "Auth signup flow successfully decrypted token for relay channel {}",
                 relay_channel_url
             );
         }
@@ -204,7 +211,7 @@ impl PubkyAuthFlow {
         if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
             cross_log!(
                 warn,
-                "Auth flow relay channel {} expired (status: {})",
+                "Auth signup flow relay channel {} expired (status: {})",
                 relay_channel_url,
                 response.status()
             );
@@ -226,7 +233,7 @@ impl PubkyAuthFlow {
             attempt += 1;
             cross_log!(
                 debug,
-                "Auth flow polling attempt {attempt} requesting {}",
+                "Auth signup flow polling attempt {attempt} requesting {}",
                 relay_channel_url
             );
 
@@ -247,7 +254,7 @@ impl PubkyAuthFlow {
             Ok(response) => {
                 cross_log!(
                     debug,
-                    "Received response for auth flow polling attempt {attempt}: status {}",
+                    "Received response for auth signup flow polling attempt {attempt}: status {}",
                     response.status()
                 );
                 Ok(Some(response))
@@ -255,14 +262,14 @@ impl PubkyAuthFlow {
             Err(PollError::Timeout) => {
                 cross_log!(
                     debug,
-                    "Auth flow polling attempt {attempt} timed out; retrying"
+                    "Auth signup flow polling attempt {attempt} timed out; retrying"
                 );
                 Ok(None)
             }
             Err(PollError::Failure(err)) => {
                 cross_log!(
                     error,
-                    "Auth flow polling attempt {attempt} failed at {}: {err}",
+                    "Auth signup flow polling attempt {attempt} failed at {}: {err}",
                     relay_channel_url
                 );
                 Err(err)
@@ -297,28 +304,30 @@ enum PollError {
     Failure(Error),
 }
 
-impl Drop for PubkyAuthFlow {
+impl Drop for PubkySignupAuthFlow {
     fn drop(&mut self) {
         // Stop background polling immediately.
         self.abort.abort();
     }
 }
 
-/// Builder for [`PubkyAuthFlow`].
+/// Builder for [`PubkySignupAuthFlow`].
 ///
-/// Use to override the HTTP relay and/or the `PubkyHttpClient`.
+/// Use to override the HTTP relay, the `PubkyHttpClient`, or set the invite code.
 #[derive(Debug, Clone)]
-pub struct PubkyAuthFlowBuilder {
-    caps: Capabilities,
-    relay: Option<Url>,
+pub struct PubkySignupAuthFlowBuilder {
+    // caps: Capabilities,
+    // relay: Option<Url>,
     client: Option<PubkyHttpClient>,
+    // homeserver_public_key: PublicKey,
+    // invite_code: Option<String>,
+    url: SignupAuthUrl,
 }
 
-impl PubkyAuthFlowBuilder {
-    pub(crate) const fn new(caps: Capabilities) -> Self {
+impl PubkySignupAuthFlowBuilder {
+    pub(crate) fn new(caps: Capabilities, homeserver_public_key: PublicKey) -> Self {
         Self {
-            caps,
-            relay: None,
+            url: SignupAuthUrl::new(homeserver_public_key, caps),
             client: None,
         }
     }
@@ -326,7 +335,7 @@ impl PubkyAuthFlowBuilder {
     /// Set a custom relay base URL. The flow will append the per-channel segment
     /// as `base + base64url(hash(client_secret))`. Trailing slash optional.
     pub fn relay(mut self, relay: Url) -> Self {
-        self.relay = Some(relay);
+        self.url.set_relay(relay);
         self
     }
 
@@ -336,33 +345,22 @@ impl PubkyAuthFlowBuilder {
         self
     }
 
+    /// Set the invite code to use for the signup flow.
+    pub fn invite_code(mut self, invite_code: String) -> Self {
+        self.url.set_invite_code(Some(invite_code));
+        self
+    }
+
     /// Finalize: derive channel, compute the `pubkyauth://` deep link, spawn the background poller,
     /// and return the flow handle.
-    pub fn start(self) -> Result<PubkyAuthFlow> {
+    pub fn start(self) -> Result<PubkySignupAuthFlow> {
         let client = match self.client {
             Some(c) => c,
             None => PubkyHttpClient::new()?,
         };
 
-        // 1) Resolve relay base (default if not provided).
-        let mut relay = match self.relay {
-            Some(u) => u,
-            None => Url::parse(DEFAULT_HTTP_RELAY)?,
-        };
-
-        // 2) Generate client secret and build pubkyauth:// URL (caps + secret + relay).
-        let client_secret = random_bytes::<32>();
-        let caps_str = self.caps.to_string();
-        let secret_b64 = URL_SAFE_NO_PAD.encode(client_secret);
-        let relay_str = relay.as_str().to_owned();
-
-        let mut auth_url = Url::parse("pubkyauth:///")?;
-        {
-            let mut query = auth_url.query_pairs_mut();
-            query.append_pair("caps", &caps_str);
-            query.append_pair("secret", &secret_b64);
-            query.append_pair("relay", &relay_str)
-        };
+        let mut relay = self.url.relay().clone();
+        let client_secret = self.url.client_secret().clone();
 
         // 3) Append derived channel id to the relay URL.
         //    channel_id = base64url( hash(client_secret) )
@@ -375,7 +373,7 @@ impl PubkyAuthFlowBuilder {
             segs.push(&channel_id)
         };
 
-        cross_log!(info, "Auth flow derived relay channel {}", relay);
+        cross_log!(info, "Auth signup flow derived relay channel {}", relay);
 
         // 4) Spawn background polling (single-shot delivery)
         let (tx, rx) = flume::bounded(1);
@@ -385,8 +383,8 @@ impl PubkyAuthFlowBuilder {
         let bg_secret = client_secret;
 
         let fut = async move {
-            cross_log!(info, "Spawning auth flow polling task");
-            PubkyAuthFlow::poll_for_token_loop(bg_client, bg_relay, bg_secret, tx).await;
+            cross_log!(info, "Spawning auth signup flow polling task");
+            PubkySignupAuthFlow::poll_for_token_loop(bg_client, bg_relay, bg_secret, tx).await;
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -395,39 +393,177 @@ impl PubkyAuthFlowBuilder {
         #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
 
-        Ok(PubkyAuthFlow {
+        Ok(PubkySignupAuthFlow {
             client,
-            auth_url,
+            auth_url: self.url.to_url(),
             rx,
             abort: abort_handle,
         })
     }
 }
 
+/// Error type for [`SignupAuthUrl`] parsing and construction.
+#[derive(Debug, thiserror::Error)]
+pub enum SignupAuthUrlError {
+    /// The scheme is invalid. Expected 'pubkyauth' but got '{0}'.
+    #[error("Invalid scheme. Expected 'pubkyauth' but got '{0}'")]
+    InvalidScheme(String),
+    /// The path is invalid. Expected '/signup' but got '{0}'.
+    #[error("Invalid path. Expected '/signup' but got '{0}'")]
+    InvalidPath(String),
+    /// The query is invalid. Missing or invalid query parameter '{0}'.
+    #[error("Invalid query. Missing or invalid query parameter '{0}'")]
+    InvalidQuery(String),
+}
+
+/// A Pubky Signup Auth URL that is used to start the qr signup flow.
+/// Deeplink or QR code can be generated from this URL.
+#[derive(Debug, Clone)]
+pub struct SignupAuthUrl {
+    invite_code: Option<String>,
+    homeserver_public_key: PublicKey,
+    caps: Capabilities,
+    relay: Url,
+    client_secret: [u8; 32],
+}
+
+impl SignupAuthUrl {
+    /// Create a new SignupAuthUrl with the given homeserver public key and capabilities.
+    /// Uses the default HTTP relay.
+    pub fn new(homeserver_public_key: PublicKey, caps: Capabilities) -> Self {
+        Self { invite_code: None, homeserver_public_key, caps, relay: Url::parse(DEFAULT_HTTP_RELAY).expect("Should be able to parse the default HTTP relay"), client_secret: random_bytes::<32>() }
+    }
+
+    /// Get the invite code for the signup flow.
+    pub fn invite_code(&self) -> Option<&String> {
+        self.invite_code.as_ref()
+    }
+
+    /// Get the homeserver public key for the signup flow.
+    pub fn homeserver_public_key(&self) -> &PublicKey {
+        &self.homeserver_public_key
+    }
+
+    /// Get the capabilities for the signup flow.
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.caps
+    }
+
+    /// Get the relay for the signup flow.
+    pub fn relay(&self) -> &Url {
+        &self.relay
+    }
+
+    /// Get the client secret for the signup flow.
+    pub fn client_secret(&self) -> &[u8; 32] {
+        &self.client_secret
+    }
+
+    /// Set the invite code for the signup flow.
+    pub fn set_invite_code(&mut self, invite_code: Option<String>) {
+        self.invite_code = invite_code;
+    }
+
+    /// Set a custom relay for the signup flow.
+    pub fn set_relay(&mut self, relay: Url) {
+        self.relay = relay;
+    }
+
+    /// Convert the SignupAuthUrl to a URL.
+    pub fn to_url(&self) -> Url {
+        let mut url = Url::parse("pubkyauth:///signup").expect("Should be able to parse the signup URL");
+        let mut query = url.query_pairs_mut();
+        query.append_pair("caps", &self.caps.to_string());
+        query.append_pair("secret", &URL_SAFE_NO_PAD.encode(self.client_secret));
+        query.append_pair("relay", &self.relay.as_str());
+        query.append_pair("hs", &self.homeserver_public_key.to_string());
+        if let Some(invite_code) = &self.invite_code {
+            query.append_pair("ic", &invite_code);
+        }
+        drop(query);
+        url
+    }
+
+    /// Parse a URL into a SignupAuthUrl.
+    /// Returns an error if the URL is invalid not matching the expected format.
+    pub fn parse_url(url: &Url) -> std::result::Result<Self, SignupAuthUrlError> {
+        if url.scheme().to_lowercase() != "pubkyauth" {
+            return Err(SignupAuthUrlError::InvalidScheme(url.scheme().to_string()));
+        }
+        if url.path() != "/signup" {
+            return Err(SignupAuthUrlError::InvalidPath(url.path().to_string()));
+        }
+
+        fn extract_query_param(url: &Url, param: &str) -> std::result::Result<String, SignupAuthUrlError> {
+            url.query_pairs().find(|(k, _)| k == param).map(|(_, v)| v.to_string()).ok_or(SignupAuthUrlError::InvalidQuery(param.to_string()))
+        }
+        let caps = extract_query_param(url, "caps")?;
+        let caps: Capabilities = Capabilities::try_from(caps.as_str()).map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid caps: {e}")))?;
+        let secret = extract_query_param(url, "secret")?;
+        let client_secret = URL_SAFE_NO_PAD.decode(secret).map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid secret: {e}")))?;
+        let client_secret: [u8; 32] = client_secret.try_into().map_err(|_| SignupAuthUrlError::InvalidQuery(format!("Invalid client secret")))?;
+        let relay = extract_query_param(url, "relay")?;
+        let relay = Url::parse(&relay).map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid relay: {e}")))?;
+        let homeserver_public_key = extract_query_param(url, "hs")?;
+        let homeserver_public_key: PublicKey = homeserver_public_key.parse().map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid homeserver public key: {e}")))?;
+        let ic = if url.query_pairs().any(|(k, _)| k == "ic") {
+            let invite_code = extract_query_param(url, "ic")?;
+            Some(invite_code)
+        } else {
+            None
+        };
+
+        Ok(SignupAuthUrl { invite_code: ic, homeserver_public_key, caps, relay, client_secret })
+    }
+}
+
+impl TryInto<SignupAuthUrl> for Url {
+    type Error = SignupAuthUrlError;
+
+    fn try_into(self) -> std::result::Result<SignupAuthUrl, Self::Error> {
+        SignupAuthUrl::parse_url(&self)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn parses_url() {
+        let homeserver_public_key: PublicKey =
+            "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+                .parse()
+                .unwrap();
+        let caps = Capabilities::builder().read_write("/").finish();
+        
+        let mut signup_url = SignupAuthUrl::new(homeserver_public_key.clone(), caps.clone());
+        signup_url.set_invite_code(Some("1234567890".to_string()));
+        let url = signup_url.to_url();
+        let parsed_url = SignupAuthUrl::parse_url(&url).unwrap();
+        assert_eq!(parsed_url.caps, caps);
+        assert_eq!(parsed_url.homeserver_public_key, homeserver_public_key);
+        assert_eq!(parsed_url.invite_code, Some("1234567890".to_string()));
+    }
+
     #[tokio::test]
     async fn constructs_urls_and_channel() {
-        let caps = Capabilities::default();
-        let flow = PubkyAuthFlow::start(&caps).unwrap();
+        let homeserver_public_key: PublicKey =
+            "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+                .parse()
+                .unwrap();
+        let caps = Capabilities::builder().read_write("/").finish();
+        let invite_code = "1234567890";
+        let flow = PubkySignupAuthFlow::builder(&caps, homeserver_public_key.clone()).invite_code(invite_code.to_string()).start().unwrap();
 
-        // pubkyauth:// deep link contains caps + secret + relay
-        assert!(
-            flow.authorization_url()
-                .as_str()
-                .starts_with("pubkyauth:///?caps=")
-        );
-        assert!(
-            flow.authorization_url()
-                .query_pairs()
-                .any(|(k, _)| k == "secret")
-        );
-        assert!(
-            flow.authorization_url()
-                .query_pairs()
-                .any(|(k, _)| k == "relay")
-        );
+        // pubkyauth:///signup deep link contains caps + secret + relay + hs + ic
+        let url = flow.authorization_url();
+        assert!(url.as_str().starts_with("pubkyauth:///signup?"));
+        assert!(url.query_pairs().any(|(k, v)| k == "caps" && v == caps.to_string()));
+        assert!(url.query_pairs().any(|(k, _)| k == "secret"));
+        assert!(url.query_pairs().any(|(k, _)| k == "relay"));
+        assert!(url.query_pairs().any(|(k, v)| k == "hs" && v == homeserver_public_key.to_string()));
+        assert!(url.query_pairs().any(|(k, v)| k == "ic" && v == invite_code));
     }
 }

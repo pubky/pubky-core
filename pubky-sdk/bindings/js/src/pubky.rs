@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 
+use crate::actors::auth_signup_flow::AuthSignupFlow;
 use crate::actors::{auth_flow::AuthFlow, signer::Signer, storage::PublicStorage};
 use crate::wrappers::keys::PublicKey;
 use crate::{client::constructor::Client, js_error::JsResult, wrappers::keys::Keypair};
@@ -52,6 +53,40 @@ impl Pubky {
     #[wasm_bindgen(js_name = "withClient")]
     pub fn with_client(client: &Client) -> Pubky {
         Pubky(pubky::Pubky::with_client(client.0.clone()))
+    }
+
+    /// Start a **pubkysignupauth** flow.
+    ///
+    /// Provide a **capabilities string** and (optionally) a relay base URL.
+    /// The capabilities string is a comma-separated list of entries:
+    /// `"<scope>:<actions>"`, where:
+    /// - `scope` starts with `/` (e.g. `/pub/example.com/`).
+    /// - `actions` is any combo of `r` and/or `w` (order normalized; `wr` -> `rw`).
+    /// Pass `""` for no scopes (read-only public session).
+    ///
+    /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
+    /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/link/"`).
+    /// @returns {AuthFlow}
+    /// A running auth flow. Show `authorizationUrl` as QR/deeplink,
+    /// then `awaitApproval()` to obtain a `Session`.
+    ///
+    /// @throws {PubkyError}
+    /// - `{ name: "InvalidInput" }` for malformed capabilities or bad relay URL
+    /// - `{ name: "RequestError" }` if the flow cannot be started (network/relay)
+    ///
+    /// @example
+    /// const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
+    /// renderQr(flow.authorizationUrl);
+    /// const session = await flow.awaitApproval();
+    #[wasm_bindgen(js_name = "startAuthSignupFlow")]
+    pub fn start_auth_signup_flow(
+        &self,
+        homeserver_public_key: &PublicKey,
+        #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        invite_code: Option<String>,
+        relay: Option<String>,
+    ) -> JsResult<AuthSignupFlow> {
+        AuthSignupFlow::start_with_client(homeserver_public_key, invite_code, capabilities, relay, Some(self.0.client().clone()))
     }
 
     /// Start a **pubkyauth** flow.
