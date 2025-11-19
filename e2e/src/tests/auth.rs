@@ -1,5 +1,6 @@
 use pubky_testnet::pubky::{
-    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySignupAuthFlow, SignupAuthUrl, StatusCode
+    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySignupAuthFlow,
+    SignupAuthUrl, StatusCode,
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
@@ -189,7 +190,10 @@ async fn signup_authz() {
 
     // Signer authenticator
     let signer = pubky.signer(Keypair::random());
-    signer.signup(&url.homeserver_public_key(), None).await.unwrap();
+    signer
+        .signup(&url.homeserver_public_key(), None)
+        .await
+        .unwrap();
     signer
         .approve_auth(&auth.authorization_url())
         .await

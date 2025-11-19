@@ -58,12 +58,15 @@ use pubky_common::{
 };
 
 use crate::{
-    AuthToken, Capabilities, PubkyHttpClient, PubkySession, actors::DEFAULT_HTTP_RELAY, cross_log, errors::{AuthError, Error, Result}, util::check_http_status
+    AuthToken, Capabilities, PubkyHttpClient, PubkySession,
+    actors::DEFAULT_HTTP_RELAY,
+    cross_log,
+    errors::{AuthError, Error, Result},
+    util::check_http_status,
 };
 
 #[cfg(target_arch = "wasm32")]
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
-
 
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
 ///
@@ -360,7 +363,7 @@ impl PubkySignupAuthFlowBuilder {
         };
 
         let mut relay = self.url.relay().clone();
-        let client_secret = self.url.client_secret().clone();
+        let client_secret = *self.url.client_secret();
 
         // 3) Append derived channel id to the relay URL.
         //    channel_id = base64url( hash(client_secret) )
@@ -428,18 +431,32 @@ pub struct SignupAuthUrl {
 }
 
 impl SignupAuthUrl {
-    /// Create a new SignupAuthUrl with the given homeserver public key and capabilities.
+    /// Create a new `SignupAuthUrl` with the given homeserver public key and capabilities.
     /// Uses the default HTTP relay.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Should be able to parse the default HTTP relay"
+    )]
+    #[must_use]
     pub fn new(homeserver_public_key: PublicKey, caps: Capabilities) -> Self {
-        Self { invite_code: None, homeserver_public_key, caps, relay: Url::parse(DEFAULT_HTTP_RELAY).expect("Should be able to parse the default HTTP relay"), client_secret: random_bytes::<32>() }
+        Self {
+            invite_code: None,
+            homeserver_public_key,
+            caps,
+            relay: Url::parse(DEFAULT_HTTP_RELAY)
+                .expect("Should be able to parse the default HTTP relay"),
+            client_secret: random_bytes::<32>(),
+        }
     }
 
     /// Get the invite code for the signup flow.
+    #[must_use]
     pub fn invite_code(&self) -> Option<&String> {
         self.invite_code.as_ref()
     }
 
     /// Get the homeserver public key for the signup flow.
+    #[must_use]
     pub fn homeserver_public_key(&self) -> &PublicKey {
         &self.homeserver_public_key
     }
@@ -450,11 +467,13 @@ impl SignupAuthUrl {
     }
 
     /// Get the relay for the signup flow.
+    #[must_use]
     pub fn relay(&self) -> &Url {
         &self.relay
     }
 
     /// Get the client secret for the signup flow.
+    #[must_use]
     pub fn client_secret(&self) -> &[u8; 32] {
         &self.client_secret
     }
@@ -469,24 +488,44 @@ impl SignupAuthUrl {
         self.relay = relay;
     }
 
-    /// Convert the SignupAuthUrl to a URL.
+    /// Convert the `SignupAuthUrl` to a URL.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Should be able to parse the base url"
+    )]
+    #[must_use]
     pub fn to_url(&self) -> Url {
-        let mut url = Url::parse("pubkyauth:///signup").expect("Should be able to parse the signup URL");
+        let mut url =
+            Url::parse("pubkyauth:///signup").expect("Should be able to parse the signup URL");
         let mut query = url.query_pairs_mut();
         query.append_pair("caps", &self.caps.to_string());
         query.append_pair("secret", &URL_SAFE_NO_PAD.encode(self.client_secret));
-        query.append_pair("relay", &self.relay.as_str());
+        query.append_pair("relay", self.relay.as_str());
         query.append_pair("hs", &self.homeserver_public_key.to_string());
         if let Some(invite_code) = &self.invite_code {
-            query.append_pair("ic", &invite_code);
+            query.append_pair("ic", invite_code);
         }
         drop(query);
         url
     }
 
-    /// Parse a URL into a SignupAuthUrl.
+    /// Parse a URL into a `SignupAuthUrl`.
     /// Returns an error if the URL is invalid not matching the expected format.
+    /// # Errors
+    /// - Returns [`SignupAuthUrlError::InvalidScheme`] if the scheme is not "pubkyauth://".
+    /// - Returns [`SignupAuthUrlError::InvalidPath`] if the path is not "/signup".
+    /// - Returns [`SignupAuthUrlError::InvalidQuery`] if a required query parameter is missing or invalid.
     pub fn parse_url(url: &Url) -> std::result::Result<Self, SignupAuthUrlError> {
+        fn extract_query_param(
+            url: &Url,
+            param: &str,
+        ) -> std::result::Result<String, SignupAuthUrlError> {
+            url.query_pairs()
+                .find(|(k, _)| k == param)
+                .map(|(_, v)| v.to_string())
+                .ok_or(SignupAuthUrlError::InvalidQuery(param.to_string()))
+        }
+
         if url.scheme().to_lowercase() != "pubkyauth" {
             return Err(SignupAuthUrlError::InvalidScheme(url.scheme().to_string()));
         }
@@ -494,18 +533,23 @@ impl SignupAuthUrl {
             return Err(SignupAuthUrlError::InvalidPath(url.path().to_string()));
         }
 
-        fn extract_query_param(url: &Url, param: &str) -> std::result::Result<String, SignupAuthUrlError> {
-            url.query_pairs().find(|(k, _)| k == param).map(|(_, v)| v.to_string()).ok_or(SignupAuthUrlError::InvalidQuery(param.to_string()))
-        }
         let caps = extract_query_param(url, "caps")?;
-        let caps: Capabilities = Capabilities::try_from(caps.as_str()).map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid caps: {e}")))?;
+        let caps: Capabilities = Capabilities::try_from(caps.as_str())
+            .map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid caps: {e}")))?;
         let secret = extract_query_param(url, "secret")?;
-        let client_secret = URL_SAFE_NO_PAD.decode(secret).map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid secret: {e}")))?;
-        let client_secret: [u8; 32] = client_secret.try_into().map_err(|_| SignupAuthUrlError::InvalidQuery(format!("Invalid client secret")))?;
+        let client_secret = URL_SAFE_NO_PAD
+            .decode(secret)
+            .map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid secret: {e}")))?;
+        let client_secret: [u8; 32] = client_secret
+            .try_into()
+            .map_err(|_e| SignupAuthUrlError::InvalidQuery("Invalid client secret".to_string()))?;
         let relay = extract_query_param(url, "relay")?;
-        let relay = Url::parse(&relay).map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid relay: {e}")))?;
+        let relay = Url::parse(&relay)
+            .map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid relay: {e}")))?;
         let homeserver_public_key = extract_query_param(url, "hs")?;
-        let homeserver_public_key: PublicKey = homeserver_public_key.parse().map_err(|e| SignupAuthUrlError::InvalidQuery(format!("Invalid homeserver public key: {e}")))?;
+        let homeserver_public_key: PublicKey = homeserver_public_key.parse().map_err(|e| {
+            SignupAuthUrlError::InvalidQuery(format!("Invalid homeserver public key: {e}"))
+        })?;
         let ic = if url.query_pairs().any(|(k, _)| k == "ic") {
             let invite_code = extract_query_param(url, "ic")?;
             Some(invite_code)
@@ -513,7 +557,13 @@ impl SignupAuthUrl {
             None
         };
 
-        Ok(SignupAuthUrl { invite_code: ic, homeserver_public_key, caps, relay, client_secret })
+        Ok(SignupAuthUrl {
+            invite_code: ic,
+            homeserver_public_key,
+            caps,
+            relay,
+            client_secret,
+        })
     }
 }
 
@@ -524,7 +574,6 @@ impl TryInto<SignupAuthUrl> for Url {
         SignupAuthUrl::parse_url(&self)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -537,7 +586,7 @@ mod tests {
                 .parse()
                 .unwrap();
         let caps = Capabilities::builder().read_write("/").finish();
-        
+
         let mut signup_url = SignupAuthUrl::new(homeserver_public_key.clone(), caps.clone());
         signup_url.set_invite_code(Some("1234567890".to_string()));
         let url = signup_url.to_url();
@@ -555,15 +604,27 @@ mod tests {
                 .unwrap();
         let caps = Capabilities::builder().read_write("/").finish();
         let invite_code = "1234567890";
-        let flow = PubkySignupAuthFlow::builder(&caps, homeserver_public_key.clone()).invite_code(invite_code.to_string()).start().unwrap();
+        let flow = PubkySignupAuthFlow::builder(&caps, homeserver_public_key.clone())
+            .invite_code(invite_code.to_string())
+            .start()
+            .unwrap();
 
         // pubkyauth:///signup deep link contains caps + secret + relay + hs + ic
         let url = flow.authorization_url();
         assert!(url.as_str().starts_with("pubkyauth:///signup?"));
-        assert!(url.query_pairs().any(|(k, v)| k == "caps" && v == caps.to_string()));
+        assert!(
+            url.query_pairs()
+                .any(|(k, v)| k == "caps" && v == caps.to_string())
+        );
         assert!(url.query_pairs().any(|(k, _)| k == "secret"));
         assert!(url.query_pairs().any(|(k, _)| k == "relay"));
-        assert!(url.query_pairs().any(|(k, v)| k == "hs" && v == homeserver_public_key.to_string()));
-        assert!(url.query_pairs().any(|(k, v)| k == "ic" && v == invite_code));
+        assert!(
+            url.query_pairs()
+                .any(|(k, v)| k == "hs" && v == homeserver_public_key.to_string())
+        );
+        assert!(
+            url.query_pairs()
+                .any(|(k, v)| k == "ic" && v == invite_code)
+        );
     }
 }

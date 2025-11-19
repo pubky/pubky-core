@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 
 use super::session::Session;
 use crate::{
-    js_error::{JsResult},
+    js_error::JsResult,
     wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start, keys::PublicKey},
 };
 
@@ -50,7 +50,13 @@ impl AuthSignupFlow {
         invite_code: Option<String>,
         relay: Option<String>,
     ) -> JsResult<AuthSignupFlow> {
-        Self::start_with_client(homeserver_public_key, invite_code, capabilities, relay, None)
+        Self::start_with_client(
+            homeserver_public_key,
+            invite_code,
+            capabilities,
+            relay,
+            None,
+        )
     }
 
     /// Internal helper that threads an explicit transport.
@@ -67,7 +73,8 @@ impl AuthSignupFlow {
         let caps = Capabilities::try_from(normalized.as_str())?;
 
         // 3) Build the flow with optional relay and optional client
-        let mut builder = pubky::PubkySignupAuthFlow::builder(&caps, homeserver_public_key.as_inner().clone());
+        let mut builder =
+            pubky::PubkySignupAuthFlow::builder(&caps, homeserver_public_key.as_inner().clone());
         if let Some(c) = client {
             builder = builder.client(c);
         }

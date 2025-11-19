@@ -54,12 +54,15 @@ use pubky_common::{
 };
 
 use crate::{
-    AuthToken, Capabilities, PubkyHttpClient, PubkySession, actors::DEFAULT_HTTP_RELAY, cross_log, errors::{AuthError, Error, Result}, util::check_http_status
+    AuthToken, Capabilities, PubkyHttpClient, PubkySession,
+    actors::DEFAULT_HTTP_RELAY,
+    cross_log,
+    errors::{AuthError, Error, Result},
+    util::check_http_status,
 };
 
 #[cfg(target_arch = "wasm32")]
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
-
 
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
 ///

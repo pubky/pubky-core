@@ -34,15 +34,15 @@ pub use actors::Pkdns;
 #[doc(inline)]
 pub use actors::PubkyAuthFlow;
 #[doc(inline)]
+pub use actors::PubkySession;
+#[doc(inline)]
+pub use actors::PubkySigner;
+#[doc(inline)]
 pub use actors::PubkySignupAuthFlow;
 #[doc(inline)]
 pub use actors::SignupAuthUrl;
 #[doc(inline)]
 pub use actors::SignupAuthUrlError;
-#[doc(inline)]
-pub use actors::PubkySession;
-#[doc(inline)]
-pub use actors::PubkySigner;
 #[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 

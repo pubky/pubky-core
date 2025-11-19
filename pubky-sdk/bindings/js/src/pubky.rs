@@ -86,7 +86,13 @@ impl Pubky {
         invite_code: Option<String>,
         relay: Option<String>,
     ) -> JsResult<AuthSignupFlow> {
-        AuthSignupFlow::start_with_client(homeserver_public_key, invite_code, capabilities, relay, Some(self.0.client().clone()))
+        AuthSignupFlow::start_with_client(
+            homeserver_public_key,
+            invite_code,
+            capabilities,
+            relay,
+            Some(self.0.client().clone()),
+        )
     }
 
     /// Start a **pubkyauth** flow.
