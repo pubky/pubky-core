@@ -363,3 +363,286 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
 
   t.end();
 });
+
+test("Auth: signout removes persisted session cookies", async (t) => {
+  const sdk = Pubky.testnet();
+
+  type CookieEvidence = {
+    actualNames: string[];
+    actualIsTrusted: boolean;
+    fallbackNames: string[];
+    reason?: string;
+  };
+
+  const COOKIE_INSPECTION_REASON =
+    "Cookie jar introspection unavailable (HttpOnly cookies cannot be read in this runtime)";
+
+  const ensureRealCookieIntrospection = (
+    evidence: CookieEvidence,
+    stage: string,
+  ): boolean => {
+    if (evidence.actualIsTrusted) {
+      return true;
+    }
+
+    t.comment(
+      `${stage}: ${evidence.reason ?? COOKIE_INSPECTION_REASON} — skipping cookie assertions`,
+    );
+    return false;
+  };
+
+  const inspectEnvironmentCookies = async (): Promise<CookieEvidence> => {
+    const fallbackNames: string[] = [];
+    const nodeEvidence = await inspectNodeCookieJar();
+
+    if (nodeEvidence.ok) {
+      const deduped = Array.from(new Set(nodeEvidence.names));
+      return {
+        actualNames: deduped,
+        actualIsTrusted: true,
+        fallbackNames: fallbackNames.length > 0 ? fallbackNames : deduped,
+      };
+    }
+
+    return {
+      actualNames: [],
+      actualIsTrusted: false,
+      fallbackNames,
+      reason: nodeEvidence.reason ?? COOKIE_INSPECTION_REASON,
+    };
+  };
+
+  type ToughCookieRecord = {
+    key?: string | null;
+    expires?: unknown;
+    maxAge?: unknown;
+  };
+
+  type CookieJarLike = {
+    serializeSync?: () =>
+      | {
+          cookies?: Array<{ key?: string | null; expires?: unknown; maxAge?: unknown }>;
+        }
+      | undefined;
+    store?: {
+      getAllCookies?: (
+        callback: (error: unknown, cookies?: ToughCookieRecord[] | null) => void,
+      ) => void;
+    };
+  };
+
+  type FetchWithCookieJar = typeof globalThis.fetch & {
+    cookieJar?: CookieJarLike;
+  };
+
+  const inspectNodeCookieJar = async (): Promise<
+    | { ok: true; names: string[] }
+    | { ok: false; reason?: string }
+  > => {
+    const fetchImpl = globalThis.fetch as FetchWithCookieJar | undefined;
+    if (!fetchImpl || typeof fetchImpl !== "function") {
+      return { ok: false, reason: "globalThis.fetch is not a function" };
+    }
+
+    const jar = fetchImpl.cookieJar;
+    if (!jar) {
+      return { ok: false, reason: "fetch.cookieJar is not available" };
+    }
+
+    const names = await collectCookieNamesFromJar(jar).catch(() => undefined);
+    if (!names) {
+      return { ok: false, reason: "cookie jar did not expose its contents" };
+    }
+
+    return { ok: true, names };
+  };
+
+  type CookieSnapshot =
+    | { key?: string | null; expires?: unknown; maxAge?: unknown }
+    | ToughCookieRecord
+    | undefined;
+
+  const collectCookieNamesFromJar = async (
+    jar: CookieJarLike,
+  ): Promise<string[] | undefined> => {
+    if (typeof jar.serializeSync === "function") {
+      try {
+        const serialized = jar.serializeSync();
+        if (serialized && Array.isArray(serialized.cookies)) {
+          return serialized.cookies
+            .map(extractActiveCookieName)
+            .filter((value): value is string => typeof value === "string" && value.length > 0);
+        }
+      } catch (_) {
+        // Ignore serialization errors and fall through to slower inspection.
+      }
+    }
+
+    if (jar.store && typeof jar.store.getAllCookies === "function") {
+      const cookies = await new Promise<ToughCookieRecord[] | undefined>((resolve) => {
+        try {
+          jar.store?.getAllCookies?.((error, values) => {
+            if (error) {
+              resolve(undefined);
+              return;
+            }
+            resolve(Array.isArray(values) ? values : []);
+          });
+        } catch (_) {
+          resolve(undefined);
+        }
+      });
+
+      if (cookies) {
+        return cookies
+          .map(extractActiveCookieName)
+          .filter((value): value is string => typeof value === "string" && value.length > 0);
+      }
+    }
+
+    return undefined;
+  };
+
+  const extractActiveCookieName = (record: CookieSnapshot): string | undefined => {
+    if (!record) {
+      return undefined;
+    }
+
+    const name = record.key;
+    if (typeof name !== "string" || name.length === 0) {
+      return undefined;
+    }
+
+    if (isExpiredCookieRecord(record)) {
+      return undefined;
+    }
+
+    return name;
+  };
+
+  const isExpiredCookieRecord = (record: CookieSnapshot): boolean => {
+    if (!record) {
+      return false;
+    }
+
+    const now = Date.now();
+    const expiresAt = parseCookieExpiry(record.expires);
+    if (typeof expiresAt === "number" && expiresAt <= now) {
+      return true;
+    }
+
+    const maxAgeSeconds = parseMaybeNumber(record.maxAge);
+    return typeof maxAgeSeconds === "number" && maxAgeSeconds <= 0;
+  };
+
+  const parseCookieExpiry = (value: unknown): number | undefined => {
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.length > 0) {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "infinity") {
+        return undefined;
+      }
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  };
+
+  const parseMaybeNumber = (value: unknown): number | undefined => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  };
+
+  const sessions: Array<{ session: SignupSession; user: string }> = [];
+
+  for (let i = 0; i < 3; i += 1) {
+    const signer = sdk.signer(Keypair.random());
+    const token = await createSignupToken();
+    const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
+    const user = session.info.publicKey.z32();
+
+    sessions.push({ session, user });
+  }
+
+  {
+    const evidence = await inspectEnvironmentCookies();
+    const canInspect = ensureRealCookieIntrospection(evidence, "after signup");
+
+    if (canInspect) {
+      const missing = sessions
+        .map(({ user }) => user)
+        .filter((user) => !evidence.actualNames.includes(user));
+
+      t.deepEqual(
+        missing,
+        [],
+        "signup should install session cookies for each user",
+      );
+
+      if (evidence.fallbackNames.length > 0) {
+        const missingInFallback = sessions
+          .map(({ user }) => user)
+          .filter((user) => !evidence.fallbackNames.includes(user));
+
+        t.deepEqual(
+          missingInFallback,
+          [],
+          "fallback cookie trackers must also record the installed session cookies",
+        );
+      }
+    }
+  }
+
+  for (const { session } of sessions) {
+    await session.signout();
+  }
+
+  const evidence = await inspectEnvironmentCookies();
+  const canInspect = ensureRealCookieIntrospection(evidence, "after signout");
+
+  if (canInspect) {
+    const lingering = sessions
+      .map(({ user }) => user)
+      .filter((user) => evidence.actualNames.includes(user));
+
+    t.deepEqual(
+      lingering,
+      [],
+      "cookies belonging to signed-out sessions should be removed from the environment",
+    );
+
+    if (evidence.fallbackNames.length > 0) {
+      const lingeringInFallback = sessions
+        .map(({ user }) => user)
+        .filter((user) => evidence.fallbackNames.includes(user));
+
+      t.deepEqual(
+        lingeringInFallback,
+        [],
+        "fallback cookie trackers must not retain signed-out sessions",
+      );
+    }
+  }
+
+  t.end();
+});

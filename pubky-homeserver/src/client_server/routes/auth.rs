@@ -138,14 +138,7 @@ async fn create_session_and_cookie(
 
     // 3) Build and set cookie
     let mut cookie = Cookie::new(user.public_key.to_string(), session_secret.to_string());
-    cookie.set_path("/");
-    if is_secure(host) {
-        // Allow this cookie only to be sent over HTTPS.
-        cookie.set_secure(true);
-        cookie.set_same_site(SameSite::None);
-    }
-    // Prevent javascript from accessing the cookie.
-    cookie.set_http_only(true);
+    configure_session_cookie(&mut cookie, host);
     // Set the cookie to expire in one year.
     let one_year = Duration::days(365);
     let expiry = OffsetDateTime::now_utc() + one_year;
@@ -160,6 +153,15 @@ async fn create_session_and_cookie(
         HeaderValue::from_static("application/octet-stream"),
     );
     Ok(resp)
+}
+
+pub(crate) fn configure_session_cookie(cookie: &mut Cookie<'static>, host: &str) {
+    cookie.set_path("/");
+    if is_secure(host) {
+        cookie.set_secure(true);
+        cookie.set_same_site(SameSite::None);
+    }
+    cookie.set_http_only(true);
 }
 
 /// Determines if the host requires secure cookie attributes.
