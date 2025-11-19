@@ -36,8 +36,11 @@ async fn test_limit_signin_get_session() {
             None,
         ),
     ];
-    let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
+    let mock_dir = MockDataDir::new(cfg, None).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
 
     // Create a user (signup should not hit the POST /session signin limit)
     let signer = pubky.signer(Keypair::random());
@@ -93,7 +96,7 @@ async fn test_limit_signin_get_session_whitelist() {
     cfg.drive.rate_limits = vec![limit];
 
     let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
+    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
 
     // --- Whitelisted user ---
     whitelisted_signer
@@ -142,7 +145,7 @@ async fn test_limit_events() {
     )];
 
     let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
+    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
 
     // Events feed URL (pkarr host form)
     let url = format!("https://{}/events/", server.public_key());
@@ -162,7 +165,6 @@ async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
-    // Throttle PUTs under /pub/** to 1 KB/s per user
     let mut cfg = ConfigToml::test();
     cfg.drive.rate_limits = vec![PathLimit::new(
         GlobPattern::new("/pub/**"),
@@ -173,7 +175,7 @@ async fn test_limit_upload() {
     )];
 
     let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
+    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
 
     // User + session-bound session
     let signer = pubky.signer(Keypair::random());
@@ -223,7 +225,7 @@ async fn test_concurrent_write_read() {
         ),
     ];
     let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_with_mock(mock).await.unwrap();
+    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
 
     // --- create 10 independent users (each has its own per-user limiter)
     let user_count = 10usize;

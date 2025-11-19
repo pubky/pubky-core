@@ -4,7 +4,7 @@ use pubky_testnet::{pubky::Keypair, EphemeralTestnet};
 async fn main() -> anyhow::Result<()> {
     // Spin up ephemeral DHT + homeserver
     let testnet = EphemeralTestnet::start().await?;
-    let homeserver = testnet.homeserver();
+    let homeserver = testnet.homeserver_app();
 
     // Intantiate a Pubky SDK wrapper that uses this testnet's preconfigured client for transport
     let pubky = testnet.sdk()?;
