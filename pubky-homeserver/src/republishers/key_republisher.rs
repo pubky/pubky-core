@@ -17,6 +17,14 @@ use crate::app_context::AppContext;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 
+/// Errors that can occur when building a `Republishers`.
+#[derive(Debug, thiserror::Error)]
+pub enum KeyRepublisherBuildError {
+    /// Failed to run the key republisher.
+    #[error("Key republisher error: {0}")]
+    KeyRepublisher(anyhow::Error),
+}
+
 /// Republishes the homeserver's pkarr packet to the DHT every hour.
 pub(crate) struct HomeserverKeyRepublisher {
     join_handle: JoinHandle<()>,
