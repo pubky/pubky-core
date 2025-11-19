@@ -68,11 +68,11 @@ use crate::{
 #[cfg(target_arch = "wasm32")]
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 
-/// End-to-end **auth flow** (request + live polling) you *hold on to*.
+/// End-to-end **auth signup flow** (request + live polling) you *hold on to*.
 ///
 /// Use it like this:
-/// 1. Construct with [`PubkyAuthFlow::start`] (happy path) or the builder
-///    [`PubkyAuthFlow::builder`] to override relay/client.
+/// 1. Construct with [`PubkySignupAuthFlow::start`] (happy path) or the builder
+///    [`PubkySignupAuthFlow::builder`] to override relay/client and pass the homeserver public key and optionally the invite code.
 /// 2. Display [`authorization_url`](Self::authorization_url) (QR/deeplink) to the signer.
 /// 3. Complete the flow with [`await_approval`](Self::await_approval) **or**
 ///    poll with [`try_poll_once`](Self::try_poll_once) / [`try_token`](Self::try_token).
