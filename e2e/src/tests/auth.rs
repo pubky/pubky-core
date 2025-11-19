@@ -58,16 +58,19 @@ async fn disabled_user() {
 
     // Disable the user via admin API
     let admin_socket = server.admin_server().listen_socket();
-    let admin_client = reqwest::Client::new();
+    let admin_client = PubkyHttpClient::new().unwrap();
 
     // Disable the user
     let response = admin_client
-        .post(format!("http://{admin_socket}/users/{pubky}/disable"))
+        .request(
+            Method::POST,
+            &format!("http://{admin_socket}/users/{pubky}/disable"),
+        )
         .header("X-Admin-Password", "admin")
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::OK);
 
     // User can still read their own file
     let response = session.storage().get(file_path).await.unwrap();
@@ -164,7 +167,7 @@ async fn authz() {
 #[pubky_testnet::test]
 async fn persist_and_restore_info() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let homeserver = testnet.homeserver();
+    let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create user and session-bound agent

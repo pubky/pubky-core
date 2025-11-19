@@ -246,7 +246,7 @@ Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
 let testnet = EphemeralTestnet::start().await.unwrap();
-let homeserver  = testnet.homeserver();
+let homeserver  = testnet.homeserver_app();
 let pubky = testnet.sdk()?;
 
 let signer = pubky.signer(Keypair::random());

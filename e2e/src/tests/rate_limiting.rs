@@ -36,7 +36,7 @@ async fn test_limit_signin_get_session() {
             None,
         ),
     ];
-    let mock_dir = MockDataDir::new(config, None).unwrap();
+    let mock_dir = MockDataDir::new(cfg, None).unwrap();
     let server = testnet
         .create_homeserver_app_with_mock(mock_dir)
         .await
@@ -164,6 +164,15 @@ async fn test_limit_events() {
 async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
+
+    let mut cfg = ConfigToml::test();
+    cfg.drive.rate_limits = vec![PathLimit::new(
+        GlobPattern::new("/pub/**"),
+        Method::PUT,
+        "1kb/s".parse().unwrap(),
+        LimitKeyType::User,
+        None,
+    )];
 
     let mock = MockDataDir::new(cfg, None).unwrap();
     let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
