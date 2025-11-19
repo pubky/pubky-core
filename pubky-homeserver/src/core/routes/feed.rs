@@ -15,7 +15,7 @@ use std::{collections::HashMap, convert::Infallible};
 use crate::{
     core::{extractors::ListQueryParams, AppState},
     persistence::{
-        files::events::{Cursor, EventEntity, EventType, EventsService, MAX_EVENT_STREAM_USERS},
+        files::events::{Cursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
         sql::SqlDb,
     },
     shared::{parse_bool, webdav::WebDavPath, HttpError, HttpResult},
@@ -86,10 +86,7 @@ where
                 format!("/{}", p)
             };
 
-            match WebDavPath::new(&normalized_path) {
-                Ok(webdav_path) => Some(webdav_path),
-                Err(_) => None, // Invalid path, treat as if no path was provided
-            }
+            WebDavPath::new(&normalized_path).ok() // Invalid path, treat as if no path was provided
         });
 
         // Parse user values into (pubkey, optional_cursor) pairs
@@ -126,49 +123,25 @@ where
     }
 }
 
-/// Response structure for event streams.
-/// This represents the data format returned by the `/events-stream` endpoint.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventResponse {
-    /// The type of event (PUT or DEL)
-    pub event_type: EventType,
-    /// The full pubky path (e.g., "pubky://user_pubkey/pub/example.txt")
-    pub path: String,
-    /// Cursor for pagination (event id as string)
-    pub cursor: String,
-    /// content_hash (blake3) of data in hex format
-    /// **Note**: Optional and only included for PUT events when the hash is available.
-    /// Legacy events created before the content_hash feature was added will not have this field.
-    pub content_hash: Option<String>,
-}
+/// Format an event entity as SSE event data.
+/// Returns the multiline data field content.
+/// Each line will be prefixed with "data: " by the SSE library.
+///
+/// ## Format
+/// ```text
+/// data: pubky://user_pubkey/pub/example.txt
+/// data: cursor: 42
+/// data: content_hash: abc123... (optional, only if present)
+/// ```
+fn event_to_sse_data(entity: &EventEntity) -> String {
+    let path = format!("pubky://{}", entity.path.as_str());
+    let cursor_line = format!("cursor: {}", entity.cursor());
 
-impl EventResponse {
-    /// Create an EventResponse from an EventEntity
-    pub fn from_entity(entity: &EventEntity) -> Self {
-        Self {
-            event_type: entity.event_type.clone(),
-            path: format!("pubky://{}", entity.path.as_str()),
-            cursor: entity.cursor().to_string(),
-            content_hash: entity.content_hash.map(|h| h.to_hex().to_string()),
-        }
+    let mut lines = vec![path, cursor_line];
+    if let Some(hash) = entity.content_hash {
+        lines.push(format!("content_hash: {}", hash.to_hex()));
     }
-
-    /// Format as SSE event data.
-    /// Returns the multiline data field content.
-    /// Each line will be prefixed with "data: " by the SSE library.
-    /// Format:
-    /// ```text
-    /// data: pubky://user_pubkey/pub/example.txt
-    /// data: cursor: 42
-    /// data: content_hash: abc123... (optional, only if present)
-    /// ```
-    pub fn to_sse_data(&self) -> String {
-        let mut lines = vec![self.path.clone(), format!("cursor: {}", self.cursor)];
-        if let Some(hash) = &self.content_hash {
-            lines.push(format!("content_hash: {}", hash));
-        }
-        lines.join("\n")
-    }
+    lines.join("\n")
 }
 
 /// Legacy text-based endpoint for fetching historical events.
@@ -320,10 +293,9 @@ pub async fn feed_stream(
                 // Update the cursor for this specific user
                 user_cursor_map.insert(event.user_id, Some(event.cursor()));
 
-                let response = EventResponse::from_entity(&event);
                 yield Ok(Event::default()
-                    .event(response.event_type.to_string())
-                    .data(response.to_sse_data()));
+                    .event(event.event_type.to_string())
+                    .data(event_to_sse_data(&event)));
 
                 total_sent += 1;
 
@@ -366,10 +338,9 @@ pub async fn feed_stream(
                         // Update this user's cursor
                         user_cursor_map.insert(event.user_id, Some(event.cursor()));
 
-                        let response = EventResponse::from_entity(&event);
                         yield Ok(Event::default()
-                            .event(response.event_type.to_string())
-                            .data(response.to_sse_data()));
+                            .event(event.event_type.to_string())
+                            .data(event_to_sse_data(&event)));
 
                         total_sent += 1;
 

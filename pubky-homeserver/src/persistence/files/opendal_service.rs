@@ -4,7 +4,10 @@ use std::path::Path;
 use crate::AppContext;
 use crate::{
     persistence::{
-        files::{entry_layer::EntryLayer, events::EventsService, user_quota_layer::UserQuotaLayer},
+        files::{
+            entry_layer::EntryLayer, events::EventsService, events_layer::EventsLayer,
+            user_quota_layer::UserQuotaLayer,
+        },
         sql::SqlDb,
     },
     shared::webdav::EntryPath,
@@ -28,7 +31,8 @@ pub fn build_storage_operator(
     events_service: EventsService,
 ) -> Result<Operator, FileIoError> {
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
-    let entry_layer = EntryLayer::new(db.clone(), events_service);
+    let entry_layer = EntryLayer::new(db.clone());
+    let events_layer = EventsLayer::new(db.clone(), events_service);
     let builder = match storage_config {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -44,6 +48,7 @@ pub fn build_storage_operator(
             opendal::Operator::new(builder)?
                 .layer(user_quota_layer)
                 .layer(entry_layer)
+                .layer(events_layer)
                 .finish()
         }
         #[cfg(feature = "storage-gcs")]
@@ -56,6 +61,7 @@ pub fn build_storage_operator(
             opendal::Operator::new(builder)?
                 .layer(user_quota_layer)
                 .layer(entry_layer)
+                .layer(events_layer)
                 .finish()
         }
         #[cfg(any(feature = "storage-memory", test))]
@@ -65,6 +71,7 @@ pub fn build_storage_operator(
             opendal::Operator::new(builder)?
                 .layer(user_quota_layer)
                 .layer(entry_layer)
+                .layer(events_layer)
                 .finish()
         }
     };

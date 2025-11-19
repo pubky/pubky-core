@@ -1,6 +1,7 @@
 mod entry_layer;
 mod entry_service;
 pub mod events;
+mod events_layer;
 mod file_io_error;
 mod file_metadata;
 mod file_service;
@@ -9,6 +10,7 @@ mod opendal_service;
 #[cfg(test)]
 pub(crate) mod opendal_test_operators;
 mod user_quota_layer;
+mod utils;
 
 pub use file_io_error::{FileIoError, WriteStreamError};
 pub(crate) use file_metadata::{FileMetadata, FileMetadataBuilder};
