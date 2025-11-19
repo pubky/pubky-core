@@ -139,7 +139,7 @@ fn event_to_sse_data(entity: &EventEntity) -> String {
 
     let mut lines = vec![path, cursor_line];
     if let Some(hash) = entity.content_hash {
-        lines.push(format!("content_hash: {}", hash.to_hex()));
+        lines.push(format!("content_hash: {}", hash));
     }
     lines.join("\n")
 }

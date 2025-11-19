@@ -330,6 +330,70 @@ async fn events_stream_basic_modes() {
         "ContentHash: Should have found at least one DEL event to verify"
     );
 
+    // ==== Test 6b: Verify content_hash format matches HTTP headers ====
+    // This ensures the SSE event stream and HTTP GET endpoints use the same hash format
+
+    // Create a new file with known content
+    let test_data = b"hello world for hash test";
+    session
+        .storage()
+        .put("/pub/hash_test.txt", test_data.to_vec())
+        .await
+        .unwrap();
+
+    // Get the content_hash from HTTP GET headers (ETag)
+    let get_url = format!("https://{}/pub/hash_test.txt", server.public_key());
+    let get_response = pubky
+        .client()
+        .request(Method::GET, &get_url)
+        .header("pubky-host", user_pubky.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get_response.status(), StatusCode::OK);
+
+    let etag_header = get_response
+        .headers()
+        .get("etag")
+        .expect("Should have ETag header")
+        .to_str()
+        .unwrap();
+    // ETag is wrapped in quotes: "hash_value"
+    let etag_hash = etag_header.trim_matches('"');
+
+    // Get the content_hash from event stream
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&path=/pub/hash_test.txt",
+        server.public_key(),
+        user_pubky
+    );
+    let stream_response = pubky
+        .client()
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stream_response.status(), StatusCode::OK);
+
+    let mut stream = stream_response.bytes_stream().eventsource();
+    let mut event_hash = String::new();
+
+    if let Some(Ok(event)) = stream.next().await {
+        let data_lines: Vec<&str> = event.data.lines().collect();
+        if let Some(hash_line) = data_lines.iter().find(|l| l.starts_with("content_hash: ")) {
+            event_hash = hash_line
+                .strip_prefix("content_hash: ")
+                .unwrap()
+                .to_string();
+        }
+    }
+
+    assert_eq!(
+        etag_hash, event_hash,
+        "ContentHash: Event stream hash should match HTTP ETag header. ETag: {}, Event: {}",
+        etag_hash, event_hash
+    );
+
     // ==== Test 7: Empty user behavior ====
     // Create new user with no events
     let empty_keypair = Keypair::random();
