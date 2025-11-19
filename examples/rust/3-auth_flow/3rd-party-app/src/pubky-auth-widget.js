@@ -10,18 +10,6 @@ const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
 /**
  * <pubky-auth-widget>
- * Third-party (unhosted) Pubky auth widget:
- * - Creates an AuthFlow and renders a QR with the deep link.
- * - Waits for approval, then exposes the authenticated user's z32.
- *
- * Attributes/properties:
- * - relay?: string — optional HTTP relay base; if not set, defaults to staging or testnet.
- * - caps?: string  — comma-separated capabilities (e.g. "/pub/app/:rw,/pub/foo.txt:r").
- * - open?: boolean — whether the widget is expanded.
- * - testnet?: boolean — toggled via switchTestnet().
- */
-/**
- * <pubky-auth-widget>
  * Third-party (unhosted) Pubky Auth widget:
  * - Creates an AuthFlow and renders a QR with the deep link.
  * - Await approval:
@@ -91,7 +79,7 @@ export class PubkyAuthWidget extends LitElement {
     const flow = this._sdk.startAuthFlow(this.caps, relay);
 
     // Capture the deep link *before* awaiting (await will consume the flow handle)
-    this._authUrl = flow.authorizationUrl();
+    this._authUrl = flow.authorizationUrl;
 
     // Redraw the QR now and again on next frame (covers initial layout/paint timing)
     this._updateQr();
@@ -103,7 +91,7 @@ export class PubkyAuthWidget extends LitElement {
       flow
         .awaitApproval()
         .then((session) => {
-          this._pubkyZ32 = session.info().publicKey().z32();
+          this._pubkyZ32 = session.info.publicKey.z32();
         })
         .catch((e) => console.error("Auth flow (session) failed:", e));
     } else {
@@ -111,7 +99,7 @@ export class PubkyAuthWidget extends LitElement {
       flow
         .awaitToken()
         .then((token) => {
-          this._pubkyZ32 = token.publicKey().z32();
+          this._pubkyZ32 = token.publicKey.z32();
         })
         .catch((e) => console.error("Auth flow (token) failed:", e));
     }

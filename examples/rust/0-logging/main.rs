@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     info!("Starting ephemeral testnet");
     let testnet = EphemeralTestnet::start().await?;
     let pubky = testnet.sdk()?;
-    let homeserver = testnet.homeserver();
+    let homeserver = testnet.homeserver_app();
 
     let keypair = Keypair::random();
     let public_key = keypair.public_key().to_string();

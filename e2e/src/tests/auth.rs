@@ -14,7 +14,7 @@ use pubky_testnet::pubky::errors::{Error, RequestError};
 #[pubky_testnet::test]
 async fn basic_authn() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let homeserver = testnet.homeserver();
+    let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let signer = pubky.signer(Keypair::random());
@@ -32,7 +32,7 @@ async fn basic_authn() {
 #[pubky_testnet::test]
 async fn disabled_user() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create a brand-new user and session
@@ -57,16 +57,20 @@ async fn disabled_user() {
     );
 
     // Disable the user via admin API
-    let admin_socket = server.admin().listen_socket();
+    let admin_socket = server.admin_server().listen_socket();
     let admin_client = PubkyHttpClient::new().unwrap();
-    let disable_url = format!("http://{admin_socket}/users/{pubky}/disable");
-    let resp = admin_client
-        .request(Method::POST, &disable_url)
+
+    // Disable the user
+    let response = admin_client
+        .request(
+            Method::POST,
+            &format!("http://{admin_socket}/users/{pubky}/disable"),
+        )
         .header("X-Admin-Password", "admin")
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::OK);
 
     // User can still read their own file
     let response = session.storage().get(file_path).await.unwrap();
@@ -97,7 +101,7 @@ async fn disabled_user() {
 #[pubky_testnet::test]
 async fn authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let http_relay_url = testnet.http_relay().local_link_url();
@@ -163,7 +167,7 @@ async fn authz() {
 #[pubky_testnet::test]
 async fn persist_and_restore_info() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let homeserver = testnet.homeserver();
+    let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create user and session-bound agent
@@ -202,7 +206,7 @@ async fn persist_and_restore_info() {
 #[tokio::test]
 async fn multiple_users() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Two independent users
@@ -226,7 +230,7 @@ async fn multiple_users() {
 #[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let http_relay_url = testnet.http_relay().local_link_url();
@@ -304,7 +308,10 @@ async fn signup_with_token() {
 
     let mut mock_dir = MockDataDir::test();
     mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet.create_homeserver_with_mock(mock_dir).await.unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
     let invalid_signup = signer
@@ -321,7 +328,7 @@ async fn signup_with_token() {
     );
 
     // 3. Call the admin endpoint to generate a valid signup token.
-    let valid_token = server.admin().create_signup_token().await.unwrap();
+    let valid_token = server.admin_server().create_signup_token().await.unwrap();
 
     // 4. Now signup with the valid token. Expect success and a session back.
     let session = signer
@@ -361,7 +368,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
     use std::time::Duration;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
 
@@ -408,7 +415,7 @@ async fn conditional_publish_skips_when_fresh() {
     use std::time::Duration;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
 

@@ -17,7 +17,7 @@ async fn events_stream_basic_modes() {
     use tokio::time::{timeout, Duration};
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create one user with 250 events - reuse for all subtests
@@ -483,7 +483,7 @@ async fn events_stream_multiple_users() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let keypair1 = Keypair::random();
@@ -705,7 +705,7 @@ async fn events_stream_validation_errors() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let keypair1 = Keypair::random();
@@ -774,7 +774,7 @@ async fn events_stream_validation_errors() {
         "Invalid key format"
     );
     let body = response.text().await.unwrap();
-    assert!(body.contains("Invalid user public key"));
+    assert!(body.contains("Invalid public key"));
 
     // Test 4: Valid key but user not registered
     let stream_url = format!(
@@ -832,7 +832,7 @@ async fn events_stream_validation_errors() {
         "Mixed valid/invalid"
     );
     let body = response.text().await.unwrap();
-    assert!(body.contains("Invalid user public key"));
+    assert!(body.contains("Invalid public key"));
 
     // Test 7: Multiple invalid keys
     let stream_url = format!(
@@ -1000,7 +1000,7 @@ async fn events_stream_reverse() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let keypair = Keypair::random();
@@ -1138,7 +1138,7 @@ async fn events_stream_path_filter() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create 2 users upfront with diverse directory structures
