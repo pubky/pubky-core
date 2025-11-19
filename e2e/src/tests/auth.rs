@@ -168,7 +168,7 @@ async fn authz() {
 #[pubky_testnet::test]
 async fn signup_authz() {
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let http_relay_url = testnet.http_relay().local_link_url();
