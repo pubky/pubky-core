@@ -2,7 +2,7 @@
 //!
 //! ## TL;DR (happy path)
 //! ```no_run
-//! # use pubky::{Capabilities, PubkySignupAuthFlow};
+//! # use pubky::{Capabilities, PubkySignupAuthFlow, PublicKey};
 //! # async fn run() -> pubky::Result<()> {
 //! let caps = Capabilities::default();
 //! let invite_code = "1234567890";
@@ -18,7 +18,7 @@
 //!
 //! ## Custom relay / non-blocking UI
 //! ```no_run
-//! # use pubky::{Capabilities, PubkySignupAuthFlow};
+//! # use pubky::{Capabilities, PubkySignupAuthFlow, PublicKey};
 //! # use std::time::Duration;
 //! # async fn ui() -> pubky::Result<()> {
 //! let homeserver_public_key: PublicKey = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo".parse().unwrap();
