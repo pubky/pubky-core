@@ -15,11 +15,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::{
-    body::Body,
-    extract::Request,
-    http::{header, HeaderValue},
-    middleware::{self, Next},
-    response::Response,
     routing::{get, post},
     Router,
 };
@@ -28,7 +23,6 @@ use axum_server::{
     Handle,
 };
 use std::{net::SocketAddr, sync::Arc};
-use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
@@ -37,7 +31,6 @@ use super::layers::{
 };
 use super::routes::{auth, events, root, tenants};
 
-static HOMESERVER_VERSION: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 
 /// Errors that can occur when building a `HomeserverCore`.
@@ -228,30 +221,15 @@ fn base() -> Router<AppState> {
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
-        // XXX: dzdidi
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
-        .layer(ServiceBuilder::new().layer(middleware::from_fn(add_server_header)))
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
         ))
-        // XXX: dzdidi - remove it in favour of path containing pubky
         .layer(PubkyHostLayer)
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.
     with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
-}
-
-// Middleware to add a `Server` header to all responses
-async fn add_server_header(request: Request<Body>, next: Next) -> Response {
-    let mut response = next.run(request).await;
-
-    // Add a custom header to the response
-    response
-        .headers_mut()
-        .insert(header::SERVER, HeaderValue::from_static(HOMESERVER_VERSION));
-
-    response
 }
