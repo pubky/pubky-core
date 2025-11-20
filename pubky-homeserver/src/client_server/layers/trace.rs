@@ -9,9 +9,12 @@ use tracing::{Level, Span};
 
 use crate::client_server::extractors::PubkyHost;
 
-pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
+// Silence events path from logs to avoid noisy logs. Only log when there is an error.
+const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
+
+pub fn with_trace_layer(router: Router) -> Router {
     let excluded_paths = Arc::new(
-        excluded_paths
+        TRACING_EXCLUDED_PATHS
             .iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>(),
@@ -20,18 +23,22 @@ pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
     router.layer(
         TraceLayer::new_for_http()
             .make_span_with(move |request: &Request| {
-                if excluded_paths.contains(&request.uri().path().to_string()) {
-                    // Skip logging for the noisy endpoint
-                    tracing::span!(Level::INFO, "request", excluded = true)
+                let uri = if let Some(pubky_host) = request.extensions().get::<PubkyHost>() {
+                    format!("pubky://{pubky_host}{}", request.uri())
                 } else {
-                    // Use the default span for other endpoints
+                    request.uri().to_string()
+                };
 
-                    let uri = if let Some(pubky_host) = request.extensions().get::<PubkyHost>() {
-                        format!("pubky://{pubky_host}{}", request.uri())
-                    } else {
-                        request.uri().to_string()
-                    };
-
+                if excluded_paths.contains(&request.uri().path().to_string()) {
+                    tracing::span!(
+                        Level::INFO,
+                        "request",
+                        method = %request.method(),
+                        uri = ?uri,
+                        version = ?request.version(),
+                        events=true
+                    )
+                } else {
                     tracing::span!(
                         Level::INFO,
                         "request",
@@ -43,7 +50,7 @@ pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
             })
             .on_request(|request: &Request, span: &Span| {
                 // Skip logging for excluded spans
-                if span.has_field("excluded") {
+                if span.has_field("events") {
                     return;
                 }
                 // Use the default behavior for other spans
@@ -52,7 +59,7 @@ pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
             .on_response(
                 |response: &axum::response::Response, latency: std::time::Duration, span: &Span| {
                     // Skip logging for excluded spans
-                    if span.has_field("excluded") {
+                    if span.has_field("events") && response.status().is_success() {
                         return;
                     }
                     // Use the default behavior for other spans
@@ -63,10 +70,6 @@ pub fn with_trace_layer(router: Router, excluded_paths: &[&str]) -> Router {
                 |error: tower_http::classify::ServerErrorsFailureClass,
                  latency: std::time::Duration,
                  span: &Span| {
-                    // Skip logging for excluded spans
-                    if span.has_field("excluded") {
-                        return;
-                    }
                     // Use the default behavior for other spans
                     DefaultOnFailure::new().on_failure(error, latency, span);
                 },
