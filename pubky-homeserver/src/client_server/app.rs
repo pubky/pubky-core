@@ -33,6 +33,32 @@ use super::routes::{auth, events, root, tenants};
 
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
 
+fn base() -> Router<AppState> {
+    Router::new()
+        .route("/", get(root::handler))
+        .route("/signup", post(auth::signup))
+        .route("/session", post(auth::signin))
+        .route("/events/", get(events::feed))
+}
+
+pub fn create_app(state: AppState, context: &AppContext) -> Router {
+    let app = base()
+        .merge(tenants::router(state.clone()))
+        .layer(CookieManagerLayer::new())
+        .layer(CorsLayer::very_permissive())
+        .layer(RateLimiterLayer::new(
+            context.config_toml.drive.rate_limits.clone(),
+        ))
+        .layer(PubkyHostLayer)
+        .with_state(state);
+    // TODO: add size limit
+    // TODO: revisit if we enable streaming big payloads
+    // TODO: maybe add to a separate router (drive router?).
+
+    // Apply trace and pubky host layers to the complete router.
+    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
+}
+
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientServerBuildError {
@@ -121,13 +147,13 @@ impl ClientServer {
             Some(quota_mb * 1024 * 1024)
         };
 
-        let state = AppState {
-            verifier: AuthVerifier::default(),
-            sql_db: context.sql_db.clone(),
-            file_service: context.file_service.clone(),
-            signup_mode: context.config_toml.general.signup_mode.clone(),
-            user_quota_bytes: quota_bytes,
-        };
+        let state = AppState::new(
+            AuthVerifier::default(),
+            context.sql_db.clone(),
+            context.file_service.clone(),
+            context.config_toml.general.signup_mode.clone(),
+            quota_bytes,
+        );
         super::create_app(state.clone(), context)
     }
 
@@ -205,31 +231,4 @@ impl Drop for ClientServer {
     fn drop(&mut self) {
         self.shutdown();
     }
-}
-
-fn base() -> Router<AppState> {
-    Router::new()
-        .route("/", get(root::handler))
-        .route("/signup", post(auth::signup))
-        .route("/session", post(auth::signin))
-        // Events
-        .route("/events/", get(events::feed))
-    // TODO: add size limit
-    // TODO: revisit if we enable streaming big payloads
-    // TODO: maybe add to a separate router (drive router?).
-}
-
-pub fn create_app(state: AppState, context: &AppContext) -> Router {
-    let app = base()
-        .merge(tenants::router(state.clone()))
-        .layer(CookieManagerLayer::new())
-        .layer(CorsLayer::very_permissive())
-        .layer(RateLimiterLayer::new(
-            context.config_toml.drive.rate_limits.clone(),
-        ))
-        .layer(PubkyHostLayer)
-        .with_state(state);
-
-    // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
 }
