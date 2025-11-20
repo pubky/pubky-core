@@ -31,8 +31,6 @@ use super::layers::{
 };
 use super::routes::{auth, events, root, tenants};
 
-const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];
-
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientServerBuildError {
@@ -231,5 +229,5 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app, &TRACING_EXCLUDED_PATHS)
+    with_trace_layer(app)
 }
