@@ -363,3 +363,166 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
 
   t.end();
 });
+test("Auth: signout removes persisted session cookies", async (t) => {
+  const sdk = Pubky.testnet();
+
+  type CookieRecord = { key?: string | null; expires?: unknown; maxAge?: unknown };
+
+  const readSessionCookieNames = async (): Promise<
+    | { names: string[] }
+    | { reason: string }
+  > => {
+    type CookieJarLike = {
+      serializeSync?: () => { cookies?: CookieRecord[] } | undefined;
+      store?: { getAllCookies?: (cb: (error: unknown, cookies?: CookieRecord[] | null) => void) => void };
+    };
+
+    const fetchImpl = globalThis.fetch as (typeof globalThis.fetch & { cookieJar?: CookieJarLike }) | undefined;
+    if (!fetchImpl || typeof fetchImpl !== "function") {
+      return { reason: "global fetch does not expose a cookie jar" };
+    }
+
+    const jar = fetchImpl.cookieJar;
+    if (!jar) {
+      return { reason: "fetch.cookieJar is not available" };
+    }
+
+    const fromSerialized = (() => {
+      if (typeof jar.serializeSync !== "function") {
+        return undefined;
+      }
+      try {
+        const serialized = jar.serializeSync();
+        return serialized?.cookies;
+      } catch (_) {
+        return undefined;
+      }
+    })();
+
+    if (fromSerialized && Array.isArray(fromSerialized)) {
+      return { names: dedupeActiveCookieNames(fromSerialized) };
+    }
+
+    const fromStore = await new Promise<CookieRecord[] | undefined>((resolve) => {
+      try {
+        jar.store?.getAllCookies?.((error, cookies) => {
+          if (error) {
+            resolve(undefined);
+            return;
+          }
+          resolve(Array.isArray(cookies) ? cookies : []);
+        });
+      } catch (_) {
+        resolve(undefined);
+      }
+    });
+
+    if (fromStore) {
+      return { names: dedupeActiveCookieNames(fromStore) };
+    }
+
+    return { reason: "cookie jar did not expose its contents" };
+  };
+
+  const dedupeActiveCookieNames = (records: CookieRecord[]): string[] => {
+    const names: string[] = [];
+    for (const record of records) {
+      const name = record?.key;
+      if (typeof name !== "string" || name.length === 0) {
+        continue;
+      }
+      if (isExpired(record)) {
+        continue;
+      }
+      names.push(name);
+    }
+    return Array.from(new Set(names));
+  };
+
+  const isExpired = (record: CookieRecord | undefined): boolean => {
+    if (!record) {
+      return false;
+    }
+
+    const expiresAt = parseExpiry(record.expires);
+    if (typeof expiresAt === "number" && expiresAt <= Date.now()) {
+      return true;
+    }
+
+    const maxAgeSeconds = parseMaybeNumber(record.maxAge);
+    return typeof maxAgeSeconds === "number" && maxAgeSeconds <= 0;
+  };
+
+  const parseExpiry = (value: unknown): number | undefined => {
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.length > 0) {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return undefined;
+  };
+
+  const parseMaybeNumber = (value: unknown): number | undefined => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return undefined;
+  };
+
+  const sessions: Array<{ session: SignupSession; user: string }> = [];
+
+  for (let i = 0; i < 3; i += 1) {
+    const signer = sdk.signer(Keypair.random());
+    const token = await createSignupToken();
+    const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
+    const user = session.info.publicKey.z32();
+
+    sessions.push({ session, user });
+  }
+
+  {
+    const inspection = await readSessionCookieNames();
+    if ("names" in inspection) {
+      const expectedUsers = sessions.map(({ user }) => user);
+      const missing = expectedUsers.filter((user) => !inspection.names.includes(user));
+
+      t.deepEqual(missing, [], "signup should install a session cookie per user");
+    } else {
+      t.comment(`after signup: ${inspection.reason}`);
+    }
+  }
+
+  for (const { session } of sessions) {
+    await session.signout();
+  }
+
+  const inspection = await readSessionCookieNames();
+
+  if ("names" in inspection) {
+    const expectedUsers = sessions.map(({ user }) => user);
+    const lingering = expectedUsers.filter((user) => inspection.names.includes(user));
+
+    t.deepEqual(
+      lingering,
+      [],
+      "cookies belonging to signed-out sessions should be removed from the environment",
+    );
+  } else {
+    t.comment(`after signout: ${inspection.reason}`);
+  }
+
+  t.end();
+});
