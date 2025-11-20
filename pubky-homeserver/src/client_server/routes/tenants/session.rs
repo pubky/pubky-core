@@ -3,12 +3,14 @@ use axum::{
     http::{header, HeaderValue},
     response::IntoResponse,
 };
-use tower_cookies::Cookies;
+use axum_extra::extract::Host;
+use tower_cookies::{Cookie, Cookies};
 
 use crate::{
     client_server::{
         err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost,
-        layers::authz::session_secret_from_cookies, AppState,
+        layers::authz::session_secret_from_cookies, routes::auth::configure_session_cookie,
+        AppState,
     },
     persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
@@ -46,13 +48,20 @@ pub async fn session(
 pub async fn signout(
     State(state): State<AppState>,
     cookies: Cookies,
+    Host(host): Host,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    // TODO: Set expired cookie to delete the cookie on client side.
-
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         SessionRepository::delete(&secret, &mut state.sql_db.pool().into()).await?;
     }
+
+    // Always instruct the client to drop the session cookie, even if the
+    // database record was already gone. This keeps repeated signout calls
+    // idempotent and lets browsers wipe stale cookies immediately.
+    let mut removal = Cookie::new(pubky.public_key().to_string(), String::new());
+    removal.make_removal();
+    configure_session_cookie(&mut removal, &host);
+    cookies.add(removal);
 
     // Idempotent Success Response (200 OK)
     Ok(())
