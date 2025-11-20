@@ -31,8 +31,6 @@ use super::layers::{
 };
 use super::routes::{auth, events, root, tenants};
 
-
-
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientServerBuildError {
