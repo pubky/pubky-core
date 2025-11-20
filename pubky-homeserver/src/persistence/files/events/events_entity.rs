@@ -8,7 +8,7 @@ use sqlx::{postgres::PgRow, FromRow, Row};
 use crate::{
     persistence::{
         files::events::{
-            events_repository::{Cursor, EventIden},
+            events_repository::{EventCursor, EventIden},
             EventType,
         },
         sql::user::UserIden,
@@ -28,8 +28,8 @@ pub struct EventEntity {
 }
 
 impl EventEntity {
-    pub fn cursor(&self) -> Cursor {
-        Cursor::new(self.id)
+    pub fn cursor(&self) -> EventCursor {
+        EventCursor::new(self.id)
     }
 }
 

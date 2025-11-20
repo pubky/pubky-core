@@ -140,7 +140,6 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
 
-        // Fetch user_id with db call
         // TODO We're currently doing this is all 3 layers. Consider caching or sharing data.
         let user_id = UserRepository::get_id(self.entry_path.pubkey(), &mut executor)
             .await
@@ -162,7 +161,6 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
-                // Broadcast event after successful commit
                 self.events_service.broadcast_event(event);
             }
             Err(e) => {
@@ -231,7 +229,6 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
                     tx.commit().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
-                    // Broadcast event after successful commit
                     self.events_service.broadcast_event(event);
                 }
                 Err(e) => {

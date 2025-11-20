@@ -1,5 +1,5 @@
 use crate::persistence::{
-    files::events::{events_repository::Cursor, EventEntity, EventRepository, EventType},
+    files::events::{events_repository::EventCursor, EventEntity, EventRepository, EventType},
     sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;
@@ -75,7 +75,7 @@ impl EventsService {
         &self,
         cursor: &str,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<Cursor, sqlx::Error> {
+    ) -> Result<EventCursor, sqlx::Error> {
         EventRepository::parse_cursor(cursor, executor).await
     }
 
@@ -87,7 +87,7 @@ impl EventsService {
     /// - `limit`: Maximum number of events to return (None = default limit)
     pub async fn get_by_cursor<'a>(
         &self,
-        cursor: Option<Cursor>,
+        cursor: Option<EventCursor>,
         limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
@@ -102,7 +102,7 @@ impl EventsService {
     /// - `path_prefix`: Optional path filter (e.g., "/pub/files/")
     pub async fn get_by_user_cursors<'a>(
         &self,
-        user_cursors: Vec<(i32, Option<Cursor>)>,
+        user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,
         path_prefix: Option<&str>,
         executor: &mut UnifiedExecutor<'a>,
@@ -177,7 +177,7 @@ mod tests {
 
         // Get events from cursor
         let events = events_service
-            .get_by_cursor(Some(Cursor::new(2)), Some(3), &mut db.pool().into())
+            .get_by_cursor(Some(EventCursor::new(2)), Some(3), &mut db.pool().into())
             .await
             .unwrap();
 

@@ -26,9 +26,9 @@ pub const EVENT_TABLE: &str = "events";
 
 /// Cursor for pagination in event queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Cursor(i64);
+pub struct EventCursor(i64);
 
-impl Cursor {
+impl EventCursor {
     /// Create a new cursor from an event ID
     pub fn new(id: i64) -> Self {
         Self(id)
@@ -40,17 +40,17 @@ impl Cursor {
     }
 }
 
-impl Display for Cursor {
+impl Display for EventCursor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl FromStr for Cursor {
+impl FromStr for EventCursor {
     type Err = std::num::ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Cursor(s.parse()?))
+        Ok(EventCursor(s.parse()?))
     }
 }
 
@@ -139,8 +139,8 @@ impl EventRepository {
     pub async fn parse_cursor<'a>(
         cursor: &str,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<Cursor, sqlx::Error> {
-        if let Ok(cursor) = cursor.parse::<Cursor>() {
+    ) -> Result<EventCursor, sqlx::Error> {
+        if let Ok(cursor) = cursor.parse::<EventCursor>() {
             // Is new cursor format
             return Ok(cursor);
         }
@@ -161,7 +161,7 @@ impl EventRepository {
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
-        Ok(Cursor::new(event_id))
+        Ok(EventCursor::new(event_id))
     }
 
     /// Get a list of events with per-user cursors.
@@ -172,7 +172,7 @@ impl EventRepository {
     /// The executor can either be db.pool() or a transaction.
     /// This uses the (user, path, id) index for efficient querying.
     pub async fn get_by_user_cursors<'a>(
-        user_cursors: Vec<(i32, Option<Cursor>)>,
+        user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,
         path_prefix: Option<&str>,
         executor: &mut UnifiedExecutor<'a>,
@@ -211,7 +211,6 @@ impl EventRepository {
                 .and_where(Expr::col((EVENT_TABLE, EventIden::User)).eq(user_id))
                 .to_owned();
 
-            // Add path filter if specified
             // Note: paths in the database are stored without the user pubkey prefix (e.g., "/pub/files/doc.txt")
             if let Some(prefix) = path_prefix {
                 // Escape special LIKE characters: %, _, and \
@@ -228,15 +227,12 @@ impl EventRepository {
                     .to_owned();
             }
 
-            // Add cursor condition for this specific user
             if let Some(cursor) = cursor {
                 if reverse {
-                    // For reverse order, get events before the cursor
                     statement = statement
                         .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).lt(cursor.id()))
                         .to_owned();
                 } else {
-                    // For normal order, get events after the cursor
                     statement = statement
                         .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id()))
                         .to_owned();
@@ -280,11 +276,11 @@ impl EventRepository {
     /// The limit is the maximum number of events to return.
     /// The executor can either be db.pool() or a transaction.
     pub async fn get_by_cursor<'a>(
-        cursor: Option<Cursor>,
+        cursor: Option<EventCursor>,
         limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-        let cursor = cursor.unwrap_or(Cursor::new(0));
+        let cursor = cursor.unwrap_or(EventCursor::new(0));
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
 
@@ -389,10 +385,13 @@ mod tests {
         }
 
         // Test get session
-        let events =
-            EventRepository::get_by_cursor(Some(Cursor::new(5)), Some(4), &mut db.pool().into())
-                .await
-                .unwrap();
+        let events = EventRepository::get_by_cursor(
+            Some(EventCursor::new(5)),
+            Some(4),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].id, 6);
         assert_eq!(events[0].user_id, user.id);

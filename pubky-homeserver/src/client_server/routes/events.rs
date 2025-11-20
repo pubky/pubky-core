@@ -1,122 +1,212 @@
 use axum::{
     body::Body,
-    extract::{FromRequestParts, Query, State},
-    http::{header, request::Parts, Response, StatusCode},
+    extract::{RawQuery, State},
+    http::{header, Response, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse,
     },
-    RequestPartsExt,
 };
 use futures_util::stream::Stream;
 use pkarr::PublicKey;
+use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible};
+use url::form_urlencoded;
 
 use crate::{
     client_server::{extractors::ListQueryParams, AppState},
     persistence::{
-        files::events::{Cursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
+        files::events::{EventCursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
         sql::SqlDb,
     },
-    shared::{parse_bool, webdav::WebDavPath, HttpError, HttpResult},
+    shared::{webdav::WebDavPath, HttpError, HttpResult},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub enum EventStreamError {
+    UserNotFound,
+    InvalidParameter(String),
+    DatabaseError(sqlx::Error),
+    InvalidPublicKey(String),
+}
+
+impl std::fmt::Display for EventStreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventStreamError::UserNotFound => write!(f, "User not found"),
+            EventStreamError::InvalidParameter(msg) => write!(f, "{}", msg),
+            EventStreamError::DatabaseError(e) => write!(f, "Database error: {}", e),
+            EventStreamError::InvalidPublicKey(key) => write!(f, "Invalid public key: {}", key),
+        }
+    }
+}
+
+impl From<EventStreamError> for HttpError {
+    fn from(error: EventStreamError) -> Self {
+        match error {
+            EventStreamError::UserNotFound => HttpError::not_found(),
+            EventStreamError::DatabaseError(e) => HttpError::from(e),
+            _ => HttpError::bad_request(error.to_string()),
+        }
+    }
+}
+
+impl From<sqlx::Error> for EventStreamError {
+    fn from(error: sqlx::Error) -> Self {
+        match error {
+            sqlx::Error::RowNotFound => EventStreamError::UserNotFound,
+            e => EventStreamError::DatabaseError(e),
+        }
+    }
+}
+
+/// Query parameters for the event stream SSE endpoint.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "RawEventStreamQueryParams")]
 pub struct EventStreamQueryParams {
+    /// Maximum total events to send before closing connection.
+    /// If specified then send up to N events total, then close
     pub limit: Option<u16>,
+    /// Return events in reverse chronological order (newest first). Default: `false` (oldest first).
+    /// **Cannot be combined with `live=true`** (returns 400 error).
     pub reverse: bool,
-    /// If true, enter live streaming mode after historical events.
-    /// If false, close connection after historical events are exhausted.
+    /// Enable live streaming mode. Default: `false` (batch mode).
+    /// **Cannot be combined with `reverse=true`** (returns 400 error).
     pub live: bool,
-    /// Vec of (user_pubkey, optional_cursor) pairs
-    /// Format: "user=pubkey" or "user=pubkey:cursor"
+    /// One or more user public keys to filter events for.
+    /// - Format: z-base-32 encoded public key (e.g., "o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")
+    /// - Single user: `?user=pubkey1`
+    /// - Single user with cursor: `?user=pubkey1:cursor`
+    /// - Multiple users: `?user=pubkey1&user=pubkey2:cursor2`
     pub user_cursors: Vec<(PublicKey, Option<String>)>,
-    /// Optional path prefix filter
-    /// Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "pub/files/")
-    ///   - Example: `path=/pub/` will only return events under the `/pub/` directory
-    ///   - Example: `path=/pub/files/` will only return events under the `/pub/files/` directory
+    /// Path prefix to filter events.
+    /// - Format: Path WITHOUT `pubky://` scheme or user pubkey
+    /// - Examples: `/pub/files/`, `pub/files/`, `/pub/`
     pub path: Option<WebDavPath>,
 }
 
-impl<S> FromRequestParts<S> for EventStreamQueryParams
-where
-    S: Send + Sync,
-{
-    type Rejection = Response<Body>;
+#[derive(Debug, Deserialize)]
+struct RawEventStreamQueryParams {
+    #[serde(default)]
+    user: Vec<String>,
+    limit: Option<u16>,
+    #[serde(default)]
+    reverse: bool,
+    #[serde(default)]
+    live: bool,
+    path: Option<String>,
+}
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let params: Query<HashMap<String, String>> =
-            parts.extract().await.map_err(IntoResponse::into_response)?;
+/// Parse query string manually to handle repeated `user` parameters.
+/// URL query string format like: `user=pubkey1&user=pubkey2:cursor&limit=10&live=true`
+fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStreamError> {
+    let mut users = Vec::new();
+    let mut limit = None;
+    let mut reverse = false;
+    let mut live = false;
+    let mut path = None;
 
-        // Manually parse the "user" parameter since it can appear multiple times
-        let query = parts.uri.query().unwrap_or("");
-        let mut user_values: Vec<String> = Vec::new();
-        for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
-            if key.as_ref() == "user" && !value.is_empty() {
-                user_values.push(value.into_owned());
+    // Parse using form_urlencoded which handles URL decoding
+    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+        match key.as_ref() {
+            "user" => users.push(value.to_string()),
+            "limit" => {
+                limit = Some(value.parse::<u16>().map_err(|_| {
+                    EventStreamError::InvalidParameter(format!("Invalid limit: {}", value))
+                })?);
             }
+            "reverse" => {
+                reverse = value == "true" || value == "1";
+            }
+            "live" => {
+                live = value == "true" || value == "1";
+            }
+            "path" => {
+                if !value.is_empty() {
+                    path = Some(value.to_string());
+                }
+            }
+            _ => {} // Ignore unknown parameters
         }
+    }
 
-        let reverse = if let Some(reverse_str) = params.get("reverse") {
-            parse_bool(reverse_str).map_err(|e| *e)?
-        } else {
-            false
-        };
+    let raw = RawEventStreamQueryParams {
+        user: users,
+        limit,
+        reverse,
+        live,
+        path,
+    };
 
-        let live = if let Some(live_str) = params.get("live") {
-            parse_bool(live_str).map_err(|e| *e)?
-        } else {
-            false
-        };
+    raw.try_into()
+}
 
-        let limit = match params.get("limit") {
-            Some(l) if !l.is_empty() => l.parse::<u16>().ok(),
-            _ => None,
-        };
+impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
+    type Error = EventStreamError;
 
-        let path = params.get("path").and_then(|p| {
-            if p.is_empty() {
-                return None;
-            }
-
-            // Automatically prepend "/" if not present for user convenience
-            let normalized_path = if p.starts_with('/') {
-                p.clone()
-            } else {
-                format!("/{}", p)
-            };
-
-            WebDavPath::new(&normalized_path).ok() // Invalid path, treat as if no path was provided
-        });
+    fn try_from(raw: RawEventStreamQueryParams) -> Result<Self, Self::Error> {
+        if raw.live && raw.reverse {
+            return Err(EventStreamError::InvalidParameter(
+                "Cannot use live mode with reverse ordering".to_string(),
+            ));
+        }
 
         // Parse user values into (pubkey, optional_cursor) pairs
         // Format: "pubkey" or "pubkey:cursor"
         let mut user_cursors = Vec::new();
-        for value in user_values {
+        for value in raw.user {
+            if value.is_empty() {
+                continue;
+            }
+
             let (pubkey_str, cursor_str) = if let Some((pubkey, cursor)) = value.split_once(':') {
                 (pubkey, Some(cursor))
             } else {
                 (value.as_str(), None)
             };
 
-            let pubkey = match PublicKey::try_from(pubkey_str) {
-                Ok(pk) => pk,
-                Err(_) => {
-                    return Err(Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Body::from(format!("Invalid public key: {}", pubkey_str)))
-                        .unwrap()
-                        .into_response());
-                }
-            };
+            let pubkey = PublicKey::try_from(pubkey_str)
+                .map_err(|_| EventStreamError::InvalidPublicKey(pubkey_str.to_string()))?;
 
             user_cursors.push((pubkey, cursor_str.map(|s| s.to_string())));
         }
 
+        if user_cursors.is_empty() {
+            return Err(EventStreamError::InvalidParameter(
+                "user parameter is required".to_string(),
+            ));
+        }
+
+        if user_cursors.len() > MAX_EVENT_STREAM_USERS {
+            return Err(EventStreamError::InvalidParameter(format!(
+                "Too many users. Maximum allowed: {}",
+                MAX_EVENT_STREAM_USERS
+            )));
+        }
+
+        let path = if let Some(p) = raw.path {
+            if p.is_empty() {
+                None
+            } else {
+                // Automatically prepend "/" if not present for user convenience
+                let normalized_path = if p.starts_with('/') {
+                    p
+                } else {
+                    format!("/{}", p)
+                };
+
+                Some(WebDavPath::new(&normalized_path).map_err(|_| {
+                    EventStreamError::InvalidParameter(format!("Invalid path: {}", normalized_path))
+                })?)
+            }
+        } else {
+            None
+        };
+
         Ok(EventStreamQueryParams {
-            limit,
-            reverse,
-            live,
+            limit: raw.limit,
+            reverse: raw.reverse,
+            live: raw.live,
             user_cursors,
             path,
         })
@@ -199,43 +289,11 @@ pub async fn feed(
 
 /// Server-Sent Events (SSE) endpoint for real-time event streaming.
 ///
-/// This endpoint supports two modes of operation:
+/// Supports two modes:
+/// - **Batch Mode** (`live=false` or omitted): Fetches historical events then closes connection
+/// - **Streaming Mode** (`live=true`): Fetches historical events then streams new events in real-time
 ///
-/// ## Batch Mode (`live=false` or omitted)
-/// - Fetches historical events from the cursor onwards
-/// - Streams events progressively as they're fetched
-/// - **Closes connection** when all historical events are sent (or `limit` reached)
-/// - Use case: Traditional GET request/response pattern for fetching historical events
-///
-/// ## Streaming Mode (`live=true`)
-/// - **Phase 1**: Fetches historical events from cursor onwards (same as batch mode)
-/// - **Phase 2**: Subscribes to broadcast channel for new events
-/// - Streams new events in real-time as they occur
-/// - Connection stays open indefinitely
-///
-/// ## Query Parameters
-/// - `user` (**REQUIRED**): One or more user public keys to filter events for.
-///   - Format: z-base-32 encoded public key (e.g., "o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")
-///   - Single user: `?user=pubkey1`
-///   - Single user with cursor: `?user=pubkey1:cursor`
-///   - Multiple users with and without cursor: `?user=pubkey1&user=pubkey2:cursor2`
-///   - Maximum: 50 users per request
-/// - `live` (optional): Enable live streaming mode. Default: `false` (batch mode)
-///   - `live=false` or omitted: Fetch historical events and close connection
-///   - `live=true`: Fetch historical events, then stream new events in real-time
-///   - **Cannot be combined with `reverse=true`** (will return 400 error)
-/// - `limit` (optional): Maximum total events to send before closing connection.
-///   - If **omitted with `live=false`**: Send all historical events, then close
-///   - If **omitted with `live=true`**: Send all historical events, then enter live mode (infinite stream)
-///   - If **specified**: Send up to N events total, then close connection (regardless of `live` setting)
-/// - `reverse` (optional): Return events in reverse chronological order (newest first).
-///   Default: `false` (oldest first)
-///   - When `true`, only historical events are returned (batch mode enforced)
-///   - **Cannot be combined with `live=true`** (will return 400 error)
-/// - `path` (optional): Path prefix to filter events. Only events whose path starts with this prefix are returned.
-///   - Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "pub/files/")
-///
-/// ## SSE Response Format
+/// ## Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
 /// ```text
 /// event: PUT
@@ -245,14 +303,14 @@ pub async fn feed(
 /// ```
 pub async fn feed_stream(
     State(state): State<AppState>,
-    params: EventStreamQueryParams,
+    raw_query: RawQuery,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    // Validate parameters
-    validate_stream_params(&params)?;
-
-    // Resolve user IDs and cursors
+    let params =
+        parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
     let mut user_cursor_map =
-        resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db).await?;
+        resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db)
+            .await
+            .map_err(HttpError::from)?;
 
     let mut total_sent: usize = 0;
     let stream = async_stream::stream! {
@@ -260,13 +318,12 @@ pub async fn feed_stream(
         // Events that occur during Phase 1 will be buffered in the channel
         let mut rx = state.events_service.subscribe();
 
-        // Phase 1: Historical auto-pagination
-        // Fetch all historical events in batches until caught up
+        // Phase 1: Batch Mode
         loop {
             // Drain any buffered events before querying as they'll be included in this or a future database query
             while rx.try_recv().is_ok() {}
 
-            let current_user_cursors: Vec<(i32, Option<Cursor>)> =
+            let current_user_cursors: Vec<(i32, Option<EventCursor>)> =
                 user_cursor_map.iter().map(|(k, cursor)| (*k, *cursor)).collect();
 
             let events = match state
@@ -302,7 +359,7 @@ pub async fn feed_stream(
                 // Close if we've reached limit
                 if let Some(max) = params.limit {
                     if total_sent >= max as usize {
-                        return; // Close connection
+                        return;
                     }
                 }
             }
@@ -321,9 +378,8 @@ pub async fn feed_stream(
             // Some users might still have more events even though this batch was partial
         }
 
-        // Phase 2: Live mode - stream new events from broadcast channel
+        // Phase 2: Live mode
         if params.live {
-            // Extract user_ids for filtering
             let user_ids: Vec<i32> = user_cursor_map.keys().copied().collect();
 
             loop {
@@ -346,7 +402,7 @@ pub async fn feed_stream(
                         // Close if we've reached limit
                         if let Some(max) = params.limit {
                             if total_sent >= max as usize {
-                                return; // Close connection
+                                return;
                             }
                         }
                     }
@@ -366,56 +422,32 @@ pub async fn feed_stream(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-/// Validate event stream parameters before processing.
-/// Returns error if parameters are invalid or incompatible.
-fn validate_stream_params(params: &EventStreamQueryParams) -> HttpResult<()> {
-    if params.user_cursors.is_empty() {
-        return Err(HttpError::bad_request("user parameter is required"));
-    }
-
-    if params.user_cursors.len() > MAX_EVENT_STREAM_USERS {
-        return Err(HttpError::bad_request(format!(
-            "Too many users. Maximum allowed: {}",
-            MAX_EVENT_STREAM_USERS
-        )));
-    }
-
-    if params.live && params.reverse {
-        return Err(HttpError::bad_request(
-            "Cannot use live mode with reverse ordering",
-        ));
-    }
-
-    Ok(())
-}
-
 /// Resolve user public keys to user IDs and parse their cursors.
 /// Returns a map of user_id → optional cursor position.
 async fn resolve_user_cursors(
     user_cursors: &[(PublicKey, Option<String>)],
     events_service: &EventsService,
     sql_db: &SqlDb,
-) -> HttpResult<HashMap<i32, Option<Cursor>>> {
+) -> Result<HashMap<i32, Option<EventCursor>>, EventStreamError> {
     use crate::persistence::sql::user::UserRepository;
 
-    let mut user_cursor_map: HashMap<i32, Option<Cursor>> = HashMap::new();
+    let mut user_cursor_map: HashMap<i32, Option<EventCursor>> = HashMap::new();
 
     for (user_pubkey, cursor_str_opt) in user_cursors {
-        let user_id = UserRepository::get_id(user_pubkey, &mut sql_db.pool().into())
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => HttpError::not_found(),
-                _ => HttpError::from(e),
-            })?;
+        let user_id = UserRepository::get_id(user_pubkey, &mut sql_db.pool().into()).await?;
 
         let cursor = if let Some(cursor_str) = cursor_str_opt {
-            match events_service
-                .parse_cursor(cursor_str, &mut sql_db.pool().into())
-                .await
-            {
-                Ok(cursor) => Some(cursor),
-                Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
-            }
+            Some(
+                events_service
+                    .parse_cursor(cursor_str, &mut sql_db.pool().into())
+                    .await
+                    .map_err(|_| {
+                        EventStreamError::InvalidParameter(format!(
+                            "Invalid cursor: {}",
+                            cursor_str
+                        ))
+                    })?,
+            )
         } else {
             None
         };
@@ -431,7 +463,7 @@ async fn resolve_user_cursors(
 fn should_include_live_event(
     event: &EventEntity,
     user_ids: &[i32],
-    user_cursor_map: &HashMap<i32, Option<Cursor>>,
+    user_cursor_map: &HashMap<i32, Option<EventCursor>>,
     path_filter: Option<&WebDavPath>,
 ) -> bool {
     // Filter by user_ids
