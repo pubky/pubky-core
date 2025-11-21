@@ -221,7 +221,7 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
 /// ```text
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: abc123... (only for PUT events)
+/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
 /// ```
 fn event_to_sse_data(entity: &EventEntity) -> String {
     let path = format!("pubky://{}", entity.path.as_str());
@@ -229,7 +229,9 @@ fn event_to_sse_data(entity: &EventEntity) -> String {
 
     let mut lines = vec![path, cursor_line];
     if let Some(hash) = entity.event_type.content_hash() {
-        lines.push(format!("content_hash: {}", hash));
+        let hash_base64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash.as_bytes());
+        lines.push(format!("content_hash: {}", hash_base64));
     }
     lines.join("\n")
 }
@@ -304,7 +306,7 @@ pub async fn feed(
 /// event: PUT
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI=
 /// ```
 pub async fn feed_stream(
     State(state): State<AppState>,
