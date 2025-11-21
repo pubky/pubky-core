@@ -41,6 +41,6 @@ sudo -u postgres psql -c 'create database pubky_homeserver;'
 If compiled with the `testing` feature, `?pubky-test=true` can be added to the database url.
 This way, an empheral test database is created and dropped after the test.
 
-**Example** `postgres://postgres@postgres@localhost:5432/postgres?pubky-test=true` For each test, the homeserver will connect to the 
+**Example** `postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true` For each test, the homeserver will connect to the 
 specified database (postgres in this case) and create a new test database. With the `#[pubky_test_utils::test]` macro, the test database is
 dropped again after the test completes/panics.
