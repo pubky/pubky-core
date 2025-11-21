@@ -43,22 +43,17 @@
 //! simply forwards bytes.
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use futures_util::future::{AbortHandle, Abortable};
 
-use reqwest::Method;
+
 use url::Url;
 
-use pubky_common::{
-    crypto::decrypt,
-    crypto::{hash, random_bytes},
-};
+use pubky_common::crypto::random_bytes;
 
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession,
-    actors::DEFAULT_HTTP_RELAY,
-    cross_log,
-    errors::{AuthError, Error, Result},
-    util::check_http_status,
+    actors::{DEFAULT_HTTP_RELAY, auth_permission_subscription::AuthPermissionSubscription},
+    errors::{Error, Result},
+
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -77,10 +72,8 @@ use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 /// the background task; the relay channel itself expires server-side after its TTL.
 #[derive(Debug)]
 pub struct PubkyAuthFlow {
-    client: PubkyHttpClient,
+    subscription: AuthPermissionSubscription,
     auth_url: Url,
-    rx: flume::Receiver<Result<AuthToken>>,
-    abort: AbortHandle,
 }
 
 impl PubkyAuthFlow {
@@ -119,9 +112,7 @@ impl PubkyAuthFlow {
     /// - Propagates HTTP/transport failures while polling the relay.
     /// - Propagates errors from the internal session exchange if it fails.
     pub async fn await_approval(self) -> Result<PubkySession> {
-        let client = self.client.clone();
-        let token = self.recv_token().await?;
-        PubkySession::new(&token, client).await
+        self.subscription.await_approval().await
     }
 
     /// Block until the signer approves and we receive an [`AuthToken`].
@@ -132,14 +123,7 @@ impl PubkyAuthFlow {
     /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expires before approval.
     /// - Propagates HTTP/transport failures encountered while polling the relay.
     pub async fn await_token(self) -> Result<AuthToken> {
-        self.recv_token().await
-    }
-
-    async fn recv_token(&self) -> Result<AuthToken> {
-        self.rx
-            .recv_async()
-            .await
-            .map_err(|_err| AuthError::RequestExpired)?
+        self.subscription.await_token().await
     }
 
     /// Non-blocking probe (single step) that **consumes any ready token** and returns:
@@ -151,11 +135,7 @@ impl PubkyAuthFlow {
     /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expired before a token arrived.
     /// - Propagates HTTP/transport failures from constructing the session.
     pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
-        if let Some(tok) = self.try_token() {
-            let token = tok?;
-            return Ok(Some(PubkySession::new(&token, self.client.clone()).await?));
-        }
-        Ok(None)
+        self.subscription.try_poll_once().await
     }
 
     /// Non-blocking check: returns a verified `AuthToken` if the background poller has delivered it.
@@ -165,145 +145,7 @@ impl PubkyAuthFlow {
     /// - `None` if not yet delivered.
     #[must_use]
     pub fn try_token(&self) -> Option<Result<AuthToken>> {
-        self.rx.try_recv().ok()
-    }
-
-    // -- internals --
-
-    /// Long-poll until a token arrives or the channel expires. Runs in the background task.
-    async fn poll_for_token_loop(
-        client: PubkyHttpClient,
-        relay_channel_url: Url,
-        client_secret: [u8; 32],
-        tx: flume::Sender<Result<AuthToken>>,
-    ) {
-        cross_log!(
-            info,
-            "Starting auth flow polling for relay channel {}",
-            relay_channel_url
-        );
-        let result = Self::poll_for_token(&client, &relay_channel_url, &client_secret).await;
-
-        if result.is_ok() {
-            cross_log!(
-                info,
-                "Auth flow successfully decrypted token for relay channel {}",
-                relay_channel_url
-            );
-        }
-
-        let _ = tx.send(result);
-    }
-
-    async fn poll_for_token(
-        client: &PubkyHttpClient,
-        relay_channel_url: &Url,
-        client_secret: &[u8; 32],
-    ) -> Result<AuthToken> {
-        use reqwest::StatusCode;
-
-        let response = Self::poll_channel(client, relay_channel_url).await?;
-
-        if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
-            cross_log!(
-                warn,
-                "Auth flow relay channel {} expired (status: {})",
-                relay_channel_url,
-                response.status()
-            );
-            return Err(AuthError::RequestExpired.into());
-        }
-
-        let response = check_http_status(response).await?;
-        let encrypted = response.bytes().await?;
-
-        Self::decode_token(&encrypted, client_secret)
-    }
-
-    async fn poll_channel(
-        client: &PubkyHttpClient,
-        relay_channel_url: &Url,
-    ) -> Result<reqwest::Response> {
-        let mut attempt: u32 = 0;
-        loop {
-            attempt += 1;
-            cross_log!(
-                debug,
-                "Auth flow polling attempt {attempt} requesting {}",
-                relay_channel_url
-            );
-
-            let result = Self::poll_channel_once(client, relay_channel_url).await;
-            if let Some(response) = Self::interpret_poll_result(attempt, relay_channel_url, result)?
-            {
-                return Ok(response);
-            }
-        }
-    }
-
-    fn interpret_poll_result(
-        attempt: u32,
-        relay_channel_url: &Url,
-        result: std::result::Result<reqwest::Response, PollError>,
-    ) -> Result<Option<reqwest::Response>> {
-        match result {
-            Ok(response) => {
-                cross_log!(
-                    debug,
-                    "Received response for auth flow polling attempt {attempt}: status {}",
-                    response.status()
-                );
-                Ok(Some(response))
-            }
-            Err(PollError::Timeout) => {
-                cross_log!(
-                    debug,
-                    "Auth flow polling attempt {attempt} timed out; retrying"
-                );
-                Ok(None)
-            }
-            Err(PollError::Failure(err)) => {
-                cross_log!(
-                    error,
-                    "Auth flow polling attempt {attempt} failed at {}: {err}",
-                    relay_channel_url
-                );
-                Err(err)
-            }
-        }
-    }
-
-    async fn poll_channel_once(
-        client: &PubkyHttpClient,
-        relay_channel_url: &Url,
-    ) -> std::result::Result<reqwest::Response, PollError> {
-        let request = client
-            .cross_request(Method::GET, relay_channel_url.clone())
-            .await
-            .map_err(PollError::Failure)?;
-
-        match request.send().await {
-            Ok(response) => Ok(response),
-            Err(err) if err.is_timeout() => Err(PollError::Timeout),
-            Err(err) => Err(PollError::Failure(err.into())),
-        }
-    }
-
-    fn decode_token(encrypted: &[u8], client_secret: &[u8; 32]) -> Result<AuthToken> {
-        let token_bytes = decrypt(encrypted, client_secret)?;
-        Ok(AuthToken::verify(&token_bytes)?)
-    }
-}
-
-enum PollError {
-    Timeout,
-    Failure(Error),
-}
-
-impl Drop for PubkyAuthFlow {
-    fn drop(&mut self) {
-        // Stop background polling immediately.
-        self.abort.abort();
+        self.subscription.try_token()
     }
 }
 
@@ -348,7 +190,7 @@ impl PubkyAuthFlowBuilder {
         };
 
         // 1) Resolve relay base (default if not provided).
-        let mut relay = match self.relay {
+        let relay = match self.relay {
             Some(u) => u,
             None => Url::parse(DEFAULT_HTTP_RELAY)?,
         };
@@ -367,42 +209,14 @@ impl PubkyAuthFlowBuilder {
             query.append_pair("relay", &relay_str)
         };
 
-        // 3) Append derived channel id to the relay URL.
-        //    channel_id = base64url( hash(client_secret) )
-        {
-            let mut segs = relay
-                .path_segments_mut()
-                .map_err(|()| url::ParseError::RelativeUrlWithCannotBeABaseBase)?;
-            segs.pop_if_empty(); // normalize trailing slash
-            let channel_id = URL_SAFE_NO_PAD.encode(hash(&client_secret).as_bytes());
-            segs.push(&channel_id)
-        };
-
-        cross_log!(info, "Auth flow derived relay channel {}", relay);
-
-        // 4) Spawn background polling (single-shot delivery)
-        let (tx, rx) = flume::bounded(1);
-        let (abort_handle, abort_reg) = AbortHandle::new_pair();
-        let bg_client = client.clone();
-        let bg_relay = relay.clone();
-        let bg_secret = client_secret;
-
-        let fut = async move {
-            cross_log!(info, "Spawning auth flow polling task");
-            PubkyAuthFlow::poll_for_token_loop(bg_client, bg_relay, bg_secret, tx).await;
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        tokio::spawn(Abortable::new(fut, abort_reg));
-
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
+        let subscription = AuthPermissionSubscription::builder(client_secret)
+        .relay_base_url(relay)
+        .client(client)
+        .start()?;
 
         Ok(PubkyAuthFlow {
-            client,
+            subscription,
             auth_url,
-            rx,
-            abort: abort_handle,
         })
     }
 }

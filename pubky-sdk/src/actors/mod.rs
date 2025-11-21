@@ -1,4 +1,6 @@
 pub mod auth_flow;
+mod http_relay_link_channel;
+mod auth_permission_subscription;
 mod constants;
 pub mod pkdns;
 mod session;
