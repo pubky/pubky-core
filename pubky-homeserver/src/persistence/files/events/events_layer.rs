@@ -149,9 +149,10 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
             .events_service
             .create_event(
                 user_id,
-                EventType::Put,
+                EventType::Put {
+                    content_hash: file_metadata.hash,
+                },
                 &self.entry_path,
-                Some(file_metadata.hash),
                 &mut executor,
             )
             .await
@@ -221,7 +222,7 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 
             match self
                 .events_service
-                .create_event(user_id, EventType::Delete, &path, None, &mut executor)
+                .create_event(user_id, EventType::Delete, &path, &mut executor)
                 .await
             {
                 Ok(event) => {
@@ -297,7 +298,7 @@ mod tests {
             assert_eq!(events.len(), 1);
             let first_event = events.first().expect("Should succeed");
             assert_eq!(first_event.path, entry_path);
-            assert_eq!(first_event.event_type, EventType::Put);
+            assert!(matches!(first_event.event_type, EventType::Put { .. }));
 
             // Overwrite the file
             operator
@@ -312,7 +313,7 @@ mod tests {
             assert_eq!(events.len(), 2);
             let second_event = events.get(1).expect("Should succeed");
             assert_eq!(second_event.path, entry_path);
-            assert_eq!(second_event.event_type, EventType::Put);
+            assert!(matches!(second_event.event_type, EventType::Put { .. }));
 
             // Delete the file
             operator

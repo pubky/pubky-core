@@ -31,6 +31,52 @@ impl MigrationTrait for M20251014EventsTableIndexAndContentHashMigration {
         let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
+        // Backfill content_hash for existing PUT events
+        // Step 1: Update events where matching entry exists in entries table (if table exists)
+        let table_exists = sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = 'entries'
+            )"#,
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+
+        if table_exists {
+            // Use an optimized query that leverages the idx_entry_user_path index on entries
+            // and the idx_events_user_path_id index on events for efficient lookups
+            let backfill_from_entries = r#"
+                UPDATE events
+                SET content_hash = entries.content_hash
+                FROM entries
+                WHERE events."user" = entries."user"
+                  AND events.path = entries.path
+                  AND events.type = 'PUT'
+                  AND events.content_hash IS NULL
+            "#;
+            let result = sqlx::query(backfill_from_entries)
+                .execute(&mut **tx)
+                .await?;
+            tracing::info!(
+                "Backfilled {} PUT events with content_hash from entries table",
+                result.rows_affected()
+            );
+        }
+
+        // Step 2: Update remaining PUT events (where entry no longer exists) with zero hash
+        let zero_hash = vec![0u8; 32];
+        let result = sqlx::query(
+            r#"UPDATE events SET content_hash = $1 WHERE type = 'PUT' AND content_hash IS NULL"#,
+        )
+        .bind(zero_hash)
+        .execute(&mut **tx)
+        .await?;
+        tracing::info!(
+            "Backfilled {} PUT events with zero hash (no matching entry)",
+            result.rows_affected()
+        );
+
         Ok(())
     }
 
@@ -49,8 +95,11 @@ mod tests {
     use crate::persistence::{
         lmdb::tables::users::USERS_TABLE,
         sql::{
-            entities::user::UserIden,
-            migrations::{M20250806CreateUserMigration, M20250814CreateEventMigration},
+            entities::{entry::EntryIden, user::UserIden},
+            migrations::{
+                M20250806CreateUserMigration, M20250814CreateEventMigration,
+                M20250815CreateEntryMigration,
+            },
             migrator::Migrator,
             SqlDb,
         },
@@ -221,5 +270,178 @@ mod tests {
         assert_eq!(index_columns[0].1, "user", "First column should be 'user'");
         assert_eq!(index_columns[1].1, "path", "Second column should be 'path'");
         assert_eq!(index_columns[2].1, "id", "Third column should be 'id'");
+    }
+
+    // Simplified test-only entity struct to avoid using complex types (EntryPath, Hash)
+    #[allow(dead_code)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct TestEntryEntity {
+        pub id: i64,
+        pub user_id: i32,
+        pub path: String,
+        pub content_hash: Vec<u8>,
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_content_hash_backfill() {
+        let db = SqlDb::test_without_migrations().await;
+        let migrator = Migrator::new(&db);
+
+        // Run migrations up to (but not including) the content_hash migration
+        migrator
+            .run_migrations(vec![
+                Box::new(M20250806CreateUserMigration),
+                Box::new(M20250814CreateEventMigration),
+                Box::new(M20250815CreateEntryMigration),
+            ])
+            .await
+            .expect("Should run successfully");
+
+        // Create a user
+        let pubkey = Keypair::random().public_key();
+        let statement = Query::insert()
+            .into_table(USERS_TABLE)
+            .columns([UserIden::PublicKey])
+            .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
+            .unwrap()
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // Create an entry in entries table
+        let entry_hash = Hash::from_bytes([99u8; 32]);
+        let statement = Query::insert()
+            .into_table("entries")
+            .columns([
+                EntryIden::User,
+                EntryIden::Path,
+                EntryIden::ContentHash,
+                EntryIden::ContentLength,
+                EntryIden::ContentType,
+            ])
+            .values(vec![
+                SimpleExpr::Value(1.into()),
+                SimpleExpr::Value("/with-entry".into()),
+                SimpleExpr::Value(entry_hash.as_bytes().to_vec().into()),
+                SimpleExpr::Value(100.into()),
+                SimpleExpr::Value("text/plain".into()),
+            ])
+            .unwrap()
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // Create PUT event that corresponds to the entry (should get backfilled with entry's hash)
+        let statement = Query::insert()
+            .into_table(TABLE)
+            .columns([EventIden::Type, EventIden::User, EventIden::Path])
+            .values(vec![
+                SimpleExpr::Value("PUT".into()),
+                SimpleExpr::Value(1.into()),
+                SimpleExpr::Value("/with-entry".into()),
+            ])
+            .unwrap()
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // Create PUT event with no corresponding entry (should get zero hash)
+        let statement = Query::insert()
+            .into_table(TABLE)
+            .columns([EventIden::Type, EventIden::User, EventIden::Path])
+            .values(vec![
+                SimpleExpr::Value("PUT".into()),
+                SimpleExpr::Value(1.into()),
+                SimpleExpr::Value("/no-entry".into()),
+            ])
+            .unwrap()
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // Create DEL event (should remain NULL after migration)
+        let statement = Query::insert()
+            .into_table(TABLE)
+            .columns([EventIden::Type, EventIden::User, EventIden::Path])
+            .values(vec![
+                SimpleExpr::Value("DEL".into()),
+                SimpleExpr::Value(1.into()),
+                SimpleExpr::Value("/deleted".into()),
+            ])
+            .unwrap()
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(query.as_str(), values)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // Now run the content_hash migration
+        migrator
+            .run_migrations(vec![Box::new(
+                M20251014EventsTableIndexAndContentHashMigration,
+            )])
+            .await
+            .expect("Should run content_hash migration successfully");
+
+        // Read all events
+        let statement = Query::select()
+            .from(TABLE)
+            .columns([
+                EventIden::Id,
+                EventIden::Type,
+                EventIden::User,
+                EventIden::Path,
+                EventIden::CreatedAt,
+                EventIden::ContentHash,
+            ])
+            .order_by(EventIden::Id, sea_query::Order::Asc)
+            .to_owned();
+        let (query, _) = statement.build_sqlx(PostgresQueryBuilder);
+        let events: Vec<EventEntity> = sqlx::query_as(query.as_str())
+            .fetch_all(db.pool())
+            .await
+            .unwrap();
+
+        assert_eq!(events.len(), 3);
+
+        // First event: PUT with matching entry - should have entry's content_hash
+        assert_eq!(events[0].event_type, "PUT");
+        assert_eq!(events[0].path, "/with-entry");
+        assert_eq!(
+            events[0].content_hash,
+            Some(entry_hash.as_bytes().to_vec()),
+            "PUT event with matching entry should have entry's content_hash"
+        );
+
+        // Second event: PUT without matching entry - should have zero hash
+        assert_eq!(events[1].event_type, "PUT");
+        assert_eq!(events[1].path, "/no-entry");
+        assert_eq!(
+            events[1].content_hash,
+            Some(vec![0u8; 32]),
+            "PUT event without matching entry should have zero hash"
+        );
+
+        // Third event: DEL - should remain NULL
+        assert_eq!(events[2].event_type, "DEL");
+        assert_eq!(events[2].path, "/deleted");
+        assert_eq!(
+            events[2].content_hash, None,
+            "DEL event should have NULL content_hash"
+        );
     }
 }

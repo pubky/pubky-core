@@ -3,7 +3,6 @@ use crate::persistence::{
     sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;
-use pubky_common::crypto::Hash;
 use tokio::sync::broadcast;
 
 /// Maximum number of users allowed in a single event stream request.
@@ -48,10 +47,9 @@ impl EventsService {
         user_id: i32,
         event_type: EventType,
         path: &EntryPath,
-        content_hash: Option<Hash>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EventEntity, sqlx::Error> {
-        EventRepository::create(user_id, event_type, path, content_hash, executor).await
+        EventRepository::create(user_id, event_type, path, executor).await
     }
 
     /// Broadcast an event to all subscribers.
@@ -137,7 +135,14 @@ mod tests {
         // Create event within transaction
         let mut tx = db.pool().begin().await.unwrap();
         let event = events_service
-            .create_event(user.id, EventType::Put, &path, None, &mut (&mut tx).into())
+            .create_event(
+                user.id,
+                EventType::Put {
+                    content_hash: pubky_common::crypto::Hash::from_bytes([0; 32]),
+                },
+                &path,
+                &mut (&mut tx).into(),
+            )
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -149,7 +154,7 @@ mod tests {
         let received = rx.recv().await.unwrap();
         assert_eq!(received.id, event.id);
         assert_eq!(received.user_id, user.id);
-        assert_eq!(received.event_type, EventType::Put);
+        assert!(matches!(received.event_type, EventType::Put { .. }));
     }
 
     #[tokio::test]
@@ -170,7 +175,14 @@ mod tests {
                 WebDavPath::new(&format!("/test{}.txt", i)).unwrap(),
             );
             events_service
-                .create_event(user.id, EventType::Put, &path, None, &mut db.pool().into())
+                .create_event(
+                    user.id,
+                    EventType::Put {
+                        content_hash: pubky_common::crypto::Hash::from_bytes([0; 32]),
+                    },
+                    &path,
+                    &mut db.pool().into(),
+                )
                 .await
                 .unwrap();
         }

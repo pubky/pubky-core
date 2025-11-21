@@ -20,34 +20,48 @@ fn pubky_url_into_entry_path(url: &str) -> anyhow::Result<EntryPath> {
     Ok(entry_path)
 }
 
-/// Create a new signup code.
+/// Create a new event from LMDB migration.
 /// The executor can either be db.pool() or a transaction.
 pub async fn create<'a>(
     timestamp: &Timestamp,
     event: &Event,
     executor: &mut UnifiedExecutor<'a>,
 ) -> anyhow::Result<()> {
+    use pubky_common::crypto::Hash;
+
     let created_at = timestamp_to_sqlx_datetime(timestamp);
     let event_type = match event {
-        Event::Put(_) => EventType::Put,
+        Event::Put(_) => EventType::Put {
+            // Legacy LMDB events don't have content_hash - use zero hash
+            content_hash: Hash::from_bytes([0; 32]),
+        },
         Event::Delete(_) => EventType::Delete,
     };
     let entry_path = pubky_url_into_entry_path(event.url())?;
     let user_id = UserRepository::get_id(entry_path.pubkey(), executor).await?;
+
+    let mut columns = vec![
+        EventIden::Type,
+        EventIden::User,
+        EventIden::Path,
+        EventIden::CreatedAt,
+    ];
+    let mut values: Vec<SimpleExpr> = vec![
+        SimpleExpr::Value(event_type.to_string().into()),
+        SimpleExpr::Value(user_id.into()),
+        SimpleExpr::Value(entry_path.path().as_str().into()),
+        SimpleExpr::Value(created_at.into()),
+    ];
+
+    if let Some(hash) = event_type.content_hash() {
+        columns.push(EventIden::ContentHash);
+        values.push(SimpleExpr::Value(hash.as_bytes().to_vec().into()));
+    }
+
     let statement = Query::insert()
         .into_table(EVENT_TABLE)
-        .columns([
-            EventIden::Type,
-            EventIden::User,
-            EventIden::Path,
-            EventIden::CreatedAt,
-        ])
-        .values(vec![
-            SimpleExpr::Value(event_type.to_string().into()),
-            SimpleExpr::Value(user_id.into()),
-            SimpleExpr::Value(entry_path.path().as_str().into()),
-            SimpleExpr::Value(created_at.into()),
-        ])
+        .columns(columns)
+        .values(values)
         .expect("Failed to build insert statement")
         .to_owned();
 
@@ -167,7 +181,14 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0].event_type, EventType::Put);
+        assert!(matches!(events[0].event_type, EventType::Put { .. }));
+        if let EventType::Put { content_hash } = &events[0].event_type {
+            assert_eq!(
+                content_hash.as_bytes(),
+                &[0; 32],
+                "Legacy PUT event should have zero content_hash"
+            );
+        }
         assert_eq!(events[0].path, entry_path1);
         assert_eq!(events[0].user_pubkey, user1_pubkey);
         assert_eq!(
@@ -189,7 +210,14 @@ mod tests {
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
         );
-        assert_eq!(events[2].event_type, EventType::Put);
+        assert!(matches!(events[2].event_type, EventType::Put { .. }));
+        if let EventType::Put { content_hash } = &events[2].event_type {
+            assert_eq!(
+                content_hash.as_bytes(),
+                &[0; 32],
+                "Legacy PUT event should have zero content_hash"
+            );
+        }
         assert_eq!(events[2].path, entry_path2);
         assert_eq!(events[2].user_pubkey, user2_pubkey);
         assert_eq!(

@@ -64,18 +64,9 @@ impl EventRepository {
         user_id: i32,
         event_type: EventType,
         path: &EntryPath,
-        content_hash: Option<Hash>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EventEntity, sqlx::Error> {
-        Self::create_with_timestamp(
-            user_id,
-            event_type,
-            path,
-            content_hash,
-            &Utc::now(),
-            executor,
-        )
-        .await
+        Self::create_with_timestamp(user_id, event_type, path, &Utc::now(), executor).await
     }
 
     /// Create a new event with a specific timestamp.
@@ -84,7 +75,6 @@ impl EventRepository {
         user_id: i32,
         event_type: EventType,
         path: &EntryPath,
-        content_hash: Option<Hash>,
         created_at: &DateTime<Utc>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EventEntity, sqlx::Error> {
@@ -101,7 +91,7 @@ impl EventRepository {
             SimpleExpr::Value(created_at.naive_utc().into()),
         ];
 
-        if let Some(hash) = content_hash {
+        if let Some(hash) = event_type.content_hash() {
             columns.push(EventIden::ContentHash);
             values.push(SimpleExpr::Value(hash.as_bytes().to_vec().into()));
         }
@@ -126,7 +116,6 @@ impl EventRepository {
             event_type,
             path: path.clone(),
             created_at: created_at.naive_utc(),
-            content_hash,
         })
     }
 
@@ -321,29 +310,29 @@ pub enum EventIden {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum EventType {
-    Put,
+    Put { content_hash: Hash },
     Delete,
+}
+
+impl EventType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EventType::Put { .. } => "PUT",
+            EventType::Delete => "DEL",
+        }
+    }
+
+    pub fn content_hash(&self) -> Option<&Hash> {
+        match self {
+            EventType::Put { content_hash } => Some(content_hash),
+            EventType::Delete => None,
+        }
+    }
 }
 
 impl Display for EventType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            EventType::Put => "PUT",
-            EventType::Delete => "DEL",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl FromStr for EventType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "PUT" => Ok(EventType::Put),
-            "DEL" => Ok(EventType::Delete),
-            _ => Err(format!("Failed to parse invalid event type: {}", s)),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -375,9 +364,10 @@ mod tests {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
             let _ = EventRepository::create(
                 user.id,
-                EventType::Put,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
                 &path,
-                None,
                 &mut db.pool().into(),
             )
             .await
@@ -399,7 +389,7 @@ mod tests {
             events[0].path,
             EntryPath::new(user_pubkey, WebDavPath::new("/test").unwrap())
         );
-        assert_eq!(events[0].event_type, EventType::Put);
+        assert!(matches!(events[0].event_type, EventType::Put { .. }));
     }
 
     #[tokio::test]
@@ -421,9 +411,10 @@ mod tests {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
             let event = EventRepository::create_with_timestamp(
                 user.id,
-                EventType::Put,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
                 &path,
-                None,
                 &created_at,
                 &mut db.pool().into(),
             )
@@ -461,9 +452,10 @@ mod tests {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
             let event = EventRepository::create_with_timestamp(
                 user.id,
-                EventType::Put,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
                 &path,
-                None,
                 &created_at,
                 &mut db.pool().into(),
             )

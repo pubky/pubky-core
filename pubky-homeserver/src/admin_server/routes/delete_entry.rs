@@ -80,7 +80,7 @@ mod tests {
             2,
             "One PUT and one DEL event should be created. Last entry is the cursor."
         );
-        assert_eq!(events[0].event_type, EventType::Put);
+        assert!(matches!(events[0].event_type, EventType::Put { .. }));
         assert_eq!(events[1].event_type, EventType::Delete);
     }
 

@@ -24,7 +24,6 @@ pub struct EventEntity {
     pub event_type: EventType,
     pub path: EntryPath,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
-    pub content_hash: Option<Hash>,
 }
 
 impl EventEntity {
@@ -40,9 +39,7 @@ impl FromRow<'_, PgRow> for EventEntity {
         let user_public_key: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
         let user_pubkey =
             PublicKey::from_str(&user_public_key).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        let event_type: String = row.try_get(EventIden::Type.to_string().as_str())?;
-        let event_type =
-            EventType::from_str(&event_type).map_err(|e| sqlx::Error::Decode(e.into()))?;
+        let event_type_str: String = row.try_get(EventIden::Type.to_string().as_str())?;
         let user_public_key =
             PublicKey::from_str(&user_public_key).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let path: String = row.try_get(EventIden::Path.to_string().as_str())?;
@@ -50,13 +47,33 @@ impl FromRow<'_, PgRow> for EventEntity {
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(EventIden::CreatedAt.to_string().as_str())?;
 
-        // Read optional content_hash
-        let content_hash: Option<Vec<u8>> =
+        let content_hash_bytes: Option<Vec<u8>> =
             row.try_get(EventIden::ContentHash.to_string().as_str())?;
-        let content_hash = content_hash.and_then(|bytes| {
+
+        let content_hash = content_hash_bytes.and_then(|bytes| {
             let hash_bytes: [u8; 32] = bytes.try_into().ok()?;
             Some(Hash::from_bytes(hash_bytes))
         });
+
+        let event_type = match event_type_str.as_str() {
+            "PUT" => {
+                let hash = content_hash.unwrap_or_else(|| {
+                    // This should never happen after m20251014 migration runs.
+                    tracing::error!(
+                        "PUT event {} has NULL content_hash - this indicates a database issue. Using zero hash as fallback.",
+                        id
+                    );
+                    Hash::from_bytes([0; 32])
+                });
+                EventType::Put { content_hash: hash }
+            }
+            "DEL" => EventType::Delete,
+            other => {
+                return Err(sqlx::Error::Decode(
+                    format!("Invalid event type: {}", other).into(),
+                ))
+            }
+        };
 
         Ok(EventEntity {
             id,
@@ -65,7 +82,6 @@ impl FromRow<'_, PgRow> for EventEntity {
             user_pubkey,
             path: EntryPath::new(user_public_key, path),
             created_at,
-            content_hash,
         })
     }
 }

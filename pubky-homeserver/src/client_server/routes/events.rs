@@ -221,14 +221,14 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
 /// ```text
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: abc123... (optional, only if present)
+/// data: content_hash: abc123... (only for PUT events)
 /// ```
 fn event_to_sse_data(entity: &EventEntity) -> String {
     let path = format!("pubky://{}", entity.path.as_str());
     let cursor_line = format!("cursor: {}", entity.cursor());
 
     let mut lines = vec![path, cursor_line];
-    if let Some(hash) = entity.content_hash {
+    if let Some(hash) = entity.event_type.content_hash() {
         lines.push(format!("content_hash: {}", hash));
     }
     lines.join("\n")
@@ -292,6 +292,11 @@ pub async fn feed(
 /// Supports two modes:
 /// - **Batch Mode** (`live=false` or omitted): Fetches historical events then closes connection
 /// - **Streaming Mode** (`live=true`): Fetches historical events then streams new events in real-time
+///
+/// ## Slow Client Behavior
+/// If a client cannot consume events fast enough in live mode then the broadcast channel will lag.
+/// When lag is detected, the connection is immediately closed to prevent memory buildup and
+/// degraded server performance. Clients should reconnect with the last received cursor to resume.
 ///
 /// ## Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
@@ -407,11 +412,11 @@ pub async fn feed_stream(
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        tracing::error!(
-                            "Broadcast channel lagged: {} events were skipped",
+                        tracing::warn!(
+                            "Slow client detected: broadcast channel lagged by {} events. Closing connection.",
                             skipped
                         );
-                        continue;
+                        return;
                     }
                     Err(_) => break, // Channel closed
                 }
@@ -466,7 +471,6 @@ fn should_include_live_event(
     user_cursor_map: &HashMap<i32, Option<EventCursor>>,
     path_filter: Option<&WebDavPath>,
 ) -> bool {
-    // Filter by user_ids
     if !user_ids.contains(&event.user_id) {
         return false;
     }
@@ -474,11 +478,10 @@ fn should_include_live_event(
     // Filter out events we already sent in Phase 1
     if let Some(Some(cursor)) = user_cursor_map.get(&event.user_id) {
         if event.cursor() <= *cursor {
-            return false; // Already sent this event
+            return false;
         }
     }
 
-    // Filter by path prefix if specified
     if let Some(path) = path_filter {
         let path_suffix = event.path.path().as_str();
         if !path_suffix.starts_with(path.as_str()) {
