@@ -125,6 +125,7 @@ impl ClientServer {
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
+            events_service: context.events_service.clone(),
         };
         super::create_app(state.clone(), context)
     }
@@ -212,6 +213,8 @@ fn base() -> Router<AppState> {
         .route("/session", post(auth::signin))
         // Events
         .route("/events/", get(events::feed))
+        .route("/events-stream", get(events::feed_stream))
+
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
     // TODO: maybe add to a separate router (drive router?).

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::sql::SqlDb;
 use crate::persistence::sql::{uexecutor, user::UserRepository};
 use crate::shared::webdav::EntryPath;
@@ -41,22 +42,6 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
             user_quota_bytes: self.user_quota_bytes,
         }
     }
-}
-
-/// Helper function to ensure that the path is a valid entry path aka
-/// starts with a pubkey.
-/// Returns the entry path if it is valid, otherwise returns an error.
-fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error> {
-    let path: EntryPath = match path.parse() {
-        Ok(path) => path,
-        Err(e) => {
-            return Err(opendal::Error::new(
-                opendal::ErrorKind::PermissionDenied,
-                e.to_string(),
-            ));
-        }
-    };
-    Ok(path)
 }
 
 #[derive(Debug, Clone)]
