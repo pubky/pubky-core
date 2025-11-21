@@ -53,10 +53,7 @@ impl From<EventStreamError> for HttpError {
 
 impl From<sqlx::Error> for EventStreamError {
     fn from(error: sqlx::Error) -> Self {
-        match error {
-            sqlx::Error::RowNotFound => EventStreamError::UserNotFound,
-            e => EventStreamError::DatabaseError(e),
-        }
+        EventStreamError::DatabaseError(error)
     }
 }
 
@@ -65,13 +62,11 @@ impl From<sqlx::Error> for EventStreamError {
 #[serde(try_from = "RawEventStreamQueryParams")]
 pub struct EventStreamQueryParams {
     /// Maximum total events to send before closing connection.
-    /// If specified then send up to N events total, then close
     pub limit: Option<u16>,
-    /// Return events in reverse chronological order (newest first). Default: `false` (oldest first).
+    /// Return events in reverse chronological order
     /// **Cannot be combined with `live=true`** (returns 400 error).
     pub reverse: bool,
-    /// Enable live streaming mode. Default: `false` (batch mode).
-    /// **Cannot be combined with `reverse=true`** (returns 400 error).
+    /// Enable live streaming mode
     pub live: bool,
     /// One or more user public keys to filter events for.
     /// - Format: z-base-32 encoded public key (e.g., "o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")
@@ -80,8 +75,7 @@ pub struct EventStreamQueryParams {
     /// - Multiple users: `?user=pubkey1&user=pubkey2:cursor2`
     pub user_cursors: Vec<(PublicKey, Option<String>)>,
     /// Path prefix to filter events.
-    /// - Format: Path WITHOUT `pubky://` scheme or user pubkey
-    /// - Examples: `/pub/files/`, `pub/files/`, `/pub/`
+    /// Format: Path WITHOUT `pubky://` scheme or user pubkey. Eg: `/pub/files/`, `pub/files/`, `/pub/`
     pub path: Option<WebDavPath>,
 }
 
@@ -221,7 +215,7 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
 /// ```text
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: abc123... (only for PUT events)
+/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
 /// ```
 fn event_to_sse_data(entity: &EventEntity) -> String {
     let path = format!("pubky://{}", entity.path.as_str());
@@ -229,7 +223,9 @@ fn event_to_sse_data(entity: &EventEntity) -> String {
 
     let mut lines = vec![path, cursor_line];
     if let Some(hash) = entity.event_type.content_hash() {
-        lines.push(format!("content_hash: {}", hash));
+        let hash_base64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash.as_bytes());
+        lines.push(format!("content_hash: {}", hash_base64));
     }
     lines.join("\n")
 }
@@ -294,9 +290,8 @@ pub async fn feed(
 /// - **Streaming Mode** (`live=true`): Fetches historical events then streams new events in real-time
 ///
 /// ## Slow Client Behavior
-/// If a client cannot consume events fast enough in live mode then the broadcast channel will lag.
-/// When lag is detected, the connection is immediately closed to prevent memory buildup and
-/// degraded server performance. Clients should reconnect with the last received cursor to resume.
+/// If a client cannot consume events fast enough in live mode, the broadcast channel will lag and the connection will be closed.
+/// It is recommended that low memory clients poll this endpoint: Ie `live=true` with a low `limit`
 ///
 /// ## Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
@@ -304,7 +299,7 @@ pub async fn feed(
 /// event: PUT
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI=
 /// ```
 pub async fn feed_stream(
     State(state): State<AppState>,
@@ -439,7 +434,12 @@ async fn resolve_user_cursors(
     let mut user_cursor_map: HashMap<i32, Option<EventCursor>> = HashMap::new();
 
     for (user_pubkey, cursor_str_opt) in user_cursors {
-        let user_id = UserRepository::get_id(user_pubkey, &mut sql_db.pool().into()).await?;
+        let user_id = UserRepository::get_id(user_pubkey, &mut sql_db.pool().into())
+            .await
+            .map_err(|e| match e {
+                sqlx::Error::RowNotFound => EventStreamError::UserNotFound,
+                e => EventStreamError::DatabaseError(e),
+            })?;
 
         let cursor = if let Some(cursor_str) = cursor_str_opt {
             Some(

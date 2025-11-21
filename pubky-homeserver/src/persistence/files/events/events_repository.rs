@@ -121,10 +121,9 @@ impl EventRepository {
 
     /// Parse the cursor to a Cursor.
     /// The cursor can be either a new cursor format or a legacy cursor format.
-    /// The new cursor format is a u64.
+    /// The new cursor format is the ID of the last event - a u64.
     /// The legacy cursor format is a timestamp.
-    /// The cursor is the id of the last event in the list.
-    /// If you don't to use the cursor, set it to "0".
+    /// If you don't want to use the cursor, set it to "0".
     pub async fn parse_cursor<'a>(
         cursor: &str,
         executor: &mut UnifiedExecutor<'a>,
@@ -154,12 +153,8 @@ impl EventRepository {
     }
 
     /// Get a list of events with per-user cursors.
-    /// Each user has their own cursor position.
     /// The limit is the maximum total number of events to return across all users.
-    /// The reverse parameter determines the ordering: false for ascending (oldest first), true for descending (newest first).
-    /// The path_prefix parameter filters events by path prefix (e.g., "/pub/files/" to match only events under that directory).
     /// The executor can either be db.pool() or a transaction.
-    /// This uses the (user, path, id) index for efficient querying.
     pub async fn get_by_user_cursors<'a>(
         user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,

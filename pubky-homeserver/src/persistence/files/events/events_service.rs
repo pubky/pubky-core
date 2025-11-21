@@ -12,7 +12,6 @@ use tokio::sync::broadcast;
 pub const MAX_EVENT_STREAM_USERS: usize = 50;
 
 /// Service that handles all event-related business logic.
-/// This provides an abstraction over the event repository and broadcast channel.
 #[derive(Clone, Debug)]
 pub struct EventsService {
     event_tx: broadcast::Sender<EventEntity>,
@@ -78,7 +77,7 @@ impl EventsService {
     }
 
     /// Get a list of events starting from a cursor position.
-    /// This is used by the legacy `/events/` endpoint.
+    /// This is used by the `/events/` endpoint.
     ///
     /// ## Parameters
     /// - `cursor`: Starting position (None = from beginning)

@@ -61,7 +61,13 @@ pub async fn get(
         .get(header::IF_NONE_MATCH)
         .and_then(|h| h.to_str().ok())
     {
-        let current_etag = format!("\"{}\"", entry.content_hash);
+        let current_etag = format!(
+            "\"{}\"",
+            base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                entry.content_hash.as_bytes()
+            )
+        );
         if request_etag
             .trim()
             .split(',')
@@ -160,7 +166,16 @@ fn parse_cursor(cursor: Option<String>) -> anyhow::Result<Option<EntryPath>> {
 fn not_modified_response(entry: &EntryEntity) -> HttpResult<Response<Body>> {
     Ok(Response::builder()
         .status(StatusCode::NOT_MODIFIED)
-        .header(header::ETAG, format!("\"{}\"", entry.content_hash))
+        .header(
+            header::ETAG,
+            format!(
+                "\"{}\"",
+                base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    entry.content_hash.as_bytes()
+                )
+            ),
+        )
         .header(
             header::LAST_MODIFIED,
             to_http_date(&entry.modified_at).to_string().as_str(),
@@ -195,9 +210,15 @@ impl EntryEntity {
         );
         headers.insert(
             header::ETAG,
-            format!("\"{}\"", self.content_hash)
-                .try_into()
-                .expect("hex string is valid"),
+            format!(
+                "\"{}\"",
+                base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    self.content_hash.as_bytes()
+                )
+            )
+            .try_into()
+            .expect("base64 string is valid"),
         );
         // tenant-aware caching
         headers.insert(header::VARY, HeaderValue::from_static("pubky-host"));
