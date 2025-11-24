@@ -68,7 +68,7 @@ impl AuthFlow {
             builder = builder.client(c);
         }
         if let Some(r) = relay {
-            builder = builder.relay(Url::parse(&r)?);
+            builder = builder.base_relay(Url::parse(&r)?);
         }
 
         Ok(AuthFlow(builder.start()?))

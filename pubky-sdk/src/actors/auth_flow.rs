@@ -1,12 +1,30 @@
 //! Client <=> Signer authing (“pubkyauth”) as a single, self-contained flow.
 //!
 //! ## TL;DR (happy path)
+//! 
+//! ### Sign in
 //! ```no_run
-//! # use pubky::{Capabilities, PubkyAuthFlow};
+//! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind};
 //! # async fn run() -> pubky::Result<()> {
 //! let caps = Capabilities::default();
-//! let flow = PubkyAuthFlow::start(&caps)?; // starts background polling immediately
+//! let flow = PubkyAuthFlow::start(&caps, AuthFlowKind::sign_in())?; // starts background polling immediately
 //! println!("Scan to sign in: {}", flow.authorization_url());
+//!
+//! // Blocks until the signer (e.g., Pubky Ring) approves and server issues a session.
+//! let session = flow.await_approval().await?;
+//! println!("Signed in as {}", session.info().public_key());
+//! # Ok(()) }
+//! ```
+//! 
+//! ### Sign up
+//! ```no_run
+//! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind};
+//! # async fn run() -> pubky::Result<()> {
+//! let caps = Capabilities::default();
+//! let homeserver_public_key: PublicKey = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo".parse().unwrap();
+//! let signup_token = "1234567890";
+//! let flow = PubkyAuthFlow::start(&caps, AuthFlowKind::signup(homeserver_public_key, Some(signup_token.to_string())))?; // starts background polling immediately
+//! println!("Scan to sign up: {}", flow.authorization_url());
 //!
 //! // Blocks until the signer (e.g., Pubky Ring) approves and server issues a session.
 //! let session = flow.await_approval().await?;
@@ -44,7 +62,7 @@
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
-
+use pkarr::PublicKey;
 use url::Url;
 
 use pubky_common::crypto::random_bytes;
@@ -52,14 +70,15 @@ use pubky_common::crypto::random_bytes;
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession,
     actors::{DEFAULT_HTTP_RELAY, auth_permission_subscription::AuthPermissionSubscription},
-    errors::{Error, Result},
-
+    errors::Result,
 };
 
 #[cfg(target_arch = "wasm32")]
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
+/// 
+/// Supports both sign in and sign up flows.
 ///
 /// Use it like this:
 /// 1. Construct with [`PubkyAuthFlow::start`] (happy path) or the builder
@@ -84,14 +103,14 @@ impl PubkyAuthFlow {
     /// # Errors
     /// - Returns [`crate::errors::Error`] if constructing the backing [`PubkyHttpClient`]
     ///   or generating the relay URL fails.
-    pub fn start(caps: &Capabilities) -> Result<Self> {
-        PubkyAuthFlowBuilder::new(caps.clone()).start()
+    pub fn start(caps: &Capabilities, auth_kind: AuthFlowKind) -> Result<Self> {
+        PubkyAuthFlowBuilder::new(caps.clone(), auth_kind).start()
     }
 
     /// Create a builder to override **relay** and/or provide a custom **client**.
     #[must_use]
-    pub fn builder(caps: &Capabilities) -> PubkyAuthFlowBuilder {
-        PubkyAuthFlowBuilder::new(caps.clone())
+    pub fn builder(caps: &Capabilities, auth_kind: AuthFlowKind) -> PubkyAuthFlowBuilder {
+        PubkyAuthFlowBuilder::new(caps.clone(), auth_kind)
     }
 
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
@@ -149,29 +168,73 @@ impl PubkyAuthFlow {
     }
 }
 
+/// The kind of authentication flow to perform.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthFlowKind {
+    /// Sign in to an existing account.
+    SignIn,
+    /// Sign up for a new account.
+    SignUp {
+        /// The public key of the homeserver to sign up on.
+        homeserver_public_key: PublicKey,
+        /// The signup token to use for the signup flow.
+        /// This is optional.
+        signup_token: Option<String>,
+    },
+}
+
+impl AuthFlowKind {
+    /// Create a sign in flow.
+    pub fn sign_in() -> Self {
+        Self::SignIn
+    }
+
+    /// Create a sign up flow.
+    /// # Arguments
+    /// * `homeserver_public_key` - The public key of the homeserver to sign up on.
+    /// * `signup_token` - The signup token to use for the signup flow. This is optional.
+    pub fn sign_up(homeserver_public_key: PublicKey, signup_token: Option<String>) -> Self {
+        Self::SignUp {
+            homeserver_public_key,
+            signup_token,
+        }
+    }
+}
+
 /// Builder for [`PubkyAuthFlow`].
 ///
 /// Use to override the HTTP relay and/or the `PubkyHttpClient`.
 #[derive(Debug, Clone)]
 pub struct PubkyAuthFlowBuilder {
     caps: Capabilities,
-    relay: Option<Url>,
+    base_relay: Url,
     client: Option<PubkyHttpClient>,
+    auth_kind: AuthFlowKind,
+    client_secret: [u8; 32],
 }
 
 impl PubkyAuthFlowBuilder {
-    pub(crate) const fn new(caps: Capabilities) -> Self {
+    /// Create a new builder for the auth flow.
+    /// # Arguments
+    /// * `caps` - The capabilities to use for the auth flow.
+    /// * `auth_kind` - The kind of auth flow to perform.
+    /// # Returns
+    /// A new builder for the auth flow.
+    pub(crate) fn new(caps: Capabilities, auth_kind: AuthFlowKind) -> Self {
         Self {
             caps,
-            relay: None,
+            base_relay: Url::parse(DEFAULT_HTTP_RELAY)
+                .expect("Should be able to parse the default HTTP relay"),
             client: None,
+            auth_kind,
+            client_secret: random_bytes::<32>(),
         }
     }
 
     /// Set a custom relay base URL. The flow will append the per-channel segment
     /// as `base + base64url(hash(client_secret))`. Trailing slash optional.
-    pub fn relay(mut self, relay: Url) -> Self {
-        self.relay = Some(relay);
+    pub fn base_relay(mut self, url: Url) -> Self {
+        self.base_relay = url;
         self
     }
 
@@ -181,43 +244,68 @@ impl PubkyAuthFlowBuilder {
         self
     }
 
+    /// Set the client secret to use for the auth flow.
+    /// By default, a random client secret is generated.
+    pub fn client_secret(mut self, client_secret: [u8; 32]) -> Self {
+        self.client_secret = client_secret;
+        self
+    }
+
     /// Finalize: derive channel, compute the `pubkyauth://` deep link, spawn the background poller,
     /// and return the flow handle.
     pub fn start(self) -> Result<PubkyAuthFlow> {
-        let client = match self.client {
-            Some(c) => c,
+        let client = match &self.client {
+            Some(c) => c.clone(),
             None => PubkyHttpClient::new()?,
         };
 
-        // 1) Resolve relay base (default if not provided).
-        let relay = match self.relay {
-            Some(u) => u,
-            None => Url::parse(DEFAULT_HTTP_RELAY)?,
-        };
+        let auth_url = self.create_url();
 
-        // 2) Generate client secret and build pubkyauth:// URL (caps + secret + relay).
-        let client_secret = random_bytes::<32>();
-        let caps_str = self.caps.to_string();
-        let secret_b64 = URL_SAFE_NO_PAD.encode(client_secret);
-        let relay_str = relay.as_str().to_owned();
-
-        let mut auth_url = Url::parse("pubkyauth:///")?;
-        {
-            let mut query = auth_url.query_pairs_mut();
-            query.append_pair("caps", &caps_str);
-            query.append_pair("secret", &secret_b64);
-            query.append_pair("relay", &relay_str)
-        };
-
-        let subscription = AuthPermissionSubscription::builder(client_secret)
-        .relay_base_url(relay)
-        .client(client)
-        .start()?;
+        let subscription = AuthPermissionSubscription::builder(self.client_secret)
+            .relay_base_url(self.base_relay)
+            .client(client)
+            .start()?;
 
         Ok(PubkyAuthFlow {
             subscription,
             auth_url,
         })
+    }
+
+    /// Create the auth URL for the auth flow.
+    /// Depending on the auth kind, the URL will be different
+    fn create_url(&self) -> Url {
+        let mut auth_url = match &self.auth_kind {
+            AuthFlowKind::SignIn => {
+                Url::parse("pubkyauth:///").expect("Should be able to parse the base url")
+            }
+            AuthFlowKind::SignUp { .. } => {
+                Url::parse("pubkyauth:///signup").expect("Should be able to parse the base url")
+            }
+        };
+
+        {
+            // Add common parameters for both signin and signup flows.
+            let mut query = auth_url.query_pairs_mut();
+            query.append_pair("caps", &self.caps.to_string());
+            query.append_pair("secret", &URL_SAFE_NO_PAD.encode(&self.client_secret));
+            query.append_pair("relay", self.base_relay.as_str());
+        }
+
+        // Add signup parameters if it is a signup flow.
+        if let AuthFlowKind::SignUp {
+            homeserver_public_key,
+            signup_token,
+        } = &self.auth_kind
+        {
+            let mut query = auth_url.query_pairs_mut();
+            query.append_pair("hs", &homeserver_public_key.to_string());
+            if let Some(signup_token) = signup_token {
+                query.append_pair("st", signup_token);
+            }
+        }
+
+        auth_url
     }
 }
 
@@ -226,25 +314,47 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn constructs_urls_and_channel() {
+    async fn construct_signin_url() {
         let caps = Capabilities::default();
-        let flow = PubkyAuthFlow::start(&caps).unwrap();
+        let flow = PubkyAuthFlow::start(&caps, AuthFlowKind::SignIn).unwrap();
 
         // pubkyauth:// deep link contains caps + secret + relay
+        let url = flow.authorization_url();
+        assert!(url.as_str().starts_with("pubkyauth:///?"));
         assert!(
-            flow.authorization_url()
-                .as_str()
-                .starts_with("pubkyauth:///?caps=")
+            url.query_pairs()
+                .any(|(k, v)| k == "caps" && v == caps.to_string())
         );
+        assert!(url.query_pairs().any(|(k, _)| k == "secret"));
+        assert!(url.query_pairs().any(|(k, _)| k == "relay"));
+    }
+
+    #[tokio::test]
+    async fn construct_signup_url() {
+        let homeserver_public_key: PublicKey =
+            "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
+                .parse()
+                .unwrap();
+        let caps = Capabilities::builder().read_write("/").finish();
+        let signup_token = "1234567890";
+        let flow = PubkyAuthFlow::start(
+            &caps,
+            AuthFlowKind::sign_up(
+                homeserver_public_key.clone(),
+                Some(signup_token.to_string()),
+            ),
+        )
+        .unwrap();
+
+        // pubkyauth:///signup deep link contains caps + secret + relay + hs + ic
+        let url = flow.authorization_url();
+        assert!(url.as_str().starts_with("pubkyauth:///signup?"));
         assert!(
-            flow.authorization_url()
-                .query_pairs()
-                .any(|(k, _)| k == "secret")
+            url.query_pairs()
+                .any(|(k, v)| k == "caps" && v == caps.to_string())
         );
-        assert!(
-            flow.authorization_url()
-                .query_pairs()
-                .any(|(k, _)| k == "relay")
-        );
+        assert!(url.query_pairs().any(|(k, _)| k == "secret"));
+        assert!(url.query_pairs().any(|(k, _)| k == "relay"));
+ 
     }
 }

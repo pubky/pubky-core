@@ -1,6 +1,5 @@
 use pubky_testnet::pubky::{
-    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, PubkySignupAuthFlow,
-    SignupAuthUrl, StatusCode,
+    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode, AuthFlowKind,
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
@@ -114,8 +113,8 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(&caps)
-        .relay(http_relay_url)
+    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::sign_in())
+        .base_relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
         .unwrap();
@@ -180,18 +179,16 @@ async fn signup_authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkySignupAuthFlow::builder(&caps, server.public_key())
-        .relay(http_relay_url)
+    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::sign_up(server.public_key(), None))
+        .base_relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
         .unwrap();
 
-    let url = SignupAuthUrl::parse_url(&auth.authorization_url()).unwrap();
-
     // Signer authenticator
     let signer = pubky.signer(Keypair::random());
     signer
-        .signup(&url.homeserver_public_key(), None)
+        .signup(&server.public_key(), None)
         .await
         .unwrap();
     signer
@@ -318,9 +315,9 @@ async fn authz_timeout_reconnect() {
 
     // set custom global client with timeout of 1 sec
     // Start pairing auth flow using our custom client + local relay
-    let auth = PubkyAuthFlow::builder(&capabilities)
+    let auth = PubkyAuthFlow::builder(&capabilities, AuthFlowKind::sign_in())
         .client(client)
-        .relay(http_relay_url)
+        .base_relay(http_relay_url)
         .start()
         .unwrap();
 
