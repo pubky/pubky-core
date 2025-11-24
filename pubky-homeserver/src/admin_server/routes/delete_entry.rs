@@ -19,9 +19,11 @@ pub async fn delete_entry(
 mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
-    use crate::persistence::files::FileService;
+    use crate::persistence::files::{
+        events::{EventRepository, EventType},
+        FileService,
+    };
     use crate::persistence::sql::entry::EntryRepository;
-    use crate::persistence::sql::event::{EventRepository, EventType};
     use crate::persistence::sql::user::UserRepository;
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use crate::AppContext;
@@ -69,7 +71,7 @@ mod tests {
         EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
             .await
             .expect_err("Should be deleted");
-        let events = EventRepository::get_by_cursor(Some(0), Some(10), &mut db.pool().into())
+        let events = EventRepository::get_by_cursor(None, Some(10), &mut db.pool().into())
             .await
             .unwrap();
 
@@ -78,7 +80,7 @@ mod tests {
             2,
             "One PUT and one DEL event should be created. Last entry is the cursor."
         );
-        assert_eq!(events[0].event_type, EventType::Put);
+        assert!(matches!(events[0].event_type, EventType::Put { .. }));
         assert_eq!(events[1].event_type, EventType::Delete);
     }
 

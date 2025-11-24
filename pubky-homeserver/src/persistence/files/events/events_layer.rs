@@ -1,42 +1,45 @@
-use super::entry_service::EntryService;
-
+use crate::persistence::files::events::{EventType, EventsService};
 use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::files::FileMetadataBuilder;
-use crate::persistence::sql::{SqlDb, UnifiedExecutor};
+use crate::persistence::sql::{user::UserRepository, SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
 
-/// Layer that wraps the access layer and updates the entry in the database when the file is written or deleted.
+/// Layer that wraps the access layer and creates events when files are written or deleted.
+/// This Layer repeats work done in entry_layer, ie calculating FileMetaData and fetching user_id. We accept this now because the idea is to remove entry_layer soon.
 #[derive(Clone)]
-pub struct EntryLayer {
+pub struct EventsLayer {
     pub(crate) db: SqlDb,
+    pub(crate) events_service: EventsService,
 }
 
-impl EntryLayer {
-    pub fn new(db: SqlDb) -> Self {
-        Self { db }
+impl EventsLayer {
+    pub fn new(db: SqlDb, events_service: EventsService) -> Self {
+        Self { db, events_service }
     }
 }
 
-impl<A: Access> Layer<A> for EntryLayer {
-    type LayeredAccess = EntryAccessor<A>;
+impl<A: Access> Layer<A> for EventsLayer {
+    type LayeredAccess = EventsAccessor<A>;
 
     fn layer(&self, inner: A) -> Self::LayeredAccess {
-        EntryAccessor {
+        EventsAccessor {
             inner,
-            entry_service: EntryService::new(self.db.clone()),
+            db: self.db.clone(),
+            events_service: self.events_service.clone(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct EntryAccessor<A: Access> {
+pub struct EventsAccessor<A: Access> {
     inner: A,
-    entry_service: EntryService,
+    db: SqlDb,
+    events_service: EventsService,
 }
 
-impl<A: Access> LayeredAccess for EntryAccessor<A> {
+impl<A: Access> LayeredAccess for EventsAccessor<A> {
     type Inner = A;
     type Reader = A::Reader;
     type Writer = WriterWrapper<A::Writer>;
@@ -62,7 +65,8 @@ impl<A: Access> LayeredAccess for EntryAccessor<A> {
             rp,
             WriterWrapper {
                 inner: writer,
-                entry_service: self.entry_service.clone(),
+                db: self.db.clone(),
+                events_service: self.events_service.clone(),
                 entry_path,
                 metadata_builder: FileMetadataBuilder::default(),
             },
@@ -87,7 +91,8 @@ impl<A: Access> LayeredAccess for EntryAccessor<A> {
             rp,
             DeleterWrapper {
                 inner: deleter,
-                entry_service: self.entry_service.clone(),
+                db: self.db.clone(),
+                events_service: self.events_service.clone(),
                 delete_queue: Vec::new(),
             },
         ))
@@ -102,10 +107,11 @@ impl<A: Access> LayeredAccess for EntryAccessor<A> {
     }
 }
 
-/// Wrapper around the writer that updates the entry in the database when the file is closed.
+/// Wrapper around the writer that creates an event when the file is closed.
 pub struct WriterWrapper<R> {
     inner: R,
-    entry_service: EntryService,
+    db: SqlDb,
+    events_service: EventsService,
     entry_path: EntryPath,
     metadata_builder: FileMetadataBuilder,
 }
@@ -122,29 +128,41 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
     }
 
     async fn close(&mut self) -> Result<opendal::Metadata> {
-        self.metadata_builder
-            .guess_mime_type_from_path(self.entry_path.path().as_str());
-        let metadata = self.inner.close().await?; // Write the file to the storage.
-                                                  // Write successful, update the entry in the database.
+        let metadata = self.inner.close().await?;
         let file_metadata = self.metadata_builder.clone().finalize();
+
+        // Create event after successful write
         let mut tx = self
-            .entry_service
-            .db()
+            .db
             .pool()
             .begin()
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
+
+        // TODO We're currently doing this is all 3 layers. Consider caching or sharing data.
+        let user_id = UserRepository::get_id(self.entry_path.pubkey(), &mut executor)
+            .await
+            .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
+
         match self
-            .entry_service
-            .write_entry(&self.entry_path, &file_metadata, &mut executor)
+            .events_service
+            .create_event(
+                user_id,
+                EventType::Put {
+                    content_hash: file_metadata.hash,
+                },
+                &self.entry_path,
+                &mut executor,
+            )
             .await
         {
-            Ok(_) => {
+            Ok(event) => {
                 drop(executor);
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
+                self.events_service.broadcast_event(event);
             }
             Err(e) => {
                 drop(executor);
@@ -152,14 +170,14 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
                 tracing::error!(
-                    "Failed to write entry {} to database: {:?}. Potential orphaned file.",
+                    "Failed to create event for {} in database: {:?}",
                     self.entry_path,
                     e
                 );
                 return Err(opendal::Error::new(
                     opendal::ErrorKind::Unexpected,
                     format!(
-                        "Failed to write entry {} to database: {:?}. Potential orphaned file.",
+                        "Failed to create event for {} in database: {:?}",
                         self.entry_path, e
                     ),
                 ));
@@ -170,13 +188,11 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
     }
 }
 
-/// This wrapper is used to delete paths in a queue
-/// and update the user quota.
-/// Depending on the service backend, each file is deleted in a separate request (filesystem, inmemory)
-/// or batched (GCS does 100 paths per batch).
+/// This wrapper is used to create events for deleted paths.
 pub struct DeleterWrapper<R> {
     inner: R,
-    entry_service: EntryService,
+    db: SqlDb,
+    events_service: EventsService,
     delete_queue: Vec<EntryPath>,
 }
 
@@ -191,24 +207,41 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 
         for path in deleted_paths {
             let mut tx =
-                self.entry_service.db().pool().begin().await.map_err(|e| {
+                self.db.pool().begin().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
             let mut executor: UnifiedExecutor<'_> = (&mut tx).into();
 
-            match self.entry_service.delete_entry(&path, &mut executor).await {
-                Ok(()) => {
+            let user_id = match UserRepository::get_id(path.pubkey(), &mut executor).await {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::error!("Failed to get user_id for {} from database: {:?}", path, e);
+                    continue;
+                }
+            };
+
+            match self
+                .events_service
+                .create_event(user_id, EventType::Delete, &path, &mut executor)
+                .await
+            {
+                Ok(event) => {
                     drop(executor);
                     tx.commit().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
+                    self.events_service.broadcast_event(event);
                 }
                 Err(e) => {
                     drop(executor);
                     tx.rollback().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
-                    tracing::error!("Failed to delete entry {} from database: {:?}", path, e);
+                    tracing::error!(
+                        "Failed to create delete event for {} in database: {:?}",
+                        path,
+                        e
+                    );
                 }
             };
         }
@@ -227,8 +260,11 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
 mod tests {
     use crate::{
         persistence::{
-            files::opendal::opendal_test_operators::OpendalTestOperators,
-            sql::{entry::EntryRepository, user::UserRepository},
+            files::{
+                events::{EventRepository, EventType, EventsService},
+                opendal::opendal_test_operators::OpendalTestOperators,
+            },
+            sql::user::UserRepository,
         },
         shared::webdav::WebDavPath,
     };
@@ -237,10 +273,11 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_entry_layer() {
+    async fn test_events_layer() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
-            let layer = EntryLayer::new(db.clone());
+            let events_service = EventsService::new(100);
+            let layer = EventsLayer::new(db.clone(), events_service);
             let operator = operator.layer(layer);
 
             let pubkey = pkarr::Keypair::random().public_key();
@@ -254,11 +291,14 @@ mod tests {
                 .await
                 .expect("Should succeed because the path starts with a pubkey");
 
-            // Make sure the entry is written to the database correctly
-            let entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+            // Make sure the event is written to the database correctly
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
-                .expect("Entry should exist");
-            assert_eq!(entry.content_length, 10);
+                .expect("Should succeed");
+            assert_eq!(events.len(), 1);
+            let first_event = events.first().expect("Should succeed");
+            assert_eq!(first_event.path, entry_path);
+            assert!(matches!(first_event.event_type, EventType::Put { .. }));
 
             // Overwrite the file
             operator
@@ -266,11 +306,14 @@ mod tests {
                 .await
                 .expect("Should succeed because the path starts with a pubkey");
 
-            // Make sure the entry is written to the database correctly
-            let entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+            // Make sure the event is written to the database correctly
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
-                .expect("Entry should exist");
-            assert_eq!(entry.content_length, 20);
+                .expect("Should succeed");
+            assert_eq!(events.len(), 2);
+            let second_event = events.get(1).expect("Should succeed");
+            assert_eq!(second_event.path, entry_path);
+            assert!(matches!(second_event.event_type, EventType::Put { .. }));
 
             // Delete the file
             operator
@@ -278,10 +321,14 @@ mod tests {
                 .await
                 .expect("Should succeed");
 
-            // Make sure the entry is deleted from the database correctly
-            let _entry = EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
+            // Make sure the event is written to the database correctly
+            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
                 .await
-                .expect_err("Entry should not exist");
+                .expect("Should succeed");
+            assert_eq!(events.len(), 3);
+            let third_event = events.get(2).expect("Should succeed");
+            assert_eq!(third_event.path, entry_path);
+            assert_eq!(third_event.event_type, EventType::Delete);
         }
     }
 }

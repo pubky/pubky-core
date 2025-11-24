@@ -9,7 +9,7 @@
 use crate::MockDataDir;
 use crate::{
     persistence::{
-        files::{FileIoError, FileService},
+        files::{events::EventsService, FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
         sql::{Migrator, SqlDb},
     },
@@ -68,6 +68,8 @@ pub struct AppContext {
     /// pkarr client builder in case we need to create a more instances.
     /// Comes ready with the correct bootstrap nodes and relays.
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
+    /// Events service for managing event creation and broadcasting.
+    pub(crate) events_service: EventsService,
 }
 
 impl AppContext {
@@ -112,8 +114,11 @@ impl AppContext {
                 .map_err(AppContextConversionError::Migrations)?;
         }
 
-        let file_service = FileService::new_from_config(&conf, dir.path(), sql_db.clone())
-            .map_err(AppContextConversionError::Storage)?;
+        let events_service = EventsService::new(1000);
+
+        let file_service =
+            FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())
+                .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
 
         Ok(Self {
@@ -127,6 +132,7 @@ impl AppContext {
             config_toml: conf,
             keypair,
             data_dir: Arc::new(dir),
+            events_service,
         })
     }
 }

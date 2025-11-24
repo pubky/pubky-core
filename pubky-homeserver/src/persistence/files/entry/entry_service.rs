@@ -3,7 +3,6 @@ use crate::{
         files::{FileIoError, FileMetadata},
         sql::{
             entry::{EntryEntity, EntryRepository},
-            event::{EventRepository, EventType},
             user::UserRepository,
             SqlDb, UnifiedExecutor,
         },
@@ -28,9 +27,7 @@ impl EntryService {
 
     /// Write an entry to the database.
     ///
-    /// This includes all associated operations:
-    /// - Write a public [Event]
-    /// - Write the entry to the database
+    /// Returns the entry.
     pub async fn write_entry<'a>(
         &self,
         path: &EntryPath,
@@ -51,8 +48,6 @@ impl EntryService {
             self.create_entry(path, metadata, executor).await?
         };
 
-        // Create event
-        EventRepository::create(entry.user_id, EventType::Put, path.path(), executor).await?;
         Ok(entry)
     }
 
@@ -94,11 +89,6 @@ impl EntryService {
     }
 
     /// Delete an entry from the database.
-    ///
-    /// This includes all associated operations:
-    /// - Write a public [Event]
-    /// - Delete the entry from the database
-    ///
     pub async fn delete_entry<'a>(
         &self,
         path: &EntryPath,
@@ -111,9 +101,6 @@ impl EntryService {
         };
 
         EntryRepository::delete(entry.id, executor).await?;
-
-        // Create event
-        EventRepository::create(entry.user_id, EventType::Delete, path.path(), executor).await?;
 
         Ok(())
     }
