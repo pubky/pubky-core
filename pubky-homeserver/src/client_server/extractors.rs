@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
 use axum::{
-    body::Body,
     extract::{FromRequestParts, Query},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
@@ -9,6 +8,8 @@ use axum::{
 };
 
 use pkarr::PublicKey;
+
+use crate::shared::parse_bool;
 
 #[derive(Debug, Clone)]
 pub struct PubkyHost(pub(crate) PublicKey);
@@ -70,26 +71,6 @@ impl ListQueryParams {
             value = stripped_value;
         }
         Some(value.to_string())
-    }
-}
-
-/// Parse a boolean value from a string.
-/// Returns an error if the value is not a valid boolean.
-fn parse_bool(value: &str) -> Result<bool, Box<Response>> {
-    match value.to_lowercase().as_str() {
-        "true" => Ok(true),
-        "yes" => Ok(true),
-        "1" => Ok(true),
-        "" => Ok(true),
-        "false" => Ok(false),
-        "no" => Ok(false),
-        "0" => Ok(false),
-        _ => Err(Box::new(
-            Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid boolean parameter"))
-                .unwrap(),
-        )),
     }
 }
 

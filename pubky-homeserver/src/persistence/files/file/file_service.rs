@@ -1,9 +1,12 @@
 #[cfg(test)]
 use crate::AppContext;
 use crate::{
-    persistence::sql::{
-        entry::{EntryEntity, EntryRepository},
-        SqlDb, UnifiedExecutor,
+    persistence::{
+        files::events::EventsService,
+        sql::{
+            entry::{EntryEntity, EntryRepository},
+            SqlDb, UnifiedExecutor,
+        },
     },
     shared::webdav::EntryPath,
     ConfigToml,
@@ -38,6 +41,7 @@ impl FileService {
         config: &ConfigToml,
         data_directory: &Path,
         db: SqlDb,
+        events_service: EventsService,
     ) -> Result<Self, FileIoError> {
         let user_quota_bytes = match config.general.user_storage_quota_mb {
             0 => u64::MAX,
@@ -48,6 +52,7 @@ impl FileService {
             data_directory,
             &db,
             user_quota_bytes,
+            events_service,
         )?;
         Ok(Self::new(opendal_service, db))
     }
