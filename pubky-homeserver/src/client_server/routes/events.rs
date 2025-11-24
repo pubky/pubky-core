@@ -22,23 +22,16 @@ use crate::{
     shared::{webdav::WebDavPath, HttpError, HttpResult},
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum EventStreamError {
+    #[error("User not found")]
     UserNotFound,
+    #[error("{0}")]
     InvalidParameter(String),
-    DatabaseError(sqlx::Error),
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
+    #[error("Invalid public key: {0}")]
     InvalidPublicKey(String),
-}
-
-impl std::fmt::Display for EventStreamError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EventStreamError::UserNotFound => write!(f, "User not found"),
-            EventStreamError::InvalidParameter(msg) => write!(f, "{}", msg),
-            EventStreamError::DatabaseError(e) => write!(f, "Database error: {}", e),
-            EventStreamError::InvalidPublicKey(key) => write!(f, "Invalid public key: {}", key),
-        }
-    }
 }
 
 impl From<EventStreamError> for HttpError {
@@ -48,12 +41,6 @@ impl From<EventStreamError> for HttpError {
             EventStreamError::DatabaseError(e) => HttpError::from(e),
             _ => HttpError::bad_request(error.to_string()),
         }
-    }
-}
-
-impl From<sqlx::Error> for EventStreamError {
-    fn from(error: sqlx::Error) -> Self {
-        EventStreamError::DatabaseError(error)
     }
 }
 

@@ -32,7 +32,6 @@ pub async fn create<'a>(
     let created_at = timestamp_to_sqlx_datetime(timestamp);
     let event_type = match event {
         Event::Put(_) => EventType::Put {
-            // Legacy LMDB events don't have content_hash - use zero hash
             content_hash: Hash::from_bytes([0; 32]),
         },
         Event::Delete(_) => EventType::Delete,
