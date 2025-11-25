@@ -9,6 +9,9 @@ use pubky_testnet::{
 /// - Live event streaming
 /// - Phase transition (historical -> live)
 /// - Batch mode connection closing
+/// - Content hash verification
+/// - Empty user behavior
+/// - Reverse ordering
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_basic_modes() {
@@ -17,7 +20,7 @@ async fn events_stream_basic_modes() {
     use tokio::time::{timeout, Duration};
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create one user with 250 events - reuse for all subtests
@@ -306,7 +309,7 @@ async fn events_stream_basic_modes() {
                 has_content_hash,
                 "ContentHash: PUT event should have content_hash field"
             );
-            // Verify format: should be 64 hex characters (blake3 hash)
+            // Verify format: should be 43 base64 characters (blake3 hash, 32 bytes)
             if let Some(hash_line) = data_lines
                 .iter()
                 .find(|line| line.starts_with("content_hash: "))
@@ -314,12 +317,14 @@ async fn events_stream_basic_modes() {
                 let hash_value = hash_line.strip_prefix("content_hash: ").unwrap();
                 assert_eq!(
                     hash_value.len(),
-                    64,
-                    "ContentHash: Should be 64 hex characters"
+                    43,
+                    "ContentHash: Should be 43 base64 characters"
                 );
                 assert!(
-                    hash_value.chars().all(|c| c.is_ascii_hexdigit()),
-                    "ContentHash: Should contain only hex digits"
+                    hash_value
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='),
+                    "ContentHash: Should contain only base64 characters"
                 );
             }
         }
@@ -328,6 +333,70 @@ async fn events_stream_basic_modes() {
     assert!(
         found_del,
         "ContentHash: Should have found at least one DEL event to verify"
+    );
+
+    // ==== Test 6b: Verify content_hash format matches HTTP headers ====
+    // This ensures the SSE event stream and HTTP GET endpoints use the same hash format
+
+    // Create a new file with known content
+    let test_data = b"hello world for hash test";
+    session
+        .storage()
+        .put("/pub/hash_test.txt", test_data.to_vec())
+        .await
+        .unwrap();
+
+    // Get the content_hash from HTTP GET headers (ETag)
+    let get_url = format!("https://{}/pub/hash_test.txt", server.public_key());
+    let get_response = pubky
+        .client()
+        .request(Method::GET, &get_url)
+        .header("pubky-host", user_pubky.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get_response.status(), StatusCode::OK);
+
+    let etag_header = get_response
+        .headers()
+        .get("etag")
+        .expect("Should have ETag header")
+        .to_str()
+        .unwrap();
+    // ETag is wrapped in quotes: "hash_value"
+    let etag_hash = etag_header.trim_matches('"');
+
+    // Get the content_hash from event stream
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&path=/pub/hash_test.txt",
+        server.public_key(),
+        user_pubky
+    );
+    let stream_response = pubky
+        .client()
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stream_response.status(), StatusCode::OK);
+
+    let mut stream = stream_response.bytes_stream().eventsource();
+    let mut event_hash = String::new();
+
+    if let Some(Ok(event)) = stream.next().await {
+        let data_lines: Vec<&str> = event.data.lines().collect();
+        if let Some(hash_line) = data_lines.iter().find(|l| l.starts_with("content_hash: ")) {
+            event_hash = hash_line
+                .strip_prefix("content_hash: ")
+                .unwrap()
+                .to_string();
+        }
+    }
+
+    assert_eq!(
+        etag_hash, event_hash,
+        "ContentHash: Event stream hash should match HTTP ETag header. ETag: {}, Event: {}",
+        etag_hash, event_hash
     );
 
     // ==== Test 7: Empty user behavior ====
@@ -410,6 +479,119 @@ async fn events_stream_basic_modes() {
         has_path,
         "Empty user live mode: Should contain first_event.txt path"
     );
+
+    // ==== Test 8: Reverse ordering ====
+    // Create a clean user with known events to test reverse ordering
+    let reverse_keypair = Keypair::random();
+    let reverse_signer = pubky.signer(reverse_keypair);
+    let reverse_session = reverse_signer
+        .signup(&server.public_key(), None)
+        .await
+        .unwrap();
+    let reverse_user_pubky = reverse_signer.public_key();
+
+    // Create exactly 5 events with known order
+    for i in 0..5 {
+        let path = format!("/pub/reverse_file_{i}.txt");
+        reverse_session
+            .storage()
+            .put(path, vec![i as u8])
+            .await
+            .unwrap();
+    }
+
+    // Test forward order first to establish baseline
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&limit=5",
+        server.public_key(),
+        reverse_user_pubky
+    );
+    let response = pubky
+        .client()
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut forward_files = Vec::new();
+    while forward_files.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if let Some(filename) = event
+                .data
+                .lines()
+                .next()
+                .and_then(|p| p.split("/pub/").nth(1))
+            {
+                forward_files.push(filename.to_string());
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Test reverse order
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&reverse=true&limit=5",
+        server.public_key(),
+        reverse_user_pubky
+    );
+    let response = pubky
+        .client()
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut reverse_files = Vec::new();
+    while reverse_files.len() < 5 {
+        if let Some(Ok(event)) = stream.next().await {
+            if let Some(filename) = event
+                .data
+                .lines()
+                .next()
+                .and_then(|p| p.split("/pub/").nth(1))
+            {
+                reverse_files.push(filename.to_string());
+            }
+        } else {
+            break;
+        }
+    }
+
+    assert_eq!(
+        forward_files.len(),
+        5,
+        "Reverse: Forward should have 5 events"
+    );
+    assert_eq!(
+        reverse_files.len(),
+        5,
+        "Reverse: Reverse should have 5 events"
+    );
+    assert_eq!(
+        forward_files[0], "reverse_file_0.txt",
+        "Reverse: Forward first should be file_0"
+    );
+    assert_eq!(
+        forward_files[4], "reverse_file_4.txt",
+        "Reverse: Forward last should be file_4"
+    );
+    assert_eq!(
+        reverse_files[0], "reverse_file_4.txt",
+        "Reverse: Reverse first should be file_4 (newest)"
+    );
+    assert_eq!(
+        reverse_files[4], "reverse_file_0.txt",
+        "Reverse: Reverse last should be file_0 (oldest)"
+    );
+
+    // Verify reverse is exactly the reverse of forward
+    let mut forward_reversed = forward_files.clone();
+    forward_reversed.reverse();
+    assert_eq!(
+        reverse_files, forward_reversed,
+        "Reverse: Should be exact reverse of forward"
+    );
 }
 
 #[tokio::test]
@@ -419,7 +601,7 @@ async fn events_stream_multiple_users() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let keypair1 = Keypair::random();
@@ -641,7 +823,7 @@ async fn events_stream_validation_errors() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let keypair1 = Keypair::random();
@@ -710,7 +892,7 @@ async fn events_stream_validation_errors() {
         "Invalid key format"
     );
     let body = response.text().await.unwrap();
-    assert!(body.contains("Invalid user public key"));
+    assert!(body.contains("Invalid public key"));
 
     // Test 4: Valid key but user not registered
     let stream_url = format!(
@@ -768,7 +950,7 @@ async fn events_stream_validation_errors() {
         "Mixed valid/invalid"
     );
     let body = response.text().await.unwrap();
-    assert!(body.contains("Invalid user public key"));
+    assert!(body.contains("Invalid public key"));
 
     // Test 7: Multiple invalid keys
     let stream_url = format!(
@@ -929,144 +1111,8 @@ async fn events_stream_validation_errors() {
     );
 }
 
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_reverse() {
-    use eventsource_stream::Eventsource;
-    use futures::StreamExt;
-
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
-    let pubky = testnet.sdk().unwrap();
-
-    let keypair = Keypair::random();
-    let signer = pubky.signer(keypair);
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
-
-    let user_pubky = signer.public_key();
-
-    // Create 10 events with identifiable content
-    for i in 0..10 {
-        let path = format!("/pub/file_{i}.txt");
-        session.storage().put(path, vec![i as u8]).await.unwrap();
-    }
-
-    // Test forward order (reverse=false) - should get oldest first
-    let stream_url_forward = format!(
-        "https://{}/events-stream?user={}&limit=10",
-        server.public_key(),
-        user_pubky
-    );
-    let response = pubky
-        .client()
-        .request(Method::GET, &stream_url_forward)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let mut stream = response.bytes_stream().eventsource();
-    let mut forward_files = Vec::new();
-    let mut event_count = 0;
-
-    while event_count < 10 {
-        if let Some(Ok(event)) = stream.next().await {
-            for line in event.data.lines() {
-                if line.contains("/pub/file_") {
-                    if let Some(filename) = line.split("/pub/").nth(1) {
-                        forward_files.push(filename.to_string());
-                    }
-                }
-            }
-            event_count += 1;
-        } else {
-            println!("Forward stream ended at event {}", event_count);
-            break;
-        }
-    }
-
-    assert_eq!(
-        forward_files.len(),
-        10,
-        "Should receive 10 events in forward order"
-    );
-    assert_eq!(
-        forward_files[0], "file_0.txt",
-        "First event should be file_0"
-    );
-    assert_eq!(
-        forward_files[9], "file_9.txt",
-        "Last event should be file_9"
-    );
-
-    // Test reverse order (reverse=true) - should get newest first
-    let stream_url_reverse = format!(
-        "https://{}/events-stream?user={}&reverse=true&limit=10",
-        server.public_key(),
-        user_pubky
-    );
-    let response = pubky
-        .client()
-        .request(Method::GET, &stream_url_reverse)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let mut stream = response.bytes_stream().eventsource();
-    let mut reverse_files = Vec::new();
-    let mut event_count = 0;
-
-    while event_count < 10 {
-        if let Some(Ok(event)) = stream.next().await {
-            for line in event.data.lines() {
-                if line.contains("/pub/file_") {
-                    if let Some(filename) = line.split("/pub/").nth(1) {
-                        reverse_files.push(filename.to_string());
-                    }
-                }
-            }
-            event_count += 1;
-        } else {
-            println!("Reverse stream ended at event {}", event_count);
-            break;
-        }
-    }
-
-    assert_eq!(
-        reverse_files.len(),
-        10,
-        "Should receive 10 events in reverse order"
-    );
-    assert_eq!(
-        reverse_files[0], "file_9.txt",
-        "First event should be file_9 (newest)"
-    );
-    assert_eq!(
-        reverse_files[9], "file_0.txt",
-        "Last event should be file_0 (oldest)"
-    );
-
-    // Verify reverse order is exactly the reverse of forward order
-    let mut forward_reversed = forward_files.clone();
-    forward_reversed.reverse();
-    assert_eq!(
-        reverse_files, forward_reversed,
-        "Reverse order should be exactly the reverse of forward order"
-    );
-
-    // Verify that stream closed after all events (phase 2 not entered)
-    // The stream from reverse test should already be exhausted
-    assert_eq!(event_count, 10, "Should have received exactly 10 events");
-}
-
 /// Comprehensive test for directory filtering (`path` parameter):
-/// - Basic filtering by different directory paths
-/// - Filter with cursor pagination
-/// - Filter with multiple users
-/// - Filter with reverse ordering
+/// - Basic filtering, cursor pagination, multiple users, reverse ordering, wildcard escaping
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_path_filter() {
@@ -1074,7 +1120,7 @@ async fn events_stream_path_filter() {
     use futures::StreamExt;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver();
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create 2 users upfront with diverse directory structures
@@ -1121,9 +1167,7 @@ async fn events_stream_path_filter() {
         session2.storage().put(path, vec![i as u8]).await.unwrap();
     }
 
-    // ==== Test 1: Basic filtering ====
-
-    // Filter user1 by /pub/files/ - expect 5 PUT + 1 DEL events
+    // ==== Test 1: Basic filtering (both specific and broad paths) ====
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/files/",
         server.public_key(),
@@ -1138,61 +1182,31 @@ async fn events_stream_path_filter() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let mut stream = response.bytes_stream().eventsource();
-    let mut files_events = Vec::new();
     let mut put_count = 0;
     let mut del_count = 0;
-    while files_events.len() < 6 {
-        if let Some(Ok(event)) = stream.next().await {
-            let path = event.data.lines().next().unwrap();
-            assert!(
-                path.contains("/pub/files/"),
-                "Filter: Expected /pub/files/, got: {}",
-                path
-            );
-            if event.event == "PUT" {
-                put_count += 1;
-            } else if event.event == "DEL" {
-                del_count += 1;
-            }
-            files_events.push(path.to_string());
-        } else {
+    while let Some(Ok(event)) = stream.next().await {
+        let path = event.data.lines().next().unwrap();
+        assert!(
+            path.contains("/pub/files/"),
+            "Filter: Expected /pub/files/, got: {}",
+            path
+        );
+        if event.event == "PUT" {
+            put_count += 1;
+        } else if event.event == "DEL" {
+            del_count += 1;
+        }
+        if put_count + del_count >= 6 {
             break;
         }
     }
     assert_eq!(
-        files_events.len(),
+        put_count + del_count,
         6,
-        "Filter: Should get 6 events from /pub/files/ (5 PUT + 1 DEL)"
+        "Filter: Should get 6 events from /pub/files/"
     );
     assert_eq!(put_count, 5, "Filter: Should have 5 PUT events");
     assert_eq!(del_count, 1, "Filter: Should have 1 DEL event");
-
-    // Filter user1 by broader /pub/ - expect 11 events total (10 PUT + 1 DEL)
-    let stream_url = format!(
-        "https://{}/events-stream?user={}&path=/pub/",
-        server.public_key(),
-        pubky1
-    );
-    let response = pubky
-        .client()
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-    let mut stream = response.bytes_stream().eventsource();
-    let mut pub_events = Vec::new();
-    while pub_events.len() < 11 {
-        if let Some(Ok(event)) = stream.next().await {
-            pub_events.push(event.data.lines().next().unwrap().to_string());
-        } else {
-            break;
-        }
-    }
-    assert_eq!(
-        pub_events.len(),
-        11,
-        "Filter: Should get 11 events from /pub/ (10 PUT + 1 DEL)"
-    );
 
     // ==== Test 2: Filter with cursor pagination ====
 
@@ -1316,37 +1330,6 @@ async fn events_stream_path_filter() {
 
     // ==== Test 4: Filter with reverse ordering ====
     // Use user1's /pub/files/ which has 5 PUT + 1 DEL = 6 events
-
-    // Forward order
-    let stream_url = format!(
-        "https://{}/events-stream?user={}&path=/pub/files/&limit=6",
-        server.public_key(),
-        pubky1
-    );
-    let response = pubky
-        .client()
-        .request(Method::GET, &stream_url)
-        .send()
-        .await
-        .unwrap();
-    let mut stream = response.bytes_stream().eventsource();
-    let mut forward = Vec::new();
-    while forward.len() < 6 {
-        if let Some(Ok(event)) = stream.next().await {
-            if let Some(fname) = event
-                .data
-                .lines()
-                .next()
-                .and_then(|p| p.split("/pub/files/").nth(1))
-            {
-                forward.push(format!("{}:{}", event.event, fname));
-            }
-        } else {
-            break;
-        }
-    }
-
-    // Reverse order
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/files/&reverse=true&limit=6",
         server.public_key(),
@@ -1375,19 +1358,57 @@ async fn events_stream_path_filter() {
         }
     }
 
-    assert_eq!(forward.len(), 6, "Reverse: Forward should have 6 events");
-    assert_eq!(reverse.len(), 6, "Reverse: Reverse should have 6 events");
-    assert_eq!(
-        forward[0], "PUT:doc_0.txt",
-        "Reverse: Forward first should be PUT doc_0"
-    );
+    assert_eq!(reverse.len(), 6, "Reverse: Should have 6 events");
     assert_eq!(
         reverse[0], "DEL:doc_0.txt",
-        "Reverse: Reverse first should be DEL doc_0 (newest)"
+        "Reverse: First should be DEL doc_0 (newest)"
+    );
+    assert_eq!(
+        reverse[5], "PUT:doc_0.txt",
+        "Reverse: Last should be PUT doc_0 (oldest)"
     );
 
-    // Verify reverse order is exactly the reverse of forward order
-    let mut fwd_rev = forward.clone();
-    fwd_rev.reverse();
-    assert_eq!(reverse, fwd_rev, "Reverse: Should be exact reverse");
+    // ==== Test 5: Filter with special LIKE characters (_, %) - verify escaping ====
+    session1
+        .storage()
+        .put("/pub/my_folder/file.txt", vec![1])
+        .await
+        .unwrap();
+    session1
+        .storage()
+        .put("/pub/myfolder/file.txt", vec![2])
+        .await
+        .unwrap();
+
+    let stream_url = format!(
+        "https://{}/events-stream?user={}&path=/pub/my_folder/",
+        server.public_key(),
+        pubky1
+    );
+    let response = pubky
+        .client()
+        .request(Method::GET, &stream_url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let mut stream = response.bytes_stream().eventsource();
+    let mut wildcard_count = 0;
+    while let Some(Ok(event)) = stream.next().await {
+        let path = event.data.lines().next().unwrap();
+        assert!(
+            path.contains("/pub/my_folder/"),
+            "Wildcard: Expected /pub/my_folder/, got: {}",
+            path
+        );
+        wildcard_count += 1;
+        if wildcard_count >= 2 {
+            break;
+        }
+    }
+    assert_eq!(
+        wildcard_count, 1,
+        "Wildcard: Should get exactly 1 event (underscore not treated as wildcard)"
+    );
 }

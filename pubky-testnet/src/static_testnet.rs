@@ -1,3 +1,5 @@
+use crate::pubky::Pubky;
+
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
@@ -6,8 +8,7 @@ use std::{
 
 use crate::Testnet;
 use http_relay::HttpRelay;
-use pubky::Pubky;
-use pubky_homeserver::{ConfigToml, DomainPort, HomeserverSuite, MockDataDir};
+use pubky_homeserver::{ConfigToml, DomainPort, HomeserverApp, MockDataDir};
 
 /// A simple testnet with
 ///
@@ -70,7 +71,7 @@ impl StaticTestnet {
     /// Create an additional homeserver with a random keypair
     pub async fn create_random_homeserver(
         &mut self,
-    ) -> anyhow::Result<&pubky_homeserver::HomeserverSuite> {
+    ) -> anyhow::Result<&pubky_homeserver::HomeserverApp> {
         self.testnet.create_random_homeserver().await
     }
 
@@ -97,7 +98,7 @@ impl StaticTestnet {
     }
 
     /// Get the homeserver in the testnet.
-    pub fn homeserver(&self) -> &pubky_homeserver::HomeserverSuite {
+    pub fn homeserver_app(&self) -> &pubky_homeserver::HomeserverApp {
         self.testnet
             .homeservers
             .first()
@@ -204,7 +205,7 @@ impl StaticTestnet {
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
         let mock = MockDataDir::new(config, Some(keypair))?;
 
-        let homeserver = HomeserverSuite::start_with_mock_data_dir(mock).await?;
+        let homeserver = HomeserverApp::start_with_mock_data_dir(mock).await?;
         self.testnet.homeservers.push(homeserver);
         Ok(())
     }
