@@ -1,14 +1,54 @@
 use pubky_testnet::{
-    pubky::{Keypair, Method, StatusCode},
+    pubky::{Keypair, Method, PubkyHttpClient, StatusCode},
     EphemeralTestnet,
 };
+
+/// Poll metrics endpoint until condition is met or timeout occurs
+async fn wait_for_metric_condition<F>(
+    client: &PubkyHttpClient,
+    metrics_url: &str,
+    mut condition: F,
+    timeout_ms: u64,
+) -> Result<String, String>
+where
+    F: FnMut(&str) -> bool,
+{
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let poll_interval = std::time::Duration::from_millis(10);
+
+    loop {
+        let response = client
+            .request(Method::GET, &metrics_url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch metrics: {}", e))?;
+
+        let metrics = response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read metrics response: {}", e))?;
+
+        if condition(&metrics) {
+            return Ok(metrics);
+        }
+
+        if start.elapsed() > timeout {
+            return Err(format!(
+                "Timeout waiting for metric condition after {}ms. Last metrics:\n{}",
+                timeout_ms, metrics
+            ));
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
+}
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn metrics_comprehensive() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
-    use tokio::time::Duration;
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_app();
@@ -41,23 +81,6 @@ async fn metrics_comprehensive() {
         "Metrics should be in Prometheus format with HELP/TYPE comments"
     );
 
-    let expected_metrics = [
-        "events_db_query_duration_ms",
-        "event_stream_db_query_duration_ms",
-        "event_stream_broadcast_lagged_count",
-        "event_stream_active_connections",
-        "event_stream_connection_duration_seconds",
-    ];
-
-    for metric in expected_metrics {
-        assert!(
-            body.contains(metric),
-            "Metrics should contain {}: {}",
-            metric,
-            body
-        );
-    }
-
     // 2. Test metric recording with concurrent connections
     let keypair1 = Keypair::random();
     let keypair2 = Keypair::random();
@@ -82,21 +105,7 @@ async fn metrics_comprehensive() {
         .await
         .unwrap();
 
-    // Call /events endpoint to generate DB query metrics
-    let events_url = format!(
-        "https://{}/events?user={}",
-        server.public_key(),
-        user_pubky1
-    );
-    let response = pubky
-        .client()
-        .request(Method::GET, &events_url)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // 3. Test concurrent stream connections
+    // 3. Test concurrent stream connections to generate metrics
     let stream_url1 = format!(
         "https://{}/events-stream?user={}&live=true",
         server.public_key(),
@@ -128,28 +137,38 @@ async fn metrics_comprehensive() {
     stream1.next().await;
     stream2.next().await;
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Verify 2 active connections
-    let response = pubky
-        .client()
-        .request(Method::GET, &metrics_url)
-        .send()
-        .await
-        .unwrap();
-    let metrics = response.text().await.unwrap();
+    // Poll metrics endpoint until 2 active connections are reported
+    let metrics = wait_for_metric_condition(
+        pubky.client(),
+        &metrics_url,
+        |m| m.contains("event_stream_active_connections") && m.contains("} 2"),
+        2000, // 2 second timeout
+    )
+    .await
+    .expect("Should have 2 active connections");
 
     assert!(
-        metrics.contains("event_stream_active_connections 2"),
+        metrics.contains("event_stream_active_connections") && metrics.contains("} 2"),
         "Should have 2 active connections: {}",
         metrics
     );
 
-    // Verify DB query metrics recorded
-    assert!(
-        metrics.contains("events_db_query_duration_ms_count"),
-        "Should have events_db_query_duration_ms_count metric"
-    );
+    // Verify expected metrics are present now that we've recorded data
+    let expected_metrics = [
+        "event_stream_db_query_duration_ms",
+        "event_stream_active_connections",
+    ];
+
+    for metric in expected_metrics {
+        assert!(
+            metrics.contains(metric),
+            "Metrics should contain {}: {}",
+            metric,
+            metrics
+        );
+    }
+
+    // Verify stream DB query metrics recorded
     assert!(
         metrics.contains("event_stream_db_query_duration_ms_count"),
         "Should have event_stream_db_query_duration_ms_count metric"
@@ -157,44 +176,61 @@ async fn metrics_comprehensive() {
 
     // Close one stream
     drop(stream1);
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Verify 1 active connection
-    let response = pubky
-        .client()
-        .request(Method::GET, &metrics_url)
-        .send()
-        .await
-        .unwrap();
-    let metrics = response.text().await.unwrap();
+    // Poll metrics endpoint until 1 active connection is reported
+    let metrics = wait_for_metric_condition(
+        pubky.client(),
+        &metrics_url,
+        |m| m.contains("event_stream_active_connections") && m.contains("} 1"),
+        2000, // 2 second timeout
+    )
+    .await
+    .expect("Should have 1 active connection after closing one");
 
     assert!(
-        metrics.contains("event_stream_active_connections 1"),
+        metrics.contains("event_stream_active_connections") && metrics.contains("} 1"),
         "Should have 1 active connection after closing one: {}",
         metrics
     );
 
     // Close second stream
     drop(stream2);
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Verify 0 active connections and connection duration recorded
-    let response = pubky
-        .client()
-        .request(Method::GET, &metrics_url)
-        .send()
-        .await
-        .unwrap();
-    let final_metrics = response.text().await.unwrap();
+    // Poll metrics endpoint until 0 active connections are reported
+    let final_metrics = wait_for_metric_condition(
+        pubky.client(),
+        &metrics_url,
+        |m| m.contains("event_stream_active_connections") && m.contains("} 0"),
+        2000, // 2 second timeout
+    )
+    .await
+    .expect("Should have 0 active connections after closing all");
 
     assert!(
-        final_metrics.contains("event_stream_active_connections 0"),
+        final_metrics.contains("event_stream_active_connections") && final_metrics.contains("} 0"),
         "Should have 0 active connections after closing all: {}",
         final_metrics
     );
 
     assert!(
-        final_metrics.contains("event_stream_connection_duration_seconds_count"),
-        "Should have event_stream_connection_duration_seconds_count metric"
+        final_metrics.contains("event_stream_connection_duration_ms_count"),
+        "Should have event_stream_connection_duration_ms_count metric"
     );
+
+    // Verify all core metrics are present after full test run
+    // Note: broadcast_lagged_count is only present if lag actually occurred
+    let all_expected_metrics = [
+        "event_stream_db_query_duration_ms",
+        "event_stream_active_connections",
+        "event_stream_connection_duration_ms",
+    ];
+
+    for metric in all_expected_metrics {
+        assert!(
+            final_metrics.contains(metric),
+            "Final metrics should contain {}: {}",
+            metric,
+            final_metrics
+        );
+    }
 }

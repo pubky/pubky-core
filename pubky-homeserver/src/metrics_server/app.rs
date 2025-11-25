@@ -7,12 +7,13 @@ use crate::AppContext;
 use crate::{AppContextConversionError, PersistentDataDir};
 use axum::routing::get;
 use axum::Router;
+use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use axum_server::Handle;
 use tokio::task::JoinHandle;
 
 fn create_app(metrics: Metrics) -> axum::routing::IntoMakeService<Router> {
     Router::new()
-        .route("/metrics", get(metrics.render()))
+        .route("/metrics", get(metrics_handler))
         .with_state(metrics)
         .into_make_service()
 }
@@ -104,5 +105,17 @@ impl Drop for MetricsServer {
         self.http_handle
             .graceful_shutdown(Some(Duration::from_secs(5)));
         self.join_handle.abort();
+    }
+}
+
+/// HTTP handler for the /metrics endpoint
+pub async fn metrics_handler(State(metrics): State<Metrics>) -> impl IntoResponse {
+    match metrics.render() {
+        Ok(body) => (StatusCode::OK, body).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("# Failed to render metrics: {}\n", e),
+        )
+            .into_response(),
     }
 }

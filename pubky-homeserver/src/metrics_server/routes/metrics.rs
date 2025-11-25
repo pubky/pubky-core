@@ -2,12 +2,19 @@ use opentelemetry::metrics::{Counter, Histogram, Meter, MeterProvider, UpDownCou
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry, TextEncoder};
 use std::sync::Arc;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum MetricsInitError {
+    #[error("Failed to build Prometheus exporter: {0}")]
+    PrometheusExporter(String),
+}
 
 pub const EVENTS_DB_QUERY_DURATION: &str = "events_db_query_duration_ms";
 pub const EVENT_STREAM_DB_QUERY_DURATION: &str = "event_stream_db_query_duration_ms";
 pub const EVENT_STREAM_BROADCAST_LAGGED_COUNT: &str = "event_stream_broadcast_lagged_count";
 pub const EVENT_STREAM_ACTIVE_CONNECTIONS: &str = "event_stream_active_connections";
-pub const EVENT_STREAM_CONNECTION_DURATION: &str = "event_stream_connection_duration_seconds";
+pub const EVENT_STREAM_CONNECTION_DURATION: &str = "event_stream_connection_duration_ms";
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
@@ -21,8 +28,8 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new() -> Self {
-        let (registry, provider, meter) = init_metrics();
+    pub fn new() -> Result<Self, MetricsInitError> {
+        let (registry, provider, meter) = init_metrics()?;
 
         // Initialize all metric instruments
         let events_db_query_duration = meter
@@ -47,10 +54,10 @@ impl Metrics {
 
         let event_stream_connection_duration = meter
             .f64_histogram(EVENT_STREAM_CONNECTION_DURATION)
-            .with_description("Duration of event stream connections in seconds")
+            .with_description("Duration of event stream connections in milliseconds")
             .build();
 
-        Self {
+        Ok(Self {
             registry: Arc::new(registry),
             _provider: Arc::new(provider),
             events_db_query_duration,
@@ -58,7 +65,7 @@ impl Metrics {
             event_stream_broadcast_lagged_count,
             event_stream_active_connections,
             event_stream_connection_duration,
-        }
+        })
     }
 
     // === /events endpoint metrics ===
@@ -90,50 +97,51 @@ impl Metrics {
     }
 
     // Connection lifecycle
-    pub fn record_connection_closed(&self, duration_secs: u64) {
+    pub fn record_connection_closed(&self, duration_ms: u128) {
         self.event_stream_connection_duration
-            .record(duration_secs as f64, &[]);
+            .record(duration_ms as f64, &[]);
     }
 
     /// Render Prometheus metrics in text format
-    pub fn render(&self) -> String {
+    pub fn render(&self) -> Result<String, String> {
         let metric_families = self.registry.gather();
         let encoder = TextEncoder::new();
         let mut buffer = Vec::new();
-        match encoder.encode(&metric_families, &mut buffer) {
-            Ok(_) => String::from_utf8(buffer).unwrap_or_else(|e| {
-                tracing::error!("Failed to convert metrics to UTF-8: {:?}", e);
-                String::from("# Error encoding metrics\n")
-            }),
-            Err(e) => {
-                tracing::error!("Failed to encode metrics: {:?}", e);
-                String::from("# Error encoding metrics\n")
-            }
-        }
+
+        encoder.encode(&metric_families, &mut buffer).map_err(|e| {
+            tracing::error!("Failed to encode metrics: {:?}", e);
+            format!("Failed to encode metrics: {}", e)
+        })?;
+
+        String::from_utf8(buffer).map_err(|e| {
+            tracing::error!("Failed to convert metrics to UTF-8: {:?}", e);
+            format!("Failed to convert metrics to UTF-8: {}", e)
+        })
     }
 }
 
 impl Default for Metrics {
     fn default() -> Self {
         Self::new()
+            .expect("Failed to initialize metrics - this should never fail with default config")
     }
 }
 
 /// Initialize OpenTelemetry with Prometheus exporter
 /// Returns the Prometheus Registry, MeterProvider, and Meter for creating instruments
-fn init_metrics() -> (Registry, SdkMeterProvider, Meter) {
+fn init_metrics() -> Result<(Registry, SdkMeterProvider, Meter), MetricsInitError> {
     let registry = Registry::new();
 
     let exporter = opentelemetry_prometheus::exporter()
         .with_registry(registry.clone())
         .build()
-        .expect("Failed to build Prometheus exporter");
+        .map_err(|e| MetricsInitError::PrometheusExporter(e.to_string()))?;
 
     let provider = SdkMeterProvider::builder().with_reader(exporter).build();
 
     let meter = provider.meter("pubky_homeserver");
 
-    (registry, provider, meter)
+    Ok((registry, provider, meter))
 }
 
 #[cfg(test)]
@@ -142,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_metrics_recording() {
-        let metrics = Metrics::new();
+        let metrics = Metrics::new().expect("Failed to create metrics");
 
         // Record various metrics
         metrics.record_events_db_query(100);
@@ -151,7 +159,7 @@ mod tests {
         metrics.record_broadcast_lagged();
         metrics.record_connection_closed(30);
 
-        let output = metrics.render();
+        let output = metrics.render().expect("Failed to render metrics");
 
         // Verify output is valid Prometheus format
         assert!(!output.is_empty());
