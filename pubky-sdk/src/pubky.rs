@@ -53,7 +53,8 @@
 use pkarr::PublicKey;
 
 use crate::{
-    Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result, actors::auth_flow::AuthFlowKind,
+    Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,
+    actors::AuthFlowKind,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -107,7 +108,11 @@ impl Pubky {
     /// # Errors
     /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
     ///   fails (e.g., malformed relay URL when configured via the builder).
-    pub fn start_auth_flow(&self, caps: &Capabilities, auth_kind: AuthFlowKind) -> Result<PubkyAuthFlow> {
+    pub fn start_auth_flow(
+        &self,
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+    ) -> Result<PubkyAuthFlow> {
         PubkyAuthFlow::builder(caps, auth_kind)
             .client(self.client.clone())
             .start()

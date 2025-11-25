@@ -1,5 +1,6 @@
+use pubky_testnet::pubky::deep_links::DeepLink;
 use pubky_testnet::pubky::{
-    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode, AuthFlowKind,
+    AuthFlowKind, Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode,
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
@@ -119,6 +120,18 @@ async fn authz() {
         .start()
         .unwrap();
 
+    let raw_deep_link = auth.authorization_url().to_string();
+    let deep_link = DeepLink::from_str(&raw_deep_link).unwrap();
+    let signin_deep_link = match deep_link {
+        DeepLink::Signin(signin) => signin,
+        _ => panic!("Expected a signin deep link"),
+    };
+    assert_eq!(signin_deep_link.capabilities(), &caps);
+    assert_eq!(
+        signin_deep_link.relay().as_str(),
+        testnet.http_relay().local_link_url().as_str()
+    );
+
     // Signer authenticator
     let signer = pubky.signer(Keypair::random());
     signer.signup(&server.public_key(), None).await.unwrap();
@@ -179,16 +192,37 @@ async fn signup_authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::sign_up(server.public_key(), None))
-        .base_relay(http_relay_url)
-        .client(pubky.client().clone())
-        .start()
-        .unwrap();
+    let auth = PubkyAuthFlow::builder(
+        &caps,
+        AuthFlowKind::sign_up(server.public_key(), Some("1234567890".to_string())),
+    )
+    .base_relay(http_relay_url)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
+
+    let raw_deep_link = auth.authorization_url().to_string();
+    let deep_link = DeepLink::from_str(&raw_deep_link).unwrap();
+
+    let signup_deep_link = match deep_link {
+        DeepLink::Signup(signup) => signup,
+        _ => panic!("Expected a signup deep link"),
+    };
+    assert_eq!(signup_deep_link.capabilities(), &caps);
+    assert_eq!(
+        signup_deep_link.relay().as_str(),
+        testnet.http_relay().local_link_url().as_str()
+    );
+    assert_eq!(signup_deep_link.homeserver(), &server.public_key());
+    assert_eq!(
+        signup_deep_link.signup_token(),
+        Some("1234567890".to_string())
+    );
 
     // Signer authenticator
     let signer = pubky.signer(Keypair::random());
     signer
-        .signup(&server.public_key(), None)
+        .signup(signup_deep_link.homeserver(), None)
         .await
         .unwrap();
     signer

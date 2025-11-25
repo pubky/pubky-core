@@ -1,4 +1,8 @@
-use std::{fmt::Display, str::FromStr, time::{Duration, Instant}};
+use std::{
+    fmt::Display,
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use pubky_common::crypto::{hash, random_bytes};
@@ -32,13 +36,20 @@ impl HttpRelayLinkChannel {
     /// Create a new HTTP relay link channel.
     pub fn new(base_url: Url, channel_id: String) -> crate::errors::Result<Self> {
         if base_url.cannot_be_a_base() {
-            return Err(crate::errors::Error::Parse(url::ParseError::RelativeUrlWithCannotBeABaseBase));
+            return Err(crate::errors::Error::Parse(
+                url::ParseError::RelativeUrlWithCannotBeABaseBase,
+            ));
         }
         if channel_id.is_empty() {
             // Note: Not the best error message, but it's a valid error.
-            return Err(crate::errors::Error::Parse(url::ParseError::RelativeUrlWithCannotBeABaseBase));
+            return Err(crate::errors::Error::Parse(
+                url::ParseError::RelativeUrlWithCannotBeABaseBase,
+            ));
         }
-        Ok(Self { base_url, channel_id })
+        Ok(Self {
+            base_url,
+            channel_id,
+        })
     }
 
     /// The base URL of the relay.
@@ -79,7 +90,8 @@ impl HttpRelayLinkChannel {
     ) -> std::result::Result<reqwest::Response, PollError> {
         let request = client
             .cross_request(Method::GET, self.to_url())
-            .await.map_err(PollError::Failure)?;
+            .await
+            .map_err(PollError::Failure)?;
         let request = match timeout {
             Some(timeout) => request.timeout(timeout),
             None => request,
@@ -100,7 +112,11 @@ impl HttpRelayLinkChannel {
     /// This poll will retry until a message is received or the timeout is reached.
     /// If the timeout is reached, Ok(None) is returned.
     /// Any underlying network errors will be retried.
-    pub async fn poll(&self, client: &PubkyHttpClient, timeout: Option<Duration>) -> crate::errors::Result<Option<Vec<u8>>> {
+    pub async fn poll(
+        &self,
+        client: &PubkyHttpClient,
+        timeout: Option<Duration>,
+    ) -> crate::errors::Result<Option<Vec<u8>>> {
         let start = Instant::now();
         let mut attempt = 0;
         loop {
@@ -119,17 +135,17 @@ impl HttpRelayLinkChannel {
                         response.status()
                     );
                     return Ok(Some(response.bytes().await?.to_vec()));
-                },
+                }
                 Err(e) => {
                     match e {
-                        PollError::Timeout => {},
+                        PollError::Timeout => {}
                         PollError::Failure(e) => {
                             cross_log!(
                                 error,
                                 "Http relay channel polling attempt {attempt} failed at {}: {e}",
                                 self
                             );
-                        },
+                        }
                     };
                     continue;
                 }
@@ -146,11 +162,9 @@ impl HttpRelayLinkChannel {
     pub async fn produce(
         &self,
         client: &PubkyHttpClient,
-        body: &[u8]
+        body: &[u8],
     ) -> std::result::Result<(), crate::errors::Error> {
-        let request = client
-            .cross_request(Method::POST, self.to_url())
-            .await?;
+        let request = client.cross_request(Method::POST, self.to_url()).await?;
         let request = request.body(body.to_vec());
         let response = request.send().await?;
         response.error_for_status()?;
@@ -169,16 +183,20 @@ impl FromStr for HttpRelayLinkChannel {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let mut url = Url::parse(s).map_err(crate::errors::Error::Parse)?;
-        let segments = url
-            .path_segments()
-            .ok_or(crate::errors::Error::Parse(url::ParseError::RelativeUrlWithCannotBeABaseBase))?;
+        let segments = url.path_segments().ok_or(crate::errors::Error::Parse(
+            url::ParseError::RelativeUrlWithCannotBeABaseBase,
+        ))?;
         let channel_id = segments
             .last()
-            .ok_or(crate::errors::Error::Parse(url::ParseError::RelativeUrlWithCannotBeABaseBase))?
+            .ok_or(crate::errors::Error::Parse(
+                url::ParseError::RelativeUrlWithCannotBeABaseBase,
+            ))?
             .to_string();
 
         if channel_id.is_empty() {
-            return Err(crate::errors::Error::Parse(url::ParseError::RelativeUrlWithCannotBeABaseBase));
+            return Err(crate::errors::Error::Parse(
+                url::ParseError::RelativeUrlWithCannotBeABaseBase,
+            ));
         }
 
         url.path_segments_mut()
@@ -216,7 +234,11 @@ impl EncryptedHttpRelayLinkChannel {
         &self.secret
     }
 
-    pub async fn produce(&self, client: &PubkyHttpClient, body: &[u8]) -> std::result::Result<(), crate::errors::Error> {
+    pub async fn produce(
+        &self,
+        client: &PubkyHttpClient,
+        body: &[u8],
+    ) -> std::result::Result<(), crate::errors::Error> {
         let encrypted = pubky_common::crypto::encrypt(body, &self.secret);
         self.channel.produce(client, &encrypted).await
     }
@@ -227,7 +249,11 @@ impl EncryptedHttpRelayLinkChannel {
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error`] if the request fails.
-    pub async fn poll(&self, client: &PubkyHttpClient, timeout: Option<Duration>) -> std::result::Result<Option<Vec<u8>>, crate::errors::Error> {
+    pub async fn poll(
+        &self,
+        client: &PubkyHttpClient,
+        timeout: Option<Duration>,
+    ) -> std::result::Result<Option<Vec<u8>>, crate::errors::Error> {
         let response = match self.channel.poll(client, timeout).await? {
             Some(response) => response,
             None => return Ok(None),
@@ -274,7 +300,12 @@ mod tests {
             }
             Err(e) => {
                 assert!(
-                    matches!(e, crate::errors::Error::Parse(url::ParseError::RelativeUrlWithCannotBeABaseBase)),
+                    matches!(
+                        e,
+                        crate::errors::Error::Parse(
+                            url::ParseError::RelativeUrlWithCannotBeABaseBase
+                        )
+                    ),
                     "Expected MissingChannelId error, got {:?}",
                     e
                 );
@@ -296,10 +327,7 @@ mod tests {
         let poll_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
             let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
-            let response = channel
-                .poll(&client, None)
-                .await
-                .unwrap().unwrap();
+            let response = channel.poll(&client, None).await.unwrap().unwrap();
             assert_eq!(response, b"Hello, world!");
         });
 
@@ -308,10 +336,7 @@ mod tests {
             let client = PubkyHttpClient::new().unwrap();
             let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
             let body = b"Hello, world!";
-            channel
-                .produce(&client, body)
-                .await
-                .unwrap();
+            channel.produce(&client, body).await.unwrap();
         });
 
         let (poll_result, produce_result) = tokio::join!(poll_handle, produce_handle);
@@ -329,7 +354,10 @@ mod tests {
             let client = PubkyHttpClient::new().unwrap();
             let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
             // First poll should timeout
-            match channel.poll_once(&client, Some(Duration::from_millis(300))).await {
+            match channel
+                .poll_once(&client, Some(Duration::from_millis(300)))
+                .await
+            {
                 Ok(_) => panic!("Expected timeout, got response"),
                 Err(e) => {
                     assert!(matches!(e, PollError::Timeout));
@@ -337,10 +365,7 @@ mod tests {
             };
 
             // Try again and should succeed
-            let response = channel
-                .poll_once(&client, None)
-                .await
-                .unwrap();
+            let response = channel.poll_once(&client, None).await.unwrap();
             assert_eq!(response.status(), reqwest::StatusCode::OK);
             let body = response.text().await.unwrap();
             assert_eq!(body, "Hello, world!");
@@ -353,10 +378,7 @@ mod tests {
             let client = PubkyHttpClient::new().unwrap();
             let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
             let body = b"Hello, world!";
-            channel
-                .produce(&client, body)
-                .await
-                .unwrap();
+            channel.produce(&client, body).await.unwrap();
         });
 
         let (poll_result, produce_result) = tokio::join!(poll_handle, produce_handle);
@@ -366,24 +388,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_encrypted_poll() {
-        let encrypted_channel = EncryptedHttpRelayLinkChannel::random_secret(Url::parse(DEFAULT_HTTP_RELAY).unwrap()).unwrap();
+        let encrypted_channel =
+            EncryptedHttpRelayLinkChannel::random_secret(Url::parse(DEFAULT_HTTP_RELAY).unwrap())
+                .unwrap();
         let chan = encrypted_channel.clone();
         let produce_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
             let body = b"Hello, world!";
-            chan
-                .produce(&client, body)
-                .await
-                .unwrap();
+            chan.produce(&client, body).await.unwrap();
         });
 
         let chan = encrypted_channel.clone();
         let poll_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
-            let response = chan
-                .poll(&client, None)
-                .await
-                .unwrap().unwrap();
+            let response = chan.poll(&client, None).await.unwrap().unwrap();
             assert_eq!(response, b"Hello, world!");
         });
 

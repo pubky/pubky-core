@@ -1,7 +1,7 @@
 //! Client <=> Signer authing (“pubkyauth”) as a single, self-contained flow.
 //!
 //! ## TL;DR (happy path)
-//! 
+//!
 //! ### Sign in
 //! ```no_run
 //! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind};
@@ -15,7 +15,7 @@
 //! println!("Signed in as {}", session.info().public_key());
 //! # Ok(()) }
 //! ```
-//! 
+//!
 //! ### Sign up
 //! ```no_run
 //! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind};
@@ -69,7 +69,13 @@ use pubky_common::crypto::random_bytes;
 
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession,
-    actors::{DEFAULT_HTTP_RELAY, auth_permission_subscription::AuthPermissionSubscription},
+    actors::{
+        DEFAULT_HTTP_RELAY,
+        auth::{
+            auth_subscription::AuthSubscription,
+            deep_links::{DeepLink, SigninDeepLink, SignupDeepLink},
+        },
+    },
     errors::Result,
 };
 
@@ -77,7 +83,7 @@ use crate::{
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
-/// 
+///
 /// Supports both sign in and sign up flows.
 ///
 /// Use it like this:
@@ -91,8 +97,8 @@ use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 /// the background task; the relay channel itself expires server-side after its TTL.
 #[derive(Debug)]
 pub struct PubkyAuthFlow {
-    subscription: AuthPermissionSubscription,
-    auth_url: Url,
+    subscription: AuthSubscription,
+    auth_url: DeepLink,
 }
 
 impl PubkyAuthFlow {
@@ -117,8 +123,8 @@ impl PubkyAuthFlow {
     ///
     /// Contains the **capabilities**, **`client_secret`** (base64url), and **relay** base.
     #[must_use]
-    pub const fn authorization_url(&self) -> &Url {
-        &self.auth_url
+    pub fn authorization_url(&self) -> Url {
+        self.auth_url.clone().into()
     }
 
     /// Block until the signer approves and the server issues a session.
@@ -261,7 +267,7 @@ impl PubkyAuthFlowBuilder {
 
         let auth_url = self.create_url();
 
-        let subscription = AuthPermissionSubscription::builder(self.client_secret)
+        let subscription = AuthSubscription::builder(self.client_secret)
             .relay_base_url(self.base_relay)
             .client(client)
             .start()?;
@@ -274,38 +280,24 @@ impl PubkyAuthFlowBuilder {
 
     /// Create the auth URL for the auth flow.
     /// Depending on the auth kind, the URL will be different
-    fn create_url(&self) -> Url {
-        let mut auth_url = match &self.auth_kind {
-            AuthFlowKind::SignIn => {
-                Url::parse("pubkyauth:///").expect("Should be able to parse the base url")
-            }
-            AuthFlowKind::SignUp { .. } => {
-                Url::parse("pubkyauth:///signup").expect("Should be able to parse the base url")
-            }
-        };
-
-        {
-            // Add common parameters for both signin and signup flows.
-            let mut query = auth_url.query_pairs_mut();
-            query.append_pair("caps", &self.caps.to_string());
-            query.append_pair("secret", &URL_SAFE_NO_PAD.encode(&self.client_secret));
-            query.append_pair("relay", self.base_relay.as_str());
+    fn create_url(&self) -> DeepLink {
+        match &self.auth_kind {
+            AuthFlowKind::SignIn => DeepLink::Signin(SigninDeepLink::new(
+                self.caps.clone(),
+                self.base_relay.clone(),
+                self.client_secret,
+            )),
+            AuthFlowKind::SignUp {
+                homeserver_public_key,
+                signup_token,
+            } => DeepLink::Signup(SignupDeepLink::new(
+                self.caps.clone(),
+                self.base_relay.clone(),
+                self.client_secret,
+                homeserver_public_key.clone(),
+                signup_token.clone(),
+            )),
         }
-
-        // Add signup parameters if it is a signup flow.
-        if let AuthFlowKind::SignUp {
-            homeserver_public_key,
-            signup_token,
-        } = &self.auth_kind
-        {
-            let mut query = auth_url.query_pairs_mut();
-            query.append_pair("hs", &homeserver_public_key.to_string());
-            if let Some(signup_token) = signup_token {
-                query.append_pair("st", signup_token);
-            }
-        }
-
-        auth_url
     }
 }
 
@@ -320,7 +312,7 @@ mod tests {
 
         // pubkyauth:// deep link contains caps + secret + relay
         let url = flow.authorization_url();
-        assert!(url.as_str().starts_with("pubkyauth:///?"));
+        assert!(url.as_str().starts_with("pubkyring://?"));
         assert!(
             url.query_pairs()
                 .any(|(k, v)| k == "caps" && v == caps.to_string())
@@ -348,13 +340,12 @@ mod tests {
 
         // pubkyauth:///signup deep link contains caps + secret + relay + hs + ic
         let url = flow.authorization_url();
-        assert!(url.as_str().starts_with("pubkyauth:///signup?"));
+        assert!(url.as_str().starts_with("pubkyring://signup?"));
         assert!(
             url.query_pairs()
                 .any(|(k, v)| k == "caps" && v == caps.to_string())
         );
         assert!(url.query_pairs().any(|(k, _)| k == "secret"));
         assert!(url.query_pairs().any(|(k, _)| k == "relay"));
- 
     }
 }

@@ -32,11 +32,13 @@ pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 #[doc(inline)]
 pub use actors::Pkdns;
 #[doc(inline)]
-pub use actors::{AuthFlowKind, PubkyAuthFlow};
-#[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
 pub use actors::PubkySigner;
+#[doc(inline)]
+pub use actors::deep_links;
+#[doc(inline)]
+pub use actors::{AuthFlowKind, PubkyAuthFlow};
 #[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
