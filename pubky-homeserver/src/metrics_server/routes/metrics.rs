@@ -13,6 +13,7 @@ pub enum MetricsInitError {
 pub const EVENTS_DB_QUERY_DURATION: &str = "events_db_query_duration_ms";
 pub const EVENT_STREAM_DB_QUERY_DURATION: &str = "event_stream_db_query_duration_ms";
 pub const EVENT_STREAM_BROADCAST_LAGGED_COUNT: &str = "event_stream_broadcast_lagged_count";
+pub const EVENT_STREAM_BROADCAST_HALF_FULL_COUNT: &str = "event_stream_broadcast_half_full_count";
 pub const EVENT_STREAM_ACTIVE_CONNECTIONS: &str = "event_stream_active_connections";
 pub const EVENT_STREAM_CONNECTION_DURATION: &str = "event_stream_connection_duration_ms";
 
@@ -23,6 +24,7 @@ pub struct Metrics {
     events_db_query_duration: Histogram<f64>,
     event_stream_db_query_duration: Histogram<f64>,
     event_stream_broadcast_lagged_count: Counter<u64>,
+    event_stream_broadcast_half_full_count: Counter<u64>,
     event_stream_active_connections: UpDownCounter<i64>,
     event_stream_connection_duration: Histogram<f64>,
 }
@@ -31,7 +33,6 @@ impl Metrics {
     pub fn new() -> Result<Self, MetricsInitError> {
         let (registry, provider, meter) = init_metrics()?;
 
-        // Initialize all metric instruments
         let events_db_query_duration = meter
             .f64_histogram(EVENTS_DB_QUERY_DURATION)
             .with_description("Duration of /events database queries in milliseconds")
@@ -45,6 +46,13 @@ impl Metrics {
         let event_stream_broadcast_lagged_count = meter
             .u64_counter(EVENT_STREAM_BROADCAST_LAGGED_COUNT)
             .with_description("Number of times event stream broadcast channel lagged")
+            .build();
+
+        let event_stream_broadcast_half_full_count = meter
+            .u64_counter(EVENT_STREAM_BROADCAST_HALF_FULL_COUNT)
+            .with_description(
+                "Number of times event stream broadcast channel reached half capacity",
+            )
             .build();
 
         let event_stream_active_connections = meter
@@ -63,6 +71,7 @@ impl Metrics {
             events_db_query_duration,
             event_stream_db_query_duration,
             event_stream_broadcast_lagged_count,
+            event_stream_broadcast_half_full_count,
             event_stream_active_connections,
             event_stream_connection_duration,
         })
@@ -82,12 +91,14 @@ impl Metrics {
             .record(duration_ms as f64, &[]);
     }
 
-    // Broadcast channel health
     pub fn record_broadcast_lagged(&self) {
         self.event_stream_broadcast_lagged_count.add(1, &[]);
     }
 
-    // Connection tracking
+    pub fn record_broadcast_half_full(&self) {
+        self.event_stream_broadcast_half_full_count.add(1, &[]);
+    }
+
     pub fn increment_active_connections(&self) {
         self.event_stream_active_connections.add(1, &[]);
     }
@@ -96,7 +107,6 @@ impl Metrics {
         self.event_stream_active_connections.add(-1, &[]);
     }
 
-    // Connection lifecycle
     pub fn record_connection_closed(&self, duration_ms: u128) {
         self.event_stream_connection_duration
             .record(duration_ms as f64, &[]);
@@ -131,16 +141,12 @@ impl Default for Metrics {
 /// Returns the Prometheus Registry, MeterProvider, and Meter for creating instruments
 fn init_metrics() -> Result<(Registry, SdkMeterProvider, Meter), MetricsInitError> {
     let registry = Registry::new();
-
     let exporter = opentelemetry_prometheus::exporter()
         .with_registry(registry.clone())
         .build()
         .map_err(|e| MetricsInitError::PrometheusExporter(e.to_string()))?;
-
     let provider = SdkMeterProvider::builder().with_reader(exporter).build();
-
     let meter = provider.meter("pubky_homeserver");
-
     Ok((registry, provider, meter))
 }
 
@@ -157,6 +163,7 @@ mod tests {
         metrics.record_event_stream_db_query(200);
         metrics.increment_active_connections();
         metrics.record_broadcast_lagged();
+        metrics.record_broadcast_half_full();
         metrics.record_connection_closed(30);
 
         let output = metrics.render().expect("Failed to render metrics");
@@ -187,6 +194,12 @@ mod tests {
             output.contains(EVENT_STREAM_BROADCAST_LAGGED_COUNT),
             "Missing {} in: {}",
             EVENT_STREAM_BROADCAST_LAGGED_COUNT,
+            output
+        );
+        assert!(
+            output.contains(EVENT_STREAM_BROADCAST_HALF_FULL_COUNT),
+            "Missing {} in: {}",
+            EVENT_STREAM_BROADCAST_HALF_FULL_COUNT,
             output
         );
         assert!(

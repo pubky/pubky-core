@@ -379,10 +379,15 @@ pub async fn feed_stream(
         // Phase 2: Live mode
         if params.live {
             let user_ids: Vec<i32> = user_cursor_map.keys().copied().collect();
+            let half_capacity = state.events_service.channel_capacity() / 2;
 
             loop {
                 match rx.recv().await {
                     Ok(event) => {
+                        // Check if receiver queue is at half capacity (early warning of slow clients)
+                        if rx.len() >= half_capacity {
+                            state.metrics.record_broadcast_half_full();
+                        }
                         // Filter events based on user_ids, cursors, and path
                         if !should_include_live_event(&event, &user_ids, &user_cursor_map, params.path.as_ref()) {
                             continue;
