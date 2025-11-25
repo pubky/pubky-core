@@ -63,6 +63,7 @@ impl Metrics {
         let event_stream_connection_duration = meter
             .f64_histogram(EVENT_STREAM_CONNECTION_DURATION)
             .with_description("Duration of event stream connections in milliseconds")
+            .with_boundaries(vec![10.0, 100.0, 1_000.0, 10_000.0, 100_000.0])
             .build();
 
         Ok(Self {
