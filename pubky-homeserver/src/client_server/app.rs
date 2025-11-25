@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::{
-    extract::State,
     routing::{get, post},
     Router,
 };
@@ -216,7 +215,6 @@ fn base() -> Router<AppState> {
         // Events
         .route("/events/", get(events::feed))
         .route("/events-stream", get(events::feed_stream))
-        .route("/metrics", get(metrics_handler))
 
     // TODO: add size limit
     // TODO: revisit if we enable streaming big payloads
@@ -236,8 +234,4 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
 
     // Apply trace and pubky host layers to the complete router.
     with_trace_layer(app)
-}
-
-async fn metrics_handler(State(state): State<AppState>) -> String {
-    state.metrics.render()
 }

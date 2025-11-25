@@ -14,7 +14,8 @@ use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
 
 use crate::{
-    client_server::{extractors::ListQueryParams, routes::metrics::Metrics, AppState},
+    client_server::{extractors::ListQueryParams, AppState},
+    metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{EventCursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
         sql::SqlDb,
@@ -304,11 +305,9 @@ pub async fn feed_stream(
             .await
             .map_err(HttpError::from)?;
 
-    state.metrics.increment_active_connections();
-
     let mut total_sent: usize = 0;
     let stream = async_stream::stream! {
-         // Create guard to ensure cleanup on any exit path
+         // Create guard to ensure cleanup on any exit path (increments on creation, decrements on drop)
         let _guard = ConnectionGuard::new(state.metrics.clone());
 
         // Subscribe to broadcast channel immediately to prevent race condition
@@ -500,6 +499,7 @@ struct ConnectionGuard {
 
 impl ConnectionGuard {
     fn new(metrics: Metrics) -> Self {
+        metrics.increment_active_connections();
         Self {
             metrics,
             start: Instant::now(),
@@ -516,6 +516,68 @@ impl Drop for ConnectionGuard {
         tracing::info!(
             duration_s = self.start.elapsed().as_secs(),
             "Event stream connection closed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_guard_drops_on_early_return() {
+        let metrics = Metrics::new();
+
+        // Create guard and return early - guard should still decrement
+        fn early_return_fn(metrics: Metrics) -> Result<(), &'static str> {
+            let _guard = ConnectionGuard::new(metrics.clone());
+            // Simulate early return (e.g., error condition)
+            return Err("early exit");
+            #[allow(unreachable_code)]
+            {
+                Ok(())
+            }
+        }
+
+        let result = early_return_fn(metrics.clone());
+        assert!(result.is_err(), "Should have returned early");
+
+        // Verify guard cleaned up properly despite early return
+        let output = metrics.render();
+        assert!(
+            output.contains("event_stream_active_connections") && output.contains("} 0"),
+            "Should have 0 active connections after early return: {}",
+            output
+        );
+        assert!(
+            output.contains("event_stream_connection_duration_seconds_count"),
+            "Should have recorded connection duration: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn connection_guard_multiple_sequential() {
+        let metrics = Metrics::new();
+
+        // Create and drop multiple guards sequentially
+        for _ in 0..3 {
+            let _guard = ConnectionGuard::new(metrics.clone());
+            // Guard increments on creation, decrements on drop
+        }
+
+        // All guards should be cleaned up
+        let output = metrics.render();
+        assert!(
+            output.contains("event_stream_active_connections") && output.contains("} 0"),
+            "Should have 0 active connections after all guards dropped: {}",
+            output
+        );
+        assert!(
+            output.contains("event_stream_connection_duration_seconds_count")
+                && output.contains("} 3"),
+            "Should have recorded 3 connection durations: {}",
+            output
         );
     }
 }

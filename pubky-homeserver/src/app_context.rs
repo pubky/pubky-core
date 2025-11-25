@@ -8,7 +8,7 @@
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
-    client_server::routes::metrics::Metrics,
+    metrics_server::routes::metrics::Metrics,
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},

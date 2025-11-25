@@ -72,6 +72,11 @@ pub struct AdminToml {
     pub admin_password: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct MetricsToml {
+    pub listen_socket: SocketAddr,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
@@ -99,6 +104,8 @@ pub struct ConfigToml {
     pub storage: StorageConfigToml,
     /// Administrative API settings (listen socket and password).
     pub admin: AdminToml,
+    /// Metrics API settings (listen socket for Prometheus metrics).
+    pub metrics: Option<MetricsToml>,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. If provided, the homeserver instance attempts to init
@@ -187,6 +194,9 @@ impl ConfigToml {
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        if let Some(ref mut metrics) = config.metrics {
+            metrics.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        }
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;

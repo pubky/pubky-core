@@ -3,6 +3,12 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry, TextEncoder};
 use std::sync::Arc;
 
+pub const EVENTS_DB_QUERY_DURATION: &str = "events_db_query_duration_ms";
+pub const EVENT_STREAM_DB_QUERY_DURATION: &str = "event_stream_db_query_duration_ms";
+pub const EVENT_STREAM_BROADCAST_LAGGED_COUNT: &str = "event_stream_broadcast_lagged_count";
+pub const EVENT_STREAM_ACTIVE_CONNECTIONS: &str = "event_stream_active_connections";
+pub const EVENT_STREAM_CONNECTION_DURATION: &str = "event_stream_connection_duration_seconds";
+
 #[derive(Clone, Debug)]
 pub struct Metrics {
     registry: Arc<Registry>,
@@ -20,27 +26,27 @@ impl Metrics {
 
         // Initialize all metric instruments
         let events_db_query_duration = meter
-            .f64_histogram("events_db_query_duration_ms")
+            .f64_histogram(EVENTS_DB_QUERY_DURATION)
             .with_description("Duration of /events database queries in milliseconds")
             .build();
 
         let event_stream_db_query_duration = meter
-            .f64_histogram("event_stream_db_query_duration_ms")
+            .f64_histogram(EVENT_STREAM_DB_QUERY_DURATION)
             .with_description("Duration of /events-stream database queries in milliseconds")
             .build();
 
         let event_stream_broadcast_lagged_count = meter
-            .u64_counter("event_stream_broadcast_lagged_count")
+            .u64_counter(EVENT_STREAM_BROADCAST_LAGGED_COUNT)
             .with_description("Number of times event stream broadcast channel lagged")
             .build();
 
         let event_stream_active_connections = meter
-            .i64_up_down_counter("event_stream_active_connections")
+            .i64_up_down_counter(EVENT_STREAM_ACTIVE_CONNECTIONS)
             .with_description("Number of active event stream connections")
             .build();
 
         let event_stream_connection_duration = meter
-            .f64_histogram("event_stream_connection_duration_seconds")
+            .f64_histogram(EVENT_STREAM_CONNECTION_DURATION)
             .with_description("Duration of event stream connections in seconds")
             .build();
 
@@ -152,28 +158,33 @@ mod tests {
         assert!(output.starts_with("#") || output.contains("# HELP"));
         // Verify all metric names appear in output
         assert!(
-            output.contains("events_db_query_duration_ms"),
-            "Missing events_db_query_duration_ms in: {}",
+            output.contains(EVENTS_DB_QUERY_DURATION),
+            "Missing {} in: {}",
+            EVENTS_DB_QUERY_DURATION,
             output
         );
         assert!(
-            output.contains("event_stream_db_query_duration_ms"),
-            "Missing event_stream_db_query_duration_ms in: {}",
+            output.contains(EVENT_STREAM_DB_QUERY_DURATION),
+            "Missing {} in: {}",
+            EVENT_STREAM_DB_QUERY_DURATION,
             output
         );
         assert!(
-            output.contains("event_stream_active_connections"),
-            "Missing event_stream_active_connections in: {}",
+            output.contains(EVENT_STREAM_ACTIVE_CONNECTIONS),
+            "Missing {} in: {}",
+            EVENT_STREAM_ACTIVE_CONNECTIONS,
             output
         );
         assert!(
-            output.contains("event_stream_broadcast_lagged_count"),
-            "Missing event_stream_broadcast_lagged_count in: {}",
+            output.contains(EVENT_STREAM_BROADCAST_LAGGED_COUNT),
+            "Missing {} in: {}",
+            EVENT_STREAM_BROADCAST_LAGGED_COUNT,
             output
         );
         assert!(
-            output.contains("event_stream_connection_duration_seconds"),
-            "Missing event_stream_connection_duration_seconds in: {}",
+            output.contains(EVENT_STREAM_CONNECTION_DURATION),
+            "Missing {} in: {}",
+            EVENT_STREAM_CONNECTION_DURATION,
             output
         );
     }
