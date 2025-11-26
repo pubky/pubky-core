@@ -50,6 +50,7 @@ impl SignupDeepLink {
         self.0.signup_token().clone()
     }
 
+    #[allow(clippy::inherent_to_string, reason = "Display trait doesn't work with wasm-bindgen")]
     #[wasm_bindgen(js_name = "toString")]
     pub fn to_string(&self) -> String {
         self.0.to_string()
