@@ -28,7 +28,7 @@ impl AuthFlow {
     /// - `scope` starts with `/` (e.g. `/pub/example.com/`)
     /// - `actions` is any combo of `r` and/or `w` (order is normalized; `wr` -> `rw`)
     /// Empty string is allowed (no scopes).
-    /// 
+    ///
     /// @param {AuthFlowKind} kind
     /// The kind of authentication flow to perform.
     /// This can either be a sign in or a sign up flow.
@@ -78,7 +78,7 @@ impl AuthFlow {
         }
 
         if let Some(r) = relay {
-            builder = builder.base_relay(Url::parse(&r)?);
+            builder = builder.relay(Url::parse(&r)?);
         }
 
         Ok(AuthFlow(builder.start()?))
@@ -138,7 +138,7 @@ pub struct AuthFlowKind(pubky::AuthFlowKind);
 impl AuthFlowKind {
     /// Create a sign in flow.
     #[wasm_bindgen(js_name = "signIn")]
-    pub fn sign_in() -> Self {
+    pub fn signin() -> Self {
         Self(pubky::AuthFlowKind::SignIn)
     }
 
@@ -147,7 +147,7 @@ impl AuthFlowKind {
     /// * `homeserver_public_key` - The public key of the homeserver to sign up on.
     /// * `signup_token` - The signup token to use for the signup flow. This is optional.
     #[wasm_bindgen(js_name = "signUp")]
-    pub fn sign_up(homeserver_public_key: &PublicKey, signup_token: Option<String>) -> Self {
+    pub fn signup(homeserver_public_key: &PublicKey, signup_token: Option<String>) -> Self {
         Self(pubky::AuthFlowKind::SignUp {
             homeserver_public_key: Box::new(homeserver_public_key.0.to_owned()),
             signup_token,
@@ -162,7 +162,7 @@ impl AuthFlowKind {
     pub fn intent(&self) -> String {
         match &self.0 {
             pubky::AuthFlowKind::SignIn => "signin".to_string(),
-            pubky::AuthFlowKind::SignUp { .. } => "signup".to_string()
+            pubky::AuthFlowKind::SignUp { .. } => "signup".to_string(),
         }
     }
 }

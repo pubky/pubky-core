@@ -24,7 +24,8 @@ impl SigninDeepLink {
     /// * `capabilities` - The capabilities to use for the signin flow.
     /// * `relay` - The relay to use for the signin flow.
     /// * `secret` - The secret to use for the signin flow.
-    #[must_use] pub fn new(capabilities: Capabilities, relay: Url, secret: [u8; 32]) -> Self {
+    #[must_use]
+    pub fn new(capabilities: Capabilities, relay: Url, secret: [u8; 32]) -> Self {
         Self {
             capabilities,
             relay,
@@ -38,12 +39,14 @@ impl SigninDeepLink {
     }
 
     /// Get the relay for the signin flow.
-    #[must_use] pub fn relay(&self) -> &Url {
+    #[must_use]
+    pub fn relay(&self) -> &Url {
         &self.relay
     }
 
     /// Get the secret for the signin flow.
-    #[must_use] pub fn secret(&self) -> &[u8; 32] {
+    #[must_use]
+    pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }
 }
@@ -102,12 +105,13 @@ impl FromStr for SigninDeepLink {
         let secret = URL_SAFE_NO_PAD
             .decode(raw_secret.as_str())
             .map_err(|e| DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e)))?;
-        let secret: [u8; 32] = secret
-            .try_into()
-            .map_err(|e: Vec<u8>| {
-                let msg = format!("Expected 32 bytes, got {}", e.len());
-                DeepLinkParseError::InvalidQueryParameter("secret", Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)))
-            })?;
+        let secret: [u8; 32] = secret.try_into().map_err(|e: Vec<u8>| {
+            let msg = format!("Expected 32 bytes, got {}", e.len());
+            DeepLinkParseError::InvalidQueryParameter(
+                "secret",
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
+            )
+        })?;
 
         Ok(SigninDeepLink {
             capabilities,

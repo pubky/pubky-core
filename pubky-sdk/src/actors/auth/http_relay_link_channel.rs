@@ -1,11 +1,7 @@
-use std::{
-    fmt::Display,
-    str::FromStr,
-    time::Duration,
-};
+use std::{fmt::Display, str::FromStr, time::Duration};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use pubky_common::crypto::{hash};
+use pubky_common::crypto::hash;
 use reqwest::Method;
 use url::Url;
 
@@ -118,9 +114,10 @@ impl HttpRelayLinkChannel {
         loop {
             attempt += 1;
             if let Some(timeout) = timeout
-                && start.elapsed() >= timeout {
-                    return Ok(None);
-                }
+                && start.elapsed() >= timeout
+            {
+                return Ok(None);
+            }
             let poll_timeout = timeout.map(|t| t - start.elapsed());
             match self.poll_once(client, poll_timeout).await {
                 Ok(response) => {
@@ -131,18 +128,16 @@ impl HttpRelayLinkChannel {
                     );
                     return Ok(Some(response.bytes().await?.to_vec()));
                 }
-                Err(e) => {
-                    match e {
-                        PollError::Timeout => {}
-                        PollError::Failure(e) => {
-                            cross_log!(
-                                error,
-                                "Http relay channel polling attempt {attempt} failed at {}: {e}",
-                                self
-                            );
-                        }
+                Err(e) => match e {
+                    PollError::Timeout => {}
+                    PollError::Failure(e) => {
+                        cross_log!(
+                            error,
+                            "Http relay channel polling attempt {attempt} failed at {}: {e}",
+                            self
+                        );
                     }
-                }
+                },
             }
         }
     }
@@ -254,9 +249,8 @@ impl EncryptedHttpRelayLinkChannel {
         client: &PubkyHttpClient,
         timeout: Option<Duration>,
     ) -> std::result::Result<Option<Vec<u8>>, crate::errors::Error> {
-        let response = match self.channel.poll(client, timeout).await? {
-            Some(response) => response,
-            None => return Ok(None),
+        let Some(response) = self.channel.poll(client, timeout).await? else {
+            return Ok(None);
         };
         let decrypted = pubky_common::crypto::decrypt(&response, &self.secret)?;
         Ok(Some(decrypted))
@@ -317,7 +311,7 @@ mod tests {
 
     fn random_channel_url() -> String {
         let channel_bytes = random_bytes::<32>();
-        let channel_id = String::from_utf8_lossy(&channel_bytes).to_string();
+        let channel_id = URL_SAFE_NO_PAD.encode(&channel_bytes);
         format!("{}/link/{}", DEFAULT_HTTP_RELAY, channel_id)
     }
 

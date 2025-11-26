@@ -5,7 +5,6 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 
-
 #[wasm_bindgen]
 pub struct SigninDeepLink(pubky::deep_links::SigninDeepLink);
 
@@ -13,7 +12,14 @@ pub struct SigninDeepLink(pubky::deep_links::SigninDeepLink);
 impl SigninDeepLink {
     #[wasm_bindgen(js_name = "parse")]
     pub fn try_from(url: &str) -> JsResult<Self> {
-        Ok(Self(pubky::deep_links::SigninDeepLink::from_str(url).map_err(|e| PubkyError::new(PubkyErrorName::InvalidInput, format!("Invalid signin deep link: {}", e)))?))
+        Ok(Self(
+            pubky::deep_links::SigninDeepLink::from_str(url).map_err(|e| {
+                PubkyError::new(
+                    PubkyErrorName::InvalidInput,
+                    format!("Invalid signin deep link: {}", e),
+                )
+            })?,
+        ))
     }
 
     #[wasm_bindgen(getter)]

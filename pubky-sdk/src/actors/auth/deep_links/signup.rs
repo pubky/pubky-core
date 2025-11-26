@@ -1,7 +1,7 @@
-use std::{fmt::Display, str::FromStr};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use pkarr::PublicKey;
 use pubky_common::capabilities::Capabilities;
+use std::{fmt::Display, str::FromStr};
 use url::Url;
 
 use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseError};
@@ -28,7 +28,8 @@ impl SignupDeepLink {
     /// * `secret` - The secret to use for the signup flow.
     /// * `homeserver` - The homeserver to use for the signup flow.
     /// * `signup_token` - The signup token to use for the signup flow.
-    #[must_use] pub fn new(
+    #[must_use]
+    pub fn new(
         capabilities: Capabilities,
         relay: Url,
         secret: [u8; 32],
@@ -50,22 +51,26 @@ impl SignupDeepLink {
     }
 
     /// Get the relay for the signup flow.
-    #[must_use] pub fn relay(&self) -> &Url {
+    #[must_use]
+    pub fn relay(&self) -> &Url {
         &self.relay
     }
 
     /// Get the secret for the signup flow.
-    #[must_use] pub fn secret(&self) -> &[u8; 32] {
+    #[must_use]
+    pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }
 
     /// Get the homeserver for the signup flow.
-    #[must_use] pub fn homeserver(&self) -> &PublicKey {
+    #[must_use]
+    pub fn homeserver(&self) -> &PublicKey {
         &self.homeserver
     }
 
     /// Get the signup token for the signup flow.
-    #[must_use] pub fn signup_token(&self) -> Option<String> {
+    #[must_use]
+    pub fn signup_token(&self) -> Option<String> {
         self.signup_token.clone()
     }
 }
@@ -128,12 +133,13 @@ impl FromStr for SignupDeepLink {
         let secret = URL_SAFE_NO_PAD
             .decode(raw_secret.as_str())
             .map_err(|e| DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e)))?;
-        let secret: [u8; 32] = secret
-            .try_into()
-            .map_err(|e: Vec<u8>| {
-                let msg = format!("Expected 32 bytes, got {}", e.len());
-                DeepLinkParseError::InvalidQueryParameter("secret", Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)))
-            })?;
+        let secret: [u8; 32] = secret.try_into().map_err(|e: Vec<u8>| {
+            let msg = format!("Expected 32 bytes, got {}", e.len());
+            DeepLinkParseError::InvalidQueryParameter(
+                "secret",
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
+            )
+        })?;
 
         let raw_homeserver = url
             .query_pairs()

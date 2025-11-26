@@ -8,7 +8,10 @@ use crate::actors::auth::deep_links::{
 
 /// A parsed Pubky deep link.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(clippy::large_enum_variant, reason = "Doesn't really matter in this case as this enum is never stored in a large amount of data")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Doesn't really matter in this case as this enum is never stored in a large amount of data"
+)]
 pub enum DeepLink {
     /// A signin deep link.
     Signin(SigninDeepLink),
@@ -18,7 +21,8 @@ pub enum DeepLink {
 
 impl DeepLink {
     /// Convert the deep link to a simple URL.
-    #[must_use] pub fn to_url(self) -> Url {
+    #[must_use]
+    pub fn to_url(self) -> Url {
         match self {
             DeepLink::Signin(signin) => signin.clone().into(),
             DeepLink::Signup(signup) => signup.clone().into(),

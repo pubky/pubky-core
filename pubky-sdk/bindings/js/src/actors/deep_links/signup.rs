@@ -3,8 +3,10 @@ use std::str::FromStr;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 
-use crate::{js_error::{JsResult, PubkyError, PubkyErrorName}, wrappers::keys::PublicKey};
-
+use crate::{
+    js_error::{JsResult, PubkyError, PubkyErrorName},
+    wrappers::keys::PublicKey,
+};
 
 #[wasm_bindgen]
 pub struct SignupDeepLink(pubky::deep_links::SignupDeepLink);
@@ -13,7 +15,14 @@ pub struct SignupDeepLink(pubky::deep_links::SignupDeepLink);
 impl SignupDeepLink {
     #[wasm_bindgen(js_name = "parse")]
     pub fn try_from(url: &str) -> JsResult<Self> {
-        Ok(Self(pubky::deep_links::SignupDeepLink::from_str(url).map_err(|e| PubkyError::new(PubkyErrorName::InvalidInput, format!("Invalid signup deep link: {}", e)))?))
+        Ok(Self(
+            pubky::deep_links::SignupDeepLink::from_str(url).map_err(|e| {
+                PubkyError::new(
+                    PubkyErrorName::InvalidInput,
+                    format!("Invalid signup deep link: {}", e),
+                )
+            })?,
+        ))
     }
 
     #[wasm_bindgen(getter)]

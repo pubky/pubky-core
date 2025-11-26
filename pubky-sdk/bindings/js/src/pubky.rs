@@ -1,6 +1,10 @@
 use wasm_bindgen::prelude::*;
 
-use crate::actors::{auth_flow::{AuthFlow, AuthFlowKind}, signer::Signer, storage::PublicStorage};
+use crate::actors::{
+    auth_flow::{AuthFlow, AuthFlowKind},
+    signer::Signer,
+    storage::PublicStorage,
+};
 use crate::wrappers::keys::PublicKey;
 use crate::{client::constructor::Client, js_error::JsResult, wrappers::keys::Keypair};
 
@@ -88,7 +92,8 @@ impl Pubky {
         kind: AuthFlowKind,
         relay: Option<String>,
     ) -> JsResult<AuthFlow> {
-        let flow = AuthFlow::start_with_client(capabilities, kind, relay, Some(self.0.client().clone()))?;
+        let flow =
+            AuthFlow::start_with_client(capabilities, kind, relay, Some(self.0.client().clone()))?;
         Ok(flow)
     }
 

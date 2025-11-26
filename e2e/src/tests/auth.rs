@@ -115,8 +115,8 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::sign_in())
-        .base_relay(http_relay_url)
+    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
+        .relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
         .unwrap();
@@ -195,9 +195,9 @@ async fn signup_authz() {
     // Third-party app (keyless)
     let auth = PubkyAuthFlow::builder(
         &caps,
-        AuthFlowKind::sign_up(server.public_key(), Some("1234567890".to_string())),
+        AuthFlowKind::signup(server.public_key(), Some("1234567890".to_string())),
     )
-    .base_relay(http_relay_url)
+    .relay(http_relay_url)
     .client(pubky.client().clone())
     .start()
     .unwrap();
@@ -350,9 +350,9 @@ async fn authz_timeout_reconnect() {
 
     // set custom global client with timeout of 1 sec
     // Start pairing auth flow using our custom client + local relay
-    let auth = PubkyAuthFlow::builder(&capabilities, AuthFlowKind::sign_in())
+    let auth = PubkyAuthFlow::builder(&capabilities, AuthFlowKind::signin())
         .client(client)
-        .base_relay(http_relay_url)
+        .relay(http_relay_url)
         .start()
         .unwrap();
 
