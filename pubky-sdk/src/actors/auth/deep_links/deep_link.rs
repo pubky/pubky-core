@@ -8,6 +8,7 @@ use crate::actors::auth::deep_links::{
 
 /// A parsed Pubky deep link.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant, reason = "Doesn't really matter in this case as this enum is never stored in a large amount of data")]
 pub enum DeepLink {
     /// A signin deep link.
     Signin(SigninDeepLink),
@@ -17,18 +18,27 @@ pub enum DeepLink {
 
 impl DeepLink {
     /// Convert the deep link to a simple URL.
-    pub fn to_url(self) -> Url {
+    #[must_use] pub fn to_url(self) -> Url {
         match self {
             DeepLink::Signin(signin) => signin.clone().into(),
             DeepLink::Signup(signup) => signup.clone().into(),
         }
     }
+}
 
-    /// Parse a deep link from a string.
-    ///
-    /// # Errors
-    /// - Returns [`DeepLinkParseError::UrlParseError`] if the URL is not valid.
-    pub fn from_str(s: &str) -> Result<Self, DeepLinkParseError> {
+impl Display for DeepLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeepLink::Signin(signin) => write!(f, "{signin}"),
+            DeepLink::Signup(signup) => write!(f, "{signup}"),
+        }
+    }
+}
+
+impl FromStr for DeepLink {
+    type Err = DeepLinkParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let url = Url::parse(s)?;
         if !DEEP_LINK_SCHEMES.contains(&url.scheme()) {
             return Err(DeepLinkParseError::InvalidSchema("pubkyauth or pubkyring"));
@@ -49,26 +59,9 @@ impl DeepLink {
     }
 }
 
-impl Display for DeepLink {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DeepLink::Signin(signin) => write!(f, "{}", signin),
-            DeepLink::Signup(signup) => write!(f, "{}", signup),
-        }
-    }
-}
-
-impl FromStr for DeepLink {
-    type Err = DeepLinkParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        DeepLink::from_str(s)
-    }
-}
-
-impl Into<Url> for DeepLink {
-    fn into(self) -> Url {
-        self.to_url()
+impl From<DeepLink> for Url {
+    fn from(val: DeepLink) -> Self {
+        val.to_url()
     }
 }
 

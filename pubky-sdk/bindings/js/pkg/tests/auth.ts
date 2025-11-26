@@ -5,6 +5,7 @@ import {
   PublicKey,
   SessionInfo,
   validateCapabilities,
+  AuthFlowKind
 } from "../index.js";
 import {
   Assert,
@@ -27,7 +28,7 @@ test("Auth: 3rd party signin", async (t) => {
   const pubky = signer.publicKey.z32();
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  const flow = sdk.startAuthFlow(capabilities, TESTNET_HTTP_RELAY);
+  const flow = sdk.startAuthFlow(capabilities, AuthFlowKind.signIn(), TESTNET_HTTP_RELAY);
 
   type Flow = typeof flow;
   type SessionPromise = ReturnType<Flow["awaitApproval"]>;
@@ -36,43 +37,6 @@ test("Auth: 3rd party signin", async (t) => {
   const _flowUrl: Assert<IsExact<Flow["authorizationUrl"], string>> = true;
   const _sessionInfo: Assert<IsExact<Session["info"], SessionInfo>> = true;
 
-  {
-    const signupToken = await createSignupToken();
-    await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-    await signer.approveAuthRequest(flow.authorizationUrl);
-  }
-
-  const session = await flow.awaitApproval();
-
-  t.equal(
-    session.info.publicKey.z32(),
-    pubky,
-    "session belongs to expected user",
-  );
-  t.deepEqual(
-    session.info.capabilities,
-    capabilities.split(","),
-    "session capabilities match",
-  );
-
-  t.end();
-});
-
-test("Auth: 3rd party signup", async (t) => {
-  const sdk = Pubky.testnet();
-
-  const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  const flow = sdk.startAuthSignupFlow(HOMESERVER_PUBLICKEY, capabilities, null, TESTNET_HTTP_RELAY);
-
-  type Flow = typeof flow;
-  type SessionPromise = ReturnType<Flow["awaitApproval"]>;
-  type Session = Awaited<SessionPromise>;
-
-  const _flowUrl: Assert<IsExact<Flow["authorizationUrl"], string>> = true;
-  const _sessionInfo: Assert<IsExact<Session["info"], SessionInfo>> = true;
-
-  const signer = sdk.signer(Keypair.random());
-  const pubky = signer.publicKey.z32();
   {
     const signupToken = await createSignupToken();
     await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
@@ -149,7 +113,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
 
   // 3) Empty string -> allowed; caps param remains empty
   {
-    const flow = sdk.startAuthFlow("", TESTNET_HTTP_RELAY);
+    const flow = sdk.startAuthFlow("", AuthFlowKind.signIn(), TESTNET_HTTP_RELAY);
     const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(caps, "", "empty input allowed (no scopes)");

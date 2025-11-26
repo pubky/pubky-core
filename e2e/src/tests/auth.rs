@@ -7,6 +7,7 @@ use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,
 };
+use std::str::FromStr;
 use std::time::Duration;
 
 use pubky_testnet::pubky::errors::{Error, RequestError};

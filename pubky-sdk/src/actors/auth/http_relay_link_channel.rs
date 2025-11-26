@@ -5,7 +5,7 @@ use std::{
 };
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use pubky_common::crypto::{hash, random_bytes};
+use pubky_common::crypto::{hash};
 use reqwest::Method;
 use url::Url;
 
@@ -23,7 +23,7 @@ enum PollError {
 
 /// A HTTP relay link channel is a URL that is used to subscribe to a channel
 /// or produce a message to a channel. Internal struct.
-/// https://httprelay.io/features/link/
+/// <https://httprelay.io/features/link>/
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRelayLinkChannel {
     /// The base URL of the relay.
@@ -53,13 +53,9 @@ impl HttpRelayLinkChannel {
     }
 
     /// The base URL of the relay.
+    #[cfg(test)]
     pub fn base_url(&self) -> &Url {
         &self.base_url
-    }
-
-    /// The channel id of the relay.
-    pub fn channel_id(&self) -> &str {
-        &self.channel_id
     }
 
     /// The full URL of the relay channel.
@@ -104,7 +100,7 @@ impl HttpRelayLinkChannel {
 
         let response = match check_http_status(response).await {
             Ok(response) => response,
-            Err(e) => return Err(PollError::Failure(e.into())),
+            Err(e) => return Err(PollError::Failure(e)),
         };
         Ok(response)
     }
@@ -121,11 +117,10 @@ impl HttpRelayLinkChannel {
         let mut attempt = 0;
         loop {
             attempt += 1;
-            if let Some(timeout) = timeout {
-                if start.elapsed() >= timeout {
+            if let Some(timeout) = timeout
+                && start.elapsed() >= timeout {
                     return Ok(None);
                 }
-            };
             let poll_timeout = timeout.map(|t| t - start.elapsed());
             match self.poll_once(client, poll_timeout).await {
                 Ok(response) => {
@@ -146,10 +141,9 @@ impl HttpRelayLinkChannel {
                                 self
                             );
                         }
-                    };
-                    continue;
+                    }
                 }
-            };
+            }
         }
     }
 
@@ -159,6 +153,7 @@ impl HttpRelayLinkChannel {
     /// - Returns [`crate::errors::Error`] if the request fails.
     /// - Returns [`HttpRelayChannelError::Timeout`] if the request times out.
     /// - Returns [`HttpRelayChannelError::RequestError`] if the request fails.
+    #[cfg(test)]
     pub async fn produce(
         &self,
         client: &PubkyHttpClient,
@@ -183,11 +178,11 @@ impl FromStr for HttpRelayLinkChannel {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let mut url = Url::parse(s).map_err(crate::errors::Error::Parse)?;
-        let segments = url.path_segments().ok_or(crate::errors::Error::Parse(
+        let mut segments = url.path_segments().ok_or(crate::errors::Error::Parse(
             url::ParseError::RelativeUrlWithCannotBeABaseBase,
         ))?;
         let channel_id = segments
-            .last()
+            .next_back()
             .ok_or(crate::errors::Error::Parse(
                 url::ParseError::RelativeUrlWithCannotBeABaseBase,
             ))?
@@ -221,7 +216,10 @@ impl EncryptedHttpRelayLinkChannel {
         Ok(Self { channel, secret })
     }
 
+    #[cfg(test)]
     pub fn random_secret(relay_base_url: Url) -> crate::errors::Result<Self> {
+        use pubky_common::crypto::random_bytes;
+
         let secret = random_bytes::<32>();
         Self::new(relay_base_url, secret)
     }
@@ -230,10 +228,12 @@ impl EncryptedHttpRelayLinkChannel {
         &self.channel
     }
 
+    #[cfg(test)]
     pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }
 
+    #[cfg(test)]
     pub async fn produce(
         &self,
         client: &PubkyHttpClient,
@@ -271,6 +271,8 @@ impl Display for EncryptedHttpRelayLinkChannel {
 
 #[cfg(test)]
 mod tests {
+    use pubky_common::crypto::random_bytes;
+
     use super::*;
 
     #[test]

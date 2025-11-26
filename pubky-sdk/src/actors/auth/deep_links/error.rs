@@ -12,7 +12,7 @@ pub enum DeepLinkParseError {
     MissingQueryParameter(&'static str),
     /// Invalid query parameter aka parameter with an invalid value in the URL.
     #[error("Invalid query parameter {0}")]
-    InvalidQueryParameter(&'static str),
+    InvalidQueryParameter(&'static str, #[source] Box<dyn std::error::Error + Send + Sync>),
     /// Invalid intent. Expected a valid intent.
     #[error("Invalid intend. Expected {0}")]
     InvalidIntent(&'static str),

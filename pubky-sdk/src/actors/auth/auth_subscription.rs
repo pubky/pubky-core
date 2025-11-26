@@ -173,7 +173,7 @@ impl AuthSubscriptionBuilder {
     fn spawn_background_polling(
         encrypted_channel: EncryptedHttpRelayLinkChannel,
         client: PubkyHttpClient,
-    ) -> Result<AuthSubscription> {
+    ) -> AuthSubscription {
         let (tx, rx) = flume::bounded(1);
         let (abort_handle, abort_reg) = AbortHandle::new_pair();
         let bg_client = client.clone();
@@ -189,11 +189,11 @@ impl AuthSubscriptionBuilder {
         #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
 
-        Ok(AuthSubscription {
+        AuthSubscription {
             client,
             rx,
             abort: abort_handle,
-        })
+        }
     }
 
     /// Finalize: derive channel, spawn the background poller,
@@ -207,7 +207,7 @@ impl AuthSubscriptionBuilder {
         let encrypted_channel =
             EncryptedHttpRelayLinkChannel::new(self.relay_base_url, self.secret)?;
 
-        Self::spawn_background_polling(encrypted_channel, client)
+        Ok(Self::spawn_background_polling(encrypted_channel, client))
     }
 }
 

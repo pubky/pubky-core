@@ -60,8 +60,6 @@
 //! URL and decrypts the payload locally. The relay **cannot decrypt anything**, it
 //! simply forwards bytes.
 
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
 use pkarr::PublicKey;
 use url::Url;
 
@@ -182,7 +180,7 @@ pub enum AuthFlowKind {
     /// Sign up for a new account.
     SignUp {
         /// The public key of the homeserver to sign up on.
-        homeserver_public_key: PublicKey,
+        homeserver_public_key: Box<PublicKey>,
         /// The signup token to use for the signup flow.
         /// This is optional.
         signup_token: Option<String>,
@@ -191,7 +189,7 @@ pub enum AuthFlowKind {
 
 impl AuthFlowKind {
     /// Create a sign in flow.
-    pub fn sign_in() -> Self {
+    #[must_use] pub fn sign_in() -> Self {
         Self::SignIn
     }
 
@@ -199,9 +197,9 @@ impl AuthFlowKind {
     /// # Arguments
     /// * `homeserver_public_key` - The public key of the homeserver to sign up on.
     /// * `signup_token` - The signup token to use for the signup flow. This is optional.
-    pub fn sign_up(homeserver_public_key: PublicKey, signup_token: Option<String>) -> Self {
+    #[must_use] pub fn sign_up(homeserver_public_key: PublicKey, signup_token: Option<String>) -> Self {
         Self::SignUp {
-            homeserver_public_key,
+            homeserver_public_key: Box::new(homeserver_public_key),
             signup_token,
         }
     }
@@ -294,7 +292,7 @@ impl PubkyAuthFlowBuilder {
                 self.caps.clone(),
                 self.base_relay.clone(),
                 self.client_secret,
-                homeserver_public_key.clone(),
+                *homeserver_public_key.clone(),
                 signup_token.clone(),
             )),
         }

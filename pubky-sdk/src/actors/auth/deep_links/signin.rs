@@ -8,8 +8,8 @@ use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseErr
 
 /// A deep link for signing into a Pubky homeserver.
 /// Supported formats:
-/// - New format with intent: pubkyauth://signin?caps={}&relay={}&secret={}
-/// - Old format without intent: pubkyauth:///?caps={}&relay={}&secret={}
+/// - New format with intent: <pubkyauth://signin?caps={}&relay={}&secret>={}
+/// - Old format without intent: <pubkyauth:///?caps={}&relay={}&secret>={}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SigninDeepLink {
     capabilities: Capabilities,
@@ -24,7 +24,7 @@ impl SigninDeepLink {
     /// * `capabilities` - The capabilities to use for the signin flow.
     /// * `relay` - The relay to use for the signin flow.
     /// * `secret` - The secret to use for the signin flow.
-    pub fn new(capabilities: Capabilities, relay: Url, secret: [u8; 32]) -> Self {
+    #[must_use] pub fn new(capabilities: Capabilities, relay: Url, secret: [u8; 32]) -> Self {
         Self {
             capabilities,
             relay,
@@ -38,12 +38,12 @@ impl SigninDeepLink {
     }
 
     /// Get the relay for the signin flow.
-    pub fn relay(&self) -> &Url {
+    #[must_use] pub fn relay(&self) -> &Url {
         &self.relay
     }
 
     /// Get the secret for the signin flow.
-    pub fn secret(&self) -> &[u8; 32] {
+    #[must_use] pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }
 }
@@ -55,7 +55,7 @@ impl Display for SigninDeepLink {
             "pubkyauth://signin?caps={}&relay={}&secret={}",
             self.capabilities,
             self.relay,
-            URL_SAFE_NO_PAD.encode(&self.secret)
+            URL_SAFE_NO_PAD.encode(self.secret)
         )
     }
 }
@@ -82,7 +82,7 @@ impl FromStr for SigninDeepLink {
         let capabilities: Capabilities = raw_caps
             .as_str()
             .try_into()
-            .map_err(|_| DeepLinkParseError::InvalidQueryParameter("caps"))?;
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("caps", Box::new(e)))?;
 
         let raw_relay = url
             .query_pairs()
@@ -91,7 +91,7 @@ impl FromStr for SigninDeepLink {
             .1
             .to_string();
         let relay = Url::parse(&raw_relay)
-            .map_err(|_| DeepLinkParseError::InvalidQueryParameter("relay"))?;
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("relay", Box::new(e)))?;
 
         let raw_secret = url
             .query_pairs()
@@ -101,10 +101,13 @@ impl FromStr for SigninDeepLink {
             .to_string();
         let secret = URL_SAFE_NO_PAD
             .decode(raw_secret.as_str())
-            .map_err(|_| DeepLinkParseError::InvalidQueryParameter("secret"))?;
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e)))?;
         let secret: [u8; 32] = secret
             .try_into()
-            .map_err(|_| DeepLinkParseError::InvalidQueryParameter("secret"))?;
+            .map_err(|e: Vec<u8>| {
+                let msg = format!("Expected 32 bytes, got {}", e.len());
+                DeepLinkParseError::InvalidQueryParameter("secret", Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)))
+            })?;
 
         Ok(SigninDeepLink {
             capabilities,
@@ -114,9 +117,9 @@ impl FromStr for SigninDeepLink {
     }
 }
 
-impl Into<Url> for SigninDeepLink {
-    fn into(self) -> Url {
-        Url::parse(&self.to_string()).expect("Should be able to parse the deep link")
+impl From<SigninDeepLink> for Url {
+    fn from(val: SigninDeepLink) -> Self {
+        Url::parse(&val.to_string()).expect("Should be able to parse the deep link")
     }
 }
 
