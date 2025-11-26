@@ -14,6 +14,6 @@ pub enum DeepLinkParseError {
     #[error("Invalid query parameter {0}")]
     InvalidQueryParameter(&'static str, #[source] Box<dyn std::error::Error + Send + Sync>),
     /// Invalid intent. Expected a valid intent.
-    #[error("Invalid intend. Expected {0}")]
+    #[error("Invalid intent. Expected {0}")]
     InvalidIntent(&'static str),
 }
