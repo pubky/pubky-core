@@ -37,11 +37,12 @@ impl SigninDeepLink {
         Uint8Array::from(self.0.secret().as_ref())
     }
 
-    #[allow(clippy::inherent_to_string, reason = "Display trait doesn't work with wasm-bindgen")]
+    #[allow(
+        clippy::inherent_to_string,
+        reason = "Display trait doesn't work with wasm-bindgen"
+    )]
     #[wasm_bindgen(js_name = "toString")]
     pub fn to_string(&self) -> String {
         self.0.to_string()
     }
 }
-
-
