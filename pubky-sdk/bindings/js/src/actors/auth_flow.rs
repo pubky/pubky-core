@@ -33,8 +33,8 @@ impl AuthFlow {
     /// The kind of authentication flow to perform.
     /// This can either be a sign in or a sign up flow.
     /// Examples:
-    /// - `AuthFlowKind.signIn()` - Sign in to an existing account.
-    /// - `AuthFlowKind.signUp(homeserverPublicKey, signupToken)` - Sign up for a new account.
+    /// - `AuthFlowKind.signin()` - Sign in to an existing account.
+    /// - `AuthFlowKind.signup(homeserverPublicKey, signupToken)` - Sign up for a new account.
     ///
     /// @param {string} [relay]
     /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/link/"`.
@@ -137,7 +137,7 @@ pub struct AuthFlowKind(pubky::AuthFlowKind);
 #[wasm_bindgen]
 impl AuthFlowKind {
     /// Create a sign in flow.
-    #[wasm_bindgen(js_name = "signIn")]
+    #[wasm_bindgen(js_name = "signin")]
     pub fn signin() -> Self {
         Self(pubky::AuthFlowKind::SignIn)
     }
@@ -146,7 +146,7 @@ impl AuthFlowKind {
     /// # Arguments
     /// * `homeserver_public_key` - The public key of the homeserver to sign up on.
     /// * `signup_token` - The signup token to use for the signup flow. This is optional.
-    #[wasm_bindgen(js_name = "signUp")]
+    #[wasm_bindgen(js_name = "signup")]
     pub fn signup(homeserver_public_key: &PublicKey, signup_token: Option<String>) -> Self {
         Self(pubky::AuthFlowKind::SignUp {
             homeserver_public_key: Box::new(homeserver_public_key.0.to_owned()),

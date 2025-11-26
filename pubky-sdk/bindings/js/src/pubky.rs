@@ -70,8 +70,8 @@ impl Pubky {
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
     /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
     /// Examples:
-    /// - `AuthFlowKind.signIn()` - Sign in to an existing account.
-    /// - `AuthFlowKind.signUp(homeserverPublicKey, signupToken)` - Sign up for a new account.
+    /// - `AuthFlowKind.signin()` - Sign in to an existing account.
+    /// - `AuthFlowKind.signup(homeserverPublicKey, signupToken)` - Sign up for a new account.
     /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/link/"`).
     /// @returns {AuthFlow}
     /// A running auth flow. Show `authorizationUrl` as QR/deeplink,
