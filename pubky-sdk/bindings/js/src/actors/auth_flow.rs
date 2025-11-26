@@ -76,6 +76,7 @@ impl AuthFlow {
         if let Some(c) = client {
             builder = builder.client(c);
         }
+
         if let Some(r) = relay {
             builder = builder.base_relay(Url::parse(&r)?);
         }

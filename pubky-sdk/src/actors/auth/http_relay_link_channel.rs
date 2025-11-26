@@ -1,7 +1,7 @@
 use std::{
     fmt::Display,
     str::FromStr,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -113,7 +113,7 @@ impl HttpRelayLinkChannel {
         client: &PubkyHttpClient,
         timeout: Option<Duration>,
     ) -> crate::errors::Result<Option<Vec<u8>>> {
-        let start = Instant::now();
+        let start = web_time::Instant::now();
         let mut attempt = 0;
         loop {
             attempt += 1;
