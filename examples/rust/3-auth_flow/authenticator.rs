@@ -1,9 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{
-    deep_links::SigninDeepLink,
-    Pubky, PublicKey,
-};
+use pubky::{deep_links::SigninDeepLink, Pubky, PublicKey};
 use std::path::PathBuf;
 use url::Url;
 

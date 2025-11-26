@@ -77,9 +77,6 @@ use crate::{
     errors::Result,
 };
 
-#[cfg(target_arch = "wasm32")]
-use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
-
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
 ///
 /// Supports both sign in and sign up flows.
