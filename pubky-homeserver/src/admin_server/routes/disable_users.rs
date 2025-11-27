@@ -74,7 +74,7 @@ mod tests {
     use crate::{persistence::files::FileService, AppContext};
     use axum::routing::post;
     use axum::Router;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     #[tokio::test]
     #[pubky_test_utils::test]

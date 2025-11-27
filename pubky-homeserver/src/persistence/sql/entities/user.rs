@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
@@ -19,7 +19,7 @@ impl UserRepository {
         let statement = Query::insert()
             .into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
-            .values(vec![SimpleExpr::Value(public_key.to_string().into())])
+            .values(vec![SimpleExpr::Value(public_key.z32().into())])
             .unwrap()
             .returning_all()
             .to_owned();
@@ -46,7 +46,7 @@ impl UserRepository {
                 UserIden::Disabled,
                 UserIden::UsedBytes,
             ])
-            .and_where(Expr::col(UserIden::PublicKey).eq(public_key.to_string()))
+            .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -62,7 +62,7 @@ impl UserRepository {
         let statement = Query::select()
             .from(USER_TABLE)
             .columns([UserIden::Id])
-            .and_where(Expr::col(UserIden::PublicKey).eq(public_key.to_string()))
+            .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -235,7 +235,7 @@ impl FromRow<'_, PgRow> for UserEntity {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use crate::persistence::sql::SqlDb;
 

@@ -17,8 +17,8 @@ use axum::{
 };
 use axum_extra::extract::Host;
 use bytes::Bytes;
-use pkarr::PublicKey;
 use pubky_common::capabilities::Capabilities;
+use pubky_common::crypto::PublicKey;
 use pubky_common::session::SessionInfo;
 use std::collections::HashMap;
 use tower_cookies::{
@@ -188,7 +188,7 @@ fn is_secure(host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use super::*;
 

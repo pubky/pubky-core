@@ -130,7 +130,7 @@ mod test {
     #[tokio::test]
     async fn test_homeserver_with_random_keypair() {
         let mut network = EphemeralTestnet::start_minimal().await.unwrap();
-        assert!(network.testnet.homeservers.len() == 0);
+        assert!(network.testnet.homeservers.is_empty());
 
         let _ = network.create_random_homeserver().await.unwrap();
         let _ = network.create_random_homeserver().await.unwrap();

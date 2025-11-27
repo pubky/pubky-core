@@ -75,12 +75,12 @@ enum User {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
     use crate::persistence::sql::{migrator::Migrator, SqlDb};
-    use pkarr::PublicKey;
+    use pubky_common::crypto::PublicKey;
     use sea_query::PostgresQueryBuilder;
     use sqlx::{postgres::PgRow, FromRow, Row};
 
@@ -131,7 +131,7 @@ mod tests {
         let statement = Query::insert()
             .into_table(USER_TABLE)
             .columns([User::PublicKey])
-            .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
+            .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);

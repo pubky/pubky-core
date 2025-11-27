@@ -1,6 +1,5 @@
 //! Pubky homeserver session struct.
 
-use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +8,7 @@ use alloc::vec::Vec;
 
 use crate::{
     capabilities::{Capabilities, Capability},
+    crypto::PublicKey,
     timestamp::Timestamp,
 };
 

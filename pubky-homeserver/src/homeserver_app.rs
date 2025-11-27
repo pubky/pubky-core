@@ -8,7 +8,7 @@ use crate::tracing::init_tracing_logs_with_config_if_set;
 use crate::MockDataDir;
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
 use std::time::Duration;
 

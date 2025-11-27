@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 
 /// Custom validator for the zbase32 pubkey in the route path.
 /// Usage:

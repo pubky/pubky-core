@@ -8,7 +8,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use futures_util::future::BoxFuture;
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;

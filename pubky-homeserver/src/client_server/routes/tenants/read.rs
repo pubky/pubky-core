@@ -236,7 +236,9 @@ mod tests {
     use axum::Router;
     use axum_test::TestServer;
     use pkarr::{Keypair, PublicKey};
-    use pubky_common::{auth::AuthToken, capabilities::Capability};
+    use pubky_common::{
+        auth::AuthToken, capabilities::Capability, crypto::Keypair as PubkyKeypair,
+    };
 
     use crate::app_context::AppContext;
     use crate::client_server::ClientServer;
@@ -245,7 +247,10 @@ mod tests {
         server: &axum_test::TestServer,
         keypair: &Keypair,
     ) -> anyhow::Result<String> {
-        let auth_token = AuthToken::sign(keypair, vec![Capability::root()]);
+        let auth_token = AuthToken::sign(
+            &PubkyKeypair::from(keypair.clone()),
+            vec![Capability::root()],
+        );
         let body_bytes: axum::body::Bytes = auth_token.serialize().into();
         let response = server
             .post("/signup")

@@ -1,7 +1,7 @@
 use crate::client_server::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 

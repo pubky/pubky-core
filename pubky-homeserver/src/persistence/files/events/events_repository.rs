@@ -333,7 +333,7 @@ impl Display for EventType {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use crate::{
         persistence::sql::{user::UserRepository, SqlDb},

@@ -29,7 +29,7 @@ mod tests {
     use crate::AppContext;
     use axum::{routing::delete, Router};
     use opendal::Buffer;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     async fn write_test_file(file_service: &FileService, entry_path: &EntryPath) {
         let buffer = Buffer::from(vec![0; 10]);

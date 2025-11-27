@@ -1,9 +1,8 @@
 //! Tools for encrypting and decrypting a recovery file storing user's root key's secret.
 
 use argon2::Argon2;
-use pkarr::Keypair;
 
-use crate::crypto::{decrypt, encrypt};
+use crate::crypto::{decrypt, encrypt, Keypair};
 
 static SPEC_NAME: &str = "recovery";
 static SPEC_LINE: &str = "pubky.org/recovery";

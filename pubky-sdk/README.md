@@ -250,7 +250,7 @@ let homeserver  = testnet.homeserver_app();
 let pubky = testnet.sdk()?;
 
 let signer = pubky.signer(Keypair::random());
-let session  = signer.signup(&homeserver.public_key(), None).await?;
+let session  = signer.signup(&homeserver.public_key().into(), None).await?;
 
 session.storage().put("/pub/my-cool-app/hello.txt", "hi").await?;
 let s = session.storage().get("/pub/my-cool-app/hello.txt").await?.text().await?;

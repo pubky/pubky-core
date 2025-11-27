@@ -5,7 +5,7 @@ use crate::{
     },
     shared::{HttpError, HttpResult},
 };
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 
 /// Returns the user if it exists and is not disabled, otherwise returns an error.
 /// - User doesn't exist: returns 404

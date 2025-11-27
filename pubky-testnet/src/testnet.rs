@@ -292,7 +292,7 @@ mod test {
         let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
 
         // Make sure the pkarr can resolve the hs_pubky.
-        let pubkey = format!("{}", hs_pubky);
+        let pubkey = hs_pubky.z32();
         let _endpoint = pkarr_client
             .resolve_https_endpoint(pubkey.as_str())
             .await

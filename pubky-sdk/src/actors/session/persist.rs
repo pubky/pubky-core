@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use pkarr::PublicKey;
+use crate::PublicKey;
 use pubky_common::session::SessionInfo;
 
 use super::core::PubkySession;
@@ -18,6 +18,7 @@ impl PubkySession {
     ///
     /// Treat the returned String as a **bearer secret**. Do not log it; store it
     /// securely.
+    #[must_use]
     pub fn export_secret(&self) -> String {
         let public_key = self.info().public_key().to_string();
         let cookie = self.cookie.clone();

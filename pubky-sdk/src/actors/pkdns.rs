@@ -8,12 +8,12 @@
 use std::time::Duration;
 
 use pkarr::{
-    Keypair, PublicKey, SignedPacket, Timestamp,
+    SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
 };
 
 use crate::{
-    PubkyHttpClient, PubkySigner, cross_log,
+    Keypair, PubkyHttpClient, PubkySigner, PublicKey, cross_log,
     errors::{AuthError, Error, PkarrError, Result},
 };
 
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn republish_preserves_non_pubky_records() {
         let keypair = Keypair::random();
-        let original_host = Keypair::random().public_key().to_string();
+        let original_host = Keypair::random().public_key().z32();
 
         let mut dnslink_txt = TXT::new();
         dnslink_txt
@@ -467,7 +467,7 @@ mod tests {
             .sign(&keypair)
             .expect("signed existing packet");
 
-        let new_host = Keypair::random().public_key().to_string();
+        let new_host = Keypair::random().public_key().z32();
 
         let republished =
             Pkdns::build_homeserver_packet(&keypair, &new_host, Some(&existing_packet))
@@ -481,13 +481,13 @@ mod tests {
         let original_dnslink = existing_packet
             .all_resource_records()
             .find(|rr| rr.name.to_string().starts_with("_dnslink"))
-            .map(|rr| rr.to_owned())
+            .map(ToOwned::to_owned)
             .expect("original _dnslink record");
 
         let republished_dnslink = republished
             .all_resource_records()
             .find(|rr| rr.name.to_string().starts_with("_dnslink"))
-            .map(|rr| rr.to_owned())
+            .map(ToOwned::to_owned)
             .expect("republished _dnslink record");
 
         assert_eq!(republished_dnslink.ttl, original_dnslink.ttl);

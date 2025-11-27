@@ -61,11 +61,10 @@ pub use pkarr::DEFAULT_RELAYS;
 
 // Re-exports
 #[doc(inline)]
-pub use pkarr::{Keypair, PublicKey};
-#[doc(inline)]
 pub use pubky_common::{
     auth::AuthToken,
     capabilities::{Capabilities, Capability},
+    crypto::{Keypair, PublicKey},
     recovery_file,
 };
 pub use reqwest::{Method, StatusCode};

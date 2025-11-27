@@ -8,7 +8,7 @@ use axum::{
     },
 };
 use futures_util::stream::Stream;
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible};
 use url::form_urlencoded;

@@ -3,7 +3,7 @@
 import { Pubky, Keypair, PublicKey, setLogLevel } from "@synonymdev/pubky";
 import { args } from "./_cli.mjs";
 
-const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+const TESTNET_HOMESERVER = "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 const usage = `
 Usage:
@@ -43,7 +43,7 @@ const homeserver = PublicKey.from(homeserverArg);
 
 const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
-console.log("Generated ephemeral signer:", keypair.publicKey.z32());
+console.log("Generated ephemeral signer:", keypair.publicKey.toString());
 
 console.log("Signing up to homeserver... (watch the debug logs above)");
 const session = await signer.signup(homeserver, null);

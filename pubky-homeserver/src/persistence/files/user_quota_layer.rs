@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use pubky_common::crypto::PublicKey;
+
 use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::sql::SqlDb;
 use crate::persistence::sql::{uexecutor, user::UserRepository};
@@ -63,17 +65,19 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
-        ensure_valid_path(path)?;
-        self.inner.create_dir(path, args).await
+        let entry_path = ensure_valid_path(path)?;
+        self.inner.create_dir(entry_path.as_str(), args).await
     }
 
     async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        self.inner.read(path, args).await
+        let entry_path = ensure_valid_path(path)?;
+        self.inner.read(entry_path.as_str(), args).await
     }
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
         let entry_path = ensure_valid_path(path)?;
-        let (rp, writer) = self.inner.write(path, args).await?;
+        let canonical_path = entry_path.to_string();
+        let (rp, writer) = self.inner.write(&canonical_path, args).await?;
         Ok((
             rp,
             WriterWrapper {
@@ -88,17 +92,20 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
-        let _ = ensure_valid_path(to)?;
-        self.inner.copy(from, to, args).await
+        let from = ensure_valid_path(from)?;
+        let to = ensure_valid_path(to)?;
+        self.inner.copy(from.as_str(), to.as_str(), args).await
     }
 
     async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
-        let _ = ensure_valid_path(to)?;
-        self.inner.rename(from, to, args).await
+        let from = ensure_valid_path(from)?;
+        let to = ensure_valid_path(to)?;
+        self.inner.rename(from.as_str(), to.as_str(), args).await
     }
 
     async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        self.inner.stat(path, args).await
+        let entry_path = ensure_valid_path(path)?;
+        self.inner.stat(entry_path.as_str(), args).await
     }
 
     async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
@@ -119,7 +126,8 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        self.inner.presign(path, args).await
+        let entry_path = ensure_valid_path(path)?;
+        self.inner.presign(entry_path.as_str(), args).await
     }
 }
 
@@ -272,7 +280,7 @@ pub struct DeleterWrapper<R, A: Access> {
 impl<R, A: Access> DeleterWrapper<R, A> {
     async fn update_user_quota(&self, deleted_paths: Vec<DeletePath>) -> Result<()> {
         // Group deleted paths by user pubkey
-        let mut user_paths: HashMap<pkarr::PublicKey, Vec<DeletePath>> = HashMap::new();
+        let mut user_paths: HashMap<PublicKey, Vec<DeletePath>> = HashMap::new();
         for path in deleted_paths {
             user_paths
                 .entry(path.entry_path.pubkey().clone())
@@ -351,7 +359,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
                 ));
             }
         };
-        self.inner.delete(path, args)?;
+        self.inner.delete(helper.entry_path.as_str(), args)?;
         self.path_queue.push(helper);
         Ok(())
     }
@@ -365,10 +373,7 @@ mod tests {
 
     use super::*;
 
-    async fn get_user_data_usage(
-        db: &SqlDb,
-        user_pubkey: &pkarr::PublicKey,
-    ) -> anyhow::Result<u64> {
+    async fn get_user_data_usage(db: &SqlDb, user_pubkey: &PublicKey) -> anyhow::Result<u64> {
         let user = UserRepository::get(user_pubkey, &mut db.pool().into())
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
@@ -387,7 +392,7 @@ mod tests {
                 .write("1234567890/test.txt", vec![0; 10])
                 .await
                 .expect_err("Should fail because the path doesn't start with a pubkey");
-            let pubkey = pkarr::Keypair::random().public_key();
+            let pubkey = pubky_common::crypto::Keypair::random().public_key();
             UserRepository::create(&pubkey, &mut db.pool().into())
                 .await
                 .unwrap();
@@ -409,7 +414,7 @@ mod tests {
         let layer = UserQuotaLayer::new(db.clone(), 1024 * 1024);
         let operator = get_memory_operator().layer(layer);
 
-        let user_pubkey1 = pkarr::Keypair::random().public_key();
+        let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&user_pubkey1, &mut db.pool().into())
             .await
             .unwrap();
@@ -462,7 +467,7 @@ mod tests {
         let layer = UserQuotaLayer::new(db.clone(), 20 + FILE_METADATA_SIZE);
         let operator = get_memory_operator().layer(layer);
 
-        let user_pubkey1 = pkarr::Keypair::random().public_key();
+        let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&user_pubkey1, &mut db.pool().into())
             .await
             .unwrap();

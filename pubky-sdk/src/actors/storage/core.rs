@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use crate::PublicKey;
 use reqwest::{Method, RequestBuilder};
 
 use super::resource::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath};
