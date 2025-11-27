@@ -8,8 +8,7 @@ use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseErr
 
 /// A deep link for signing up to a Pubky homeserver.
 /// Supported formats:
-/// - New format with intent: <pubkyauth://signup?caps={}&relay={}&secret>={}
-/// - Old format without intent: <pubkyauth://?caps={}&relay={}&secret>={}
+/// - <pubkyauth://signup?caps={}&relay={}&secret={base64_encoded_secret}&hs={homeserver_public_key}&st={signup_token}>    
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignupDeepLink {
     capabilities: Capabilities,
