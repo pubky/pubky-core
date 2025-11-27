@@ -16,7 +16,7 @@ impl SeedExportDeepLink {
             pubky::deep_links::SeedExportDeepLink::from_str(url).map_err(|e| {
                 PubkyError::new(
                     PubkyErrorName::InvalidInput,
-                    format!("Invalid signup deep link: {}", e),
+                    format!("Invalid seed export deep link: {}", e),
                 )
             })?,
         ))
