@@ -33,10 +33,11 @@ impl Keypair {
 
     /// Returns the [PublicKey] of this keypair.
     ///
-    /// Use `.z32()` on the returned `PublicKey` to get the string form.
+    /// Use `.to_string()` on the returned `PublicKey` to get the string form.
+    /// or `.z32()` to get the z32 string form without prefix.
     ///
     /// @example
-    /// const who = keypair.publicKey.z32();
+    /// const who = keypair.publicKey.to_string();
     #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.public_key())
@@ -55,7 +56,7 @@ impl Keypair {
     pub fn from_recovery_file(recovery_file: &[u8], passphrase: &str) -> JsResult<Keypair> {
         let keypair =
             pubky_common::recovery_file::decrypt_recovery_file(recovery_file, passphrase)?;
-        Ok(Keypair::from(NativeKeypair::from(keypair)))
+        Ok(Keypair::from(keypair))
     }
 }
 
