@@ -458,9 +458,20 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_quota_rechead() {
+        use crate::persistence::files::entry::entry_layer::EntryLayer;
+        use crate::persistence::files::events::{EventRepository, EventsLayer, EventsService};
+        use crate::persistence::sql::entry::EntryRepository;
+        use crate::shared::webdav::{EntryPath, WebDavPath};
+
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone(), 20 + FILE_METADATA_SIZE);
-        let operator = get_memory_operator().layer(layer);
+        let events_service = EventsService::new(100);
+        let user_quota_layer = UserQuotaLayer::new(db.clone(), 20 + FILE_METADATA_SIZE);
+        let entry_layer = EntryLayer::new(db.clone());
+        let events_layer = EventsLayer::new(db.clone(), events_service);
+        let operator = get_memory_operator()
+            .layer(user_quota_layer)
+            .layer(entry_layer)
+            .layer(events_layer);
 
         let user_pubkey1 = pkarr::Keypair::random().public_key();
         UserRepository::create(&user_pubkey1, &mut db.pool().into())
@@ -468,6 +479,9 @@ mod tests {
             .unwrap();
 
         let file_name1 = format!("{}/test1.txt", user_pubkey1);
+        let entry_path1 =
+            EntryPath::new(user_pubkey1.clone(), WebDavPath::new("/test1.txt").unwrap());
+
         // Write a file and see if the user usage is updated
         operator
             .write(file_name1.as_str(), vec![0; 21])
@@ -480,6 +494,25 @@ mod tests {
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 0);
 
+        // Verify that no entry was created in the database
+        EntryRepository::get_by_path(&entry_path1, &mut db.pool().into())
+            .await
+            .expect_err("Entry should not exist because quota was exceeded");
+
+        // Verify that no event was created in the database
+        let events = crate::persistence::files::events::EventRepository::get_by_cursor(
+            None,
+            Some(9999),
+            &mut db.pool().into(),
+        )
+        .await
+        .expect("Should succeed");
+        assert_eq!(
+            events.len(),
+            0,
+            "No events should be created when quota is exceeded"
+        );
+
         // Write file at exactly the quota limit
         operator
             .write(file_name1.as_str(), vec![0; 20])
@@ -491,6 +524,22 @@ mod tests {
             .expect("Should succeed because the file exists");
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 20 + FILE_METADATA_SIZE);
+
+        // Verify that entry WAS created when write succeeded
+        let entry = EntryRepository::get_by_path(&entry_path1, &mut db.pool().into())
+            .await
+            .expect("Entry should exist after successful write");
+        assert_eq!(entry.content_length, 20);
+
+        // Verify that event WAS created when write succeeded
+        let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
+            .await
+            .expect("Should succeed");
+        assert_eq!(
+            events.len(),
+            1,
+            "Event should be created after successful write"
+        );
 
         let file_name2 = format!("{}/test2.txt", user_pubkey1);
         // Write a second file and see if the user usage is updated
