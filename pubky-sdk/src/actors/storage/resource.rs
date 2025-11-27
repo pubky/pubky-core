@@ -253,7 +253,7 @@ impl PubkyResource {
     /// Render as the identifier form `pubky<owner>/<abs-path>`.
     pub(crate) fn to_identifier(&self) -> String {
         let rel = self.path.as_str().trim_start_matches('/');
-        format!("{}/{}", self.owner.to_string(), rel)
+        format!("{}/{}", self.owner, rel)
     }
 }
 
