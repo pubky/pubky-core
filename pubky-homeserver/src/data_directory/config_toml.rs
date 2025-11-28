@@ -88,6 +88,13 @@ pub struct LoggingToml {
     pub module_levels: Vec<TargetLevel>,
 }
 
+/// Metrics server configuration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct MetricsToml {
+    /// Socket address for Prometheus metrics endpoint. Should be isolated from public network.
+    pub listen_socket: SocketAddr,
+}
+
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
@@ -99,8 +106,8 @@ pub struct ConfigToml {
     pub storage: StorageConfigToml,
     /// Administrative API settings (listen socket and password).
     pub admin: AdminToml,
-    /// Metrics API: socket address for Prometheus metrics endpoint. None will not start the metrics server.
-    pub metrics: Option<SocketAddr>,
+    /// Metrics server configuration. If None, metrics server will not be started.
+    pub metrics: Option<MetricsToml>,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. If provided, the homeserver instance attempts to init

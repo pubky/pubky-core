@@ -45,9 +45,14 @@ impl MetricsServer {
     /// Run the metrics server.
     pub async fn start(context: &AppContext) -> Result<Self, MetricsServerBuildError> {
         let metrics = context.metrics.clone();
-        let socket = context.config_toml.metrics.ok_or_else(|| {
-            MetricsServerBuildError::Server(anyhow::anyhow!("Metrics configuration not found"))
-        })?;
+        let socket = context
+            .config_toml
+            .metrics
+            .as_ref()
+            .ok_or_else(|| {
+                MetricsServerBuildError::Server(anyhow::anyhow!("Metrics configuration not found"))
+            })?
+            .listen_socket;
         let app = create_app(metrics);
         let listener = std::net::TcpListener::bind(socket)
             .map_err(|e| MetricsServerBuildError::Server(e.into()))?;

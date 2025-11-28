@@ -1,8 +1,3 @@
-# The socket address to run the metrics HTTP server on. It exposes Prometheus metrics at the /metrics endpoint.
-# It should be isolated from the public network and only accessible to monitoring systems.
-# If not set, the metrics server will not be started.
-metrics = "127.0.0.1:6289"
-
 [general]
 # The URL of the Postgres database.
 # Important: The database must be created manually.
@@ -150,3 +145,9 @@ level = "info"
 # Per-module log levels overrides the global log level for specific modules.
 # Useful for suppressing logs from external dependencies or increasing verbosity for debugging.
 module_levels = ["pubky_homeserver=debug", "tower_http=debug"]
+
+[metrics]
+# The socket address to run the metrics HTTP server on. It exposes Prometheus metrics at the /metrics endpoint.
+# It should be isolated from the public network and only accessible to monitoring systems.
+# If the [metrics] section is not present, the metrics server will not be started.
+listen_socket = "127.0.0.1:6289"
