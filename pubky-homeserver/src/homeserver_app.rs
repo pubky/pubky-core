@@ -1,5 +1,6 @@
 use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{ClientServer, ClientServerBuildError};
+use crate::metrics_server::{MetricsServer, MetricsServerBuildError};
 use crate::republishers::{
     HomeserverKeyRepublisher, KeyRepublisherBuildError, UserKeysRepublisher,
 };
@@ -23,10 +24,13 @@ pub enum HomeserverAppBuildError {
     /// Failed to build the admin server.
     #[error("Failed to build admin server: {0}")]
     Admin(AdminServerBuildError),
+    /// Failed to build the metrics server.
+    #[error("Failed to build metrics server: {0}")]
+    Metrics(MetricsServerBuildError),
 }
 
 /// Homeserver with all bells and whistles.
-/// Core + Admin server.
+/// Core + Admin + Metrics servers.
 ///
 /// When dropped, the homeserver will stop.
 pub struct HomeserverApp {
@@ -45,6 +49,9 @@ pub struct HomeserverApp {
 
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
     admin_server: AdminServer,
+
+    #[allow(dead_code)] // Keep this alive. When dropped, the metrics server will stop.
+    metrics_server: Option<MetricsServer>,
 }
 
 impl HomeserverApp {
@@ -79,6 +86,11 @@ impl HomeserverApp {
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
 
         let admin_server = AdminServer::start(&context).await?;
+        let metrics_server = if context.config_toml.metrics.is_some() {
+            Some(MetricsServer::start(&context).await?)
+        } else {
+            None
+        };
         let client_server = ClientServer::start(context.clone()).await?;
 
         let key_republisher = HomeserverKeyRepublisher::start(
@@ -93,6 +105,7 @@ impl HomeserverApp {
             context,
             client_server,
             admin_server,
+            metrics_server,
             user_keys_republisher,
             key_republisher,
         })
@@ -106,6 +119,11 @@ impl HomeserverApp {
     /// Get the admin server of the homeserver app.
     pub fn admin_server(&self) -> &AdminServer {
         &self.admin_server
+    }
+
+    /// Get the metrics server of the homeserver app.
+    pub fn metrics_server(&self) -> Option<&MetricsServer> {
+        self.metrics_server.as_ref()
     }
 
     /// Returns the public_key of this server.

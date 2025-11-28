@@ -1,3 +1,4 @@
+use crate::metrics_server::routes::metrics::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
 use crate::persistence::sql::SqlDb;
@@ -14,4 +15,5 @@ pub(crate) struct AppState {
     /// If `Some(bytes)` the quota is enforced, else unlimited.
     pub(crate) user_quota_bytes: Option<u64>,
     pub(crate) events_service: EventsService,
+    pub(crate) metrics: Metrics,
 }

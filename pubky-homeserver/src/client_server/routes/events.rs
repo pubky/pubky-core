@@ -10,11 +10,12 @@ use axum::{
 use futures_util::stream::Stream;
 use pkarr::PublicKey;
 use serde::Deserialize;
-use std::{collections::HashMap, convert::Infallible};
+use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
 
 use crate::{
     client_server::{extractors::ListQueryParams, AppState},
+    metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{EventCursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
         sql::SqlDb,
@@ -249,10 +250,15 @@ pub async fn feed(
         Err(_e) => return Err(HttpError::bad_request("Invalid cursor")),
     };
 
+    let query_start = Instant::now();
     let events = state
         .events_service
         .get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
         .await?;
+    state
+        .metrics
+        .record_events_db_query(query_start.elapsed().as_millis());
+
     let mut result = events
         .iter()
         .map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str()))
@@ -301,6 +307,9 @@ pub async fn feed_stream(
 
     let mut total_sent: usize = 0;
     let stream = async_stream::stream! {
+         // Create guard to ensure cleanup on any exit path (increments on creation, decrements on drop)
+        let _guard = ConnectionGuard::new(state.metrics.clone());
+
         // Subscribe to broadcast channel immediately to prevent race condition
         // Events that occur during Phase 1 will be buffered in the channel
         let mut rx = state.events_service.subscribe();
@@ -313,6 +322,7 @@ pub async fn feed_stream(
             let current_user_cursors: Vec<(i32, Option<EventCursor>)> =
                 user_cursor_map.iter().map(|(k, cursor)| (*k, *cursor)).collect();
 
+            let query_start = Instant::now();
             let events = match state
                 .events_service
                 .get_by_user_cursors(
@@ -329,6 +339,7 @@ pub async fn feed_stream(
                     break;
                 }
             };
+            state.metrics.record_event_stream_db_query(query_start.elapsed().as_millis());
 
             let event_count = events.len();
 
@@ -368,10 +379,15 @@ pub async fn feed_stream(
         // Phase 2: Live mode
         if params.live {
             let user_ids: Vec<i32> = user_cursor_map.keys().copied().collect();
+            let half_capacity = state.events_service.channel_capacity() / 2;
 
             loop {
                 match rx.recv().await {
                     Ok(event) => {
+                        // Check if receiver queue is at half capacity (early warning of slow clients)
+                        if rx.len() >= half_capacity {
+                            state.metrics.record_broadcast_half_full();
+                        }
                         // Filter events based on user_ids, cursors, and path
                         if !should_include_live_event(&event, &user_ids, &user_cursor_map, params.path.as_ref()) {
                             continue;
@@ -394,6 +410,7 @@ pub async fn feed_stream(
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        state.metrics.record_broadcast_lagged();
                         tracing::warn!(
                             "Slow client detected: broadcast channel lagged by {} events. Closing connection.",
                             skipped
@@ -477,4 +494,113 @@ fn should_include_live_event(
     }
 
     true
+}
+
+/// Guard to ensure connection cleanup on any exit path
+struct ConnectionGuard {
+    metrics: Metrics,
+    start: Instant,
+}
+
+impl ConnectionGuard {
+    fn new(metrics: Metrics) -> Self {
+        metrics.increment_active_connections();
+        Self {
+            metrics,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.metrics.decrement_active_connections();
+        self.metrics
+            .record_connection_closed(self.start.elapsed().as_millis());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_guard_drops_on_early_return() {
+        let metrics = Metrics::new().expect("Failed to create metrics");
+
+        // Create guard and return early - guard should still decrement
+        fn early_return_fn(metrics: Metrics) -> Result<(), &'static str> {
+            let _guard = ConnectionGuard::new(metrics.clone());
+            // Simulate early return (e.g., error condition)
+            return Err("early exit");
+            #[allow(unreachable_code)]
+            {
+                Ok(())
+            }
+        }
+
+        let result = early_return_fn(metrics.clone());
+        assert!(result.is_err(), "Should have returned early");
+
+        // Verify guard cleaned up properly despite early return
+        let output = metrics.render().expect("Failed to render metrics");
+        assert!(
+            output.contains("event_stream_active_connections") && output.contains("} 0"),
+            "Should have 0 active connections after early return: {}",
+            output
+        );
+        assert!(
+            output.contains("event_stream_connection_duration_ms_count"),
+            "Should have recorded connection duration: {}",
+            output
+        );
+    }
+
+    #[tokio::test]
+    async fn connection_guard_concurrent() {
+        let metrics = Metrics::new().expect("Failed to create metrics");
+
+        // Create 5 concurrent guards using tokio::spawn
+        let handles: Vec<_> = (0..5)
+            .map(|i| {
+                let metrics_clone = metrics.clone();
+                tokio::spawn(async move {
+                    let _guard = ConnectionGuard::new(metrics_clone);
+                    // Simulate some work
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10 * i)).await;
+                    // Guard will be dropped here
+                })
+            })
+            .collect();
+
+        // While tasks are running, check active connections
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        let output = metrics.render().expect("Failed to render metrics");
+        // We should have some active connections (implementation dependent on timing)
+        assert!(
+            output.contains("event_stream_active_connections"),
+            "Should have active connections metric: {}",
+            output
+        );
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // All guards should be cleaned up
+        let output = metrics.render().expect("Failed to render metrics");
+        assert!(
+            output.contains("event_stream_active_connections") && output.contains("} 0"),
+            "Should have 0 active connections after all concurrent guards dropped: {}",
+            output
+        );
+        assert!(
+            output.contains("event_stream_connection_duration_ms_count") && output.contains("} 5"),
+            "Should have recorded 5 connection durations: {}",
+            output
+        );
+    }
 }
