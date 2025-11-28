@@ -88,6 +88,13 @@ pub struct LoggingToml {
     pub module_levels: Vec<TargetLevel>,
 }
 
+/// Metrics server configuration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct MetricsToml {
+    /// Socket address for Prometheus metrics endpoint. Should be isolated from public network.
+    pub listen_socket: SocketAddr,
+}
+
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
@@ -99,6 +106,8 @@ pub struct ConfigToml {
     pub storage: StorageConfigToml,
     /// Administrative API settings (listen socket and password).
     pub admin: AdminToml,
+    /// Metrics server configuration. If None, metrics server will not be started.
+    pub metrics: Option<MetricsToml>,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. If provided, the homeserver instance attempts to init
@@ -179,7 +188,7 @@ impl ConfigToml {
 
     /// Returns a default config tuned for unit tests.
     #[cfg(any(test, feature = "testing"))]
-    pub fn test() -> Self {
+    pub fn default_test_config() -> Self {
         let mut config = Self::default();
         config.general.database_url = ConnectionString::default_test_db(); // Mark this db as test. This indicates that the db is not real.
         config.general.signup_mode = SignupMode::Open;
@@ -193,6 +202,13 @@ impl ConfigToml {
         config.storage = StorageConfigToml::InMemory;
         config.logging = None;
         config
+    }
+
+    /// Creates a test configuration with default settings.
+    /// For custom configs, use default_test_config() and modify before passing to test APIs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test() -> Self {
+        Self::default_test_config()
     }
 }
 

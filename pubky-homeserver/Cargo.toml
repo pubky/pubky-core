@@ -73,6 +73,10 @@ async-dropper = { version = "0.3", features = [ "tokio", "simple" ] }
 async-stream = "0.3"
 uuid = { version = "1.7.0", features = ["v4"] }
 pubky_test_utils = { path = "../test_utils/pubky_test", version = "0.1.0" }
+opentelemetry = "0.29"
+opentelemetry_sdk = { version = "0.29", features = ["rt-tokio", "metrics"] }
+opentelemetry-prometheus = "0.29"
+prometheus = "0.14"
 
 [dev-dependencies]
 futures-lite = "2.6.0"
