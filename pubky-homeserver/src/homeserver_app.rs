@@ -48,7 +48,7 @@ pub struct HomeserverApp {
     pub(crate) key_republisher: HomeserverKeyRepublisher,
 
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
-    admin_server: AdminServer,
+    admin_server: Option<AdminServer>,
 
     #[allow(dead_code)] // Keep this alive. When dropped, the metrics server will stop.
     metrics_server: Option<MetricsServer>,
@@ -85,8 +85,12 @@ impl HomeserverApp {
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
 
-        let admin_server = AdminServer::start(&context).await?;
-        let metrics_server = if context.config_toml.metrics.is_some() {
+        let admin_server = if context.config_toml.admin.enabled {
+            Some(AdminServer::start(&context).await?)
+        } else {
+            None
+        };
+        let metrics_server = if context.config_toml.metrics.enabled {
             Some(MetricsServer::start(&context).await?)
         } else {
             None
@@ -117,8 +121,8 @@ impl HomeserverApp {
     }
 
     /// Get the admin server of the homeserver app.
-    pub fn admin_server(&self) -> &AdminServer {
-        &self.admin_server
+    pub fn admin_server(&self) -> Option<&AdminServer> {
+        self.admin_server.as_ref()
     }
 
     /// Get the metrics server of the homeserver app.
