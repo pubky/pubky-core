@@ -1,10 +1,9 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::metrics_server::routes::metrics::Metrics;
 use crate::AppContext;
-use crate::{AppContextConversionError, PersistentDataDir};
+use crate::AppContextConversionError;
 use axum::routing::get;
 use axum::Router;
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
@@ -43,35 +42,12 @@ pub struct MetricsServer {
 }
 
 impl MetricsServer {
-    /// Start the metrics server from a persistent data directory.
-    pub async fn from_data_dir(
-        data_dir: PersistentDataDir,
-    ) -> Result<Self, MetricsServerBuildError> {
-        let context = AppContext::read_from(data_dir)
-            .await
-            .map_err(MetricsServerBuildError::DataDir)?;
-        Self::start(&context).await
-    }
-
-    /// Start the metrics server from a data directory path.
-    pub async fn from_data_dir_path(
-        data_dir_path: PathBuf,
-    ) -> Result<Self, MetricsServerBuildError> {
-        let data_dir = PersistentDataDir::new(data_dir_path);
-        Self::from_data_dir(data_dir).await
-    }
-
     /// Run the metrics server.
     pub async fn start(context: &AppContext) -> Result<Self, MetricsServerBuildError> {
         let metrics = context.metrics.clone();
-        let socket = context
-            .config_toml
-            .metrics
-            .as_ref()
-            .ok_or_else(|| {
-                MetricsServerBuildError::Server(anyhow::anyhow!("Metrics configuration not found"))
-            })?
-            .listen_socket;
+        let socket = context.config_toml.metrics.ok_or_else(|| {
+            MetricsServerBuildError::Server(anyhow::anyhow!("Metrics configuration not found"))
+        })?;
         let app = create_app(metrics);
         let listener = std::net::TcpListener::bind(socket)
             .map_err(|e| MetricsServerBuildError::Server(e.into()))?;

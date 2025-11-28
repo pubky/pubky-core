@@ -51,6 +51,12 @@ async fn main() -> Result<()> {
         "Admin server listening on http://{}",
         server.admin_server().listen_socket()
     );
+    if let Some(metrics_server) = server.metrics_server() {
+        tracing::info!(
+            "Metrics server listening on http://{}",
+            metrics_server.listen_socket()
+        );
+    }
 
     tracing::info!("Press Ctrl+C to stop the Homeserver");
     tokio::signal::ctrl_c().await?;

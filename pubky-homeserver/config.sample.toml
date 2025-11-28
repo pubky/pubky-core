@@ -1,3 +1,8 @@
+# The socket address to run the metrics HTTP server on. It exposes Prometheus metrics at the /metrics endpoint.
+# It should be isolated from the public network and only accessible to monitoring systems.
+# If not set, the metrics server will not be started.
+metrics = "127.0.0.1:6289"
+
 [general]
 # The URL of the Postgres database.
 # Important: The database must be created manually.

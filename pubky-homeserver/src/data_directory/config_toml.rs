@@ -72,11 +72,6 @@ pub struct AdminToml {
     pub admin_password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct MetricsToml {
-    pub listen_socket: SocketAddr,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
@@ -104,8 +99,8 @@ pub struct ConfigToml {
     pub storage: StorageConfigToml,
     /// Administrative API settings (listen socket and password).
     pub admin: AdminToml,
-    /// Metrics API settings (listen socket for Prometheus metrics).
-    pub metrics: Option<MetricsToml>,
+    /// Metrics API: socket address for Prometheus metrics endpoint. None will not start the metrics server.
+    pub metrics: Option<SocketAddr>,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. If provided, the homeserver instance attempts to init

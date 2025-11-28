@@ -50,7 +50,7 @@ async fn metrics_comprehensive() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    use pubky_testnet::pubky_homeserver::{ConfigToml, MetricsToml, MockDataDir};
+    use pubky_testnet::pubky_homeserver::{ConfigToml, MockDataDir};
     use std::net::SocketAddr;
 
     // TODO: Modify pubky_testnet to optionally take a custom Config
@@ -58,9 +58,7 @@ async fn metrics_comprehensive() {
     testnet.create_http_relay().await.unwrap();
 
     let mut config = ConfigToml::default_test_config();
-    config.metrics = Some(MetricsToml {
-        listen_socket: SocketAddr::from(([127, 0, 0, 1], 0)),
-    });
+    config.metrics = Some(SocketAddr::from(([127, 0, 0, 1], 0)));
     let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32]))).unwrap();
 
     // Extract values we need before getting SDK to avoid borrow conflicts

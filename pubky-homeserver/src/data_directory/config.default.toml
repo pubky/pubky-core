@@ -15,9 +15,6 @@ type = "file_system"
 listen_socket = "127.0.0.1:6288"
 admin_password = "admin"
 
-[metrics]
-listen_socket = "127.0.0.1:6289"
-
 [pkdns]
 public_ip = "127.0.0.1"
 icann_domain = "localhost"
