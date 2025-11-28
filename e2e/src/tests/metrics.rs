@@ -1,6 +1,6 @@
 use pubky_testnet::{
     pubky::{Keypair, Method, PubkyHttpClient, StatusCode},
-    EphemeralTestnet,
+    Testnet,
 };
 
 /// Poll metrics endpoint until condition is met or timeout occurs
@@ -50,15 +50,37 @@ async fn metrics_comprehensive() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
+    use pubky_testnet::pubky_homeserver::{ConfigToml, MetricsToml, MockDataDir};
+    use std::net::SocketAddr;
 
-    let metrics_server = server
-        .metrics_server()
-        .expect("metrics server should be enabled in tests");
-    let metrics_socket = metrics_server.listen_socket();
-    let metrics_url = format!("http://{}/metrics", metrics_socket);
+    // TODO: Modify pubky_testnet to optionally take a custom Config
+    let mut testnet = Testnet::new().await.unwrap();
+    testnet.create_http_relay().await.unwrap();
+
+    let mut config = ConfigToml::default_test_config();
+    config.metrics = Some(MetricsToml {
+        listen_socket: SocketAddr::from(([127, 0, 0, 1], 0)),
+    });
+    let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32]))).unwrap();
+
+    // Extract values we need before getting SDK to avoid borrow conflicts
+    let (metrics_url, server_public_key) = {
+        let server = testnet
+            .create_homeserver_app_with_mock(mock_dir)
+            .await
+            .unwrap();
+
+        let metrics_server = server
+            .metrics_server()
+            .expect("metrics server should be enabled in tests");
+        let metrics_socket = metrics_server.listen_socket();
+        let metrics_url = format!("http://{}/metrics", metrics_socket);
+        let public_key = server.public_key().clone();
+
+        (metrics_url, public_key)
+    };
+
+    let pubky = testnet.sdk().unwrap();
 
     // 1. Test basic endpoint accessibility and Prometheus format
     let response = pubky
@@ -87,8 +109,8 @@ async fn metrics_comprehensive() {
     let signer1 = pubky.signer(keypair1);
     let signer2 = pubky.signer(keypair2);
 
-    let session1 = signer1.signup(&server.public_key(), None).await.unwrap();
-    let session2 = signer2.signup(&server.public_key(), None).await.unwrap();
+    let session1 = signer1.signup(&server_public_key, None).await.unwrap();
+    let session2 = signer2.signup(&server_public_key, None).await.unwrap();
 
     let user_pubky1 = signer1.public_key();
     let user_pubky2 = signer2.public_key();
@@ -108,13 +130,11 @@ async fn metrics_comprehensive() {
     // 3. Test concurrent stream connections to generate metrics
     let stream_url1 = format!(
         "https://{}/events-stream?user={}&live=true",
-        server.public_key(),
-        user_pubky1
+        server_public_key, user_pubky1
     );
     let stream_url2 = format!(
         "https://{}/events-stream?user={}&live=true",
-        server.public_key(),
-        user_pubky2
+        server_public_key, user_pubky2
     );
 
     let response1 = pubky

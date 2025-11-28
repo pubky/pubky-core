@@ -186,7 +186,7 @@ impl ConfigToml {
 
     /// Returns a default config tuned for unit tests.
     #[cfg(any(test, feature = "testing"))]
-    pub fn test() -> Self {
+    pub fn default_test_config() -> Self {
         let mut config = Self::default();
         config.general.database_url = ConnectionString::default_test_db(); // Mark this db as test. This indicates that the db is not real.
         config.general.signup_mode = SignupMode::Open;
@@ -194,15 +194,19 @@ impl ConfigToml {
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        if let Some(ref mut metrics) = config.metrics {
-            metrics.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        }
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
         config.storage = StorageConfigToml::InMemory;
         config.logging = None;
         config
+    }
+
+    /// Creates a test configuration with default settings.
+    /// For custom configs, use default_test_config() and modify before passing to test APIs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test() -> Self {
+        Self::default_test_config()
     }
 }
 
