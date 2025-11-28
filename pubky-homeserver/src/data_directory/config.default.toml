@@ -12,8 +12,13 @@ rate_limits = []
 type = "file_system"
 
 [admin]
+enabled = true
 listen_socket = "127.0.0.1:6288"
 admin_password = "admin"
+
+[metrics]
+enabled = false
+listen_socket = "127.0.0.1:6289"
 
 [pkdns]
 public_ip = "127.0.0.1"
