@@ -83,6 +83,9 @@ type = "file_system"
 # type = "in_memory"
 
 [admin]
+# Enable or disable the admin server
+enabled = true
+
 # The port number to run the admin HTTP (clear text) server on.
 # Used for admin requests from the admin UI.
 # If this API is every exposed to the public internet, make sure to add a HTTPS cert.
@@ -90,6 +93,14 @@ listen_socket = "127.0.0.1:6288"
 
 # The password for the admin user to access the admin UI.
 admin_password = "admin"
+
+[metrics]
+# Enable or disable the metrics server
+enabled = true
+
+# The socket address to run the metrics HTTP server on. It exposes Prometheus metrics at the /metrics endpoint.
+# It should be isolated from the public network and only accessible to monitoring systems.
+listen_socket = "127.0.0.1:6289"
 
 [pkdns]
 # The public IP address of the homeserver pubky_drive_api to be advertised on the DHT.
@@ -145,9 +156,3 @@ level = "info"
 # Per-module log levels overrides the global log level for specific modules.
 # Useful for suppressing logs from external dependencies or increasing verbosity for debugging.
 module_levels = ["pubky_homeserver=debug", "tower_http=debug"]
-
-[metrics]
-# The socket address to run the metrics HTTP server on. It exposes Prometheus metrics at the /metrics endpoint.
-# It should be isolated from the public network and only accessible to monitoring systems.
-# If the [metrics] section is not present, the metrics server will not be started.
-listen_socket = "127.0.0.1:6289"

@@ -57,7 +57,10 @@ async fn disabled_user() {
     );
 
     // Disable the user via admin API
-    let admin_socket = server.admin_server().listen_socket();
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
     let admin_client = PubkyHttpClient::new().unwrap();
 
     // Disable the user
@@ -328,7 +331,12 @@ async fn signup_with_token() {
     );
 
     // 3. Call the admin endpoint to generate a valid signup token.
-    let valid_token = server.admin_server().create_signup_token().await.unwrap();
+    let valid_token = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .create_signup_token()
+        .await
+        .unwrap();
 
     // 4. Now signup with the valid token. Expect success and a session back.
     let session = signer

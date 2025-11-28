@@ -66,9 +66,19 @@ pub struct DriveToml {
     pub rate_limits: Vec<PathLimit>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+/// Admin server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct AdminToml {
+    /// Enable or disable the admin server
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Socket address for the admin HTTP server
     pub listen_socket: SocketAddr,
+    /// Password for admin authentication
     pub admin_password: String,
 }
 
@@ -88,9 +98,16 @@ pub struct LoggingToml {
     pub module_levels: Vec<TargetLevel>,
 }
 
+fn default_false() -> bool {
+    false
+}
+
 /// Metrics server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct MetricsToml {
+    /// Enable or disable the metrics server. Default: false
+    #[serde(default = "default_false")]
+    pub enabled: bool,
     /// Socket address for Prometheus metrics endpoint. Should be isolated from public network.
     pub listen_socket: SocketAddr,
 }
@@ -104,10 +121,10 @@ pub struct ConfigToml {
     pub drive: DriveToml,
     /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
     pub storage: StorageConfigToml,
-    /// Administrative API settings (listen socket and password).
+    /// Administrative API configuration.
     pub admin: AdminToml,
-    /// Metrics server configuration. If None, metrics server will not be started.
-    pub metrics: Option<MetricsToml>,
+    /// Metrics server configuration.
+    pub metrics: MetricsToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. If provided, the homeserver instance attempts to init
@@ -195,6 +212,7 @@ impl ConfigToml {
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        config.admin.enabled = true;
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
