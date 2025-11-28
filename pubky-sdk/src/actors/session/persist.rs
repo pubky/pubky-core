@@ -20,7 +20,7 @@ impl PubkySession {
     /// securely.
     #[must_use]
     pub fn export_secret(&self) -> String {
-        let public_key = self.info().public_key().to_string();
+        let public_key = self.info().public_key().z32();
         let cookie = self.cookie.clone();
         cross_log!(info, "Exporting session secret for {}", public_key);
         format!("{public_key}:{cookie}")

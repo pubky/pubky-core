@@ -137,7 +137,7 @@ async fn create_session_and_cookie(
         SessionRepository::create(user.id, capabilities, &mut state.sql_db.pool().into()).await?;
 
     // 3) Build and set cookie
-    let mut cookie = Cookie::new(user.public_key.to_string(), session_secret.to_string());
+    let mut cookie = Cookie::new(user.public_key.z32(), session_secret.to_string());
     configure_session_cookie(&mut cookie, host);
     // Set the cookie to expire in one year.
     let one_year = Duration::days(365);

@@ -338,11 +338,14 @@ impl EntryRepository {
 
         if reverse {
             statement = statement
-                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Desc)
+                .order_by_expr(
+                    Expr::col((ENTRY_TABLE, EntryIden::Path)).into(),
+                    Order::Desc,
+                )
                 .to_owned();
         } else {
             statement = statement
-                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
+                .order_by_expr(Expr::col((ENTRY_TABLE, EntryIden::Path)).into(), Order::Asc)
                 .to_owned();
         }
 

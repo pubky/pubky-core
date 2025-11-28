@@ -254,7 +254,7 @@ mod tests {
         let body_bytes: axum::body::Bytes = auth_token.serialize().into();
         let response = server
             .post("/signup")
-            .add_header("host", keypair.public_key().to_string())
+            .add_header("host", keypair.public_key().to_z32())
             .bytes(body_bytes)
             .expect_success()
             .await;

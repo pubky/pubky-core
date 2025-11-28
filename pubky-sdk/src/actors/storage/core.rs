@@ -67,7 +67,7 @@ impl SessionStorage {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn with_session_cookie(&self, rb: RequestBuilder) -> RequestBuilder {
-        let cookie_name = self.user.to_string();
+        let cookie_name = self.user.z32();
         rb.header(
             reqwest::header::COOKIE,
             format!("{cookie_name}={}", self.cookie),

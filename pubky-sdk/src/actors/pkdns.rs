@@ -415,7 +415,7 @@ fn determine_host(
 ) -> Option<String> {
     if let Some(host) = override_host {
         cross_log!(info, "Using override host {} for `_pubky` publish", host);
-        return Some(host.to_string());
+        return Some(host.z32());
     }
     cross_log!(debug, "Deriving publish host from existing `_pubky` record");
     dht_packet.and_then(extract_host_from_packet)

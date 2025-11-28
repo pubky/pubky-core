@@ -198,7 +198,7 @@ pub fn session_secret_from_cookies(
     public_key: &PublicKey,
 ) -> Option<SessionSecret> {
     let value = cookies
-        .get(&public_key.to_string())
+        .get(&public_key.z32())
         .map(|c| c.value().to_string())?;
     SessionSecret::new(value).ok()
 }

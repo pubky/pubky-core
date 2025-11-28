@@ -58,7 +58,7 @@ pub async fn signout(
     // Always instruct the client to drop the session cookie, even if the
     // database record was already gone. This keeps repeated signout calls
     // idempotent and lets browsers wipe stale cookies immediately.
-    let mut removal = Cookie::new(pubky.public_key().to_string(), String::new());
+    let mut removal = Cookie::new(pubky.public_key().z32(), String::new());
     removal.make_removal();
     configure_session_cookie(&mut removal, &host);
     cookies.add(removal);

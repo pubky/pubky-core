@@ -170,7 +170,7 @@ mod tests {
         let client = Client::testnet(None).unwrap();
         let keypair = Keypair::random();
         seed_pkarr_testnet_endpoint(&client, &keypair, "localhost", 15411);
-        let pk = keypair.public_key().to_string();
+        let pk = keypair.public_key().z32();
         let mut url = Url::parse(&format!("https://_pubky.{}/pub/file.txt", pk)).unwrap();
 
         let err = client.0.prepare_request(&mut url).await.unwrap_err();

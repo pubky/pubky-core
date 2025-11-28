@@ -21,6 +21,7 @@ async fn events_stream_basic_modes() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_app();
+    let server_host = server.public_key().z32();
     let pubky = testnet.sdk().unwrap();
 
     // Create one user with 250 events - reuse for all subtests
@@ -28,6 +29,7 @@ async fn events_stream_basic_modes() {
     let signer = pubky.signer(keypair);
     let session = signer.signup(&server.public_key(), None).await.unwrap();
     let user_pubky = signer.public_key();
+    let user_host = user_pubky.z32();
 
     // Create 250 events (internal batch size is 100, tests pagination)
     for i in 0..250 {
@@ -43,8 +45,7 @@ async fn events_stream_basic_modes() {
     // ==== Test 1: Historical auto-pagination (>100 events) ====
     let stream_url = format!(
         "https://{}/events-stream?user={}&limit=255",
-        server.public_key(),
-        user_pubky
+        server_host, user_host
     );
     let response = pubky
         .client()
@@ -96,8 +97,7 @@ async fn events_stream_basic_modes() {
     // ==== Test 2: Finite limit enforcement ====
     let stream_url = format!(
         "https://{}/events-stream?user={}&limit=50",
-        server.public_key(),
-        user_pubky
+        server_host, user_host
     );
     let response = pubky
         .client()
@@ -128,9 +128,7 @@ async fn events_stream_basic_modes() {
     // Reuse cursor_250 captured from Test 1 (event 250)
     let stream_url = format!(
         "https://{}/events-stream?user={}:{}&live=true",
-        server.public_key(),
-        user_pubky,
-        cursor_250
+        server_host, user_host, cursor_250
     );
     let response = pubky
         .client()
@@ -171,9 +169,7 @@ async fn events_stream_basic_modes() {
     // ==== Test 4: Live mode with limit - transitions from historical to live until limit reached ====
     let stream_url = format!(
         "https://{}/events-stream?user={}:{}&live=true&limit=10",
-        server.public_key(),
-        user_pubky,
-        cursor_250
+        server_host, user_host, cursor_250
     );
     let response = pubky
         .client()
@@ -229,9 +225,7 @@ async fn events_stream_basic_modes() {
     // ==== Test 5: Batch mode (live=false) - connection closes after historical events ====
     let stream_url = format!(
         "https://{}/events-stream?user={}:{}&limit=5",
-        server.public_key(),
-        user_pubky,
-        cursor_250
+        server_host, user_host, cursor_250
     );
     let response = pubky
         .client()
@@ -276,9 +270,7 @@ async fn events_stream_basic_modes() {
     // Fetch from cursor_250 which we know has 5 DEL events after it
     let stream_url = format!(
         "https://{}/events-stream?user={}:{}&limit=6",
-        server.public_key(),
-        user_pubky,
-        cursor_250
+        server_host, user_host, cursor_250
     );
     let response = pubky
         .client()
@@ -347,11 +339,11 @@ async fn events_stream_basic_modes() {
         .unwrap();
 
     // Get the content_hash from HTTP GET headers (ETag)
-    let get_url = format!("https://{}/pub/hash_test.txt", server.public_key());
+    let get_url = format!("https://{}/pub/hash_test.txt", server_host);
     let get_response = pubky
         .client()
         .request(Method::GET, &get_url)
-        .header("pubky-host", user_pubky.to_string())
+        .header("pubky-host", user_host.to_string())
         .send()
         .await
         .unwrap();
@@ -369,8 +361,7 @@ async fn events_stream_basic_modes() {
     // Get the content_hash from event stream
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/hash_test.txt",
-        server.public_key(),
-        user_pubky
+        server_host, user_host
     );
     let stream_response = pubky
         .client()
@@ -412,8 +403,8 @@ async fn events_stream_basic_modes() {
     // Test 7a: Batch mode should close immediately
     let stream_url = format!(
         "https://{}/events-stream?user={}",
-        server.public_key(),
-        empty_user_pubky
+        server_host,
+        empty_user_pubky.z32()
     );
     let response = pubky
         .client()
@@ -432,8 +423,8 @@ async fn events_stream_basic_modes() {
     // Test 7b: Live mode should stay open and receive new events
     let stream_url = format!(
         "https://{}/events-stream?user={}&live=true",
-        server.public_key(),
-        empty_user_pubky
+        server_host,
+        empty_user_pubky.z32()
     );
     let response = pubky
         .client()
@@ -503,8 +494,8 @@ async fn events_stream_basic_modes() {
     // Test forward order first to establish baseline
     let stream_url = format!(
         "https://{}/events-stream?user={}&limit=5",
-        server.public_key(),
-        reverse_user_pubky
+        server_host,
+        reverse_user_pubky.z32()
     );
     let response = pubky
         .client()
@@ -532,8 +523,8 @@ async fn events_stream_basic_modes() {
     // Test reverse order
     let stream_url = format!(
         "https://{}/events-stream?user={}&reverse=true&limit=5",
-        server.public_key(),
-        reverse_user_pubky
+        server_host,
+        reverse_user_pubky.z32()
     );
     let response = pubky
         .client()
@@ -602,6 +593,7 @@ async fn events_stream_multiple_users() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_app();
+    let server_host = server.public_key().z32();
     let pubky = testnet.sdk().unwrap();
 
     let keypair1 = Keypair::random();
@@ -638,9 +630,9 @@ async fn events_stream_multiple_users() {
     // Stream events for user1 and user2 (should get 5 events total)
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
-        server.public_key(),
-        pubky1,
-        pubky2
+        server_host,
+        pubky1.z32(),
+        pubky2.z32()
     );
 
     let response = pubky
@@ -673,32 +665,23 @@ async fn events_stream_multiple_users() {
 
     // Verify we got events from both users
     assert_eq!(events.len(), 5, "Should receive 5 events total");
-    let user1_events = events
-        .iter()
-        .filter(|e| e.contains(&pubky1.to_string()))
-        .count();
-    let user2_events = events
-        .iter()
-        .filter(|e| e.contains(&pubky2.to_string()))
-        .count();
+    let user1_events = events.iter().filter(|e| e.contains(&pubky1.z32())).count();
+    let user2_events = events.iter().filter(|e| e.contains(&pubky2.z32())).count();
 
     assert_eq!(user1_events, 3, "Should receive 3 events from user1");
     assert_eq!(user2_events, 2, "Should receive 2 events from user2");
 
     // Verify no events from user3
-    let user3_events = events
-        .iter()
-        .filter(|e| e.contains(&pubky3.to_string()))
-        .count();
+    let user3_events = events.iter().filter(|e| e.contains(&pubky3.z32())).count();
     assert_eq!(user3_events, 0, "Should not receive events from user3");
 
     // Now test that returned cursor values are correct with per-user cursors
     // Get the first 2 events and track cursor per user
     let stream_url_for_cursor = format!(
         "https://{}/events-stream?user={}&user={}&limit=2",
-        server.public_key(),
-        pubky1,
-        pubky2
+        server_host,
+        pubky1.z32(),
+        pubky2.z32()
     );
 
     let response = pubky
@@ -744,18 +727,18 @@ async fn events_stream_multiple_users() {
     // Now request the remaining events using per-user cursors
     // This should properly handle the case where each user has a different cursor position
     // Build the URL conditionally based on whether we have cursors
-    let mut url_parts = vec![format!("https://{}/events-stream?", server.public_key())];
+    let mut url_parts = vec![format!("https://{}/events-stream?", server_host)];
 
     if !user1_cursor.is_empty() {
-        url_parts.push(format!("user={}:{}", pubky1, user1_cursor));
+        url_parts.push(format!("user={}:{}", pubky1.z32(), user1_cursor));
     } else {
-        url_parts.push(format!("user={}", pubky1));
+        url_parts.push(format!("user={}", pubky1.z32()));
     }
 
     if !user2_cursor.is_empty() {
-        url_parts.push(format!("&user={}:{}", pubky2, user2_cursor));
+        url_parts.push(format!("&user={}:{}", pubky2.z32(), user2_cursor));
     } else {
-        url_parts.push(format!("&user={}", pubky2));
+        url_parts.push(format!("&user={}", pubky2.z32()));
     }
 
     let stream_url_with_cursor = url_parts.join("");
@@ -792,11 +775,11 @@ async fn events_stream_multiple_users() {
 
     let user1_remaining = remaining_events
         .iter()
-        .filter(|e| e.contains(&pubky1.to_string()))
+        .filter(|e| e.contains(&pubky1.z32()))
         .count();
     let user2_remaining = remaining_events
         .iter()
-        .filter(|e| e.contains(&pubky2.to_string()))
+        .filter(|e| e.contains(&pubky2.z32()))
         .count();
 
     // With per-user cursors, each user's position is tracked independently:
@@ -824,6 +807,7 @@ async fn events_stream_validation_errors() {
 
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_app();
+    let server_host = server.public_key().z32();
     let pubky = testnet.sdk().unwrap();
 
     let keypair1 = Keypair::random();
@@ -838,7 +822,7 @@ async fn events_stream_validation_errors() {
     let invalid_pubkey = "invalid_key_not_zbase32";
 
     // Test 1: No user parameter
-    let stream_url = format!("https://{}/events-stream", server.public_key());
+    let stream_url = format!("https://{}/events-stream", server_host);
     let response = pubky
         .client()
         .request(Method::GET, &stream_url)
@@ -857,11 +841,11 @@ async fn events_stream_validation_errors() {
     let mut query_params = vec![];
     for _i in 0..51 {
         let keypair = Keypair::random();
-        query_params.push(format!("user={}", keypair.public_key()));
+        query_params.push(format!("user={}", keypair.public_key().z32()));
     }
     let stream_url = format!(
         "https://{}/events-stream?{}",
-        server.public_key(),
+        server_host,
         query_params.join("&")
     );
     let response = pubky
@@ -877,8 +861,7 @@ async fn events_stream_validation_errors() {
     // Test 3: Invalid public key format
     let stream_url = format!(
         "https://{}/events-stream?user={}",
-        server.public_key(),
-        invalid_pubkey
+        server_host, invalid_pubkey
     );
     let response = pubky
         .client()
@@ -897,8 +880,8 @@ async fn events_stream_validation_errors() {
     // Test 4: Valid key but user not registered
     let stream_url = format!(
         "https://{}/events-stream?user={}",
-        server.public_key(),
-        pubky2
+        server_host,
+        pubky2.z32()
     );
     let response = pubky
         .client()
@@ -915,9 +898,9 @@ async fn events_stream_validation_errors() {
     // Test 5: Mix of valid registered and unregistered user
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
-        server.public_key(),
-        pubky1,
-        pubky2
+        server_host,
+        pubky1.z32(),
+        pubky2.z32()
     );
     let response = pubky
         .client()
@@ -934,8 +917,8 @@ async fn events_stream_validation_errors() {
     // Test 6: Mix of valid user and invalid key format
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
-        server.public_key(),
-        pubky1,
+        server_host,
+        pubky1.z32(),
         invalid_pubkey
     );
     let response = pubky
@@ -955,9 +938,7 @@ async fn events_stream_validation_errors() {
     // Test 7: Multiple invalid keys
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}",
-        server.public_key(),
-        invalid_pubkey,
-        "another_invalid_key"
+        server_host, invalid_pubkey, "another_invalid_key"
     );
     let response = pubky
         .client()
@@ -974,8 +955,8 @@ async fn events_stream_validation_errors() {
     // Test 8: Incompatible live=true with reverse=true
     let stream_url = format!(
         "https://{}/events-stream?user={}&live=true&reverse=true",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1002,8 +983,8 @@ async fn events_stream_validation_errors() {
     // Test 9a: Malformed cursor (non-numeric)
     let stream_url = format!(
         "https://{}/events-stream?user={}:abc123xyz",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1022,8 +1003,8 @@ async fn events_stream_validation_errors() {
     // Test 9b: Negative cursor (technically valid i64, but no events will have negative IDs)
     let stream_url = format!(
         "https://{}/events-stream?user={}:-100&limit=10",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1047,8 +1028,8 @@ async fn events_stream_validation_errors() {
     // Test 9c: Very large cursor beyond any events (should succeed but return no events)
     let stream_url = format!(
         "https://{}/events-stream?user={}:999999999&limit=10",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1072,8 +1053,8 @@ async fn events_stream_validation_errors() {
     // Test 10a: Path without leading slash - should automatically add "/" prefix
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=pub/test.txt&limit=1",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1093,8 +1074,8 @@ async fn events_stream_validation_errors() {
     // Test 10b: Empty path parameter (should be treated as no filter)
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=&limit=1",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1122,6 +1103,7 @@ async fn events_stream_path_filter() {
     let testnet = EphemeralTestnet::start().await.unwrap();
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
+    let server_host = server.public_key().z32();
 
     // Create 2 users upfront with diverse directory structures
     let keypair1 = Keypair::random();
@@ -1170,8 +1152,8 @@ async fn events_stream_path_filter() {
     // ==== Test 1: Basic filtering (both specific and broad paths) ====
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/files/",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1213,8 +1195,8 @@ async fn events_stream_path_filter() {
     // Get first 5 with cursor
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/files/&limit=5",
-        server.public_key(),
-        pubky2
+        server_host,
+        pubky2.z32()
     );
     let response = pubky
         .client()
@@ -1249,8 +1231,8 @@ async fn events_stream_path_filter() {
     // Get remaining 5 with cursor
     let stream_url = format!(
         "https://{}/events-stream?user={}:{}&path=/pub/files/",
-        server.public_key(),
-        pubky2,
+        server_host,
+        pubky2.z32(),
         cursor
     );
     let response = pubky
@@ -1286,9 +1268,9 @@ async fn events_stream_path_filter() {
     // Filter both users by files directory - user1 has 6 events (5 PUT + 1 DEL), user2 has 10
     let stream_url = format!(
         "https://{}/events-stream?user={}&user={}&path=/pub/files/",
-        server.public_key(),
-        pubky1,
-        pubky2
+        server_host,
+        pubky1.z32(),
+        pubky2.z32()
     );
     let response = pubky
         .client()
@@ -1319,11 +1301,11 @@ async fn events_stream_path_filter() {
     );
     let user1_count = multi_events
         .iter()
-        .filter(|e| e.contains(&pubky1.to_string()))
+        .filter(|e| e.contains(&pubky1.z32()))
         .count();
     let user2_count = multi_events
         .iter()
-        .filter(|e| e.contains(&pubky2.to_string()))
+        .filter(|e| e.contains(&pubky2.z32()))
         .count();
     assert_eq!(user1_count, 6, "Multi-user: Should get 6 from user1");
     assert_eq!(user2_count, 10, "Multi-user: Should get 10 from user2");
@@ -1332,8 +1314,8 @@ async fn events_stream_path_filter() {
     // Use user1's /pub/files/ which has 5 PUT + 1 DEL = 6 events
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/files/&reverse=true&limit=6",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
@@ -1382,8 +1364,8 @@ async fn events_stream_path_filter() {
 
     let stream_url = format!(
         "https://{}/events-stream?user={}&path=/pub/my_folder/",
-        server.public_key(),
-        pubky1
+        server_host,
+        pubky1.z32()
     );
     let response = pubky
         .client()
