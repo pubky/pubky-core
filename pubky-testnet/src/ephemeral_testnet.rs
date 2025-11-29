@@ -92,33 +92,10 @@ impl EphemeralTestnet {
         Self::builder().build().await
     }
 
-    /// Run a new simple testnet.
-    /// Pass a custom postgres connection string to use for the homeserver.
-    pub async fn start_with_custom_postgres(
-        postgres_connection_string: ConnectionString,
-    ) -> anyhow::Result<Self> {
-        Self::builder()
-            .postgres(postgres_connection_string)
-            .build()
-            .await
-    }
-
     /// Run a new simple testnet network with a minimal setup.
     pub async fn start_minimal() -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new().await?,
-        };
-        me.testnet.create_http_relay().await?;
-        Ok(me)
-    }
-
-    /// Run a new simple testnet network with a minimal setup.
-    /// Pass a custom postgres connection string to use for the homeserver.
-    pub async fn start_minimal_with_custom_postgres(
-        postgres_connection_string: ConnectionString,
-    ) -> anyhow::Result<Self> {
-        let mut me = Self {
-            testnet: Testnet::new_with_custom_postgres(postgres_connection_string).await?,
         };
         me.testnet.create_http_relay().await?;
         Ok(me)

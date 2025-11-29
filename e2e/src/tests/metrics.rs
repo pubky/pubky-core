@@ -47,13 +47,20 @@ async fn metrics_comprehensive() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    use pubky_testnet::pubky_homeserver::{ConfigToml, MockDataDir};
+    use pubky_testnet::pubky_homeserver::ConfigToml;
     use std::net::SocketAddr;
+
+    use pubky_testnet::EphemeralTestnet;
 
     let mut config = ConfigToml::default_test_config();
     config.metrics.enabled = true;
     config.metrics.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-    let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32]))).unwrap();
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
 
     // Extract values we need before getting SDK to avoid borrow conflicts
     let (metrics_url, server_public_key) = {
