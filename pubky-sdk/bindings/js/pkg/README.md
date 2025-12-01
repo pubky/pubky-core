@@ -50,6 +50,10 @@ const session = await authFlow.awaitApproval();
 
 Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
 
+### Initialization & events
+
+The npm package bundles the WebAssembly module and **initializes it before exposing any APIs**. This avoids the common wasm-pack pitfall where events fire before the module finishes instantiating. Long-polling flows such as `authFlow.awaitApproval()` or `authFlow.tryPollOnce()` only start their relay calls after the underlying module is ready, so you won't miss approvals while the bundle is loading.
+
 ## API Overview
 
 Use `new Pubky()` to quickly get any flow started:
@@ -347,6 +351,12 @@ Both `pubky<pk>/…` (preferred) and `pubky://<pk>/…` resolve to the same HTTP
 
 ---
 
+## WASM memory (`free()` helpers)
+
+`wasm-bindgen` generates `free()` methods on exported classes (for example `Pubky`, `AuthFlow` `PublicKey`). JavaScript's GC eventually releases the underlying Rust structs on its own, but calling `free()` lets you drop them **immediately** if you are creating many short-lived instances (e.g. in a long-running worker). It is safe to skip manual frees in typical browser or Node apps.
+
+---
+
 ## Errors
 
 All async methods throw a structured `PubkyError`:
@@ -383,6 +393,12 @@ try {
   }
 }
 ```
+
+## Browser environment notes
+
+- Keep the Pubky client UI and the homeserver on the **same origin family** (both local or both remote). Browsers partition cookies by scheme/host, and cross-site requests (e.g., http://localhost calling https://staging…​) can silently drop or cache `SameSite`/`Secure` session cookies.
+- If you must mix environments, use a reverse proxy so the browser always talks to one consistent origin (or disable caching via devtools and clear cookies between switches).
+- When troubleshooting auth/session caching: open a fresh incognito window, clear site data for the target origin, and verify the request includes credentials.
 
 ---
 
