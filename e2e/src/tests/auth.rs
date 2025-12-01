@@ -3,7 +3,7 @@ use pubky_testnet::pubky::{
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
-    pubky_homeserver::{MockDataDir, SignupMode},
+    pubky_homeserver::{ConfigToml, SignupMode},
     EphemeralTestnet, Testnet,
 };
 use std::time::Duration;
@@ -31,7 +31,16 @@ async fn basic_authn() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn disabled_user() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    use pubky_testnet::pubky_homeserver::ConfigToml;
+    let mut config = ConfigToml::default_test_config();
+    config.admin.enabled = true; // Enable admin server
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -303,18 +312,21 @@ async fn authz_timeout_reconnect() {
 #[pubky_testnet::test]
 async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-    let mut testnet = Testnet::new().await.unwrap();
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::TokenRequired;
+    config.admin.enabled = true; // Enable admin server
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let signer = pubky.signer(Keypair::random());
     let signer2 = pubky.signer(Keypair::random());
-
-    let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
-        .await
-        .unwrap();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
     let invalid_signup = signer

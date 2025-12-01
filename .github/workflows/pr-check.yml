@@ -235,7 +235,7 @@ jobs:
         run: |
           timeout=180
           count=0
-          until nc -zv 127.0.0.1 6288; do
+          until nc -zv 127.0.0.1 6286; do
             if [ $count -ge $timeout ]; then
               echo "Timeout: Testnet homeserver did not start within 3 minutes."
               exit 1
