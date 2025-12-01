@@ -384,6 +384,12 @@ try {
 }
 ```
 
+## Browser environment notes
+
+- Keep the Pubky client UI and the homeserver on the **same origin family** (both local or both remote). Browsers partition cookies by scheme/host, and cross-site requests (e.g., http://localhost calling https://staging…​) can silently drop or cache `SameSite`/`Secure` session cookies.
+- If you must mix environments, use a reverse proxy so the browser always talks to one consistent origin (or disable caching via devtools and clear cookies between switches).
+- When troubleshooting auth/session caching: open a fresh incognito window, clear site data for the target origin, and verify the request includes credentials.
+
 ---
 
 ## Local Test & Development
