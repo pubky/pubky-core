@@ -353,10 +353,7 @@ Both `pubky<pk>/…` (preferred) and `pubky://<pk>/…` resolve to the same HTTP
 
 ## WASM memory (`free()` helpers)
 
-`wasm-bindgen` generates `free()` methods on exported classes (for example `Pubky`, `AuthFlow`,
-`PublicKey`). JavaScript's GC eventually releases the underlying Rust structs on its own, but calling
-`free()` lets you drop them **immediately** if you are creating many short-lived instances (e.g. in a
-long-running worker). It is safe to skip manual frees in typical browser or Node apps.
+`wasm-bindgen` generates `free()` methods on exported classes (for example `Pubky`, `AuthFlow` `PublicKey`). JavaScript's GC eventually releases the underlying Rust structs on its own, but calling `free()` lets you drop them **immediately** if you are creating many short-lived instances (e.g. in a long-running worker). It is safe to skip manual frees in typical browser or Node apps.
 
 ---
 
