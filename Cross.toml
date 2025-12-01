@@ -8,12 +8,6 @@
 # @Sev May 2025
 # --------------------------------------------------------------------------------
 
-[build]
-pre-build = [
-    "dpkg --add-architecture $CROSS_DEB_ARCH",
-    "apt-get update && apt-get install --assume-yes libssl-dev:$CROSS_DEB_ARCH"
-]
-
 [target.aarch64-apple-darwin]
 image = "ghcr.io/pubky/aarch64-apple-darwin-cross:latest"
 
