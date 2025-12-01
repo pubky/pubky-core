@@ -2,7 +2,7 @@ use std::{fmt::Display, str::FromStr};
 
 use pubky_common::crypto::Hash;
 use pubky_common::timestamp::Timestamp;
-use sea_query::{Expr, Iden, LikeExpr, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
@@ -284,6 +284,7 @@ impl EventRepository {
                 Expr::col((EVENT_TABLE, EventIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((EVENT_TABLE, EventIden::Id)).gt(cursor.id()))
+            .order_by((EVENT_TABLE, EventIden::Id), Order::Asc)
             .limit(limit as u64)
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
