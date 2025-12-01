@@ -27,6 +27,8 @@ export class PubkyAuthWidget extends LitElement {
     return {
       relay: { type: String },
       caps: { type: String },
+      signupToken: { type: String | null },
+      homeserverPublicKey: { type: String },
       open: { type: Boolean },
       showCopied: { type: Boolean },
       testnet: { type: Boolean },
@@ -76,7 +78,8 @@ export class PubkyAuthWidget extends LitElement {
       this.relay || (this.testnet ? TESTNET_HTTP_RELAY : DEFAULT_HTTP_RELAY);
 
     // Start the flow with the facade’s client
-    const flow = this._sdk.startAuthFlow(this.caps, pubky.AuthFlowKind.signin(), relay);
+    let homeserverPublicKey = pubky.PublicKey.from(this.homeserverPublicKey);
+    const flow = this._sdk.startAuthFlow(this.caps, pubky.AuthFlowKind.signup(homeserverPublicKey, this.signupToken), relay);
 
     // Capture the deep link *before* awaiting (await will consume the flow handle)
     this._authUrl = flow.authorizationUrl;
@@ -154,7 +157,7 @@ export class PubkyAuthWidget extends LitElement {
 
   render() {
     const showSuccess = Boolean(this._pubkyZ32);
-    const headerLabel = this.open ? "Pubky Auth" : "Click!";
+    const headerLabel = this.open ? "Pubky Auth Signup" : "Click!";
 
     const instruction =
       this.caps && this.caps.trim().length

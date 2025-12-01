@@ -71,6 +71,7 @@ impl From<pkarr::Keypair> for Keypair {
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct PublicKey(pub(crate) pkarr::PublicKey);
 
 #[wasm_bindgen]

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{Capabilities, Pubky, PublicKey};
+use pubky::{deep_links::SigninDeepLink, Pubky, PublicKey};
 use std::path::PathBuf;
 use url::Url;
 
@@ -31,7 +31,11 @@ async fn main() -> Result<()> {
     let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
     let url = cli.url;
 
-    let caps = Capabilities::from(&url);
+    let deep_link = url
+        .to_string()
+        .parse::<SigninDeepLink>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse sign in deep link: {e}"))?;
+    let caps = deep_link.capabilities();
 
     if !caps.is_empty() {
         println!("\nRequested capabilities:\n  {}", caps);

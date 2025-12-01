@@ -28,6 +28,10 @@ path = "./4-storage/main.rs"
 name = "request"
 path = "./5-request/main.rs"
 
+[[bin]]
+name = "authenticator_signup"
+path = "./6-auth_flow_signup/authenticator.rs"
+
 [dependencies]
 anyhow = "1.0.99"
 base64 = "0.22.1"

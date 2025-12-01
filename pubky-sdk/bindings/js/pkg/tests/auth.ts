@@ -5,6 +5,7 @@ import {
   PublicKey,
   SessionInfo,
   validateCapabilities,
+  AuthFlowKind
 } from "../index.js";
 import {
   Assert,
@@ -20,6 +21,45 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 // relay base (no trailing slash is fine; the flow will append the channel id)
 const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
 
+test("Auth: 3rd party signup", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const pubky = signer.publicKey.z32();
+  const signupToken = await createSignupToken();
+
+  const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
+  const flow = sdk.startAuthFlow(capabilities, AuthFlowKind.signup(HOMESERVER_PUBLICKEY, signupToken), TESTNET_HTTP_RELAY);
+
+  type Flow = typeof flow;
+  type SessionPromise = ReturnType<Flow["awaitApproval"]>;
+  type Session = Awaited<SessionPromise>;
+
+  const _flowUrl: Assert<IsExact<Flow["authorizationUrl"], string>> = true;
+  const _sessionInfo: Assert<IsExact<Session["info"], SessionInfo>> = true;
+
+  {
+
+    await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+    await signer.approveAuthRequest(flow.authorizationUrl);
+  }
+
+  const session = await flow.awaitApproval();
+
+  t.equal(
+    session.info.publicKey.z32(),
+    pubky,
+    "session belongs to expected user",
+  );
+  t.deepEqual(
+    session.info.capabilities,
+    capabilities.split(","),
+    "session capabilities match",
+  );
+
+  t.end();
+});
+
 test("Auth: 3rd party signin", async (t) => {
   const sdk = Pubky.testnet();
 
@@ -27,7 +67,7 @@ test("Auth: 3rd party signin", async (t) => {
   const pubky = signer.publicKey.z32();
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  const flow = sdk.startAuthFlow(capabilities, TESTNET_HTTP_RELAY);
+  const flow = sdk.startAuthFlow(capabilities, AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
 
   type Flow = typeof flow;
   type SessionPromise = ReturnType<Flow["awaitApproval"]>;
@@ -64,7 +104,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   // 1) Invalid entries -> throws InvalidInput with a precise message
   try {
     // @ts-ignore: invalid capabilities string format. Emulating plain JS validation rules.
-    sdk.startAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", TESTNET_HTTP_RELAY);
+    sdk.startAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
     t.fail("startAuthFlow() should throw on malformed capability entries");
   } catch (error) {
     assertPubkyError(t, error);
@@ -100,7 +140,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   // 2) Valid entry with unordered actions -> normalized in URL (wr -> rw)
   {
     // @ts-ignore: invalid capabilities string format. Emulating plain JS normalization.
-    const flow = sdk.startAuthFlow("/pub/example/:wr", TESTNET_HTTP_RELAY);
+    const flow = sdk.startAuthFlow("/pub/example/:wr", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
     const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(
@@ -112,7 +152,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
 
   // 3) Empty string -> allowed; caps param remains empty
   {
-    const flow = sdk.startAuthFlow("", TESTNET_HTTP_RELAY);
+    const flow = sdk.startAuthFlow("", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
     const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(caps, "", "empty input allowed (no scopes)");

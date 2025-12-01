@@ -1,11 +1,14 @@
-# Pubky Auth Signin Example
+# Pubky Auth Signup Example
 
-This example shows 3rd party authorization in Pubky.
+This example shows 3rd party user signup and authorization in Pubky.
 
 It consists of 2 parts:
 
 1. [3rd party app](./3rd-party-app): A web component showing the how to implement a Pubky Auth widget.
-2. [Authenticator CLI](./authenticator.rs): A CLI showing the authenticator (key chain) asking user for consent and generating the AuthToken.
+2. [Authenticator CLI](./authenticator.rs): A CLI showing the authenticator (key chain) 
+- signing up a new user
+- asking the user for consent 
+- generating the AuthToken
 
 ## Usage
 
@@ -27,7 +30,7 @@ Copy the Pubky Auth URL from the frontend.
 Finally run the CLI to paste the Pubky Auth in.
 
 ```bash
-cargo run --bin authenticator <RECOVERY_FILE> "<Auth_URL>" [Testnet]
+cargo run --bin authenticator_signup "<Auth_URL>" [Testnet]
 ```
 
 Where the auth url should be within quotations marks, and the Testnet is an option you can set to true to use the local homeserver.
