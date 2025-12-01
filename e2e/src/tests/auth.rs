@@ -1,11 +1,13 @@
+use pubky_testnet::pubky::deep_links::DeepLink;
 use pubky_testnet::pubky::{
-    Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode,
+    AuthFlowKind, Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode,
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
     pubky_homeserver::{MockDataDir, SignupMode},
     EphemeralTestnet, Testnet,
 };
+use std::str::FromStr;
 use std::time::Duration;
 
 use pubky_testnet::pubky::errors::{Error, RequestError};
@@ -116,11 +118,23 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(&caps)
+    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
         .relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
         .unwrap();
+
+    let raw_deep_link = auth.authorization_url().to_string();
+    let deep_link = DeepLink::from_str(&raw_deep_link).unwrap();
+    let signin_deep_link = match deep_link {
+        DeepLink::Signin(signin) => signin,
+        _ => panic!("Expected a signin deep link"),
+    };
+    assert_eq!(signin_deep_link.capabilities(), &caps);
+    assert_eq!(
+        signin_deep_link.relay().as_str(),
+        testnet.http_relay().local_link_url().as_str()
+    );
 
     // Signer authenticator
     let signer = pubky.signer(Keypair::random());
@@ -137,6 +151,93 @@ async fn authz() {
 
     // let session = user.info().await.unwrap().unwrap();
     // assert_eq!(session.capabilities(), &caps.0);
+
+    // Ensure the same user pubky has been authed on the keyless app from cold keypair
+    assert_eq!(user.info().public_key(), &signer.public_key());
+
+    // Access control enforcement
+    user.storage()
+        .put("/pub/pubky.app/foo", Vec::<u8>::new())
+        .await
+        .unwrap();
+
+    let err = user
+        .storage()
+        .put("/pub/pubky.app", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
+    );
+
+    let err = user
+        .storage()
+        .put("/pub/foo.bar/file", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn signup_authz() {
+    let testnet = EphemeralTestnet::start().await.unwrap();
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    // Third-party app (keyless)
+    let caps = Capabilities::builder()
+        .read_write("/pub/pubky.app/")
+        .read("/pub/foo.bar/file")
+        .finish();
+
+    // Third-party app (keyless)
+    let auth = PubkyAuthFlow::builder(
+        &caps,
+        AuthFlowKind::signup(server.public_key(), Some("1234567890".to_string())),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
+
+    let raw_deep_link = auth.authorization_url().to_string();
+    let deep_link = DeepLink::from_str(&raw_deep_link).unwrap();
+
+    let signup_deep_link = match deep_link {
+        DeepLink::Signup(signup) => signup,
+        _ => panic!("Expected a signup deep link"),
+    };
+    assert_eq!(signup_deep_link.capabilities(), &caps);
+    assert_eq!(
+        signup_deep_link.relay().as_str(),
+        testnet.http_relay().local_link_url().as_str()
+    );
+    assert_eq!(signup_deep_link.homeserver(), &server.public_key());
+    assert_eq!(
+        signup_deep_link.signup_token(),
+        Some("1234567890".to_string())
+    );
+
+    // Signer authenticator
+    let signer = pubky.signer(Keypair::random());
+    signer
+        .signup(signup_deep_link.homeserver(), None)
+        .await
+        .unwrap();
+    signer
+        .approve_auth(&auth.authorization_url())
+        .await
+        .unwrap();
+
+    // Retrieve the session-bound agent (third party app)
+    let user = auth.await_approval().await.unwrap();
+
+    assert_eq!(user.info().public_key(), &signer.public_key());
 
     // Ensure the same user pubky has been authed on the keyless app from cold keypair
     assert_eq!(user.info().public_key(), &signer.public_key());
@@ -252,7 +353,7 @@ async fn authz_timeout_reconnect() {
 
     // set custom global client with timeout of 1 sec
     // Start pairing auth flow using our custom client + local relay
-    let auth = PubkyAuthFlow::builder(&capabilities)
+    let auth = PubkyAuthFlow::builder(&capabilities, AuthFlowKind::signin())
         .client(client)
         .relay(http_relay_url)
         .start()
