@@ -9,13 +9,13 @@
 //! ## Quick starts
 //! ### 1) App sign-in via QR/deeplink (auth flow)
 //! ```no_run
-//! use pubky::{Pubky, Capabilities};
+//! use pubky::{Pubky, Capabilities, AuthFlowKind};
 //!
 //! # async fn run() -> pubky::Result<()> {
 //! let pubky = Pubky::new()?; // or Pubky::testnet() / Pubky::with_client(...)
 //!
 //! let caps = Capabilities::default();
-//! let flow = pubky.start_auth_flow(&caps)?;
+//! let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
 //! println!("Scan to sign in: {}", flow.authorization_url());
 //!
 //! let session = flow.await_approval().await?;
@@ -54,6 +54,7 @@ use crate::PublicKey;
 
 use crate::{
     Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,
+    actors::AuthFlowKind,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -97,6 +98,9 @@ impl Pubky {
     }
 
     /// Start an end-to-end auth flow (QR/deeplink).
+    /// Depending on the auth kind, the flow will be different.
+    /// - `AuthFlowKind::SignIn` - Sign in to an existing account.
+    /// - `AuthFlowKind::SignUp` - Sign up for a new account.
     ///
     /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
     /// or `try_poll_once()` (non-blocking UI loops).
@@ -104,8 +108,12 @@ impl Pubky {
     /// # Errors
     /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
     ///   fails (e.g., malformed relay URL when configured via the builder).
-    pub fn start_auth_flow(&self, caps: &Capabilities) -> Result<PubkyAuthFlow> {
-        PubkyAuthFlow::builder(caps)
+    pub fn start_auth_flow(
+        &self,
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+    ) -> Result<PubkyAuthFlow> {
+        PubkyAuthFlow::builder(caps, auth_kind)
             .client(self.client.clone())
             .start()
     }

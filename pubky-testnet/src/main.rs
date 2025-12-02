@@ -43,10 +43,15 @@ async fn main() -> Result<()> {
         "Homeserver Pubky HTTPS: {}",
         testnet.homeserver_app().pubky_url()
     );
-    tracing::info!(
-        "Homeserver admin: http://{}",
-        testnet.homeserver_app().admin_server().listen_socket()
-    );
+    if let Some(admin_server) = testnet.homeserver_app().admin_server() {
+        tracing::info!("Homeserver admin: http://{}", admin_server.listen_socket());
+    }
+    if let Some(metrics_server) = testnet.homeserver_app().metrics_server() {
+        tracing::info!(
+            "Homeserver metrics: http://{}",
+            metrics_server.listen_socket()
+        );
+    }
 
     tokio::signal::ctrl_c().await?;
     drop(testnet); // Drop the testnet to trigger the drop of the homeserver and all databases.

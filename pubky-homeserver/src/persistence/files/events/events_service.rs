@@ -15,6 +15,7 @@ pub const MAX_EVENT_STREAM_USERS: usize = 50;
 #[derive(Clone, Debug)]
 pub struct EventsService {
     event_tx: broadcast::Sender<EventEntity>,
+    channel_capacity: usize,
 }
 
 impl EventsService {
@@ -22,13 +23,21 @@ impl EventsService {
     /// The channel_capacity determines how many events can be buffered before old ones are dropped.
     pub fn new(channel_capacity: usize) -> Self {
         let (event_tx, _rx) = broadcast::channel(channel_capacity);
-        Self { event_tx }
+        Self {
+            event_tx,
+            channel_capacity,
+        }
     }
 
     /// Subscribe to the event broadcast channel.
     /// Returns a receiver that will receive all future events.
     pub fn subscribe(&self) -> broadcast::Receiver<EventEntity> {
         self.event_tx.subscribe()
+    }
+
+    /// Get the maximum capacity of the broadcast channel.
+    pub fn channel_capacity(&self) -> usize {
+        self.channel_capacity
     }
 
     /// Create a new event in the database.

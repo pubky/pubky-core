@@ -34,6 +34,8 @@ pub fn build_storage_operator(
     let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
+    // Note: Layers ordering is important:
+    // With current layer order (events_layer outermost), when close() is called the entry_layer.close() has already completed, guaranteeing the file is written before the Event is created.
     let builder = match storage_config {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -47,9 +49,9 @@ pub fn build_storage_operator(
             };
             let builder = opendal::services::Fs::default().root(files_dir.as_str());
             opendal::Operator::new(builder)?
-                .layer(events_layer)
                 .layer(user_quota_layer)
                 .layer(entry_layer)
+                .layer(events_layer)
                 .finish()
         }
         #[cfg(feature = "storage-gcs")]
@@ -60,9 +62,9 @@ pub fn build_storage_operator(
             );
             let builder = config.to_builder()?;
             opendal::Operator::new(builder)?
-                .layer(events_layer)
                 .layer(user_quota_layer)
                 .layer(entry_layer)
+                .layer(events_layer)
                 .finish()
         }
         #[cfg(any(feature = "storage-memory", test))]
@@ -70,9 +72,9 @@ pub fn build_storage_operator(
             tracing::info!("Store files in memory");
             let builder = opendal::services::Memory::default();
             opendal::Operator::new(builder)?
-                .layer(events_layer)
                 .layer(user_quota_layer)
                 .layer(entry_layer)
+                .layer(events_layer)
                 .finish()
         }
     };

@@ -66,9 +66,19 @@ pub struct DriveToml {
     pub rate_limits: Vec<PathLimit>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+/// Admin server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct AdminToml {
+    /// Enable or disable the admin server
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Socket address for the admin HTTP server
     pub listen_socket: SocketAddr,
+    /// Password for admin authentication
     pub admin_password: String,
 }
 
@@ -88,6 +98,20 @@ pub struct LoggingToml {
     pub module_levels: Vec<TargetLevel>,
 }
 
+fn default_false() -> bool {
+    false
+}
+
+/// Metrics server configuration
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct MetricsToml {
+    /// Enable or disable the metrics server. Default: false
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    /// Socket address for Prometheus metrics endpoint. Should be isolated from public network.
+    pub listen_socket: SocketAddr,
+}
+
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
@@ -97,8 +121,10 @@ pub struct ConfigToml {
     pub drive: DriveToml,
     /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
     pub storage: StorageConfigToml,
-    /// Administrative API settings (listen socket and password).
+    /// Administrative API configuration.
     pub admin: AdminToml,
+    /// Metrics server configuration.
+    pub metrics: MetricsToml,
     /// Peer‐to‐peer DHT / PKDNS settings (public endpoints, bootstrap, relays).
     pub pkdns: PkdnsToml,
     /// Logging configuration. If provided, the homeserver instance attempts to init
@@ -179,13 +205,14 @@ impl ConfigToml {
 
     /// Returns a default config tuned for unit tests.
     #[cfg(any(test, feature = "testing"))]
-    pub fn test() -> Self {
+    pub fn default_test_config() -> Self {
         let mut config = Self::default();
         config.general.database_url = ConnectionString::default_test_db(); // Mark this db as test. This indicates that the db is not real.
         config.general.signup_mode = SignupMode::Open;
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
+        config.admin.enabled = true;
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
@@ -193,6 +220,13 @@ impl ConfigToml {
         config.storage = StorageConfigToml::InMemory;
         config.logging = None;
         config
+    }
+
+    /// Creates a test configuration with default settings.
+    /// For custom configs, use default_test_config() and modify before passing to test APIs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test() -> Self {
+        Self::default_test_config()
     }
 }
 

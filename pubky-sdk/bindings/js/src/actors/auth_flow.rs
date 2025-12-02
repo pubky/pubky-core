@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 use super::session::Session;
 use crate::{
     js_error::JsResult,
-    wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start},
+    wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start, keys::PublicKey},
 };
 
 /// Start and control a pubkyauth authorization flow.
@@ -29,6 +29,13 @@ impl AuthFlow {
     /// - `actions` is any combo of `r` and/or `w` (order is normalized; `wr` -> `rw`)
     /// Empty string is allowed (no scopes).
     ///
+    /// @param {AuthFlowKind} kind
+    /// The kind of authentication flow to perform.
+    /// This can either be a sign in or a sign up flow.
+    /// Examples:
+    /// - `AuthFlowKind.signin()` - Sign in to an existing account.
+    /// - `AuthFlowKind.signup(homeserverPublicKey, signupToken)` - Sign up for a new account.
+    ///
     /// @param {string} [relay]
     /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/link/"`.
     /// Defaults to the default Synonym-hosted relay when omitted.
@@ -46,14 +53,16 @@ impl AuthFlow {
     #[wasm_bindgen(js_name = "start")]
     pub fn start(
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        kind: AuthFlowKind,
         relay: Option<String>,
     ) -> JsResult<AuthFlow> {
-        Self::start_with_client(capabilities, relay, None)
+        Self::start_with_client(capabilities, kind, relay, None)
     }
 
     /// Internal helper that threads an explicit transport.
     pub(crate) fn start_with_client(
         capabilities: String,
+        kind: AuthFlowKind,
         relay: Option<String>,
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<AuthFlow> {
@@ -63,10 +72,11 @@ impl AuthFlow {
         let caps = Capabilities::try_from(normalized.as_str())?;
 
         // 3) Build the flow with optional relay and optional client
-        let mut builder = pubky::PubkyAuthFlow::builder(&caps);
+        let mut builder = pubky::PubkyAuthFlow::builder(&caps, kind.0);
         if let Some(c) = client {
             builder = builder.client(c);
         }
+
         if let Some(r) = relay {
             builder = builder.relay(Url::parse(&r)?);
         }
@@ -116,5 +126,43 @@ impl AuthFlow {
     #[wasm_bindgen(js_name = "tryPollOnce")]
     pub async fn try_poll_once(&self) -> JsResult<Option<Session>> {
         Ok(self.0.try_poll_once().await?.map(Session))
+    }
+}
+
+/// The kind of authentication flow to perform.
+/// This can either be a sign in or a sign up flow.
+#[wasm_bindgen]
+pub struct AuthFlowKind(pubky::AuthFlowKind);
+
+#[wasm_bindgen]
+impl AuthFlowKind {
+    /// Create a sign in flow.
+    #[wasm_bindgen(js_name = "signin")]
+    pub fn signin() -> Self {
+        Self(pubky::AuthFlowKind::SignIn)
+    }
+
+    /// Create a sign up flow.
+    /// # Arguments
+    /// * `homeserver_public_key` - The public key of the homeserver to sign up on.
+    /// * `signup_token` - The signup token to use for the signup flow. This is optional.
+    #[wasm_bindgen(js_name = "signup")]
+    pub fn signup(homeserver_public_key: &PublicKey, signup_token: Option<String>) -> Self {
+        Self(pubky::AuthFlowKind::SignUp {
+            homeserver_public_key: Box::new(homeserver_public_key.0.to_owned()),
+            signup_token,
+        })
+    }
+
+    /// Get the intent of the authentication flow.
+    /// # Returns
+    /// * `"signin"` - If the authentication flow is a sign in flow.
+    /// * `"signup"` - If the authentication flow is a sign up flow.
+    #[wasm_bindgen(js_name = "intent", getter)]
+    pub fn intent(&self) -> String {
+        match &self.0 {
+            pubky::AuthFlowKind::SignIn => "signin".to_string(),
+            pubky::AuthFlowKind::SignUp { .. } => "signup".to_string(),
+        }
     }
 }

@@ -67,12 +67,16 @@ dav-server-opendalfs = "0.6.2"
 dav-server = "0.8.0"
 sea-query = { version = "0.32.6", features = [ "with-chrono", "postgres-array" ]}
 sea-query-binder = { version = "0.7.0", features = [ "with-chrono", "runtime-tokio", "sqlx-postgres", "postgres-array" ] }
-sqlx = { version = "0.8.6", features = [ "runtime-tokio", "postgres", "chrono" ] }
+sqlx = { version = "0.8.6", features = [ "runtime-tokio", "postgres", "chrono", "tls-rustls" ] }
 async-trait = "0.1"
 async-dropper = { version = "0.3", features = [ "tokio", "simple" ] }
 async-stream = "0.3"
 uuid = { version = "1.7.0", features = ["v4"] }
 pubky_test_utils = { path = "../test_utils/pubky_test", version = "0.1.0" }
+opentelemetry = "0.29"
+opentelemetry_sdk = { version = "0.29", features = ["rt-tokio", "metrics"] }
+opentelemetry-prometheus = "0.29"
+prometheus = "0.14"
 
 [dev-dependencies]
 futures-lite = "2.6.0"

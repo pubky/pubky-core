@@ -12,8 +12,13 @@ rate_limits = []
 type = "file_system"
 
 [admin]
+enabled = true
 listen_socket = "127.0.0.1:6288"
 admin_password = "admin"
+
+[metrics]
+enabled = false
+listen_socket = "127.0.0.1:6289"
 
 [pkdns]
 public_ip = "127.0.0.1"
@@ -24,9 +29,3 @@ dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 [logging]
 level = "info"
 module_levels = ["pubky_homeserver=debug", "tower_http=debug"]
-
-# The following params exist, but the default value is None.
-# See ./sample.config.toml for usage
-# public_icann_http_port =
-# dht_bootstrap_nodes =
-# dht_request_timeout_ms =

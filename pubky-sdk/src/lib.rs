@@ -32,11 +32,13 @@ pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 #[doc(inline)]
 pub use actors::Pkdns;
 #[doc(inline)]
-pub use actors::PubkyAuthFlow;
-#[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
 pub use actors::PubkySigner;
+#[doc(inline)]
+pub use actors::deep_links;
+#[doc(inline)]
+pub use actors::{AuthFlowKind, PubkyAuthFlow};
 #[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
@@ -53,7 +55,7 @@ pub use crate::actors::storage::{
     stats::ResourceStats,
 };
 #[doc(inline)]
-pub use actors::auth_flow::DEFAULT_HTTP_RELAY;
+pub use actors::DEFAULT_HTTP_RELAY;
 #[doc(inline)]
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
 #[doc(inline)]

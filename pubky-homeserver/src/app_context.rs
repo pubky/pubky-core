@@ -8,6 +8,7 @@
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
+    metrics_server::routes::metrics::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
@@ -45,6 +46,9 @@ pub enum AppContextConversionError {
     /// Failed to build pkarr client.
     #[error("Failed to build pkarr client: {0}")]
     Pkarr(pkarr::errors::BuildError),
+    /// Failed to initialize metrics.
+    #[error("Failed to initialize metrics: {0}")]
+    Metrics(MetricsInitError),
 }
 
 /// The application context shared between all components.
@@ -70,6 +74,8 @@ pub struct AppContext {
     pub(crate) pkarr_builder: pkarr::ClientBuilder,
     /// Events service for managing event creation and broadcasting.
     pub(crate) events_service: EventsService,
+    /// Metrics for all endpoints.
+    pub(crate) metrics: Metrics,
 }
 
 impl AppContext {
@@ -133,6 +139,7 @@ impl AppContext {
             keypair,
             data_dir: Arc::new(dir),
             events_service,
+            metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
         })
     }
 }

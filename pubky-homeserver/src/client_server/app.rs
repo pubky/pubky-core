@@ -125,6 +125,7 @@ impl ClientServer {
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
+            metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
         };
         super::create_app(state.clone(), context)
