@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use std::str::FromStr;
 
 use super::WebDavPath;
@@ -30,7 +30,7 @@ pub struct EntryPath {
 
 impl EntryPath {
     pub fn new(pubkey: PublicKey, path: WebDavPath) -> Self {
-        let key = format!("{}{}", pubkey, path);
+        let key = format!("{}{}", pubkey.z32(), path);
         Self { pubkey, path, key }
     }
 
@@ -110,7 +110,7 @@ mod tests {
         let pubkey =
             PublicKey::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo").unwrap();
         let path = WebDavPath::new("/pub/folder/file.txt").unwrap();
-        let key = format!("{pubkey}{path}");
+        let key = format!("{}{path}", pubkey.z32());
         let entry_path = EntryPath::new(pubkey, path);
         assert_eq!(entry_path.as_ref(), key);
     }

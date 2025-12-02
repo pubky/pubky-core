@@ -148,7 +148,7 @@ async fn test_limit_events() {
     let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
 
     // Events feed URL (pkarr host form)
-    let url = format!("https://{}/events/", server.public_key());
+    let url = format!("https://{}/events/", server.public_key().z32());
 
     // First request OK
     let res = client.request(Method::GET, &url).send().await.unwrap();

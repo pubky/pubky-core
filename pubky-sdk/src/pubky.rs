@@ -50,7 +50,7 @@
 //! # Ok(()) }
 //! ```
 
-use pkarr::PublicKey;
+use crate::PublicKey;
 
 use crate::{
     Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,

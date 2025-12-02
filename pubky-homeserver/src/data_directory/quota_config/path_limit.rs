@@ -98,7 +98,7 @@ mod tests {
         str::FromStr,
     };
 
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use super::*;
 

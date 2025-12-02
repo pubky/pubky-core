@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use url::Url;
 
 /// local testnet HOMESERVER
-const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+const HOMESERVER: &str = "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

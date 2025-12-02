@@ -7,7 +7,7 @@ use axum::{
     RequestPartsExt,
 };
 
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 
 use crate::shared::parse_bool;
 

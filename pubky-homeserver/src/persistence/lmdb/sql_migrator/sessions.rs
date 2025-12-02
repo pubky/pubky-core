@@ -71,8 +71,8 @@ pub async fn migrate_sessions<'a>(
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use pkarr::Keypair;
     use pubky_common::capabilities::{Capabilities, Capability};
+    use pubky_common::crypto::Keypair;
 
     use crate::persistence::sql::{
         session::{SessionRepository, SessionSecret},

@@ -50,7 +50,7 @@ impl PubkyHttpClient {
     /// the request body before sending.
     ///
     /// Differs from [`reqwest::Client::request`], in that it can make requests to:
-    /// 1. HTTPS URLs with a [`pkarr::PublicKey`] as top-level domain, by resolving
+    /// 1. HTTPS URLs with a [`crate::PublicKey`] as top-level domain, by resolving
     ///    corresponding endpoints, and verifying TLS certificates accordingly.
     ///    (example: `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`)
     /// 2. `_pubky.<public-key>` URLs like `https://_pubky.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`

@@ -102,7 +102,7 @@ impl PubkySession {
             let info = SessionInfo::deserialize(&bytes)?;
 
             // 3) Find the cookie named exactly as the user's pubky.
-            let cookie_name = info.public_key().to_string();
+            let cookie_name = info.public_key().z32();
             let cookie = raw_set_cookies
                 .iter()
                 .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())

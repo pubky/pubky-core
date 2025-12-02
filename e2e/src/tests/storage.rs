@@ -605,7 +605,7 @@ async fn list_events() {
     }
 
     // Feed is exposed under the public-key host
-    let feed_url = format!("https://{}/events/", server.public_key());
+    let feed_url = format!("https://{}/events/", server.public_key().z32());
 
     // Page 1
     let cursor: String = {
@@ -696,7 +696,7 @@ async fn read_after_event() {
         .unwrap();
 
     // Events page 1
-    let feed_url = format!("https://{}/events/", server.public_key());
+    let feed_url = format!("https://{}/events/", server.public_key().z32());
     {
         let page_url = format!("{feed_url}?limit=10");
         let resp = pubky
@@ -761,7 +761,7 @@ async fn dont_delete_shared_blobs() {
     assert_eq!(blob, file);
 
     // Event feed should show PUT u1, PUT u2, DEL u1 (order preserved)
-    let feed_url = format!("https://{}/events/", homeserver.public_key());
+    let feed_url = format!("https://{}/events/", homeserver.public_key().z32());
     let resp = pubky
         .client()
         .request(Method::GET, &feed_url)

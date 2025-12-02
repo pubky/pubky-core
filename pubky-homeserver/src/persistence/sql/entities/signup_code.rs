@@ -1,8 +1,8 @@
 use std::{fmt::Display, str::FromStr};
 
 use base32::{decode, encode, Alphabet};
-use pkarr::PublicKey;
 use pubky_common::crypto::random_bytes;
+use pubky_common::crypto::PublicKey;
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
@@ -101,7 +101,7 @@ impl SignupCodeRepository {
             .table(SIGNUP_CODE_TABLE)
             .values(vec![(
                 SignupCodeIden::UsedBy,
-                SimpleExpr::Value(used_by.to_string().into()),
+                SimpleExpr::Value(used_by.z32().into()),
             )])
             .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
             .returning_all()
@@ -220,7 +220,7 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
 #[cfg(test)]
 mod tests {
     use crate::persistence::sql::SqlDb;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use super::*;
 
