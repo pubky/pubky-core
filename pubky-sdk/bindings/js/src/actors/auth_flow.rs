@@ -1,10 +1,14 @@
 use pubky_common::capabilities::Capabilities;
+use std::{cell::RefCell, rc::Rc};
 use url::Url;
+
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
 use super::session::Session;
 use crate::{
-    js_error::JsResult,
+    js_error::{JsResult, PubkyError, PubkyErrorName},
     wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start, keys::PublicKey},
 };
 
@@ -15,7 +19,11 @@ use crate::{
 /// 2) Show `authorizationUrl()` as QR/deeplink to the user’s signing device
 /// 3) `awaitApproval()` to receive a ready `Session`
 #[wasm_bindgen]
-pub struct AuthFlow(pub(crate) pubky::PubkyAuthFlow);
+pub struct AuthFlow {
+    inner: RefCell<Option<Rc<pubky::PubkyAuthFlow>>>,
+    in_flight: RefCell<bool>,
+    authorization_url: String,
+}
 
 #[wasm_bindgen]
 impl AuthFlow {
@@ -81,7 +89,14 @@ impl AuthFlow {
             builder = builder.relay(Url::parse(&r)?);
         }
 
-        Ok(AuthFlow(builder.start()?))
+        let flow = builder.start()?;
+        let auth_url = flow.authorization_url().as_str().to_string();
+
+        Ok(AuthFlow {
+            authorization_url: auth_url,
+            in_flight: RefCell::new(false),
+            inner: RefCell::new(Some(Rc::new(flow))),
+        })
     }
 
     /// Return the authorization deep link (URL) to show as QR or open on the signer device.
@@ -92,7 +107,7 @@ impl AuthFlow {
     /// renderQr(flow.authorizationUrl());
     #[wasm_bindgen(js_name = "authorizationUrl", getter)]
     pub fn authorization_url(&self) -> String {
-        self.0.authorization_url().as_str().to_string()
+        self.authorization_url.clone()
     }
 
     /// Block until the user approves on their signer device; returns a `Session`.
@@ -104,8 +119,17 @@ impl AuthFlow {
     /// - `RequestError` if relay/network fails
     /// - `AuthenticationError` if approval is denied/invalid
     #[wasm_bindgen(js_name = "awaitApproval")]
-    pub async fn await_approval(self) -> JsResult<Session> {
-        Ok(Session(self.0.await_approval().await?))
+    pub async fn await_approval(&self) -> JsResult<Session> {
+        let _guard = self.begin_call("awaitApproval")?;
+        let flow = self.take_inner("awaitApproval")?;
+
+        match Rc::try_unwrap(flow) {
+            Ok(flow) => Ok(Session(flow.await_approval().await?)),
+            Err(flow) => {
+                self.restore_inner(flow);
+                Err(self.in_use_error("awaitApproval"))
+            }
+        }
     }
 
     /// Block until the user approves on their signer device; returns an `AuthToken`.
@@ -116,8 +140,17 @@ impl AuthFlow {
     /// @throws {PubkyError}
     /// - `RequestError` if relay/network fails
     #[wasm_bindgen(js_name = "awaitToken")]
-    pub async fn await_token(self) -> JsResult<AuthToken> {
-        Ok(AuthToken(self.0.await_token().await?))
+    pub async fn await_token(&self) -> JsResult<AuthToken> {
+        let _guard = self.begin_call("awaitToken")?;
+        let flow = self.take_inner("awaitToken")?;
+
+        match Rc::try_unwrap(flow) {
+            Ok(flow) => Ok(AuthToken(flow.await_token().await?)),
+            Err(flow) => {
+                self.restore_inner(flow);
+                Err(self.in_use_error("awaitToken"))
+            }
+        }
     }
 
     /// Non-blocking single poll step (advanced UIs).
@@ -125,7 +158,83 @@ impl AuthFlow {
     /// @returns {Promise<Session|undefined>} A session if the approval arrived, otherwise `undefined`.
     #[wasm_bindgen(js_name = "tryPollOnce")]
     pub async fn try_poll_once(&self) -> JsResult<Option<Session>> {
-        Ok(self.0.try_poll_once().await?.map(Session))
+        let _guard = self.begin_call("tryPollOnce")?;
+        // Ensure the in-flight guard spans at least one microtask so concurrent
+        // calls (e.g., awaitApproval) observe the in-use state before this
+        // probe settles.
+        let _ = JsFuture::from(js_sys::Promise::resolve(&JsValue::NULL)).await;
+        let flow = self.borrow_inner()?;
+        let result = flow.try_poll_once().await?.map(Session);
+        // Keep the guard alive for an extra turn so other calls racing this one
+        // still see the in-flight flag even if the poll finishes immediately.
+        let _ = JsFuture::from(js_sys::Promise::resolve(&JsValue::NULL)).await;
+        Ok(result)
+    }
+}
+
+impl AuthFlow {
+    fn begin_call(&self, caller: &str) -> JsResult<InFlightGuard<'_>> {
+        let mut flag = self.in_flight.borrow_mut();
+        if *flag {
+            Err(self.in_use_error(caller))
+        } else {
+            *flag = true;
+            Ok(InFlightGuard {
+                in_flight: &self.in_flight,
+            })
+        }
+    }
+
+    fn borrow_inner(&self) -> JsResult<Rc<pubky::PubkyAuthFlow>> {
+        self.inner
+            .borrow()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| self.consumed_error())
+    }
+
+    fn take_inner(&self, caller: &str) -> JsResult<Rc<pubky::PubkyAuthFlow>> {
+        self.inner
+            .borrow_mut()
+            .take()
+            .ok_or_else(|| self.already_taken_error(caller))
+    }
+
+    fn restore_inner(&self, flow: Rc<pubky::PubkyAuthFlow>) {
+        let mut inner = self.inner.borrow_mut();
+        *inner = Some(flow);
+    }
+
+    fn consumed_error(&self) -> PubkyError {
+        PubkyError::new(
+            PubkyErrorName::ClientStateError,
+            "AuthFlow has already completed; start a new flow for another login.",
+        )
+    }
+
+    fn already_taken_error(&self, caller: &str) -> PubkyError {
+        PubkyError::new(
+            PubkyErrorName::ClientStateError,
+            format!("AuthFlow.{caller}() was already called; create a new AuthFlow."),
+        )
+    }
+
+    fn in_use_error(&self, caller: &str) -> PubkyError {
+        PubkyError::new(
+            PubkyErrorName::ClientStateError,
+            format!("AuthFlow.{caller}() cannot run while another call is in-flight."),
+        )
+    }
+}
+
+struct InFlightGuard<'a> {
+    in_flight: &'a RefCell<bool>,
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        let mut flag = self.in_flight.borrow_mut();
+        *flag = false;
     }
 }
 
