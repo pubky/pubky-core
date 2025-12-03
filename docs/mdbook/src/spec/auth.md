@@ -1,19 +1,18 @@
 # Pubky Auth
 
-Pubky Auth is a protocol for using user's [root key](../concepts/rootkey.md) to authenticate themselves to a 3rd party app and to authorize that app to access resources on the user's [Homeserver](../concepts/homeserver.md).
+Pubky Auth is a protocol for using a user's [root key](../concepts/rootkey.md) to authenticate themselves to a 3rd party app and to authorize that app to access resources on the user's [Homeserver](../concepts/homeserver.md).
 
 ### Glossary
-1. **Authenticator**: An application holding the Keypair used in authentication. Eg [Pubky Ring](https://github.com/pubky/pubky-ring).
-2. **Pubky**: The public key (pubky) identifying the user.
-3. **Homeserver**: The public key (pubky) identifying the receiver of the authentication request, usually a server.
-4. **3rd Party App**: An application trying to get authorized to access some resources belonging to the **Pubky**.
-5. **Capabilities**: A list of strings specifying scopes and the actions that can be performed on them.
-6. **HTTP relay**: An independent HTTP relay (or the backend of the 3rd Party App) forwarding the [`AuthToken`](#authtoken-encoding) to the frontend.  
+1. **User**: an entity owner of secret and public key and owner of assets which can be accessed on location identified by their public key.
+2. **Authenticator**: an application holding the Keypair used in authentication. Eg [Pubky Ring](https://github.com/pubky/pubky-ring).
+3. **Issuer**: an entity that issues access on behalf of **Pubky** to **3rd Party App**.
+4. **Pubky**: the public key (pubky) identifying the user secret key to which is owned by user.
+6. **3rd Party App**: an application trying to get authorized to access some resources belonging to the **Pubky**.
+5. **Homeserver**: the public key (pubky) identified storage of resources the belong to **Pubky**.
+7. **Capabilities**: a list of strings specifying scopes and the actions that can be performed on them.
+8. **HTTP relay**: an independent HTTP relay (or the backend of the 3rd Party App) used for communication between **3rd Party App** and **Authenticator** . Since neither **Authenticator** nor **3rd Party App** are extrernally reachable.
 
 ## Flow
-
-Here's how is works:
-
 ```mermaid
 sequenceDiagram
     participant User
@@ -24,22 +23,31 @@ sequenceDiagram
 
     autonumber
     
-    3rd Party App -->>3rd Party App : Generate a unique secret
+    3rd Party App -->>3rd Party App : Generate
+    note over 3rd Party App ,3rd Party App: Unique 32 bytes `client_secret`
     3rd Party App ->>+HTTP Relay: Subscribe
-    note over 3rd Party App ,HTTP Relay: channel Id = hash(client secret)
-    3rd Party App ->>Authenticator: Show QR code
-    note over 3rd Party App ,Authenticator: required Capabilities,<br/>relay url, and client secret
+    note over 3rd Party App ,HTTP Relay: `channel_id=hash(client_secret)`
+    3rd Party App -->>3rd Party App : Compose PubkyAuth URL
+    note over 3rd Party App ,3rd Party App: `pubkyauth:///<br/>?relay=<HTTP Base URL><br/>&caps=<capabilities><br/>&secret=<base64url(client_secret)>`
+    3rd Party App ->>Authenticator: Display QR code
+    note over 3rd Party App ,Authenticator: PubkyAuth URL
     Authenticator-->>User: Display consent form
+    note over Authenticator ,User: Showing capabilities <br/>
     User -->>Authenticator: Confirm consent
-    Authenticator-->>Authenticator: Sign AuthToken & encrypt with client secret
-    Authenticator->>HTTP Relay: Send encrypted AuthToken
-    note over Authenticator ,HTTP Relay: channel Id = hash(client secret)
-    HTTP Relay->>3rd Party App : Forward Encrypted AuthToken
+    note over User ,Authenticator: Assemble `AuthToken`
+    Authenticator-->>Authenticator: Sign `AuthToken` and encrypt with `client_secret`
+    Authenticator->>HTTP Relay: Send encrypted `AuthToken`
+    note over Authenticator ,HTTP Relay: `channel_id = hash(client_secret)`
+    HTTP Relay->>3rd Party App : Send `AuthToken` via subscription
+    note over HTTP Relay ,3rd Party App: `channel_id = hash(client_secret)`
     HTTP Relay->>-Authenticator: Ok
-    3rd Party App -->>3rd Party App : Decrypt AuthToken & Resolve user's homeserver
-    3rd Party App ->>+Homeserver: Send AuthToken
-    Homeserver-->>Homeserver: Verify AuthToken
-    Homeserver->>-3rd Party App : Return SessionId
+    note over HTTP Relay ,Authenticator: Confirm forward
+    3rd Party App -->>3rd Party App : Decrypt `AuthToken`
+    note over  3rd Party App ,3rd Party App : extract users pubky and resolve user's homeserver
+    3rd Party App ->>+Homeserver: Send `AuthToken`
+    Homeserver-->>Homeserver: Verify `AuthToken`
+    note over  Homeserver ,Homeserver : Verify timestamp and signature. <br/> Associate capabilities with session
+    Homeserver->>-3rd Party App : Return `session_id`
     3rd Party App ->>+Homeserver: Request resources
     Homeserver-->>Homeserver: Check Session capabilities
     Homeserver ->>-3rd Party App: Ok
@@ -62,18 +70,19 @@ pubkyauth:///
   &secret=mAa8kGmlrynGzQLteDVW6-WeUGnfvHTpEmbNerbWfPI
  ```
  and finally show that URL as a QR code to the user.
-1. The `Authenticator` app scans that QR code, parses the URL and shows a consent form for the user.
-2. The user decides whether or not to grant these capabilities to the `3rd Party App`.
-3. If the user approves, the `Authenticator` uses their Keypair to sign an [`AuthToken`](#authtoken-encoding), then encrypts that token with the `client_secret`. The `channel_id` is then calculated by hashing that secret and the encrypted token is sent to the callback url, which is the `relay` + `channel_id`.
-4. `HTTP Relay` forwards the encrypted `AuthToken` to the `3rd Party App` frontend and confirms the delivery with the `Authenticator`.
-5. `3rd Party App` decrypts the AuthToken using its `client_secret`, reads the `pubky` in it and sends it to their `Homeserver` to obtain a session.
-6. `Homeserver` verifies the session and stores the corresponding `capabilities`.
-7. `Homeserver` returns a session Id to the frontend to use in subsequent requests.
-8. `3rd Party App` uses the session Id to access some resource at the Homeserver.
-9. `Homeserver` checks the session capabilities to see if it is allowed to access that resource.
-10. `Homeserver` responds to the `3rd Party App` with the resource.
+4. The `Authenticator` app scans that QR code, parse the URL, and show a consent form for the user.
+5. The user decides whether or not to grant these capabilities to the `3rd Party App`.
+7. If the user approves, the `Authenticator` then uses their Keypair, to sign an [AuthToken](#authtoken), and encrypt it with the `client_secret`, then calculate the `channel_id` by hashing `client_secret`, and send encrypted token to the callback url(`relay` + `channel_id`).
+8. `HTTP Relay` forwards the encrypted AuthToken to the `3rd Party App` frontend.
+9. `HTTP Relay` confirms the delivery with the `Authenticator`
+10. `3rd Party App` decrypts the AuthToken using its `client_secret`, read the `pubky` in it, and send it to their `homeserver` to obtain a session.
+11. `Homeserver` verifies the session and stores the corresponding `capabilities`.
+12. `Homeserver` returns a session id to the frontend to use in subsequent requests.
+13. `3rd Party App` uses the session id to access some resource at the Homeserver.
+14. `Homeserver` checks the session capabilities to see if it is allowed to access that resource.
+15. `Homeserver` responds to the `3rd Party App` with the resource.
 
-### AuthToken encoding
+## AuthToken encoding
 ```abnf
 AuthToken   = signature namespace version timestamp pubky capabilities
 
@@ -107,12 +116,14 @@ Callback URLs work fine for full-stack applications. There are however many case
 
 These applications will still need some [relay](https://httprelay.io/) to receive the `AuthToken` when the `Authenticator` sends it to the callback URL. Since the `AuthToken` is a bearer token these relays can intercept it and use it before the unhosted app. That is why we need to encrypt the `AuthToken` with a key that the relay doesn't have access to, and only shared between the app and the `Authenticator` 
 
-## Limitations
+## Limitations of `v0`
 
 ### No delegation
-In version zero the `pubky` **is** the `issuer`, meaning that the `AuthToken` is signed by the same key of the `pubky`. This is to simplify the spec until we have a reason to keep the `issuer` keys even more secure than being in a mobile app used rarely to authenticate a browser session once in a while.
+In version zero, the `pubky`/`User` IS the `issuer`, meaning that the `AuthToken` is signed by the same key of the `pubky`. This is to simplify the spec, until we have a reason to keep the `issuer` keys even more secure than being in a mobile app used rarely to authenticate a browser session once in a while.
 
-Having an `issuer` that isn't exactly the `pubky` means the `issuer` themselves need a certificate of delegation signed by the `pubky`. The problem with that is that you can either lookup that certificate on the Homeserver (making the verification process async and possibly taking too long to timeout) or do what most TLS apps do right now and send the certificates chain with the token. The problem with this is that you then have to deal with the eternal problem of revocation, which basically also forces you to go lookup somewhere making the the verification process async and possibly taking too long before timeout.
+Having an `issuer` that isn't exactly the `pubky` means the `issuer` themselves need a certificate of delegation signed by the `pubky`. This can be done in following ways:
+-  Lookup that certificate on the Homeserver. Which may make the verification process possibly taking too long to timeout
+- Send the certificates chain with the token. Which brings on the problem of revocation..
 
 ### Expiration is out of scope
 While the token itself can only be used for very brief period, it is immediately exchanged for another authentication mechanism (usually a session ID). Deciding the expiration date of that authentication, if any, is out of the scope of this spec.
