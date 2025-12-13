@@ -430,4 +430,62 @@ mod tests {
             );
         }
     }
+
+    /// Test that file handles are properly released after writing files.
+    /// This test writes many files sequentially to verify that file handles
+    /// are correctly closed and released, preventing file descriptor exhaustion.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_file_handles_released_after_write() {
+        let operators = OpendalTestOperators::new();
+        for (scheme, operator) in operators.operators() {
+            let file_service = OpendalService::new_from_operator(operator);
+            let pubkey = pkarr::Keypair::random().public_key();
+
+            // Write many files sequentially - if file handles aren't released,
+            // this would eventually fail with "too many open files"
+            let file_count = 100;
+            for i in 0..file_count {
+                let path = EntryPath::new(
+                    pubkey.clone(),
+                    WebDavPath::new(&format!("/test_handle_{}.txt", i)).unwrap(),
+                );
+                let test_data = vec![i as u8; 1024]; // 1KB per file
+                let stream = futures_util::stream::iter(vec![Ok(Bytes::from(test_data))]);
+
+                file_service
+                    .write_stream(&path, stream)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!("Should write file {} for scheme {:?}: {:?}", i, scheme, e)
+                    });
+            }
+
+            // Verify all files can be read back (further confirmation handles are released)
+            for i in 0..file_count {
+                let path = EntryPath::new(
+                    pubkey.clone(),
+                    WebDavPath::new(&format!("/test_handle_{}.txt", i)).unwrap(),
+                );
+                let content = file_service.get(&path).await.unwrap_or_else(|e| {
+                    panic!("Should read file {} for scheme {:?}: {:?}", i, scheme, e)
+                });
+                assert_eq!(
+                    content.len(),
+                    1024,
+                    "File {} should have correct length",
+                    i
+                );
+            }
+
+            // Clean up
+            for i in 0..file_count {
+                let path = EntryPath::new(
+                    pubkey.clone(),
+                    WebDavPath::new(&format!("/test_handle_{}.txt", i)).unwrap(),
+                );
+                file_service.delete(&path).await.ok(); // Ignore cleanup errors
+            }
+        }
+    }
 }
