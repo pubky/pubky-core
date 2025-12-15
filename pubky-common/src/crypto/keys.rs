@@ -24,6 +24,14 @@ impl Keypair {
         Self(pkarr::Keypair::random())
     }
 
+    /// Export the secret key bytes.
+    #[must_use]
+    pub fn secret_key(&self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        out.copy_from_slice(self.0.secret_key().as_ref());
+        out
+    }
+
     /// Construct a [`Keypair`] from a 32-byte secret key.
     #[must_use]
     pub fn from_secret_key(secret: &[u8; 32]) -> Self {
