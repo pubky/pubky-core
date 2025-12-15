@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::actors::{
     auth_flow::{AuthFlow, AuthFlowKind},
+    session::Session,
     signer::Signer,
     storage::PublicStorage,
 };
@@ -148,5 +149,22 @@ impl Pubky {
     #[wasm_bindgen(getter)]
     pub fn client(&self) -> Client {
         Client(self.0.client().clone())
+    }
+
+    /// Restore a session from a previously exported snapshot, using this instance's client.
+    ///
+    /// This does **not** read or write any secrets. It revalidates the session metadata with
+    /// the server using the browser-managed HTTP-only cookie that must still be present.
+    ///
+    /// @param {string} exported A string produced by `session.export()`.
+    /// @returns {Promise<Session>}
+    /// A rehydrated session bound to this SDK's HTTP client.
+    ///
+    /// @example
+    /// const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
+    #[wasm_bindgen(js_name = "restoreSession")]
+    pub async fn restore_session(&self, exported: String) -> JsResult<Session> {
+        let session = pubky::PubkySession::import(&exported, Some(self.0.client().clone())).await?;
+        Ok(Session(session))
     }
 }

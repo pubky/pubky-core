@@ -157,6 +157,20 @@ const caps = session.info.capabilities; // -> string[] permissions and paths
 const storage = session.storage; // -> This User's storage API (absolute paths)
 ```
 
+**Persist a session across tab refreshes (browser)**
+
+```js
+// Save the session snapshot (no secrets inside; relies on the HTTP-only cookie).
+const snapshot = session.export();
+localStorage.setItem("pubky-session", snapshot);
+
+// Later (after a reload), rehydrate using the browser's stored cookie.
+const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
+```
+
+> The exported string contains only public session metadata. The browser must keep the
+> HTTP-only cookie alive for the restored session to remain authenticated.
+
 **Approve a pubkyauth request URL**
 
 ```js
