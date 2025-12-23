@@ -53,8 +53,8 @@
 use pkarr::PublicKey;
 
 use crate::{
-    Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,
-    actors::AuthFlowKind,
+    Capabilities, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner,
+    PublicStorage, Result, actors::AuthFlowKind,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -150,6 +150,42 @@ impl Pubky {
         Pkdns::with_client(self.client.clone())
             .get_homeserver_of(user_public_key)
             .await
+    }
+
+    /// Create an event stream builder for multi-user subscriptions.
+    ///
+    /// This allows you to subscribe to Server-Sent Events (SSE) from multiple users'
+    /// events on a homeserver `/events-stream` endpoint. Use `.add_user()` to add
+    /// users (up to 50), then call `.subscribe()`.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use pubky::{Pubky, PublicKey};
+    /// # use futures_util::StreamExt;
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")?;
+    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy")?;
+    ///
+    /// let mut stream = pubky.event_stream()
+    ///     .add_user(&user1, None)?
+    ///     .add_user(&user2, 100)?
+    ///     .live()
+    ///     .limit(100)
+    ///     .path("/pub/")
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?} at {}", event.event_type, event.path);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn event_stream(&self) -> EventStreamBuilder {
+        EventStreamBuilder::new(self.client.clone())
     }
 
     // ------ Persistance helpers ----------
