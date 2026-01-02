@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 type ParseError = <pkarr::PublicKey as TryFrom<String>>::Error;
 
 fn parse_public_key(value: &str) -> Result<pkarr::PublicKey, ParseError> {
-    let raw = value.strip_prefix("pubky").unwrap_or(value);
+    let raw = match value.strip_prefix("pubky") {
+        Some(stripped) if stripped.len() == 52 => stripped,
+        _ => value,
+    };
     pkarr::PublicKey::try_from(raw.to_string())
 }
 
