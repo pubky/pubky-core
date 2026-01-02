@@ -109,8 +109,10 @@ impl HttpRelayLinkChannel {
         client: &PubkyHttpClient,
         timeout: Option<Duration>,
     ) -> crate::errors::Result<Option<Vec<u8>>> {
+        const MAX_FAILURES: usize = 3;
         let start = web_time::Instant::now();
         let mut attempt = 0;
+        let mut consecutive_failures = 0;
         loop {
             attempt += 1;
             if let Some(timeout) = timeout
@@ -131,11 +133,15 @@ impl HttpRelayLinkChannel {
                 Err(e) => match e {
                     PollError::Timeout => {}
                     PollError::Failure(e) => {
+                        consecutive_failures += 1;
                         cross_log!(
                             error,
                             "Http relay channel polling attempt {attempt} failed at {}: {e}",
                             self
                         );
+                        if consecutive_failures >= MAX_FAILURES {
+                            return Err(e);
+                        }
                     }
                 },
             }

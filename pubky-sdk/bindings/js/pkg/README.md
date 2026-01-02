@@ -54,6 +54,10 @@ Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/m
 
 The npm package bundles the WebAssembly module and **initializes it before exposing any APIs**. This avoids the common wasm-pack pitfall where events fire before the module finishes instantiating. Long-polling flows such as `authFlow.awaitApproval()` or `authFlow.tryPollOnce()` only start their relay calls after the underlying module is ready, so you won't miss approvals while the bundle is loading.
 
+### Reuse a single facade across your app
+
+Use a shared `Pubky` (e.g, via context or prop drilling) instead of constructing one per request. This avoids reinitializing transports and keeps the same client available for repeated usage.
+
 ## API Overview
 
 Use `new Pubky()` to quickly get any flow started:
