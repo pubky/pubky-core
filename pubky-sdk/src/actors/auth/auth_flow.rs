@@ -65,8 +65,7 @@ use url::Url;
 use pubky_common::crypto::random_bytes;
 
 use crate::{
-    AuthToken, Capabilities, PubkyHttpClient, PubkySession,
-    PublicKey,
+    AuthToken, Capabilities, PubkyHttpClient, PubkySession, PublicKey,
     actors::{
         DEFAULT_HTTP_RELAY,
         auth::{
