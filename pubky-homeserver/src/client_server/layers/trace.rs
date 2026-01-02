@@ -24,7 +24,7 @@ pub fn with_trace_layer(router: Router) -> Router {
         TraceLayer::new_for_http()
             .make_span_with(move |request: &Request| {
                 let uri = if let Some(pubky_host) = request.extensions().get::<PubkyHost>() {
-                    format!("pubky://{pubky_host}{}", request.uri())
+                    format!("pubky://{}{}", pubky_host.public_key().z32(), request.uri())
                 } else {
                     request.uri().to_string()
                 };

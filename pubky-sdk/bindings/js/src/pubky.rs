@@ -145,7 +145,7 @@ impl Pubky {
     /// Use this for low-level `fetch()` calls or testing with raw URLs.
     ///
     /// @example
-    /// const r = await pubky.client.fetch(`pubky://${user}/pub/app/file.txt`, { credentials: "include" });
+    /// const r = await pubky.client.fetch(`pubky://${userPk.z32()}/pub/app/file.txt`, { credentials: "include" });
     #[wasm_bindgen(getter)]
     pub fn client(&self) -> Client {
         Client(self.0.client().clone())

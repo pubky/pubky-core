@@ -708,9 +708,9 @@ async fn events_stream_multiple_users() {
                     let cursor = cursor_line.strip_prefix("cursor: ").unwrap().to_string();
 
                     // Determine which user this event belongs to
-                    if lines[0].contains(&pubky1.to_string()) {
+                    if lines[0].contains(&pubky1.z32()) {
                         user1_cursor = cursor;
-                    } else if lines[0].contains(&pubky2.to_string()) {
+                    } else if lines[0].contains(&pubky2.z32()) {
                         user2_cursor = cursor;
                     }
                 }

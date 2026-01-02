@@ -209,7 +209,7 @@ fn formatted_event_path(entity: &EventEntity) -> String {
     // TODO: switch this formatter to use the shared `PubkyResource` type from `pubky-sdk`
     // once the homeserver crate depends on it directly, so we avoid ad-hoc string
     // reconstruction here.
-    format!("pubky://{}{}", entity.user_pubkey, entity.path.path())
+    format!("pubky://{}{}", entity.user_pubkey.z32(), entity.path.path())
 }
 
 fn event_to_sse_data(entity: &EventEntity) -> String {

@@ -393,7 +393,7 @@ impl IntoResourcePath for &String {
 /// let r2: PubkyResource = format!("{}/pub/site/index.html", user).parse()?;
 ///
 /// // Parse `pubky://`
-/// let r3: PubkyResource = format!("pubky://{}/pub/site/index.html", user).parse()?;
+/// let r3: PubkyResource = format!("pubky://{}/pub/site/index.html", user.z32()).parse()?;
 /// # Ok::<(), pubky::Error>(())
 /// ```
 pub trait IntoPubkyResource {

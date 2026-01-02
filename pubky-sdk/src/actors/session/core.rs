@@ -47,7 +47,7 @@ impl PubkySession {
     /// This POSTs the resolved homeserver session endpoint with the token, validates the response
     /// and constructs a new session-bound [`PubkySession`]
     pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<Self> {
-        let url = format!("pubky://{}/session", token.public_key());
+        let url = format!("pubky://{}/session", token.public_key().z32());
         cross_log!(
             info,
             "Establishing new session exchange for {}",
