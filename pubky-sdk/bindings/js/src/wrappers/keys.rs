@@ -33,11 +33,11 @@ impl Keypair {
 
     /// Returns the [PublicKey] of this keypair.
     ///
-    /// Use `.to_string()` on the returned `PublicKey` to get the string form.
+    /// Use `.toString()` on the returned `PublicKey` to get the string form
     /// or `.z32()` to get the z32 string form without prefix.
     ///
     /// @example
-    /// const who = keypair.publicKey.to_string();
+    /// const who = keypair.publicKey.toString();
     #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.public_key())

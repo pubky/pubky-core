@@ -294,7 +294,7 @@ mod tests {
 
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -302,13 +302,13 @@ mod tests {
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .expect_success()
             .await;
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(
                 header::IF_MODIFIED_SINCE,
                 response.headers().get(header::LAST_MODIFIED).unwrap(),
@@ -327,7 +327,7 @@ mod tests {
 
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -335,13 +335,13 @@ mod tests {
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .expect_success()
             .await;
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(
                 header::IF_NONE_MATCH,
                 response.headers().get(header::ETAG).unwrap(),
@@ -360,7 +360,7 @@ mod tests {
 
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -368,7 +368,7 @@ mod tests {
 
         let response = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .await;
 
         response.assert_header(header::CONTENT_TYPE, "image/png");
@@ -383,7 +383,7 @@ mod tests {
 
         server
             .put("/pub/text.txt")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::COOKIE, cookie)
             .bytes(data.into())
             .expect_success()
@@ -391,7 +391,7 @@ mod tests {
 
         let response = server
             .get("/pub/text.txt")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .await;
 
         response.assert_header(header::CONTENT_TYPE, "text/plain");
@@ -403,7 +403,7 @@ mod tests {
         // Write v1
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::COOKIE, cookie.clone())
             .bytes(Vec::from("alice").into())
             .expect_success()
@@ -412,7 +412,7 @@ mod tests {
         // Baseline GET to capture ETag and Last-Modified
         let base = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .expect_success()
             .await;
         let etag_v1 = base
@@ -427,7 +427,7 @@ mod tests {
         // Overwrite with different content but same-second timestamp likely
         server
             .put("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::COOKIE, cookie.clone())
             .bytes(Vec::from("bob").into())
             .expect_success()
@@ -436,7 +436,7 @@ mod tests {
         // Conditional GET that sends both validators; must return 200 because ETag changed.
         let r = server
             .get("/pub/foo")
-            .add_header("host", public_key.to_string())
+            .add_header("host", public_key.z32())
             .add_header(header::IF_NONE_MATCH, etag_v1)
             .add_header(header::IF_MODIFIED_SINCE, lm_v1)
             .await;
