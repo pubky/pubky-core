@@ -130,6 +130,6 @@ mod tests {
     fn macro_compiles() {
         // This test just ensures the macro compiles correctly
         // The actual functionality is tested in integration tests
-        assert!(true);
+        let _ = ();
     }
 }

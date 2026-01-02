@@ -255,7 +255,14 @@ impl PubkySession {
     /// Restore a session from an `export()` string (unsupported on native targets).
     ///
     /// Use [`Self::import_secret`] on native to restore a session using the secret token instead.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::RequestError::Validation`] because exports are only supported on WASM.
     #[cfg(not(target_arch = "wasm32"))]
+    #[allow(
+        clippy::unused_async,
+        reason = "keep async signature aligned with WASM build"
+    )]
     pub async fn import(_export: &str, _client: Option<PubkyHttpClient>) -> Result<Self> {
         Err(RequestError::Validation {
             message: "session import is only supported on WASM targets".into(),

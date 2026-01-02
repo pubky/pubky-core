@@ -309,7 +309,7 @@ async fn list_deep() {
     }
 
     // List all files with no cursor, no limit
-    let url = format!("/pub/example.com/");
+    let url = "/pub/example.com/".to_string();
     {
         let list = owner_session
             .storage()
@@ -448,7 +448,7 @@ async fn list_shallow() {
     }
 
     // List all files with no cursor, no limit
-    let url = format!("/pub/");
+    let url = "/pub/".to_string();
     {
         let list = owner_session
             .storage()
@@ -621,7 +621,13 @@ async fn list_events() {
         let lines = text.split('\n').collect::<Vec<_>>();
 
         // last line is "cursor: <id>"
-        let cursor = lines.last().unwrap().split(' ').last().unwrap().to_string();
+        let cursor = lines
+            .last()
+            .unwrap()
+            .rsplit(' ')
+            .next()
+            .unwrap()
+            .to_string();
 
         assert_eq!(
             lines,
@@ -708,7 +714,13 @@ async fn read_after_event() {
 
         let text = resp.text().await.unwrap();
         let lines = text.split('\n').collect::<Vec<_>>();
-        let cursor = lines.last().unwrap().split(' ').last().unwrap().to_string();
+        let cursor = lines
+            .last()
+            .unwrap()
+            .rsplit(' ')
+            .next()
+            .unwrap()
+            .to_string();
 
         assert_eq!(
             lines,

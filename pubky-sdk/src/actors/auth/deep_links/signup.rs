@@ -187,7 +187,7 @@ mod tests {
         let deep_link = SignupDeepLink::new(
             capabilities.clone(),
             relay.clone(),
-            secret.clone(),
+            secret,
             homeserver.clone(),
             None,
         );
@@ -198,7 +198,7 @@ mod tests {
                 "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}",
                 capabilities,
                 relay,
-                URL_SAFE_NO_PAD.encode(&secret),
+                URL_SAFE_NO_PAD.encode(secret),
                 homeserver.z32()
             )
         );
@@ -220,7 +220,7 @@ mod tests {
         let deep_link = SignupDeepLink::new(
             capabilities.clone(),
             relay.clone(),
-            secret.clone(),
+            secret,
             homeserver.clone(),
             Some(signup_token.to_string()),
         );
@@ -231,7 +231,7 @@ mod tests {
                 "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}&st={}",
                 capabilities,
                 relay,
-                URL_SAFE_NO_PAD.encode(&secret),
+                URL_SAFE_NO_PAD.encode(secret),
                 homeserver.z32(),
                 signup_token
             )

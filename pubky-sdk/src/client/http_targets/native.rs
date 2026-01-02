@@ -48,6 +48,13 @@ impl PubkyHttpClient {
     ///
     /// Native builds do not rewrite URLs; we only detect pubky hosts and return the
     /// `pubky-host` value when applicable.
+    ///
+    /// # Errors
+    /// - This function does not currently return errors; it keeps the `Result` to match WASM.
+    #[allow(
+        clippy::unused_async,
+        reason = "keep async signature aligned with WASM build"
+    )]
     pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("");
 
