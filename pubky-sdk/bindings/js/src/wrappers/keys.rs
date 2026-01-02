@@ -100,7 +100,10 @@ impl PublicKey {
     /// @throws
     pub fn try_from(value: String) -> JsResult<PublicKey> {
         let value = value.strip_prefix("pubky://").unwrap_or(&value);
-        let value = value.strip_prefix("pubky").unwrap_or(value);
+        let value = match value.strip_prefix("pubky") {
+            Some(stripped) if stripped.len() == 52 => stripped,
+            _ => value,
+        };
         let native_pk = NativePublicKey::try_from(value)?;
         Ok(PublicKey(native_pk))
     }
