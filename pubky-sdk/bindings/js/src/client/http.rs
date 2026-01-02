@@ -159,7 +159,8 @@ fn js_fetch(req: &web_sys::Request) -> Promise {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pkarr::{CacheKey, Keypair, SignedPacket};
+    use pkarr::{CacheKey, SignedPacket};
+    use pubky::Keypair;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -202,7 +203,8 @@ mod tests {
             .cache()
             .expect("pkarr client should expose a cache for tests");
 
-        let cache_key: CacheKey = keypair.public_key().into();
+        let pkarr_public_key = pkarr::PublicKey::from(keypair.public_key());
+        let cache_key: CacheKey = pkarr_public_key.into();
         let signed_packet = SignedPacket::builder()
             .sign(keypair)
             .expect("sign empty packet");

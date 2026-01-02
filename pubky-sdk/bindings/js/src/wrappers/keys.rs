@@ -28,7 +28,7 @@ impl Keypair {
     /// Returns the secret key of this keypair.
     #[wasm_bindgen(js_name = "secretKey")]
     pub fn secret_key(&self) -> Uint8Array {
-        Uint8Array::from(self.0.as_inner().secret_key().as_ref())
+        Uint8Array::from(self.0.secret_key().as_ref())
     }
 
     /// Returns the [PublicKey] of this keypair.
@@ -73,6 +73,7 @@ impl From<NativeKeypair> for Keypair {
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct PublicKey(pub(crate) NativePublicKey);
 
 #[wasm_bindgen]

@@ -194,7 +194,7 @@ impl Testnet {
             }
             // 100ms timeout for requests. This makes methods like `resolve_most_recent` fast
             // because it doesn't need to wait the default 2s which would slow down the tests.
-            builder.request_timeout(Duration::from_millis(2000));
+            builder.request_timeout(Duration::from_millis(100));
             builder
         });
 

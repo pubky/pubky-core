@@ -45,7 +45,7 @@ assert_eq!(txt, "hello");
 
 // 5) Keyless app flow (QR/deeplink)
 let caps = Capabilities::builder().write("/pub/example.com/").finish();
-let flow = pubky.start_auth_flow(&caps)?;
+let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
 println!("Scan to sign in: {}", flow.authorization_url());
 let app_session = flow.await_approval().await?;
 
@@ -177,7 +177,7 @@ Request an authorization URL and await approval.
 3. Await `await_approval()` to obtain a session-bound `PubkySession`.
 
 ```rust
-# use pubky::{Pubky, Capabilities, Keypair};
+# use pubky::{Pubky, Capabilities, Keypair, AuthFlowKind};
 # async fn auth() -> pubky::Result<()> {
 
 let pubky = Pubky::new()?;
@@ -185,7 +185,7 @@ let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read_write("pub/example.com/").finish();
 
 // Start the flow using the default relay (see “Relay & reliability” below)
-let flow = pubky.start_auth_flow(&caps)?;
+let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
 println!("Scan to sign in: {}", flow.authorization_url());
 
 // On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;
@@ -213,11 +213,11 @@ See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-
 **Custom relay example**
 
 ```rust
-# use pubky::{Pubky, PubkyAuthFlow, Capabilities};
+# use pubky::{Pubky, PubkyAuthFlow, Capabilities, AuthFlowKind};
 # async fn custom_relay() -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read("pub/example.com/").finish();
-let auth_flow = PubkyAuthFlow::builder(&caps)
+let auth_flow = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
     .client(pubky.client().clone())
     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
     .start()?;

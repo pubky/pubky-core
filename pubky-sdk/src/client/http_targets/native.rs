@@ -44,6 +44,24 @@ impl PubkyHttpClient {
         Ok(self.request(method, &url))
     }
 
+    /// Prepare a request for callers that need the WASM-style preflight.
+    ///
+    /// Native builds do not rewrite URLs; we only detect pubky hosts and return the
+    /// `pubky-host` value when applicable.
+    pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
+        let host = url.host_str().unwrap_or("");
+
+        if let Some(stripped) = host.strip_prefix("_pubky.") {
+            if PublicKey::try_from(stripped).is_ok() {
+                return Ok(Some(stripped.to_string()));
+            }
+        } else if PublicKey::try_from(host).is_ok() {
+            return Ok(Some(host.to_string()));
+        }
+
+        Ok(None)
+    }
+
     /// Start building a `Request` with the `Method` and `Url` (native-only)
     ///
     /// Returns a `RequestBuilder`, which will allow setting headers and

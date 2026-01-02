@@ -1,4 +1,4 @@
-# Pubky Auth Example
+# Pubky Auth Signin Example
 
 This example shows 3rd party authorization in Pubky.
 

@@ -76,7 +76,7 @@ export class PubkyAuthWidget extends LitElement {
       this.relay || (this.testnet ? TESTNET_HTTP_RELAY : DEFAULT_HTTP_RELAY);
 
     // Start the flow with the facade’s client
-    const flow = this._sdk.startAuthFlow(this.caps, relay);
+    const flow = this._sdk.startAuthFlow(this.caps, pubky.AuthFlowKind.signin(), relay);
 
     // Capture the deep link *before* awaiting (await will consume the flow handle)
     this._authUrl = flow.authorizationUrl;

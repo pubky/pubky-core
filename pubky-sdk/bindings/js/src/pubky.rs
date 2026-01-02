@@ -1,6 +1,11 @@
 use wasm_bindgen::prelude::*;
 
-use crate::actors::{auth_flow::AuthFlow, signer::Signer, storage::PublicStorage};
+use crate::actors::{
+    auth_flow::{AuthFlow, AuthFlowKind},
+    session::Session,
+    signer::Signer,
+    storage::PublicStorage,
+};
 use crate::wrappers::keys::PublicKey;
 use crate::{client::constructor::Client, js_error::JsResult, wrappers::keys::Keypair};
 
@@ -64,6 +69,10 @@ impl Pubky {
     /// Pass `""` for no scopes (read-only public session).
     ///
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
+    /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
+    /// Examples:
+    /// - `AuthFlowKind.signin()` - Sign in to an existing account.
+    /// - `AuthFlowKind.signup(homeserverPublicKey, signupToken)` - Sign up for a new account.
     /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/link/"`).
     /// @returns {AuthFlow}
     /// A running auth flow. Show `authorizationUrl` as QR/deeplink,
@@ -81,9 +90,11 @@ impl Pubky {
     pub fn start_auth_flow(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        kind: AuthFlowKind,
         relay: Option<String>,
     ) -> JsResult<AuthFlow> {
-        let flow = AuthFlow::start_with_client(capabilities, relay, Some(self.0.client().clone()))?;
+        let flow =
+            AuthFlow::start_with_client(capabilities, kind, relay, Some(self.0.client().clone()))?;
         Ok(flow)
     }
 
@@ -138,5 +149,22 @@ impl Pubky {
     #[wasm_bindgen(getter)]
     pub fn client(&self) -> Client {
         Client(self.0.client().clone())
+    }
+
+    /// Restore a session from a previously exported snapshot, using this instance's client.
+    ///
+    /// This does **not** read or write any secrets. It revalidates the session metadata with
+    /// the server using the browser-managed HTTP-only cookie that must still be present.
+    ///
+    /// @param {string} exported A string produced by `session.export()`.
+    /// @returns {Promise<Session>}
+    /// A rehydrated session bound to this SDK's HTTP client.
+    ///
+    /// @example
+    /// const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
+    #[wasm_bindgen(js_name = "restoreSession")]
+    pub async fn restore_session(&self, exported: String) -> JsResult<Session> {
+        let session = pubky::PubkySession::import(&exported, Some(self.0.client().clone())).await?;
+        Ok(Session(session))
     }
 }

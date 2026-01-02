@@ -17,7 +17,7 @@ Module system + TS types: ESM and CommonJS both supported; TypeScript typings ge
 ## Getting Started
 
 ```js
-import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
+import { Pubky, PublicKey, Keypair, AuthFlowKind } from "@synonymdev/pubky";
 
 // Initiate a Pubky SDK facade wired for default mainnet Pkarr relays.
 const pubky = new Pubky(); // or: const pubky = Pubky.testnet(); for localhost testnet.
@@ -43,19 +43,23 @@ const addr = `pubky${userPk}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw"); // require permissions to read and write into `my.app`
+const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind::signin()); // require permissions to read and write into `my.app`
 renderQr(authFlow.authorizationUrl); // show to user
 const session = await authFlow.awaitApproval();
 ```
 
 Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
 
+### Initialization & events
+
+The npm package bundles the WebAssembly module and **initializes it before exposing any APIs**. This avoids the common wasm-pack pitfall where events fire before the module finishes instantiating. Long-polling flows such as `authFlow.awaitApproval()` or `authFlow.tryPollOnce()` only start their relay calls after the underlying module is ready, so you won't miss approvals while the bundle is loading.
+
 ## API Overview
 
 Use `new Pubky()` to quickly get any flow started:
 
 ```js
-import { Pubky, Keypair } from "@synonymdev/pubky";
+import { Pubky, Keypair, AuthFlowKind } from "@synonymdev/pubky";
 
 // Mainnet (default relays)
 const pubky = new Pubky();
@@ -68,7 +72,7 @@ const pubkyLocal = Pubky.testnet("localhost");
 const signer = pubky.signer(Keypair.random());
 
 // Pubky Auth flow (with capabilities)
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
+const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind::signin());
 
 // Public storage (read-only)
 const publicStorage = pubky.publicStorage;
@@ -153,6 +157,20 @@ const caps = session.info.capabilities; // -> string[] permissions and paths
 const storage = session.storage; // -> This User's storage API (absolute paths)
 ```
 
+**Persist a session across tab refreshes (browser)**
+
+```js
+// Save the session snapshot (no secrets inside; relies on the HTTP-only cookie).
+const snapshot = session.export();
+localStorage.setItem("pubky-session", snapshot);
+
+// Later (after a reload), rehydrate using the browser's stored cookie.
+const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
+```
+
+> The exported string contains only public session metadata. The browser must keep the
+> HTTP-only cookie alive for the restored session to remain authenticated.
+
 **Approve a pubkyauth request URL**
 
 ```js
@@ -166,7 +184,7 @@ await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
 End-to-end auth (3rd-party app asks a user to approve via QR/deeplink, E.g. Pubky Ring).
 
 ```js
-import { Pubky } from "@synonymdev/pubky";
+import { Pubky, AuthFlowKind } from "@synonymdev/pubky";
 const pubky = new Pubky();
 
 // Comma-separated capabilities string
@@ -176,7 +194,7 @@ const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this)
 
 // Start the auth polling
-const flow = pubky.startAuthFlow(caps, relay);
+const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin(), relay);
 
 renderQr(flow.authorizationUrl); // show to user
 
@@ -192,7 +210,7 @@ normalized string (ordering actions like `:rw`) and throws a structured error
 when the input is malformed.
 
 ```js
-import { Pubky, validateCapabilities } from "@synonymdev/pubky";
+import { Pubky, validateCapabilities, AuthFlowKind } from "@synonymdev/pubky";
 
 const pubky = new Pubky();
 
@@ -200,7 +218,7 @@ const rawCaps = formData.get("caps");
 
 try {
   const caps = validateCapabilities(rawCaps ?? "");
-  const flow = pubky.startAuthFlow(caps);
+  const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin());
   renderQr(flow.authorizationUrl);
   const session = await flow.awaitApproval();
   // ...
@@ -347,6 +365,12 @@ Both `pubky<pk>/…` (preferred) and `pubky://<pk>/…` resolve to the same HTTP
 
 ---
 
+## WASM memory (`free()` helpers)
+
+`wasm-bindgen` generates `free()` methods on exported classes (for example `Pubky`, `AuthFlow` `PublicKey`). JavaScript's GC eventually releases the underlying Rust structs on its own, but calling `free()` lets you drop them **immediately** if you are creating many short-lived instances (e.g. in a long-running worker). It is safe to skip manual frees in typical browser or Node apps.
+
+---
+
 ## Errors
 
 All async methods throw a structured `PubkyError`:
@@ -383,6 +407,12 @@ try {
   }
 }
 ```
+
+## Browser environment notes
+
+- Keep the Pubky client UI and the homeserver on the **same origin family** (both local or both remote). Browsers partition cookies by scheme/host, and cross-site requests (e.g., http://localhost calling https://staging…​) can silently drop or cache `SameSite`/`Secure` session cookies.
+- If you must mix environments, use a reverse proxy so the browser always talks to one consistent origin (or disable caching via devtools and clear cookies between switches).
+- When troubleshooting auth/session caching: open a fresh incognito window, clear site data for the target origin, and verify the request includes credentials.
 
 ---
 

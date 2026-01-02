@@ -8,7 +8,6 @@
 # @Sev May 2025
 # --------------------------------------------------------------------------------
 
-
 [target.aarch64-apple-darwin]
 image = "ghcr.io/pubky/aarch64-apple-darwin-cross:latest"
 
