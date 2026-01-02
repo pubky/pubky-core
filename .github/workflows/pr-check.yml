@@ -46,7 +46,7 @@ jobs:
   test:
     services:
       postgres:
-        image: postgres:17-alpine          # official image
+        image: postgres:18-alpine          # official image
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
@@ -155,7 +155,7 @@ jobs:
   wasm-test:
     services:
       postgres:
-        image: postgres:17-alpine          # official image
+        image: postgres:18-alpine          # official image
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
