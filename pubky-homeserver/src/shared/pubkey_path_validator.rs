@@ -27,7 +27,16 @@ impl<'de> serde::Deserialize<'de> for Z32Pubkey {
         D: serde::Deserializer<'de>,
     {
         let s: String = serde::Deserialize::deserialize(deserializer)?;
+        if is_prefixed_pubky(&s) {
+            return Err(serde::de::Error::custom(
+                "unexpected `pubky` prefix; expected raw z32",
+            ));
+        }
         let pubkey = PublicKey::try_from(s.as_str()).map_err(serde::de::Error::custom)?;
         Ok(Z32Pubkey(pubkey))
     }
+}
+
+fn is_prefixed_pubky(value: &str) -> bool {
+    matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
 }

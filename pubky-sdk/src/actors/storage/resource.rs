@@ -33,6 +33,11 @@ fn invalid(msg: impl Into<String>) -> Error {
     .into()
 }
 
+#[inline]
+fn is_prefixed_pubky(value: &str) -> bool {
+    matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
+}
+
 // ============================================================================
 // ResourcePath
 // ============================================================================
@@ -239,6 +244,11 @@ impl PubkyResource {
         let owner = host
             .strip_prefix("_pubky.")
             .ok_or_else(|| invalid("transport URL host must start with '_pubky.'"))?;
+        if is_prefixed_pubky(owner) {
+            return Err(invalid(
+                "transport URL host must use raw z32 without `pubky` prefix",
+            ));
+        }
         let public_key = PublicKey::try_from(owner)
             .map_err(|_err| invalid("transport URL host does not contain a valid public key"))?;
 
@@ -261,8 +271,6 @@ impl FromStr for PubkyResource {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let is_prefixed_pubky = |value: &str| matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52);
-
         // 1) pubky://<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky://") {
             let (user_str, path) = rest

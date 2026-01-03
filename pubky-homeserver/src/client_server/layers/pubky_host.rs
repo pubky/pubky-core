@@ -58,6 +58,9 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
     for header in ["host", "pubky-host"].iter() {
         if let Some(val) = req.headers().get(*header) {
             if let Ok(s) = val.to_str() {
+                if is_prefixed_pubky(s) {
+                    continue;
+                }
                 if let Ok(key) = PublicKey::try_from(s) {
                     pubky = Some(key);
                 }
@@ -71,6 +74,9 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
                 let mut parts = pair.splitn(2, '=');
                 if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
                     if key == "pubky-host" {
+                        if is_prefixed_pubky(val) {
+                            return None;
+                        }
                         return PublicKey::try_from(val).ok();
                     }
                 }
@@ -79,4 +85,8 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
         });
     }
     pubky
+}
+
+fn is_prefixed_pubky(value: &str) -> bool {
+    matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
 }
