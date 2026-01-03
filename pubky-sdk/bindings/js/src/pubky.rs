@@ -114,12 +114,12 @@ impl Pubky {
     /// Public, unauthenticated storage API.
     ///
     /// Use for **read-only** public access via addressed paths:
-    /// `"<user-z32>/pub/…"`.
+    /// `"pubky<user>/pub/…"`.
     ///
     /// @returns {PublicStorage}
     ///
     /// @example
-    /// const text = await pubky.publicStorage.getText(`${userPk.z32()}/pub/example.com/hello.txt`);
+    /// const text = await pubky.publicStorage.getText(`${userPk.toString()}/pub/example.com/hello.txt`);
     #[wasm_bindgen(js_name = "publicStorage", getter)]
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage(self.0.public_storage())
@@ -130,7 +130,7 @@ impl Pubky {
     /// Uses an internal read-only Pkdns actor.
     ///
     /// @param {PublicKey} user
-    /// @returns {Promise<PublicKey|undefined>} Homeserver public key (z32) or `undefined` if not found.
+    /// @returns {Promise<PublicKey|undefined>} Homeserver public key or `undefined` if not found.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
     pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
         self.0

@@ -261,11 +261,18 @@ impl FromStr for PubkyResource {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let is_prefixed_pubky = |value: &str| matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52);
+
         // 1) pubky://<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky://") {
             let (user_str, path) = rest
                 .split_once('/')
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
+            if is_prefixed_pubky(user_str) {
+                return Err(invalid(
+                    "unexpected `pubky` prefix in user id; use raw z32 after `pubky://`",
+                ));
+            }
             let user = PublicKey::try_from(user_str)
                 .map_err(|_err| invalid(format!("invalid user public key: {user_str}")))?;
             return Self::new(user, path);
@@ -274,6 +281,11 @@ impl FromStr for PubkyResource {
         // 2) pubky<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky") {
             if let Some((user_id, path)) = rest.split_once('/') {
+                if is_prefixed_pubky(user_id) {
+                    return Err(invalid(
+                        "unexpected `pubky` prefix in user id; use raw z32 after `pubky`",
+                    ));
+                }
                 let user = PublicKey::try_from(user_id).map_err(|_err| {
                     invalid("expected `pubky<user>/<path>` or `pubky://<user>/<path>`")
                 })?;

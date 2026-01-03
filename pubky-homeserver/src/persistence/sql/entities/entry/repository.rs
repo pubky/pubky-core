@@ -266,26 +266,22 @@ impl EntryRepository {
             .from_subquery(inner_statement, Alias::new("t"))
             .to_owned();
 
-        let regpath_order_expr = Expr::cust("regpath COLLATE \"C\"");
         if reverse {
-            outer_statement = outer_statement
-                .order_by_expr(regpath_order_expr.clone(), Order::Desc)
-                .to_owned();
+            outer_statement = outer_statement.order_by("regpath", Order::Desc).to_owned();
         } else {
-            outer_statement = outer_statement
-                .order_by_expr(regpath_order_expr.clone(), Order::Asc)
-                .to_owned();
+            outer_statement = outer_statement.order_by("regpath", Order::Asc).to_owned();
         }
 
         if let Some(cursor_entry_path) = cursor {
-            let op = if reverse { "<" } else { ">" };
-            let cursor_expr = Expr::cust_with_values(
-                format!("regpath COLLATE \"C\" {op} $1"),
-                vec![sea_query::Value::from(
-                    cursor_entry_path.path().as_str().to_string(),
-                )],
-            );
-            outer_statement = outer_statement.and_where(cursor_expr).to_owned();
+            if reverse {
+                outer_statement = outer_statement
+                    .and_where(Expr::col("regpath").lt(cursor_entry_path.path().as_str()))
+                    .to_owned();
+            } else {
+                outer_statement = outer_statement
+                    .and_where(Expr::col("regpath").gt(cursor_entry_path.path().as_str()))
+                    .to_owned();
+            }
         }
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
@@ -340,30 +336,26 @@ impl EntryRepository {
             .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
-        let path_order_expr = Expr::cust(format!(
-            "{ENTRY_TABLE}.{} COLLATE \"C\"",
-            EntryIden::Path.to_string()
-        ));
         if reverse {
             statement = statement
-                .order_by_expr(path_order_expr.clone(), Order::Desc)
+                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Desc)
                 .to_owned();
         } else {
             statement = statement
-                .order_by_expr(path_order_expr.clone(), Order::Asc)
+                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
                 .to_owned();
         }
 
         if let Some(cursor) = cursor {
-            let op = if reverse { "<" } else { ">" };
-            let cursor_expr = Expr::cust_with_values(
-                format!(
-                    "{ENTRY_TABLE}.{} COLLATE \"C\" {op} $1",
-                    EntryIden::Path.to_string()
-                ),
-                vec![sea_query::Value::from(cursor.path().as_str().to_string())],
-            );
-            statement = statement.and_where(cursor_expr).to_owned();
+            if reverse {
+                statement = statement
+                    .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).lt(cursor.path().as_str()))
+                    .to_owned();
+            } else {
+                statement = statement
+                    .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).gt(cursor.path().as_str()))
+                    .to_owned();
+            }
         }
 
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
