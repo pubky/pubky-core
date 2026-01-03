@@ -146,7 +146,7 @@ impl FromStr for SignupDeepLink {
             .ok_or(DeepLinkParseError::MissingQueryParameter("hs"))?
             .1
             .to_string();
-        let homeserver = PublicKey::try_from(raw_homeserver.as_str())
+        let homeserver = PublicKey::try_from_z32(raw_homeserver.as_str())
             .map_err(|e| DeepLinkParseError::InvalidQueryParameter("hs", Box::new(e)))?;
 
         let signup_token = url

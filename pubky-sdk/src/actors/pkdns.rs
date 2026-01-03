@@ -151,7 +151,7 @@ impl Pkdns {
         );
         let packet = self.client.pkarr().resolve(user_public_key).await?;
         let s = extract_host_from_packet(&packet)?;
-        let result = PublicKey::try_from(s).ok();
+        let result = PublicKey::try_from_z32(&s).ok();
         cross_log!(
             debug,
             "Homeserver resolution for {} yielded {:?}",

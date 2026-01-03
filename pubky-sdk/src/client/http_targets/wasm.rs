@@ -5,6 +5,7 @@ use crate::errors::{PkarrError, RequestError, Result};
 use crate::{PubkyHttpClient, cross_log};
 use futures_lite::StreamExt;
 use pkarr::extra::endpoints::Endpoint;
+use pubky_common::crypto::is_prefixed_pubky;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
@@ -42,33 +43,29 @@ impl PubkyHttpClient {
     pub async fn prepare_request(&self, url: &mut Url) -> Result<Option<String>> {
         let host = url.host_str().unwrap_or("").to_string();
 
-        let invalid_prefixed_host = |value: &str| -> bool {
-            matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
-        };
-
         let mut pubky_host = None;
 
         if let Some(stripped) = host.strip_prefix("_pubky.") {
-            if invalid_prefixed_host(stripped) {
+            if is_prefixed_pubky(stripped) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
                 }
                 .into());
             }
-            if PublicKey::try_from(stripped).is_ok() {
+            if PublicKey::try_from_z32(stripped).is_ok() {
                 self.transform_url(url).await?;
                 pubky_host = Some(stripped.to_string());
             }
         } else {
-            if invalid_prefixed_host(&host) {
+            if is_prefixed_pubky(&host) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
                 }
                 .into());
             }
-            if PublicKey::try_from(host.clone()).is_ok() {
+            if PublicKey::try_from_z32(host.clone()).is_ok() {
                 self.transform_url(url).await?;
                 pubky_host = Some(host);
             }

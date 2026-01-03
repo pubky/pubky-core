@@ -1,8 +1,9 @@
 use wasm_bindgen::prelude::*;
 
-use crate::js_error::JsResult;
+use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use js_sys::Uint8Array;
 use pubky::{Keypair as NativeKeypair, PublicKey as NativePublicKey};
+use pubky_common::crypto::is_prefixed_pubky;
 
 #[wasm_bindgen]
 pub struct Keypair(NativeKeypair);
@@ -99,10 +100,16 @@ impl PublicKey {
     #[wasm_bindgen(js_name = "from")]
     /// @throws
     pub fn try_from(value: String) -> JsResult<PublicKey> {
-        let value = value.strip_prefix("pubky://").unwrap_or(&value);
-        let value = match value.strip_prefix("pubky") {
-            Some(stripped) if stripped.len() == 52 => stripped,
-            _ => value,
+        if value.starts_with("pubky://") {
+            return Err(PubkyError::new(
+                PubkyErrorName::InvalidInput,
+                "public key must be raw z32 or pubky<z32>; pubky:// is not supported",
+            ));
+        }
+        let value = if is_prefixed_pubky(value) {
+            value.strip_prefix("pubky").unwrap_or(value)
+        } else {
+            value
         };
         let native_pk = NativePublicKey::try_from(value)?;
         Ok(PublicKey(native_pk))

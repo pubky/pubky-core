@@ -21,6 +21,7 @@
 use std::{fmt, str::FromStr};
 
 use crate::PublicKey;
+use pubky_common::crypto::is_prefixed_pubky;
 use url::Url;
 
 use crate::{Error, errors::RequestError};
@@ -31,11 +32,6 @@ fn invalid(msg: impl Into<String>) -> Error {
         message: msg.into(),
     }
     .into()
-}
-
-#[inline]
-fn is_prefixed_pubky(value: &str) -> bool {
-    matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
 }
 
 // ============================================================================
@@ -249,7 +245,7 @@ impl PubkyResource {
                 "transport URL host must use raw z32 without `pubky` prefix",
             ));
         }
-        let public_key = PublicKey::try_from(owner)
+        let public_key = PublicKey::try_from_z32(owner)
             .map_err(|_err| invalid("transport URL host does not contain a valid public key"))?;
 
         let path = if url.path().is_empty() {
@@ -281,7 +277,7 @@ impl FromStr for PubkyResource {
                     "unexpected `pubky` prefix in user id; use raw z32 after `pubky://`",
                 ));
             }
-            let user = PublicKey::try_from(user_str)
+            let user = PublicKey::try_from_z32(user_str)
                 .map_err(|_err| invalid(format!("invalid user public key: {user_str}")))?;
             return Self::new(user, path);
         }
@@ -294,7 +290,7 @@ impl FromStr for PubkyResource {
                         "unexpected `pubky` prefix in user id; use raw z32 after `pubky`",
                     ));
                 }
-                let user = PublicKey::try_from(user_id).map_err(|_err| {
+                let user = PublicKey::try_from_z32(user_id).map_err(|_err| {
                     invalid("expected `pubky<user>/<path>` or `pubky://<user>/<path>`")
                 })?;
                 return Self::new(user, path);

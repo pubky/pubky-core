@@ -50,9 +50,10 @@ impl PubkySession {
                 message: "invalid secret: expected `<pubkey>:<cookie>`".into(),
             })?;
 
-        let public_key = PublicKey::try_from(pk_str).map_err(|_err| RequestError::Validation {
-            message: "invalid public key".into(),
-        })?;
+        let public_key =
+            PublicKey::try_from_z32(pk_str).map_err(|_err| RequestError::Validation {
+                message: "invalid public key".into(),
+            })?;
         cross_log!(info, "Importing session secret for {}", public_key);
 
         // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.

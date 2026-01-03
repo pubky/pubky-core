@@ -171,7 +171,7 @@ pub(crate) fn configure_session_cookie(cookie: &mut Cookie<'static>, host: &str)
 /// container names or localhost) are treated as non-secure development environments.
 fn is_secure(host: &str) -> bool {
     // A pkarr public key is always a secure context.
-    if PublicKey::try_from(host).is_ok() {
+    if PublicKey::try_from_z32(host).is_ok() {
         return true;
     }
 
@@ -202,7 +202,7 @@ mod tests {
         assert!(!is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"));
         assert!(!is_secure("localhost"));
         assert!(!is_secure("localhost:23423"));
-        assert!(is_secure(&Keypair::random().public_key().to_string()));
+        assert!(is_secure(&Keypair::random().public_key().z32()));
         assert!(is_secure("example.com"));
     }
 }

@@ -8,10 +8,16 @@ use serde::{Deserialize, Serialize};
 
 type ParseError = <pkarr::PublicKey as TryFrom<String>>::Error;
 
+/// Returns true if the value is in `pubky<z32>` form.
+pub fn is_prefixed_pubky(value: &str) -> bool {
+    matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
+}
+
 fn parse_public_key(value: &str) -> Result<pkarr::PublicKey, ParseError> {
-    let raw = match value.strip_prefix("pubky") {
-        Some(stripped) if stripped.len() == 52 => stripped,
-        _ => value,
+    let raw = if is_prefixed_pubky(value) {
+        value.strip_prefix("pubky").unwrap_or(value)
+    } else {
+        value
     };
     pkarr::PublicKey::try_from(raw.to_string())
 }
@@ -129,6 +135,11 @@ impl PublicKey {
     #[must_use]
     pub fn z32(&self) -> String {
         self.0.to_string()
+    }
+
+    /// Parse a public key from raw z-base32 text (without the `pubky` prefix).
+    pub fn try_from_z32(value: &str) -> Result<Self, ParseError> {
+        pkarr::PublicKey::try_from(value.to_string()).map(Self)
     }
 }
 

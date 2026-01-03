@@ -216,7 +216,7 @@ impl FromRow<'_, PgRow> for UserEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id: i32 = row.try_get(UserIden::Id.to_string().as_str())?;
         let raw_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
-        let public_key = PublicKey::try_from(raw_pubkey.as_str())
+        let public_key = PublicKey::try_from_z32(raw_pubkey.as_str())
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let disabled: bool = row.try_get(UserIden::Disabled.to_string().as_str())?;
         let raw_used_bytes: i64 = row.try_get(UserIden::UsedBytes.to_string().as_str())?;

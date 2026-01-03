@@ -1,5 +1,6 @@
 use crate::errors::RequestError;
 use crate::{PubkyHttpClient, PublicKey, Result, cross_log};
+use pubky_common::crypto::is_prefixed_pubky;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
@@ -12,20 +13,16 @@ enum HostKind {
 
 fn classify_host(host: &str) -> HostKind {
     if let Some(pk_host) = host.strip_prefix("_pubky.") {
-        if is_prefixed_pubky_host(pk_host) {
+        if is_prefixed_pubky(pk_host) {
             return HostKind::Icann;
         }
-        if PublicKey::try_from(pk_host).is_ok() {
+        if PublicKey::try_from_z32(pk_host).is_ok() {
             return HostKind::ResolvedPubky;
         }
-    } else if is_prefixed_pubky_host(host) || PublicKey::try_from(host).is_err() {
+    } else if is_prefixed_pubky(host) || PublicKey::try_from_z32(host).is_err() {
         return HostKind::Icann;
     }
     HostKind::Pubky
-}
-
-fn is_prefixed_pubky_host(value: &str) -> bool {
-    matches!(value.strip_prefix("pubky"), Some(stripped) if stripped.len() == 52)
 }
 
 impl PubkyHttpClient {
@@ -48,7 +45,12 @@ impl PubkyHttpClient {
         clippy::unused_async,
         reason = "native implementation stays async to share the same signature as the WASM backend"
     )]
-    pub(crate) async fn cross_request(&self, method: Method, url: Url) -> Result<RequestBuilder> {
+    pub(crate) async fn cross_request(
+        &self,
+        method: Method,
+        mut url: Url,
+    ) -> Result<RequestBuilder> {
+        let _ = self.prepare_request(&mut url).await?;
         Ok(self.request(method, &url))
     }
 
@@ -67,25 +69,25 @@ impl PubkyHttpClient {
         let host = url.host_str().unwrap_or("");
 
         if let Some(stripped) = host.strip_prefix("_pubky.") {
-            if is_prefixed_pubky_host(stripped) {
+            if is_prefixed_pubky(stripped) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
                 }
                 .into());
             }
-            if PublicKey::try_from(stripped).is_ok() {
+            if PublicKey::try_from_z32(stripped).is_ok() {
                 return Ok(Some(stripped.to_string()));
             }
         } else {
-            if is_prefixed_pubky_host(host) {
+            if is_prefixed_pubky(host) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
                 }
                 .into());
             }
-            if PublicKey::try_from(host).is_ok() {
+            if PublicKey::try_from_z32(host).is_ok() {
                 return Ok(Some(host.to_string()));
             }
         }

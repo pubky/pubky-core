@@ -393,11 +393,12 @@ mod tests {
                 .await
                 .expect_err("Should fail because the path doesn't start with a pubkey");
             let pubkey = pubky_common::crypto::Keypair::random().public_key();
+            let pubkey_raw = pubkey.z32();
             UserRepository::create(&pubkey, &mut db.pool().into())
                 .await
                 .unwrap();
             operator
-                .write(format!("{}/test.txt", pubkey).as_str(), vec![0; 10])
+                .write(format!("{}/test.txt", pubkey_raw).as_str(), vec![0; 10])
                 .await
                 .expect("Should succeed because the path starts with a pubkey");
             operator
@@ -415,13 +416,17 @@ mod tests {
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
+        let user_pubkey1_raw = user_pubkey1.z32();
         UserRepository::create(&user_pubkey1, &mut db.pool().into())
             .await
             .unwrap();
 
         // Write a file and see if the user usage is updated
         operator
-            .write(format!("{}/test.txt1", user_pubkey1).as_str(), vec![0; 10])
+            .write(
+                format!("{}/test.txt1", user_pubkey1_raw).as_str(),
+                vec![0; 10],
+            )
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
@@ -429,7 +434,10 @@ mod tests {
 
         // Write the same file again but with a different size
         operator
-            .write(format!("{}/test.txt1", user_pubkey1).as_str(), vec![0; 12])
+            .write(
+                format!("{}/test.txt1", user_pubkey1_raw).as_str(),
+                vec![0; 12],
+            )
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
@@ -437,7 +445,10 @@ mod tests {
 
         // Write a second file and see if the user usage is updated
         operator
-            .write(format!("{}/test.txt2", user_pubkey1).as_str(), vec![0; 5])
+            .write(
+                format!("{}/test.txt2", user_pubkey1_raw).as_str(),
+                vec![0; 5],
+            )
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
@@ -445,7 +456,7 @@ mod tests {
 
         // Delete the first file and see if the user usage is updated
         operator
-            .delete(format!("{}/test.txt1", user_pubkey1).as_str())
+            .delete(format!("{}/test.txt1", user_pubkey1_raw).as_str())
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
@@ -453,7 +464,7 @@ mod tests {
 
         // Delete the second file and see if the user usage is updated
         operator
-            .delete(format!("{}/test.txt2", user_pubkey1).as_str())
+            .delete(format!("{}/test.txt2", user_pubkey1_raw).as_str())
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
@@ -479,11 +490,12 @@ mod tests {
             .layer(events_layer);
 
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
+        let user_pubkey1_raw = user_pubkey1.z32();
         UserRepository::create(&user_pubkey1, &mut db.pool().into())
             .await
             .unwrap();
 
-        let file_name1 = format!("{}/test1.txt", user_pubkey1);
+        let file_name1 = format!("{}/test1.txt", user_pubkey1_raw);
         let entry_path1 =
             EntryPath::new(user_pubkey1.clone(), WebDavPath::new("/test1.txt").unwrap());
 
@@ -546,7 +558,7 @@ mod tests {
             "Event should be created after successful write"
         );
 
-        let file_name2 = format!("{}/test2.txt", user_pubkey1);
+        let file_name2 = format!("{}/test2.txt", user_pubkey1_raw);
         // Write a second file and see if the user usage is updated
         operator
             .write(file_name2.as_str(), vec![0; 1])

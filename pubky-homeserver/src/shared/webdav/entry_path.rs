@@ -1,4 +1,4 @@
-use pubky_common::crypto::PublicKey;
+use pubky_common::crypto::{is_prefixed_pubky, PublicKey};
 use std::str::FromStr;
 
 use super::WebDavPath;
@@ -70,7 +70,12 @@ impl FromStr for EntryPath {
             Some((pubkey, path)) => (pubkey, path),
             None => return Err(EntryPathError::Invalid("Missing '/'".to_string())),
         };
-        let pubkey = PublicKey::from_str(pubkey).map_err(EntryPathError::InvalidPubkey)?;
+        if is_prefixed_pubky(pubkey) {
+            return Err(EntryPathError::Invalid(
+                "unexpected `pubky` prefix; expected raw z32".to_string(),
+            ));
+        }
+        let pubkey = PublicKey::try_from_z32(pubkey).map_err(EntryPathError::InvalidPubkey)?;
         let webdav_path = WebDavPath::new(path).map_err(EntryPathError::InvalidWebdavPath)?;
         Ok(Self::new(pubkey, webdav_path))
     }
