@@ -37,10 +37,14 @@ let body = session.storage().get("/pub/my-cool-app/hello.txt").await?.text().awa
 assert_eq!(&body, "hello");
 
 // 4) Public read of another user’s file
-let txt = pubky.public_storage()
-  .get(format!("pubky{}/pub/my-cool-app/hello.txt", session.info().public_key()))
-  .await?
-  .text().await?;
+let txt = pubky
+    .public_storage()
+    .get(format!(
+        "{}/pub/my-cool-app/hello.txt",
+        session.info().public_key()
+    ))
+    .await?
+    .text().await?;
 assert_eq!(txt, "hello");
 
 // 5) Keyless app flow (QR/deeplink)
@@ -105,13 +109,13 @@ let pubky = Pubky::new()?;
 let public = pubky.public_storage();
 
 let file = public
-    .get(format!("pubky{user_id}/pub/example.com/file.bin"))
+    .get(format!("{user_id}/pub/example.com/file.bin"))
     .await?
     .bytes()
     .await?;
 
 let entries = public
-    .list(format!("pubky{user_id}/pub/example.com/"))?
+    .list(format!("{user_id}/pub/example.com/"))?
     .limit(10)
     .send()
     .await?;
@@ -254,7 +258,7 @@ let homeserver  = testnet.homeserver_app();
 let pubky = testnet.sdk()?;
 
 let signer = pubky.signer(Keypair::random());
-let session  = signer.signup(&homeserver.public_key(), None).await?;
+let session  = signer.signup(&homeserver.public_key().into(), None).await?;
 
 session.storage().put("/pub/my-cool-app/hello.txt", "hi").await?;
 let s = session.storage().get("/pub/my-cool-app/hello.txt").await?.text().await?;

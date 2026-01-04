@@ -358,7 +358,7 @@ mod tests {
         Router,
     };
     use axum_server::Server;
-    use pkarr::{Keypair, PublicKey};
+    use pubky_common::crypto::{Keypair, PublicKey};
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
 
@@ -544,7 +544,11 @@ mod tests {
             tokio::spawn(async move {
                 let client = Client::new();
                 let response = client
-                    .post(format!("http://{}/upload?pubky-host={user_pubkey}", socket))
+                    .post(format!(
+                        "http://{}/upload?pubky-host={}",
+                        socket,
+                        user_pubkey.z32()
+                    ))
                     .send()
                     .await
                     .unwrap();

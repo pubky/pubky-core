@@ -17,8 +17,8 @@ use axum::{
 };
 use axum_extra::extract::Host;
 use bytes::Bytes;
-use pkarr::PublicKey;
 use pubky_common::capabilities::Capabilities;
+use pubky_common::crypto::PublicKey;
 use pubky_common::session::SessionInfo;
 use std::collections::HashMap;
 use tower_cookies::{
@@ -137,7 +137,7 @@ async fn create_session_and_cookie(
         SessionRepository::create(user.id, capabilities, &mut state.sql_db.pool().into()).await?;
 
     // 3) Build and set cookie
-    let mut cookie = Cookie::new(user.public_key.to_string(), session_secret.to_string());
+    let mut cookie = Cookie::new(user.public_key.z32(), session_secret.to_string());
     configure_session_cookie(&mut cookie, host);
     // Set the cookie to expire in one year.
     let one_year = Duration::days(365);
@@ -171,7 +171,7 @@ pub(crate) fn configure_session_cookie(cookie: &mut Cookie<'static>, host: &str)
 /// container names or localhost) are treated as non-secure development environments.
 fn is_secure(host: &str) -> bool {
     // A pkarr public key is always a secure context.
-    if PublicKey::try_from(host).is_ok() {
+    if PublicKey::try_from_z32(host).is_ok() {
         return true;
     }
 
@@ -188,7 +188,7 @@ fn is_secure(host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use super::*;
 
@@ -202,7 +202,7 @@ mod tests {
         assert!(!is_secure("[2001:0db8:0000:0000:0000:ff00:0042:8329]"));
         assert!(!is_secure("localhost"));
         assert!(!is_secure("localhost:23423"));
-        assert!(is_secure(&Keypair::random().public_key().to_string()));
+        assert!(is_secure(&Keypair::random().public_key().z32()));
         assert!(is_secure("example.com"));
     }
 }

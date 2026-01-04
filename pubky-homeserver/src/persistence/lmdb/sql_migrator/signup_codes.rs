@@ -18,7 +18,7 @@ pub async fn create<'a>(
     executor: &mut UnifiedExecutor<'a>,
 ) -> Result<(), sqlx::Error> {
     let used_by = match lmdb_token.used.as_ref() {
-        Some(p) => SimpleExpr::Value(p.to_string().into()),
+        Some(p) => SimpleExpr::Value(p.z32().into()),
         None => SimpleExpr::Value(Value::String(None)),
     };
     let created_at =
@@ -66,7 +66,7 @@ pub async fn migrate_signup_codes<'a>(
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use crate::persistence::sql::{
         signup_code::{SignupCodeId, SignupCodeRepository},

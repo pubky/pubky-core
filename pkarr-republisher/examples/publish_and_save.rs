@@ -140,16 +140,15 @@ async fn publish_records(num_records: usize, thread_id: usize) -> Vec<Keypair> {
             .cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600)
             .build(&key)
             .unwrap();
-        let result = rclient.publish(packet, None).await;
         let elapsed_time = instant.elapsed().as_millis();
-        if result.is_ok() {
-            let info = result.unwrap();
-            tracing::info!("- t{thread_id:<2} {i:>3}/{num_records} Published {} within {elapsed_time}ms to {} nodes {} attempts", key.public_key(), info.published_nodes_count, info.attempts_needed);
-            records.push(key);
-        } else {
-            let e = result.unwrap_err();
-            tracing::error!("Failed to publish {} record: {e:?}", key.public_key());
-            continue;
+        match rclient.publish(packet, None).await {
+            Ok(info) => {
+                tracing::info!("- t{thread_id:<2} {i:>3}/{num_records} Published {} within {elapsed_time}ms to {} nodes {} attempts", key.public_key(), info.published_nodes_count, info.attempts_needed);
+                records.push(key);
+            }
+            Err(e) => {
+                tracing::error!("Failed to publish {} record: {e:?}", key.public_key());
+            }
         }
     }
     records

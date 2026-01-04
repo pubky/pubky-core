@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use pkarr::PublicKey;
+use crate::PublicKey;
 use pubky_common::session::SessionInfo;
 
 use super::core::PubkySession;
@@ -18,8 +18,9 @@ impl PubkySession {
     ///
     /// Treat the returned String as a **bearer secret**. Do not log it; store it
     /// securely.
+    #[must_use]
     pub fn export_secret(&self) -> String {
-        let public_key = self.info().public_key().to_string();
+        let public_key = self.info().public_key().z32();
         let cookie = self.cookie.clone();
         cross_log!(info, "Exporting session secret for {}", public_key);
         format!("{public_key}:{cookie}")
@@ -49,9 +50,10 @@ impl PubkySession {
                 message: "invalid secret: expected `<pubkey>:<cookie>`".into(),
             })?;
 
-        let public_key = PublicKey::try_from(pk_str).map_err(|_err| RequestError::Validation {
-            message: "invalid public key".into(),
-        })?;
+        let public_key =
+            PublicKey::try_from_z32(pk_str).map_err(|_err| RequestError::Validation {
+                message: "invalid public key".into(),
+            })?;
         cross_log!(info, "Importing session secret for {}", public_key);
 
         // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.

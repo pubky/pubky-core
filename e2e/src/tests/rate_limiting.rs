@@ -148,7 +148,7 @@ async fn test_limit_events() {
     let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
 
     // Events feed URL (pkarr host form)
-    let url = format!("https://{}/events/", server.public_key());
+    let url = format!("https://{}/events/", server.public_key().z32());
 
     // First request OK
     let res = client.request(Method::GET, &url).send().await.unwrap();
@@ -243,7 +243,8 @@ async fn test_concurrent_write_read() {
     let start = Instant::now();
     {
         let mut tasks = Vec::with_capacity(user_count);
-        for session in sessions.iter().cloned() {
+        for session in &sessions {
+            let session = session.clone();
             let body = body.clone();
             tasks.push(tokio::spawn(async move {
                 session.storage().put(path, body).await.unwrap();
@@ -265,7 +266,8 @@ async fn test_concurrent_write_read() {
     let start = Instant::now();
     {
         let mut tasks = Vec::with_capacity(user_count);
-        for session in sessions.iter().cloned() {
+        for session in &sessions {
+            let session = session.clone();
             tasks.push(tokio::spawn(async move {
                 let resp = session.storage().get(path).await.unwrap();
                 let _ = resp.bytes().await.unwrap(); // read body to apply full 3 KB download

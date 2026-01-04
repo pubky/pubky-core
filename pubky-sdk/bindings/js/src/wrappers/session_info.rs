@@ -12,12 +12,13 @@ pub struct SessionInfo(pub(crate) session::SessionInfo);
 impl SessionInfo {
     /// The user’s public key for this session.
     ///
-    /// Use `.z32()` on the returned `PublicKey` to get the string form.
+    /// Use `.toString()` on the returned `PublicKey` to get the `pubky<z32>` identifier.
+    /// Call `.z32()` when you specifically need the raw z-base32 value (e.g. hostnames).
     ///
     /// @returns {PublicKey}
     ///
     /// @example
-    /// const who = sessionInfo.publicKey.z32();
+    /// const who = sessionInfo.publicKey.toString();
     #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         self.0.public_key().clone().into()

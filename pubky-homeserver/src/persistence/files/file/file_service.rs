@@ -147,7 +147,7 @@ mod tests {
         let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
 
         let user = UserRepository::create(&pubkey, &mut db.pool().into())
             .await
@@ -263,7 +263,7 @@ mod tests {
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
@@ -295,7 +295,7 @@ mod tests {
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
@@ -327,7 +327,7 @@ mod tests {
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
@@ -362,7 +362,7 @@ mod tests {
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
@@ -390,7 +390,7 @@ mod tests {
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
@@ -425,7 +425,7 @@ mod tests {
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
-        let pubkey = pkarr::Keypair::random().public_key();
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();

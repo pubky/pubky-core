@@ -122,7 +122,7 @@ mod tests {
     use super::*;
     use crate::persistence::sql::{user::UserRepository, SqlDb};
     use crate::shared::webdav::WebDavPath;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     #[tokio::test]
     #[pubky_test_utils::test]
