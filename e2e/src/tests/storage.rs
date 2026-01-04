@@ -48,7 +48,7 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        session.info().public_key()
+        session.info().public_key().z32()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default

@@ -65,7 +65,7 @@ impl PubkyHttpClient {
                 }
                 .into());
             }
-            if PublicKey::try_from_z32(host.clone()).is_ok() {
+            if PublicKey::try_from_z32(&host).is_ok() {
                 self.transform_url(url).await?;
                 pubky_host = Some(host);
             }

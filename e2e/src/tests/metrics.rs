@@ -130,11 +130,13 @@ async fn metrics_comprehensive() {
     // 3. Test concurrent stream connections to generate metrics
     let stream_url1 = format!(
         "https://{}/events-stream?user={}&live=true",
-        server_public_key_z32, user_pubky1
+        server_public_key_z32,
+        user_pubky1.z32()
     );
     let stream_url2 = format!(
         "https://{}/events-stream?user={}&live=true",
-        server_public_key_z32, user_pubky2
+        server_public_key_z32,
+        user_pubky2.z32()
     );
 
     let response1 = pubky
