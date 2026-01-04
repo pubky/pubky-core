@@ -106,8 +106,11 @@ impl PublicKey {
                 "public key must be raw z32 or pubky<z32>; pubky:// is not supported",
             ));
         }
-        let value = if is_prefixed_pubky(value) {
-            value.strip_prefix("pubky").unwrap_or(value)
+        let value = if is_prefixed_pubky(&value) {
+            value
+                .strip_prefix("pubky")
+                .unwrap_or(value.as_str())
+                .to_string()
         } else {
             value
         };
