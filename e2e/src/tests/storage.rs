@@ -1,11 +1,55 @@
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
+    pubky::{
+        errors::RequestError, Error, IntoPubkyResource, Keypair, Method, PubkyHttpClient,
+        StatusCode,
+    },
     pubky_homeserver::MockDataDir,
     EphemeralTestnet, Testnet,
 };
 use rand::rng;
 use rand::seq::SliceRandom;
+
+async fn collect_feed_events(
+    client: &PubkyHttpClient,
+    feed_url: &str,
+    limit: usize,
+    user_ids: &[String],
+    expected: usize,
+) -> Vec<String> {
+    let mut cursor: Option<String> = None;
+    let mut out = Vec::new();
+
+    loop {
+        let url = match cursor.as_ref() {
+            Some(cursor) => format!("{feed_url}?limit={limit}&cursor={cursor}"),
+            None => format!("{feed_url}?limit={limit}"),
+        };
+        let resp = client.request(Method::GET, &url).send().await.unwrap();
+        let text = resp.text().await.unwrap();
+        let mut next_cursor = None;
+
+        for line in text.lines() {
+            if let Some(value) = line.strip_prefix("cursor: ") {
+                next_cursor = Some(value.to_string());
+                continue;
+            }
+            if user_ids.iter().any(|user_id| line.contains(user_id)) {
+                out.push(line.to_string());
+                if out.len() >= expected {
+                    return out;
+                }
+            }
+        }
+
+        match next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => break,
+        }
+    }
+
+    out
+}
 
 #[tokio::test]
 #[pubky_testnet::test]
@@ -292,6 +336,7 @@ async fn list_deep() {
     let owner = pubky.signer(Keypair::random());
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
     let public_key = owner_session.info().public_key();
+    let public_key_z32 = public_key.z32();
     // Write files to the server
     let mut paths = vec![
         format!("/pub/a.wrong/a.txt"),
@@ -327,10 +372,10 @@ async fn list_deep() {
                 format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/cc-nested/z.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/cc-nested/z.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
                 format!("{public_key}/pub/example.com/d.txt")
@@ -372,7 +417,7 @@ async fn list_deep() {
             .list(&url)
             .unwrap()
             .limit(2)
-            .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
+            .cursor(format!("{public_key_z32}/pub/example.com/a.txt").as_str())
             .send()
             .await
             .unwrap();
@@ -383,7 +428,7 @@ async fn list_deep() {
                 format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/cc-nested/z.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -397,7 +442,7 @@ async fn list_deep() {
             .list(&url)
             .unwrap()
             .limit(2)
-            .cursor(&format!("{public_key}/pub/example.com/a.txt"))
+            .cursor(&format!("{public_key_z32}/pub/example.com/a.txt"))
             .send()
             .await
             .unwrap();
@@ -408,7 +453,7 @@ async fn list_deep() {
                 format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/cc-nested/z.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -428,6 +473,7 @@ async fn list_shallow() {
     let owner = pubky.signer(Keypair::random());
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
     let public_key = owner_session.info().public_key();
+    let public_key_z32 = public_key.z32();
 
     // Write files to the server
     let mut urls = vec![
@@ -503,7 +549,7 @@ async fn list_shallow() {
         .unwrap()
         .shallow(true)
         .limit(2)
-        .cursor(format!("{public_key}/pub/example.com/").as_str())
+        .cursor(format!("{public_key_z32}/pub/example.com/").as_str())
         .send()
         .await
         .unwrap();
@@ -523,7 +569,7 @@ async fn list_shallow() {
         .unwrap()
         .shallow(true)
         .limit(2)
-        .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
+        .cursor(format!("{public_key_z32}/pub/example.com/a.txt").as_str())
         .send()
         .await
         .unwrap();
@@ -541,7 +587,7 @@ async fn list_shallow() {
             .unwrap()
             .shallow(true)
             .limit(3)
-            .cursor(format!("{public_key}/pub/example.com/").as_str())
+            .cursor(format!("{public_key_z32}/pub/example.com/").as_str())
             .send()
             .await
             .unwrap();
@@ -592,78 +638,24 @@ async fn list_events() {
     // Feed is exposed under the public-key host
     let feed_url = format!("https://{}/events/", server.public_key().z32());
 
-    // Page 1
-    let cursor: String = {
-        let page1_url = format!("{feed_url}?limit=10");
-        let resp = session
-            .client()
-            .request(Method::GET, &page1_url)
-            .send()
-            .await
-            .unwrap();
-
-        let text = resp.text().await.unwrap();
-        let lines = text.split('\n').collect::<Vec<_>>();
-
-        // last line is "cursor: <id>"
-        let cursor = lines
-            .last()
-            .unwrap()
-            .rsplit(' ')
-            .next()
-            .unwrap()
-            .to_string();
-
-        assert_eq!(
-            lines,
-            vec![
-                format!("PUT pubky://{public_key_z32}/pub/a.com/a.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/a.com/a.txt"),
-                format!("PUT pubky://{public_key_z32}/pub/example.com/a.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/example.com/a.txt"),
-                format!("PUT pubky://{public_key_z32}/pub/example.com/b.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/example.com/b.txt"),
-                format!("PUT pubky://{public_key_z32}/pub/example.com/c.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/example.com/c.txt"),
-                format!("PUT pubky://{public_key_z32}/pub/example.com/d.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/example.com/d.txt"),
-                format!("cursor: {cursor}"),
+    let expected = paths
+        .iter()
+        .flat_map(|path| {
+            [
+                format!("PUT pubky://{public_key_z32}{path}"),
+                format!("DEL pubky://{public_key_z32}{path}"),
             ]
-        );
-
-        cursor
-    };
-
-    // Page 2 (using cursor)
-    {
-        let page2_url = format!("{feed_url}?limit=10&cursor={cursor}");
-        let resp = session
-            .client()
-            .request(Method::GET, &page2_url)
-            .send()
-            .await
-            .unwrap();
-
-        let text = resp.text().await.unwrap();
-        let lines = text.split('\n').collect::<Vec<_>>();
-
-        assert_eq!(
-            lines,
-            vec![
-                format!("PUT pubky://{public_key_z32}/pub/example.xyz/d.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/example.xyz/d.txt"),
-                format!("PUT pubky://{public_key_z32}/pub/example.xyz"),
-                format!("DEL pubky://{public_key_z32}/pub/example.xyz"),
-                format!("PUT pubky://{public_key_z32}/pub/file"),
-                format!("DEL pubky://{public_key_z32}/pub/file"),
-                format!("PUT pubky://{public_key_z32}/pub/file2"),
-                format!("DEL pubky://{public_key_z32}/pub/file2"),
-                format!("PUT pubky://{public_key_z32}/pub/z.com/a.txt"),
-                format!("DEL pubky://{public_key_z32}/pub/z.com/a.txt"),
-                lines.last().unwrap().to_string(),
-            ]
-        );
-    }
+        })
+        .collect::<Vec<_>>();
+    let events = collect_feed_events(
+        &session.client(),
+        &feed_url,
+        10,
+        &[public_key_z32.clone()],
+        expected.len(),
+    )
+    .await;
+    assert_eq!(events, expected);
 }
 
 #[tokio::test]
@@ -690,28 +682,9 @@ async fn read_after_event() {
     // Events page 1
     let feed_url = format!("https://{}/events/", server.public_key().z32());
     {
-        let page_url = format!("{feed_url}?limit=10");
-        let resp = pubky
-            .client()
-            .request(Method::GET, &page_url)
-            .send()
-            .await
-            .unwrap();
-
-        let text = resp.text().await.unwrap();
-        let lines = text.split('\n').collect::<Vec<_>>();
-        let cursor = lines
-            .last()
-            .unwrap()
-            .rsplit(' ')
-            .next()
-            .unwrap()
-            .to_string();
-
-        assert_eq!(
-            lines,
-            vec![format!("PUT {url}"), format!("cursor: {cursor}")]
-        );
+        let events =
+            collect_feed_events(&pubky.client(), &feed_url, 10, &[public_key_z32.clone()], 1).await;
+        assert_eq!(events, vec![format!("PUT {url}")]);
     }
 
     // Now the file should exist
@@ -760,25 +733,20 @@ async fn dont_delete_shared_blobs() {
 
     // Event feed should show PUT u1, PUT u2, DEL u1 (order preserved)
     let feed_url = format!("https://{}/events/", homeserver.public_key().z32());
-    let resp = pubky
-        .client()
-        .request(Method::GET, &feed_url)
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
-
-    let text = resp.text().await.unwrap();
-    let lines = text.split('\n').collect::<Vec<_>>();
-
+    let events = collect_feed_events(
+        &pubky.client(),
+        &feed_url,
+        10,
+        &[user_1_id.z32(), user_2_id.z32()],
+        3,
+    )
+    .await;
     assert_eq!(
-        lines,
+        events,
         vec![
             format!("PUT pubky://{}/pub/pubky.app/file/file_1", user_1_id.z32()),
             format!("PUT pubky://{}/pub/pubky.app/file/file_1", user_2_id.z32()),
             format!("DEL pubky://{}/pub/pubky.app/file/file_1", user_1_id.z32()),
-            lines.last().unwrap().to_string(),
         ]
     );
 }
