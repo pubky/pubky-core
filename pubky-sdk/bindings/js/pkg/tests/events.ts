@@ -7,7 +7,7 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
 
-test("eventStreamFor: comprehensive", async (t) => {
+test("eventStream: comprehensive", async (t) => {
   const sdk = Pubky.testnet();
 
   // === SETUP: Create ONE user with diverse events ===
@@ -47,7 +47,7 @@ test("eventStreamFor: comprehensive", async (t) => {
   // === Test 1: Historical events with limit ===
   t.comment("Test 1: Historical events with limit");
 
-  const stream1 = await sdk.eventStreamFor(userPk).limit(10).subscribe();
+  const stream1 = await sdk.eventStream().addUser(userPk, null).limit(10).subscribe();
 
   const events1 = [];
   const reader1 = stream1.getReader();
@@ -79,7 +79,8 @@ test("eventStreamFor: comprehensive", async (t) => {
   t.comment("Test 2: Path filtering - /pub/app1/");
 
   const stream2 = await sdk
-    .eventStreamFor(userPk)
+    .eventStream()
+    .addUser(userPk, null)
     .path("/pub/app1/")
     .subscribe();
 
@@ -120,7 +121,8 @@ test("eventStreamFor: comprehensive", async (t) => {
   t.comment("Test 3: Path filtering - /pub/app2/");
 
   const stream3 = await sdk
-    .eventStreamFor(userPk)
+    .eventStream()
+    .addUser(userPk, null)
     .path("/pub/app2/")
     .limit(20)
     .subscribe();
@@ -152,7 +154,8 @@ test("eventStreamFor: comprehensive", async (t) => {
   t.comment("Test 4: DELETE events structure");
 
   const stream4 = await sdk
-    .eventStreamFor(userPk)
+    .eventStream()
+    .addUser(userPk, null)
     .path("/pub/app1/")
     .reverse()
     .limit(5)
@@ -185,7 +188,7 @@ test("eventStreamFor: comprehensive", async (t) => {
   // === Test 5: Reverse order ===
   t.comment("Test 5: Reverse order");
 
-  const stream5 = await sdk.eventStreamFor(userPk).reverse().limit(10).subscribe();
+  const stream5 = await sdk.eventStream().addUser(userPk, null).reverse().limit(10).subscribe();
 
   const events5 = [];
   const reader5 = stream5.getReader();
@@ -223,7 +226,7 @@ test("eventStreamFor: comprehensive", async (t) => {
   t.comment("Test 6: Cursor-based pagination");
 
   // Get first 5 events
-  const streamP1 = await sdk.eventStreamFor(userPk).limit(5).subscribe();
+  const streamP1 = await sdk.eventStream().addUser(userPk, null).limit(5).subscribe();
 
   const firstBatch = [];
   const readerP1 = streamP1.getReader();
@@ -243,8 +246,8 @@ test("eventStreamFor: comprehensive", async (t) => {
   // Get next batch using cursor
   const lastCursor = firstBatch[firstBatch.length - 1].cursor;
   const streamP2 = await sdk
-    .eventStreamFor(userPk)
-    .cursor(lastCursor)
+    .eventStream()
+    .addUser(userPk, parseInt(lastCursor))
     .limit(5)
     .subscribe();
 
@@ -278,7 +281,8 @@ test("eventStreamFor: comprehensive", async (t) => {
   t.comment("Test 7: ReadableStream iteration");
 
   const stream7 = await sdk
-    .eventStreamFor(userPk)
+    .eventStream()
+    .addUser(userPk, null)
     .path("/pub/photos/")
     .subscribe();
 
@@ -308,7 +312,7 @@ test("eventStreamFor: comprehensive", async (t) => {
   t.comment("Test 8: Validation error - live + reverse");
 
   try {
-    await sdk.eventStreamFor(userPk).live().reverse().subscribe();
+    await sdk.eventStream().addUser(userPk, null).live().reverse().subscribe();
     t.fail("should throw error when combining live() and reverse()");
   } catch (error) {
     assertPubkyError(t, error);
@@ -324,14 +328,14 @@ test("eventStreamFor: comprehensive", async (t) => {
 /**
  * Test error handling for non-existent user.
  */
-test("eventStreamFor: invalid user key", async (t) => {
+test("eventStream: invalid user key", async (t) => {
   const sdk = Pubky.testnet();
 
   const fakeUser = Keypair.random().publicKey;
 
   try {
     // Try to subscribe to events for a user that doesn't exist
-    await sdk.eventStreamFor(fakeUser).limit(10).subscribe();
+    await sdk.eventStream().addUser(fakeUser, null).limit(10).subscribe();
 
     // If the homeserver can't be resolved, it should fail
     // But if it goes through, we should be able to read from stream

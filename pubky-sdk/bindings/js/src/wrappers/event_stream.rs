@@ -5,7 +5,6 @@ use wasm_bindgen::prelude::*;
 /// Type of event in the event stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Tsify)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
-#[serde(tag = "type")]
 pub enum EventType {
     #[serde(rename = "PUT")]
     Put,

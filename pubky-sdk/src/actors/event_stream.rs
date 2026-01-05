@@ -8,17 +8,17 @@
 //!
 //! # Example
 //! ```no_run
-//! use pubky::{Pubky, PublicKey};
+//! use pubky::{Pubky, PublicKey, EventCursor};
 //! use futures_util::StreamExt;
 //!
 //! # async fn example() -> pubky::Result<()> {
 //! let pubky = Pubky::new()?;
-//! let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo")?;
-//! let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy")?;
+//! let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+//! let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
 //!
 //! let mut stream = pubky.event_stream()
 //!     .add_user(&user1, None)?
-//!     .add_user(&user2, 100)?
+//!     .add_user(&user2, Some(EventCursor::new(100)))?
 //!     .live()
 //!     .limit(100)
 //!     .path("/pub/")
@@ -154,7 +154,7 @@ impl EventStreamBuilder {
     ///
     /// Typically called via [`crate::Pubky::event_stream`].
     #[must_use]
-    pub(crate) fn new(client: PubkyHttpClient) -> Self {
+    pub fn new(client: PubkyHttpClient) -> Self {
         Self {
             client,
             users: Vec::new(),
