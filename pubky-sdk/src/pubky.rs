@@ -63,6 +63,9 @@ use crate::{PubkySession, errors::RequestError};
 use std::path::Path;
 
 /// High-level facade. Owns a `PubkyHttpClient` and constructs the main actors.
+/// Prefer to instantiate only once and use trough your application a single shared `Pubky`
+/// instead of constructing one per request. This avoids reinitializing transports and keeps
+/// the same client available for repeated usage.
 #[derive(Clone, Debug)]
 pub struct Pubky {
     client: PubkyHttpClient,

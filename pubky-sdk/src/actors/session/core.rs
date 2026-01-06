@@ -1,14 +1,16 @@
 use reqwest::{Method, StatusCode};
 
+#[cfg(target_arch = "wasm32")]
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::session::SessionInfo;
 
 use crate::actors::storage::resource::resolve_pubky;
+use crate::errors::AuthError;
+#[cfg(target_arch = "wasm32")]
+use crate::errors::RequestError;
 use crate::{
     AuthToken, Error, PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http_status,
 };
-
-#[cfg(not(target_arch = "wasm32"))]
-use crate::errors::AuthError;
 
 /// Stateful, per-identity API driver built on a shared [`PubkyHttpClient`].
 ///
@@ -205,6 +207,60 @@ impl PubkySession {
         }
         cross_log!(info, "Session for {} signed out", self.info.public_key());
         Ok(()) // success => `self` is consumed
+    }
+
+    /// Export session metadata for rehydrating in browsers after a tab refresh.
+    ///
+    /// This is available on WASM targets only. The returned string contains **no secrets**;
+    /// it is a base64 encoding of the public `SessionInfo`. The browser remains responsible
+    /// for persisting the HTTP-only session cookie; `export()` merely captures the metadata
+    /// needed to reconstruct a `PubkySession` handle.
+    #[cfg(target_arch = "wasm32")]
+    #[must_use]
+    pub fn export(&self) -> String {
+        cross_log!(
+            info,
+            "Exporting WASM session for {}",
+            self.info.public_key()
+        );
+        STANDARD.encode(self.info.serialize())
+    }
+
+    /// Restore a WASM session from an `export()` string. No secrets are read or written;
+    /// the browser's HTTP-only cookie jar must still contain the session cookie.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::RequestError::Validation`] if the export string is malformed.
+    /// - Returns [`crate::errors::AuthError::RequestExpired`] if the cookie is missing/expired.
+    /// - Propagates transport failures while revalidating the session with the homeserver.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn import(export: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
+        let client = match client {
+            Some(c) => c,
+            None => PubkyHttpClient::new()?,
+        };
+
+        let bytes = STANDARD
+            .decode(export)
+            .map_err(|e| RequestError::Validation {
+                message: format!("invalid session export: {e}"),
+            })?;
+        let info = SessionInfo::deserialize(&bytes).map_err(|e| RequestError::Validation {
+            message: format!("invalid session export: {e}"),
+        })?;
+
+        let mut session = Self { client, info };
+        let info = session
+            .revalidate()
+            .await?
+            .ok_or(AuthError::RequestExpired)?;
+        session.info = info;
+        cross_log!(
+            info,
+            "Rehydrated WASM session for {}",
+            session.info.public_key()
+        );
+        Ok(session)
     }
 
     /// Create a **session-mode** Storage bound to this user session.

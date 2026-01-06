@@ -57,6 +57,10 @@ println!("Your current homeserver: {:?}", resolved);
 # Ok(()) }
 ```
 
+### Reuse a single facade across your app
+
+Use a shared `Pubky` (via cloning it, passing down as argument or behind `OnceCell`) instead of constructing one per request. This avoids reinitializing transports and keeps the same client available for repeated usage.
+
 ## Mental model
 
 - `Pubky` - facade, always start here! Owns the transport and constructs actors.
