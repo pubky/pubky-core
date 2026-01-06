@@ -108,6 +108,11 @@ impl AdminServer {
             context.sql_db.clone(),
             context.file_service.clone(),
             &password,
+        )
+        .with_metadata_from_config(
+            context.keypair.public_key().to_string(),
+            &context.config_toml,
+            env!("CARGO_PKG_VERSION"),
         );
         let socket = context.config_toml.admin.listen_socket;
         let app = create_app(state, password.as_str());

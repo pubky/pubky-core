@@ -14,7 +14,7 @@ docker run --name postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
   -p 127.0.0.1:5432:5432 \
-  -d postgres:17
+  -d postgres:18-alpine
 
 # Run the testnet binary (all resources ephemeral). The environment variable must point to the postgres admin database.
 TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres' cargo run -p pubky-testnet

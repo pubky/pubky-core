@@ -2,6 +2,7 @@
 use wasm_bindgen::prelude::*;
 
 use super::storage::SessionStorage;
+use crate::client::constructor::Client;
 use crate::js_error::{JsResult, PubkyError};
 use crate::wrappers::session_info::SessionInfo;
 
@@ -39,6 +40,37 @@ impl Session {
             Ok(()) => Ok(()),
             Err((e, _s)) => Err(PubkyError::from(e)),
         }
+    }
+
+    /// Export the session metadata so it can be restored after a tab refresh.
+    ///
+    /// The export string contains **no secrets**; it only serializes the public `SessionInfo`.
+    /// Browsers remain responsible for persisting the HTTP-only session cookie.
+    ///
+    /// @returns {string}
+    /// A base64 string to store (e.g. in `localStorage`).
+    #[wasm_bindgen]
+    pub fn export(&self) -> String {
+        self.0.export()
+    }
+
+    /// Restore a session from an `export()` string.
+    ///
+    /// The HTTP-only cookie must still be present in the browser; this function does not
+    /// read or write any secrets.
+    ///
+    /// @param {string} exported
+    /// A string produced by `session.export()`.
+    /// @param {Client=} client
+    /// Optional client to reuse transport configuration.
+    /// @returns {Promise<Session>}
+    #[wasm_bindgen(js_name = "restore")]
+    pub async fn restore(exported: String, client: Option<Client>) -> JsResult<Session> {
+        let session = match client {
+            Some(c) => pubky::PubkySession::import(&exported, Some(c.0)).await?,
+            None => pubky::PubkySession::import(&exported, None).await?,
+        };
+        Ok(Session(session))
     }
 }
 

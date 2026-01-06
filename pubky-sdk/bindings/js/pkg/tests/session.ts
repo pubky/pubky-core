@@ -4,6 +4,7 @@ import {
   Keypair,
   Pubky,
   PublicKey,
+  Session,
   type Address,
   type Path,
 } from "../index.js";
@@ -35,6 +36,38 @@ type _PublicGetText = Assert<
 >;
 
 const PATH_AUTH_BASIC: Path = "/pub/example.com/auth-basic.txt";
+
+test("Session: export/import uses browser cookie", async (t) => {
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+
+  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const exported = session.export();
+
+  t.equal(typeof exported, "string", "export() returns a string snapshot");
+
+  const restored = await sdk.restoreSession(exported);
+  t.equal(
+    restored.info.publicKey.z32(),
+    session.info.publicKey.z32(),
+    "restored session keeps the same identity",
+  );
+
+  const path = `/pub/example.com/export-${Date.now()}.txt` as Path;
+  await restored.storage.putText(path, "persisted");
+
+  const url = `https://_pubky.${restored.info.publicKey.z32()}${path}`;
+  const res = await sdk.client.fetch(url, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  t.ok(res.ok, "restored session can read via retained cookie");
+  t.equal(await res.text(), "persisted", "resource content matches");
+
+  t.end();
+});
 
 /**
  * Basic auth lifecycle:
