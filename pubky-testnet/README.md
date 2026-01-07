@@ -13,7 +13,7 @@ docker run --name postgres \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
-  -p 5432:5432 \
+  -p 127.0.0.1:5432:5432 \
   -d postgres:18-alpine
 
 # Run the testnet binary (all resources ephemeral). The environment variable must point to the postgres admin database.
