@@ -372,10 +372,10 @@ async fn list_deep() {
                 format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/cc-nested/z.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/cc-nested/z.txt")
                     .parse()
                     .unwrap(),
                 format!("{public_key}/pub/example.com/d.txt")
@@ -428,7 +428,7 @@ async fn list_deep() {
                 format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/cc-nested/z.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -453,7 +453,7 @@ async fn list_deep() {
                 format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("{public_key}/pub/example.com/cc-nested/z.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
             ],
