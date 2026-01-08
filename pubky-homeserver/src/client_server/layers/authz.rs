@@ -118,7 +118,7 @@ async fn authorize(
         // if method == Method::GET {
         //     return Ok(());
         // }
-    } else {
+    } else if method == Method::PUT {
         tracing::warn!(
             "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",
             public_key,
