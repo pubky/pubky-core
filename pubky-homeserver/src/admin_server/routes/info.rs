@@ -12,6 +12,10 @@ pub(crate) struct InfoResponse {
     total_disk_used_mb: u64,
     num_signup_codes: u64,
     num_unused_signup_codes: u64,
+    public_key: String,
+    pkarr_pubky_address: Option<String>,
+    pkarr_icann_domain: Option<String>,
+    version: String,
 }
 
 /// Return summary statistics about the homeserver.
@@ -27,6 +31,10 @@ pub async fn info(State(state): State<AppState>) -> HttpResult<(StatusCode, Json
         total_disk_used_mb: user_overview.total_used_mb,
         num_signup_codes: signup_code_overview.num_signup_codes,
         num_unused_signup_codes: signup_code_overview.num_unused_signup_codes,
+        public_key: state.metadata.public_key.clone(),
+        pkarr_pubky_address: state.metadata.pkarr_pubky_address.clone(),
+        pkarr_icann_domain: state.metadata.pkarr_icann_domain.clone(),
+        version: state.metadata.version.clone(),
     };
 
     Ok((StatusCode::OK, Json(body)))

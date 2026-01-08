@@ -46,12 +46,12 @@ jobs:
   test:
     services:
       postgres:
-        image: postgres:17-alpine          # official image
+        image: postgres:18-alpine          # official image
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
           POSTGRES_DB: postgres
-        ports: ['5432:5432']                # optional – makes it reachable on localhost
+        ports: ['127.0.0.1:5432:5432']      # optional – makes it reachable on localhost
         options: >-                         # give the container a health check
           --health-cmd="pg_isready -U test_user"
           --health-interval=5s
@@ -155,12 +155,12 @@ jobs:
   wasm-test:
     services:
       postgres:
-        image: postgres:17-alpine          # official image
+        image: postgres:18-alpine          # official image
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
           POSTGRES_DB: postgres
-        ports: ['5433:5432']                # optional – makes it reachable on localhost
+        ports: ['127.0.0.1:5433:5432']      # optional – makes it reachable on localhost
         options: >-                         # give the container a health check
           --health-cmd="pg_isready -U test_user"
           --health-interval=5s
