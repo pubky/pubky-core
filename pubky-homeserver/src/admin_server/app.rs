@@ -110,7 +110,7 @@ impl AdminServer {
             &password,
         )
         .with_metadata_from_config(
-            context.keypair.public_key().to_string(),
+            context.keypair.public_key().z32(),
             &context.config_toml,
             env!("CARGO_PKG_VERSION"),
         );

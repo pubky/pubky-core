@@ -1,5 +1,4 @@
-use pkarr::Keypair;
-use pubky_testnet::pubky::{Method, PubkyHttpClient, StatusCode};
+use pubky_testnet::pubky::{Keypair, Method, PubkyHttpClient, StatusCode};
 use pubky_testnet::{
     pubky_homeserver::{ConfigToml, Domain, MockDataDir},
     Testnet,
@@ -71,7 +70,7 @@ async fn admin_info_includes_metadata() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let body: InfoResponse = response.json().await.unwrap();
-    assert_eq!(body.public_key, homeserver.public_key().to_string());
+    assert_eq!(body.public_key, homeserver.public_key().z32());
     assert_eq!(body.pkarr_pubky_address, Some(expected_pubky_endpoint));
     assert_eq!(body.pkarr_icann_domain, Some(expected_icann_endpoint));
     assert_eq!(body.version, env!("CARGO_PKG_VERSION"));
