@@ -139,7 +139,7 @@ mod tests {
             .finish();
         let relay = Url::parse("https://httprelay.pubky.app/link/").unwrap();
         let secret = [123; 32];
-        let deep_link = SigninDeepLink::new(capabilities.clone(), relay.clone(), secret.clone());
+        let deep_link = SigninDeepLink::new(capabilities.clone(), relay.clone(), secret);
         let deep_link_str = deep_link.to_string();
         assert_eq!(
             deep_link_str,
@@ -147,7 +147,7 @@ mod tests {
                 "pubkyauth://signin?caps={}&relay={}&secret={}",
                 capabilities,
                 relay,
-                URL_SAFE_NO_PAD.encode(&secret)
+                URL_SAFE_NO_PAD.encode(secret)
             )
         );
         let deep_link_parsed = SigninDeepLink::from_str(&deep_link_str).unwrap();

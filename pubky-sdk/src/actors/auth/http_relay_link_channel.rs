@@ -308,17 +308,16 @@ mod tests {
                             url::ParseError::RelativeUrlWithCannotBeABaseBase
                         )
                     ),
-                    "Expected MissingChannelId error, got {:?}",
-                    e
+                    "Expected MissingChannelId error, got {e:?}"
                 );
             }
-        };
+        }
     }
 
     fn random_channel_url() -> String {
         let channel_bytes = random_bytes::<32>();
-        let channel_id = URL_SAFE_NO_PAD.encode(&channel_bytes);
-        format!("{}/link/{}", DEFAULT_HTTP_RELAY, channel_id)
+        let channel_id = URL_SAFE_NO_PAD.encode(channel_bytes);
+        format!("{DEFAULT_HTTP_RELAY}/link/{channel_id}")
     }
 
     #[tokio::test]
@@ -342,8 +341,8 @@ mod tests {
         });
 
         let (poll_result, produce_result) = tokio::join!(poll_handle, produce_handle);
-        assert!(poll_result.is_ok());
-        assert!(produce_result.is_ok());
+        poll_result.unwrap();
+        produce_result.unwrap();
     }
 
     /// Test that a poll can time out and then resume successfully.
@@ -364,7 +363,7 @@ mod tests {
                 Err(e) => {
                     assert!(matches!(e, PollError::Timeout));
                 }
-            };
+            }
 
             // Try again and should succeed
             let response = channel.poll_once(&client, None).await.unwrap();
@@ -384,8 +383,8 @@ mod tests {
         });
 
         let (poll_result, produce_result) = tokio::join!(poll_handle, produce_handle);
-        assert!(poll_result.is_ok());
-        assert!(produce_result.is_ok());
+        poll_result.unwrap();
+        produce_result.unwrap();
     }
 
     #[tokio::test]
@@ -408,7 +407,7 @@ mod tests {
         });
 
         let (produce_result, poll_result) = tokio::join!(produce_handle, poll_handle);
-        assert!(produce_result.is_ok());
-        assert!(poll_result.is_ok());
+        produce_result.unwrap();
+        poll_result.unwrap();
     }
 }

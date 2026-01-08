@@ -39,7 +39,7 @@ async fn disabled_user() {
 
     // Create a brand-new user and session
     let signer = pubky.signer(Keypair::random());
-    let pubky = signer.public_key().clone();
+    let user_pubky = signer.public_key().clone();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Create a test file to ensure the user can write to their account
@@ -69,7 +69,7 @@ async fn disabled_user() {
     let response = admin_client
         .request(
             Method::POST,
-            &format!("http://{admin_socket}/users/{pubky}/disable"),
+            &format!("http://{admin_socket}/users/{}/disable", user_pubky.z32()),
         )
         .header("X-Admin-Password", "admin")
         .send()
@@ -99,7 +99,7 @@ async fn disabled_user() {
         .signin()
         .await
         .expect("Signin should succeed for disabled users");
-    assert_eq!(session2.info().public_key(), &pubky);
+    assert_eq!(session2.info().public_key(), &user_pubky);
 }
 
 #[tokio::test]

@@ -1,8 +1,8 @@
 use super::super::tables::users;
 use crate::persistence::lmdb::tables::users::PublicKeyCodec;
 use heed::{BoxedError, BytesDecode, BytesEncode, Database, Env, RwTxn};
-use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
+use pubky_common::crypto::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -103,7 +103,7 @@ fn read_old_users_table(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<Vec<(Publ
     let mut new_users: Vec<(PublicKey, OldUser)> = vec![];
     for entry in table.iter(wtxn)? {
         let (key, old_user) = entry?;
-        new_users.push((key, old_user));
+        new_users.push((key.into(), old_user));
     }
 
     Ok(new_users)
@@ -152,7 +152,7 @@ pub fn run(env: &Env, wtxn: &mut RwTxn) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use heed::EnvOpenOptions;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use crate::persistence::lmdb::{db::DEFAULT_MAP_SIZE, migrations::m0};
 
