@@ -348,17 +348,11 @@ impl EntryRepository {
 
         if reverse {
             statement = statement
-                .order_by_expr(
-                    Expr::cust("entries.path COLLATE \"C\""),
-                    Order::Desc,
-                )
+                .order_by_expr(Expr::cust("entries.path COLLATE \"C\""), Order::Desc)
                 .to_owned();
         } else {
             statement = statement
-                .order_by_expr(
-                    Expr::cust("entries.path COLLATE \"C\""),
-                    Order::Asc,
-                )
+                .order_by_expr(Expr::cust("entries.path COLLATE \"C\""), Order::Asc)
                 .to_owned();
         }
 
