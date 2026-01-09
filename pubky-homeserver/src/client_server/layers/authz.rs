@@ -118,7 +118,7 @@ async fn authorize(
         // if method == Method::GET {
         //     return Ok(());
         // }
-    } else if method == Method::PUT {
+    } else {
         tracing::warn!(
             "Access to non-/pub/ paths is forbidden: {}/{}. Access forbidden",
             public_key,
