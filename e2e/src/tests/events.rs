@@ -1019,7 +1019,7 @@ async fn events_stream_validation_errors() {
     let body = response.text().await.unwrap();
     assert!(body.contains("Invalid cursor"));
 
-    // Test 9b: Negative cursor (technically valid i64, but no events will have negative IDs)
+    // Test 9b: Negative cursor (invalid - cursor is u64, cannot be negative)
     let stream_url = format!(
         "https://{}/events-stream?user={}:-100&limit=10",
         server.public_key(),
@@ -1033,16 +1033,11 @@ async fn events_stream_validation_errors() {
         .unwrap();
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Negative cursor is technically valid but returns all events (since -100 < any event ID)"
+        StatusCode::BAD_REQUEST,
+        "Negative cursor should be rejected (cursor is u64)"
     );
-    let mut stream = response.bytes_stream().eventsource();
-    // Since cursor is -100, all events (which have positive IDs) are "after" it
-    // Should get at least 1 event (the test.txt we created)
-    assert!(
-        stream.next().await.is_some(),
-        "Negative cursor should return events since all event IDs are positive"
-    );
+    let body = response.text().await.unwrap();
+    assert!(body.contains("Invalid cursor"));
 
     // Test 9c: Very large cursor beyond any events (should succeed but return no events)
     let stream_url = format!(

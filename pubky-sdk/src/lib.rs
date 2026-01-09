@@ -40,6 +40,8 @@ pub use actors::deep_links;
 #[doc(inline)]
 pub use actors::{AuthFlowKind, PubkyAuthFlow};
 #[doc(inline)]
+pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
+#[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
 // Error and global client
