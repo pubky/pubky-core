@@ -120,7 +120,7 @@ async fn authorize(
         // }
     } else {
         tracing::warn!(
-            "Access to non-/pub/ paths is forbidden: {}/{}. Access forbidden",
+            "Access to non-/pub/ paths is forbidden: {}/{}.",
             public_key,
             path
         );
