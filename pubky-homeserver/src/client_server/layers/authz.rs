@@ -120,12 +120,12 @@ async fn authorize(
         // }
     } else {
         tracing::warn!(
-            "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",
+            "Access to non-/pub/ paths is forbidden: {}/{}.",
             public_key,
             path
         );
         return Err(HttpError::forbidden_with_message(
-            "Writing to directories other than '/pub/' is forbidden",
+            "Access to non-/pub/ paths is forbidden",
         ));
     }
 
