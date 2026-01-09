@@ -202,6 +202,7 @@ impl StaticTestnet {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
         config.drive.pubky_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
+        config.admin.enabled = true; // Enable admin server for static testnet
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
         let mock = MockDataDir::new(config, Some(keypair))?;
 

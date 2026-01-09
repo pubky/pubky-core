@@ -204,6 +204,7 @@ impl ConfigToml {
     }
 
     /// Returns a default config tuned for unit tests.
+    /// Note: Admin and Metrics servers are disabled.
     #[cfg(any(test, feature = "testing"))]
     pub fn default_test_config() -> Self {
         let mut config = Self::default();
@@ -212,7 +213,7 @@ impl ConfigToml {
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        config.admin.enabled = true;
+        config.admin.enabled = false;
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
