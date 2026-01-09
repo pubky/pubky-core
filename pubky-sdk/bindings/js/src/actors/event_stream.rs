@@ -34,16 +34,21 @@ impl EventStreamBuilder {
     /// If the user is already in the subscription, their cursor position will be updated.
     ///
     /// @param {PublicKey} user - User public key
-    /// @param {number | null} cursor - Optional cursor position (event ID) to start from
+    /// @param {string | null} cursor - Optional cursor position (event ID as string) to start from
     /// @returns {EventStreamBuilder} - Builder for chaining
-    /// @throws {Error} - If trying to add more than 50 users
+    /// @throws {Error} - If trying to add more than 50 users or if cursor is invalid
     #[wasm_bindgen(js_name = "addUser")]
     pub fn add_user(
         self,
         user: &PublicKey,
-        cursor: Option<f64>,
+        cursor: Option<String>,
     ) -> Result<EventStreamBuilder, JsValue> {
-        let event_cursor = cursor.map(|c| pubky::EventCursor::new(c as i64));
+        let event_cursor = cursor
+            .map(|c| {
+                c.parse::<pubky::EventCursor>()
+                    .map_err(|e| JsValue::from_str(&format!("Invalid cursor: {e}")))
+            })
+            .transpose()?;
         let builder = self
             .0
             .add_user(user.as_inner(), event_cursor)

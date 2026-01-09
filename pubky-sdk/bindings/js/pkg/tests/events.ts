@@ -247,7 +247,7 @@ test("eventStream: comprehensive", async (t) => {
   const lastCursor = firstBatch[firstBatch.length - 1].cursor;
   const streamP2 = await sdk
     .eventStream()
-    .addUser(userPk, parseInt(lastCursor))
+    .addUser(userPk, lastCursor)
     .limit(5)
     .subscribe();
 

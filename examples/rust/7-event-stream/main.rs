@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
                     Ok(None)
                 } else {
                     s.trim()
-                        .parse::<i64>()
+                        .parse::<u64>()
                         .map(|id| Some(EventCursor::new(id)))
                         .map_err(|e| anyhow::anyhow!("Invalid cursor '{}': {}", s, e))
                 }

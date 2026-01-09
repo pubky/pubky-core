@@ -53,18 +53,18 @@ use crate::{
 /// The cursor represents the ID of an event and is used for pagination.
 /// It can be parsed from a string representation of an integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EventCursor(i64);
+pub struct EventCursor(u64);
 
 impl EventCursor {
     /// Create a new cursor from an event ID.
     #[must_use]
-    pub fn new(id: i64) -> Self {
+    pub fn new(id: u64) -> Self {
         Self(id)
     }
 
     /// Get the underlying ID value.
     #[must_use]
-    pub fn id(&self) -> i64 {
+    pub fn id(&self) -> u64 {
         self.0
     }
 }
@@ -83,8 +83,8 @@ impl FromStr for EventCursor {
     }
 }
 
-impl From<i64> for EventCursor {
-    fn from(id: i64) -> Self {
+impl From<u64> for EventCursor {
+    fn from(id: u64) -> Self {
         EventCursor(id)
     }
 }
@@ -176,15 +176,15 @@ impl EventStreamBuilder {
     /// # Errors
     /// - Returns an error if trying to add more than 50 users
     pub fn add_user(mut self, user: &PublicKey, cursor: Option<EventCursor>) -> Result<Self> {
+        if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
+            existing.1 = cursor;
+            return Ok(self);
+        }
+
         if self.users.len() >= 50 {
             return Err(Error::from(RequestError::Validation {
                 message: "Cannot subscribe to more than 50 users".into(),
             }));
-        }
-
-        if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
-            existing.1 = cursor;
-            return Ok(self);
         }
 
         self.users.push((user.clone(), cursor));
@@ -407,35 +407,38 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
         }
     };
 
-    let lines: Vec<&str> = sse.data.lines().collect();
-    if lines.is_empty() {
-        return Err(Error::from(RequestError::Validation {
-            message: "SSE event data is empty".into(),
-        }));
+    // Parse SSE data by prefix
+    let mut path: Option<String> = None;
+    let mut cursor: Option<EventCursor> = None;
+    let mut content_hash: Option<String> = None;
+
+    for (i, line) in sse.data.lines().enumerate() {
+        if let Some(cursor_str) = line.strip_prefix("cursor: ") {
+            cursor = Some(cursor_str.parse::<EventCursor>().map_err(|e| {
+                Error::from(RequestError::Validation {
+                    message: format!("Invalid cursor format '{cursor_str}': {e}"),
+                })
+            })?);
+        } else if let Some(hash) = line.strip_prefix("content_hash: ") {
+            content_hash = Some(hash.to_string());
+        } else if i == 0 {
+            // First line without a known prefix is the path
+            path = Some(line.to_string());
+        }
+        // Unknown prefixed lines are ignored for forward compatibility
     }
 
-    // First line is the path
-    let path = lines[0].to_string();
-    // Second line is the cursor
-    let cursor_str = lines
-        .get(1)
-        .and_then(|line| line.strip_prefix("cursor: "))
-        .ok_or_else(|| {
-            Error::from(RequestError::Validation {
-                message: "SSE event missing cursor line".into(),
-            })
-        })?;
-    let cursor = cursor_str.parse::<EventCursor>().map_err(|e| {
+    let path = path.ok_or_else(|| {
         Error::from(RequestError::Validation {
-            message: format!("Invalid cursor format '{cursor_str}': {e}"),
+            message: "SSE event missing path (expected as first line)".into(),
         })
     })?;
 
-    // Third line (optional) is the content_hash
-    let content_hash = lines
-        .get(2)
-        .and_then(|line| line.strip_prefix("content_hash: "))
-        .map(ToString::to_string);
+    let cursor = cursor.ok_or_else(|| {
+        Error::from(RequestError::Validation {
+            message: "SSE event missing cursor line".into(),
+        })
+    })?;
 
     Ok(Event {
         event_type,
