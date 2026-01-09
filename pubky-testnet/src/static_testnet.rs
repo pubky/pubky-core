@@ -188,7 +188,7 @@ impl StaticTestnet {
         let mut config = if let Some(config_path) = &self.homeserver_config {
             ConfigToml::from_file(config_path)?
         } else {
-            ConfigToml::test()
+            ConfigToml::default_test_config()
         };
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
         config.pkdns.dht_bootstrap_nodes = Some(

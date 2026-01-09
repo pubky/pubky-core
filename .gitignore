@@ -7,4 +7,3 @@ target/
 .vscode/*
 gcs-service-account.json
 .DS_Store
-./claude/*

@@ -48,11 +48,11 @@ async fn main () {
 use pubky_testnet::EphemeralTestnet;
 
 #[tokio::main]
-#[pubky_testnet::test] // Makro makes sure that the empheral Postgres databases are cleaned up.
+#[pubky_testnet::test] // Macro makes sure that the ephemeral Postgres databases are cleaned up.
 async fn main () {
-  // Run a new testnet. This creates a test dht,
-  // a homeserver, and a http relay.
-  let testnet = EphemeralTestnet::start().await.unwrap();
+  // Run a new testnet. This creates a test DHT, homeserver, and HTTP relay.
+  // By default, uses minimal_test_config() (admin/metrics disabled).
+  let testnet = EphemeralTestnet::builder().build().await.unwrap();
 
   // Create a Pubky Http Client from the testnet.
   let client = testnet.client().unwrap();
@@ -62,6 +62,29 @@ async fn main () {
 
   // Use the relay
   let http_relay = testnet.http_relay();
+}
+```
+
+### Custom configuration
+
+```rust
+use pubky_testnet::{EphemeralTestnet, pubky_homeserver::ConfigToml, pubky::Keypair};
+
+#[tokio::main]
+async fn main () {
+  // Enable admin server for tests that need it
+  let testnet = EphemeralTestnet::builder()
+      .config(ConfigToml::default_test_config())
+      .build()
+      .await
+      .unwrap();
+
+  // Or use a custom keypair
+  let testnet = EphemeralTestnet::builder()
+      .keypair(Keypair::random())
+      .build()
+      .await
+      .unwrap();
 }
 ```
 

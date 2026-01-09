@@ -31,12 +31,9 @@ async fn basic_authn() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn disabled_user() {
-    use pubky_testnet::pubky_homeserver::ConfigToml;
-    let mut config = ConfigToml::default_test_config();
-    config.admin.enabled = true; // Enable admin server
-
+    // This test requires the admin server to disable users
     let testnet = EphemeralTestnet::builder()
-        .config(config)
+        .config(ConfigToml::default_test_config())
         .build()
         .await
         .unwrap();
@@ -314,7 +311,6 @@ async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut config = ConfigToml::default_test_config();
     config.general.signup_mode = SignupMode::TokenRequired;
-    config.admin.enabled = true; // Enable admin server
 
     let testnet = EphemeralTestnet::builder()
         .config(config)
