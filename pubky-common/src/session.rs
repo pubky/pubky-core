@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn serialize() {
-        let keypair = Keypair::from_secret_key(&[0; 32]);
+        let keypair = Keypair::from_seed(&[0; 32]);
         let public_key = keypair.public_key();
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 

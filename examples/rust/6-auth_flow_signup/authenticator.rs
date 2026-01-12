@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         "Generated a new keypair. Public key: {}",
         keypair.public_key()
     );
-    println!("Secret key: {:?}", keypair.secret_key());
+    println!("Seed: {:?}", keypair.seed());
 
     let signer = if cli.testnet {
         Pubky::testnet()?.signer(keypair)

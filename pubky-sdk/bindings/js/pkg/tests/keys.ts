@@ -7,19 +7,19 @@ type KeypairClass = typeof Keypair;
 type PublicKeyClass = typeof PublicKey;
 
 const _keypairReturn: Assert<
-  IsExact<ReturnType<KeypairClass["fromSecretKey"]>, Keypair>
+  IsExact<ReturnType<KeypairClass["fromSeed"]>, Keypair>
 > = true;
 const _publicKeyReturn: Assert<
   IsExact<ReturnType<PublicKeyClass["from"]>, PublicKey>
 > = true;
 
 test("generate keys from a seed", async (t) => {
-  const secretkey = Buffer.from(
+  const seed = Buffer.from(
     "5aa93b299a343aa2691739771f2b5b85e740ca14c685793d67870f88fa89dc51",
     "hex",
   );
 
-  const keypair = Keypair.fromSecretKey(secretkey);
+  const keypair = Keypair.fromSeed(seed);
 
   t.is(
     keypair.publicKey.z32(),
@@ -27,16 +27,16 @@ test("generate keys from a seed", async (t) => {
   );
 });
 
-test("fromSecretKey error", async (t) => {
-  const secretkey = Buffer.from("5aa93b299a343aa2691739771f2b5b", "hex");
+test("fromSeed error", async (t) => {
+  const seed = Buffer.from("5aa93b299a343aa2691739771f2b5b", "hex");
 
   t.throws(
-    () => Keypair.fromSecretKey(null as unknown as Uint8Array),
-    "Expected secret_key to be an instance of Uint8Array",
+    () => Keypair.fromSeed(null as unknown as Uint8Array),
+    "Expected seed to be an instance of Uint8Array",
   );
   t.throws(
-    () => Keypair.fromSecretKey(secretkey),
-    /Expected secret_key to be 32 bytes, got 15/,
+    () => Keypair.fromSeed(seed),
+    /Expected seed to be 32 bytes, got 15/,
   );
 });
 

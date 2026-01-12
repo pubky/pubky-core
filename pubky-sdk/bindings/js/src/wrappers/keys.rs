@@ -3,7 +3,6 @@ use wasm_bindgen::prelude::*;
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use js_sys::Uint8Array;
 use pubky::{Keypair as NativeKeypair, PublicKey as NativePublicKey};
-use pubky_common::crypto::is_prefixed_pubky;
 
 #[wasm_bindgen]
 pub struct Keypair(NativeKeypair);
@@ -16,19 +15,19 @@ impl Keypair {
         Self(NativeKeypair::random())
     }
 
-    /// Generate a [Keypair] from a secret key.
-    #[wasm_bindgen(js_name = "fromSecretKey")]
-    pub fn from_secret_key(secret_key: Vec<u8>) -> Result<Keypair, JsValue> {
-        let secret_len = secret_key.len();
-        let secret: [u8; 32] = secret_key
+    /// Generate a [Keypair] from a 32-byte seed.
+    #[wasm_bindgen(js_name = "fromSeed")]
+    pub fn from_seed(seed: Vec<u8>) -> Result<Keypair, JsValue> {
+        let seed_len = seed.len();
+        let seed: [u8; 32] = seed
             .try_into()
-            .map_err(|_| format!("Expected secret_key to be 32 bytes, got {}", secret_len))?;
-        Ok(Self(NativeKeypair::from_secret_key(&secret)))
+            .map_err(|_| format!("Expected seed to be 32 bytes, got {}", seed_len))?;
+        Ok(Self(NativeKeypair::from_seed(&seed)))
     }
 
-    /// Returns the secret key of this keypair.
-    #[wasm_bindgen(js_name = "secretKey")]
-    pub fn secret_key(&self) -> Uint8Array {
+    /// Returns the seed of this keypair.
+    #[wasm_bindgen(js_name = "seed")]
+    pub fn seed(&self) -> Uint8Array {
         Uint8Array::from(self.0.secret_key().as_ref())
     }
 
@@ -36,6 +35,7 @@ impl Keypair {
     ///
     /// Use `.toString()` on the returned `PublicKey` to get the string form
     /// or `.z32()` to get the z32 string form without prefix.
+    /// Transport/storage (query params, headers, persistence) should use `.z32()`.
     ///
     /// @example
     /// const who = keypair.publicKey.toString();
@@ -93,6 +93,7 @@ impl PublicKey {
 
     #[wasm_bindgen(js_name = "toString")]
     /// Returns the identifier form with the `pubky` prefix.
+    /// Use for display only; transport/storage should use `.z32()`.
     pub fn to_string_js(&self) -> String {
         self.0.to_string()
     }
@@ -106,7 +107,7 @@ impl PublicKey {
                 "public key must be raw z32 or pubky<z32>; pubky:// is not supported",
             ));
         }
-        let value = if is_prefixed_pubky(&value) {
+        let value = if NativePublicKey::is_pubky_prefixed(&value) {
             value
                 .strip_prefix("pubky")
                 .unwrap_or(value.as_str())

@@ -8,7 +8,7 @@ use axum::{
     },
 };
 use futures_util::stream::Stream;
-use pubky_common::crypto::{is_prefixed_pubky, PublicKey};
+use pubky_common::crypto::PublicKey;
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
@@ -147,7 +147,7 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
                 (value.as_str(), None)
             };
 
-            if is_prefixed_pubky(pubkey_str) {
+            if PublicKey::is_pubky_prefixed(pubkey_str) {
                 return Err(EventStreamError::InvalidPublicKey(pubkey_str.to_string()));
             }
             let pubkey = PublicKey::try_from_z32(pubkey_str)

@@ -61,6 +61,15 @@ println!("Your current homeserver: {:?}", resolved);
 # Ok(()) }
 ```
 
+## Key formats (display vs transport)
+
+`PublicKey` has two string representations:
+
+- **Display format**: `pubky<z32>` (used for logs/UI and human-facing identifiers).
+- **Transport/storage format**: raw `z32` (used for hostnames, headers, query params, serde/JSON, and database storage).
+
+Use `.z32()` whenever you are building hostnames or transport values (for example `_pubky.<z32>` or the `pubky-host` header). Use `Display`/`.to_string()` when you want the prefixed identifier for people.
+
 ### Reuse a single facade across your app
 
 Use a shared `Pubky` (via cloning it, passing down as argument or behind `OnceCell`) instead of constructing one per request. This avoids reinitializing transports and keeps the same client available for repeated usage.

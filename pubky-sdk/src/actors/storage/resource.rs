@@ -21,7 +21,6 @@
 use std::{fmt, str::FromStr};
 
 use crate::PublicKey;
-use pubky_common::crypto::is_prefixed_pubky;
 use url::Url;
 
 use crate::{Error, errors::RequestError};
@@ -240,7 +239,7 @@ impl PubkyResource {
         let owner = host
             .strip_prefix("_pubky.")
             .ok_or_else(|| invalid("transport URL host must start with '_pubky.'"))?;
-        if is_prefixed_pubky(owner) {
+        if PublicKey::is_pubky_prefixed(owner) {
             return Err(invalid(
                 "transport URL host must use raw z32 without `pubky` prefix",
             ));
@@ -272,7 +271,7 @@ impl FromStr for PubkyResource {
             let (user_str, path) = rest
                 .split_once('/')
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
-            if is_prefixed_pubky(user_str) {
+            if PublicKey::is_pubky_prefixed(user_str) {
                 return Err(invalid(
                     "unexpected `pubky` prefix in user id; use raw z32 after `pubky://`",
                 ));
@@ -285,7 +284,7 @@ impl FromStr for PubkyResource {
         // 2) pubky<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky") {
             if let Some((user_id, path)) = rest.split_once('/') {
-                if is_prefixed_pubky(user_id) {
+                if PublicKey::is_pubky_prefixed(user_id) {
                     return Err(invalid(
                         "unexpected `pubky` prefix in user id; use raw z32 after `pubky`",
                     ));

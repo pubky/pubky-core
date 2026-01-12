@@ -14,7 +14,7 @@ pub fn is_prefixed_pubky(value: &str) -> bool {
 }
 
 fn parse_public_key(value: &str) -> Result<pkarr::PublicKey, ParseError> {
-    let raw = if is_prefixed_pubky(value) {
+    let raw = if PublicKey::is_pubky_prefixed(value) {
         value.strip_prefix("pubky").unwrap_or(value)
     } else {
         value
@@ -33,17 +33,17 @@ impl Keypair {
         Self(pkarr::Keypair::random())
     }
 
-    /// Export the secret key bytes.
+    /// Export the seed bytes used to derive this keypair.
     #[must_use]
-    pub fn secret_key(&self) -> [u8; 32] {
+    pub fn seed(&self) -> [u8; 32] {
         let mut out = [0u8; 32];
         out.copy_from_slice(self.0.secret_key().as_ref());
         out
     }
 
-    /// Construct a [`Keypair`] from a 32-byte secret key.
+    /// Construct a [`Keypair`] from a 32-byte seed.
     #[must_use]
-    pub fn from_secret_key(secret: &[u8; 32]) -> Self {
+    pub fn from_seed(secret: &[u8; 32]) -> Self {
         Self(pkarr::Keypair::from_secret_key(secret))
     }
 
@@ -114,11 +114,19 @@ impl From<Keypair> for pkarr::Keypair {
 }
 
 /// Wrapper around [`pkarr::PublicKey`] that renders with the `pubky` prefix.
+///
+/// Note: serde/transport/database formats continue to use raw z32 strings. Use
+/// [`PublicKey::z32()`] for hostnames, query parameters, storage, and wire formats.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PublicKey(pkarr::PublicKey);
 
 impl PublicKey {
+    /// Returns true if the value is in `pubky<z32>` form.
+    pub fn is_pubky_prefixed(value: &str) -> bool {
+        is_prefixed_pubky(value)
+    }
+
     /// Borrow the inner [`pkarr::PublicKey`].
     #[must_use]
     pub const fn as_inner(&self) -> &pkarr::PublicKey {
@@ -132,6 +140,9 @@ impl PublicKey {
     }
 
     /// Return the raw z-base32 representation without the `pubky` prefix.
+    ///
+    /// This is the canonical transport/storage form used for hostnames, query
+    /// parameters, serde, and database persistence.
     #[must_use]
     pub fn z32(&self) -> String {
         self.0.to_string()

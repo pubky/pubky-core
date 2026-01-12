@@ -1,6 +1,5 @@
 use crate::errors::RequestError;
 use crate::{PubkyHttpClient, PublicKey, Result, cross_log};
-use pubky_common::crypto::is_prefixed_pubky;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
@@ -13,13 +12,13 @@ enum HostKind {
 
 fn classify_host(host: &str) -> HostKind {
     if let Some(pk_host) = host.strip_prefix("_pubky.") {
-        if is_prefixed_pubky(pk_host) {
+        if PublicKey::is_pubky_prefixed(pk_host) {
             return HostKind::Icann;
         }
         if PublicKey::try_from_z32(pk_host).is_ok() {
             return HostKind::ResolvedPubky;
         }
-    } else if is_prefixed_pubky(host) || PublicKey::try_from_z32(host).is_err() {
+    } else if PublicKey::is_pubky_prefixed(host) || PublicKey::try_from_z32(host).is_err() {
         return HostKind::Icann;
     }
     HostKind::Pubky
@@ -69,7 +68,7 @@ impl PubkyHttpClient {
         let host = url.host_str().unwrap_or("");
 
         if let Some(stripped) = host.strip_prefix("_pubky.") {
-            if is_prefixed_pubky(stripped) {
+            if PublicKey::is_pubky_prefixed(stripped) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
@@ -80,7 +79,7 @@ impl PubkyHttpClient {
                 return Ok(Some(stripped.to_string()));
             }
         } else {
-            if is_prefixed_pubky(host) {
+            if PublicKey::is_pubky_prefixed(host) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),

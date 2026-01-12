@@ -1,7 +1,7 @@
 use crate::client_server::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
-use pubky_common::crypto::{is_prefixed_pubky, PublicKey};
+use pubky_common::crypto::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 
@@ -58,7 +58,7 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
     for header in ["host", "pubky-host"].iter() {
         if let Some(val) = req.headers().get(*header) {
             if let Ok(s) = val.to_str() {
-                if is_prefixed_pubky(s) {
+                if PublicKey::is_pubky_prefixed(s) {
                     continue;
                 }
                 if let Ok(key) = PublicKey::try_from_z32(s) {
@@ -74,7 +74,7 @@ fn extract_pubky(req: &Request<Body>) -> Option<PublicKey> {
                 let mut parts = pair.splitn(2, '=');
                 if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
                     if key == "pubky-host" {
-                        if is_prefixed_pubky(val) {
+                        if PublicKey::is_pubky_prefixed(val) {
                             return None;
                         }
                         return PublicKey::try_from_z32(val).ok();

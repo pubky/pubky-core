@@ -50,6 +50,15 @@ const session = await authFlow.awaitApproval();
 
 Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
 
+### Key formats (display vs transport)
+
+`PublicKey` has two string forms:
+
+- **Display format**: `pubky<z32>` (for logs/UI/human-facing identifiers).
+- **Transport/storage format**: raw `z32` (for hostnames, headers, query params, serde/JSON, DB storage).
+
+Use `publicKey.z32()` for transport/storage. Use `publicKey.toString()` for display.
+
 ### Initialization & events
 
 The npm package bundles the WebAssembly module and **initializes it before exposing any APIs**. This avoids the common wasm-pack pitfall where events fire before the module finishes instantiating. Long-polling flows such as `authFlow.awaitApproval()` or `authFlow.tryPollOnce()` only start their relay calls after the underlying module is ready, so you won't miss approvals while the bundle is loading.
@@ -113,6 +122,7 @@ const pubkey = keypair.publicKey;
 
 // z-base-32 roundtrip
 const parsed = PublicKey.from(pubkey.z32());
+const displayId = pubkey.toString(); // pubky<z32> (display only)
 ```
 
 #### Recovery file (encrypt/decrypt root secret)

@@ -5,7 +5,6 @@ use crate::errors::{PkarrError, RequestError, Result};
 use crate::{PubkyHttpClient, cross_log};
 use futures_lite::StreamExt;
 use pkarr::extra::endpoints::Endpoint;
-use pubky_common::crypto::is_prefixed_pubky;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
@@ -46,7 +45,7 @@ impl PubkyHttpClient {
         let mut pubky_host = None;
 
         if let Some(stripped) = host.strip_prefix("_pubky.") {
-            if is_prefixed_pubky(stripped) {
+            if PublicKey::is_pubky_prefixed(stripped) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
@@ -58,7 +57,7 @@ impl PubkyHttpClient {
                 pubky_host = Some(stripped.to_string());
             }
         } else {
-            if is_prefixed_pubky(&host) {
+            if PublicKey::is_pubky_prefixed(&host) {
                 return Err(RequestError::Validation {
                     message: "pubky prefix is not allowed in transport hosts; use raw z32"
                         .to_string(),
