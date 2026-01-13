@@ -188,7 +188,7 @@ impl StaticTestnet {
         let mut config = if let Some(config_path) = &self.homeserver_config {
             ConfigToml::from_file(config_path)?
         } else {
-            ConfigToml::test()
+            ConfigToml::default_test_config()
         };
         let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
         config.pkdns.dht_bootstrap_nodes = Some(
@@ -202,6 +202,7 @@ impl StaticTestnet {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
         config.drive.pubky_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
+        config.admin.enabled = true; // Enable admin server for static testnet
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
         let mock = MockDataDir::new(config, Some(keypair))?;
 

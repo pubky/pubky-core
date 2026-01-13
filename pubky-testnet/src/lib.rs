@@ -2,7 +2,7 @@
 mod ephemeral_testnet;
 mod static_testnet;
 mod testnet;
-pub use ephemeral_testnet::EphemeralTestnet;
+pub use ephemeral_testnet::{EphemeralTestnet, EphemeralTestnetBuilder};
 pub use static_testnet::StaticTestnet;
 pub use testnet::Testnet;
 

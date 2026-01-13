@@ -2,8 +2,8 @@ use pubky_testnet::{pubky::Keypair, EphemeralTestnet};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Spin up ephemeral DHT + homeserver
-    let testnet = EphemeralTestnet::start().await?;
+    // Spin up ephemeral DHT + homeserver with minimal config
+    let testnet = EphemeralTestnet::builder().build().await?;
     let homeserver = testnet.homeserver_app();
 
     // Intantiate a Pubky SDK wrapper that uses this testnet's preconfigured client for transport

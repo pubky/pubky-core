@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     info!(%level, "Tracing initialized");
 
     info!("Starting ephemeral testnet");
-    let testnet = EphemeralTestnet::start().await?;
+    let testnet = EphemeralTestnet::builder().build().await?;
     let pubky = testnet.sdk()?;
     let homeserver = testnet.homeserver_app();
 
