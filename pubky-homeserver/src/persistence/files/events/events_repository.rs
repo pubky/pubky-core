@@ -25,6 +25,11 @@ use crate::{
 pub const EVENT_TABLE: &str = "events";
 
 /// Cursor for pagination in event queries.
+///
+/// Note: Uses `u64` internally, but Postgres BIGINT is signed (`i64`).
+/// sea_query/sqlx binds `u64` values, which works correctly as long as
+/// IDs stay within `i64::MAX` (~9.2 quintillion). Since event IDs are
+/// auto-incrementing from 1, this is not a practical concern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EventCursor(u64);
 

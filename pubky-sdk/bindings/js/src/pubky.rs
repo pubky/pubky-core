@@ -186,7 +186,7 @@ impl Pubky {
     /// const user2 = PublicKey.from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy");
     /// const stream = await pubky.eventStream()
     ///   .addUser(user1, null)
-    ///   .addUser(user2, 100)
+    ///   .addUser(user2, "100")
     ///   .live()
     ///   .limit(100)
     ///   .path("/pub/")
