@@ -3,7 +3,7 @@ target/
 .continuerules
 .cursorrules
 .cursor/*
+.claude/*
 .vscode/*
 gcs-service-account.json
 .DS_Store
-./claude/*

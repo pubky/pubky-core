@@ -203,7 +203,9 @@ impl ConfigToml {
             .join("\n")
     }
 
-    /// Returns a default config tuned for unit tests.
+    /// Returns a default config tuned for unit tests with full features enabled.
+    /// Note: Admin server is enabled, Metrics server is disabled.
+    /// Use this for backward compatibility with external codebases using `EphemeralTestnet::start()`.
     #[cfg(any(test, feature = "testing"))]
     pub fn default_test_config() -> Self {
         let mut config = Self::default();
@@ -212,7 +214,7 @@ impl ConfigToml {
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.drive.pubky_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-        config.admin.enabled = true;
+        config.admin.enabled = true; // Enabled for backward compat
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
@@ -222,9 +224,26 @@ impl ConfigToml {
         config
     }
 
-    /// Creates a test configuration with default settings.
-    /// For custom configs, use default_test_config() and modify before passing to test APIs.
+    /// Returns a minimal test config with admin/metrics disabled.
+    /// Use for fast internal tests that don't need extra servers.
     #[cfg(any(test, feature = "testing"))]
+    pub fn minimal_test_config() -> Self {
+        let mut config = Self::default_test_config();
+        config.admin.enabled = false;
+        config.metrics.enabled = false;
+        config
+    }
+
+    /// Returns the default test configuration for backward compatibility.
+    ///
+    /// # Deprecated
+    /// Use [`Self::default_test_config()`] for full-featured config (admin enabled),
+    /// or [`Self::minimal_test_config()`] for lightweight tests (admin/metrics disabled).
+    #[cfg(any(test, feature = "testing"))]
+    #[deprecated(
+        since = "0.5.0",
+        note = "Use default_test_config() or minimal_test_config() directly for explicit behavior"
+    )]
     pub fn test() -> Self {
         Self::default_test_config()
     }
