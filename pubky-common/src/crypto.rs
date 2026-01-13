@@ -6,8 +6,7 @@ use crypto_secretbox::{
 };
 use rand::random;
 
-mod keys;
-pub use keys::{is_prefixed_pubky, Keypair, PublicKey};
+pub use crate::keys::{Keypair, PublicKey};
 
 pub use ed25519_dalek::Signature;
 
