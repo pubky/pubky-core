@@ -18,6 +18,10 @@ pub struct Pubky(pub(crate) pubky::Pubky);
 impl Pubky {
     /// Create a Pubky facade wired for **mainnet** defaults (public relays).
     ///
+    /// Prefer to instantiate only once and use trough your application a single shared `Pubky`
+    /// instead of constructing one per request. This avoids reinitializing transports and keeps
+    /// the same client available for repeated usage.
+    ///
     /// @returns {Pubky}
     /// A new facade instance. Use this to create signers, start auth flows, etc.
     ///

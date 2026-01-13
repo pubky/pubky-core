@@ -4,7 +4,8 @@ A local test network for developing Pubky Core or applications depending on it.
 
 All resources are ephemeral, the database is an empheral Postgres, and all servers are cleaned up as the testnet dropped.
 
-## Quickstart 
+## Quickstart
+
 Requires a running Postgres.
 
 ```bash
@@ -13,17 +14,19 @@ docker run --name postgres \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
-  -p 5432:5432 -d postgres:17
+  -p 127.0.0.1:5432:5432 \
+  -d postgres:18-alpine
+```
 
 # Run the testnet binary (all resources ephemeral). The environment variable must point to the postgres admin database.
-TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres' cargo run -p pubky-testnet
 
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' cargo run -p pubky-testnet
 
 ## Usage
 
 ### Postgres
 
-For the homeserver and therefore this testnet to be used, a postgres server is required. 
+For the homeserver and therefore this testnet to be used, a postgres server is required.
 By default, testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
 `?pubky-test=true` indicates that the homeserver should create an emphemeral database.
 
@@ -48,19 +51,47 @@ async fn main () {
 use pubky_testnet::EphemeralTestnet;
 
 #[tokio::main]
-#[pubky_testnet::test] // Makro makes sure that the empheral Postgres databases are cleaned up.
+#[pubky_testnet::test] // Macro makes sure that the ephemeral Postgres databases are cleaned up.
 async fn main () {
-  // Run a new testnet. This creates a test dht,
-  // a homeserver, and a http relay.
-  let testnet = EphemeralTestnet::start().await.unwrap();
+  // Run a new testnet. This creates a test DHT and homeserver.
+  // By default, uses minimal_test_config() (admin/metrics disabled, no HTTP relay).
+  let testnet = EphemeralTestnet::builder().build().await.unwrap();
 
   // Create a Pubky Http Client from the testnet.
   let client = testnet.client().unwrap();
 
   // Use the homeserver
   let homeserver = testnet.homeserver_app();
+}
+```
 
-  // Use the relay
+### Custom configuration
+
+```rust
+use pubky_testnet::{EphemeralTestnet, pubky_homeserver::ConfigToml, pubky::Keypair};
+
+#[tokio::main]
+async fn main () {
+  // Enable admin server for tests that need it
+  let testnet = EphemeralTestnet::builder()
+      .config(ConfigToml::default_test_config())
+      .build()
+      .await
+      .unwrap();
+
+  // Or use a custom keypair
+  let testnet = EphemeralTestnet::builder()
+      .keypair(Keypair::random())
+      .build()
+      .await
+      .unwrap();
+
+  // Enable HTTP relay for tests that need it
+  let testnet = EphemeralTestnet::builder()
+      .with_http_relay()
+      .build()
+      .await
+      .unwrap();
   let http_relay = testnet.http_relay();
 }
 ```
