@@ -7,8 +7,8 @@ use pubky_homeserver::{ConfigToml, ConnectionString, HomeserverApp, MockDataDir}
 ///
 /// Components included:
 /// - A local DHT with bootstrapping nodes.
-/// - An HTTP relay.
 /// - A homeserver (default pubkey: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`).
+/// - An HTTP relay (optional, use `.with_http_relay()` to enable).
 ///
 /// # Recommended Usage
 /// Use [`EphemeralTestnet::builder()`] to create a testnet with explicit configuration:
@@ -40,10 +40,11 @@ pub struct EphemeralTestnet {
 /// - **Config**: [`ConfigToml::minimal_test_config()`] (admin/metrics disabled)
 /// - **Keypair**: Deterministic keypair from `[0; 32]` secret key
 /// - **Postgres**: Uses `TEST_PUBKY_CONNECTION_STRING` env var if set, otherwise in-memory
+/// - **HTTP Relay**: Disabled by default (use `.with_http_relay()` to enable)
 ///
 /// # Example
 /// ```ignore
-/// // Use defaults (minimal config)
+/// // Use defaults (minimal config, no HTTP relay)
 /// let testnet = EphemeralTestnet::builder().build().await?;
 ///
 /// // Enable admin server
@@ -57,11 +58,18 @@ pub struct EphemeralTestnet {
 ///     .keypair(Keypair::random())
 ///     .build()
 ///     .await?;
+///
+/// // With HTTP relay (for tests that need it)
+/// let testnet = EphemeralTestnet::builder()
+///     .with_http_relay()
+///     .build()
+///     .await?;
 /// ```
 pub struct EphemeralTestnetBuilder {
     postgres_connection_string: Option<ConnectionString>,
     homeserver_config: Option<ConfigToml>,
     homeserver_keypair: Option<Keypair>,
+    http_relay: bool,
 }
 
 impl EphemeralTestnetBuilder {
@@ -71,6 +79,7 @@ impl EphemeralTestnetBuilder {
             postgres_connection_string: None,
             homeserver_config: None,
             homeserver_keypair: None,
+            http_relay: false,
         }
     }
 
@@ -92,6 +101,12 @@ impl EphemeralTestnetBuilder {
         self
     }
 
+    /// Enable the HTTP relay (disabled by default).
+    pub fn with_http_relay(mut self) -> Self {
+        self.http_relay = true;
+        self
+    }
+
     /// Build and start the testnet with the configured settings.
     /// Uses minimal_test_config() by default (admin/metrics disabled).
     pub async fn build(self) -> anyhow::Result<EphemeralTestnet> {
@@ -100,7 +115,10 @@ impl EphemeralTestnetBuilder {
         } else {
             Testnet::new().await?
         };
-        testnet.create_http_relay().await?;
+
+        if self.http_relay {
+            testnet.create_http_relay().await?;
+        }
 
         let mut config = self
             .homeserver_config
@@ -266,7 +284,7 @@ impl EphemeralTestnet {
         self.testnet
             .http_relays
             .first()
-            .expect("http relays should be non-empty")
+            .expect("no http relay configured - use .with_http_relay() when building")
     }
 }
 
