@@ -7,3 +7,4 @@ target/
 gcs-service-account.json
 .DS_Store
 ./claude/*
+.idea/
