@@ -41,7 +41,7 @@ mod tests {
     async fn test_delete_entry() {
         // Set everything up
         let context = AppContext::test().await;
-        let keypair = Keypair::from_seed(&[0; 32]);
+        let keypair = Keypair::from_secret(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let db = context.sql_db.clone();
@@ -89,7 +89,7 @@ mod tests {
     async fn test_file_not_found() {
         // Set everything up
         let context = AppContext::test().await;
-        let keypair = Keypair::from_seed(&[0; 32]);
+        let keypair = Keypair::from_secret(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let app_state = AppState::new(

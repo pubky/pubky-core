@@ -60,7 +60,7 @@ async fn metrics_comprehensive() {
     let mut config = ConfigToml::default_test_config();
     config.metrics.enabled = true;
     config.metrics.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-    let mock_dir = MockDataDir::new(config, Some(Keypair::from_seed(&[0; 32]))).unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret(&[0; 32]))).unwrap();
 
     // Extract values we need before getting SDK to avoid borrow conflicts
     let (metrics_url, server_public_key, server_public_key_z32) = {

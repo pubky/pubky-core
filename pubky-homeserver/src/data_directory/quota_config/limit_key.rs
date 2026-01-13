@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn test_limit_key_pubkey() {
-        let keypair = Keypair::from_seed(&[0u8; 32]);
+        let keypair = Keypair::from_secret(&[0u8; 32]);
         let pubkey = keypair.public_key();
 
         let limit_key = LimitKey::User(pubkey);

@@ -15,19 +15,19 @@ impl Keypair {
         Self(NativeKeypair::random())
     }
 
-    /// Generate a [Keypair] from a 32-byte seed.
-    #[wasm_bindgen(js_name = "fromSeed")]
-    pub fn from_seed(seed: Vec<u8>) -> Result<Keypair, JsValue> {
-        let seed_len = seed.len();
-        let seed: [u8; 32] = seed
+    /// Generate a [Keypair] from a 32-byte secret.
+    #[wasm_bindgen(js_name = "fromSecret")]
+    pub fn from_secret(secret: Vec<u8>) -> Result<Keypair, JsValue> {
+        let secret_len = secret.len();
+        let secret: [u8; 32] = secret
             .try_into()
-            .map_err(|_| format!("Expected seed to be 32 bytes, got {}", seed_len))?;
-        Ok(Self(NativeKeypair::from_seed(&seed)))
+            .map_err(|_| format!("Expected secret to be 32 bytes, got {}", secret_len))?;
+        Ok(Self(NativeKeypair::from_secret(&secret)))
     }
 
-    /// Returns the seed of this keypair.
-    #[wasm_bindgen(js_name = "seed")]
-    pub fn seed(&self) -> Uint8Array {
+    /// Returns the secret of this keypair.
+    #[wasm_bindgen(js_name = "secret")]
+    pub fn secret(&self) -> Uint8Array {
         Uint8Array::from(self.0.secret_key().as_ref())
     }
 

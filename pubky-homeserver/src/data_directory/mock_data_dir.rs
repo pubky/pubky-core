@@ -36,7 +36,7 @@ impl MockDataDir {
     #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let config = super::ConfigToml::test();
-        let keypair = pubky_common::crypto::Keypair::from_seed(&[0; 32]);
+        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
         Self::new(config, Some(keypair)).expect("failed to create MockDataDir")
     }
 }

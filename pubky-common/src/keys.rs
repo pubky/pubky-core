@@ -28,17 +28,17 @@ impl Keypair {
         Self(pkarr::Keypair::random())
     }
 
-    /// Export the seed bytes used to derive this keypair.
+    /// Export the secret bytes used to derive this keypair.
     #[must_use]
-    pub fn seed(&self) -> [u8; 32] {
+    pub fn secret(&self) -> [u8; 32] {
         let mut out = [0u8; 32];
         out.copy_from_slice(self.0.secret_key().as_ref());
         out
     }
 
-    /// Construct a [`Keypair`] from a 32-byte seed.
+    /// Construct a [`Keypair`] from a 32-byte secret.
     #[must_use]
-    pub fn from_seed(secret: &[u8; 32]) -> Self {
+    pub fn from_secret(secret: &[u8; 32]) -> Self {
         Self(pkarr::Keypair::from_secret_key(secret))
     }
 

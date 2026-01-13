@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn test_signin_deep_link_parse() {
         let keypair = Keypair::random();
-        let secret = keypair.seed();
+        let secret = keypair.secret();
         let deep_link = SeedExportDeepLink::new(secret);
         let deep_link_str = deep_link.to_string();
         assert_eq!(
