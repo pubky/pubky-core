@@ -1,5 +1,4 @@
-use pkarr::Keypair;
-use pubky_testnet::pubky::{Method, PubkyHttpClient, StatusCode};
+use pubky_testnet::pubky::{Keypair, Method, PubkyHttpClient, StatusCode};
 use pubky_testnet::{
     pubky_homeserver::{ConfigToml, Domain, MockDataDir},
     Testnet,
@@ -19,7 +18,7 @@ struct InfoResponse {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn admin_info_includes_metadata() {
-    let mut config = ConfigToml::test();
+    let mut config = ConfigToml::default_test_config();
     config.pkdns.public_ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
     config.pkdns.public_pubky_tls_port = Some(9443);
     config.pkdns.icann_domain = Some(Domain::from_str("example.test").unwrap());
@@ -71,7 +70,7 @@ async fn admin_info_includes_metadata() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let body: InfoResponse = response.json().await.unwrap();
-    assert_eq!(body.public_key, homeserver.public_key().to_string());
+    assert_eq!(body.public_key, homeserver.public_key().z32());
     assert_eq!(body.pkarr_pubky_address, Some(expected_pubky_endpoint));
     assert_eq!(body.pkarr_icann_domain, Some(expected_icann_endpoint));
     assert_eq!(body.version, env!("CARGO_PKG_VERSION"));

@@ -82,21 +82,20 @@ impl From<SeedExportDeepLink> for Url {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
-
     use super::*;
+    use crate::Keypair;
 
     #[test]
     fn test_signin_deep_link_parse() {
         let keypair = Keypair::random();
-        let secret = keypair.secret_key();
-        let deep_link = SeedExportDeepLink::new(secret.clone());
+        let secret = keypair.secret();
+        let deep_link = SeedExportDeepLink::new(secret);
         let deep_link_str = deep_link.to_string();
         assert_eq!(
             deep_link_str,
             format!(
                 "pubkyauth://secret_export?secret={}",
-                URL_SAFE_NO_PAD.encode(&secret)
+                URL_SAFE_NO_PAD.encode(secret)
             )
         );
         let deep_link_parsed = SeedExportDeepLink::from_str(&deep_link_str).unwrap();

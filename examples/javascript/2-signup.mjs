@@ -8,7 +8,7 @@ Usage:
   npm run signup -- <homeserver_pubky> </path/to/recovery_file> [signup_code] [--testnet]
 
 Example:
-  npm run signup -- 8pinxxg... ./alice.recovery INVITE-123 --testnet
+  npm run signup -- pubky8pinxxg... ./alice.recovery INVITE-123 --testnet
 `;
 
 const a = args(process.argv.slice(2), { usage });
@@ -32,5 +32,5 @@ const homeserver = PublicKey.from(homeserverArg);
 const session = await signer.signup(homeserver, signupCode ?? null);
 
 // 4) Show session owner + capabilities
-console.log("\nSigned up as:", session.info.publicKey.z32());
+console.log("\nSigned up as:", session.info.publicKey.toString());
 console.log("Capabilities:", session.info.capabilities);

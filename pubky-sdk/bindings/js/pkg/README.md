@@ -38,8 +38,8 @@ const path = "/pub/example.com/hello.json";
 await session.storage.putJson(path, { hello: "world" });
 
 // 4) Read it publicly (no auth needed)
-const userPk = session.info.publicKey.z32();
-const addr = `pubky${userPk}/pub/example.com/hello.json`;
+const userPk = session.info.publicKey.toString();
+const addr = `${userPk}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
@@ -49,6 +49,15 @@ const session = await authFlow.awaitApproval();
 ```
 
 Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
+
+### Key formats (display vs transport)
+
+`PublicKey` has two string forms:
+
+- **Display format**: `pubky<z32>` (for logs/UI/human-facing identifiers).
+- **Transport/storage format**: raw `z32` (for hostnames, headers, query params, serde/JSON, DB storage).
+
+Use `publicKey.z32()` for transport/storage. Use `publicKey.toString()` for display.
 
 ### Initialization & events
 
@@ -91,12 +100,13 @@ const client = pubky.client;
 ### Client (HTTP bridge)
 
 ```js
-import { Client, resolvePubky } from "@synonymdev/pubky";
+import { Client, PublicKey, resolvePubky } from "@synonymdev/pubky";
 
 const client = new Client(); // or: pubky.client.fetch(); instead of constructing a client manually
 
 // Convert the identifier into a transport URL before fetching.
-const url = resolvePubky("pubky<pubky>/pub/example.com/file.txt");
+const userId = PublicKey.from("pubky<z32>").toString();
+const url = resolvePubky(`${userId}/pub/example.com/file.txt`);
 const res = await client.fetch(url);
 ```
 
@@ -112,6 +122,7 @@ const pubkey = keypair.publicKey;
 
 // z-base-32 roundtrip
 const parsed = PublicKey.from(pubkey.z32());
+const displayId = pubkey.toString(); // pubky<z32> (display only)
 ```
 
 #### Recovery file (encrypt/decrypt root secret)
@@ -155,7 +166,7 @@ await session.signout(); // invalidates server session
 **Session details**
 
 ```js
-const userPk = session.info.publicKey.z32(); // -> PublicKey as z32 string
+const userPk = session.info.publicKey.toString(); // -> pubky<z32> identifier
 const caps = session.info.capabilities; // -> string[] permissions and paths
 
 const storage = session.storage; // -> This User's storage API (absolute paths)
@@ -256,20 +267,20 @@ const pub = pubky.publicStorage;
 
 // Reads
 const response = await pub.get(
-  `pubky${userPk.z32()}/pub/example.com/data.json`
+  `${userPk}/pub/example.com/data.json`
 ); // -> Response (stream it)
-await pub.getJson(`pubky${userPk.z32()}/pub/example.com/data.json`);
-await pub.getText(`pubky${userPk.z32()}/pub/example.com/readme.txt`);
-await pub.getBytes(`pubky${userPk.z32()}/pub/example.com/icon.png`); // Uint8Array
+await pub.getJson(`${userPk}/pub/example.com/data.json`);
+await pub.getText(`${userPk}/pub/example.com/readme.txt`);
+await pub.getBytes(`${userPk}/pub/example.com/icon.png`); // Uint8Array
 
 // Metadata
-await pub.exists(`pubky${userPk.z32()}/pub/example.com/foo`); // boolean
-await pub.stats(`pubky${userPk.z32()}/pub/example.com/foo`); // { content_length, content_type, etag, last_modified } | null
+await pub.exists(`${userPk}/pub/example.com/foo`); // boolean
+await pub.stats(`${userPk}/pub/example.com/foo`); // { content_length, content_type, etag, last_modified } | null
 
 // List directory (addressed path "<pubky>/pub/.../") must include trailing `/`.
 // list(addr, cursor=null|suffix|fullUrl, reverse=false, limit?, shallow=false)
 await pub.list(
-  `pubky${userPk.z32()}/pub/example.com/`,
+  `${userPk}/pub/example.com/`,
   null,
   false,
   100,
@@ -327,7 +338,7 @@ import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 const pubky = new Pubky();
 
 // Read-only resolver
-const homeserver = await pubky.getHomeserverOf(PublicKey.from("<user-z32>")); // string | undefined
+const homeserver = await pubky.getHomeserverOf(PublicKey.from("pubky<z32>")); // string | undefined
 
 // With keys (signer-bound)
 const signer = pubky.signer(Keypair.random());

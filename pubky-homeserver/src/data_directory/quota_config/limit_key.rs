@@ -2,7 +2,7 @@ use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
 
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 
 /// The key to limit the quota on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -47,7 +47,7 @@ impl fmt::Display for LimitKey {
             f,
             "{}",
             match self {
-                LimitKey::User(user_pubkey) => user_pubkey.to_string(),
+                LimitKey::User(user_pubkey) => user_pubkey.z32(),
                 LimitKey::Ip(ip_addr) => ip_addr.to_string(),
             }
         )
@@ -130,13 +130,13 @@ impl<'de> serde::Deserialize<'de> for LimitKeyType {
 mod tests {
     use std::net::Ipv4Addr;
 
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use super::*;
 
     #[test]
     fn test_limit_key_pubkey() {
-        let keypair = Keypair::from_secret_key(&[0u8; 32]);
+        let keypair = Keypair::from_secret(&[0u8; 32]);
         let pubkey = keypair.public_key();
 
         let limit_key = LimitKey::User(pubkey);

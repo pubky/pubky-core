@@ -103,15 +103,15 @@ impl DataDir for PersistentDataDir {
     }
 
     /// Reads the secret file. Creates a new secret file if it doesn't exist.
-    fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair> {
+    fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
         let secret_file_path = self.get_secret_file_path();
         if !secret_file_path.exists() {
             // Create a new secret file
-            pkarr::Keypair::random().write_secret_key_file(&secret_file_path)?;
+            pubky_common::crypto::Keypair::random().write_secret_key_file(&secret_file_path)?;
             tracing::info!("Secret file created at {}", secret_file_path.display());
         }
         // Read the secret file
-        let keypair = pkarr::Keypair::from_secret_key_file(&secret_file_path)?;
+        let keypair = pubky_common::crypto::Keypair::from_secret_key_file(&secret_file_path)?;
         Ok(keypair)
     }
 }
@@ -230,7 +230,7 @@ mod tests {
         data_dir.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Create a secret file
-        let keypair = pkarr::Keypair::random();
+        let keypair = pubky_common::crypto::Keypair::random();
         let secret_file_path = data_dir.get_secret_file_path();
         let file_content = format!("\n {}\n \n", hex::encode(keypair.secret_key()));
         std::fs::write(secret_file_path.clone(), file_content).unwrap();

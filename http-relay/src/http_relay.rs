@@ -282,8 +282,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_request_timeout() {
-        let mut config = Config::default();
-        config.request_timeout = Duration::from_millis(50);
+        let config = Config {
+            request_timeout: Duration::from_millis(50),
+            ..Config::default()
+        };
         let (app, state) = HttpRelay::create_app(config).unwrap();
         let server = axum_test::TestServer::new(app).unwrap();
 

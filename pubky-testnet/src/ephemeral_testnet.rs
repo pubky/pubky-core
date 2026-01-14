@@ -130,7 +130,7 @@ impl EphemeralTestnetBuilder {
 
         let keypair = self
             .homeserver_keypair
-            .unwrap_or_else(|| Keypair::from_secret_key(&[0; 32]));
+            .unwrap_or_else(|| Keypair::from_secret(&[0; 32]));
         let mock_dir = MockDataDir::new(config, Some(keypair))?;
         testnet.create_homeserver_app_with_mock(mock_dir).await?;
 

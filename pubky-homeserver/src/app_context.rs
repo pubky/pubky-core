@@ -16,7 +16,7 @@ use crate::{
     },
     ConfigToml, DataDir,
 };
-use pkarr::Keypair;
+use pubky_common::crypto::Keypair;
 use std::{sync::Arc, time::Duration};
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
