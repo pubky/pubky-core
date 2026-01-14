@@ -177,7 +177,7 @@ test("forbidden: writing outside /pub returns 403", async (t) => {
     t.equal(getStatusCode(error), 403, "status code 403");
     t.ok(
       String(error.message || "").includes(
-        "Writing to directories other than '/pub/'",
+        "Access to non-/pub/ paths is forbidden",
       ),
       "error message mentions /pub restriction",
     );
