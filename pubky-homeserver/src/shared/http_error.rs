@@ -30,6 +30,18 @@ impl HttpError {
         }
     }
 
+    /// Get the status code of the error.
+    #[cfg(test)]
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    /// Get the detail message of the error.
+    #[cfg(test)]
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_deref()
+    }
+
     pub fn not_found() -> HttpError {
         Self::new_with_message(StatusCode::NOT_FOUND, "Not Found")
     }
