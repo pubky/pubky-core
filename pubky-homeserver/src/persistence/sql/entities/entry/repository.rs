@@ -110,7 +110,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).eq(path.path().as_str()))
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -179,7 +179,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).eq(path.path().as_str()))
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
         // Then delete the entry by the id
@@ -213,7 +213,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .limit(1)
             .to_owned();
 
@@ -256,7 +256,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", dir_path))) // Everything that starts with the path
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
         // Use a select in select to filter the previous regex regpath
@@ -343,7 +343,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
         if reverse {
@@ -414,7 +414,7 @@ pub enum EntryIden {
 mod tests {
     use super::*;
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
     use std::collections::HashSet;
 
     #[tokio::test]

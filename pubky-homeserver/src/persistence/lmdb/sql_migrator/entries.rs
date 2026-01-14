@@ -74,7 +74,7 @@ pub async fn migrate_entries<'a>(
 #[cfg(test)]
 mod tests {
 
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
     use pubky_common::{crypto::Hash, timestamp::Timestamp};
 
     use crate::{

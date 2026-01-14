@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use std::str::FromStr;
 
 use super::WebDavPath;
@@ -30,7 +30,7 @@ pub struct EntryPath {
 
 impl EntryPath {
     pub fn new(pubkey: PublicKey, path: WebDavPath) -> Self {
-        let key = format!("{}{}", pubkey, path);
+        let key = format!("{}{}", pubkey.z32(), path);
         Self { pubkey, path, key }
     }
 
@@ -70,7 +70,12 @@ impl FromStr for EntryPath {
             Some((pubkey, path)) => (pubkey, path),
             None => return Err(EntryPathError::Invalid("Missing '/'".to_string())),
         };
-        let pubkey = PublicKey::from_str(pubkey).map_err(EntryPathError::InvalidPubkey)?;
+        if PublicKey::is_pubky_prefixed(pubkey) {
+            return Err(EntryPathError::Invalid(
+                "unexpected `pubky` prefix; expected raw z32".to_string(),
+            ));
+        }
+        let pubkey = PublicKey::try_from_z32(pubkey).map_err(EntryPathError::InvalidPubkey)?;
         let webdav_path = WebDavPath::new(path).map_err(EntryPathError::InvalidWebdavPath)?;
         Ok(Self::new(pubkey, webdav_path))
     }
@@ -110,7 +115,7 @@ mod tests {
         let pubkey =
             PublicKey::from_str("8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo").unwrap();
         let path = WebDavPath::new("/pub/folder/file.txt").unwrap();
-        let key = format!("{pubkey}{path}");
+        let key = format!("{}{path}", pubkey.z32());
         let entry_path = EntryPath::new(pubkey, path);
         assert_eq!(entry_path.as_ref(), key);
     }

@@ -1,8 +1,9 @@
+use super::build_full_testnet;
 use bytes::Bytes;
 use pubky_testnet::{
     pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
     pubky_homeserver::MockDataDir,
-    EphemeralTestnet, Testnet,
+    Testnet,
 };
 use rand::rng;
 use rand::seq::SliceRandom;
@@ -10,7 +11,7 @@ use rand::seq::SliceRandom;
 #[tokio::test]
 #[pubky_testnet::test]
 async fn put_get_delete() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -33,7 +34,7 @@ async fn put_get_delete() {
     // Use Pubky native method to get data from homeserver
     let response = pubky
         .public_storage()
-        .get(format!("pubky{public_key}/{path}"))
+        .get(format!("{public_key}/{path}"))
         .await
         .unwrap();
 
@@ -48,7 +49,7 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        session.info().public_key()
+        session.info().public_key().z32()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
@@ -86,7 +87,7 @@ use serde::{Deserialize, Serialize};
 #[tokio::test]
 #[pubky_testnet::test]
 async fn put_then_get_json_roundtrip() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -115,7 +116,7 @@ async fn put_then_get_json_roundtrip() {
     // Read back as strongly-typed JSON and assert equality.
     let got: Payload = pubky
         .public_storage()
-        .get_json(format!("pubky{}/{path}", public_key))
+        .get_json(format!("{public_key}/{path}"))
         .await
         .unwrap();
     assert_eq!(got, expected);
@@ -217,7 +218,7 @@ async fn put_quota_applied() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn unauthorized_put_delete() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -229,7 +230,7 @@ async fn unauthorized_put_delete() {
 
     // Someone tries to write to owner's namespace -> 401 Unauthorized
     let owner_url = format!(
-        "pubky{}/{}",
+        "{}/{}",
         owner_session.info().public_key(),
         path.trim_start_matches('/')
     );
@@ -284,7 +285,7 @@ async fn unauthorized_put_delete() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn list_deep() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -321,19 +322,19 @@ async fn list_deep() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/a.txt")
+                format!("{public_key}/pub/example.com/a.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/b.txt")
+                format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/cc-nested/z.txt")
+                format!("{public_key}/pub/example.com/cc-nested/z.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/d.txt")
+                format!("{public_key}/pub/example.com/d.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -354,10 +355,10 @@ async fn list_deep() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/a.txt")
+                format!("{public_key}/pub/example.com/a.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/b.txt")
+                format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -372,7 +373,7 @@ async fn list_deep() {
             .list(&url)
             .unwrap()
             .limit(2)
-            .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
+            .cursor(format!("{}/pub/example.com/a.txt", public_key.z32()).as_str())
             .send()
             .await
             .unwrap();
@@ -380,10 +381,10 @@ async fn list_deep() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/b.txt")
+                format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -397,7 +398,7 @@ async fn list_deep() {
             .list(&url)
             .unwrap()
             .limit(2)
-            .cursor(&format!("{public_key}/pub/example.com/a.txt"))
+            .cursor(&format!("{}/pub/example.com/a.txt", public_key.z32()))
             .send()
             .await
             .unwrap();
@@ -405,10 +406,10 @@ async fn list_deep() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.com/b.txt")
+                format!("{public_key}/pub/example.com/b.txt")
                     .parse()
                     .unwrap(),
-                format!("pubky{public_key}/pub/example.com/c.txt")
+                format!("{public_key}/pub/example.com/c.txt")
                     .parse()
                     .unwrap(),
             ],
@@ -420,7 +421,7 @@ async fn list_deep() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn list_shallow() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -462,19 +463,13 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/a.com/").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/")
-                    .parse()
-                    .unwrap(),
-                format!("pubky{public_key}/pub/example.con")
-                    .parse()
-                    .unwrap(),
-                format!("pubky{public_key}/pub/example.con/")
-                    .parse()
-                    .unwrap(),
-                format!("pubky{public_key}/pub/file").parse().unwrap(),
-                format!("pubky{public_key}/pub/file2").parse().unwrap(),
-                format!("pubky{public_key}/pub/z.com/").parse().unwrap(),
+                format!("{public_key}/pub/a.com/").parse().unwrap(),
+                format!("{public_key}/pub/example.com/").parse().unwrap(),
+                format!("{public_key}/pub/example.con").parse().unwrap(),
+                format!("{public_key}/pub/example.con/").parse().unwrap(),
+                format!("{public_key}/pub/file").parse().unwrap(),
+                format!("{public_key}/pub/file2").parse().unwrap(),
+                format!("{public_key}/pub/z.com/").parse().unwrap(),
             ],
             "normal list shallow"
         );
@@ -495,10 +490,8 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/a.com/").parse().unwrap(),
-                format!("pubky{public_key}/pub/example.com/")
-                    .parse()
-                    .unwrap(),
+                format!("{public_key}/pub/a.com/").parse().unwrap(),
+                format!("{public_key}/pub/example.com/").parse().unwrap(),
             ],
             "normal list shallow with limit but no cursor"
         );
@@ -511,7 +504,7 @@ async fn list_shallow() {
         .unwrap()
         .shallow(true)
         .limit(2)
-        .cursor(format!("{public_key}/pub/example.com/").as_str())
+        .cursor(format!("{}/pub/example.com/", public_key.z32()).as_str())
         .send()
         .await
         .unwrap();
@@ -519,12 +512,8 @@ async fn list_shallow() {
     assert_eq!(
         list1,
         vec![
-            format!("pubky{public_key}/pub/example.con")
-                .parse()
-                .unwrap(),
-            format!("pubky{public_key}/pub/example.con/")
-                .parse()
-                .unwrap(),
+            format!("{public_key}/pub/example.con").parse().unwrap(),
+            format!("{public_key}/pub/example.con/").parse().unwrap(),
         ],
         "normal list shallow with limit and a file cursor"
     );
@@ -535,7 +524,7 @@ async fn list_shallow() {
         .unwrap()
         .shallow(true)
         .limit(2)
-        .cursor(format!("{public_key}/pub/example.com/a.txt").as_str())
+        .cursor(format!("{}/pub/example.com/a.txt", public_key.z32()).as_str())
         .send()
         .await
         .unwrap();
@@ -553,7 +542,7 @@ async fn list_shallow() {
             .unwrap()
             .shallow(true)
             .limit(3)
-            .cursor(format!("{public_key}/pub/example.com/").as_str())
+            .cursor(format!("{}/pub/example.com/", public_key.z32()).as_str())
             .send()
             .await
             .unwrap();
@@ -561,13 +550,9 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("pubky{public_key}/pub/example.con")
-                    .parse()
-                    .unwrap(),
-                format!("pubky{public_key}/pub/example.con/")
-                    .parse()
-                    .unwrap(),
-                format!("pubky{public_key}/pub/file").parse().unwrap(),
+                format!("{public_key}/pub/example.con").parse().unwrap(),
+                format!("{public_key}/pub/example.con/").parse().unwrap(),
+                format!("{public_key}/pub/file").parse().unwrap(),
             ],
             "normal list shallow with limit and a directory cursor"
         );
@@ -577,13 +562,14 @@ async fn list_shallow() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn list_events() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create a user/session
     let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key();
+    let public_key_z32 = public_key.z32();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write + delete a bunch of files to populate the event feed
@@ -605,7 +591,7 @@ async fn list_events() {
     }
 
     // Feed is exposed under the public-key host
-    let feed_url = format!("https://{}/events/", server.public_key());
+    let feed_url = format!("https://{}/events/", server.public_key().z32());
 
     // Page 1
     let cursor: String = {
@@ -626,16 +612,16 @@ async fn list_events() {
         assert_eq!(
             lines,
             vec![
-                format!("PUT pubky://{public_key}/pub/a.com/a.txt"),
-                format!("DEL pubky://{public_key}/pub/a.com/a.txt"),
-                format!("PUT pubky://{public_key}/pub/example.com/a.txt"),
-                format!("DEL pubky://{public_key}/pub/example.com/a.txt"),
-                format!("PUT pubky://{public_key}/pub/example.com/b.txt"),
-                format!("DEL pubky://{public_key}/pub/example.com/b.txt"),
-                format!("PUT pubky://{public_key}/pub/example.com/c.txt"),
-                format!("DEL pubky://{public_key}/pub/example.com/c.txt"),
-                format!("PUT pubky://{public_key}/pub/example.com/d.txt"),
-                format!("DEL pubky://{public_key}/pub/example.com/d.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/a.com/a.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/a.com/a.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/example.com/a.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/example.com/a.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/example.com/b.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/example.com/b.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/example.com/c.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/example.com/c.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/example.com/d.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/example.com/d.txt"),
                 format!("cursor: {cursor}"),
             ]
         );
@@ -659,16 +645,16 @@ async fn list_events() {
         assert_eq!(
             lines,
             vec![
-                format!("PUT pubky://{public_key}/pub/example.xyz/d.txt"),
-                format!("DEL pubky://{public_key}/pub/example.xyz/d.txt"),
-                format!("PUT pubky://{public_key}/pub/example.xyz"),
-                format!("DEL pubky://{public_key}/pub/example.xyz"),
-                format!("PUT pubky://{public_key}/pub/file"),
-                format!("DEL pubky://{public_key}/pub/file"),
-                format!("PUT pubky://{public_key}/pub/file2"),
-                format!("DEL pubky://{public_key}/pub/file2"),
-                format!("PUT pubky://{public_key}/pub/z.com/a.txt"),
-                format!("DEL pubky://{public_key}/pub/z.com/a.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/example.xyz/d.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/example.xyz/d.txt"),
+                format!("PUT pubky://{public_key_z32}/pub/example.xyz"),
+                format!("DEL pubky://{public_key_z32}/pub/example.xyz"),
+                format!("PUT pubky://{public_key_z32}/pub/file"),
+                format!("DEL pubky://{public_key_z32}/pub/file"),
+                format!("PUT pubky://{public_key_z32}/pub/file2"),
+                format!("DEL pubky://{public_key_z32}/pub/file2"),
+                format!("PUT pubky://{public_key_z32}/pub/z.com/a.txt"),
+                format!("DEL pubky://{public_key_z32}/pub/z.com/a.txt"),
                 lines.last().unwrap().to_string(),
             ]
         );
@@ -678,17 +664,18 @@ async fn list_events() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn read_after_event() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // User + session
     let signer = pubky.signer(Keypair::random());
     let public_key = signer.public_key();
+    let public_key_z32 = public_key.z32();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Write one file
-    let url = format!("pubky://{public_key}/pub/a.com/a.txt");
+    let url = format!("pubky://{public_key_z32}/pub/a.com/a.txt");
     session
         .storage()
         .put("/pub/a.com/a.txt", vec![0])
@@ -696,7 +683,7 @@ async fn read_after_event() {
         .unwrap();
 
     // Events page 1
-    let feed_url = format!("https://{}/events/", server.public_key());
+    let feed_url = format!("https://{}/events/", server.public_key().z32());
     {
         let page_url = format!("{feed_url}?limit=10");
         let resp = pubky
@@ -730,7 +717,7 @@ async fn read_after_event() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn dont_delete_shared_blobs() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -761,7 +748,7 @@ async fn dont_delete_shared_blobs() {
     assert_eq!(blob, file);
 
     // Event feed should show PUT u1, PUT u2, DEL u1 (order preserved)
-    let feed_url = format!("https://{}/events/", homeserver.public_key());
+    let feed_url = format!("https://{}/events/", homeserver.public_key().z32());
     let resp = pubky
         .client()
         .request(Method::GET, &feed_url)
@@ -777,9 +764,9 @@ async fn dont_delete_shared_blobs() {
     assert_eq!(
         lines,
         vec![
-            format!("PUT pubky://{user_1_id}/pub/pubky.app/file/file_1"),
-            format!("PUT pubky://{user_2_id}/pub/pubky.app/file/file_1"),
-            format!("DEL pubky://{user_1_id}/pub/pubky.app/file/file_1"),
+            format!("PUT pubky://{}/pub/pubky.app/file/file_1", user_1_id.z32()),
+            format!("PUT pubky://{}/pub/pubky.app/file/file_1", user_2_id.z32()),
+            format!("DEL pubky://{}/pub/pubky.app/file/file_1", user_1_id.z32()),
             lines.last().unwrap().to_string(),
         ]
     );
@@ -788,7 +775,7 @@ async fn dont_delete_shared_blobs() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn stream() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -825,7 +812,7 @@ async fn stream() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn write_same_path_separate_users() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 

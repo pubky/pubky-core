@@ -213,10 +213,10 @@ impl AuthSubscriptionBuilder {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
     use pubky_common::capabilities::Capabilities;
 
     use super::*;
+    use crate::Keypair;
 
     #[tokio::test]
     async fn subscribe_to_auth_token() {
@@ -248,7 +248,7 @@ mod tests {
         });
 
         let (producer_result, poll_result) = tokio::join!(producer_handle, poll_handle);
-        assert!(producer_result.is_ok());
-        assert!(poll_result.is_ok());
+        producer_result.unwrap();
+        poll_result.unwrap();
     }
 }

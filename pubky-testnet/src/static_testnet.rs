@@ -190,7 +190,7 @@ impl StaticTestnet {
         } else {
             ConfigToml::default_test_config()
         };
-        let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
+        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
         config.pkdns.dht_bootstrap_nodes = Some(
             self.bootstrap_nodes()
                 .iter()

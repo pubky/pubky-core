@@ -7,7 +7,7 @@ use syn::{parse_macro_input, ItemFn};
 /// database(s) are dropped after the test completes/panics.
 ///
 /// Usage:
-/// ```no_run
+/// ```ignore
 /// #[tokio::test]
 /// #[pubky_testnet::test]
 /// async fn test_function() {
@@ -130,6 +130,6 @@ mod tests {
     fn macro_compiles() {
         // This test just ensures the macro compiles correctly
         // The actual functionality is tested in integration tests
-        assert!(true);
+        let _ = ();
     }
 }

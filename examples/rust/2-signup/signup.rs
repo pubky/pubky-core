@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Homeserver Pkarr Domain (for example `5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo`)
+    /// Homeserver identifier (for example `pubky5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo`)
     homeserver: String,
 
     /// Path to a recovery_file of the Pubky you want to sign in with

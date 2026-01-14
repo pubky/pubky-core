@@ -2,8 +2,8 @@ use heed::{
     types::{Bytes, Str},
     Database,
 };
-use pkarr::PublicKey;
 use postcard::from_bytes;
+use pubky_common::crypto::PublicKey;
 
 use serde::{Deserialize, Serialize};
 

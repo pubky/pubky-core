@@ -45,12 +45,12 @@
 //! # async fn run(user: pubky::PublicKey) -> pubky::Result<()> {
 //! let pubky = Pubky::new()?;
 //! let public = pubky.public_storage();
-//! let addr = format!("pubky{}/pub/site/index.html", user);
+//! let addr = format!("{}/pub/site/index.html", user);
 //! let html = public.get(addr).await?.text().await?;
 //! # Ok(()) }
 //! ```
 
-use pkarr::PublicKey;
+use crate::PublicKey;
 
 use crate::{
     Capabilities, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner, PublicStorage, Result,

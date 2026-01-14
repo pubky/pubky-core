@@ -98,7 +98,7 @@ enum EntryIden {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
@@ -167,7 +167,7 @@ mod tests {
         let statement = Query::insert()
             .into_table(USERS_TABLE)
             .columns([UserIden::PublicKey])
-            .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
+            .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -247,7 +247,7 @@ mod tests {
         let statement = Query::insert()
             .into_table(USERS_TABLE)
             .columns([UserIden::PublicKey])
-            .values(vec![SimpleExpr::Value(pubkey.to_string().into())])
+            .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);

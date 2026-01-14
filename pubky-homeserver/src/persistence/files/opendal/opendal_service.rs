@@ -285,7 +285,7 @@ mod tests {
 
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
-        let pubky = pkarr::Keypair::random().public_key();
+        let pubky = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubky, &mut context.sql_db.pool().into())
             .await
             .unwrap();
@@ -302,7 +302,7 @@ mod tests {
         context.config_toml.general.user_storage_quota_mb = 1;
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
-        let pubky = pkarr::Keypair::random().public_key();
+        let pubky = pubky_common::crypto::Keypair::random().public_key();
         UserRepository::create(&pubky, &mut context.sql_db.pool().into())
             .await
             .unwrap();
@@ -323,7 +323,7 @@ mod tests {
         for (_scheme, operator) in operators.operators() {
             let file_service = OpendalService::new_from_operator(operator);
 
-            let pubkey = pkarr::Keypair::random().public_key();
+            let pubkey = pubky_common::crypto::Keypair::random().public_key();
             let path = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
 
             // Write a 10KB file filled with test data
@@ -385,7 +385,7 @@ mod tests {
         for (_scheme, operator) in operators.operators() {
             let file_service = OpendalService::new_from_operator(operator);
 
-            let pubkey = pkarr::Keypair::random().public_key();
+            let pubkey = pubky_common::crypto::Keypair::random().public_key();
             let path = EntryPath::new(pubkey, WebDavPath::new("/test_stream.txt").unwrap());
 
             // Create test data - multiple chunks to test streaming

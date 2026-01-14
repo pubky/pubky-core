@@ -92,7 +92,7 @@ pub async fn migrate_events<'a>(
 #[cfg(test)]
 mod tests {
 
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
     use pubky_common::timestamp::Timestamp;
     use sqlx::types::chrono::DateTime;
 

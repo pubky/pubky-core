@@ -20,7 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
-use pkarr::PublicKey;
+use crate::PublicKey;
 use url::Url;
 
 use crate::{Error, errors::RequestError};
@@ -165,16 +165,16 @@ impl fmt::Display for ResourcePath {
 ///
 /// ### Examples
 /// ```
-/// # use pkarr::Keypair;
+/// # use pubky::Keypair;
 /// # use pubky::{PubkyResource, ResourcePath};
 /// // Build from parts
 /// let pk = Keypair::random().public_key();
 /// let r = PubkyResource::new(pk.clone(), "/pub/site/index.html")?;
-/// assert_eq!(r.to_string(), format!("pubky{pk}/pub/site/index.html"));
+/// assert_eq!(r.to_string(), format!("{pk}/pub/site/index.html"));
 ///
 /// // Parse from string
 /// // `pubky://` form
-/// let parsed2: PubkyResource = format!("pubky://{pk}/pub/site/index.html").parse()?;
+/// let parsed2: PubkyResource = format!("pubky://{}/pub/site/index.html", pk.z32()).parse()?;
 ///
 /// # Ok::<(), pubky::Error>(())
 /// ```
@@ -207,7 +207,7 @@ impl PubkyResource {
     #[must_use]
     pub fn to_pubky_url(&self) -> String {
         let rel = self.path.as_str().trim_start_matches('/');
-        format!("pubky://{}/{}", self.owner, rel)
+        format!("pubky://{}/{}", self.owner.z32(), rel)
     }
 
     /// Render as `https://_pubky.<owner>/<abs-path>` for transport.
@@ -220,7 +220,7 @@ impl PubkyResource {
     /// - Returns [`Error::Request`] if the constructed transport URL is invalid.
     pub fn to_transport_url(&self) -> Result<Url, Error> {
         let rel = self.path.as_str().trim_start_matches('/');
-        let https = format!("https://_pubky.{}/{}", self.owner, rel);
+        let https = format!("https://_pubky.{}/{}", self.owner.z32(), rel);
         Ok(Url::parse(&https)?)
     }
 
@@ -239,7 +239,12 @@ impl PubkyResource {
         let owner = host
             .strip_prefix("_pubky.")
             .ok_or_else(|| invalid("transport URL host must start with '_pubky.'"))?;
-        let public_key = PublicKey::try_from(owner)
+        if PublicKey::is_pubky_prefixed(owner) {
+            return Err(invalid(
+                "transport URL host must use raw z32 without `pubky` prefix",
+            ));
+        }
+        let public_key = PublicKey::try_from_z32(owner)
             .map_err(|_err| invalid("transport URL host does not contain a valid public key"))?;
 
         let path = if url.path().is_empty() {
@@ -253,7 +258,7 @@ impl PubkyResource {
     /// Render as the identifier form `pubky<owner>/<abs-path>`.
     pub(crate) fn to_identifier(&self) -> String {
         let rel = self.path.as_str().trim_start_matches('/');
-        format!("pubky{}/{}", self.owner, rel)
+        format!("{}/{}", self.owner, rel)
     }
 }
 
@@ -266,7 +271,12 @@ impl FromStr for PubkyResource {
             let (user_str, path) = rest
                 .split_once('/')
                 .ok_or_else(|| invalid("missing `<user>/<path>`"))?;
-            let user = PublicKey::try_from(user_str)
+            if PublicKey::is_pubky_prefixed(user_str) {
+                return Err(invalid(
+                    "unexpected `pubky` prefix in user id; use raw z32 after `pubky://`",
+                ));
+            }
+            let user = PublicKey::try_from_z32(user_str)
                 .map_err(|_err| invalid(format!("invalid user public key: {user_str}")))?;
             return Self::new(user, path);
         }
@@ -274,7 +284,12 @@ impl FromStr for PubkyResource {
         // 2) pubky<user>/<path>
         if let Some(rest) = s.strip_prefix("pubky") {
             if let Some((user_id, path)) = rest.split_once('/') {
-                let user = PublicKey::try_from(user_id).map_err(|_err| {
+                if PublicKey::is_pubky_prefixed(user_id) {
+                    return Err(invalid(
+                        "unexpected `pubky` prefix in user id; use raw z32 after `pubky`",
+                    ));
+                }
+                let user = PublicKey::try_from_z32(user_id).map_err(|_err| {
                     invalid("expected `pubky<user>/<path>` or `pubky://<user>/<path>`")
                 })?;
                 return Self::new(user, path);
@@ -382,7 +397,7 @@ impl IntoResourcePath for &String {
 ///
 /// ### Examples
 /// ```
-/// # use pkarr::Keypair;
+/// # use pubky::Keypair;
 /// # use pubky::{IntoPubkyResource, PubkyResource};
 /// let user = Keypair::random().public_key();
 ///
@@ -390,10 +405,10 @@ impl IntoResourcePath for &String {
 /// let r1 = (user.clone(), "/pub/site/index.html").into_pubky_resource()?;
 ///
 /// // Parse `<pk>/<path>`
-/// let r2: PubkyResource = format!("pubky{}/pub/site/index.html", user).parse()?;
+/// let r2: PubkyResource = format!("{}/pub/site/index.html", user).parse()?;
 ///
 /// // Parse `pubky://`
-/// let r3: PubkyResource = format!("pubky://{}/pub/site/index.html", user).parse()?;
+/// let r3: PubkyResource = format!("pubky://{}/pub/site/index.html", user.z32()).parse()?;
 /// # Ok::<(), pubky::Error>(())
 /// ```
 pub trait IntoPubkyResource {
@@ -445,7 +460,7 @@ impl<P: AsRef<str>> IntoPubkyResource for (&PublicKey, P) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pkarr::Keypair;
+    use crate::Keypair;
 
     #[test]
     fn file_path_normalization_and_rejections() {
@@ -475,8 +490,9 @@ mod tests {
     fn parse_addressed_user_both_forms() {
         let kp = Keypair::random();
         let user = kp.public_key();
-        let s1 = format!("pubky://{}/pub/my-cool-app/file", user);
-        let s3 = format!("pubky{}/pub/my-cool-app/file", user);
+        let user_raw = user.z32();
+        let s1 = format!("pubky://{user_raw}/pub/my-cool-app/file");
+        let s3 = format!("pubky{user_raw}/pub/my-cool-app/file");
 
         let p1 = PubkyResource::from_str(&s1).unwrap();
         let p3 = PubkyResource::from_str(&s3).unwrap();
@@ -511,7 +527,7 @@ mod tests {
         let r = PubkyResource::new(user.clone(), p_abs.as_str()).unwrap();
         assert_eq!(
             r.to_pubky_url(),
-            format!("pubky://{}/pub/my-cool-app/file", user)
+            format!("pubky://{}/pub/my-cool-app/file", user.z32())
         );
     }
 
@@ -527,7 +543,7 @@ mod tests {
         ));
 
         // Double-slash inside path
-        let s_bad = format!("pubky{}/pub//app", user);
+        let s_bad = format!("{user}/pub//app");
         assert!(matches!(
             PubkyResource::from_str(&s_bad),
             Err(Error::Request(RequestError::Validation { .. }))
@@ -548,8 +564,8 @@ mod tests {
 
     #[test]
     fn rejects_dot_segments_but_allows_trailing_slash() {
-        assert!(ResourcePath::parse("/a/./b").is_err());
-        assert!(ResourcePath::parse("/a/../b").is_err());
+        ResourcePath::parse("/a/./b").unwrap_err();
+        ResourcePath::parse("/a/../b").unwrap_err();
         assert_eq!(
             ResourcePath::parse("/pub/my-cool-app/").unwrap().as_str(),
             "/pub/my-cool-app/"
@@ -560,14 +576,14 @@ mod tests {
     fn resolve_identifiers() {
         let kp = Keypair::random();
         let user = kp.public_key();
-        let base = format!("pubky://{}/pub/site/index.html", user);
+        let base = format!("pubky://{}/pub/site/index.html", user.z32());
         let resolved = resolve_pubky(&base).unwrap();
         assert_eq!(
             resolved.as_str(),
-            format!("https://_pubky.{}/pub/site/index.html", user)
+            format!("https://_pubky.{}/pub/site/index.html", user.z32())
         );
 
-        let prefixed = format!("pubky{}/pub/site/index.html", user);
+        let prefixed = format!("pubky{}/pub/site/index.html", user.z32());
         let resolved2 = resolve_pubky(&prefixed).unwrap();
         assert_eq!(resolved, resolved2);
 
@@ -577,7 +593,8 @@ mod tests {
         let parsed = PubkyResource::from_transport_url(&resolved).unwrap();
         assert_eq!(parsed, resource);
 
-        let http_url = Url::parse(&format!("http://_pubky.{}/pub/site/index.html", user)).unwrap();
+        let http_url =
+            Url::parse(&format!("http://_pubky.{}/pub/site/index.html", user.z32())).unwrap();
         let parsed_http = PubkyResource::from_transport_url(&http_url).unwrap();
         assert_eq!(parsed_http, resource);
     }

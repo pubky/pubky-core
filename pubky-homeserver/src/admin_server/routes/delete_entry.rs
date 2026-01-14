@@ -29,7 +29,7 @@ mod tests {
     use crate::AppContext;
     use axum::{routing::delete, Router};
     use opendal::Buffer;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     async fn write_test_file(file_service: &FileService, entry_path: &EntryPath) {
         let buffer = Buffer::from(vec![0; 10]);
@@ -41,7 +41,7 @@ mod tests {
     async fn test_delete_entry() {
         // Set everything up
         let context = AppContext::test().await;
-        let keypair = Keypair::from_secret_key(&[0; 32]);
+        let keypair = Keypair::from_secret(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let db = context.sql_db.clone();
@@ -63,7 +63,7 @@ mod tests {
         // Delete the file
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server
-            .delete(format!("/webdav/{}{}", pubkey, entry_path.path().as_str()).as_str())
+            .delete(format!("/webdav/{}", entry_path.as_str()).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
@@ -89,7 +89,7 @@ mod tests {
     async fn test_file_not_found() {
         // Set everything up
         let context = AppContext::test().await;
-        let keypair = Keypair::from_secret_key(&[0; 32]);
+        let keypair = Keypair::from_secret(&[0; 32]);
         let pubkey = keypair.public_key();
         let file_path = "my_file.txt";
         let app_state = AppState::new(
@@ -102,7 +102,7 @@ mod tests {
             .with_state(app_state);
 
         // Delete the file
-        let url = format!("/webdav/{}/pub/{}", pubkey, file_path);
+        let url = format!("/webdav/{}/pub/{}", pubkey.z32(), file_path);
         let server = axum_test::TestServer::new(router).unwrap();
         let response = server.delete(url.as_str()).await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);

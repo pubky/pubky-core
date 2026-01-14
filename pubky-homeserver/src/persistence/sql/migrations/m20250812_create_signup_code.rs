@@ -50,7 +50,7 @@ enum SignupCodeIden {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::{Keypair, PublicKey};
+    use pubky_common::crypto::{Keypair, PublicKey};
     use sea_query::{Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
     use sqlx::{postgres::PgRow, FromRow, Row};
@@ -77,7 +77,8 @@ mod tests {
                 row.try_get(SignupCodeIden::UsedBy.to_string().as_str())?;
             let used_by = used_by_raw
                 .map(|s| {
-                    PublicKey::try_from(s.as_str()).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+                    PublicKey::try_from_z32(s.as_str())
+                        .map_err(|e| sqlx::Error::Decode(Box::new(e)))
                 })
                 .transpose()?;
             Ok(SignupCodeEntity {
@@ -139,7 +140,7 @@ mod tests {
             .table(SIGNUP_CODE_TABLE)
             .values(vec![(
                 SignupCodeIden::UsedBy,
-                SimpleExpr::Value(pubkey.to_string().into()),
+                SimpleExpr::Value(pubkey.z32().into()),
             )])
             .and_where(Expr::col(SignupCodeIden::Id).eq(code.id))
             .to_owned();

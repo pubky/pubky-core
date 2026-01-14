@@ -1,9 +1,8 @@
 //! Tools for encrypting and decrypting a recovery file storing user's root key's secret.
 
 use argon2::Argon2;
-use pkarr::Keypair;
 
-use crate::crypto::{decrypt, encrypt};
+use crate::crypto::{decrypt, encrypt, Keypair};
 
 static SPEC_NAME: &str = "recovery";
 static SPEC_LINE: &str = "pubky.org/recovery";
@@ -38,13 +37,13 @@ pub fn decrypt_recovery_file(recovery_file: &[u8], passphrase: &str) -> Result<K
         .try_into()
         .map_err(|_| Error::RecoverFileInvalidSecretKeyLength(length))?;
 
-    Ok(Keypair::from_secret_key(&secret_key))
+    Ok(Keypair::from_secret(&secret_key))
 }
 
 /// Encrypt a recovery file.
 pub fn create_recovery_file(keypair: &Keypair, passphrase: &str) -> Vec<u8> {
     let encryption_key = recovery_file_encryption_key_from_passphrase(passphrase);
-    let secret_key = keypair.secret_key();
+    let secret_key = keypair.secret();
 
     let encrypted_secret_key = encrypt(&secret_key, &encryption_key);
 

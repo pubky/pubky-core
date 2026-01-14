@@ -1,9 +1,9 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use pkarr::PublicKey;
 use pubky_common::capabilities::Capabilities;
 use std::{fmt::Display, str::FromStr};
 use url::Url;
 
+use crate::PublicKey;
 use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseError};
 
 /// A deep link for signing up to a Pubky homeserver.
@@ -81,7 +81,7 @@ impl Display for SignupDeepLink {
             self.capabilities,
             self.relay,
             URL_SAFE_NO_PAD.encode(self.secret),
-            self.homeserver
+            self.homeserver.z32()
         );
         write!(f, "{url}")?;
         if let Some(signup_token) = self.signup_token.as_ref() {
@@ -146,7 +146,7 @@ impl FromStr for SignupDeepLink {
             .ok_or(DeepLinkParseError::MissingQueryParameter("hs"))?
             .1
             .to_string();
-        let homeserver = PublicKey::try_from(raw_homeserver.as_str())
+        let homeserver = PublicKey::try_from_z32(raw_homeserver.as_str())
             .map_err(|e| DeepLinkParseError::InvalidQueryParameter("hs", Box::new(e)))?;
 
         let signup_token = url
@@ -187,7 +187,7 @@ mod tests {
         let deep_link = SignupDeepLink::new(
             capabilities.clone(),
             relay.clone(),
-            secret.clone(),
+            secret,
             homeserver.clone(),
             None,
         );
@@ -198,8 +198,8 @@ mod tests {
                 "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}",
                 capabilities,
                 relay,
-                URL_SAFE_NO_PAD.encode(&secret),
-                homeserver
+                URL_SAFE_NO_PAD.encode(secret),
+                homeserver.z32()
             )
         );
         let deep_link_parsed = SignupDeepLink::from_str(&deep_link_str).unwrap();
@@ -220,7 +220,7 @@ mod tests {
         let deep_link = SignupDeepLink::new(
             capabilities.clone(),
             relay.clone(),
-            secret.clone(),
+            secret,
             homeserver.clone(),
             Some(signup_token.to_string()),
         );
@@ -231,8 +231,8 @@ mod tests {
                 "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}&st={}",
                 capabilities,
                 relay,
-                URL_SAFE_NO_PAD.encode(&secret),
-                homeserver,
+                URL_SAFE_NO_PAD.encode(secret),
+                homeserver.z32(),
                 signup_token
             )
         );
