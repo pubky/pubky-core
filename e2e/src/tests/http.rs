@@ -1,10 +1,10 @@
+use super::build_full_testnet;
 use pubky_testnet::pubky::Method;
-use pubky_testnet::EphemeralTestnet;
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn http_get_pubky() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
 
     let client = testnet.client().unwrap();
@@ -22,7 +22,7 @@ async fn http_get_pubky() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn http_get_icann() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
 
     let client = testnet.client().unwrap();
 

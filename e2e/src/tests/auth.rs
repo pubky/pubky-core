@@ -10,12 +10,13 @@ use pubky_testnet::{
 use std::str::FromStr;
 use std::time::Duration;
 
+use super::build_full_testnet;
 use pubky_testnet::pubky::errors::{Error, RequestError};
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn basic_authn() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -111,7 +112,7 @@ async fn disabled_user() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn authz() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -189,7 +190,7 @@ async fn authz() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn signup_authz() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -276,7 +277,7 @@ async fn signup_authz() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn persist_and_restore_info() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -315,7 +316,7 @@ async fn persist_and_restore_info() {
 
 #[tokio::test]
 async fn multiple_users() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -339,7 +340,7 @@ async fn multiple_users() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -484,7 +485,7 @@ async fn signup_with_token() {
 async fn republish_if_stale_triggers_timestamp_bump() {
     use std::time::Duration;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
@@ -531,7 +532,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 async fn conditional_publish_skips_when_fresh() {
     use std::time::Duration;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();

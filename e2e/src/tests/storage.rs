@@ -1,8 +1,9 @@
+use super::build_full_testnet;
 use bytes::Bytes;
 use pubky_testnet::{
     pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
     pubky_homeserver::MockDataDir,
-    EphemeralTestnet, Testnet,
+    Testnet,
 };
 use rand::rng;
 use rand::seq::SliceRandom;
@@ -10,7 +11,7 @@ use rand::seq::SliceRandom;
 #[tokio::test]
 #[pubky_testnet::test]
 async fn put_get_delete() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -86,7 +87,7 @@ use serde::{Deserialize, Serialize};
 #[tokio::test]
 #[pubky_testnet::test]
 async fn put_then_get_json_roundtrip() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -217,7 +218,7 @@ async fn put_quota_applied() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn unauthorized_put_delete() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -284,7 +285,7 @@ async fn unauthorized_put_delete() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn list_deep() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -420,7 +421,7 @@ async fn list_deep() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn list_shallow() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -561,7 +562,7 @@ async fn list_shallow() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn list_events() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -663,7 +664,7 @@ async fn list_events() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn read_after_event() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -716,7 +717,7 @@ async fn read_after_event() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn dont_delete_shared_blobs() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -774,7 +775,7 @@ async fn dont_delete_shared_blobs() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn stream() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -811,7 +812,7 @@ async fn stream() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn write_same_path_separate_users() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 

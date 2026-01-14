@@ -1,7 +1,5 @@
-use pubky_testnet::{
-    pubky::{Keypair, Method, StatusCode},
-    EphemeralTestnet,
-};
+use super::build_full_testnet;
+use pubky_testnet::pubky::{Keypair, Method, StatusCode};
 
 /// Comprehensive test for single-user event streaming modes:
 /// - Historical event pagination (>100 events across internal batches)
@@ -19,7 +17,7 @@ async fn events_stream_basic_modes() {
     use futures::StreamExt;
     use tokio::time::{timeout, Duration};
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let server_host = server.public_key().z32();
     let pubky = testnet.sdk().unwrap();
@@ -591,7 +589,7 @@ async fn events_stream_multiple_users() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let server_host = server.public_key().z32();
     let pubky = testnet.sdk().unwrap();
@@ -805,7 +803,7 @@ async fn events_stream_validation_errors() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let server_host = server.public_key().z32();
     let pubky = testnet.sdk().unwrap();
@@ -1100,7 +1098,7 @@ async fn events_stream_path_filter() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let server_host = server.public_key().z32();

@@ -17,7 +17,7 @@ async fn test_limit_signin_get_session() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
-    let mut cfg = ConfigToml::test();
+    let mut cfg = ConfigToml::default_test_config();
     cfg.drive.rate_limits = vec![
         // Limit sign-ins: POST /session by IP
         PathLimit::new(
@@ -82,7 +82,7 @@ async fn test_limit_signin_get_session_whitelist() {
     let whitelisted_pubky = whitelisted_signer.public_key().clone();
 
     // Rate-limit GET /session by user, but whitelist `whitelisted_pubky`
-    let mut cfg = ConfigToml::test();
+    let mut cfg = ConfigToml::default_test_config();
     let mut limit = PathLimit::new(
         GlobPattern::new("/session"),
         Method::GET,
@@ -135,7 +135,7 @@ async fn test_limit_events() {
     let client = pubky.client();
 
     // Rate-limit GET /events/ by IP
-    let mut cfg = ConfigToml::test();
+    let mut cfg = ConfigToml::default_test_config();
     cfg.drive.rate_limits = vec![PathLimit::new(
         GlobPattern::new("/events/"),
         Method::GET,
@@ -165,7 +165,7 @@ async fn test_limit_upload() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
-    let mut cfg = ConfigToml::test();
+    let mut cfg = ConfigToml::default_test_config();
     cfg.drive.rate_limits = vec![PathLimit::new(
         GlobPattern::new("/pub/**"),
         Method::PUT,
@@ -207,7 +207,7 @@ async fn test_concurrent_write_read() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
-    let mut cfg = ConfigToml::test();
+    let mut cfg = ConfigToml::default_test_config();
     cfg.drive.rate_limits = vec![
         PathLimit::new(
             GlobPattern::new("/pub/**"),

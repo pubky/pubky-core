@@ -18,7 +18,7 @@ struct InfoResponse {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn admin_info_includes_metadata() {
-    let mut config = ConfigToml::test();
+    let mut config = ConfigToml::default_test_config();
     config.pkdns.public_ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
     config.pkdns.public_pubky_tls_port = Some(9443);
     config.pkdns.icann_domain = Some(Domain::from_str("example.test").unwrap());
