@@ -9,6 +9,7 @@ pub mod auth;
 pub mod capabilities;
 pub mod constants;
 pub mod crypto;
+mod keys;
 pub mod namespaces;
 pub mod recovery_file;
 pub mod session;

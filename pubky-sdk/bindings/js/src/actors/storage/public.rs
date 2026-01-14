@@ -11,7 +11,7 @@ use crate::js_error::JsResult;
 const TS_ADDRESS: &'static str =
     r#"export type Address = `pubky${string}/pub/${string}` | `pubky://${string}/pub/${string}`;"#;
 
-/// Read-only public storage using addressed paths (`"<user-z32>/pub/...")`.
+/// Read-only public storage using addressed paths (`"pubky<user>/pub/..."`).
 #[wasm_bindgen]
 pub struct PublicStorage(pub(crate) pubky::PublicStorage);
 

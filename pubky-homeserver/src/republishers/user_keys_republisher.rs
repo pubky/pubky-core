@@ -1,9 +1,9 @@
 use std::{collections::HashMap, time::Duration};
 
-use pkarr::PublicKey;
 use pkarr_republisher::{
     MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
 };
+use pubky_common::crypto::PublicKey;
 use tokio::{
     task::JoinHandle,
     time::{interval, Instant},
@@ -100,8 +100,10 @@ impl UserKeysRepublisher {
         settings.republish_condition(|_| true);
         let republisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
         // TODO: Only publish if user points to this home server.
+        let pkarr_keys: Vec<pkarr::PublicKey> =
+            keys.into_iter().map(pkarr::PublicKey::from).collect();
         let results = republisher
-            .run(keys, 12)
+            .run(pkarr_keys, 12)
             .await
             .map_err(UserKeysRepublisherError::Pkarr)?;
         Ok(results)
@@ -165,7 +167,7 @@ mod tests {
     use crate::persistence::sql::user::UserRepository;
     use crate::persistence::sql::SqlDb;
     use crate::republishers::user_keys_republisher::UserKeysRepublisher;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     async fn init_db_with_users(count: usize) -> SqlDb {
         let db = SqlDb::test().await;

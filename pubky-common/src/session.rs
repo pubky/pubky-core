@@ -1,6 +1,5 @@
 //! Pubky homeserver session struct.
 
-use pkarr::PublicKey;
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +8,7 @@ use alloc::vec::Vec;
 
 use crate::{
     capabilities::{Capabilities, Capability},
+    crypto::PublicKey,
     timestamp::Timestamp,
 };
 
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn serialize() {
-        let keypair = Keypair::from_secret_key(&[0; 32]);
+        let keypair = Keypair::from_secret(&[0; 32]);
         let public_key = keypair.public_key();
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 

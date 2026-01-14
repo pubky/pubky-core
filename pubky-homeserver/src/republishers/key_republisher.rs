@@ -183,7 +183,7 @@ mod tests {
         // Make sure the pkarr packet of the hs is resolvable.
         let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
         // Make sure the pkarr client can resolve the endpoint of the hs.
-        let qname = format!("{}", hs_pubky);
+        let qname = hs_pubky.z32();
         let endpoint = pkarr_client
             .resolve_https_endpoint(qname.as_str())
             .await
@@ -198,7 +198,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_endpoints() {
         let mut context = AppContext::test().await;
-        context.keypair = pkarr::Keypair::random();
+        context.keypair = pubky_common::crypto::Keypair::random();
         let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();

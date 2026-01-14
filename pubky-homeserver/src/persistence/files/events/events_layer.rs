@@ -280,7 +280,7 @@ mod tests {
             let layer = EventsLayer::new(db.clone(), events_service);
             let operator = operator.layer(layer);
 
-            let pubkey = pkarr::Keypair::random().public_key();
+            let pubkey = pubky_common::crypto::Keypair::random().public_key();
             UserRepository::create(&pubkey, &mut db.pool().into())
                 .await
                 .unwrap();

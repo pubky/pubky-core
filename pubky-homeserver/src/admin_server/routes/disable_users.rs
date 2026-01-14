@@ -74,7 +74,7 @@ mod tests {
     use crate::{persistence::files::FileService, AppContext};
     use axum::routing::post;
     use axum::Router;
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     #[tokio::test]
     #[pubky_test_utils::test]
@@ -106,8 +106,9 @@ mod tests {
 
         // Disable the tenant
         let server = axum_test::TestServer::new(router).unwrap();
+        let pubkey_path = pubkey.z32();
         let response = server
-            .post(format!("/users/{}/disable", pubkey).as_str())
+            .post(format!("/users/{}/disable", pubkey_path).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
 
@@ -119,7 +120,7 @@ mod tests {
 
         // Enable the tenant again
         let response = server
-            .post(format!("/users/{}/enable", pubkey).as_str())
+            .post(format!("/users/{}/enable", pubkey_path).as_str())
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
 

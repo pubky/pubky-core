@@ -9,6 +9,7 @@ use crate::persistence::{
         UnifiedExecutor,
     },
 };
+use pubky_common::crypto::PublicKey;
 
 /// Convert nano seconds to a timestamp.
 pub fn nano_seconds_to_timestamp(nano_seconds: u64) -> Option<DateTime<Utc>> {
@@ -56,6 +57,7 @@ pub async fn migrate_users<'a>(
     let mut count = 0;
     for record in lmdb.tables.users.iter(&lmdb_txn)? {
         let (public_key, lmdb_user) = record?;
+        let public_key: PublicKey = public_key.into();
         let mut sql_user = UserRepository::create(&public_key, executor).await?;
         sql_user.created_at = nano_seconds_to_timestamp(lmdb_user.created_at)
             .expect("Failed to convert nano seconds to timestamp")
@@ -73,7 +75,7 @@ pub async fn migrate_users<'a>(
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
 
     use crate::persistence::{lmdb::tables::users::User, sql::SqlDb};
 
@@ -88,14 +90,16 @@ mod tests {
         let mut wtxn = lmdb.env.write_txn().unwrap();
         // User1
         let user1_pubkey = Keypair::random().public_key();
-        let mut lmdb_user1 = User::default();
-        lmdb_user1.created_at = SystemTime::now()
+        let user1_created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs()
             * 1_000_000;
-        lmdb_user1.used_bytes = 100;
-        lmdb_user1.disabled = true;
+        let lmdb_user1 = User {
+            created_at: user1_created_at,
+            used_bytes: 100,
+            disabled: true,
+        };
         lmdb.tables
             .users
             .put(&mut wtxn, &user1_pubkey, &lmdb_user1)
@@ -103,14 +107,16 @@ mod tests {
 
         // User2
         let user2_pubkey = Keypair::random().public_key();
-        let mut lmdb_user2 = User::default();
-        lmdb_user2.created_at = SystemTime::now()
+        let user2_created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs()
             * 1_000_000;
-        lmdb_user2.used_bytes = 200;
-        lmdb_user2.disabled = false;
+        let lmdb_user2 = User {
+            created_at: user2_created_at,
+            used_bytes: 200,
+            disabled: false,
+        };
         lmdb.tables
             .users
             .put(&mut wtxn, &user2_pubkey, &lmdb_user2)

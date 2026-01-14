@@ -9,7 +9,7 @@ use crate::tracing::init_tracing_logs_with_config_if_set;
 use crate::MockDataDir;
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -137,7 +137,7 @@ impl HomeserverApp {
 
     /// Returns the `https://<server public key>` url
     pub fn pubky_url(&self) -> url::Url {
-        url::Url::parse(&format!("https://{}", self.public_key())).expect("valid url")
+        url::Url::parse(&format!("https://{}", self.public_key().z32())).expect("valid url")
     }
 
     /// Returns the `https://<server public key>` url

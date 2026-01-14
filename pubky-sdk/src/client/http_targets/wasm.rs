@@ -1,9 +1,9 @@
 //! HTTP methods that support `https://` with Pkarr domains, including `_pubky.<pk>` URLs
 
-use crate::errors::{PkarrError, Result};
+use crate::PublicKey;
+use crate::errors::{PkarrError, RequestError, Result};
 use crate::{PubkyHttpClient, cross_log};
 use futures_lite::StreamExt;
-use pkarr::PublicKey;
 use pkarr::extra::endpoints::Endpoint;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
@@ -45,13 +45,29 @@ impl PubkyHttpClient {
         let mut pubky_host = None;
 
         if let Some(stripped) = host.strip_prefix("_pubky.") {
-            if PublicKey::try_from(stripped).is_ok() {
+            if PublicKey::is_pubky_prefixed(stripped) {
+                return Err(RequestError::Validation {
+                    message: "pubky prefix is not allowed in transport hosts; use raw z32"
+                        .to_string(),
+                }
+                .into());
+            }
+            if PublicKey::try_from_z32(stripped).is_ok() {
                 self.transform_url(url).await?;
                 pubky_host = Some(stripped.to_string());
             }
-        } else if PublicKey::try_from(host.clone()).is_ok() {
-            self.transform_url(url).await?;
-            pubky_host = Some(host);
+        } else {
+            if PublicKey::is_pubky_prefixed(&host) {
+                return Err(RequestError::Validation {
+                    message: "pubky prefix is not allowed in transport hosts; use raw z32"
+                        .to_string(),
+                }
+                .into());
+            }
+            if PublicKey::try_from_z32(&host).is_ok() {
+                self.transform_url(url).await?;
+                pubky_host = Some(host);
+            }
         }
 
         Ok(pubky_host)
@@ -158,8 +174,8 @@ impl PubkyHttpClient {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use crate::Keypair;
     use futures_lite::stream;
-    use pkarr::Keypair;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -167,7 +183,7 @@ mod tests {
     #[wasm_bindgen_test(async)]
     async fn transform_url_errors_when_no_domain_is_found() {
         let client = PubkyHttpClient::new().unwrap();
-        let pk = Keypair::random().public_key().to_string();
+        let pk = Keypair::random().public_key().z32();
         let mut url = Url::parse(&format!("https://_pubky.{pk}/pub/app/file.txt")).unwrap();
         let original = url.clone();
 

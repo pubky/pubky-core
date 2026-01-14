@@ -4,7 +4,7 @@ import { Pubky, Keypair, PublicKey, setLogLevel } from "@synonymdev/pubky";
 
 // This is the default testnet homeserver. It comes from the secret `00000...` (bits).
 const TESTNET_HOMESERVER =
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+  "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 // 1) Build Pubky SDK facade for local testnet host
 const pubky = Pubky.testnet();
@@ -14,7 +14,7 @@ const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
 const homeserver = PublicKey.from(TESTNET_HOMESERVER);
 const session = await signer.signup(homeserver, null);
-console.log("Signed up succeeded for user:", session.info.publicKey.z32());
+console.log("Signed up succeeded for user:", session.info.publicKey.toString());
 
 // 3) Write then read a file under /pub/<your.app>/
 const path = "/pub/my-cool-app/hello.txt";

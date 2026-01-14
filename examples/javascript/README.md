@@ -56,7 +56,7 @@ Decrypts a recovery file, creates a `Signer`, and signs up on a homeserver.
 npm run signup -- <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
 
 # example (testnet homeserver)
-npm run signup -- 8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
+npm run signup -- pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
 ```
 
 You’ll be prompted for the recovery **passphrase**.
@@ -80,14 +80,14 @@ You can run a Browser 3rd party app that requires authentication with [**3rd-par
 
 ### 4) Public storage read (no auth)
 
-Reads a public resource via the **addressed** form: `<pubky>/pub/my-cool-app/path/to/file.txt`.
+Reads a public resource via the **addressed** form: `pubky<z32>/pub/my-cool-app/path/to/file.txt`.
 
 ```bash
 npm run storage -- <pubky>/<absolute-path> [--testnet]
 
 # examples
-npm run storage -- q5oo7ma.../pub/my-cool-app/hello.txt --testnet
-npm run storage -- operrr8w.../pub/pubky.app/posts/0033X02JAN0SG
+npm run storage -- pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
+npm run storage -- pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
 ```
 
 Shows **exists**, **stats**, and downloads the content.
@@ -96,8 +96,10 @@ Shows **exists**, **stats**, and downloads the content.
 
 Low-level fetch through the Pubky client. Handy for debugging.
 
+> Use the **raw z-base32** key (no `pubky` prefix) in the `_pubky.<key>` host portion. Call `publicKey.z32()` to get it.
+
 ```bash
-npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
+  npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 # pubky:// read (testnet)
 npm run request -- GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet

@@ -184,7 +184,7 @@ impl ClientServer {
 
     /// Get the URL of the pubky tls server with the Pubky DNS name.
     pub fn pubky_tls_dns_url_string(&self) -> String {
-        format!("https://{}", self.context.keypair.public_key())
+        format!("https://{}", self.context.keypair.public_key().z32())
     }
 
     /// Get the URL of the pubky tls server with the Pubky IP address.

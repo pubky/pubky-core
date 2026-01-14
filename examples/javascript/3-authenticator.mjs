@@ -17,7 +17,7 @@ You can try this out with the example backend-less third party browser applicati
 const a = args(process.argv.slice(2), {
   usage,
   defaults: {
-    homeserver: "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
+    homeserver: "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
   },
 });
 const [recoveryPath, authUrl] = a._;

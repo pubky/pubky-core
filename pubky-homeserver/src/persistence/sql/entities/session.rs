@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use pubky_common::{capabilities::Capabilities, crypto::random_bytes, session::SessionInfo};
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
@@ -197,8 +197,8 @@ impl FromRow<'_, PgRow> for SessionEntity {
 
 #[cfg(test)]
 mod tests {
-    use pkarr::Keypair;
     use pubky_common::capabilities::Capability;
+    use pubky_common::crypto::Keypair;
 
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
