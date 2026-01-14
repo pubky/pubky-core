@@ -72,7 +72,6 @@ where
                 None => {
                     tracing::warn!("Pubky Host is missing in request. Authorization failed.");
                     return Ok(HttpError::new_with_message(
-                        // todo: should we return 403 here ?
                         StatusCode::NOT_FOUND,
                         "Pubky Host is missing",
                     )
