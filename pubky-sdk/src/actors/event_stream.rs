@@ -37,9 +37,9 @@ use std::fmt::Display;
 use std::pin::Pin;
 use std::str::FromStr;
 
+use crate::PublicKey;
 use eventsource_stream::Eventsource;
 use futures_util::{Stream, StreamExt};
-use pkarr::PublicKey;
 use reqwest::Method;
 use url::Url;
 
@@ -253,15 +253,15 @@ impl EventStreamBuilder {
     /// Constructs a URL like:
     /// `https://{homeserver}/events-stream?user=pk1&user=pk2:cursor&limit=100&live=true&path=/pub/`
     fn build_request_url(&self, homeserver: &PublicKey) -> Result<Url> {
-        let mut url = Url::parse(&format!("https://{homeserver}/events-stream"))?;
+        let mut url = Url::parse(&format!("https://{}/events-stream", homeserver.z32()))?;
 
         {
             let mut query = url.query_pairs_mut();
             for (user, cursor) in &self.users {
                 if let Some(c) = cursor {
-                    query.append_pair("user", &format!("{user}:{c}"));
+                    query.append_pair("user", &format!("{}:{c}", user.z32()));
                 } else {
-                    query.append_pair("user", &user.to_string());
+                    query.append_pair("user", &user.z32());
                 }
             }
             if let Some(limit) = self.limit {
