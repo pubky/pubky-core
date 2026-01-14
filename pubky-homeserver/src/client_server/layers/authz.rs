@@ -1,5 +1,6 @@
 use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::persistence::sql::session::{SessionRepository, SessionSecret};
+use crate::persistence::sql::SqlDb;
 use crate::shared::{HttpError, HttpResult};
 use axum::http::Method;
 use axum::response::IntoResponse;
@@ -87,7 +88,14 @@ where
             };
 
             // Authorize the request
-            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path).await
+            if let Err(e) = authorize(
+                &state.sql_db,
+                req.method(),
+                cookies,
+                pubky.public_key(),
+                path,
+            )
+            .await
             {
                 return Ok(e.into_response());
             }
@@ -98,9 +106,9 @@ where
     }
 }
 
-/// Authorize write (PUT or DELETE) for Public paths.
+/// Authorize request.
 async fn authorize(
-    state: &AppState,
+    sql_db: &SqlDb,
     method: &Method,
     cookies: &Cookies,
     public_key: &PublicKey,
@@ -120,12 +128,12 @@ async fn authorize(
         // }
     } else {
         tracing::warn!(
-            "Writing to directories other than '/pub/' is forbidden: {}/{}. Access forbidden",
+            "Access to non-/pub/ paths is forbidden: {}/{}.",
             public_key,
             path
         );
         return Err(HttpError::forbidden_with_message(
-            "Writing to directories other than '/pub/' is forbidden",
+            "Access to non-/pub/ paths is forbidden",
         ));
     }
 
@@ -143,9 +151,7 @@ async fn authorize(
     };
 
     let session =
-        match SessionRepository::get_by_secret(&session_secret, &mut state.sql_db.pool().into())
-            .await
-        {
+        match SessionRepository::get_by_secret(&session_secret, &mut sql_db.pool().into()).await {
             Ok(session) => session,
             Err(sqlx::Error::RowNotFound) => {
                 tracing::warn!(
@@ -201,4 +207,318 @@ pub fn session_secret_from_cookies(
         .get(&public_key.z32())
         .map(|c| c.value().to_string())?;
     SessionSecret::new(value).ok()
+}
+
+#[cfg(test)]
+pub mod tests {
+    use std::str::FromStr;
+
+    use crate::{
+        client_server::layers::authz::authorize,
+        persistence::sql::{session::SessionRepository, user::UserRepository, SqlDb},
+    };
+    use pubky_common::capabilities::{Capabilities, Capability};
+    use pubky_common::crypto::{Keypair, PublicKey};
+    use reqwest::{Method, StatusCode};
+    use tower_cookies::{Cookie, Cookies};
+
+    const PUBKEY: &str = "o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy";
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_non_pub_paths() {
+        let methods = vec![
+            Method::GET,
+            Method::PUT,
+            Method::POST,
+            Method::DELETE,
+            Method::PATCH,
+        ];
+
+        let db = SqlDb::test().await;
+        let cookies = Cookies::default();
+        let public_key = PublicKey::try_from(PUBKEY).unwrap();
+
+        for method in methods {
+            let result = authorize(&db, &method, &cookies, &public_key, "/test").await;
+            match result {
+                Err(http) => {
+                    assert_eq!(
+                        http.status(),
+                        StatusCode::FORBIDDEN,
+                        "Method {:?} on /test",
+                        method
+                    );
+                    assert_eq!(
+                        http.detail(),
+                        Some("Access to non-/pub/ paths is forbidden"),
+                        "Error message should indicate non-/pub/ path forbidden"
+                    );
+                }
+                Ok(_) => panic!("Expected error for method {:?} on /test, got Ok", method),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_pub_paths() {
+        let test_cases = vec![
+            (Method::GET, None),
+            (Method::HEAD, None),
+            (Method::PUT, Some(StatusCode::UNAUTHORIZED)),
+            (Method::POST, Some(StatusCode::UNAUTHORIZED)),
+            (Method::DELETE, Some(StatusCode::UNAUTHORIZED)),
+            (Method::PATCH, Some(StatusCode::UNAUTHORIZED)),
+        ];
+
+        let db = SqlDb::test().await;
+        let cookies = Cookies::default();
+        let public_key = PublicKey::from_str(PUBKEY).unwrap();
+
+        for (method, expected_error) in test_cases {
+            let result = authorize(&db, &method, &cookies, &public_key, "/pub/test").await;
+            match expected_error {
+                Some(expected_status) => match result {
+                    Err(http) => {
+                        assert_eq!(
+                            http.status(),
+                            expected_status,
+                            "Method {:?} on /pub/test",
+                            method
+                        );
+                        if expected_status == StatusCode::UNAUTHORIZED {
+                            assert_eq!(
+                                http.detail(),
+                                Some("No session secret found in cookies"),
+                                "Error message should indicate missing session cookie"
+                            );
+                        }
+                    }
+                    Ok(_) => panic!(
+                        "Expected error {:?} for method {:?} on /pub/test, got Ok",
+                        expected_status, method
+                    ),
+                },
+                None => {
+                    if let Err(http) = result {
+                        panic!(
+                            "Expected Ok for method {:?} on /pub/test, got error {:?}",
+                            method,
+                            http.status()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_session_path_allows_all_methods() {
+        let methods = vec![
+            Method::GET,
+            Method::PUT,
+            Method::POST,
+            Method::DELETE,
+            Method::PATCH,
+        ];
+
+        let db = SqlDb::test().await;
+        let cookies = Cookies::default();
+        let public_key = PublicKey::from_str(PUBKEY).unwrap();
+
+        for method in methods {
+            let result = authorize(&db, &method, &cookies, &public_key, "/session").await;
+            assert!(
+                result.is_ok(),
+                "Method {:?} on /session should be allowed without auth",
+                method
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_valid_session_with_write_capability() {
+        let db = SqlDb::test().await;
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+
+        // Create user
+        UserRepository::create(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Create session with root capability (write access to /pub/)
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
+        let user = UserRepository::get(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+        let session_secret =
+            SessionRepository::create(user.id, &capabilities, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        // Create cookies with session secret
+        let cookies = Cookies::default();
+        cookies.add(Cookie::new(public_key.z32(), session_secret.to_string()));
+
+        // Test write operations should succeed
+        let write_methods = vec![Method::PUT, Method::POST, Method::DELETE, Method::PATCH];
+
+        for method in write_methods {
+            let result = authorize(&db, &method, &cookies, &public_key, "/pub/test.txt").await;
+            assert!(
+                result.is_ok(),
+                "Method {:?} on /pub/test.txt with valid session should succeed",
+                method
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_session_pubkey_mismatch() {
+        let db = SqlDb::test().await;
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+
+        // Create user and session
+        UserRepository::create(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
+        let user = UserRepository::get(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+        let session_secret =
+            SessionRepository::create(user.id, &capabilities, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        // Create cookies with session secret but use different public key
+        let different_keypair = Keypair::random();
+        let different_public_key = different_keypair.public_key();
+
+        let cookies = Cookies::default();
+        cookies.add(Cookie::new(
+            different_public_key.z32(),
+            session_secret.to_string(),
+        ));
+
+        // Should fail with unauthorized because pubkey doesn't match session
+        let result = authorize(
+            &db,
+            &Method::PUT,
+            &cookies,
+            &different_public_key,
+            "/pub/test.txt",
+        )
+        .await;
+
+        match result {
+            Err(http) => {
+                assert_eq!(
+                    http.status(),
+                    StatusCode::UNAUTHORIZED,
+                    "Pubkey mismatch should return UNAUTHORIZED"
+                );
+                assert_eq!(
+                    http.detail(),
+                    Some("SessionInfo public key does not match pubky-host"),
+                    "Error message should indicate pubkey mismatch"
+                );
+            }
+            Ok(_) => panic!("Expected UNAUTHORIZED for pubkey mismatch, got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_session_without_write_capability() {
+        let db = SqlDb::test().await;
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+
+        // Create user
+        UserRepository::create(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Create session with limited capability (only read access to specific path)
+        let capabilities = Capabilities::builder()
+            .cap(Capability::read("/pub/readonly/"))
+            .finish();
+        let user = UserRepository::get(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+        let session_secret =
+            SessionRepository::create(user.id, &capabilities, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        // Create cookies with session secret
+        let cookies = Cookies::default();
+        cookies.add(Cookie::new(public_key.z32(), session_secret.to_string()));
+
+        // Try to write to /pub/test.txt (should fail - no write capability)
+        let result = authorize(&db, &Method::PUT, &cookies, &public_key, "/pub/test.txt").await;
+
+        match result {
+            Err(http) => {
+                assert_eq!(
+                    http.status(),
+                    StatusCode::FORBIDDEN,
+                    "Write without write capability should return FORBIDDEN"
+                );
+                assert_eq!(
+                    http.detail(),
+                    Some("Session does not have write access to path"),
+                    "Error message should indicate missing write capability"
+                );
+            }
+            Ok(_) => panic!("Expected FORBIDDEN for write without capability, got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_invalid_session_secret_in_db() {
+        let db = SqlDb::test().await;
+        let keypair = Keypair::random();
+        let public_key = keypair.public_key();
+
+        // Create user but no session
+        UserRepository::create(&public_key, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Create cookies with non-existent session secret (must be 26 chars)
+        let cookies = Cookies::default();
+        cookies.add(Cookie::new(
+            public_key.z32(),
+            "abcdefghijklmnopqrstuvwxyz", // 26 chars, valid format but not in DB
+        ));
+
+        // Should fail with unauthorized because session doesn't exist in DB
+        let result = authorize(&db, &Method::PUT, &cookies, &public_key, "/pub/test.txt").await;
+
+        match result {
+            Err(http) => {
+                assert_eq!(
+                    http.status(),
+                    StatusCode::UNAUTHORIZED,
+                    "Invalid session secret should return UNAUTHORIZED"
+                );
+                assert_eq!(
+                    http.detail(),
+                    Some("No session found for session secret"),
+                    "Error message should indicate session not found in database"
+                );
+            }
+            Ok(_) => panic!("Expected UNAUTHORIZED for invalid session secret, got Ok"),
+        }
+    }
 }
