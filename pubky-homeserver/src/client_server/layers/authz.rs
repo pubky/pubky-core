@@ -213,15 +213,14 @@ pub fn session_secret_from_cookies(
 pub mod tests {
     use std::str::FromStr;
 
-    use pkarr::{Keypair, PublicKey};
-    use pubky_common::capabilities::{Capabilities, Capability};
-    use reqwest::{Method, StatusCode};
-    use tower_cookies::{Cookie, Cookies};
-
     use crate::{
         client_server::layers::authz::authorize,
         persistence::sql::{session::SessionRepository, user::UserRepository, SqlDb},
     };
+    use pubky_common::capabilities::{Capabilities, Capability};
+    use pubky_common::crypto::{Keypair, PublicKey};
+    use reqwest::{Method, StatusCode};
+    use tower_cookies::{Cookie, Cookies};
 
     const PUBKEY: &str = "o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy";
 
@@ -238,7 +237,7 @@ pub mod tests {
 
         let db = SqlDb::test().await;
         let cookies = Cookies::default();
-        let public_key = PublicKey::from_str(PUBKEY).unwrap();
+        let public_key = PublicKey::try_from(PUBKEY).unwrap();
 
         for method in methods {
             let result = authorize(&db, &method, &cookies, &public_key, "/test").await;
@@ -363,10 +362,7 @@ pub mod tests {
 
         // Create cookies with session secret
         let cookies = Cookies::default();
-        cookies.add(Cookie::new(
-            public_key.to_string(),
-            session_secret.to_string(),
-        ));
+        cookies.add(Cookie::new(public_key.z32(), session_secret.to_string()));
 
         // Test write operations should succeed
         let write_methods = vec![Method::PUT, Method::POST, Method::DELETE, Method::PATCH];
@@ -408,7 +404,7 @@ pub mod tests {
 
         let cookies = Cookies::default();
         cookies.add(Cookie::new(
-            different_public_key.to_string(),
+            different_public_key.z32(),
             session_secret.to_string(),
         ));
 
@@ -465,10 +461,7 @@ pub mod tests {
 
         // Create cookies with session secret
         let cookies = Cookies::default();
-        cookies.add(Cookie::new(
-            public_key.to_string(),
-            session_secret.to_string(),
-        ));
+        cookies.add(Cookie::new(public_key.z32(), session_secret.to_string()));
 
         // Try to write to /pub/test.txt (should fail - no write capability)
         let result = authorize(&db, &Method::PUT, &cookies, &public_key, "/pub/test.txt").await;
@@ -505,7 +498,7 @@ pub mod tests {
         // Create cookies with non-existent session secret (must be 26 chars)
         let cookies = Cookies::default();
         cookies.add(Cookie::new(
-            public_key.to_string(),
+            public_key.z32(),
             "abcdefghijklmnopqrstuvwxyz", // 26 chars, valid format but not in DB
         ));
 

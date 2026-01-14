@@ -82,7 +82,7 @@ impl Drop for TestDbDropper {
 }
 
 #[cfg(any(test, feature = "testing"))]
-const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
+const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://postgres:postgres@localhost:5432/postgres";
 
 #[cfg(any(test, feature = "testing"))]
 impl SqlDb {
