@@ -60,13 +60,12 @@
 //! URL and decrypts the payload locally. The relay **cannot decrypt anything**, it
 //! simply forwards bytes.
 
-use pkarr::PublicKey;
 use url::Url;
 
 use pubky_common::crypto::random_bytes;
 
 use crate::{
-    AuthToken, Capabilities, PubkyHttpClient, PubkySession,
+    AuthToken, Capabilities, PubkyHttpClient, PubkySession, PublicKey,
     actors::{
         DEFAULT_HTTP_RELAY,
         auth::{

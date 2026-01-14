@@ -4,18 +4,19 @@ use pubky_testnet::pubky::{
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
-    pubky_homeserver::{MockDataDir, SignupMode},
+    pubky_homeserver::{ConfigToml, SignupMode},
     EphemeralTestnet, Testnet,
 };
 use std::str::FromStr;
 use std::time::Duration;
 
+use super::build_full_testnet;
 use pubky_testnet::pubky::errors::{Error, RequestError};
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn basic_authn() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -33,13 +34,19 @@ async fn basic_authn() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn disabled_user() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    // This test requires the admin server to disable users
+    let testnet = EphemeralTestnet::builder()
+        .config(ConfigToml::default_test_config())
+        .build()
+        .await
+        .unwrap();
+
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     // Create a brand-new user and session
     let signer = pubky.signer(Keypair::random());
-    let pubky = signer.public_key().clone();
+    let user_pubky = signer.public_key().clone();
     let session = signer.signup(&server.public_key(), None).await.unwrap();
 
     // Create a test file to ensure the user can write to their account
@@ -69,7 +76,7 @@ async fn disabled_user() {
     let response = admin_client
         .request(
             Method::POST,
-            &format!("http://{admin_socket}/users/{pubky}/disable"),
+            &format!("http://{admin_socket}/users/{}/disable", user_pubky.z32()),
         )
         .header("X-Admin-Password", "admin")
         .send()
@@ -99,13 +106,13 @@ async fn disabled_user() {
         .signin()
         .await
         .expect("Signin should succeed for disabled users");
-    assert_eq!(session2.info().public_key(), &pubky);
+    assert_eq!(session2.info().public_key(), &user_pubky);
 }
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn authz() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -183,7 +190,7 @@ async fn authz() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn signup_authz() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -270,7 +277,7 @@ async fn signup_authz() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn persist_and_restore_info() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -309,7 +316,7 @@ async fn persist_and_restore_info() {
 
 #[tokio::test]
 async fn multiple_users() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -333,7 +340,7 @@ async fn multiple_users() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn authz_timeout_reconnect() {
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
@@ -404,18 +411,20 @@ async fn authz_timeout_reconnect() {
 #[pubky_testnet::test]
 async fn signup_with_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
-    let mut testnet = Testnet::new().await.unwrap();
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::TokenRequired;
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
     let signer = pubky.signer(Keypair::random());
     let signer2 = pubky.signer(Keypair::random());
-
-    let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.signup_mode = SignupMode::TokenRequired;
-    let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
-        .await
-        .unwrap();
 
     // 2. Try to signup with an invalid token "AAAAA" and expect failure.
     let invalid_signup = signer
@@ -476,7 +485,7 @@ async fn signup_with_token() {
 async fn republish_if_stale_triggers_timestamp_bump() {
     use std::time::Duration;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();
@@ -523,7 +532,7 @@ async fn republish_if_stale_triggers_timestamp_bump() {
 async fn conditional_publish_skips_when_fresh() {
     use std::time::Duration;
 
-    let testnet = EphemeralTestnet::start().await.unwrap();
+    let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let client = testnet.client().unwrap();

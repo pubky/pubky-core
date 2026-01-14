@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use sea_query::Iden;
 use sqlx::{postgres::PgRow, FromRow, Row};
 

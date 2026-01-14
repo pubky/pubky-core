@@ -8,7 +8,7 @@ use axum::{
     },
 };
 use futures_util::stream::Stream;
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
@@ -147,7 +147,10 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
                 (value.as_str(), None)
             };
 
-            let pubkey = PublicKey::try_from(pubkey_str)
+            if PublicKey::is_pubky_prefixed(pubkey_str) {
+                return Err(EventStreamError::InvalidPublicKey(pubkey_str.to_string()));
+            }
+            let pubkey = PublicKey::try_from_z32(pubkey_str)
                 .map_err(|_| EventStreamError::InvalidPublicKey(pubkey_str.to_string()))?;
 
             user_cursors.push((pubkey, cursor_str.map(|s| s.to_string())));
@@ -205,8 +208,15 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
 /// data: cursor: 42
 /// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
 /// ```
+fn formatted_event_path(entity: &EventEntity) -> String {
+    // TODO: switch this formatter to use the shared `PubkyResource` type from `pubky-sdk`
+    // once the homeserver crate depends on it directly, so we avoid ad-hoc string
+    // reconstruction here.
+    format!("pubky://{}{}", entity.user_pubkey.z32(), entity.path.path())
+}
+
 fn event_to_sse_data(entity: &EventEntity) -> String {
-    let path = format!("pubky://{}", entity.path.as_str());
+    let path = formatted_event_path(entity);
     let cursor_line = format!("cursor: {}", entity.cursor());
 
     let mut lines = vec![path, cursor_line];
@@ -261,7 +271,7 @@ pub async fn feed(
 
     let mut result = events
         .iter()
-        .map(|event| format!("{} pubky://{}", event.event_type, event.path.as_str()))
+        .map(|event| format!("{} {}", event.event_type, formatted_event_path(event)))
         .collect::<Vec<String>>();
     let next_cursor = events.last().map(|event| event.id.to_string());
 

@@ -110,7 +110,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).eq(path.path().as_str()))
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -179,7 +179,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).eq(path.path().as_str()))
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
         // Then delete the entry by the id
@@ -213,7 +213,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .limit(1)
             .to_owned();
 
@@ -256,7 +256,7 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", dir_path))) // Everything that starts with the path
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
         // Use a select in select to filter the previous regex regpath
@@ -267,19 +267,29 @@ impl EntryRepository {
             .to_owned();
 
         if reverse {
-            outer_statement = outer_statement.order_by("regpath", Order::Desc).to_owned();
+            outer_statement = outer_statement
+                .order_by_expr(Expr::cust("regpath COLLATE \"C\""), Order::Desc)
+                .to_owned();
         } else {
-            outer_statement = outer_statement.order_by("regpath", Order::Asc).to_owned();
+            outer_statement = outer_statement
+                .order_by_expr(Expr::cust("regpath COLLATE \"C\""), Order::Asc)
+                .to_owned();
         }
 
         if let Some(cursor_entry_path) = cursor {
             if reverse {
                 outer_statement = outer_statement
-                    .and_where(Expr::col("regpath").lt(cursor_entry_path.path().as_str()))
+                    .and_where(Expr::cust_with_values(
+                        "regpath COLLATE \"C\" < $1",
+                        vec![sea_query::Value::from(cursor_entry_path.path().as_str())],
+                    ))
                     .to_owned();
             } else {
                 outer_statement = outer_statement
-                    .and_where(Expr::col("regpath").gt(cursor_entry_path.path().as_str()))
+                    .and_where(Expr::cust_with_values(
+                        "regpath COLLATE \"C\" > $1",
+                        vec![sea_query::Value::from(cursor_entry_path.path().as_str())],
+                    ))
                     .to_owned();
             }
         }
@@ -333,27 +343,33 @@ impl EntryRepository {
                 Expr::col((ENTRY_TABLE, EntryIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
             .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).like(format!("{}%", full_path))) // Everything that starts with the path
-            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().to_string()))
+            .and_where(Expr::col((USER_TABLE, UserIden::PublicKey)).eq(path.pubkey().z32()))
             .to_owned();
 
         if reverse {
             statement = statement
-                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Desc)
+                .order_by_expr(Expr::cust("entries.path COLLATE \"C\""), Order::Desc)
                 .to_owned();
         } else {
             statement = statement
-                .order_by((ENTRY_TABLE, EntryIden::Path), Order::Asc)
+                .order_by_expr(Expr::cust("entries.path COLLATE \"C\""), Order::Asc)
                 .to_owned();
         }
 
         if let Some(cursor) = cursor {
             if reverse {
                 statement = statement
-                    .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).lt(cursor.path().as_str()))
+                    .and_where(Expr::cust_with_values(
+                        "entries.path COLLATE \"C\" < $1",
+                        vec![sea_query::Value::from(cursor.path().as_str())],
+                    ))
                     .to_owned();
             } else {
                 statement = statement
-                    .and_where(Expr::col((ENTRY_TABLE, EntryIden::Path)).gt(cursor.path().as_str()))
+                    .and_where(Expr::cust_with_values(
+                        "entries.path COLLATE \"C\" > $1",
+                        vec![sea_query::Value::from(cursor.path().as_str())],
+                    ))
                     .to_owned();
             }
         }
@@ -398,7 +414,7 @@ pub enum EntryIden {
 mod tests {
     use super::*;
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
-    use pkarr::Keypair;
+    use pubky_common::crypto::Keypair;
     use std::collections::HashSet;
 
     #[tokio::test]

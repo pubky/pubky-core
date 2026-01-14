@@ -1,4 +1,4 @@
-use pkarr::PublicKey;
+use pubky_common::crypto::PublicKey;
 
 /// Custom validator for the zbase32 pubkey in the route path.
 /// Usage:
@@ -27,7 +27,12 @@ impl<'de> serde::Deserialize<'de> for Z32Pubkey {
         D: serde::Deserializer<'de>,
     {
         let s: String = serde::Deserialize::deserialize(deserializer)?;
-        let pubkey = PublicKey::try_from(s.as_str()).map_err(serde::de::Error::custom)?;
+        if PublicKey::is_pubky_prefixed(&s) {
+            return Err(serde::de::Error::custom(
+                "unexpected `pubky` prefix; expected raw z32",
+            ));
+        }
+        let pubkey = PublicKey::try_from_z32(s.as_str()).map_err(serde::de::Error::custom)?;
         Ok(Z32Pubkey(pubkey))
     }
 }

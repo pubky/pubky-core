@@ -79,22 +79,25 @@ impl Testnet {
         None
     }
 
-    /// Run the full homeserver app with core and admin server
-    /// Automatically listens on the default ports.
-    /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
+    /// Run the full homeserver app with core and admin server.
+    ///
+    /// Uses [`ConfigToml::default_test_config()`] which enables the admin server.
+    /// Automatically listens on ephemeral ports and uses this Testnet's bootstrap nodes and relays.
     pub async fn create_homeserver(&mut self) -> Result<&HomeserverApp> {
-        let mut config = ConfigToml::test();
+        let mut config = ConfigToml::default_test_config();
         if let Some(connection_string) = self.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
         }
-        let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32])))?;
+        let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret(&[0; 32])))?;
         self.create_homeserver_app_with_mock(mock_dir).await
     }
 
-    /// Creates a homeserver app using a freshly generated random keypair.
-    /// Automatically listens on the configured ports and uses this Testnet's bootstrap nodes and relays.
+    /// Run the full homeserver app with core and admin server using a freshly generated random keypair.
+    ///
+    /// Uses [`ConfigToml::default_test_config()`] which enables the admin server.
+    /// Automatically listens on ephemeral ports and uses this Testnet's bootstrap nodes and relays.
     pub async fn create_random_homeserver(&mut self) -> Result<&HomeserverApp> {
-        let mut config = ConfigToml::test();
+        let mut config = ConfigToml::default_test_config();
         if let Some(connection_string) = self.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
         }
@@ -292,7 +295,7 @@ mod test {
         let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
 
         // Make sure the pkarr can resolve the hs_pubky.
-        let pubkey = format!("{}", hs_pubky);
+        let pubkey = hs_pubky.z32();
         let _endpoint = pkarr_client
             .resolve_https_endpoint(pubkey.as_str())
             .await

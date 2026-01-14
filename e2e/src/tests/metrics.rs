@@ -1,7 +1,4 @@
-use pubky_testnet::{
-    pubky::{Keypair, Method, PubkyHttpClient, StatusCode},
-    Testnet,
-};
+use pubky_testnet::pubky::{Keypair, Method, PubkyHttpClient, StatusCode};
 
 /// Poll metrics endpoint until condition is met or timeout occurs
 async fn wait_for_metric_condition<F>(
@@ -50,24 +47,24 @@ async fn metrics_comprehensive() {
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
 
-    use pubky_testnet::pubky_homeserver::{ConfigToml, MockDataDir};
+    use pubky_testnet::pubky_homeserver::ConfigToml;
     use std::net::SocketAddr;
 
-    // TODO: Modify pubky_testnet to optionally take a custom Config
-    let mut testnet = Testnet::new().await.unwrap();
-    testnet.create_http_relay().await.unwrap();
+    use pubky_testnet::EphemeralTestnet;
 
     let mut config = ConfigToml::default_test_config();
     config.metrics.enabled = true;
     config.metrics.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
-    let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret_key(&[0; 32]))).unwrap();
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
 
     // Extract values we need before getting SDK to avoid borrow conflicts
-    let (metrics_url, server_public_key) = {
-        let server = testnet
-            .create_homeserver_app_with_mock(mock_dir)
-            .await
-            .unwrap();
+    let (metrics_url, server_public_key, server_public_key_z32) = {
+        let server = testnet.homeserver_app();
 
         let metrics_server = server
             .metrics_server()
@@ -75,8 +72,9 @@ async fn metrics_comprehensive() {
         let metrics_socket = metrics_server.listen_socket();
         let metrics_url = format!("http://{}/metrics", metrics_socket);
         let public_key = server.public_key().clone();
+        let public_key_z32 = public_key.z32();
 
-        (metrics_url, public_key)
+        (metrics_url, public_key, public_key_z32)
     };
 
     let pubky = testnet.sdk().unwrap();
@@ -129,11 +127,13 @@ async fn metrics_comprehensive() {
     // 3. Test concurrent stream connections to generate metrics
     let stream_url1 = format!(
         "https://{}/events-stream?user={}&live=true",
-        server_public_key, user_pubky1
+        server_public_key_z32,
+        user_pubky1.z32()
     );
     let stream_url2 = format!(
         "https://{}/events-stream?user={}&live=true",
-        server_public_key, user_pubky2
+        server_public_key_z32,
+        user_pubky2.z32()
     );
 
     let response1 = pubky

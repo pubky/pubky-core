@@ -1,12 +1,10 @@
 use reqwest::{Method, StatusCode};
 
-#[cfg(target_arch = "wasm32")]
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::session::SessionInfo;
 
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::AuthError;
-#[cfg(target_arch = "wasm32")]
 use crate::errors::RequestError;
 use crate::{
     AuthToken, Error, PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http_status,
@@ -49,7 +47,7 @@ impl PubkySession {
     /// This POSTs the resolved homeserver session endpoint with the token, validates the response
     /// and constructs a new session-bound [`PubkySession`]
     pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<Self> {
-        let url = format!("pubky://{}/session", token.public_key());
+        let url = format!("pubky://{}/session", token.public_key().z32());
         cross_log!(
             info,
             "Establishing new session exchange for {}",
@@ -104,7 +102,7 @@ impl PubkySession {
             let info = SessionInfo::deserialize(&bytes)?;
 
             // 3) Find the cookie named exactly as the user's pubky.
-            let cookie_name = info.public_key().to_string();
+            let cookie_name = info.public_key().z32();
             let cookie = raw_set_cookies
                 .iter()
                 .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
@@ -209,25 +207,20 @@ impl PubkySession {
         Ok(()) // success => `self` is consumed
     }
 
-    /// Export session metadata for rehydrating in browsers after a tab refresh.
+    /// Export session metadata for rehydrating after a tab refresh or process restart.
     ///
-    /// This is available on WASM targets only. The returned string contains **no secrets**;
-    /// it is a base64 encoding of the public `SessionInfo`. The browser remains responsible
-    /// for persisting the HTTP-only session cookie; `export()` merely captures the metadata
-    /// needed to reconstruct a `PubkySession` handle.
-    #[cfg(target_arch = "wasm32")]
+    /// The returned string contains **no secrets**; it is a base64 encoding of the
+    /// public `SessionInfo`. The caller remains responsible for persisting the
+    /// HTTP-only session cookie; `export()` merely captures the metadata needed to
+    /// reconstruct a `PubkySession` handle.
     #[must_use]
     pub fn export(&self) -> String {
-        cross_log!(
-            info,
-            "Exporting WASM session for {}",
-            self.info.public_key()
-        );
+        cross_log!(info, "Exporting session for {}", self.info.public_key());
         STANDARD.encode(self.info.serialize())
     }
 
-    /// Restore a WASM session from an `export()` string. No secrets are read or written;
-    /// the browser's HTTP-only cookie jar must still contain the session cookie.
+    /// Restore a session from an `export()` string. No secrets are read or written;
+    /// the HTTP-only cookie jar must still contain the session cookie.
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] if the export string is malformed.
@@ -255,12 +248,26 @@ impl PubkySession {
             .await?
             .ok_or(AuthError::RequestExpired)?;
         session.info = info;
-        cross_log!(
-            info,
-            "Rehydrated WASM session for {}",
-            session.info.public_key()
-        );
+        cross_log!(info, "Rehydrated session for {}", session.info.public_key());
         Ok(session)
+    }
+
+    /// Restore a session from an `export()` string (unsupported on native targets).
+    ///
+    /// Use [`Self::import_secret`] on native to restore a session using the secret token instead.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::RequestError::Validation`] because exports are only supported on WASM.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[allow(
+        clippy::unused_async,
+        reason = "keep async signature aligned with WASM build"
+    )]
+    pub async fn import(_export: &str, _client: Option<PubkyHttpClient>) -> Result<Self> {
+        Err(RequestError::Validation {
+            message: "session import is only supported on WASM targets".into(),
+        }
+        .into())
     }
 
     /// Create a **session-mode** Storage bound to this user session.

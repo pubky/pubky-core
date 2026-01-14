@@ -12,7 +12,7 @@
 //    const token = await flow.awaitToken();       // <- AuthToken
 //
 //    // Who just authenticated?
-//    console.log(token.publicKey().z32());
+//    console.log(token.publicKey().toString());
 //
 //    // Optional: send to your backend and verify there
 //    const bytes = token.toBytes();               // Uint8Array
@@ -42,7 +42,7 @@ use crate::wrappers::keys::PublicKey;
 /// const token = await flow.awaitToken();
 ///
 /// // Identify the user
-/// console.log(token.publicKey().z32());
+/// console.log(token.publicKey().toString());
 ///
 /// // Optionally forward to a server for verification:
 /// await fetch("/api/verify", { method: "POST", body: token.toBytes() });
@@ -73,7 +73,7 @@ impl AuthToken {
     /// export async function POST(req) {
     ///   const bytes = new Uint8Array(await req.arrayBuffer());
     ///   const token = AuthToken.verify(bytes); // throws on failure
-    ///   return new Response(token.publicKey().z32(), { status: 200 });
+    ///   return new Response(token.publicKey().toString(), { status: 200 });
     /// }
     /// ```
     #[wasm_bindgen(js_name = "verify")]
@@ -102,10 +102,11 @@ impl AuthToken {
 
     /// Returns the **public key** that authenticated with this token.
     ///
-    /// Use `.z32()` on the returned `PublicKey` to get the string form.
+    /// Use `.toString()` on the returned `PublicKey` to get the `pubky<z32>` identifier.
+    /// Call `.z32()` when you specifically need the raw z-base32 value (e.g. hostnames).
     ///
     /// @example
-    /// const who = sessionInfo.publicKey.z32();
+    /// const who = token.publicKey.toString();
     #[wasm_bindgen(js_name = "publicKey", getter)]
     pub fn public_key(&self) -> PublicKey {
         // `pubky::PublicKey` implements `Clone`

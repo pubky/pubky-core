@@ -13,7 +13,7 @@ pub struct MockDataDir {
     /// The configuration for the homeserver.
     pub config_toml: super::ConfigToml,
     /// The keypair for the homeserver.
-    pub keypair: pkarr::Keypair,
+    pub keypair: pubky_common::crypto::Keypair,
 }
 
 impl MockDataDir {
@@ -22,9 +22,9 @@ impl MockDataDir {
     /// If keypair is not provided, a new one will be generated.
     pub fn new(
         config_toml: super::ConfigToml,
-        keypair: Option<pkarr::Keypair>,
+        keypair: Option<pubky_common::crypto::Keypair>,
     ) -> anyhow::Result<Self> {
-        let keypair = keypair.unwrap_or_else(pkarr::Keypair::random);
+        let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
         Ok(Self {
             temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?),
             config_toml,
@@ -33,10 +33,13 @@ impl MockDataDir {
     }
 
     /// Creates a mock data directory with a config and keypair appropriate for testing.
+    ///
+    /// Uses [`ConfigToml::default_test_config()`] which enables the admin server.
+    /// For lightweight tests, use [`MockDataDir::new()`] with [`ConfigToml::minimal_test_config()`].
     #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
-        let config = super::ConfigToml::test();
-        let keypair = pkarr::Keypair::from_secret_key(&[0; 32]);
+        let config = super::ConfigToml::default_test_config();
+        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
         Self::new(config, Some(keypair)).expect("failed to create MockDataDir")
     }
 }
@@ -60,7 +63,7 @@ impl DataDir for MockDataDir {
         Ok(self.config_toml.clone())
     }
 
-    fn read_or_create_keypair(&self) -> anyhow::Result<pkarr::Keypair> {
+    fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
         Ok(self.keypair.clone())
     }
 }
