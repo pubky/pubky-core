@@ -27,7 +27,7 @@
 //!
 //! while let Some(result) = stream.next().await {
 //!     let event = result?;
-//!     println!("Event: {:?} at {}", event.event_type, event.path);
+//!     println!("Event: {:?} at {}", event.event_type, event.resource);
 //! }
 //! # Ok(())
 //! # }
@@ -44,7 +44,7 @@ use reqwest::Method;
 use url::Url;
 
 use crate::{
-    Pkdns, PubkyHttpClient, cross_log,
+    Pkdns, PubkyHttpClient, PubkyResource, cross_log,
     errors::{Error, RequestError, Result},
 };
 
@@ -128,8 +128,8 @@ impl std::fmt::Display for EventType {
 pub struct Event {
     /// Type of event (PUT or DEL).
     pub event_type: EventType,
-    /// Full pubky path (e.g., `<pubky://user_pubkey/pub/example.txt>`).
-    pub path: String,
+    /// The resource that was created, updated, or deleted.
+    pub resource: PubkyResource,
     /// Cursor for pagination (event ID).
     pub cursor: EventCursor,
     /// Content hash (blake3) in hex format (only for PUT events with available hash).
@@ -211,6 +211,14 @@ impl EventStreamBuilder {
     /// Without this flag (default): Stream only delivers historical events and closes.
     ///
     /// **Note**: Cannot be combined with `reverse()`.
+    ///
+    /// # Cleanup
+    /// To stop the stream, simply drop it. The underlying HTTP connection will be closed.
+    /// ```ignore
+    /// let stream = pubky.event_stream().add_user(&user, None)?.live().subscribe().await?;
+    /// // Process some events...
+    /// drop(stream); // Connection closed
+    /// ```
     #[must_use]
     pub const fn live(mut self) -> Self {
         self.live = true;
@@ -434,6 +442,12 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
         })
     })?;
 
+    let resource: PubkyResource = path.parse().map_err(|e| {
+        Error::from(RequestError::Validation {
+            message: format!("Invalid resource path '{path}': {e}"),
+        })
+    })?;
+
     let cursor = cursor.ok_or_else(|| {
         Error::from(RequestError::Validation {
             message: "SSE event missing cursor line".into(),
@@ -442,8 +456,211 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
 
     Ok(Event {
         event_type,
-        path,
+        resource,
         cursor,
         content_hash,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create an SSE event for testing
+    fn make_sse(event: &str, data: &str) -> eventsource_stream::Event {
+        eventsource_stream::Event {
+            event: event.to_string(),
+            data: data.to_string(),
+            id: String::new(),
+            retry: None,
+        }
+    }
+
+    #[test]
+    fn parse_put_event_with_content_hash() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/example.txt\ncursor: 42\ncontent_hash: abc123def456",
+        );
+
+        let event = parse_sse_event(&sse).unwrap();
+
+        assert_eq!(event.event_type, EventType::Put);
+        assert_eq!(event.resource.path.as_str(), "/pub/example.txt");
+        assert_eq!(event.cursor.id(), 42);
+        assert_eq!(event.content_hash, Some("abc123def456".to_string()));
+    }
+
+    #[test]
+    fn parse_del_event_without_content_hash() {
+        let sse = make_sse(
+            "DEL",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/deleted.txt\ncursor: 100",
+        );
+
+        let event = parse_sse_event(&sse).unwrap();
+
+        assert_eq!(event.event_type, EventType::Delete);
+        assert_eq!(event.resource.path.as_str(), "/pub/deleted.txt");
+        assert_eq!(event.cursor.id(), 100);
+        assert_eq!(event.content_hash, None);
+    }
+
+    #[test]
+    fn parse_event_with_unknown_prefixed_lines_for_forward_compatibility() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 50\nfuture_field: some_value\nanother_future: 123\ncontent_hash: hashvalue",
+        );
+
+        let event = parse_sse_event(&sse).unwrap();
+
+        assert_eq!(event.event_type, EventType::Put);
+        assert_eq!(event.cursor.id(), 50);
+        assert_eq!(event.content_hash, Some("hashvalue".to_string()));
+    }
+
+    #[test]
+    fn parse_event_with_lines_in_different_order() {
+        // cursor before content_hash, both after path
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/test.txt\ncontent_hash: hash123\ncursor: 999",
+        );
+
+        let event = parse_sse_event(&sse).unwrap();
+
+        assert_eq!(event.cursor.id(), 999);
+        assert_eq!(event.content_hash, Some("hash123".to_string()));
+    }
+
+    #[test]
+    fn error_on_unknown_event_type() {
+        let sse = make_sse(
+            "PATCH",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1",
+        );
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unknown event type: PATCH"), "Got: {err}");
+    }
+
+    #[test]
+    fn error_on_missing_path() {
+        let sse = make_sse("PUT", "cursor: 42\ncontent_hash: abc");
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("missing path") || err.contains("Invalid resource"),
+            "Got: {err}"
+        );
+    }
+
+    #[test]
+    fn error_on_missing_cursor() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncontent_hash: abc",
+        );
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("missing cursor"), "Got: {err}");
+    }
+
+    #[test]
+    fn error_on_invalid_cursor_format() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: not_a_number",
+        );
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid cursor format"), "Got: {err}");
+    }
+
+    #[test]
+    fn error_on_negative_cursor() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: -100",
+        );
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid cursor format"), "Got: {err}");
+    }
+
+    #[test]
+    fn error_on_invalid_pubky_resource_path() {
+        let sse = make_sse("PUT", "not-a-valid-pubky-url\ncursor: 42");
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid resource path"), "Got: {err}");
+    }
+
+    #[test]
+    fn parse_event_with_empty_content_hash() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: ",
+        );
+
+        let event = parse_sse_event(&sse).unwrap();
+
+        // Empty string after prefix is still captured
+        assert_eq!(event.content_hash, Some("".to_string()));
+    }
+
+    #[test]
+    fn parse_event_with_large_cursor() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 9223372036854775807",
+        );
+
+        let event = parse_sse_event(&sse).unwrap();
+
+        assert_eq!(event.cursor.id(), 9223372036854775807u64);
+    }
+
+    #[test]
+    fn cursor_display_and_from_str() {
+        let cursor = EventCursor::new(12345);
+        assert_eq!(cursor.to_string(), "12345");
+
+        let parsed: EventCursor = "67890".parse().unwrap();
+        assert_eq!(parsed.id(), 67890);
+
+        let from_u64: EventCursor = 111u64.into();
+        assert_eq!(from_u64.id(), 111);
+
+        let try_from_str = EventCursor::try_from("222").unwrap();
+        assert_eq!(try_from_str.id(), 222);
+
+        let try_from_string = EventCursor::try_from("333".to_string()).unwrap();
+        assert_eq!(try_from_string.id(), 333);
+    }
+
+    #[test]
+    fn event_type_display() {
+        assert_eq!(EventType::Put.to_string(), "PUT");
+        assert_eq!(EventType::Delete.to_string(), "DEL");
+    }
 }

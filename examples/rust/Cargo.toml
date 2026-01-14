@@ -33,8 +33,8 @@ name = "authenticator_signup"
 path = "./6-auth_flow_signup/authenticator.rs"
 
 [[bin]]
-name = "event_stream"
-path = "./7-event-stream/main.rs"
+name = "events_stream"
+path = "./7-events_stream/main.rs"
 
 [dependencies]
 futures-util = "0.3.31"

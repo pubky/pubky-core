@@ -197,7 +197,7 @@ impl Pubky {
     ///   .subscribe();
     ///
     /// for await (const event of stream) {
-    ///   console.log(`${event.eventType}: ${event.path}`);
+    ///   console.log(`${event.eventType}: ${event.resource.path}`);
     /// }
     /// ```
     #[wasm_bindgen(js_name = "eventStream")]

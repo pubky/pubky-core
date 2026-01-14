@@ -181,7 +181,7 @@ impl Pubky {
     ///
     /// while let Some(result) = stream.next().await {
     ///     let event = result?;
-    ///     println!("Event: {:?} at {}", event.event_type, event.path);
+    ///     println!("Event: {:?} at {}", event.event_type, event.resource);
     /// }
     /// # Ok(())
     /// # }

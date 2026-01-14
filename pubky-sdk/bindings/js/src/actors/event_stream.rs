@@ -20,7 +20,7 @@ use crate::wrappers::keys::PublicKey;
 ///   .subscribe();
 ///
 /// for await (const event of stream) {
-///   console.log(event.eventType, event.path);
+///   console.log(event.eventType, event.resource.path);
 /// }
 /// ```
 #[wasm_bindgen]
@@ -79,6 +79,21 @@ impl EventStreamBuilder {
     ///
     /// **Note**: Cannot be combined with `reverse()`.
     ///
+    /// ## Cleanup
+    /// To stop a live stream, use the reader's `cancel()` method:
+    /// ```typescript
+    /// const stream = await pubky.eventStream().addUser(user, null).live().subscribe();
+    /// const reader = stream.getReader();
+    ///
+    /// while (true) {
+    ///   const { done, value } = await reader.read();
+    ///   if (shouldStop) {
+    ///     await reader.cancel(); // Closes the connection
+    ///     break;
+    ///   }
+    /// }
+    /// ```
+    ///
     /// @returns {EventStreamBuilder} - Builder for chaining
     #[wasm_bindgen]
     pub fn live(self) -> Self {
@@ -130,7 +145,7 @@ impl EventStreamBuilder {
     /// ```typescript
     /// const stream = await builder.subscribe();
     /// for await (const event of stream) {
-    ///   console.log(`${event.eventType}: ${event.path}`);
+    ///   console.log(`${event.eventType}: ${event.resource.path}`);
     /// }
     /// ```
     #[wasm_bindgen]
@@ -145,8 +160,7 @@ impl EventStreamBuilder {
         let mapped_stream = rust_stream.map(|result| match result {
             Ok(event) => {
                 let js_event = Event::from(event);
-                serde_wasm_bindgen::to_value(&js_event)
-                    .map_err(|e| JsValue::from_str(&format!("Failed to serialize event: {}", e)))
+                Ok(JsValue::from(js_event))
             }
             Err(e) => {
                 let pubky_err = crate::js_error::PubkyError::from(e);

@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
                 EventType::Put => "PUT",
                 EventType::Delete => "DEL",
             },
-            event.path,
+            event.resource,
             event.cursor,
             event.content_hash.unwrap_or_else(|| "-".to_string())
         );
