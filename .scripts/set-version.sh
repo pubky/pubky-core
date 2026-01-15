@@ -44,7 +44,7 @@ fi
 
 # Update the pubky-sdk package.json
 echo "Updating pubky-sdk package.json version to $NEW_VERSION..."
-(cd pubky-sdk/pkg && npm version --no-git-tag-version --allow-same-version "$NEW_VERSION")
+(cd pubky-sdk/bindings/js/pkg && npm version --no-git-tag-version --allow-same-version "$NEW_VERSION")
 
 # Set the version of all rust members of the workspace
 # cargo set-version also updates the inner member dependency versions.
