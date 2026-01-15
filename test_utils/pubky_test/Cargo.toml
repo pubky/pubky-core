@@ -11,5 +11,5 @@ homepage.workspace = true
 repository.workspace = true
 
 [dependencies]
-pubky_test_utils_macro = { path = "../test_macro" }
-pubky_test_utils_drop_db_helper = { path = "../drop_db_helper" }
+pubky_test_utils_macro = { path = "../test_macro", version = "0.1.0" }
+pubky_test_utils_drop_db_helper = { path = "../drop_db_helper", version = "0.1.0" }

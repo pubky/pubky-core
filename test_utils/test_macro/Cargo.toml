@@ -17,7 +17,7 @@ proc-macro = true
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
-pubky_test_utils_drop_db_helper = { path = "../drop_db_helper" }
+pubky_test_utils_drop_db_helper = { path = "../drop_db_helper", version = "0.1.0" }
 proc-macro-crate = "3.3.0"
 
 
