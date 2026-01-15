@@ -16,7 +16,7 @@
     "request": "node 5-request.mjs"
   },
   "dependencies": {
-    "@synonymdev/pubky": "0.6.0-rc.6",
+    "@synonymdev/pubky": "0.6.0",
     "mri": "^1.2.0",
     "password-prompt": "^1.1.3"
   }
