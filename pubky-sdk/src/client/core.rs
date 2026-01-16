@@ -15,7 +15,7 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 /// `PubkyHttpClientBuilder::default()`.
 ///
 /// # Defaults
-/// - Pkarr relays: [`crate::DEFAULT_RELAYS`]
+/// - Pkarr relays: [`crate::pkarr::DEFAULT_RELAYS`]
 /// - HTTP request timeout: reqwest default (no global timeout) unless set via
 ///   [`Self::request_timeout`]
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
