@@ -32,7 +32,12 @@ path = "./5-request/main.rs"
 name = "authenticator_signup"
 path = "./6-auth_flow_signup/authenticator.rs"
 
+[[bin]]
+name = "events_stream"
+path = "./7-events_stream/main.rs"
+
 [dependencies]
+futures-util = "0.3.31"
 anyhow = "1.0.99"
 base64 = "0.22.1"
 clap = { version = "4.5.48", features = ["derive"] }

@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::actors::{
     auth_flow::{AuthFlow, AuthFlowKind},
+    event_stream::EventStreamBuilder,
     session::Session,
     signer::Signer,
     storage::PublicStorage,
@@ -170,5 +171,37 @@ impl Pubky {
     pub async fn restore_session(&self, exported: String) -> JsResult<Session> {
         let session = pubky::PubkySession::import(&exported, Some(self.0.client().clone())).await?;
         Ok(Session(session))
+    }
+
+    /// Create an event stream builder for multi-user subscriptions.
+    ///
+    /// This allows you to subscribe to Server-Sent Events (SSE) from multiple users'
+    /// events on a homeserver `/events-stream` endpoint. Use `.addUser()` to add
+    /// users (up to 50), then call `.subscribe()`.
+    ///
+    /// IMPORTANT: Only the first User's pubky is used to identify the Homeserver which this code calls.
+    /// It is the responsibility of the caller to ensure that all Users added are on the same Homeserver.
+    ///
+    /// @returns {EventStreamBuilder} A builder to add users and configure the event stream
+    ///
+    /// @example
+    /// ```typescript
+    /// const user1 = PublicKey.from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo");
+    /// const user2 = PublicKey.from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy");
+    /// const stream = await pubky.eventStream()
+    ///   .addUser(user1, null)
+    ///   .addUser(user2, "100")
+    ///   .live()
+    ///   .limit(100)
+    ///   .path("/pub/")
+    ///   .subscribe();
+    ///
+    /// for await (const event of stream) {
+    ///   console.log(`${event.eventType}: ${event.resource.path}`);
+    /// }
+    /// ```
+    #[wasm_bindgen(js_name = "eventStream")]
+    pub fn event_stream(&self) -> EventStreamBuilder {
+        EventStreamBuilder(pubky::EventStreamBuilder::new(self.0.client().clone()))
     }
 }

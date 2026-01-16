@@ -16,7 +16,7 @@ use crate::{
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EventEntity {
-    pub id: i64,
+    pub id: u64,
     pub user_id: i32,
     pub user_pubkey: PublicKey,
     pub event_type: EventType,
@@ -33,6 +33,7 @@ impl EventEntity {
 impl FromRow<'_, PgRow> for EventEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id: i64 = row.try_get(EventIden::Id.to_string().as_str())?;
+        let id = id as u64;
         let user_id: i32 = row.try_get(EventIden::User.to_string().as_str())?;
         let user_public_key: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
         let user_pubkey =

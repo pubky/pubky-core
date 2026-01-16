@@ -25,17 +25,22 @@ use crate::{
 pub const EVENT_TABLE: &str = "events";
 
 /// Cursor for pagination in event queries.
+///
+/// Note: Uses `u64` internally, but Postgres BIGINT is signed (`i64`).
+/// sea_query/sqlx binds `u64` values, which works correctly as long as
+/// IDs stay within `i64::MAX` (~9.2 quintillion). Since event IDs are
+/// auto-incrementing from 1, this is not a practical concern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EventCursor(i64);
+pub struct EventCursor(u64);
 
 impl EventCursor {
     /// Create a new cursor from an event ID
-    pub fn new(id: i64) -> Self {
+    pub fn new(id: u64) -> Self {
         Self(id)
     }
 
     /// Get the underlying ID value
-    pub fn id(&self) -> i64 {
+    pub fn id(&self) -> u64 {
         self.0
     }
 }
@@ -110,7 +115,7 @@ impl EventRepository {
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
         Ok(EventEntity {
-            id: event_id,
+            id: event_id as u64,
             user_id,
             user_pubkey: path.pubkey().clone(),
             event_type,
@@ -149,7 +154,7 @@ impl EventRepository {
         let con = executor.get_con().await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
-        Ok(EventCursor::new(event_id))
+        Ok(EventCursor::new(event_id as u64))
     }
 
     /// Get a list of events with per-user cursors.
