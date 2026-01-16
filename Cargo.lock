@@ -1482,6 +1482,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "futures-util",
  "pubky",
  "pubky-common",
  "pubky-testnet",
@@ -3600,6 +3601,7 @@ version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "cookie",
+ "eventsource-stream",
  "flume",
  "futures-lite",
  "futures-util",
