@@ -1,5 +1,6 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::Method;
+use std::str::FromStr;
 use url::Url;
 
 use pubky_common::{
@@ -8,7 +9,8 @@ use pubky_common::{
 };
 
 use crate::{
-    Capabilities, cross_log,
+    cross_log,
+    deep_links::DeepLink,
     errors::{AuthError, Result},
     util::check_http_status,
 };
@@ -36,76 +38,48 @@ impl PubkySigner {
         reason = "Approving a flow requires a fixed sequence of validation steps kept together for clarity"
     )]
     pub async fn approve_auth(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
-        let pubkyauth_url = Url::parse(pubkyauth_url.as_ref())?;
+        let deep_link = DeepLink::from_str(pubkyauth_url.as_ref())
+            .map_err(|e| AuthError::Validation(format!("Invalid pubkyauth URL: {e}")))?;
 
-        // 1) Extract query params and decode client secret
-        let (relay, client_secret) = Self::parse_relay_and_secret(&pubkyauth_url)?;
-        cross_log!(info, "Approving auth flow via relay {relay}");
+        match deep_link {
+            DeepLink::Signup(signup) => {
+                if signup.is_direct_signup() {
+                    cross_log!(
+                        info,
+                        "Approving direct signup for homeserver {}",
+                        signup.homeserver()
+                    );
+                    self.signup(signup.homeserver(), signup.signup_token().as_deref())
+                        .await?;
+                    return Ok(());
+                }
 
-        // 2) Build token with requested capabilities parsed from URL
-        let capabilities = Capabilities::from(&pubkyauth_url);
-        cross_log!(
-            info,
-            "Signing capabilities {:?} for auth approval",
-            capabilities
-        );
-
-        let encrypted_token = self.build_encrypted_token(capabilities, &client_secret);
-
-        // 3) Derive channel: relay/<base64url(hash(secret))>
-        let callback_url = Self::derive_callback_url(&relay, &client_secret)?;
-        cross_log!(
-            info,
-            "Posting encrypted auth token to relay channel {}",
-            callback_url
-        );
-
-        // 4) POST encrypted token
-        let response = self
-            .client
-            .cross_request(Method::POST, callback_url)
-            .await?
-            .body(encrypted_token)
-            .send()
-            .await?;
-
-        check_http_status(response).await?;
-        cross_log!(info, "Auth token delivered successfully");
-        Ok(())
-    }
-
-    fn parse_relay_and_secret(pubkyauth_url: &Url) -> Result<(Url, [u8; 32])> {
-        let mut relay_param: Option<String> = None;
-        let mut secret_param: Option<String> = None;
-
-        for (key, value) in pubkyauth_url.query_pairs() {
-            match key.as_ref() {
-                "relay" if relay_param.is_none() => relay_param = Some(value.into_owned()),
-                "secret" if secret_param.is_none() => secret_param = Some(value.into_owned()),
-                _ => {}
+                let relay = signup.relay().ok_or_else(|| {
+                    AuthError::Validation("Missing 'relay' query parameter".to_string())
+                })?;
+                let client_secret = signup.secret().ok_or_else(|| {
+                    AuthError::Validation("Missing 'secret' query parameter".to_string())
+                })?;
+                self.post_auth_token(relay, client_secret, signup.capabilities())
+                    .await?;
+            }
+            DeepLink::Signin(signin) => {
+                self.post_auth_token(signin.relay(), signin.secret(), signin.capabilities())
+                    .await?;
+            }
+            DeepLink::SeedExport(_) => {
+                return Err(AuthError::Validation(
+                    "Seed export deep link is not an auth approval request".to_string(),
+                )
+                .into());
             }
         }
-
-        let relay_str = relay_param
-            .ok_or_else(|| AuthError::Validation("Missing 'relay' query parameter".to_string()))?;
-        let relay = Url::parse(&relay_str)?;
-
-        let secret_str = secret_param
-            .ok_or_else(|| AuthError::Validation("Missing 'secret' query parameter".to_string()))?;
-        let secret_bytes = URL_SAFE_NO_PAD
-            .decode(secret_str)
-            .map_err(|e| AuthError::Validation(format!("Invalid base64 secret: {e}")))?;
-
-        let client_secret: [u8; 32] = secret_bytes
-            .try_into()
-            .map_err(|_err| AuthError::Validation("Client secret must be 32 bytes".to_string()))?;
-
-        Ok((relay, client_secret))
+        Ok(())
     }
 
     fn build_encrypted_token(
         &self,
-        capabilities: Capabilities,
+        capabilities: crate::Capabilities,
         client_secret: &[u8; 32],
     ) -> Vec<u8> {
         let token = AuthToken::sign(&self.keypair, capabilities);
@@ -122,5 +96,39 @@ impl PubkySigner {
         path_segments.push(&channel_id);
         drop(path_segments);
         Ok(callback_url)
+    }
+
+    async fn post_auth_token(
+        &self,
+        relay: &Url,
+        client_secret: &[u8; 32],
+        capabilities: &crate::Capabilities,
+    ) -> Result<()> {
+        cross_log!(info, "Approving auth flow via relay {relay}");
+        cross_log!(
+            info,
+            "Signing capabilities {:?} for auth approval",
+            capabilities
+        );
+
+        let encrypted_token = self.build_encrypted_token(capabilities.clone(), client_secret);
+        let callback_url = Self::derive_callback_url(relay, client_secret)?;
+        cross_log!(
+            info,
+            "Posting encrypted auth token to relay channel {}",
+            callback_url
+        );
+
+        let response = self
+            .client
+            .cross_request(Method::POST, callback_url)
+            .await?
+            .body(encrypted_token)
+            .send()
+            .await?;
+
+        check_http_status(response).await?;
+        cross_log!(info, "Auth token delivered successfully");
+        Ok(())
     }
 }
