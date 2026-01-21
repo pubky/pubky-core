@@ -221,7 +221,10 @@ async fn signup_authz() {
     };
     assert_eq!(signup_deep_link.capabilities(), &caps);
     assert_eq!(
-        signup_deep_link.relay().as_str(),
+        signup_deep_link
+            .relay()
+            .expect("signup deep link should include relay")
+            .as_str(),
         testnet.http_relay().local_link_url().as_str()
     );
     assert_eq!(signup_deep_link.homeserver(), &server.public_key());
@@ -272,6 +275,49 @@ async fn signup_authz() {
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
     );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn signup_via_direct_deeplink() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let deeplink = format!("pubkyauth://signup?hs={}", server.public_key().z32());
+
+    signer.approve_auth(&deeplink).await.unwrap();
+
+    let session = signer.signin().await.unwrap();
+    assert_eq!(session.info().public_key(), &signer.public_key());
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn signup_via_direct_deeplink_with_token() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let token = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .create_signup_token()
+        .await
+        .unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let deeplink = format!(
+        "pubkyauth://signup?hs={}&st={}",
+        server.public_key().z32(),
+        token
+    );
+
+    signer.approve_auth(&deeplink).await.unwrap();
+
+    let session = signer.signin().await.unwrap();
+    assert_eq!(session.info().public_key(), &signer.public_key());
 }
 
 #[tokio::test]

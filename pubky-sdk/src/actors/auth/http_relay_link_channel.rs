@@ -120,7 +120,7 @@ impl HttpRelayLinkChannel {
             {
                 return Ok(None);
             }
-            let poll_timeout = timeout.map(|t| t - start.elapsed());
+            let poll_timeout = timeout.and_then(|t| t.checked_sub(start.elapsed()));
             match self.poll_once(client, poll_timeout).await {
                 Ok(response) => {
                     cross_log!(

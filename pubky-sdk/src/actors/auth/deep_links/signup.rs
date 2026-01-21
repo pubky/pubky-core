@@ -1,6 +1,10 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use pubky_common::capabilities::Capabilities;
-use std::{fmt::Display, str::FromStr};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+    str::FromStr,
+};
 use url::Url;
 
 use crate::PublicKey;
@@ -8,12 +12,14 @@ use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseErr
 
 /// A deep link for signing up to a Pubky homeserver.
 /// Supported formats:
-/// - <pubkyauth://signup?caps={}&relay={}&secret={base64_encoded_secret}&hs={homeserver_public_key}&st={signup_token}>    
+/// - <pubkyauth://signup?caps={}&relay={}&secret={base64_encoded_secret}&hs={homeserver_public_key}&st={signup_token}>
+/// - <pubkyauth://signup?hs={homeserver_public_key}&st={signup_token}>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignupDeepLink {
     capabilities: Capabilities,
-    relay: Url,
-    secret: [u8; 32],
+    caps_in_url: bool,
+    relay: Option<Url>,
+    secret: Option<[u8; 32]>,
     homeserver: PublicKey,
     signup_token: Option<String>,
 }
@@ -37,8 +43,9 @@ impl SignupDeepLink {
     ) -> Self {
         Self {
             capabilities,
-            relay,
-            secret,
+            caps_in_url: true,
+            relay: Some(relay),
+            secret: Some(secret),
             homeserver,
             signup_token,
         }
@@ -51,14 +58,23 @@ impl SignupDeepLink {
 
     /// Get the relay for the signup flow.
     #[must_use]
-    pub fn relay(&self) -> &Url {
-        &self.relay
+    pub fn relay(&self) -> Option<&Url> {
+        self.relay.as_ref()
     }
 
     /// Get the secret for the signup flow.
     #[must_use]
-    pub fn secret(&self) -> &[u8; 32] {
-        &self.secret
+    pub fn secret(&self) -> Option<&[u8; 32]> {
+        self.secret.as_ref()
+    }
+
+    /// Returns true if this deep link represents a direct signup flow.
+    ///
+    /// Direct signup links omit relay/secret and only include the homeserver
+    /// and optional signup token.
+    #[must_use]
+    pub fn is_direct_signup(&self) -> bool {
+        self.relay.is_none() && self.secret.is_none()
     }
 
     /// Get the homeserver for the signup flow.
@@ -76,17 +92,22 @@ impl SignupDeepLink {
 
 impl Display for SignupDeepLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let url = format!(
-            "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}",
-            self.capabilities,
-            self.relay,
-            URL_SAFE_NO_PAD.encode(self.secret),
-            self.homeserver.z32()
-        );
-        write!(f, "{url}")?;
+        // Canonical query ordering: hs, st, relay, secret, caps.
+        let mut url = "pubkyauth://signup?".to_string();
+        write!(&mut url, "hs={}", self.homeserver.z32())?;
         if let Some(signup_token) = self.signup_token.as_ref() {
-            write!(f, "&st={signup_token}")?;
+            write!(&mut url, "&st={signup_token}")?;
         }
+        if let Some(relay) = self.relay.as_ref() {
+            write!(&mut url, "&relay={relay}")?;
+        }
+        if let Some(secret) = self.secret.as_ref() {
+            write!(&mut url, "&secret={}", URL_SAFE_NO_PAD.encode(secret))?;
+        }
+        if self.caps_in_url {
+            write!(&mut url, "&caps={}", self.capabilities)?;
+        }
+        write!(f, "{url}")?;
         Ok(())
     }
 }
@@ -103,59 +124,64 @@ impl FromStr for SignupDeepLink {
         if intent != "signup" {
             return Err(DeepLinkParseError::InvalidIntent("signup"));
         }
-        let raw_caps = url
-            .query_pairs()
-            .find(|(key, _)| key == "caps")
-            .ok_or(DeepLinkParseError::MissingQueryParameter("caps"))?
-            .1
-            .to_string();
-        let capabilities: Capabilities = raw_caps
-            .as_str()
-            .try_into()
-            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("caps", Box::new(e)))?;
+        let mut query_params: HashMap<String, String> = HashMap::new();
+        for (key, value) in url.query_pairs() {
+            query_params
+                .entry(key.to_string())
+                .or_insert_with(|| value.to_string());
+        }
+        let raw_caps = query_params.get("caps").cloned();
+        let (capabilities, caps_in_url) = match raw_caps {
+            Some(raw_caps) => (
+                raw_caps
+                    .as_str()
+                    .try_into()
+                    .map_err(|e| DeepLinkParseError::InvalidQueryParameter("caps", Box::new(e)))?,
+                true,
+            ),
+            None => (Capabilities::default(), false),
+        };
 
-        let raw_relay = url
-            .query_pairs()
-            .find(|(key, _)| key == "relay")
-            .ok_or(DeepLinkParseError::MissingQueryParameter("relay"))?
-            .1
-            .to_string();
-        let relay = Url::parse(&raw_relay)
-            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("relay", Box::new(e)))?;
+        let raw_relay = query_params.get("relay").cloned();
+        let raw_secret = query_params.get("secret").cloned();
 
-        let raw_secret = url
-            .query_pairs()
-            .find(|(key, _)| key == "secret")
-            .ok_or(DeepLinkParseError::MissingQueryParameter("secret"))?
-            .1
-            .to_string();
-        let secret = URL_SAFE_NO_PAD
-            .decode(raw_secret.as_str())
-            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e)))?;
-        let secret: [u8; 32] = secret.try_into().map_err(|e: Vec<u8>| {
-            let msg = format!("Expected 32 bytes, got {}", e.len());
-            DeepLinkParseError::InvalidQueryParameter(
-                "secret",
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
-            )
-        })?;
+        let (relay, secret) = match (raw_relay, raw_secret) {
+            (Some(raw_relay), Some(raw_secret)) => {
+                let relay = Url::parse(&raw_relay)
+                    .map_err(|e| DeepLinkParseError::InvalidQueryParameter("relay", Box::new(e)))?;
+                let secret = URL_SAFE_NO_PAD.decode(raw_secret.as_str()).map_err(|e| {
+                    DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e))
+                })?;
+                let secret: [u8; 32] = secret.try_into().map_err(|e: Vec<u8>| {
+                    let msg = format!("Expected 32 bytes, got {}", e.len());
+                    DeepLinkParseError::InvalidQueryParameter(
+                        "secret",
+                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
+                    )
+                })?;
+                (Some(relay), Some(secret))
+            }
+            (None, None) => (None, None),
+            (None, Some(_)) => {
+                return Err(DeepLinkParseError::MissingQueryParameter("relay"));
+            }
+            (Some(_), None) => {
+                return Err(DeepLinkParseError::MissingQueryParameter("secret"));
+            }
+        };
 
-        let raw_homeserver = url
-            .query_pairs()
-            .find(|(key, _)| key == "hs")
-            .ok_or(DeepLinkParseError::MissingQueryParameter("hs"))?
-            .1
-            .to_string();
+        let raw_homeserver = query_params
+            .get("hs")
+            .cloned()
+            .ok_or(DeepLinkParseError::MissingQueryParameter("hs"))?;
         let homeserver = PublicKey::try_from_z32(raw_homeserver.as_str())
             .map_err(|e| DeepLinkParseError::InvalidQueryParameter("hs", Box::new(e)))?;
 
-        let signup_token = url
-            .query_pairs()
-            .find(|(key, _)| key == "st")
-            .map(|(_, value)| value.to_string());
+        let signup_token = query_params.get("st").cloned();
 
         Ok(SignupDeepLink {
             capabilities,
+            caps_in_url,
             relay,
             secret,
             homeserver,
@@ -195,11 +221,11 @@ mod tests {
         assert_eq!(
             deep_link_str,
             format!(
-                "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}",
-                capabilities,
+                "pubkyauth://signup?hs={}&relay={}&secret={}&caps={}",
+                homeserver.z32(),
                 relay,
                 URL_SAFE_NO_PAD.encode(secret),
-                homeserver.z32()
+                capabilities
             )
         );
         let deep_link_parsed = SignupDeepLink::from_str(&deep_link_str).unwrap();
@@ -228,15 +254,26 @@ mod tests {
         assert_eq!(
             deep_link_str,
             format!(
-                "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}&st={}",
-                capabilities,
+                "pubkyauth://signup?hs={}&st={}&relay={}&secret={}&caps={}",
+                homeserver.z32(),
+                signup_token,
                 relay,
                 URL_SAFE_NO_PAD.encode(secret),
-                homeserver.z32(),
-                signup_token
+                capabilities
             )
         );
         let deep_link_parsed = SignupDeepLink::from_str(&deep_link_str).unwrap();
         assert_eq!(deep_link_parsed, deep_link);
+    }
+
+    #[test]
+    fn test_signup_deep_link_parse_direct() {
+        let homeserver =
+            PublicKey::from_str("5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo").unwrap();
+        let deep_link_str = format!("pubkyauth://signup?hs={}", homeserver.z32());
+        let deep_link_parsed = SignupDeepLink::from_str(&deep_link_str).unwrap();
+        assert_eq!(deep_link_parsed.homeserver(), &homeserver);
+        assert_eq!(deep_link_parsed.relay(), None);
+        assert_eq!(deep_link_parsed.secret(), None);
     }
 }
