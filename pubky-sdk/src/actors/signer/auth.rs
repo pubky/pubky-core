@@ -33,10 +33,6 @@ impl PubkySigner {
     /// - Returns [`crate::errors::Error::Authentication`] if the `pubkyauth://` URL is malformed or missing required parameters.
     /// - Returns [`crate::errors::Error::Authentication`] if the secret cannot be decoded or has the wrong length.
     /// - Propagates transport failures when posting to the relay or if the relay responds with a non-success status.
-    #[allow(
-        clippy::cognitive_complexity,
-        reason = "Approving a flow requires a fixed sequence of validation steps kept together for clarity"
-    )]
     pub async fn approve_auth(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
         let deep_link = DeepLink::from_str(pubkyauth_url.as_ref())
             .map_err(|e| AuthError::Validation(format!("Invalid pubkyauth URL: {e}")))?;
