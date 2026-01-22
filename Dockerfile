@@ -34,7 +34,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY . .
 
 # Add build argument for binary selection (homeserver or testnet)
-ARG BUILD_TARGET=homeserver
+ARG BUILD_TARGET=testnet
 
 # Build the project in release mode for the MUSL target
 # Only apply environment setup script only when host is ARM so we don't override the native compiler on x86 hosts
@@ -49,30 +49,19 @@ RUN strip target/release/pubky-$BUILD_TARGET
 FROM alpine:3.20
 
 ARG TARGETARCH
-ARG BUILD_TARGET=homeserver
+ARG BUILD_TARGET=testnet
 
-# Install runtime dependencies (ca-certificates for TLS, wget and netcat for healthchecks, su-exec for user switching)
-RUN apk add --no-cache ca-certificates wget netcat-openbsd su-exec
-
-# Create non-root user (use 1000:1000 to match Umbrel's default)
-RUN addgroup -g 1000 homeserver && \
-    adduser -D -u 1000 -G homeserver homeserver
+# Install runtime dependencies (only ca-certificates)
+RUN apk add --no-cache ca-certificates
 
 # Copy the compiled binary from the builder stage
 COPY --from=builder /usr/src/app/target/release/pubky-$BUILD_TARGET /usr/local/bin/homeserver
 
-# Copy entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Set the working directory
+WORKDIR /usr/local/bin
 
-# Set the working directory for data
-WORKDIR /data
+# Expose the port the homeserver listens on (should match that of config.toml)
+EXPOSE 6287
 
-# Don't switch user here - entrypoint script will handle it
-# USER homeserver
-
-# Expose ports (6286: HTTP, 6287: Pubky TLS, 6288: Admin, 6289: Metrics)
-EXPOSE 6286 6287 6288 6289
-
-# Use entrypoint script that handles config creation and user switching
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Set the default command to run the binary
+CMD ["homeserver"]
