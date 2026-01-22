@@ -61,9 +61,12 @@ RUN addgroup -g 1000 homeserver && \
 # Copy the compiled binary from the builder stage
 COPY --from=builder /usr/src/app/target/release/pubky-$BUILD_TARGET /usr/local/bin/homeserver
 
-# Copy entrypoint script
-COPY deployments/umbrel/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Copy entrypoint script and fix line endings (remove Windows CRLF to ensure Unix LF)
+# This ensures the script works regardless of the line endings in the source repository
+COPY deployments/umbrel/entrypoint.sh /tmp/entrypoint.sh
+RUN sed -i 's/\r$//' /tmp/entrypoint.sh && \
+    mv /tmp/entrypoint.sh /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
 
 # Set the working directory for data
 WORKDIR /data
