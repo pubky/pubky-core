@@ -63,6 +63,24 @@ The entrypoint script intelligently detects configuration values:
 
 **Note:** If defaults (`127.0.0.1`/`localhost`) are used, the homeserver will not be accessible externally. Set `PUBLIC_IP` and `ICANN_DOMAIN` for production deployments.
 
+### External Access and PKARR Configuration
+
+The auto-detection feature attempts to determine the local IP, but this often resolves to the Docker internal IP rather than the public IP needed for PKARR and external services. For production deployments requiring external access, explicitly setting `PUBLIC_IP` and `ICANN_DOMAIN` is recommended.
+
+1. **Set environment variables** in `docker-compose.yml`:
+   ```yaml
+   homeserver:
+     environment:
+       PUBLIC_IP: "your.public.ip.address"
+       ICANN_DOMAIN: "your-domain.com"
+   ```
+
+2. **Infrastructure setup**:
+   - Configure NAT traversal (router port forwarding for ports 6286-6289)
+   - Set up firewall rules to allow incoming connections
+   - Configure DNS to point your domain to your public IP
+   - Ensure your network supports the required ports
+
 ## Ports
 
 The following ports are exposed:
