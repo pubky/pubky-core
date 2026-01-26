@@ -82,6 +82,10 @@ docker run -it pubky:core
 
 Additional optional arguments can be used to run it in the background, but the most important is `--network=host`, which allows the container to access the network and provides an admin endpoint accessible from the host machine. Please refer to the Docker documentation for more detailed options.
 
+#### Umbrel Deployment
+
+For deploying on Umbrel OS, see the [Umbrel deployment guide](./deployments/umbrel/README.md) which includes a specialized Dockerfile and entrypoint script for automatic configuration.
+
 ## Links
 
 - [Contributors Guide](./CONTRIBUTORS.md)
