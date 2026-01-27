@@ -45,38 +45,10 @@ if [ ! -f /data/config.toml ]; then
     echo "WARNING: For Umbrel users, ICANN_DOMAIN can be set to your device domain or a custom domain." >&2
   fi
   
-  cat > /data/config.toml <<EOF
-[general]
-signup_mode = "token_required"
-user_storage_quota_mb = 0
-database_url = "postgres://pubky:${POSTGRES_PASSWORD}@postgres:5432/pubky_homeserver"
-
-[drive]
-pubky_listen_socket = "0.0.0.0:6287"
-icann_listen_socket = "0.0.0.0:6286"
-
-[storage]
-type = "file_system"
-
-[admin]
-enabled = true
-listen_socket = "0.0.0.0:6288"
-admin_password = "${ADMIN_PASSWORD}"
-
-[metrics]
-enabled = true
-listen_socket = "0.0.0.0:6289"
-
-[pkdns]
-public_ip = "${DETECTED_PUBLIC_IP}"
-icann_domain = "${DETECTED_ICANN_DOMAIN}"
-user_keys_republisher_interval = 14400
-dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
-
-[logging]
-level = "info"
-module_levels = ["pubky_homeserver=info", "tower_http=info"]
-EOF
+  # Use envsubst to safely substitute environment variables in the config template
+  # This prevents TOML syntax errors from special characters in passwords
+  export POSTGRES_PASSWORD ADMIN_PASSWORD DETECTED_PUBLIC_IP DETECTED_ICANN_DOMAIN
+  envsubst < /usr/local/share/config.toml.template > /data/config.toml
   # Ensure the config file is readable by homeserver user
   chmod 644 /data/config.toml || true
   chown homeserver:homeserver /data/config.toml || true
