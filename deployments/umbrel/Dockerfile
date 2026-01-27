@@ -3,7 +3,8 @@
 # ========================
 FROM rust:1.89.0-alpine3.20 AS builder
 
-# Build platform argument (x86_64 or aarch64) (default: x86_64)
+# TARGETARCH is set by Docker Buildx when using --platform flag
+ARG TARGETARCH
 RUN echo "TARGETARCH: $TARGETARCH"
 
 # Install build dependencies, including static OpenSSL libraries
