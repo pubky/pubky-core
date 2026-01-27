@@ -52,8 +52,8 @@ FROM alpine:3.20
 ARG TARGETARCH
 ARG BUILD_TARGET=homeserver
 
-# Install runtime dependencies (ca-certificates for TLS, wget and netcat for healthchecks, su-exec for user switching)
-RUN apk add --no-cache ca-certificates wget netcat-openbsd su-exec
+# Install runtime dependencies (ca-certificates for TLS, wget and netcat for healthchecks, su-exec for user switching, gettext for envsubst)
+RUN apk add --no-cache ca-certificates wget netcat-openbsd su-exec gettext
 
 # Create non-root user (use 1000:1000 to match Umbrel's default)
 RUN addgroup -g 1000 homeserver && \
@@ -62,12 +62,14 @@ RUN addgroup -g 1000 homeserver && \
 # Copy the compiled binary from the builder stage
 COPY --from=builder /usr/src/app/target/release/pubky-$BUILD_TARGET /usr/local/bin/homeserver
 
-# Copy entrypoint script and fix line endings (remove Windows CRLF to ensure Unix LF)
-# This ensures the script works regardless of the line endings in the source repository
+# Copy entrypoint script and config template, fix line endings (remove Windows CRLF to ensure Unix LF)
+# This ensures the scripts work regardless of the line endings in the source repository
 COPY deployments/umbrel/entrypoint.sh /tmp/entrypoint.sh
+COPY deployments/umbrel/config.toml.template /usr/local/share/config.toml.template
 RUN sed -i 's/\r$//' /tmp/entrypoint.sh && \
     mv /tmp/entrypoint.sh /usr/local/bin/entrypoint.sh && \
-    chmod +x /usr/local/bin/entrypoint.sh
+    chmod +x /usr/local/bin/entrypoint.sh && \
+    chmod 644 /usr/local/share/config.toml.template
 
 # Set the working directory for data
 WORKDIR /data
