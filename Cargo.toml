@@ -2,11 +2,10 @@
 members = [
   "pubky-*",
   "pubky-sdk/bindings/js",
-  "http-relay",
   "pkarr-republisher",
-  "e2e", 
-  "test_utils/test_macro", 
-  "test_utils/drop_db_helper", 
+  "e2e",
+  "test_utils/test_macro",
+  "test_utils/drop_db_helper",
   "test_utils/pubky_test",
   "examples/rust",
 ]
@@ -14,7 +13,6 @@ default-members = [
   "pubky-common",
   "pkarr-republisher",
   "pubky-homeserver",
-  "http-relay",
   "pubky-testnet",
   "pubky-sdk",
 ] # `ws publish` will only attempt to publish these ones. 
