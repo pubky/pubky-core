@@ -3748,6 +3748,7 @@ dependencies = [
 name = "pubky-wasm"
 version = "0.6.0"
 dependencies = [
+ "base64 0.22.1",
  "console_log",
  "futures-util",
  "getrandom 0.3.4",
