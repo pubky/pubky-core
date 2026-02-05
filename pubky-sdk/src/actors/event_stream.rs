@@ -583,7 +583,10 @@ fn decode_content_hash(content_hash_base64: Option<String>) -> Result<Hash> {
         _ => {
             // Fallback to zero hash for missing/empty content_hash (legacy/error case)
             // This matches homeserver's fallback behavior in events_entity.rs
-            cross_log!(warn, "PUT event missing content_hash. Using zero hash as fallback.");
+            cross_log!(
+                warn,
+                "PUT event missing content_hash. Using zero hash as fallback."
+            );
             Ok(Hash::from_bytes([0; 32]))
         }
     }
@@ -614,7 +617,9 @@ mod tests {
         let hash_b64 = encode_hash(hash_bytes);
         let sse = make_sse(
             "PUT",
-            &format!("pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/example.txt\ncursor: 42\ncontent_hash: {hash_b64}"),
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/example.txt\ncursor: 42\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
@@ -649,7 +654,9 @@ mod tests {
         let hash_b64 = encode_hash(hash_bytes);
         let sse = make_sse(
             "PUT",
-            &format!("pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 50\nfuture_field: some_value\nanother_future: 123\ncontent_hash: {hash_b64}"),
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 50\nfuture_field: some_value\nanother_future: 123\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
@@ -669,7 +676,9 @@ mod tests {
         // cursor before content_hash, both after path
         let sse = make_sse(
             "PUT",
-            &format!("pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/test.txt\ncontent_hash: {hash_b64}\ncursor: 999"),
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/test.txt\ncontent_hash: {hash_b64}\ncursor: 999"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
@@ -715,7 +724,9 @@ mod tests {
         let hash_b64 = encode_hash([0u8; 32]);
         let sse = make_sse(
             "PUT",
-            &format!("pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncontent_hash: {hash_b64}"),
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let result = parse_sse_event(&sse);
@@ -801,7 +812,9 @@ mod tests {
         let hash_b64 = encode_hash([0u8; 32]);
         let sse = make_sse(
             "PUT",
-            &format!("pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 9223372036854775807\ncontent_hash: {hash_b64}"),
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 9223372036854775807\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
@@ -832,7 +845,9 @@ mod tests {
         let short_hash = base64::engine::general_purpose::STANDARD.encode([1u8; 16]);
         let sse = make_sse(
             "PUT",
-            &format!("pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: {short_hash}"),
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: {short_hash}"
+            ),
         );
 
         let result = parse_sse_event(&sse);

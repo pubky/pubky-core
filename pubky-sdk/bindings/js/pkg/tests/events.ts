@@ -62,12 +62,12 @@ test("eventStream: comprehensive", async (t) => {
     t.equal(events1.length, 10, "should receive exactly 10 events");
 
     for (const event of events1) {
-      t.equal(typeof event.eventType, "string", "event type should be string");
+      t.ok(event.eventType, "event should have eventType");
       t.ok(event.resource, "event should have a resource");
       t.ok(event.resource.path, "resource should have a path");
       t.ok(event.cursor, "event should have a cursor");
-      t.equal(event.eventType, "PUT", "first 10 events should all be PUT");
-      t.ok(event.contentHash, "PUT events should have contentHash");
+      t.ok(event.eventType.isPut(), "first 10 events should all be PUT");
+      t.ok(event.eventType.contentHash, "PUT events should have contentHash");
     }
   } finally {
     reader1.releaseLock();
@@ -99,8 +99,8 @@ test("eventStream: comprehensive", async (t) => {
       "should receive 18 events from /pub/app1/ (15 PUT + 3 DEL)",
     );
 
-    const putCount = events2.filter((e) => e.eventType === "PUT").length;
-    const delCount = events2.filter((e) => e.eventType === "DEL").length;
+    const putCount = events2.filter((e) => e.eventType.isPut()).length;
+    const delCount = events2.filter((e) => e.eventType.isDelete()).length;
 
     t.equal(putCount, 15, "should have 15 PUT events");
     t.equal(delCount, 3, "should have 3 DEL events");
@@ -142,7 +142,7 @@ test("eventStream: comprehensive", async (t) => {
         event.resource.path.includes("/pub/app2/"),
         `event path should contain /pub/app2/: ${event.resource.path}`,
       );
-      t.equal(event.eventType, "PUT", "app2 events should all be PUT");
+      t.ok(event.eventType.isPut(), "app2 events should all be PUT");
     }
   } finally {
     reader3.releaseLock();
@@ -170,7 +170,7 @@ test("eventStream: comprehensive", async (t) => {
     }
 
     // In reverse order, the 3 DELETE events should come first
-    const delEvents = events4.filter((e) => e.eventType === "DEL");
+    const delEvents = events4.filter((e) => e.eventType.isDelete());
 
     t.ok(delEvents.length >= 3, "should have at least 3 DEL events");
 
@@ -178,7 +178,7 @@ test("eventStream: comprehensive", async (t) => {
       t.ok(delEvent.resource, "DEL event should have a resource");
       t.ok(delEvent.resource.path, "DEL event resource should have a path");
       t.ok(delEvent.cursor, "DEL event should have a cursor");
-      t.notOk(delEvent.contentHash, "DEL event should not have contentHash");
+      t.notOk(delEvent.eventType.contentHash, "DEL event should not have contentHash");
     }
   } finally {
     reader4.releaseLock();
@@ -203,8 +203,8 @@ test("eventStream: comprehensive", async (t) => {
 
     // In reverse order, cursors should be decreasing
     if (events5.length > 1) {
-      const firstCursor = parseInt(events5[0].cursor);
-      const lastCursor = parseInt(events5[events5.length - 1].cursor);
+      const firstCursor = parseInt(events5[0].cursor.id());
+      const lastCursor = parseInt(events5[events5.length - 1].cursor.id());
       t.ok(
         firstCursor > lastCursor,
         "reverse order: first cursor should be greater than last cursor",
@@ -212,9 +212,8 @@ test("eventStream: comprehensive", async (t) => {
     }
 
     // First events in reverse should be the DELETEs (most recent)
-    t.equal(
-      events5[0].eventType,
-      "DEL",
+    t.ok(
+      events5[0].eventType.isDelete(),
       "reverse order: first event should be DEL (most recent)",
     );
   } finally {
@@ -243,7 +242,7 @@ test("eventStream: comprehensive", async (t) => {
   t.equal(firstBatch.length, 5, "first batch should have 5 events");
 
   // Get next batch using cursor
-  const lastCursor = firstBatch[firstBatch.length - 1].cursor;
+  const lastCursor = firstBatch[firstBatch.length - 1].cursor.toString();
   const streamP2 = await sdk
     .eventStream()
     .addUser(userPk, lastCursor)
@@ -298,10 +297,10 @@ test("eventStream: comprehensive", async (t) => {
     t.equal(events7.length, 3, "should receive 3 photo events");
 
     for (const event of events7) {
-      t.equal(typeof event.eventType, "string", "eventType should be string");
+      t.ok(event.eventType, "event should have eventType");
       t.ok(event.resource, "event should have a resource");
       t.equal(typeof event.resource.path, "string", "path should be string");
-      t.equal(typeof event.cursor, "string", "cursor should be string");
+      t.ok(event.cursor, "event should have a cursor");
       t.ok(event.resource.path.includes("/pub/photos/"), "should be from photos directory");
     }
   } finally {
@@ -428,7 +427,7 @@ test("eventStream: multi-user subscription", async (t) => {
     reader1.releaseLock();
   }
 
-  const cursor = batch1[batch1.length - 1].cursor;
+  const cursor = batch1[batch1.length - 1].cursor.toString();
 
   // Add same user with updated cursor - should work without error
   const streamBatch2 = await sdk
