@@ -7,6 +7,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use crate::crypto::Hash;
+use serde::{Deserialize, Serialize};
 
 /// Cursor for pagination in event queries.
 ///
@@ -71,7 +72,7 @@ impl TryFrom<String> for EventCursor {
 }
 
 /// Type of event in the event stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EventType {
     /// PUT event - resource created or updated, with its content hash.
     Put {
@@ -170,5 +171,22 @@ mod tests {
         assert!("".parse::<EventCursor>().is_err());
         assert!("-1".parse::<EventCursor>().is_err());
         assert!("12.34".parse::<EventCursor>().is_err());
+    }
+
+    #[test]
+    fn event_type_serde_roundtrip() {
+        let put = EventType::Put {
+            content_hash: Hash::from_bytes([1; 32]),
+        };
+        let json = serde_json::to_string(&put).expect("Failed to serialize PUT");
+        let deserialized: EventType =
+            serde_json::from_str(&json).expect("Failed to deserialize PUT");
+        assert_eq!(put, deserialized);
+
+        let del = EventType::Delete;
+        let json = serde_json::to_string(&del).expect("Failed to serialize DELETE");
+        let deserialized: EventType =
+            serde_json::from_str(&json).expect("Failed to deserialize DELETE");
+        assert_eq!(del, deserialized);
     }
 }

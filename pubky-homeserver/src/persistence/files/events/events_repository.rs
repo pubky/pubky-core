@@ -272,7 +272,6 @@ pub enum EventIden {
     ContentHash,
 }
 
-
 #[cfg(test)]
 mod tests {
     use pubky_common::crypto::{Hash, Keypair};
