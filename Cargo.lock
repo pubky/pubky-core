@@ -1476,25 +1476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "examples"
-version = "0.6.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "clap",
- "futures-util",
- "pubky",
- "pubky-common",
- "pubky-testnet",
- "reqwest",
- "rpassword",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "fast-glob"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3639,6 +3620,25 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.17",
+ "url",
+]
+
+[[package]]
+name = "pubky-core-examples"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
+ "futures-util",
+ "pubky",
+ "pubky-common",
+ "pubky-testnet",
+ "reqwest",
+ "rpassword",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
