@@ -150,7 +150,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Cargo check examples
         run: |
-          cargo check -p examples --all-features --bins
+          cargo check -p pubky-core-examples --all-features --bins
 
   wasm-test:
     services:
