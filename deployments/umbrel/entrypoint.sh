@@ -4,6 +4,12 @@ set -e
 # Ensure /data directory exists
 mkdir -p /data
 
+# Cloudflare Tunnel: read domain from dashboard-written file if present (overrides env)
+if [ -f /etc/pubky-cloudflare/domain ] && [ -s /etc/pubky-cloudflare/domain ]; then
+  CLOUDFLARE_DOMAIN=$(cat /etc/pubky-cloudflare/domain | tr -d '\n\r')
+  export CLOUDFLARE_DOMAIN
+fi
+
 # Generate config.toml if it doesn't exist
 if [ ! -f /data/config.toml ]; then
   # Validate required environment variables
@@ -28,30 +34,47 @@ if [ ! -f /data/config.toml ]; then
     fi
   fi
   
-  # Determine ICANN_DOMAIN: use env var, or use DEVICE_DOMAIN_NAME, or use default
-  if [ -n "$ICANN_DOMAIN" ]; then
+  # Determine ICANN_DOMAIN: Cloudflare Tunnel takes precedence, then env, then Umbrel device name, then default
+  DETECTED_PUBLIC_ICANN_HTTP_PORT=""
+  if [ -n "$CLOUDFLARE_DOMAIN" ]; then
+    DETECTED_ICANN_DOMAIN="$CLOUDFLARE_DOMAIN"
+    DETECTED_PUBLIC_ICANN_HTTP_PORT="443"
+  elif [ -n "$ICANN_DOMAIN" ]; then
     DETECTED_ICANN_DOMAIN="$ICANN_DOMAIN"
   elif [ -n "$DEVICE_DOMAIN_NAME" ]; then
-    # Use Umbrel's device domain name as a better default
     DETECTED_ICANN_DOMAIN="$DEVICE_DOMAIN_NAME"
   else
     DETECTED_ICANN_DOMAIN="localhost"
   fi
-  
-  # Warn if using defaults that won't work for external access
-  if [ "$DETECTED_PUBLIC_IP" = "127.0.0.1" ] || [ "$DETECTED_ICANN_DOMAIN" = "localhost" ]; then
+
+  # Warn if using defaults that won't work for external access (skip when using Cloudflare)
+  if [ -z "$CLOUDFLARE_DOMAIN" ] && { [ "$DETECTED_PUBLIC_IP" = "127.0.0.1" ] || [ "$DETECTED_ICANN_DOMAIN" = "localhost" ]; }; then
     echo "WARNING: Using default values for public_ip ($DETECTED_PUBLIC_IP) and icann_domain ($DETECTED_ICANN_DOMAIN)." >&2
-    echo "WARNING: These values will not work for a real homeserver. Please set PUBLIC_IP and ICANN_DOMAIN environment variables." >&2
-    echo "WARNING: For Umbrel users, ICANN_DOMAIN can be set to your device domain or a custom domain." >&2
+    echo "WARNING: Set PUBLIC_IP and ICANN_DOMAIN, or use Cloudflare Tunnel (CLOUDFLARE_DOMAIN + CLOUDFLARE_TUNNEL_TOKEN)." >&2
   fi
-  
-  # Use envsubst to safely substitute environment variables in the config template
-  # This prevents TOML syntax errors from special characters in passwords
+
   export POSTGRES_PASSWORD ADMIN_PASSWORD DETECTED_PUBLIC_IP DETECTED_ICANN_DOMAIN
   envsubst < /usr/local/share/config.toml.template > /data/config.toml
-  # Ensure the config file is readable by homeserver user
+
+  if [ -n "$DETECTED_PUBLIC_ICANN_HTTP_PORT" ]; then
+    sed -i "/^icann_domain = /a public_icann_http_port = $DETECTED_PUBLIC_ICANN_HTTP_PORT" /data/config.toml
+  fi
+
   chmod 644 /data/config.toml || true
   chown homeserver:homeserver /data/config.toml || true
+fi
+
+# If config already exists and CLOUDFLARE_DOMAIN is set (e.g. from dashboard), update [pkdns]
+if [ -f /data/config.toml ] && [ -n "$CLOUDFLARE_DOMAIN" ]; then
+  if grep -q '^icann_domain = ' /data/config.toml; then
+    sed -i "s|^icann_domain = .*|icann_domain = \"$CLOUDFLARE_DOMAIN\"|" /data/config.toml
+  fi
+  if ! grep -q '^public_icann_http_port = ' /data/config.toml; then
+    sed -i "/^icann_domain = /a public_icann_http_port = 443" /data/config.toml
+  else
+    sed -i 's/^public_icann_http_port = .*/public_icann_http_port = 443/' /data/config.toml
+  fi
+  chown homeserver:homeserver /data/config.toml 2>/dev/null || true
 fi
 
 # Optimize chown: only run if ownership change is needed
