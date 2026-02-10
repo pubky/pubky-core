@@ -38,15 +38,15 @@ path = "./7-events_stream/main.rs"
 
 [dependencies]
 futures-util = "0.3.31"
-anyhow = "1.0.99"
+anyhow = "1.0.101"
 base64 = "0.22.1"
-clap = { version = "4.5.48", features = ["derive"] }
+clap = { version = "4.5.57", features = ["derive"] }
 pubky = { path = "../../pubky-sdk", version = "0.6.0" }
 pubky-testnet = { path = "../../pubky-testnet", version = "0.6.0" }
 pubky-common = { path = "../../pubky-common", version = "0.6.0" }
 reqwest = "0.12.23"
 rpassword = "7.4.0"
-tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-tracing = "0.1.41"
-url = "2.5.4"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing = "0.1.44"
+url = "2.5.8"
