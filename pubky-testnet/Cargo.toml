@@ -1,7 +1,7 @@
 [package]
 name = "pubky-testnet"
 description = "A local test network for Pubky Core development."
-version = "0.6.0"
+version = "0.7.0-rc.1"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -19,9 +19,9 @@ tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"
 url = "2.5.4"
 
-pubky = { path = "../pubky-sdk", version = "0.6.0", features = ["json"] }
-pubky-common = { path = "../pubky-common", version = "0.6.0" }
-pubky-homeserver = { path = "../pubky-homeserver", version = "0.6.0", default-features = false, features = [
+pubky = { path = "../pubky-sdk", version = "0.7.0-rc.1", features = ["json"] }
+pubky-common = { path = "../pubky-common", version = "0.7.0-rc.1" }
+pubky-homeserver = { path = "../pubky-homeserver", version = "0.7.0-rc.1", default-features = false, features = [
     "testing",
 ] }
 pubky_test_utils = { path = "../test_utils/pubky_test", version = "0.1.0" }
