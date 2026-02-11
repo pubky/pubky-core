@@ -1,6 +1,6 @@
 [package]
 name = "pubky-core-examples"
-version = "0.6.0"
+version = "0.7.0-rc.1"
 edition.workspace = true
 publish = false
 
