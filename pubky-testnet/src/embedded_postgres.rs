@@ -84,28 +84,36 @@ impl Drop for EmbeddedPostgres {
 mod tests {
     use crate::EphemeralTestnet;
     use pubky::Keypair;
-    /// Test that we can create users and store data with embedded postgres.
+
+    /// Comprehensive test for embedded postgres: startup, user operations, HTTP relay, and cleanup.
+    /// Consolidated into one test to reduce the number of postgres instances started.
     #[tokio::test]
-    async fn test_embedded_postgres_user_operations() {
+    async fn test_embedded_postgres_full_lifecycle() {
+        // Start testnet with embedded postgres and HTTP relay
         let testnet = EphemeralTestnet::builder()
             .with_embedded_postgres()
+            .with_http_relay()
             .build()
             .await
             .expect("Failed to start testnet with embedded postgres");
 
-        let pubky = testnet.sdk().expect("Failed to create SDK");
+        // Verify the homeserver is running
+        assert!(!testnet.homeserver_app().public_key().to_string().is_empty());
 
-        // Create a new keypair for the user
+        // Verify HTTP relay is running
+        let _ = testnet.http_relay();
+
+        // Test user operations
+        let pubky = testnet.sdk().expect("Failed to create SDK");
         let keypair = Keypair::random();
         let signer = pubky.signer(keypair);
 
-        // Sign up the user
         let session = signer
             .signup(&testnet.homeserver_app().public_key(), None)
             .await
             .expect("Failed to signup user");
 
-        // Store some data
+        // Store and retrieve data
         let path = "/pub/test.txt";
         let data = b"Hello from embedded postgres test!";
         session
@@ -114,60 +122,32 @@ mod tests {
             .await
             .expect("Failed to store data");
 
-        // Read it back
         let response = session
             .storage()
             .get(path)
             .await
             .expect("Failed to get data");
-
         let bytes = response.bytes().await.expect("Failed to read bytes");
         assert_eq!(bytes.as_ref(), data);
-    }
 
-    /// Test that cleanup works properly when the testnet is dropped.
-    #[tokio::test]
-    async fn test_embedded_postgres_cleanup() {
-        // Create and drop a testnet
-        {
-            let testnet = EphemeralTestnet::builder()
-                .with_embedded_postgres()
-                .build()
-                .await
-                .expect("Failed to start testnet with embedded postgres");
+        // Drop first testnet and verify cleanup by creating another
+        drop(testnet);
 
-            // Use it briefly
-            let _ = testnet.homeserver_app().public_key();
-        }
-
-        // Create another testnet - this should work if cleanup was successful
-        {
-            let testnet = EphemeralTestnet::builder()
-                .with_embedded_postgres()
-                .build()
-                .await
-                .expect("Failed to start second testnet with embedded postgres");
-
-            let _ = testnet.homeserver_app().public_key();
-        }
-    }
-
-    /// Test that embedded postgres works with HTTP relay enabled.
-    #[tokio::test]
-    async fn test_embedded_postgres_with_http_relay() {
-        let testnet = EphemeralTestnet::builder()
+        let testnet2 = EphemeralTestnet::builder()
             .with_embedded_postgres()
-            .with_http_relay()
             .build()
             .await
-            .expect("Failed to start testnet with embedded postgres and http relay");
+            .expect("Failed to start second testnet - cleanup may have failed");
 
-        // Verify both are running
-        let _ = testnet.homeserver_app().public_key();
-        let _ = testnet.http_relay();
+        assert!(!testnet2
+            .homeserver_app()
+            .public_key()
+            .to_string()
+            .is_empty());
     }
 
     /// Test that specifying both embedded postgres and a custom connection string fails.
+    /// This test is fast as it fails before starting any postgres instance.
     #[tokio::test]
     async fn test_embedded_postgres_and_custom_connection_string_fails() {
         use pubky_homeserver::ConnectionString;
