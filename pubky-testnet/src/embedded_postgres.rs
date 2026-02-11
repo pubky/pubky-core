@@ -84,21 +84,6 @@ impl Drop for EmbeddedPostgres {
 mod tests {
     use crate::EphemeralTestnet;
     use pubky::Keypair;
-
-    /// Test that the testnet can start with embedded postgres.
-    #[tokio::test]
-    async fn test_embedded_postgres_basic() {
-        let testnet = EphemeralTestnet::builder()
-            .with_embedded_postgres()
-            .build()
-            .await
-            .expect("Failed to start testnet with embedded postgres");
-
-        // Verify the homeserver is running
-        let homeserver = testnet.homeserver_app();
-        assert!(!homeserver.public_key().to_string().is_empty());
-    }
-
     /// Test that we can create users and store data with embedded postgres.
     #[tokio::test]
     async fn test_embedded_postgres_user_operations() {
@@ -180,5 +165,32 @@ mod tests {
         // Verify both are running
         let _ = testnet.homeserver_app().public_key();
         let _ = testnet.http_relay();
+    }
+
+    /// Test that specifying both embedded postgres and a custom connection string fails.
+    #[tokio::test]
+    async fn test_embedded_postgres_and_custom_connection_string_fails() {
+        use pubky_homeserver::ConnectionString;
+
+        let connection = ConnectionString::new("postgres://localhost:5432/test").unwrap();
+
+        let result = EphemeralTestnet::builder()
+            .postgres(connection)
+            .with_embedded_postgres()
+            .build()
+            .await;
+
+        match result {
+            Ok(_) => panic!("Should fail when both postgres options are set"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains(
+                        "Cannot use both embedded postgres and a custom connection string"
+                    ),
+                    "Expected error about conflicting postgres options, got: {}",
+                    err
+                );
+            }
+        }
     }
 }

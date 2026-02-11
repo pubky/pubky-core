@@ -127,6 +127,9 @@ impl EphemeralTestnetBuilder {
     ///
     /// This is useful for running tests without requiring a separate
     /// PostgreSQL installation.
+    ///
+    /// **Note**: Cannot be combined with `.postgres()`. If both are set, `build()` will
+    /// return an error.
     #[cfg(feature = "embedded-postgres")]
     pub fn with_embedded_postgres(mut self) -> Self {
         self.use_embedded_postgres = true;
@@ -135,7 +138,18 @@ impl EphemeralTestnetBuilder {
 
     /// Build and start the testnet with the configured settings.
     /// Uses minimal_test_config() by default (admin/metrics disabled).
+    ///
+    /// # Errors
+    /// Returns an error if both `.postgres()` and `.with_embedded_postgres()` are set.
     pub async fn build(self) -> anyhow::Result<EphemeralTestnet> {
+        #[cfg(feature = "embedded-postgres")]
+        if self.use_embedded_postgres && self.postgres_connection_string.is_some() {
+            anyhow::bail!(
+                "Cannot use both embedded postgres and a custom connection string. \
+                 Use either .with_embedded_postgres() or .postgres(), not both."
+            );
+        }
+
         #[cfg(feature = "embedded-postgres")]
         let (embedded_postgres, postgres_connection_string) = if self.use_embedded_postgres {
             let embedded = EmbeddedPostgres::start().await?;
