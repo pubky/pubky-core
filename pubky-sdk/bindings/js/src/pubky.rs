@@ -204,4 +204,32 @@ impl Pubky {
     pub fn event_stream(&self) -> EventStreamBuilder {
         EventStreamBuilder(pubky::EventStreamBuilder::new(self.0.client().clone()))
     }
+
+    /// Create an event stream builder for a specific homeserver.
+    ///
+    /// Use this when you already know the homeserver pubkey. This avoids
+    /// Pkarr resolution overhead. Obtain a homeserver pubkey via `getHomeserverOf()`.
+    ///
+    /// @param {PublicKey} homeserver - The homeserver public key
+    /// @returns {EventStreamBuilder} - Builder for configuring and subscribing to the stream
+    ///
+    /// @example
+    /// ```typescript
+    /// const homeserver = await pubky.getHomeserverOf(user1);
+    /// const stream = await pubky.eventStreamFor(homeserver)
+    ///   .addUser(user1, null)
+    ///   .live()
+    ///   .subscribe();
+    ///
+    /// for await (const event of stream) {
+    ///   console.log(`${event.eventType}: ${event.resource.path}`);
+    /// }
+    /// ```
+    #[wasm_bindgen(js_name = "eventStreamFor")]
+    pub fn event_stream_for(&self, homeserver: &PublicKey) -> EventStreamBuilder {
+        EventStreamBuilder(pubky::EventStreamBuilder::for_homeserver(
+            self.0.client().clone(),
+            homeserver.as_inner(),
+        ))
+    }
 }
