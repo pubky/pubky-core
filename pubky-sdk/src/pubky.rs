@@ -191,6 +191,43 @@ impl Pubky {
         EventStreamBuilder::new(self.client.clone())
     }
 
+    /// Create an event stream builder for a specific homeserver.
+    ///
+    /// Use this when you already know the homeserver pubkey. This avoids
+    /// Pkarr resolution overhead. Obtain a homeserver pubkey via [`Self::get_homeserver_of`].
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey};
+    /// use futures_util::StreamExt;
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
+    ///
+    /// // When subscribing to multiple users on the same homeserver,
+    /// // specify the homeserver directly to avoid redundant Pkarr lookups
+    /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+    ///
+    /// let mut stream = pubky.event_stream_for(&homeserver)
+    ///     .add_user(&user1, None)?
+    ///     .add_user(&user2, None)?
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?} at {}", event.event_type, event.resource);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn event_stream_for(&self, homeserver: &PublicKey) -> EventStreamBuilder {
+        EventStreamBuilder::for_homeserver(self.client.clone(), homeserver)
+    }
+
     // ------ Persistance helpers ----------
 
     /// Restore a session from a `.sess` secret file.

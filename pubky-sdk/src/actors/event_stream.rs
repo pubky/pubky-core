@@ -138,11 +138,12 @@ pub struct Event {
 
 /// Builder for creating an event stream subscription.
 ///
-/// Construct via [`crate::Pubky::event_stream`].
+/// Construct via [`crate::Pubky::event_stream`] or [`crate::Pubky::event_stream_for`].
 #[derive(Clone, Debug)]
 pub struct EventStreamBuilder {
     client: PubkyHttpClient,
     users: Vec<(PublicKey, Option<EventCursor>)>,
+    homeserver: Option<PublicKey>,
     limit: Option<u16>,
     live: bool,
     reverse: bool,
@@ -158,6 +159,53 @@ impl EventStreamBuilder {
         Self {
             client,
             users: Vec::new(),
+            homeserver: None,
+            limit: None,
+            live: false,
+            reverse: false,
+            path: None,
+        }
+    }
+
+    /// Create a new event stream builder for a specific homeserver.
+    ///
+    /// Use this when you already know the homeserver pubkey, avoiding Pkarr resolution.
+    /// You can obtain a homeserver pubkey via [`crate::Pubky::get_homeserver_of`].
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey};
+    /// use futures_util::StreamExt;
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
+    ///
+    /// // When subscribing to multiple users on the same homeserver,
+    /// // specify the homeserver directly to avoid redundant Pkarr lookups
+    /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+    ///
+    /// let mut stream = pubky.event_stream_for(&homeserver)
+    ///     .add_user(&user1, None)?
+    ///     .add_user(&user2, None)?
+    ///     .live()
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn for_homeserver(client: PubkyHttpClient, homeserver: &PublicKey) -> Self {
+        Self {
+            client,
+            users: Vec::new(),
+            homeserver: Some(homeserver.clone()),
             limit: None,
             live: false,
             reverse: false,
@@ -300,16 +348,20 @@ impl EventStreamBuilder {
             }));
         }
 
-        // Resolve homeserver for the first user
-        let (first_user, _) = &self.users[0];
-        let homeserver = Pkdns::with_client(self.client.clone())
-            .get_homeserver_of(first_user)
-            .await
-            .ok_or_else(|| {
-                Error::from(RequestError::Validation {
-                    message: format!("Could not resolve homeserver for user {first_user}"),
-                })
-            })?;
+        // Use pre-set homeserver or resolve from first user
+        let homeserver = if let Some(hs) = &self.homeserver {
+            hs.clone()
+        } else {
+            let (first_user, _) = &self.users[0];
+            Pkdns::with_client(self.client.clone())
+                .get_homeserver_of(first_user)
+                .await
+                .ok_or_else(|| {
+                    Error::from(RequestError::Validation {
+                        message: format!("Could not resolve homeserver for user {first_user}"),
+                    })
+                })?
+        };
 
         cross_log!(
             info,
