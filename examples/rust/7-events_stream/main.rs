@@ -1,11 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
 use futures_util::StreamExt;
-use pubky::{EventCursor, EventType, Pubky, PublicKey};
+use pubky::{EventCursor, EventStreamBuilder, EventType, Pubky, PublicKey};
 use std::env;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Subscribe to multiple Pubky users' event streams")]
+#[command(version, about = "Subscribe to Pubky users' event streams")]
 struct Cli {
     /// User public keys (z32 format, 1-50 users)
     #[arg(required = true)]
@@ -72,14 +72,33 @@ async fn main() -> Result<()> {
         vec![None; args.users.len()]
     };
 
-    // Build event stream subscription
-    let mut builder = pubky.event_stream();
+    // Parse users and their cursors
+    let users: Vec<(PublicKey, Option<EventCursor>)> = args
+        .users
+        .iter()
+        .zip(cursors.iter())
+        .map(|(user_str, cursor)| {
+            let user_pubkey = PublicKey::try_from(user_str.as_str())?;
+            Ok((user_pubkey, *cursor))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    // Add users with their cursors
-    for (user_str, cursor) in args.users.iter().zip(cursors.iter()) {
-        let user_pubkey = PublicKey::try_from(user_str.as_str())?;
-        builder = builder.add_user(&user_pubkey, *cursor)?;
-    }
+    // Build event stream subscription using the appropriate constructor
+    let mut builder: EventStreamBuilder = if users.len() == 1 {
+        // Single user: use the simple constructor
+        let (user, cursor) = &users[0];
+        pubky.event_stream_for_user(user, *cursor)
+    } else {
+        // Multiple users: resolve homeserver from first user, then add all users
+        let (first_user, _) = &users[0];
+        let homeserver = pubky
+            .get_homeserver_of(first_user)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Could not resolve homeserver for user {first_user}"))?;
+
+        let users_refs: Vec<_> = users.iter().map(|(u, c)| (u, *c)).collect();
+        pubky.event_stream_for(&homeserver).add_users(users_refs)?
+    };
 
     if let Some(limit) = args.limit {
         builder = builder.limit(limit);
