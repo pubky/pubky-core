@@ -1,12 +1,31 @@
 //! Event stream actor for subscribing to multi-user event feeds.
 //!
 //! This module provides a builder-style API for subscribing to Server-Sent Events (SSE)
-//! from a user's homeserver `/events-stream` endpoint.
+//! from a homeserver's `/events-stream` endpoint.
 //!
-//! IMPORTANT: Only the first User's pubky is used to identify the Homeserver which this code calls.
-//! It is the responsibility of the caller to ensure that all Users added are on the same Homeserver.
+//! # Example: Single user
+//! ```no_run
+//! use pubky::{Pubky, PublicKey};
+//! use futures_util::StreamExt;
 //!
-//! # Example
+//! # async fn example() -> pubky::Result<()> {
+//! let pubky = Pubky::new()?;
+//! let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+//!
+//! let mut stream = pubky.event_stream_for_user(&user, None)
+//!     .live()
+//!     .subscribe()
+//!     .await?;
+//!
+//! while let Some(result) = stream.next().await {
+//!     let event = result?;
+//!     println!("Event: {:?} at {}", event.event_type, event.resource);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Example: Multiple users on the same homeserver
 //! ```no_run
 //! use pubky::{Pubky, PublicKey, EventCursor};
 //! use futures_util::StreamExt;
@@ -16,9 +35,11 @@
 //! let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
 //! let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
 //!
-//! let mut stream = pubky.event_stream()
-//!     .add_user(&user1, None)?
-//!     .add_user(&user2, Some(EventCursor::new(100)))?
+//! // When subscribing to multiple users, specify the homeserver directly
+//! let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+//!
+//! let mut stream = pubky.event_stream_for(&homeserver)
+//!     .add_users([(&user1, None), (&user2, Some(EventCursor::new(100)))])?
 //!     .live()
 //!     .limit(100)
 //!     .path("/pub/")
@@ -155,10 +176,54 @@ impl EventStreamBuilder {
     ///
     /// Typically called via [`crate::Pubky::event_stream`].
     #[must_use]
+    #[deprecated(since = "0.7.0", note = "Use `for_user` or `for_homeserver` instead")]
     pub fn new(client: PubkyHttpClient) -> Self {
         Self {
             client,
             users: Vec::new(),
+            homeserver: None,
+            limit: None,
+            live: false,
+            reverse: false,
+            path: None,
+        }
+    }
+
+    /// Create an event stream builder for a single user.
+    ///
+    /// This is the simplest way to subscribe to events for one user. The homeserver
+    /// is automatically resolved from the user's Pkarr record.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey, EventCursor};
+    /// use futures_util::StreamExt;
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    ///
+    /// let mut stream = pubky.event_stream_for_user(&user, None)
+    ///     .live()
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn for_user(
+        client: PubkyHttpClient,
+        user: &PublicKey,
+        cursor: Option<EventCursor>,
+    ) -> Self {
+        Self {
+            client,
+            users: vec![(user.clone(), cursor)],
             homeserver: None,
             limit: None,
             live: false,
@@ -187,8 +252,7 @@ impl EventStreamBuilder {
     /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
     ///
     /// let mut stream = pubky.event_stream_for(&homeserver)
-    ///     .add_user(&user1, None)?
-    ///     .add_user(&user2, None)?
+    ///     .add_users([(&user1, None), (&user2, None)])?
     ///     .live()
     ///     .subscribe()
     ///     .await?;
@@ -215,14 +279,15 @@ impl EventStreamBuilder {
 
     /// Add a user to the event stream subscription.
     ///
+    /// **Deprecated**: Use [`Self::for_user`] for single-user streams or
+    /// [`Self::add_users`] for adding multiple users.
+    ///
     /// You can add up to 50 users total. Each user can have an independent cursor position.
     /// If a user is added who already exists then their cursor value is overwritten with the newest value.
     ///
-    /// IMPORTANT: Only the first added User's pubky is used to identify the Homeserver.
-    /// It is the responsibility of the caller to ensure that all Users added are on the same Homeserver.
-    ///
     /// # Errors
     /// - Returns an error if trying to add more than 50 users
+    #[deprecated(since = "0.7.0", note = "Use `for_user` or `add_users` instead")]
     pub fn add_user(mut self, user: &PublicKey, cursor: Option<EventCursor>) -> Result<Self> {
         if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
             existing.1 = cursor;
@@ -236,6 +301,56 @@ impl EventStreamBuilder {
         }
 
         self.users.push((user.clone(), cursor));
+        Ok(self)
+    }
+
+    /// Add multiple users to the event stream subscription at once.
+    ///
+    /// # Errors
+    /// - Returns an error if the total number of users would exceed 50
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey, EventCursor};
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let homeserver = PublicKey::try_from("h9m4r...").unwrap();
+    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
+    ///
+    /// let users = [
+    ///     (&user1, None),
+    ///     (&user2, Some(EventCursor::new(100))),
+    /// ];
+    ///
+    /// let stream = pubky.event_stream_for(&homeserver)
+    ///     .add_users(users)?
+    ///     .live()
+    ///     .subscribe()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn add_users<'a>(
+        mut self,
+        users: impl IntoIterator<Item = (&'a PublicKey, Option<EventCursor>)>,
+    ) -> Result<Self> {
+        for (user, cursor) in users {
+            // Check if user already exists - update cursor if so
+            if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
+                existing.1 = cursor;
+                continue;
+            }
+
+            if self.users.len() >= 50 {
+                return Err(Error::from(RequestError::Validation {
+                    message: "Cannot subscribe to more than 50 users".into(),
+                }));
+            }
+
+            self.users.push((user.clone(), cursor));
+        }
         Ok(self)
     }
 
@@ -714,5 +829,128 @@ mod tests {
     fn event_type_display() {
         assert_eq!(EventType::Put.to_string(), "PUT");
         assert_eq!(EventType::Delete.to_string(), "DEL");
+    }
+
+    // === Builder tests ===
+
+    fn test_pubkeys(count: usize) -> Vec<PublicKey> {
+        // Generate random test public keys
+        (0..count)
+            .map(|_| crate::Keypair::random().public_key())
+            .collect()
+    }
+
+    #[test]
+    fn builder_constructors_and_add_users() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(4);
+
+        // for_user initializes with single user and cursor
+        let builder =
+            EventStreamBuilder::for_user(client.clone(), &keys[0], Some(EventCursor::new(42)));
+        assert_eq!(builder.users.len(), 1);
+        assert_eq!(builder.users[0].0, keys[0]);
+        assert_eq!(builder.users[0].1, Some(EventCursor::new(42)));
+        assert!(builder.homeserver.is_none());
+
+        // for_homeserver initializes with homeserver and no users
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), &keys[0]);
+        assert!(builder.users.is_empty());
+        assert_eq!(builder.homeserver.as_ref(), Some(&keys[0]));
+
+        // add_users adds multiple users with cursors
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), &keys[0])
+            .add_users([
+                (&keys[1], None),
+                (&keys[2], Some(EventCursor::new(100))),
+                (&keys[3], Some(EventCursor::new(200))),
+            ])
+            .unwrap();
+        assert_eq!(builder.users.len(), 3);
+        assert_eq!(builder.users[0], (keys[1].clone(), None));
+        assert_eq!(
+            builder.users[1],
+            (keys[2].clone(), Some(EventCursor::new(100)))
+        );
+        assert_eq!(
+            builder.users[2],
+            (keys[3].clone(), Some(EventCursor::new(200)))
+        );
+
+        // add_users updates existing user's cursor
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), &keys[0])
+            .add_users([(&keys[1], Some(EventCursor::new(10))), (&keys[2], None)])
+            .unwrap()
+            .add_users([(&keys[1], Some(EventCursor::new(999)))])
+            .unwrap();
+        assert_eq!(builder.users.len(), 2);
+        assert_eq!(builder.users[0].1, Some(EventCursor::new(999))); // Updated
+        assert_eq!(builder.users[1].1, None); // Unchanged
+
+        // Builder chaining with live mode
+        let builder = EventStreamBuilder::for_user(client.clone(), &keys[0], None)
+            .limit(100)
+            .live()
+            .path("/pub/posts/".to_string());
+        assert_eq!(builder.limit, Some(100));
+        assert!(builder.live);
+        assert!(!builder.reverse);
+        assert_eq!(builder.path, Some("/pub/posts/".to_string()));
+
+        // Builder chaining with reverse mode
+        let builder = EventStreamBuilder::for_user(client, &keys[0], None)
+            .limit(50)
+            .reverse()
+            .path("/pub/files/".to_string());
+        assert_eq!(builder.limit, Some(50));
+        assert!(!builder.live);
+        assert!(builder.reverse);
+        assert_eq!(builder.path, Some("/pub/files/".to_string()));
+    }
+
+    #[test]
+    fn add_users_errors_on_exceeding_50_users() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(52);
+        let homeserver = &keys[0];
+        let users = &keys[1..]; // 51 users
+
+        let user_refs: Vec<_> = users.iter().map(|u| (u, None)).collect();
+
+        let result = EventStreamBuilder::for_homeserver(client, homeserver).add_users(user_refs);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("50 users"), "Got: {err}");
+    }
+
+    #[tokio::test]
+    async fn subscribe_fails_with_no_users() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(1);
+        let homeserver = &keys[0];
+
+        // Building with empty users list succeeds
+        let empty: [(&PublicKey, Option<EventCursor>); 0] = [];
+        let builder = EventStreamBuilder::for_homeserver(client, homeserver)
+            .add_users(empty)
+            .unwrap();
+
+        assert!(builder.users.is_empty());
+        assert_eq!(builder.homeserver.as_ref(), Some(homeserver));
+
+        // But subscribe should fail
+        let result = builder.subscribe().await;
+
+        match result {
+            Ok(_) => panic!("Expected error, but subscribe succeeded"),
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("At least one user must be specified"),
+                    "Got: {err}"
+                );
+            }
+        }
     }
 }

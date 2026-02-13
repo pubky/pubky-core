@@ -53,8 +53,8 @@
 use crate::PublicKey;
 
 use crate::{
-    Capabilities, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient, PubkySigner,
-    PublicStorage, Result, actors::AuthFlowKind,
+    Capabilities, EventCursor, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient,
+    PubkySigner, PublicStorage, Result, actors::AuthFlowKind,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -160,22 +160,35 @@ impl Pubky {
     /// This allows you to subscribe to Server-Sent Events (SSE) from multiple users'
     /// events on a homeserver `/events-stream` endpoint. Use `.add_user()` to add
     /// users (up to 50), then call `.subscribe()`.
+    #[must_use]
+    #[deprecated(
+        since = "0.7.0",
+        note = "Use `event_stream_for_user` for single-user streams or `event_stream_for` for multi-user streams"
+    )]
+    #[allow(
+        deprecated,
+        reason = "This deprecated method calls the deprecated EventStreamBuilder::new"
+    )]
+    pub fn event_stream(&self) -> EventStreamBuilder {
+        EventStreamBuilder::new(self.client.clone())
+    }
+
+    /// Create an event stream builder for a single user.
+    ///
+    /// This is the simplest way to subscribe to events for one user. The homeserver
+    /// is automatically resolved from the user's Pkarr record.
     ///
     /// # Example
     /// ```no_run
-    /// # use pubky::{Pubky, PublicKey, EventCursor};
-    /// # use futures_util::StreamExt;
+    /// use pubky::{Pubky, PublicKey, EventCursor};
+    /// use futures_util::StreamExt;
+    ///
     /// # async fn example() -> pubky::Result<()> {
     /// let pubky = Pubky::new()?;
-    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
-    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
+    /// let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
     ///
-    /// let mut stream = pubky.event_stream()
-    ///     .add_user(&user1, None)?
-    ///     .add_user(&user2, Some(EventCursor::new(100)))?
+    /// let mut stream = pubky.event_stream_for_user(&user, None)
     ///     .live()
-    ///     .limit(100)
-    ///     .path("/pub/")
     ///     .subscribe()
     ///     .await?;
     ///
@@ -187,8 +200,12 @@ impl Pubky {
     /// # }
     /// ```
     #[must_use]
-    pub fn event_stream(&self) -> EventStreamBuilder {
-        EventStreamBuilder::new(self.client.clone())
+    pub fn event_stream_for_user(
+        &self,
+        user: &PublicKey,
+        cursor: Option<EventCursor>,
+    ) -> EventStreamBuilder {
+        EventStreamBuilder::for_user(self.client.clone(), user, cursor)
     }
 
     /// Create an event stream builder for a specific homeserver.
