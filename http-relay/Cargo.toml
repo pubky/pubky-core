@@ -12,7 +12,7 @@ categories = ["web-programming"]
 
 [dependencies]
 anyhow.workspace = true
-axum = "0.8.6"
+axum.workspace = true
 axum-server = "0.7.2"
 futures-util = "0.3.31"
 tokio = { version = "1.47.1", features = ["full"] }

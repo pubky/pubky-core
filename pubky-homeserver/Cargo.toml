@@ -17,7 +17,7 @@ categories = [
 
 [dependencies]
 anyhow.workspace = true
-axum = { version = "0.8.1", features = ["macros"] }
+axum = { workspace = true, features = ["macros"] }
 axum-extra = { version = "0.10.0", features = [
     "typed-header",
     "async-read-body",
