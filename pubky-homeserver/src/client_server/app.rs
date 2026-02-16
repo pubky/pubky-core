@@ -56,10 +56,10 @@ pub struct ClientServer {
     /// Keep context alive.
     context: AppContext,
 
-    pub(crate) icann_http_handle: Handle,
+    pub(crate) icann_http_handle: Handle<SocketAddr>,
     pub(crate) icann_http_socket: SocketAddr,
 
-    pub(crate) pubky_tls_handle: Handle,
+    pub(crate) pubky_tls_handle: Handle<SocketAddr>,
     pub(crate) pubky_tls_socket: SocketAddr,
 }
 
@@ -135,13 +135,14 @@ impl ClientServer {
     async fn start_icann_http_server(
         context: &AppContext,
         router: Router,
-    ) -> Result<(Handle, SocketAddr)> {
+    ) -> Result<(Handle<SocketAddr>, SocketAddr)> {
         // Icann http server
         let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
         let http_socket = http_listener.local_addr()?;
         let http_handle = Handle::new();
+        let server = axum_server::from_tcp(http_listener)?;
         tokio::spawn(
-            axum_server::from_tcp(http_listener)
+            server
                 .handle(http_handle.clone())
                 .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                 .map_err(|error| {
@@ -157,13 +158,14 @@ impl ClientServer {
     async fn start_pubky_tls_server(
         context: &AppContext,
         router: Router,
-    ) -> Result<(Handle, SocketAddr)> {
+    ) -> Result<(Handle<SocketAddr>, SocketAddr)> {
         // Pubky tls server
         let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
         let https_socket = https_listener.local_addr()?;
         let https_handle = Handle::new();
+        let server = axum_server::from_tcp(https_listener)?;
         tokio::spawn(
-            axum_server::from_tcp(https_listener)
+            server
                 .acceptor(RustlsAcceptor::new(RustlsConfig::from_config(Arc::new(
                     context.keypair.to_rpk_rustls_server_config(),
                 ))))

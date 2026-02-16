@@ -71,7 +71,7 @@ pub enum AdminServerBuildError {
 ///
 /// When dropped, the server will stop.
 pub struct AdminServer {
-    http_handle: Handle,
+    http_handle: Handle<SocketAddr>,
     join_handle: JoinHandle<()>,
     socket: SocketAddr,
     password: String,
@@ -123,8 +123,10 @@ impl AdminServer {
             .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
+        let server = axum_server::from_tcp(listener)
+            .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let join_handle = tokio::spawn(async move {
-            axum_server::from_tcp(listener)
+            server
                 .handle(inner_http_handle)
                 .serve(app)
                 .await

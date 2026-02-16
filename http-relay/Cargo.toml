@@ -13,7 +13,7 @@ categories = ["web-programming"]
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
-axum-server = "0.7.2"
+axum-server.workspace = true
 futures-util = "0.3.31"
 tokio = { version = "1.47.1", features = ["full"] }
 tracing.workspace = true
