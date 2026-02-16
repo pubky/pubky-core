@@ -1494,7 +1494,7 @@ dependencies = [
  "bytes",
  "eventsource-stream",
  "futures",
- "pkarr",
+ "pkarr 3.10.0",
  "pubky-common",
  "pubky-testnet",
  "rand 0.10.0",
@@ -2979,6 +2979,12 @@ dependencies = [
 
 [[package]]
 name = "lru"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
+
+[[package]]
+name = "lru"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f8cc7106155f10bdf99a6f379688f543ad6596a415375b36a59a054ceda1198"
@@ -2997,6 +3003,28 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
+name = "mainline"
+version = "5.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c258b001fa52b7270dc1a239b36a9b608b024e68733648c1757b025204fdc248"
+dependencies = [
+ "crc",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek 2.2.0",
+ "flume",
+ "futures-lite",
+ "getrandom 0.2.16",
+ "lru 0.13.0",
+ "serde",
+ "serde_bencode",
+ "serde_bytes",
+ "sha1_smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
 
 [[package]]
 name = "mainline"
@@ -3689,9 +3717,9 @@ dependencies = [
 
 [[package]]
 name = "pkarr"
-version = "5.0.2"
+version = "3.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d346b545765a0ef58b6a7e160e17ddaa7427f439b7b9a287df6c88c9e04bf2"
+checksum = "5eb1f2f4311bae1da11f930c804c724c9914cf55ae51a9ee0440fc98826984f7"
 dependencies = [
  "async-compat",
  "base32",
@@ -3700,15 +3728,15 @@ dependencies = [
  "cfg_aliases",
  "document-features",
  "dyn-clone",
- "ed25519-dalek 3.0.0-pre.5",
+ "ed25519-dalek 2.2.0",
  "futures-buffered",
  "futures-lite",
  "genawaiter",
- "getrandom 0.3.4",
+ "getrandom 0.2.16",
  "heed",
  "log",
- "lru 0.16.3",
- "mainline",
+ "lru 0.13.0",
+ "mainline 5.4.0",
  "ntimestamp",
  "page_size",
  "reqwest",
@@ -3722,6 +3750,38 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "pkarr"
+version = "5.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1d346b545765a0ef58b6a7e160e17ddaa7427f439b7b9a287df6c88c9e04bf2"
+dependencies = [
+ "async-compat",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek 3.0.0-pre.5",
+ "futures-lite",
+ "getrandom 0.3.4",
+ "heed",
+ "log",
+ "lru 0.16.3",
+ "mainline 6.1.0",
+ "ntimestamp",
+ "page_size",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
  "wasm-bindgen-futures",
 ]
 
@@ -3740,7 +3800,7 @@ dependencies = [
  "governor 0.8.1",
  "http 1.3.1",
  "httpdate",
- "pkarr",
+ "pkarr 5.0.2",
  "rustls",
  "serde",
  "thiserror 2.0.18",
@@ -3762,7 +3822,7 @@ dependencies = [
  "ctrlc",
  "futures-lite",
  "hex",
- "pkarr",
+ "pkarr 3.10.0",
  "rand 0.10.0",
  "thiserror 2.0.18",
  "tokio",
@@ -4069,7 +4129,7 @@ dependencies = [
  "httpdate",
  "httpmock",
  "log",
- "pkarr",
+ "pkarr 3.10.0",
  "pubky-common",
  "pubky-testnet",
  "reqwest",
@@ -4093,7 +4153,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "js-sys",
  "once_cell",
- "pkarr",
+ "pkarr 3.10.0",
  "postcard",
  "pubky-timestamp",
  "rand 0.9.2",
@@ -4159,7 +4219,7 @@ dependencies = [
  "opentelemetry_sdk",
  "page_size",
  "percent-encoding",
- "pkarr",
+ "pkarr 3.10.0",
  "pkarr-republisher",
  "postcard",
  "prometheus",
@@ -4194,9 +4254,9 @@ dependencies = [
  "clap",
  "dirs",
  "http-relay",
- "mainline",
+ "mainline 5.4.0",
  "once_cell",
- "pkarr",
+ "pkarr 3.10.0",
  "pkarr-relay",
  "postgresql_embedded",
  "pubky",
@@ -4235,7 +4295,7 @@ dependencies = [
  "getrandom 0.4.1",
  "js-sys",
  "log",
- "pkarr",
+ "pkarr 3.10.0",
  "pubky",
  "pubky-common",
  "reqwest",
