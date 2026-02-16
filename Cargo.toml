@@ -45,3 +45,4 @@ pkarr = { version = "3.10.0", default-features = false }
 mainline = { version = "5.4.0" }
 pkarr-relay = { version = "0.11.1" }
 log = "0.4.29"
+url = "2.5.8"

@@ -17,7 +17,7 @@ anyhow = "1.0.95"
 pkarr-relay = { workspace = true }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"
-url = "2.5.4"
+url.workspace = true
 
 pubky = { path = "../pubky-sdk", version = "0.6.0", features = ["json"] }
 pubky-common = { path = "../pubky-common", version = "0.6.0" }
