@@ -2389,7 +2389,7 @@ version = "0.5.1"
 dependencies = [
  "anyhow",
  "axum",
- "axum-server 0.8.0",
+ "axum-server 0.7.3",
  "axum-test 18.2.1",
  "futures-util",
  "tokio",

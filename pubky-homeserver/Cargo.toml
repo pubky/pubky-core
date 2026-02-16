@@ -42,7 +42,7 @@ tower-http = { version = "0.6.2", features = ["cors", "trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 url = { version = "2.5.4", features = ["serde"] }
-axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.7.2", features = ["tls-rustls-no-provider"] }
 tower = "0.5.2"
 page_size = "0.6.0"
 pkarr-republisher = { path = "../pkarr-republisher", version = "0.5.1" }
