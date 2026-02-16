@@ -54,7 +54,7 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "ServiceWorkerGlobalScope",
 ] }
 url = "2.5.8"
-getrandom = { version = "0.4.1", features = ["wasm_js"] }
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
 reqwest = { version = "0.12.12", default-features = false, features = [
     "stream",
 ] }
