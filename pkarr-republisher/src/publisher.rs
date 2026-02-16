@@ -262,7 +262,7 @@ mod tests {
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 
-        let required_nodes = 3;
+        let required_nodes = 4;
         let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
@@ -271,7 +271,7 @@ mod tests {
         let res = publisher.publish_once().await;
         assert!(res.is_ok());
         let success = res.unwrap();
-        assert_eq!(success.published_nodes_count, 3);
+        assert_eq!(success.published_nodes_count, 4);
     }
 
     #[tokio::test]
@@ -282,7 +282,7 @@ mod tests {
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 
-        let required_nodes = 4;
+        let required_nodes = 5;
         let mut settings = PublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
@@ -297,7 +297,7 @@ mod tests {
             published_nodes_count,
         } = err
         {
-            assert_eq!(published_nodes_count, 3);
+            assert_eq!(published_nodes_count, 4);
         };
     }
 

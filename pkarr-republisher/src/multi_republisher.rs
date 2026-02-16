@@ -217,7 +217,7 @@ mod tests {
         let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(3).unwrap());
+            .min_sufficient_node_publish_count(NonZeroU8::new(4).unwrap());
         let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
         let results = publisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();
@@ -240,7 +240,7 @@ mod tests {
         let mut settings = RepublisherSettings::default();
         settings
             .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(4).unwrap());
+            .min_sufficient_node_publish_count(NonZeroU8::new(5).unwrap());
         let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
         let results = publisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();

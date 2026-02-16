@@ -267,6 +267,8 @@ jobs:
     # This job tests the embedded-postgres feature WITHOUT an external postgres service
     # to verify that the embedded postgres works as a standalone solution
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg tokio_allow_from_blocking_fd"
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust
