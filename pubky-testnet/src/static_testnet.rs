@@ -153,10 +153,7 @@ impl StaticTestnet {
         // Wrap blocking DHT creation in spawn_blocking to avoid blocking tokio runtime
         let dht = tokio::task::spawn_blocking(move || {
             let mut builder = pkarr::mainline::Dht::builder();
-            builder
-                .port(6881)
-                .bootstrap(&bootstrap_nodes)
-                .server_mode();
+            builder.port(6881).bootstrap(&bootstrap_nodes).server_mode();
             builder.build()
         })
         .await
