@@ -44,3 +44,12 @@ opt-level = 'z'
 pkarr = { version = "3.10.0", default-features = false }
 mainline = { version = "5.4.0" }
 pkarr-relay = { version = "0.11.1" }
+log = "0.4.29"
+url = "2.5.8"
+anyhow = "1.0.101"
+axum = "0.8.8"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.22"
+tower-http = "0.6.8"
+thiserror = "2.0.18"
+clap = "4.5.58"
