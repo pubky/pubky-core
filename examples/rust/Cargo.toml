@@ -47,6 +47,6 @@ pubky-common = { path = "../../pubky-common", version = "0.6.0" }
 reqwest = "0.12.23"
 rpassword = "7.4.0"
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true
 url.workspace = true
