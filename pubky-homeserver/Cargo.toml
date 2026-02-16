@@ -16,8 +16,8 @@ categories = [
 ]
 
 [dependencies]
-anyhow = "1.0.95"
-axum = { version = "0.8.1", features = ["macros"] }
+anyhow.workspace = true
+axum = { workspace = true, features = ["macros"] }
 axum-extra = { version = "0.10.0", features = [
     "typed-header",
     "async-read-body",
@@ -25,7 +25,7 @@ axum-extra = { version = "0.10.0", features = [
 base32 = "0.5.1"
 base64 = "0.22.1"
 bytes = "^1.10.0"
-clap = { version = "4.5.29", features = ["derive"] }
+clap = { workspace = true, features = ["derive"] }
 flume = "0.11.1"
 futures-util = "0.3.31"
 heed = "0.21.0"
@@ -38,15 +38,15 @@ serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.20"
 tower-cookies = "0.11.0"
-tower-http = { version = "0.6.2", features = ["cors", "trace"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-url = { version = "2.5.4", features = ["serde"] }
+tower-http = { workspace = true, features = ["cors", "trace"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url = { workspace = true, features = ["serde"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tower = "0.5.2"
 page_size = "0.6.0"
 pkarr-republisher = { path = "../pkarr-republisher", version = "0.5.1" }
-thiserror = "2.0.12"
+thiserror.workspace = true
 dirs = "6.0.0"
 hostname-validator = "1.1.1"
 axum-test = "17.2.0"
