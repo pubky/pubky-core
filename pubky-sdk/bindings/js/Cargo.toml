@@ -58,7 +58,7 @@ getrandom = { version = "0.3.3", features = ["wasm_js"] }
 reqwest = { version = "0.13", default-features = false, features = [
     "stream",
 ] }
-wasm-streams = "0.4"
+wasm-streams = "0.5"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
