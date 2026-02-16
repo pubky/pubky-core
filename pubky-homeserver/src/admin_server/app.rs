@@ -123,8 +123,8 @@ impl AdminServer {
             .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
-        let server = axum_server::from_tcp(listener)
-            .map_err(|e| AdminServerBuildError::Server(e.into()))?;
+        let server =
+            axum_server::from_tcp(listener).map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let join_handle = tokio::spawn(async move {
             server
                 .handle(inner_http_handle)
