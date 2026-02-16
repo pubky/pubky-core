@@ -61,6 +61,7 @@ jobs:
     env:
       # Your code can read these, or just use the defaults above
       TEST_PUBKY_CONNECTION_STRING: postgres://test_user:test_pass@localhost:5432/postgres?pubky-test=true
+      RUSTFLAGS: "--cfg tokio_allow_from_blocking_fd"
 
     strategy:
       matrix:
