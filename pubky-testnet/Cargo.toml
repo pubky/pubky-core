@@ -13,7 +13,7 @@ keywords = ["pkarr", "pubky", "testnet", "testing"]
 categories = ["web-programming", "authentication", "cryptography"]
 
 [dependencies]
-anyhow = "1.0.95"
+anyhow.workspace = true
 pkarr-relay = { workspace = true }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing-subscriber = "0.3.19"

@@ -38,7 +38,7 @@ path = "./7-events_stream/main.rs"
 
 [dependencies]
 futures-util = "0.3.31"
-anyhow = "1.0.99"
+anyhow.workspace = true
 base64 = "0.22.1"
 clap = { version = "4.5.48", features = ["derive"] }
 pubky = { path = "../../pubky-sdk", version = "0.6.0" }
