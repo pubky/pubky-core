@@ -138,6 +138,7 @@ impl ClientServer {
     ) -> Result<(Handle<SocketAddr>, SocketAddr)> {
         // Icann http server
         let http_listener = TcpListener::bind(context.config_toml.drive.icann_listen_socket)?;
+        http_listener.set_nonblocking(true)?;
         let http_socket = http_listener.local_addr()?;
         let http_handle = Handle::new();
         let server = axum_server::from_tcp(http_listener)?;
@@ -161,6 +162,7 @@ impl ClientServer {
     ) -> Result<(Handle<SocketAddr>, SocketAddr)> {
         // Pubky tls server
         let https_listener = TcpListener::bind(context.config_toml.drive.pubky_listen_socket)?;
+        https_listener.set_nonblocking(true)?;
         let https_socket = https_listener.local_addr()?;
         let https_handle = Handle::new();
         let server = axum_server::from_tcp(https_listener)?;

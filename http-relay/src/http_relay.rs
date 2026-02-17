@@ -106,6 +106,7 @@ impl HttpRelay {
         let shutdown_handle = http_handle.clone();
 
         let http_listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
+        http_listener.set_nonblocking(true)?;
         let http_address = http_listener.local_addr()?;
 
         let server = axum_server::from_tcp(http_listener)?;
