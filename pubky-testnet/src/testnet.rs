@@ -32,10 +32,7 @@ pub struct Testnet {
 impl Testnet {
     /// Run a new testnet with a local DHT.
     pub async fn new() -> Result<Self> {
-        // Wrap blocking DHT creation in spawn_blocking to avoid blocking tokio runtime
-        let dht = tokio::task::spawn_blocking(|| pkarr::mainline::Testnet::new(2))
-            .await
-            .expect("spawn_blocking panicked")?;
+        let dht = pkarr::mainline::Testnet::new(2)?;
         let testnet = Self {
             dht,
             pkarr_relays: vec![],
@@ -55,10 +52,7 @@ impl Testnet {
     pub async fn new_with_custom_postgres(
         postgres_connection_string: ConnectionString,
     ) -> Result<Self> {
-        // Wrap blocking DHT creation in spawn_blocking to avoid blocking tokio runtime
-        let dht = tokio::task::spawn_blocking(|| pkarr::mainline::Testnet::new(2))
-            .await
-            .expect("spawn_blocking panicked")?;
+        let dht = pkarr::mainline::Testnet::new(2)?;
         let testnet: Testnet = Self {
             dht,
             pkarr_relays: vec![],
