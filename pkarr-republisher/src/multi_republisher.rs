@@ -206,10 +206,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_success() {
-        let dht = tokio::task::spawn_blocking(|| pkarr::mainline::Testnet::new(3))
-            .await
-            .expect("spawn_blocking panicked")
-            .unwrap();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
@@ -232,10 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_insufficient() {
-        let dht = tokio::task::spawn_blocking(|| pkarr::mainline::Testnet::new(3))
-            .await
-            .expect("spawn_blocking panicked")
-            .unwrap();
+        let dht = pkarr::mainline::Testnet::new(3).unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
