@@ -410,6 +410,12 @@ async fn authz_timeout_reconnect() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn signup_with_token() {
+    tracing_subscriber::fmt()
+        .with_env_filter("debug")
+        .with_test_writer()
+        .try_init()
+        .ok();
+
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut config = ConfigToml::default_test_config();
     config.general.signup_mode = SignupMode::TokenRequired;
