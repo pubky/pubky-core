@@ -15,7 +15,7 @@ categories = ["web-programming", "authentication", "cryptography"]
 [dependencies]
 anyhow.workspace = true
 pkarr-relay = { workspace = true }
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 tracing-subscriber.workspace = true
 url.workspace = true
 
