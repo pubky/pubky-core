@@ -1,6 +1,6 @@
 [package]
 name = "pubky-core-examples"
-version = "0.6.0"
+version = "0.7.0-rc.1"
 edition.workspace = true
 publish = false
 
@@ -41,9 +41,9 @@ futures-util = "0.3.31"
 anyhow.workspace = true
 base64 = "0.22.1"
 clap = { version = "4.5.48", features = ["derive"] }
-pubky = { path = "../../pubky-sdk", version = "0.6.0" }
-pubky-testnet = { path = "../../pubky-testnet", version = "0.6.0" }
-pubky-common = { path = "../../pubky-common", version = "0.6.0" }
+pubky = { path = "../../pubky-sdk", version = "0.7.0-rc.1" }
+pubky-testnet = { path = "../../pubky-testnet", version = "0.7.0-rc.1" }
+pubky-common = { path = "../../pubky-common", version = "0.7.0-rc.1" }
 reqwest.workspace = true
 rpassword = "7.4.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
