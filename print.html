@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0fbc3b0a.js";
+            window.path_to_searchindex_js = "searchindex-2adaa9f0.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-9bf9d4fc.js"></script>
@@ -297,7 +297,7 @@ action        = "r" / "w" ; Read or write (more actions can be specified later)
 <ol>
 <li>Check the 75th byte (version) and make sure it is <code>0</code> for this spec.</li>
 <li>Deserialize the token</li>
-<li>Verify that the <code>timestamp</code> is within a window from the local time: the default should be 45 seconds in the past and 45 seconds in the future to handle latency and drifts.</li>
+<li>Verify that the <code>timestamp</code> is within a window from the local time: the default should be 3 minutes in the past and 3 minutes in the future to handle latency and drifts.</li>
 <li>Verify that the <code>pubky</code> is the signer of the <code>signature</code> over the rest of the serialized token after the signature (<code>serialized_token[65..]</code>).</li>
 <li>To avoid reuse of the token the <code>Homeserver</code> should consider the <code>timestamp</code> and <code>pubky</code>  (<code>serialized_token[75..115]</code>) as a unique sortable ID, and store it in a sortable key value store, rejecting any token that has the same ID, and removing all IDs that start with a timestamp that is older than the window mentioned in step 3.</li>
 </ol>
