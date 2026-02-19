@@ -175,9 +175,7 @@ impl ReplayGuard {
     fn gc(&mut self) {
         let cutoff = Timestamp::now() - 2 * TIMESTAMP_WINDOW as u64;
 
-        let expired_count = self
-            .seen
-            .partition_point(|id| id.timestamp < cutoff);
+        let expired_count = self.seen.partition_point(|id| id.timestamp < cutoff);
 
         self.seen.drain(..expired_count);
     }
