@@ -30,6 +30,9 @@ pub struct EventStreamBuilder(pub(crate) pubky::EventStreamBuilder);
 impl EventStreamBuilder {
     /// Add a user to the event stream subscription.
     ///
+    /// **Deprecated**: Use `eventStreamForUser()` for single-user streams or
+    /// `addUsers()` for adding multiple users.
+    ///
     /// You can add up to 50 users total.
     /// If the user is already in the subscription, their cursor position will be updated.
     ///
@@ -37,7 +40,9 @@ impl EventStreamBuilder {
     /// @param {string | null} cursor - Optional cursor position (event ID as string) to start from
     /// @returns {EventStreamBuilder} - Builder for chaining
     /// @throws {Error} - If trying to add more than 50 users or if cursor is invalid
+    /// @deprecated Use `eventStreamForUser()` or `addUsers()` instead
     #[wasm_bindgen(js_name = "addUser")]
+    #[allow(deprecated)]
     pub fn add_user(
         self,
         user: &PublicKey,
@@ -53,6 +58,73 @@ impl EventStreamBuilder {
             .0
             .add_user(user.as_inner(), event_cursor)
             .map_err(|e| JsValue::from_str(&format!("Failed to add user: {e}")))?;
+        Ok(EventStreamBuilder(builder))
+    }
+
+    /// Add multiple users to the event stream subscription at once.
+    ///
+    /// Each user can have an independent cursor position. If a user already exists,
+    /// their cursor value is overwritten.
+    ///
+    /// @param {Array<[string, string | null]>} users - Array of [z32PublicKey, cursor] tuples
+    /// @returns {EventStreamBuilder} - Builder for chaining
+    /// @throws {Error} - If total users would exceed 50 or if any cursor/pubkey is invalid
+    ///
+    /// @example
+    /// ```typescript
+    /// const users: [string, string | null][] = [
+    ///   [user1.z32(), null],
+    ///   [user2.z32(), "100"],
+    /// ];
+    /// const stream = await pubky.eventStreamFor(homeserver)
+    ///   .addUsers(users)
+    ///   .live()
+    ///   .subscribe();
+    /// ```
+    #[wasm_bindgen(js_name = "addUsers")]
+    pub fn add_users(self, users: js_sys::Array) -> Result<EventStreamBuilder, JsValue> {
+        // Parse all users first
+        let mut parsed_users: Vec<(pubky::PublicKey, Option<pubky::EventCursor>)> = Vec::new();
+
+        for item in users.iter() {
+            let tuple = js_sys::Array::from(&item);
+            if tuple.length() != 2 {
+                return Err(JsValue::from_str(
+                    "Each user entry must be a [PublicKey, cursor] tuple",
+                ));
+            }
+
+            // Parse the public key from z32 string
+            let user_str = tuple.get(0).as_string().ok_or_else(|| {
+                JsValue::from_str("First element must be a z32 public key string")
+            })?;
+            let user = pubky::PublicKey::try_from(user_str)
+                .map_err(|e| JsValue::from_str(&format!("Invalid public key: {e}")))?;
+
+            let cursor_val = tuple.get(1);
+            let event_cursor = if cursor_val.is_null() || cursor_val.is_undefined() {
+                None
+            } else {
+                let cursor_str = cursor_val
+                    .as_string()
+                    .ok_or_else(|| JsValue::from_str("Cursor must be a string or null"))?;
+                Some(
+                    cursor_str
+                        .parse::<pubky::EventCursor>()
+                        .map_err(|e| JsValue::from_str(&format!("Invalid cursor: {e}")))?,
+                )
+            };
+
+            parsed_users.push((user, event_cursor));
+        }
+
+        // Use add_users with references
+        let user_refs: Vec<_> = parsed_users.iter().map(|(u, c)| (u, *c)).collect();
+        let builder = self
+            .0
+            .add_users(user_refs)
+            .map_err(|e| JsValue::from_str(&format!("Failed to add users: {e}")))?;
+
         Ok(EventStreamBuilder(builder))
     }
 
