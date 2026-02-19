@@ -36,7 +36,7 @@ pub enum MetricsServerBuildError {
 ///
 /// When dropped, the server will stop.
 pub struct MetricsServer {
-    http_handle: Handle,
+    http_handle: Handle<SocketAddr>,
     join_handle: JoinHandle<()>,
     socket: SocketAddr,
 }
@@ -49,13 +49,18 @@ impl MetricsServer {
         let app = create_app(metrics);
         let listener = std::net::TcpListener::bind(socket)
             .map_err(|e| MetricsServerBuildError::Server(e.into()))?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| MetricsServerBuildError::Server(e.into()))?;
         let socket = listener
             .local_addr()
             .map_err(|e| MetricsServerBuildError::Server(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
+        let server = axum_server::from_tcp(listener)
+            .map_err(|e| MetricsServerBuildError::Server(e.into()))?;
         let join_handle = tokio::spawn(async move {
-            axum_server::from_tcp(listener)
+            server
                 .handle(inner_http_handle)
                 .serve(app)
                 .await
