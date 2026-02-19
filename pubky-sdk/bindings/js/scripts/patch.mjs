@@ -24,6 +24,8 @@ const content = await readFile(
 
 const needsNamedExport = new Set();
 
+const hasModuleExports = content.includes("= module.exports");
+
 let patched = content
   // use global TextDecoder TextEncoder
   .replace("require(`util`)", "globalThis")
@@ -51,6 +53,10 @@ let patched = content
     },
   )
   .replace(/= exports\./g, "= imports.");
+
+if (!hasModuleExports) {
+  patched = "const imports = {};\n" + patched;
+}
 
 for (const name of needsNamedExport) {
   if (
