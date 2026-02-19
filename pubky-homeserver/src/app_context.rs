@@ -12,12 +12,13 @@ use crate::{
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
         lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
-        sql::{Migrator, SqlDb},
+        sql::{Migrator, PgEventListener, SqlDb},
     },
     ConfigToml, DataDir,
 };
 use pubky_common::crypto::Keypair;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 /// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +77,10 @@ pub struct AppContext {
     pub(crate) events_service: EventsService,
     /// Metrics for all endpoints.
     pub(crate) metrics: Metrics,
+    /// Background listener for Postgres event notifications.
+    /// Enables cross-instance event propagation for /events-stream's SSE functionality.
+    /// Kept alive for the background task, not for direct access.
+    _pg_event_listener: Arc<PgEventListener>,
 }
 
 impl AppContext {
@@ -122,6 +127,9 @@ impl AppContext {
 
         let events_service = EventsService::new(1000);
 
+        // Start the Postgres event listener for cross-instance event propagation
+        let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone());
+
         let file_service =
             FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())
                 .map_err(AppContextConversionError::Storage)?;
@@ -140,6 +148,7 @@ impl AppContext {
             data_dir: Arc::new(dir),
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
+            _pg_event_listener: Arc::new(pg_event_listener),
         })
     }
 }

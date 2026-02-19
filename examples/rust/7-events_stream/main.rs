@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use futures_util::StreamExt;
-use pubky::{EventCursor, EventType, Pubky, PublicKey};
+use pubky::{EventCursor, Pubky, PublicKey};
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -106,15 +106,14 @@ async fn main() -> Result<()> {
     // Process events
     while let Some(result) = stream.next().await {
         let event = result?;
+        let hash_str = event
+            .event_type
+            .content_hash()
+            .map(|h| h.to_string())
+            .unwrap_or("-".into());
         println!(
             "[{}] {} (cursor: {}, hash: {})",
-            match event.event_type {
-                EventType::Put => "PUT",
-                EventType::Delete => "DEL",
-            },
-            event.resource,
-            event.cursor,
-            event.content_hash.unwrap_or_else(|| "-".to_string())
+            event.event_type, event.resource, event.cursor, hash_str
         );
     }
 
