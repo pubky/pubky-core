@@ -13,7 +13,7 @@ categories = ["web-programming"]
 [dependencies]
 anyhow.workspace = true
 pkarr = { workspace = true, features = ["default"] }
-tokio = { version = "1.47.1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 futures-lite = { version = "2.6.1" }
 thiserror.workspace = true
