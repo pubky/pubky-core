@@ -28,9 +28,9 @@ name = "bundle_npm"
 path = "scripts/bundle_npm.rs"
 
 [dependencies]
-wasm-bindgen = "0.2.100"
+wasm-bindgen = "0.2.108"
 console_log = { version = "1.0.0", features = ["color"] }
-log = "0.4.28"
+log.workspace = true
 js-sys = "0.3.77"
 wasm-bindgen-futures = "0.4.54"
 futures-util = "0.3"
@@ -53,12 +53,12 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "Headers",
     "ServiceWorkerGlobalScope",
 ] }
-url = "2.5.4"
+url.workspace = true
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
-reqwest = { version = "0.12.12", default-features = false, features = [
+reqwest = { workspace = true, features = [
     "stream",
 ] }
-wasm-streams = "0.4"
+wasm-streams = "0.5"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

@@ -3,6 +3,9 @@ use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
 use pubky_homeserver::{ConfigToml, ConnectionString, HomeserverApp, MockDataDir};
 
+#[cfg(feature = "embedded-postgres")]
+use crate::embedded_postgres::EmbeddedPostgres;
+
 /// A simple testnet with random ports assigned for all components.
 ///
 /// Components included:
@@ -30,6 +33,11 @@ use pubky_homeserver::{ConfigToml, ConnectionString, HomeserverApp, MockDataDir}
 pub struct EphemeralTestnet {
     /// Inner flexible testnet.
     pub testnet: Testnet,
+    /// Embedded PostgreSQL instance (if using embedded postgres).
+    /// Kept alive as long as the testnet is running.
+    #[cfg(feature = "embedded-postgres")]
+    #[allow(dead_code)]
+    embedded_postgres: Option<EmbeddedPostgres>,
 }
 
 /// Builder for configuring and creating an [`EphemeralTestnet`].
@@ -70,6 +78,8 @@ pub struct EphemeralTestnetBuilder {
     homeserver_config: Option<ConfigToml>,
     homeserver_keypair: Option<Keypair>,
     http_relay: bool,
+    #[cfg(feature = "embedded-postgres")]
+    use_embedded_postgres: bool,
 }
 
 impl EphemeralTestnetBuilder {
@@ -80,6 +90,8 @@ impl EphemeralTestnetBuilder {
             homeserver_config: None,
             homeserver_keypair: None,
             http_relay: false,
+            #[cfg(feature = "embedded-postgres")]
+            use_embedded_postgres: false,
         }
     }
 
@@ -107,10 +119,50 @@ impl EphemeralTestnetBuilder {
         self
     }
 
+    /// Use embedded PostgreSQL instead of an external database.
+    ///
+    /// This starts an embedded PostgreSQL instance that is automatically
+    /// downloaded and managed. The first run will download the PostgreSQL
+    /// binaries (~50-100MB), which are cached for subsequent runs.
+    ///
+    /// This is useful for running tests without requiring a separate
+    /// PostgreSQL installation.
+    ///
+    /// **Note**: Cannot be combined with `.postgres()`. If both are set, `build()` will
+    /// return an error.
+    #[cfg(feature = "embedded-postgres")]
+    pub fn with_embedded_postgres(mut self) -> Self {
+        self.use_embedded_postgres = true;
+        self
+    }
+
     /// Build and start the testnet with the configured settings.
     /// Uses minimal_test_config() by default (admin/metrics disabled).
+    ///
+    /// # Errors
+    /// Returns an error if both `.postgres()` and `.with_embedded_postgres()` are set.
     pub async fn build(self) -> anyhow::Result<EphemeralTestnet> {
-        let mut testnet = if let Some(postgres) = self.postgres_connection_string {
+        #[cfg(feature = "embedded-postgres")]
+        if self.use_embedded_postgres && self.postgres_connection_string.is_some() {
+            anyhow::bail!(
+                "Cannot use both embedded postgres and a custom connection string. \
+                 Use either .with_embedded_postgres() or .postgres(), not both."
+            );
+        }
+
+        #[cfg(feature = "embedded-postgres")]
+        let (embedded_postgres, postgres_connection_string) = if self.use_embedded_postgres {
+            let embedded = EmbeddedPostgres::start().await?;
+            let conn_string = embedded.connection_string()?;
+            (Some(embedded), Some(conn_string))
+        } else {
+            (None, self.postgres_connection_string)
+        };
+
+        #[cfg(not(feature = "embedded-postgres"))]
+        let postgres_connection_string = self.postgres_connection_string;
+
+        let mut testnet = if let Some(postgres) = postgres_connection_string {
             Testnet::new_with_custom_postgres(postgres).await?
         } else {
             Testnet::new().await?
@@ -134,7 +186,11 @@ impl EphemeralTestnetBuilder {
         let mock_dir = MockDataDir::new(config, Some(keypair))?;
         testnet.create_homeserver_app_with_mock(mock_dir).await?;
 
-        Ok(EphemeralTestnet { testnet })
+        Ok(EphemeralTestnet {
+            testnet,
+            #[cfg(feature = "embedded-postgres")]
+            embedded_postgres,
+        })
     }
 }
 
@@ -174,7 +230,11 @@ impl EphemeralTestnet {
         let mut testnet = Testnet::new().await?;
         testnet.create_http_relay().await?;
         testnet.create_homeserver().await?;
-        Ok(Self { testnet })
+        Ok(Self {
+            testnet,
+            #[cfg(feature = "embedded-postgres")]
+            embedded_postgres: None,
+        })
     }
 
     /// Run a new simple testnet with custom postgres and full config (admin enabled).
@@ -191,7 +251,11 @@ impl EphemeralTestnet {
         let mut testnet = Testnet::new_with_custom_postgres(postgres_connection_string).await?;
         testnet.create_http_relay().await?;
         testnet.create_homeserver().await?;
-        Ok(Self { testnet })
+        Ok(Self {
+            testnet,
+            #[cfg(feature = "embedded-postgres")]
+            embedded_postgres: None,
+        })
     }
 
     /// Run a new simple testnet with custom postgres but no homeserver (minimal setup).
@@ -207,6 +271,8 @@ impl EphemeralTestnet {
     ) -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new_with_custom_postgres(postgres_connection_string).await?,
+            #[cfg(feature = "embedded-postgres")]
+            embedded_postgres: None,
         };
         me.testnet.create_http_relay().await?;
         Ok(me)
@@ -223,6 +289,8 @@ impl EphemeralTestnet {
     pub async fn start_minimal() -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new().await?,
+            #[cfg(feature = "embedded-postgres")]
+            embedded_postgres: None,
         };
         me.testnet.create_http_relay().await?;
         Ok(me)
@@ -311,7 +379,11 @@ mod test {
         // Start with just DHT + http relay, no homeserver
         let mut testnet = Testnet::new().await.unwrap();
         testnet.create_http_relay().await.unwrap();
-        let mut network = EphemeralTestnet { testnet };
+        let mut network = EphemeralTestnet {
+            testnet,
+            #[cfg(feature = "embedded-postgres")]
+            embedded_postgres: None,
+        };
         assert!(network.testnet.homeservers.is_empty());
 
         let _ = network.create_random_homeserver().await.unwrap();

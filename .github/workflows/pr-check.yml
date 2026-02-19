@@ -263,6 +263,27 @@ jobs:
         if: failure()
         run: cat testnet.log
 
+  embedded-postgres-test:
+    # This job tests the embedded-postgres feature WITHOUT an external postgres service
+    # to verify that the embedded postgres works as a standalone solution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.89
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run embedded postgres tests
+        run: |
+          cargo test -p pubky-testnet \
+            --features embedded-postgres \
+            embedded_postgres \
+            -- --test-threads=1
+
   docker-build:
     runs-on: ubuntu-latest
     steps:

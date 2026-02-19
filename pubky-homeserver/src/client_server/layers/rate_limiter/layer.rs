@@ -403,7 +403,7 @@ mod tests {
         let socket = listener.local_addr().unwrap();
 
         // Use the listener with axum_server
-        let server = Server::from_tcp(listener.into_std().unwrap());
+        let server = Server::<SocketAddr>::from_listener(listener);
 
         tokio::spawn(async move {
             server
