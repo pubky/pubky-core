@@ -98,7 +98,7 @@ action        = "r" / "w" ; Read or write (more actions can be specified later)
 To verify a token the `Homeserver` should:
 1. Check the 75th byte (version) and make sure it is `0` for this spec.
 1. Deserialize the token
-1. Verify that the `timestamp` is within a window from the local time: the default should be 45 seconds in the past and 45 seconds in the future to handle latency and drifts.
+1. Verify that the `timestamp` is within a window from the local time: the default should be 3 minutes in the past and 3 minutes in the future to handle latency and drifts.
 1. Verify that the `pubky` is the signer of the `signature` over the rest of the serialized token after the signature (`serialized_token[65..]`).
 1. To avoid reuse of the token the `Homeserver` should consider the `timestamp` and `pubky`  (`serialized_token[75..115]`) as a unique sortable ID, and store it in a sortable key value store, rejecting any token that has the same ID, and removing all IDs that start with a timestamp that is older than the window mentioned in step 3.
 
