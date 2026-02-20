@@ -28,6 +28,10 @@ use tower_cookies::{
 };
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
+///
+/// Note: This endpoint uses action-oriented path `/signup` which is not RESTful.
+/// Ideally would be eg `POST /users` in future.
+///
 /// 1) Check if signup tokens are required (signup mode is token_required).
 /// 2) Ensure the user *does not* already exist.
 /// 3) Create new user if needed.
