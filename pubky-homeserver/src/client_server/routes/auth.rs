@@ -27,6 +27,59 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
+/// Check if a signup token is valid without consuming it.
+///
+/// Note: This endpoint uses RESTful status codes (404 Not Found, 410 Gone) for token errors,
+/// while POST /signup uses 401 Unauthorized. Keeping like this for backwards compatibility.
+pub async fn check_signup_token(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> HttpResult<impl IntoResponse> {
+    if state.signup_mode != SignupMode::TokenRequired {
+        return Err(HttpError::new_with_message(
+            StatusCode::BAD_REQUEST,
+            "Signup tokens not required",
+        ));
+    }
+
+    // Extract and validate token format
+    let signup_token_param = params
+        .get("signup_token")
+        .ok_or(HttpError::new_with_message(
+            StatusCode::BAD_REQUEST,
+            "signup_token query parameter required",
+        ))?;
+    let signup_code_id = SignupCodeId::new(signup_token_param.clone()).map_err(|e| {
+        HttpError::new_with_message(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid signup token format: {}", e),
+        )
+    })?;
+
+    // Check token exists in database
+    let code =
+        match SignupCodeRepository::get(&signup_code_id, &mut state.sql_db.pool().into()).await {
+            Ok(code) => code,
+            Err(sqlx::Error::RowNotFound) => {
+                return Err(HttpError::new_with_message(
+                    StatusCode::NOT_FOUND,
+                    "Token not found",
+                ));
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+    if code.used_by.is_some() {
+        return Err(HttpError::new_with_message(
+            StatusCode::GONE,
+            "Token already used",
+        ));
+    }
+
+    // Return success with no-cache header to prevent callers from caching result
+    Ok((StatusCode::OK, [(header::CACHE_CONTROL, "no-store")], ""))
+}
+
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
 /// 1) Check if signup tokens are required (signup mode is token_required).
 /// 2) Ensure the user *does not* already exist.
