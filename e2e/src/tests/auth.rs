@@ -478,7 +478,7 @@ async fn signup_with_token() {
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn check_signup_token() {
+async fn get_signup_token() {
     // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
     let mut config = ConfigToml::default_test_config();
     config.general.signup_mode = SignupMode::TokenRequired;
@@ -494,24 +494,9 @@ async fn check_signup_token() {
     let client = PubkyHttpClient::new().unwrap();
     let base_url = server.icann_http_url();
 
-    // 2. GET /signup without token → 400
+    // 2. GET /signup_tokens/invalid-format → 400
     let response = client
-        .request(Method::GET, &format!("{}signup", base_url))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        response.status(),
-        StatusCode::BAD_REQUEST,
-        "Missing signup_token should return 400"
-    );
-
-    // 3. GET /signup?signup_token=invalid-format → 400
-    let response = client
-        .request(
-            Method::GET,
-            &format!("{}signup?signup_token=invalid", base_url),
-        )
+        .request(Method::GET, &format!("{}signup_tokens/invalid", base_url))
         .send()
         .await
         .unwrap();
@@ -521,11 +506,11 @@ async fn check_signup_token() {
         "Invalid token format should return 400"
     );
 
-    // 4. GET /signup?signup_token=AAAA-BBBB-CCCC (nonexistent) → 404
+    // 3. GET /signup_tokens/AAAA-BBBB-CCCC (nonexistent) → 404
     let response = client
         .request(
             Method::GET,
-            &format!("{}signup?signup_token=AAAA-BBBB-CCCC", base_url),
+            &format!("{}signup_tokens/AAAA-BBBB-CCCC", base_url),
         )
         .send()
         .await
@@ -536,7 +521,7 @@ async fn check_signup_token() {
         "Nonexistent token should return 404"
     );
 
-    // 5. Generate valid token via admin API
+    // 4. Generate valid token via admin API
     let valid_token = server
         .admin_server()
         .expect("admin server should be enabled")
@@ -544,11 +529,11 @@ async fn check_signup_token() {
         .await
         .unwrap();
 
-    // 6. GET /signup?signup_token=<valid> → 200 + verify Cache-Control: no-store
+    // 5. GET /signup_tokens/<valid> → 200 with status: "valid"
     let response = client
         .request(
             Method::GET,
-            &format!("{}signup?signup_token={}", base_url, valid_token),
+            &format!("{}signup_tokens/{}", base_url, valid_token),
         )
         .send()
         .await
@@ -566,27 +551,45 @@ async fn check_signup_token() {
         Some("no-store"),
         "Response should have Cache-Control: no-store header"
     );
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body["status"], "valid",
+        "Unused token should have status 'valid'"
+    );
+    assert!(
+        body["created_at"].is_string(),
+        "Response should have created_at field"
+    );
 
-    // 7. Use token with POST /signup
+    // 6. Use token with POST /signup
     let signer = pubky.signer(Keypair::random());
     let _session = signer
         .signup(&server.public_key(), Some(&valid_token))
         .await
         .unwrap();
 
-    // 8. GET /signup?signup_token=<used> → 410
+    // 7. GET /signup_tokens/<used> → 200 with status: "used"
     let response = client
         .request(
             Method::GET,
-            &format!("{}signup?signup_token={}", base_url, valid_token),
+            &format!("{}signup_tokens/{}", base_url, valid_token),
         )
         .send()
         .await
         .unwrap();
     assert_eq!(
         response.status(),
-        StatusCode::GONE,
-        "Used token should return 410"
+        StatusCode::OK,
+        "Used token should still return 200"
+    );
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body["status"], "used",
+        "Used token should have status 'used'"
+    );
+    assert!(
+        body["created_at"].is_string(),
+        "Response should have created_at field"
     );
 }
 

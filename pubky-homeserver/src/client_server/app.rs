@@ -29,7 +29,7 @@ use tower_http::cors::CorsLayer;
 use super::layers::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
 };
-use super::routes::{auth, events, root, tenants};
+use super::routes::{auth, events, root, signup_tokens, tenants};
 
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
@@ -214,7 +214,8 @@ impl Drop for ClientServer {
 fn base() -> Router<AppState> {
     Router::new()
         .route("/", get(root::handler))
-        .route("/signup", get(auth::check_signup_token).post(auth::signup))
+        .route("/signup", post(auth::signup))
+        .route("/signup_tokens/{token}", get(signup_tokens::get))
         .route("/session", post(auth::signin))
         // Events
         .route("/events/", get(events::feed))
