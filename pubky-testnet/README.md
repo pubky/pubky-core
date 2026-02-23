@@ -15,9 +15,13 @@ For testing without a separate Postgres installation, enable the `embedded-postg
 pubky-testnet = { version = "0.6", features = ["embedded-postgres"] }
 ```
 
-```rust
+```rust,no_run
+# #[cfg(not(feature = "embedded-postgres"))]
+# fn main() {}
+# #[cfg(feature = "embedded-postgres")]
 use pubky_testnet::EphemeralTestnet;
 
+# #[cfg(feature = "embedded-postgres")]
 #[tokio::main]
 async fn main() {
     let testnet = EphemeralTestnet::builder()
