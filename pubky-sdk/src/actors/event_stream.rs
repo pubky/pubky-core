@@ -430,8 +430,8 @@ impl EventStreamBuilder {
                 Ok(sse_event) => match parse_sse_event(&sse_event) {
                     Ok(event) => Some(Ok(event)),
                     Err(e) => {
-                        cross_log!(warn, "Failed to parse SSE event: {}", e);
-                        Some(Err(e))
+                        cross_log!(error, "Failed to parse SSE event, skipping: {}", e);
+                        None
                     }
                 },
                 Err(e) => {
@@ -538,7 +538,7 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
 
     let event_type = match sse.event.as_str() {
         "PUT" => {
-            let content_hash = decode_content_hash(content_hash_base64)?;
+            let content_hash = decode_content_hash(content_hash_base64.as_deref())?;
             EventType::Put { content_hash }
         }
         "DEL" => EventType::Delete,
@@ -557,39 +557,33 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
 }
 
 /// Decode a base64-encoded content hash into a Hash.
-/// If the hash is missing or invalid for a PUT event, falls back to zero hash.
-fn decode_content_hash(content_hash_base64: Option<String>) -> Result<Hash> {
-    match content_hash_base64 {
-        Some(b64) if !b64.is_empty() => {
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(&b64)
-                .map_err(|e| {
-                    Error::from(RequestError::Validation {
-                        message: format!("Invalid content_hash base64 encoding: {e}"),
-                    })
-                })?;
+fn decode_content_hash(content_hash_base64: Option<&str>) -> Result<Hash> {
+    let b64 = content_hash_base64
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Error::from(RequestError::Validation {
+                message: "PUT event missing required content_hash".into(),
+            })
+        })?;
 
-            let hash_bytes: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
-                Error::from(RequestError::Validation {
-                    message: format!(
-                        "content_hash must be exactly 32 bytes, got {} bytes",
-                        bytes.len()
-                    ),
-                })
-            })?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| {
+            Error::from(RequestError::Validation {
+                message: format!("Invalid content_hash base64 encoding: {e}"),
+            })
+        })?;
 
-            Ok(Hash::from_bytes(hash_bytes))
-        }
-        _ => {
-            // Fallback to zero hash for missing/empty content_hash (legacy/error case)
-            // This matches homeserver's fallback behavior in events_entity.rs
-            cross_log!(
-                warn,
-                "PUT event missing content_hash. Using zero hash as fallback."
-            );
-            Ok(Hash::from_bytes([0; 32]))
-        }
-    }
+    let hash_bytes: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
+        Error::from(RequestError::Validation {
+            message: format!(
+                "content_hash must be exactly 32 bytes, got {} bytes",
+                bytes.len()
+            ),
+        })
+    })?;
+
+    Ok(Hash::from_bytes(hash_bytes))
 }
 
 #[cfg(test)]
@@ -776,35 +770,31 @@ mod tests {
     }
 
     #[test]
-    fn parse_put_event_with_empty_content_hash_uses_zero_hash() {
+    fn error_on_empty_content_hash() {
         let sse = make_sse(
             "PUT",
             "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: ",
         );
 
-        let event = parse_sse_event(&sse).unwrap();
+        let result = parse_sse_event(&sse);
 
-        // Empty content_hash falls back to zero hash
-        assert_eq!(
-            event.event_type.content_hash(),
-            Some(&Hash::from_bytes([0; 32]))
-        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("missing required content_hash"), "Got: {err}");
     }
 
     #[test]
-    fn parse_put_event_without_content_hash_uses_zero_hash() {
+    fn error_on_missing_content_hash() {
         let sse = make_sse(
             "PUT",
             "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1",
         );
 
-        let event = parse_sse_event(&sse).unwrap();
+        let result = parse_sse_event(&sse);
 
-        // Missing content_hash falls back to zero hash
-        assert_eq!(
-            event.event_type.content_hash(),
-            Some(&Hash::from_bytes([0; 32]))
-        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("missing required content_hash"), "Got: {err}");
     }
 
     #[test]
