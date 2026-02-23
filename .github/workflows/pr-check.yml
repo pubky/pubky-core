@@ -6,6 +6,15 @@ on:
     branches: [main]
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-msrv
+        uses: taiki-e/install-action@cargo-msrv
+      - name: Verify MSRV
+        run: cargo msrv verify
+
   fmt:
     runs-on: ubuntu-latest
     steps:
