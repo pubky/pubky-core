@@ -12,7 +12,16 @@ use tokio::sync::broadcast;
 /// - Set to 50 for clean limit with safety margin for longer cursors
 pub const MAX_EVENT_STREAM_USERS: usize = 50;
 
-/// Maximum safe payload size for pg_notify (Postgres hard limit is 8KB).
+/// Postgres channel name for event notifications.
+pub(crate) const PG_NOTIFY_CHANNEL: &str = "events";
+
+/// SQL query to send a NOTIFY event.
+const PG_NOTIFY_QUERY: &str = "SELECT pg_notify('events', $1)";
+
+/// Warning threshold for pg_notify payload size.
+/// Postgres has a hard limit of 8KB for NOTIFY payloads. If the serialized
+/// event exceeds this threshold, a warning is logged. Typical events are
+/// ~200-400 bytes, so hitting this threshold indicates a potential issue.
 const PG_NOTIFY_WARN_THRESHOLD: usize = 4096;
 
 /// Service that handles all event-related business logic.
@@ -84,11 +93,6 @@ impl EventsService {
     ///
     /// This sends a notification to all Postgres listeners (including this instance),
     /// which will then broadcast the event to their local SSE subscribers.
-    ///
-    /// # Payload Size Constraint
-    /// Postgres `pg_notify` has an 8KB hard limit. EventEntity typically serializes
-    /// to ~200-300 bytes. If you add fields to EventEntity, ensure the total stays
-    /// well under 8KB or this will silently fail.
     pub async fn notify_event(&self, event: &EventEntity, pool: &PgPool) {
         let payload = match serde_json::to_string(event) {
             Ok(p) => p,
@@ -110,7 +114,7 @@ impl EventsService {
             );
         }
 
-        if let Err(e) = sqlx::query("SELECT pg_notify('events', $1)")
+        if let Err(e) = sqlx::query(PG_NOTIFY_QUERY)
             .bind(&payload)
             .execute(pool)
             .await
