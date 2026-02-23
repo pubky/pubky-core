@@ -2,6 +2,9 @@
 mod ephemeral_testnet;
 mod static_testnet;
 mod testnet;
+
+#[cfg(feature = "embedded-postgres")]
+mod embedded_postgres;
 pub use ephemeral_testnet::{EphemeralTestnet, EphemeralTestnetBuilder};
 pub use static_testnet::StaticTestnet;
 pub use testnet::Testnet;

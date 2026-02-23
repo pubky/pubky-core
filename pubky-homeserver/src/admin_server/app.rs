@@ -71,7 +71,7 @@ pub enum AdminServerBuildError {
 ///
 /// When dropped, the server will stop.
 pub struct AdminServer {
-    http_handle: Handle,
+    http_handle: Handle<SocketAddr>,
     join_handle: JoinHandle<()>,
     socket: SocketAddr,
     password: String,
@@ -118,13 +118,18 @@ impl AdminServer {
         let app = create_app(state, password.as_str());
         let listener = std::net::TcpListener::bind(socket)
             .map_err(|e| AdminServerBuildError::Server(e.into()))?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let socket = listener
             .local_addr()
             .map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let http_handle = Handle::new();
         let inner_http_handle = http_handle.clone();
+        let server =
+            axum_server::from_tcp(listener).map_err(|e| AdminServerBuildError::Server(e.into()))?;
         let join_handle = tokio::spawn(async move {
-            axum_server::from_tcp(listener)
+            server
                 .handle(inner_http_handle)
                 .serve(app)
                 .await

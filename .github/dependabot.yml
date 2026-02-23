@@ -8,5 +8,8 @@ updates:
       day: "tuesday"
     commit-message:
       prefix: "deps"
-    open-pull-requests-limit: 30
     rebase-strategy: "auto"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
