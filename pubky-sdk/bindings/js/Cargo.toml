@@ -58,7 +58,7 @@ getrandom = { version = "0.3.3", features = ["wasm_js"] }
 reqwest = { workspace = true, features = [
     "stream",
 ] }
-wasm-streams = "0.4"
+wasm-streams = "0.5"
 base64 = "0.22"
 
 [dev-dependencies]
