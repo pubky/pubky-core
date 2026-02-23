@@ -206,7 +206,10 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_success() {
-        let dht = pkarr::mainline::Testnet::new_unseeded(3).unwrap();
+        let dht = pkarr::mainline::Testnet::builder(3)
+            .seeded(false)
+            .build()
+            .unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
@@ -229,7 +232,10 @@ mod tests {
 
     #[tokio::test]
     async fn single_key_republish_insufficient() {
-        let dht = pkarr::mainline::Testnet::new_unseeded(3).unwrap();
+        let dht = pkarr::mainline::Testnet::builder(3)
+            .seeded(false)
+            .build()
+            .unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
