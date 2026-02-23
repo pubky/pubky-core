@@ -40,7 +40,15 @@ icann_listen_socket = "127.0.0.1:6286"
 #   By default, burst is equal the quota rate.
 # `whitelist` is a list of IP addresses or user pubkeys that are exempt from the rate limit.
 #
-# Limit login attempts to 20 requests per minute per IP. 
+# Default: Limit signup token lookups to 10 requests per minute per IP.
+# This mitigates brute-forcing invite codes.
+# [[drive.rate_limits]]
+# path = "/signup_tokens/*"
+# method = "GET"
+# quota = "10r/m"
+# key = "ip"
+#
+# Limit login attempts to 20 requests per minute per IP.
 [[drive.rate_limits]]
 path = "/session"
 method = "POST"
