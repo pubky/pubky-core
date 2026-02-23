@@ -120,8 +120,7 @@ impl HttpRelayLinkChannel {
             {
                 return Ok(None);
             }
-            let poll_timeout =
-                timeout.map(|t| t.checked_sub(start.elapsed()).unwrap_or_default());
+            let poll_timeout = timeout.map(|t| t.checked_sub(start.elapsed()).unwrap_or_default());
             match self.poll_once(client, poll_timeout).await {
                 Ok(response) => {
                     cross_log!(
@@ -211,6 +210,7 @@ pub struct EncryptedHttpRelayLinkChannel {
     secret: [u8; 32],
 }
 
+#[allow(dead_code, reason = "Internal use only")]
 impl EncryptedHttpRelayLinkChannel {
     pub fn new(relay_base_url: Url, secret: [u8; 32]) -> crate::errors::Result<Self> {
         let channel_id = URL_SAFE_NO_PAD.encode(hash(&secret).as_bytes());

@@ -34,6 +34,9 @@ pub struct HttpRelayInboxChannel {
 
 impl HttpRelayInboxChannel {
     /// Create a new HTTP relay inbox channel.
+    ///
+    /// # Errors
+    /// Returns an error if `base_url` cannot be a base or `channel_id` is empty.
     pub fn new(base_url: Url, channel_id: String) -> crate::errors::Result<Self> {
         if base_url.cannot_be_a_base() {
             return Err(crate::errors::Error::Parse(
@@ -58,6 +61,10 @@ impl HttpRelayInboxChannel {
     }
 
     /// The full URL of the inbox channel: `{base_url}/{channel_id}`.
+    ///
+    /// # Panics
+    /// Panics if the base URL (validated in [`Self::new`]) is unexpectedly not a valid base.
+    #[must_use]
     pub fn to_url(&self) -> Url {
         let mut url = self.base_url.clone();
         let mut segs = url
@@ -129,7 +136,9 @@ impl HttpRelayInboxChannel {
     ///
     /// Retries on both client-side timeouts and server-side 408 responses.
     /// Returns `Ok(None)` if the caller-specified timeout is reached.
-    /// Returns `Err` after 3 consecutive non-timeout failures.
+    ///
+    /// # Errors
+    /// Returns an error after 3 consecutive non-timeout failures.
     pub async fn poll(
         &self,
         client: &PubkyHttpClient,
@@ -181,6 +190,9 @@ impl HttpRelayInboxChannel {
     /// Unlike the link channel's produce (which blocks until a consumer reads),
     /// the inbox produce returns immediately. The message persists server-side
     /// for approximately 5 minutes or until acknowledged via DELETE.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns a non-success status.
     pub async fn produce(
         &self,
         client: &PubkyHttpClient,
@@ -197,6 +209,9 @@ impl HttpRelayInboxChannel {
     ///
     /// Returns `Ok(true)` if the message was found and deleted (200),
     /// `Ok(false)` if no message existed (404).
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns an unexpected status.
     pub async fn ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<bool> {
         let request = client.cross_request(Method::DELETE, self.to_url()).await?;
         let response = request.send().await?;
@@ -214,6 +229,9 @@ impl HttpRelayInboxChannel {
     ///
     /// Returns `Ok(Some(true))` if acked, `Ok(Some(false))` if not yet acked,
     /// or `Ok(None)` if the channel does not exist (404).
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns an unexpected status.
     pub async fn check_ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<Option<bool>> {
         let request = client.cross_request(Method::GET, self.ack_url()).await?;
         let response = request.send().await?;
@@ -234,6 +252,9 @@ impl HttpRelayInboxChannel {
     ///
     /// Returns `Ok(Some(true))` if acknowledged (200), `Ok(Some(false))` if the
     /// server timed out (408), or `Ok(None)` if the channel does not exist (404).
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns an unexpected status.
     pub async fn await_ack(
         &self,
         client: &PubkyHttpClient,
@@ -308,12 +329,16 @@ impl EncryptedHttpRelayInboxChannel {
     /// Create a new encrypted inbox channel.
     ///
     /// The `channel_id` is derived as `base64url(hash(secret))`.
+    ///
+    /// # Errors
+    /// Returns an error if `relay_base_url` cannot be a base.
     pub fn new(relay_base_url: Url, secret: [u8; 32]) -> crate::errors::Result<Self> {
         let channel_id = URL_SAFE_NO_PAD.encode(hash(&secret).as_bytes());
         let channel = HttpRelayInboxChannel::new(relay_base_url, channel_id)?;
         Ok(Self { channel, secret })
     }
 
+    /// Create an encrypted inbox channel with a random secret (for testing).
     #[cfg(test)]
     pub fn random_secret(relay_base_url: Url) -> crate::errors::Result<Self> {
         use pubky_common::crypto::random_bytes;
@@ -322,17 +347,16 @@ impl EncryptedHttpRelayInboxChannel {
         Self::new(relay_base_url, secret)
     }
 
-    /// Access the underlying unencrypted channel.
-    pub fn channel(&self) -> &HttpRelayInboxChannel {
-        &self.channel
-    }
-
+    /// Returns the shared secret.
     #[cfg(test)]
     pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }
 
     /// Store an encrypted message in the inbox.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns a non-success status.
     pub async fn produce(
         &self,
         client: &PubkyHttpClient,
@@ -344,6 +368,9 @@ impl EncryptedHttpRelayInboxChannel {
 
     /// Poll the inbox and decrypt the message.
     /// Returns `Ok(None)` if the timeout is reached.
+    ///
+    /// # Errors
+    /// Returns an error on repeated poll failures or decryption failure.
     pub async fn poll(
         &self,
         client: &PubkyHttpClient,
@@ -358,16 +385,25 @@ impl EncryptedHttpRelayInboxChannel {
 
     /// Acknowledge receipt of the current message.
     /// Returns `Ok(true)` if deleted, `Ok(false)` if no message existed.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns an unexpected status.
     pub async fn ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<bool> {
         self.channel.ack(client).await
     }
 
     /// Check whether the message has been acknowledged.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns an unexpected status.
     pub async fn check_ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<Option<bool>> {
         self.channel.check_ack(client).await
     }
 
     /// Block until the consumer acknowledges or the server times out.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP request fails or the server returns an unexpected status.
     pub async fn await_ack(
         &self,
         client: &PubkyHttpClient,
