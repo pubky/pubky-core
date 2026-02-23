@@ -26,7 +26,7 @@ pubky-homeserver = { path = "../pubky-homeserver", version = "0.6.0", default-fe
 ] }
 pubky_test_utils = { path = "../test_utils/pubky_test", version = "0.1.0" }
 # External http-relay: server + link-compat, no persist/cli (in-memory storage for tests)
-http-relay = { path = "/Users/severinbuhler/git/pubky/pubky-http-relay", default-features = false, features = ["server", "link-compat"] }
+http-relay = { workspace = true, features = ["server", "link-compat"] }
 tempfile = "3.19.1"
 tracing.workspace = true
 pkarr = { workspace = true }
