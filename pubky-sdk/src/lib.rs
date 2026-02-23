@@ -59,6 +59,8 @@ pub use crate::actors::storage::{
 #[doc(inline)]
 pub use actors::DEFAULT_HTTP_RELAY;
 #[doc(inline)]
+pub use actors::DEFAULT_HTTP_RELAY_INBOX;
+#[doc(inline)]
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
 #[doc(inline)]
 pub use pkarr;

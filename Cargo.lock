@@ -3934,6 +3934,7 @@ dependencies = [
  "flume 0.11.1",
  "futures-lite",
  "futures-util",
+ "http-relay",
  "httpdate",
  "httpmock",
  "log",

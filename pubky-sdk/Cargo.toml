@@ -60,6 +60,7 @@ futures-lite = { version = "2.6.0", default-features = false }
 [dev-dependencies]
 pubky-testnet = { path = "../pubky-testnet" } # used in docstring tests
 httpmock = "0.7"
+http-relay = { path = "/Users/severinbuhler/git/pubky/pubky-http-relay", default-features = false, features = ["server", "link-compat"] }
 
 [package.metadata.docs.rs]
 all-features = true

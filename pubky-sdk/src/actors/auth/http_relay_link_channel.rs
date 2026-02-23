@@ -314,30 +314,39 @@ mod tests {
         }
     }
 
-    fn random_channel_url() -> String {
+    async fn start_relay() -> (http_relay::HttpRelay, Url) {
+        let relay = http_relay::HttpRelay::builder()
+            .http_port(0)
+            .run()
+            .await
+            .unwrap();
+        let link_base = relay.local_link_url();
+        (relay, link_base)
+    }
+
+    fn random_channel(link_base: &Url) -> HttpRelayLinkChannel {
         let channel_bytes = random_bytes::<32>();
         let channel_id = URL_SAFE_NO_PAD.encode(channel_bytes);
-        format!("{DEFAULT_HTTP_RELAY}/link/{channel_id}")
+        HttpRelayLinkChannel::new(link_base.clone(), channel_id).unwrap()
     }
 
     #[tokio::test]
     async fn test_poll() {
-        let channel_url = random_channel_url();
+        let (_relay, link_base) = start_relay().await;
+        let channel = random_channel(&link_base);
 
-        let chan_url = channel_url.clone();
+        let chan = channel.clone();
         let poll_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
-            let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
-            let response = channel.poll(&client, None).await.unwrap().unwrap();
+            let response = chan.poll(&client, None).await.unwrap().unwrap();
             assert_eq!(response, b"Hello, world!");
         });
 
-        let chan_url = channel_url.clone();
+        let chan = channel.clone();
         let produce_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
-            let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
             let body = b"Hello, world!";
-            channel.produce(&client, body).await.unwrap();
+            chan.produce(&client, body).await.unwrap();
         });
 
         let (poll_result, produce_result) = tokio::join!(poll_handle, produce_handle);
@@ -348,14 +357,14 @@ mod tests {
     /// Test that a poll can time out and then resume successfully.
     #[tokio::test]
     async fn test_poll_timeout() {
-        let channel_url = random_channel_url();
+        let (_relay, link_base) = start_relay().await;
+        let channel = random_channel(&link_base);
 
-        let chan_url = channel_url.clone();
+        let chan = channel.clone();
         let poll_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
-            let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
             // First poll should timeout
-            match channel
+            match chan
                 .poll_once(&client, Some(Duration::from_millis(300)))
                 .await
             {
@@ -366,20 +375,18 @@ mod tests {
             }
 
             // Try again and should succeed
-            let response = channel.poll_once(&client, None).await.unwrap();
+            let response = chan.poll_once(&client, None).await.unwrap();
             assert_eq!(response.status(), reqwest::StatusCode::OK);
             let body = response.text().await.unwrap();
             assert_eq!(body, "Hello, world!");
         });
 
-        let chan_url = channel_url.clone();
+        let chan = channel.clone();
         let produce_handle = tokio::spawn(async move {
             // Wait for the first poll to timeout
             tokio::time::sleep(Duration::from_millis(1_000)).await;
             let client = PubkyHttpClient::new().unwrap();
-            let channel = chan_url.parse::<HttpRelayLinkChannel>().unwrap();
-            let body = b"Hello, world!";
-            channel.produce(&client, body).await.unwrap();
+            chan.produce(&client, b"Hello, world!").await.unwrap();
         });
 
         let (poll_result, produce_result) = tokio::join!(poll_handle, produce_handle);
@@ -389,9 +396,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_encrypted_poll() {
+        let (_relay, link_base) = start_relay().await;
         let encrypted_channel =
-            EncryptedHttpRelayLinkChannel::random_secret(Url::parse(DEFAULT_HTTP_RELAY).unwrap())
-                .unwrap();
+            EncryptedHttpRelayLinkChannel::random_secret(link_base).unwrap();
+
         let chan = encrypted_channel.clone();
         let produce_handle = tokio::spawn(async move {
             let client = PubkyHttpClient::new().unwrap();
