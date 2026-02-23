@@ -476,9 +476,126 @@ async fn signup_with_token() {
     assert!(err.to_string().contains("Token already used"));
 }
 
+#[tokio::test]
+#[pubky_testnet::test]
+async fn get_signup_token() {
+    // 1. Start a test homeserver with closed signups (i.e. signup tokens required)
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::TokenRequired;
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let client = PubkyHttpClient::new().unwrap();
+    let base_url = server.icann_http_url();
+
+    // 2. GET /signup_tokens/invalid-format → 400
+    let response = client
+        .request(Method::GET, &format!("{}signup_tokens/invalid", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Invalid token format should return 400"
+    );
+
+    // 3. GET /signup_tokens/AAAA-BBBB-CCCC (nonexistent) → 404
+    let response = client
+        .request(
+            Method::GET,
+            &format!("{}signup_tokens/AAAA-BBBB-CCCC", base_url),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "Nonexistent token should return 404"
+    );
+
+    // 4. Generate valid token via admin API
+    let valid_token = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .create_signup_token()
+        .await
+        .unwrap();
+
+    // 5. GET /signup_tokens/<valid> → 200 with status: "valid"
+    let response = client
+        .request(
+            Method::GET,
+            &format!("{}signup_tokens/{}", base_url, valid_token),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Valid token should return 200"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store"),
+        "Response should have Cache-Control: no-store header"
+    );
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body["status"], "valid",
+        "Unused token should have status 'valid'"
+    );
+    assert!(
+        body["created_at"].is_string(),
+        "Response should have created_at field"
+    );
+
+    // 6. Use token with POST /signup
+    let signer = pubky.signer(Keypair::random());
+    let _session = signer
+        .signup(&server.public_key(), Some(&valid_token))
+        .await
+        .unwrap();
+
+    // 7. GET /signup_tokens/<used> → 200 with status: "used"
+    let response = client
+        .request(
+            Method::GET,
+            &format!("{}signup_tokens/{}", base_url, valid_token),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Used token should still return 200"
+    );
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body["status"], "used",
+        "Used token should have status 'used'"
+    );
+    assert!(
+        body["created_at"].is_string(),
+        "Response should have created_at field"
+    );
+}
+
 // This test verifies that when a signin happens immediately after signup,
 // the record is not republished on signin (its timestamp remains unchanged)
-// but when a signin happens after the record is “old” (in test, after 1 second),
+// but when a signin happens after the record is "old" (in test, after 1 second),
 // the record is republished (its timestamp increases).
 #[tokio::test]
 #[pubky_testnet::test]
