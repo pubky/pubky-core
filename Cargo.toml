@@ -1,5 +1,4 @@
 [workspace]
-rust-version = "1.89"
 members = [
   "pubky-*",
   "pubky-sdk/bindings/js",
@@ -20,6 +19,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
+rust-version = "1.89"
 edition = "2021"
 authors = [
   "SeverinAlexB <severin@synonym.to>",

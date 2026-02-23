@@ -10,10 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install cargo-msrv
-        uses: taiki-e/install-action@cargo-msrv
+      - name: Set up MSRV toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "1.89"
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
       - name: Verify MSRV
-        run: cargo msrv verify
+        run: cargo check --workspace --all-features
 
   fmt:
     runs-on: ubuntu-latest

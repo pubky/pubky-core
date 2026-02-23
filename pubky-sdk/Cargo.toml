@@ -3,6 +3,7 @@ name = "pubky"
 description = "Pubky SDK"
 version = "0.6.0"
 edition = "2024"
+rust-version.workspace = true
 authors = [
     "SeverinAlexB <severin@synonym.to>",
     "SHAcollision <shacollision@synonym.to>",

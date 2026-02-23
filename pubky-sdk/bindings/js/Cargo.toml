@@ -2,6 +2,7 @@
 name = "pubky-wasm"
 version = "0.6.0"
 edition = "2024"
+rust-version.workspace = true
 description = "Pubky-Core Client WASM bindings"
 authors = [
     "SeverinAlexB <severin@synonym.to>",

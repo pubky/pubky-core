@@ -3,6 +3,7 @@ name = "pubky-testnet"
 description = "A local test network for Pubky Core development."
 version = "0.6.0"
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 homepage.workspace = true
