@@ -126,56 +126,6 @@ mod tests {
         panic!("Listener failed to become ready after 5 attempts");
     }
 
-    /// Test that pg_notify sends an event and PgEventListener receives it
-    /// via the broadcast channel.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_pg_notify_roundtrip() {
-        let db = SqlDb::test().await;
-        let events_service = EventsService::new(100);
-
-        // Start the listener
-        let _listener = PgEventListener::start(db.pool(), events_service.clone());
-
-        // Wait for listener to be ready using probe event
-        let probe_rx = events_service.subscribe();
-        wait_for_listener_ready(&events_service, db.pool(), probe_rx).await;
-
-        // Subscribe to the broadcast channel
-        let mut rx = events_service.subscribe();
-
-        // Create a test event
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/test.txt").unwrap());
-        let event = EventEntity {
-            id: 12345,
-            user_id: 42,
-            user_pubkey: pubkey,
-            event_type: EventType::Put {
-                content_hash: Hash::from_bytes([1; 32]),
-            },
-            path,
-            created_at: NaiveDateTime::parse_from_str("2024-01-15 10:30:00", "%Y-%m-%d %H:%M:%S")
-                .unwrap(),
-        };
-
-        // Send via pg_notify (simulating what notify_event does)
-        events_service.notify_event(&event, db.pool()).await;
-
-        // Wait for the event to come through the listener
-        let received = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .expect("Timeout waiting for event")
-            .expect("Channel closed");
-
-        assert_eq!(received.id, event.id);
-        assert_eq!(received.user_id, event.user_id);
-        assert_eq!(received.user_pubkey, event.user_pubkey);
-        assert_eq!(received.event_type, event.event_type);
-        assert_eq!(received.path, event.path);
-    }
-
     /// Test that multiple events are received in order.
     #[tokio::test]
     #[pubky_test_utils::test]

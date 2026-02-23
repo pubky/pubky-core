@@ -13,7 +13,6 @@ use tokio::sync::broadcast;
 pub const MAX_EVENT_STREAM_USERS: usize = 50;
 
 /// Maximum safe payload size for pg_notify (Postgres hard limit is 8KB).
-/// Log warnings if we approach this to catch issues before they cause failures.
 const PG_NOTIFY_WARN_THRESHOLD: usize = 4096;
 
 /// Service that handles all event-related business logic.

@@ -127,7 +127,6 @@ impl AppContext {
 
         let events_service = EventsService::new(1000);
 
-        // Start the Postgres event listener for cross-instance event propagation
         let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone());
 
         let file_service =
