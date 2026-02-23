@@ -120,7 +120,8 @@ impl HttpRelayLinkChannel {
             {
                 return Ok(None);
             }
-            let poll_timeout = timeout.map(|t| t - start.elapsed());
+            let poll_timeout =
+                timeout.map(|t| t.checked_sub(start.elapsed()).unwrap_or_default());
             match self.poll_once(client, poll_timeout).await {
                 Ok(response) => {
                     cross_log!(
@@ -397,8 +398,7 @@ mod tests {
     #[tokio::test]
     async fn test_encrypted_poll() {
         let (_relay, link_base) = start_relay().await;
-        let encrypted_channel =
-            EncryptedHttpRelayLinkChannel::random_secret(link_base).unwrap();
+        let encrypted_channel = EncryptedHttpRelayLinkChannel::random_secret(link_base).unwrap();
 
         let chan = encrypted_channel.clone();
         let produce_handle = tokio::spawn(async move {

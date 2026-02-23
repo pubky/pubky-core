@@ -146,8 +146,7 @@ impl HttpRelayInboxChannel {
             {
                 return Ok(None);
             }
-            let poll_timeout =
-                timeout.map(|t| t.checked_sub(start.elapsed()).unwrap_or_default());
+            let poll_timeout = timeout.map(|t| t.checked_sub(start.elapsed()).unwrap_or_default());
             match self.poll_once(client, poll_timeout).await {
                 Ok(response) => {
                     cross_log!(
@@ -198,10 +197,7 @@ impl HttpRelayInboxChannel {
     ///
     /// Returns `Ok(true)` if the message was found and deleted (200),
     /// `Ok(false)` if no message existed (404).
-    pub async fn ack(
-        &self,
-        client: &PubkyHttpClient,
-    ) -> crate::errors::Result<bool> {
+    pub async fn ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<bool> {
         let request = client.cross_request(Method::DELETE, self.to_url()).await?;
         let response = request.send().await?;
         match response.status() {
@@ -218,10 +214,7 @@ impl HttpRelayInboxChannel {
     ///
     /// Returns `Ok(Some(true))` if acked, `Ok(Some(false))` if not yet acked,
     /// or `Ok(None)` if the channel does not exist (404).
-    pub async fn check_ack(
-        &self,
-        client: &PubkyHttpClient,
-    ) -> crate::errors::Result<Option<bool>> {
+    pub async fn check_ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<Option<bool>> {
         let request = client.cross_request(Method::GET, self.ack_url()).await?;
         let response = request.send().await?;
         match response.status() {
@@ -246,9 +239,7 @@ impl HttpRelayInboxChannel {
         client: &PubkyHttpClient,
         timeout: Option<Duration>,
     ) -> crate::errors::Result<Option<bool>> {
-        let request = client
-            .cross_request(Method::GET, self.await_url())
-            .await?;
+        let request = client.cross_request(Method::GET, self.await_url()).await?;
         let request = match timeout {
             Some(timeout) => request.timeout(timeout),
             None => request,
@@ -367,18 +358,12 @@ impl EncryptedHttpRelayInboxChannel {
 
     /// Acknowledge receipt of the current message.
     /// Returns `Ok(true)` if deleted, `Ok(false)` if no message existed.
-    pub async fn ack(
-        &self,
-        client: &PubkyHttpClient,
-    ) -> crate::errors::Result<bool> {
+    pub async fn ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<bool> {
         self.channel.ack(client).await
     }
 
     /// Check whether the message has been acknowledged.
-    pub async fn check_ack(
-        &self,
-        client: &PubkyHttpClient,
-    ) -> crate::errors::Result<Option<bool>> {
+    pub async fn check_ack(&self, client: &PubkyHttpClient) -> crate::errors::Result<Option<bool>> {
         self.channel.check_ack(client).await
     }
 
@@ -595,8 +580,7 @@ mod tests {
     #[tokio::test]
     async fn test_encrypted_produce_poll_ack() {
         let (_relay, inbox_base) = start_relay().await;
-        let encrypted_channel =
-            EncryptedHttpRelayInboxChannel::random_secret(inbox_base).unwrap();
+        let encrypted_channel = EncryptedHttpRelayInboxChannel::random_secret(inbox_base).unwrap();
         let client = PubkyHttpClient::new().unwrap();
 
         encrypted_channel
@@ -618,8 +602,7 @@ mod tests {
     #[tokio::test]
     async fn test_encrypted_concurrent() {
         let (_relay, inbox_base) = start_relay().await;
-        let encrypted_channel =
-            EncryptedHttpRelayInboxChannel::random_secret(inbox_base).unwrap();
+        let encrypted_channel = EncryptedHttpRelayInboxChannel::random_secret(inbox_base).unwrap();
 
         let chan = encrypted_channel.clone();
         let produce_handle = tokio::spawn(async move {

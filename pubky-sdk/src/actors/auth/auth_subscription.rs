@@ -1,16 +1,82 @@
+use std::fmt;
+
 use futures_util::future::{AbortHandle, Abortable};
 
 use url::Url;
 
 use crate::{
     AuthToken, PubkyHttpClient, PubkySession,
-    actors::{DEFAULT_HTTP_RELAY, auth::http_relay_link_channel::EncryptedHttpRelayLinkChannel},
+    actors::{
+        DEFAULT_HTTP_RELAY_INBOX,
+        auth::{
+            http_relay_inbox_channel::EncryptedHttpRelayInboxChannel,
+            http_relay_link_channel::EncryptedHttpRelayLinkChannel,
+        },
+    },
     cross_log,
     errors::{AuthError, Result},
 };
 
 #[cfg(target_arch = "wasm32")]
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
+
+/// Internal dispatch between inbox and link channel implementations.
+///
+/// The variant is chosen automatically based on the relay URL path:
+/// - Paths ending with `/link` or `/link/` → [`Link`](Self::Link)
+/// - Everything else (including `/inbox`) → [`Inbox`](Self::Inbox)
+#[derive(Clone)]
+enum EncryptedAuthChannel {
+    Inbox(EncryptedHttpRelayInboxChannel),
+    Link(EncryptedHttpRelayLinkChannel),
+}
+
+impl EncryptedAuthChannel {
+    /// Poll the underlying channel for a message.
+    async fn poll(
+        &self,
+        client: &PubkyHttpClient,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<Option<Vec<u8>>> {
+        match self {
+            Self::Inbox(ch) => Ok(ch.poll(client, timeout).await?),
+            Self::Link(ch) => Ok(ch.poll(client, timeout).await?),
+        }
+    }
+
+    /// Acknowledge receipt. Only meaningful for inbox channels (no-op for link).
+    /// Errors are propagated for inbox so callers know if the ACK failed.
+    async fn ack(&self, client: &PubkyHttpClient) -> Result<()> {
+        if let Self::Inbox(ch) = self {
+            ch.ack(client).await?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for EncryptedAuthChannel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Inbox(ch) => write!(f, "{ch}"),
+            Self::Link(ch) => write!(f, "{ch}"),
+        }
+    }
+}
+
+impl fmt::Debug for EncryptedAuthChannel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Inbox(ch) => f.debug_tuple("Inbox").field(ch).finish(),
+            Self::Link(ch) => f.debug_tuple("Link").field(ch).finish(),
+        }
+    }
+}
+
+/// Returns `true` if the URL path ends with `/link` or `/link/`.
+fn is_link_url(url: &Url) -> bool {
+    let path = url.path().trim_end_matches('/');
+    path.ends_with("/link") || path == "link"
+}
 
 /// **auth subscription** (long polling for a single auth token) you *hold on to*.
 ///
@@ -98,13 +164,13 @@ impl AuthSubscription {
     /// Long-poll until a token arrives or the channel expires. Runs in the background task.
     async fn poll_for_token_loop(
         client: PubkyHttpClient,
-        encrypted_channel: EncryptedHttpRelayLinkChannel,
+        encrypted_channel: EncryptedAuthChannel,
         tx: flume::Sender<Result<AuthToken>>,
     ) {
         cross_log!(
             info,
             "Starting auth flow polling for relay channel {}",
-            encrypted_channel.channel()
+            encrypted_channel
         );
         let result = Self::poll_for_token(&client, &encrypted_channel).await;
 
@@ -112,7 +178,7 @@ impl AuthSubscription {
             cross_log!(
                 info,
                 "Auth flow successfully decrypted token for relay channel {}",
-                encrypted_channel.channel()
+                encrypted_channel
             );
         }
 
@@ -121,13 +187,18 @@ impl AuthSubscription {
 
     async fn poll_for_token(
         client: &PubkyHttpClient,
-        encrypted_channel: &EncryptedHttpRelayLinkChannel,
+        encrypted_channel: &EncryptedAuthChannel,
     ) -> Result<AuthToken> {
         let response = encrypted_channel
             .poll(client, None)
             .await?
             .expect("Always Some() because no timeout is set");
-        Ok(AuthToken::verify(&response)?)
+        let token = AuthToken::verify(&response)?;
+
+        // ACK: confirms receipt for inbox channels, no-op for link.
+        encrypted_channel.ack(client).await?;
+
+        Ok(token)
     }
 }
 
@@ -151,7 +222,7 @@ pub struct AuthSubscriptionBuilder {
 impl AuthSubscriptionBuilder {
     pub(crate) fn new(secret: [u8; 32]) -> Self {
         Self {
-            relay_base_url: Url::parse(DEFAULT_HTTP_RELAY).expect("Always valid"),
+            relay_base_url: Url::parse(DEFAULT_HTTP_RELAY_INBOX).expect("Always valid"),
             secret,
             client: None,
         }
@@ -171,7 +242,7 @@ impl AuthSubscriptionBuilder {
 
     // Spawn background polling (single-shot delivery)
     fn spawn_background_polling(
-        encrypted_channel: EncryptedHttpRelayLinkChannel,
+        encrypted_channel: EncryptedAuthChannel,
         client: PubkyHttpClient,
     ) -> AuthSubscription {
         let (tx, rx) = flume::bounded(1);
@@ -198,14 +269,27 @@ impl AuthSubscriptionBuilder {
 
     /// Finalize: derive channel, spawn the background poller,
     /// and return the subscription handle.
+    ///
+    /// The channel type is auto-detected from the relay URL path:
+    /// - `/link` or `/link/` → link channel (synchronous pairing)
+    /// - Otherwise → inbox channel (store-and-forward, default)
     pub fn start(self) -> Result<AuthSubscription> {
         let client = match self.client {
             Some(c) => c,
             None => PubkyHttpClient::new()?,
         };
 
-        let encrypted_channel =
-            EncryptedHttpRelayLinkChannel::new(self.relay_base_url, self.secret)?;
+        let encrypted_channel = if is_link_url(&self.relay_base_url) {
+            EncryptedAuthChannel::Link(EncryptedHttpRelayLinkChannel::new(
+                self.relay_base_url,
+                self.secret,
+            )?)
+        } else {
+            EncryptedAuthChannel::Inbox(EncryptedHttpRelayInboxChannel::new(
+                self.relay_base_url,
+                self.secret,
+            )?)
+        };
 
         Ok(Self::spawn_background_polling(encrypted_channel, client))
     }
@@ -220,9 +304,16 @@ mod tests {
 
     #[tokio::test]
     async fn subscribe_to_auth_token() {
+        // Start a local relay so the test doesn't depend on production.
+        let relay = http_relay::HttpRelay::builder()
+            .http_port(0)
+            .run()
+            .await
+            .unwrap();
+        let inbox_base = relay.local_url().join("inbox").unwrap();
+
         let encrypted_channel =
-            EncryptedHttpRelayLinkChannel::random_secret(Url::parse(DEFAULT_HTTP_RELAY).unwrap())
-                .unwrap();
+            EncryptedHttpRelayInboxChannel::random_secret(inbox_base.clone()).unwrap();
 
         let keypair = Keypair::random();
         let capabilities = Capabilities::default();
@@ -238,7 +329,7 @@ mod tests {
         });
 
         let subscriber = AuthSubscription::builder(encrypted_channel.secret().to_owned())
-            .relay_base_url(encrypted_channel.channel().base_url().to_owned())
+            .relay_base_url(inbox_base)
             .client(main_client.clone())
             .start()
             .unwrap();
