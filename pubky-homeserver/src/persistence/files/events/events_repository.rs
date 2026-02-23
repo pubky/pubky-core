@@ -2,10 +2,10 @@ use pubky_common::events::{EventCursor, EventType};
 use std::{fmt::Display, str::FromStr};
 
 use pubky_common::crypto::Hash;
-use serde::{Deserialize, Serialize};
 use pubky_common::timestamp::Timestamp;
 use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
+use serde::{Deserialize, Serialize};
 use sqlx::{
     postgres::PgRow,
     types::chrono::{DateTime, Utc},

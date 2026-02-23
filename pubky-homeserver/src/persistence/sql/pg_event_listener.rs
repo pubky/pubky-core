@@ -10,7 +10,7 @@ use std::time::Duration;
 use sqlx::{postgres::PgListener, PgPool};
 use tokio::task::JoinHandle;
 
-use crate::persistence::files::events::{EventEntity, EventsService};
+use crate::persistence::files::events::{EventEntity, EventsService, PG_NOTIFY_CHANNEL};
 
 /// Background service that listens for Postgres NOTIFY events and broadcasts them locally.
 ///
@@ -26,7 +26,7 @@ impl PgEventListener {
     ///
     /// Listens on the "events" channel and forwards received events to the
     /// broadcast channel via `EventsService::broadcast_event`.
-    #[must_use = "the listener must be kept alive to receive events"]
+    #[must_use = "the listener stops receiving events when dropped"]
     pub fn start(pool: &PgPool, events_service: EventsService) -> Self {
         let pool = pool.clone();
         let handle = tokio::spawn(async move {
@@ -56,7 +56,7 @@ impl PgEventListener {
         events_service: &EventsService,
     ) -> Result<(), sqlx::Error> {
         let mut listener = PgListener::connect_with(pool).await?;
-        listener.listen("events").await?;
+        listener.listen(PG_NOTIFY_CHANNEL).await?;
 
         tracing::info!("PgEventListener started, listening for events");
 
@@ -67,7 +67,7 @@ impl PgEventListener {
                     events_service.broadcast_event(event);
                 }
                 Err(e) => {
-                    tracing::warn!(
+                    tracing::error!(
                         "Failed to deserialize event notification: {}. Payload: {}",
                         e,
                         notification.payload()
@@ -126,7 +126,7 @@ mod tests {
         panic!("Listener failed to become ready after 5 attempts");
     }
 
-    /// Test that multiple events are received in order.
+    /// Test that multiple events are received in order with all fields preserved.
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_pg_notify_multiple_events() {
@@ -144,37 +144,48 @@ mod tests {
         let keypair = Keypair::random();
         let pubkey = keypair.public_key();
 
-        // Send 3 events
-        for i in 1..=3 {
-            let path = EntryPath::new(
-                pubkey.clone(),
-                WebDavPath::new(&format!("/pub/file{}.txt", i)).unwrap(),
-            );
-            let event = EventEntity {
-                id: i as u64,
-                user_id: 1,
-                user_pubkey: pubkey.clone(),
-                event_type: EventType::Put {
-                    content_hash: Hash::from_bytes([i as u8; 32]),
-                },
-                path,
-                created_at: NaiveDateTime::parse_from_str(
-                    "2024-01-15 10:30:00",
-                    "%Y-%m-%d %H:%M:%S",
-                )
-                .unwrap(),
-            };
-            events_service.notify_event(&event, db.pool()).await;
+        // Build events to send and keep for comparison
+        let events: Vec<EventEntity> = (1..=3)
+            .map(|i| {
+                let path = EntryPath::new(
+                    pubkey.clone(),
+                    WebDavPath::new(&format!("/pub/file{}.txt", i)).unwrap(),
+                );
+                EventEntity {
+                    id: i as u64,
+                    user_id: i as i32,
+                    user_pubkey: pubkey.clone(),
+                    event_type: EventType::Put {
+                        content_hash: Hash::from_bytes([i as u8; 32]),
+                    },
+                    path,
+                    created_at: NaiveDateTime::parse_from_str(
+                        "2024-01-15 10:30:00",
+                        "%Y-%m-%d %H:%M:%S",
+                    )
+                    .unwrap(),
+                }
+            })
+            .collect();
+
+        // Send all events
+        for event in &events {
+            events_service.notify_event(event, db.pool()).await;
         }
 
-        // Receive all 3 events
-        for expected_id in 1..=3 {
+        // Receive and verify all fields for each event
+        for expected in &events {
             let received = tokio::time::timeout(Duration::from_secs(2), rx.recv())
                 .await
                 .expect("Timeout waiting for event")
                 .expect("Channel closed");
 
-            assert_eq!(received.id, expected_id as u64);
+            assert_eq!(received.id, expected.id);
+            assert_eq!(received.user_id, expected.user_id);
+            assert_eq!(received.user_pubkey, expected.user_pubkey);
+            assert_eq!(received.event_type, expected.event_type);
+            assert_eq!(received.path, expected.path);
+            assert_eq!(received.created_at, expected.created_at);
         }
     }
 
@@ -198,13 +209,17 @@ mod tests {
         let events_service_b = EventsService::new(100);
         let _listener_b = PgEventListener::start(db.pool(), events_service_b.clone());
 
-        // Wait for both listeners to be ready
+        // Wait for both listeners to be ready.
+        // Important: Both listeners receive ALL pg_notify events, so probe events
+        // sent for one listener will also be received by the other.
         let probe_rx_a = events_service_a.subscribe();
         wait_for_listener_ready(&events_service_a, db.pool(), probe_rx_a).await;
         let probe_rx_b = events_service_b.subscribe();
         wait_for_listener_ready(&events_service_b, db.pool(), probe_rx_b).await;
 
-        // Subscribe to both instances
+        // Subscribe AFTER both listeners are ready to avoid receiving stale probe events.
+        // A small delay ensures any in-flight probe notifications are processed.
+        tokio::time::sleep(Duration::from_millis(50)).await;
         let mut rx_a = events_service_a.subscribe();
         let mut rx_b = events_service_b.subscribe();
 

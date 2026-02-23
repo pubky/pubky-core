@@ -68,12 +68,13 @@ impl FromRow<'_, PgRow> for EventEntity {
             }
         };
 
+        let entry_path = EntryPath::new(user_pubkey.clone(), path);
         Ok(EventEntity {
             id,
             event_type,
             user_id,
-            user_pubkey: user_pubkey.clone(),
-            path: EntryPath::new(user_pubkey, path),
+            user_pubkey,
+            path: entry_path,
             created_at,
         })
     }
