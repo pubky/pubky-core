@@ -295,7 +295,8 @@ mod tests {
         assert_eq!(c.pkdns.user_keys_republisher_interval, 14400);
         assert_eq!(c.pkdns.dht_bootstrap_nodes, None);
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
-        assert_eq!(c.drive.rate_limits, vec![]);
+        assert_eq!(c.drive.rate_limits.len(), 1);
+        assert_eq!(c.drive.rate_limits[0].path.0, "/signup_tokens/*");
         assert_eq!(c.storage, StorageConfigToml::FileSystem);
         assert_eq!(
             c.logging,
@@ -342,7 +343,9 @@ mod tests {
         // Test that a minimal config with optional logging section with empty module_levels
         let s = "[logging]\nlevel=\"trace\"\nmodule_levels = [ ]";
         let merged: ConfigToml = ConfigToml::from_str_with_defaults(s).unwrap();
-        assert_eq!(merged.drive.rate_limits, vec![]);
+        // Default rate limits should be preserved from defaults
+        assert_eq!(merged.drive.rate_limits.len(), 1);
+        assert_eq!(merged.drive.rate_limits[0].path.0, "/signup_tokens/*");
         let expected_logging = Some(LoggingToml {
             level: LogLevel::from_str("trace").unwrap(),
             module_levels: vec![],
