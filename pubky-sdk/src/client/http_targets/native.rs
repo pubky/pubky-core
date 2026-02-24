@@ -28,6 +28,7 @@ fn classify_host(host: &str) -> HostKind {
         if PublicKey::try_from_z32(pk_host).is_ok() {
             return HostKind::ResolvedPubky;
         }
+        return HostKind::Icann;
     } else if PublicKey::is_pubky_prefixed(host) || PublicKey::try_from_z32(host).is_err() {
         return HostKind::Icann;
     }
@@ -240,7 +241,9 @@ impl PubkyHttpClient {
 mod tests {
     use super::*;
     use crate::Keypair;
+    use crate::errors::Error;
     use pkarr::dns::rdata::SVCB;
+    use reqwest::Method;
 
     fn build_signed_packet_with_endpoints(
         kp: &Keypair,
@@ -274,6 +277,43 @@ mod tests {
         let pk = packet.public_key();
         let cache_key: pkarr::CacheKey = pk.into();
         cache.put(&cache_key, packet);
+    }
+
+    #[test]
+    fn classify_host_routes_invalid_pubky_subdomain_as_icann() {
+        assert_eq!(classify_host("_pubky.not-a-valid-z32"), HostKind::Icann);
+    }
+
+    #[tokio::test]
+    async fn prepare_request_rejects_prefixed_pubky_transport_host() {
+        let client = PubkyHttpClient::new().unwrap();
+        let kp = Keypair::random();
+        let prefixed = format!("pubky{}", kp.public_key().z32());
+        let mut url = Url::parse(&format!("https://{prefixed}/signup")).unwrap();
+
+        let result = client.prepare_request(&mut url).await;
+
+        let err = result.expect_err("prefixed hosts should be rejected");
+        let Error::Request(RequestError::Validation { message }) = err else {
+            panic!("expected RequestError::Validation, got {err:?}");
+        };
+        assert!(message.contains("pubky prefix is not allowed"));
+    }
+
+    #[tokio::test]
+    async fn cross_request_rejects_prefixed_pubky_subdomain_host() {
+        let client = PubkyHttpClient::new().unwrap();
+        let kp = Keypair::random();
+        let prefixed = format!("pubky{}", kp.public_key().z32());
+        let url = Url::parse(&format!("https://_pubky.{prefixed}/signup")).unwrap();
+
+        let result = client.cross_request(Method::GET, url).await;
+
+        let err = result.expect_err("prefixed _pubky hosts should be rejected");
+        let Error::Request(RequestError::Validation { message }) = err else {
+            panic!("expected RequestError::Validation, got {err:?}");
+        };
+        assert!(message.contains("pubky prefix is not allowed"));
     }
 
     #[tokio::test]
