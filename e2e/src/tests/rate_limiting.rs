@@ -6,19 +6,16 @@ use pubky_testnet::pubky::{
 use pubky_testnet::{
     pubky_homeserver::{
         quota_config::{GlobPattern, LimitKey, LimitKeyType, PathLimit},
-        ConfigToml, MockDataDir,
+        ConfigToml, SignupMode,
     },
-    Testnet,
+    EphemeralTestnet,
 };
 
 #[tokio::test]
 #[pubky_testnet::test]
 async fn test_limit_signin_get_session() {
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-
-    let mut cfg = ConfigToml::default_test_config();
-    cfg.drive.rate_limits = vec![
+    let mut config = ConfigToml::default_test_config();
+    config.drive.rate_limits = vec![
         // Limit sign-ins: POST /session by IP
         PathLimit::new(
             GlobPattern::new("/session"),
@@ -36,11 +33,15 @@ async fn test_limit_signin_get_session() {
             None,
         ),
     ];
-    let mock_dir = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
         .await
         .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
 
     // Create a user (signup should not hit the POST /session signin limit)
     let signer = pubky.signer(Keypair::random());
@@ -74,15 +75,12 @@ async fn test_limit_signin_get_session() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn test_limit_signin_get_session_whitelist() {
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-
     // Pre-generate the whitelisted user (we need their pubkey in the config)
-    let whitelisted_signer = pubky.signer(Keypair::random());
-    let whitelisted_pubky = whitelisted_signer.public_key().clone();
+    let whitelisted_keypair = Keypair::random();
+    let whitelisted_pubkey = whitelisted_keypair.public_key();
 
-    // Rate-limit GET /session by user, but whitelist `whitelisted_pubky`
-    let mut cfg = ConfigToml::default_test_config();
+    // Rate-limit GET /session by user, but whitelist `whitelisted_pubkey`
+    let mut config = ConfigToml::default_test_config();
     let mut limit = PathLimit::new(
         GlobPattern::new("/session"),
         Method::GET,
@@ -92,13 +90,20 @@ async fn test_limit_signin_get_session_whitelist() {
     );
     limit
         .whitelist
-        .push(LimitKey::User(whitelisted_pubky.clone()));
-    cfg.drive.rate_limits = vec![limit];
+        .push(LimitKey::User(whitelisted_pubkey.clone()));
+    config.drive.rate_limits = vec![limit];
 
-    let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
 
     // --- Whitelisted user ---
+    let whitelisted_signer = pubky.signer(whitelisted_keypair);
     whitelisted_signer
         .signup(&server.public_key(), None)
         .await
@@ -130,13 +135,9 @@ async fn test_limit_signin_get_session_whitelist() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn test_limit_events() {
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-    let client = pubky.client();
-
     // Rate-limit GET /events/ by IP
-    let mut cfg = ConfigToml::default_test_config();
-    cfg.drive.rate_limits = vec![PathLimit::new(
+    let mut config = ConfigToml::default_test_config();
+    config.drive.rate_limits = vec![PathLimit::new(
         GlobPattern::new("/events/"),
         Method::GET,
         "1r/m".parse().unwrap(),
@@ -144,8 +145,15 @@ async fn test_limit_events() {
         None,
     )];
 
-    let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let client = pubky.client();
 
     // Events feed URL (pkarr host form)
     let url = format!("https://{}/events/", server.public_key().z32());
@@ -162,11 +170,8 @@ async fn test_limit_events() {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn test_limit_upload() {
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-
-    let mut cfg = ConfigToml::default_test_config();
-    cfg.drive.rate_limits = vec![PathLimit::new(
+    let mut config = ConfigToml::default_test_config();
+    config.drive.rate_limits = vec![PathLimit::new(
         GlobPattern::new("/pub/**"),
         Method::PUT,
         "1kb/s".parse().unwrap(),
@@ -174,8 +179,14 @@ async fn test_limit_upload() {
         None,
     )];
 
-    let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
 
     // User + session-bound session
     let signer = pubky.signer(Keypair::random());
@@ -204,11 +215,8 @@ async fn test_limit_upload() {
 #[pubky_testnet::test]
 async fn test_concurrent_write_read() {
     // --- homeserver with per-user throttling on PUT/GET under /pub/**
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-
-    let mut cfg = ConfigToml::default_test_config();
-    cfg.drive.rate_limits = vec![
+    let mut config = ConfigToml::default_test_config();
+    config.drive.rate_limits = vec![
         PathLimit::new(
             GlobPattern::new("/pub/**"),
             Method::PUT,
@@ -224,8 +232,15 @@ async fn test_concurrent_write_read() {
             None,
         ),
     ];
-    let mock = MockDataDir::new(cfg, None).unwrap();
-    let server = testnet.create_homeserver_app_with_mock(mock).await.unwrap();
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
 
     // --- create 10 independent users (each has its own per-user limiter)
     let user_count = 10usize;
@@ -283,4 +298,50 @@ async fn test_concurrent_write_read() {
         "concurrent GETs too slow: {:?}",
         elapsed
     );
+}
+
+/// Test that signup token lookups are rate-limited by IP.
+/// This is the default rate limit configured in config.default.toml.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn test_limit_signup_tokens() {
+    // Configure with token-required signup mode and rate limit on signup_tokens
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::TokenRequired;
+    config.drive.rate_limits = vec![PathLimit::new(
+        GlobPattern::new("/signup_tokens/*"),
+        Method::GET,
+        "1r/m".parse().unwrap(),
+        LimitKeyType::Ip,
+        None,
+    )];
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let client = pubky.client();
+
+    // Generate a valid token via admin API
+    let valid_token = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .create_signup_token()
+        .await
+        .unwrap();
+
+    // Build URL for the signup_tokens endpoint (using ICANN HTTP)
+    let url = format!("{}signup_tokens/{}", server.icann_http_url(), valid_token);
+
+    // First request should succeed
+    let res = client.request(Method::GET, &url).send().await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Second request should be rate-limited (429)
+    let res = client.request(Method::GET, &url).send().await.unwrap();
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
 }
