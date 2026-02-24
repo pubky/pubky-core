@@ -6,7 +6,14 @@ database_url = "postgres://localhost:5432/pubky_homeserver"
 [drive]
 pubky_listen_socket = "127.0.0.1:6287"
 icann_listen_socket = "127.0.0.1:6286"
-rate_limits = []
+
+# Default rate limit to mitigate brute-forcing signup tokens (invite codes).
+# 10 requests per minute per IP address.
+[[drive.rate_limits]]
+path = "/signup_tokens/*"
+method = "GET"
+quota = "10r/m"
+key = "ip"
 
 [storage]
 type = "file_system"
