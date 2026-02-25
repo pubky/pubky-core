@@ -19,18 +19,24 @@
     - Assign a reviewer. Every PR needs to be reviewed at least once. More reviews are possible on request.
 5. Always squash the PR when merging. One commit == one feature/fix.
 
-## Versioning
+## Releasing a crate
 
-1. Merge all PRs in the main branch that you want to include in the next version.
-2. Update versions of all crates and npm package with `./.scripts/set-version.sh $NEW_SEMVER_VERSION`.
-3. Create a PR with the title: `chore: vx.x.x`.
-4. Let the PR review and squash + merge.
-5. Publish crates and npm package.
-  - Checkout the `main` branch with the new version merged.
-  - Run `./.scripts/publish-libs.sh`.
-6. Create a [new Github release](https://github.com/pubky/pubky-core/releases/new).
-    - Tag: `vx.x.x`
-    - Title: `vx.x.x`
-    - Description: Changelog for the current version.
-    - Upload the different artifacts created by the [build-artifacts.yml workflow](./.github/workflows/build-artifacts.yml). 
-    You can find them in [Github Actions](https://github.com/pubky/pubky-core/actions?query=branch%3Amain) for the new main commit.
+1. Bump the crate version: `./.scripts/set-version.sh $VERSION crate-name`
+   - Example: `./.scripts/set-version.sh 0.7.0 pubky-testnet`
+2. If the crate depends on other workspace crates that changed, update those dependency versions in `Cargo.toml`.
+3. Create and merge a PR with the version bump titled: `chore: crate-name vx.x.x`.
+4. Publish the crate: `./.scripts/publish-libs.sh crate-name`
+   - Example: `./.scripts/publish-libs.sh pubky-testnet`
+
+**Note:** Dependencies must be published before dependents. For example, if `pubky-homeserver` needs a new version of `pubky-common`, publish `pubky-common` first, then update the version in `pubky-homeserver/Cargo.toml`, then publish `pubky-homeserver`.
+
+### Releasing pubky-homeserver
+
+`pubky-homeserver` is the only crate that needs a GitHub release with binary artifacts (other crates are libraries consumed via crates.io/npm).
+
+After publishing to crates.io, create a [new Github release](https://github.com/pubky/pubky-core/releases/new):
+- Tag: `vx.x.x`
+- Title: `vx.x.x`
+- Description: Changelog for this release.
+- Upload artifacts from the [build-artifacts.yml workflow](./.github/workflows/build-artifacts.yml).
+  You can find them in [Github Actions](https://github.com/pubky/pubky-core/actions?query=branch%3Amain) for the main commit.
