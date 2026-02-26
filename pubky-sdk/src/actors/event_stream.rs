@@ -430,6 +430,10 @@ impl EventStreamBuilder {
                 Ok(sse_event) => match parse_sse_event(&sse_event) {
                     Ok(event) => Some(Ok(event)),
                     Err(e) => {
+                        // Skip unparseable events rather than failing the entire stream.
+                        // We don't control what homeservers return, and we shouldn't panic
+                        // on unexpected data.
+                        // This also provides forward compatibility for new event types.
                         cross_log!(error, "Failed to parse SSE event, skipping: {}", e);
                         None
                     }
@@ -494,7 +498,7 @@ impl EventStreamBuilder {
 /// event: PUT
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: <base64-encoded-blake3-hash> (required for PUT events)
+/// data: content_hash: <base64 of raw 32-byte blake3 digest> (required for PUT events)
 /// ```
 fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
     // Parse SSE data by prefix
