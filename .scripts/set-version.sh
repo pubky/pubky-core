@@ -56,7 +56,11 @@ fi
 
 # Set version for the crate (update first version = "x.x.x" line in [package] section)
 echo "Setting $CRATE to $NEW_VERSION..."
-sed -i '0,/^version = ".*"$/s//version = "'"$NEW_VERSION"'"/' "$MANIFEST_PATH"
+# Use portable sed -i syntax (BSD/macOS requires '' argument, GNU/Linux does not)
+case "$OSTYPE" in
+    darwin*) sed -i '' 's/^version = ".*"$/version = "'"$NEW_VERSION"'"/' "$MANIFEST_PATH" ;;
+    *)       sed -i 's/^version = ".*"$/version = "'"$NEW_VERSION"'"/' "$MANIFEST_PATH" ;;
+esac
 
 # Update npm package if pubky
 if [ "$CRATE" = "pubky" ]; then
