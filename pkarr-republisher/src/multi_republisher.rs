@@ -1,7 +1,5 @@
-use crate::{
-    republisher::{RepublishError, RepublishInfo, RepublisherSettings},
-    ResilientClient, ResilientClientBuilderError,
-};
+use crate::republisher::{RepublishError, RepublishInfo, RepublisherSettings};
+use crate::{ResilientClient, ResilientClientBuilderError};
 use pkarr::PublicKey;
 use std::collections::HashMap;
 use tokio::time::Instant;
@@ -113,19 +111,14 @@ impl MultiRepublisher {
             ResilientClient::new_with_client(client, self.settings.retry_settings.clone())?;
         for key in public_keys {
             let start = Instant::now();
-            let res = rclient
-                .republish(
-                    key.clone(),
-                    Some(self.settings.min_sufficient_node_publish_count),
-                )
-                .await;
+            let res = rclient.republish(key.clone()).await;
 
             let elapsed = start.elapsed().as_millis();
             match &res {
                 Ok(info) => {
                     tracing::info!(
-                        "Republished {key} successfully on {} nodes within {elapsed}ms. attemps={}",
-                        info.published_nodes_count,
+                        "Republished {key} successfully within {elapsed}ms. stored_at={:?} attempts={}",
+                        info.stored_at,
                         info.attempts_needed
                     )
                 }
@@ -185,8 +178,6 @@ impl MultiRepublisher {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU8;
-
     use pkarr::{dns::Name, Keypair, PublicKey};
 
     use crate::{multi_republisher::MultiRepublisher, republisher::RepublisherSettings};
@@ -211,45 +202,23 @@ mod tests {
             .build()
             .unwrap();
         let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        pkarr_builder
+            .no_default_network()
+            .bootstrap(&dht.bootstrap)
+            .no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
 
         let public_keys = publish_sample_packets(&pkarr_client, 1).await;
         let public_key = public_keys.first().unwrap().clone();
 
         let mut settings = RepublisherSettings::default();
-        settings
-            .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(3).unwrap());
-        let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
-        let results = publisher.run_serially(public_keys).await.unwrap();
+        settings.pkarr_client(pkarr_client);
+        let republisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
+        let results = republisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();
         if let Err(e) = result {
             println!("Err {e}");
         }
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn single_key_republish_insufficient() {
-        let dht = pkarr::mainline::Testnet::builder(3)
-            .seeded(false)
-            .build()
-            .unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
-        let pkarr_client = pkarr_builder.clone().build().unwrap();
-
-        let public_keys = publish_sample_packets(&pkarr_client, 1).await;
-        let public_key = public_keys.first().unwrap().clone();
-
-        let mut settings = RepublisherSettings::default();
-        settings
-            .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(4).unwrap());
-        let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
-        let results = publisher.run_serially(public_keys).await.unwrap();
-        let result = results.get(&public_key).unwrap();
-        assert!(result.is_err());
     }
 }
