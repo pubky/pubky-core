@@ -36,12 +36,19 @@ test("signup deep link valid", async (t) => {
   const deepLink = SignupDeepLink.parse(url);
   t.equal(deepLink.capabilities, "/pub/pubky.app/:rw");
   t.equal(deepLink.baseRelayUrl, TESTNET_HTTP_RELAY);
-  t.deepEqual(deepLink.secret, new Uint8Array([146, 169, 220, 120, 67, 32, 172, 212, 12, 255, 24, 180, 234, 132, 23, 140, 13, 220, 36, 117, 255, 69, 9, 176, 212, 22, 58, 36, 77, 91, 177, 239]));
+  t.deepEqual(
+    deepLink.secret,
+    new Uint8Array([
+      146, 169, 220, 120, 67, 32, 172, 212, 12, 255, 24, 180, 234, 132, 23,
+      140, 13, 220, 36, 117, 255, 69, 9, 176, 212, 22, 58, 36, 77, 91, 177,
+      239,
+    ]),
+  );
   t.equal(deepLink.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
   t.equal(deepLink.signupToken, "1234567890");
 
-  t.equal(deepLink.toString(), url);
+  const expectedUrl = "pubkyauth://signup?hs=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo&st=1234567890&relay=http://localhost:15412/link&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&caps=/pub/pubky.app/:rw";
+  t.equal(deepLink.toString(), expectedUrl);
 
   t.end();
 });
-

@@ -98,6 +98,45 @@ test("Auth: 3rd party signin", async (t) => {
   t.end();
 });
 
+test("Auth: direct signup deeplink", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const deeplink = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}`;
+
+  await signer.approveAuthRequest(deeplink);
+
+  const session = await signer.signin();
+  t.equal(
+    session.info.publicKey.z32(),
+    signer.publicKey.z32(),
+    "session belongs to expected user",
+  );
+
+  t.end();
+});
+
+test("Auth: direct signup deeplink with token", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signupToken = await createSignupToken();
+  const signer = sdk.signer(Keypair.random());
+  const deeplink = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=${encodeURIComponent(
+    signupToken,
+  )}`;
+
+  await signer.approveAuthRequest(deeplink);
+
+  const session = await signer.signin();
+  t.equal(
+    session.info.publicKey.z32(),
+    signer.publicKey.z32(),
+    "session belongs to expected user",
+  );
+
+  t.end();
+});
+
 test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows empty", async (t) => {
   const sdk = Pubky.testnet(); // uses local testnet mapping so URLs are resolvable in-node
 
