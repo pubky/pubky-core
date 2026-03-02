@@ -19,7 +19,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing-subscriber.workspace = true
 url.workspace = true
 
-pubky = { version = "0.7.0-rc.1", path = "../pubky-sdk" }
+pubky = { version = "0.7.0-rc.1", path = "../pubky-sdk", features = ["json"] }
 pubky-common = { path = "../pubky-common", version = "0.6.0" }
 pubky-homeserver = { path = "../pubky-homeserver", version = "0.6.0", default-features = false, features = [
     "testing",
