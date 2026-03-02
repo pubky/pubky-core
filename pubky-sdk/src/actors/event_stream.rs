@@ -924,6 +924,78 @@ mod tests {
         assert!(err.contains("50 users"), "Got: {err}");
     }
 
+    #[test]
+    fn build_request_url_constructs_correct_query_params() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(3);
+        let homeserver = &keys[0];
+        let user1 = &keys[1];
+        let user2 = &keys[2];
+
+        // Test with all options: multiple users, cursors, limit, live, path
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), homeserver)
+            .add_users([(user1, None), (user2, Some(EventCursor::new(42)))])
+            .unwrap()
+            .limit(100)
+            .live()
+            .path("/pub/posts/");
+
+        let url = builder.build_request_url(homeserver).unwrap();
+
+        // Verify base URL
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.path(), "/events-stream");
+
+        // Verify query parameters
+        let query: Vec<_> = url.query_pairs().collect();
+
+        // Should have: user (x2), limit, live, path
+        assert_eq!(query.len(), 5, "Should have 5 query params: {:?}", query);
+
+        // Check user params
+        let user_params: Vec<_> = query
+            .iter()
+            .filter(|(k, _)| k == "user")
+            .map(|(_, v)| v.to_string())
+            .collect();
+        assert_eq!(user_params.len(), 2);
+        assert!(
+            user_params.iter().any(|v| v == &user1.z32()),
+            "Should have user1 without cursor"
+        );
+        assert!(
+            user_params
+                .iter()
+                .any(|v| v == &format!("{}:42", user2.z32())),
+            "Should have user2 with cursor"
+        );
+
+        // Check other params
+        assert!(query.iter().any(|(k, v)| k == "limit" && v == "100"));
+        assert!(query.iter().any(|(k, v)| k == "live" && v == "true"));
+        assert!(query.iter().any(|(k, v)| k == "path" && v == "/pub/posts/"));
+
+        // Test reverse mode (mutually exclusive with live)
+        let builder_reverse = EventStreamBuilder::for_homeserver(client, homeserver)
+            .add_users([(user1, None)])
+            .unwrap()
+            .reverse()
+            .limit(50);
+
+        let url_reverse = builder_reverse.build_request_url(homeserver).unwrap();
+        let query_reverse: Vec<_> = url_reverse.query_pairs().collect();
+
+        assert!(
+            query_reverse
+                .iter()
+                .any(|(k, v)| k == "reverse" && v == "true")
+        );
+        assert!(
+            !query_reverse.iter().any(|(k, _)| k == "live"),
+            "Should not have live param when reverse is set"
+        );
+    }
+
     #[tokio::test]
     async fn subscribe_fails_with_no_users() {
         let client = crate::PubkyHttpClient::testnet().unwrap();
