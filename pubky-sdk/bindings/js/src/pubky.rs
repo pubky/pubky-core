@@ -179,29 +179,78 @@ impl Pubky {
     /// events on a homeserver `/events-stream` endpoint. Use `.addUser()` to add
     /// users (up to 50), then call `.subscribe()`.
     ///
-    /// IMPORTANT: Only the first User's pubky is used to identify the Homeserver which this code calls.
-    /// It is the responsibility of the caller to ensure that all Users added are on the same Homeserver.
-    ///
     /// @returns {EventStreamBuilder} A builder to add users and configure the event stream
+    /// @deprecated Use `eventStreamForUser()` for single-user streams or `eventStreamFor()` for multi-user streams
+    #[wasm_bindgen(js_name = "eventStream")]
+    #[allow(deprecated)]
+    pub fn event_stream(&self) -> EventStreamBuilder {
+        EventStreamBuilder(pubky::EventStreamBuilder::new(self.0.client().clone()))
+    }
+
+    /// Create an event stream builder for a single user.
+    ///
+    /// This is the simplest way to subscribe to events for one user. The homeserver
+    /// is automatically resolved from the user's Pkarr record.
+    ///
+    /// @param {PublicKey} user - The user's public key
+    /// @param {string | null} cursor - Optional cursor position to start from
+    /// @returns {EventStreamBuilder} - Builder for configuring and subscribing to the stream
     ///
     /// @example
     /// ```typescript
-    /// const user1 = PublicKey.from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo");
-    /// const user2 = PublicKey.from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy");
-    /// const stream = await pubky.eventStream()
-    ///   .addUser(user1, null)
-    ///   .addUser(user2, "100")
+    /// const user = PublicKey.from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo");
+    /// const stream = await pubky.eventStreamForUser(user, null)
     ///   .live()
-    ///   .limit(100)
-    ///   .path("/pub/")
     ///   .subscribe();
     ///
     /// for await (const event of stream) {
     ///   console.log(`${event.eventType}: ${event.resource.path}`);
     /// }
     /// ```
-    #[wasm_bindgen(js_name = "eventStream")]
-    pub fn event_stream(&self) -> EventStreamBuilder {
-        EventStreamBuilder(pubky::EventStreamBuilder::new(self.0.client().clone()))
+    #[wasm_bindgen(js_name = "eventStreamForUser")]
+    pub fn event_stream_for_user(
+        &self,
+        user: &PublicKey,
+        cursor: Option<String>,
+    ) -> Result<EventStreamBuilder, JsValue> {
+        let event_cursor = cursor
+            .map(|c| {
+                c.parse::<pubky::EventCursor>()
+                    .map_err(|e| JsValue::from_str(&format!("Invalid cursor: {e}")))
+            })
+            .transpose()?;
+        Ok(EventStreamBuilder(pubky::EventStreamBuilder::for_user(
+            self.0.client().clone(),
+            user.as_inner(),
+            event_cursor,
+        )))
+    }
+
+    /// Create an event stream builder for a specific homeserver.
+    ///
+    /// Use this when you already know the homeserver pubkey. This avoids
+    /// Pkarr resolution overhead. Obtain a homeserver pubkey via `getHomeserverOf()`.
+    ///
+    /// @param {PublicKey} homeserver - The homeserver public key
+    /// @returns {EventStreamBuilder} - Builder for configuring and subscribing to the stream
+    ///
+    /// @example
+    /// ```typescript
+    /// const homeserver = await pubky.getHomeserverOf(user1);
+    /// const stream = await pubky.eventStreamFor(homeserver)
+    ///   .addUsers([[user1.z32(), null], [user2.z32(), null]])
+    ///   .live()
+    ///   .subscribe();
+    ///
+    /// for await (const event of stream) {
+    ///   console.log(`${event.eventType}: ${event.resource.path}`);
+    /// }
+    /// ```
+    #[wasm_bindgen(js_name = "eventStreamFor")]
+    pub fn event_stream_for(&self, homeserver: &PublicKey) -> EventStreamBuilder {
+        EventStreamBuilder(pubky::EventStreamBuilder::for_homeserver(
+            self.0.client().clone(),
+            homeserver.as_inner(),
+        ))
     }
 }
