@@ -19,13 +19,15 @@
     - Assign a reviewer. Every PR needs to be reviewed at least once. More reviews are possible on request.
 5. Always squash the PR when merging. One commit == one feature/fix.
 
+
 ## Releasing a crate
 
 1. Bump the crate version: `./.scripts/set-version.sh $VERSION crate-name`
    - Example: `./.scripts/set-version.sh 0.7.0 pubky-testnet`
 2. **If the crate depends on other workspace crates that changed, update those dependency versions in `Cargo.toml`.**
-3. Create and merge a PR with the version bump titled: `chore: crate-name vx.x.x`.
-4. Publish the crate: `./.scripts/publish-libs.sh crate-name`
+3. Update the `CHANGELOG.md` with the new version
+4. Create and merge a PR with the version bump titled: `chore: crate-name vx.x.x`.
+5. Publish the crate: `./.scripts/publish-libs.sh crate-name`
    - Example: `./.scripts/publish-libs.sh pubky-testnet`
 
 **Note:** Dependencies must be published before dependents. For example, if `pubky-homeserver` needs a new version of `pubky-common`, publish `pubky-common` first, then update the version in `pubky-homeserver/Cargo.toml`, then publish `pubky-homeserver`.
