@@ -1,29 +1,38 @@
 #!/bin/bash
 
 # -------------------------------------------------------------------------------------------------
-# This script publishes all the crates of the workspace to crates.io.
+# This script publishes a crate to crates.io.
+#
+# Usage:
+#   ./publish-libs.sh pubky-testnet   # Publish pubky-testnet
+#   ./publish-libs.sh pubky           # Publish pubky + npm package
 # -------------------------------------------------------------------------------------------------
 
 set -e # fail the script if any command fails
 set -u # fail the script if any variable is not set
 set -o pipefail # fail the script if any pipe command fails
 
-# Check if cargo-set-version is installed
-if ! cargo --list | grep -q "workspaces"; then
-  echo "Error: cargo-workspaces is not installed but required."
-  echo "Please install it first by running:"
-  echo "  cargo install cargo-workspaces"
+# Check arguments
+if [ $# -ne 1 ]; then
+  echo "Error: Crate name required."
+  echo "Usage: $0 <crate>"
+  echo ""
+  echo "Examples:"
+  echo "  $0 pubky-testnet   # Publish pubky-testnet"
+  echo "  $0 pubky           # Publish pubky + npm package"
   exit 1
 fi
 
+CRATE=$1
 
-# Publish all the crates of the workspace to crates.io.
-# ws does this in the correct order on how crates are depended on each other.
-echo "Publishing all the crates of the workspace to crates.io..."
-cargo ws publish --no-git-commit --publish-as-is
+# Publish the crate
+echo "Publishing $CRATE..."
+cargo publish -p "$CRATE"
 
-# Publish the npm package to npmjs.com.
-echo "Publishing the npm package to npmjs.com..."
-(cd pubky-sdk/bindings/js/pkg && npm ci && npm run build && npm publish)
+# Publish npm package if pubky
+if [ "$CRATE" = "pubky" ]; then
+  echo "Publishing the npm package to npmjs.com..."
+  (cd pubky-sdk/bindings/js/pkg && npm ci && npm run build && npm publish)
+fi
 
 echo "Done"
