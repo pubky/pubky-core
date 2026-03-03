@@ -26,8 +26,11 @@
    - Example: `./.scripts/set-version.sh 0.7.0 pubky-testnet`
 2. **If the crate depends on other workspace crates that changed, update those dependency versions in `Cargo.toml`.**
 3. Update the `CHANGELOG.md` with the new version
-4. Create and merge a PR with the version bump titled: `chore: crate-name vx.x.x`.
-5. Publish the crate: `./.scripts/publish-libs.sh crate-name`
+4. Check for dependency conflicts: `./.scripts/check-crate-deps.sh crate-name`
+   - Example: `./.scripts/check-crate-deps.sh pubky-testnet`
+   - This checks the packaged crate for version mismatches in critical dependencies (pkarr, mainline, pubky-common)
+5. Create and merge a PR with the version bump titled: `chore: crate-name vx.x.x`.
+6. Publish the crate: `./.scripts/publish-libs.sh crate-name`
    - Example: `./.scripts/publish-libs.sh pubky-testnet`
 
 **Note:** Dependencies must be published before dependents. For example, if `pubky-homeserver` needs a new version of `pubky-common`, publish `pubky-common` first, then update the version in `pubky-homeserver/Cargo.toml`, then publish `pubky-homeserver`.

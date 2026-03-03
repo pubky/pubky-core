@@ -24,6 +24,10 @@ if [ $# -ne 1 ]; then
 fi
 
 CRATE=$1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check for critical dependency version conflicts before publishing
+"$SCRIPT_DIR/check-crate-deps.sh" "$CRATE"
 
 # Publish the crate
 echo "Publishing $CRATE..."
