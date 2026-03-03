@@ -1,9 +1,32 @@
+use clap::Parser;
 use pubky_testnet::{pubky::Keypair, EphemeralTestnet};
+
+#[derive(Parser)]
+struct Args {
+    /// Use an external PostgreSQL instance instead of embedded postgres.
+    /// Connects to TEST_PUBKY_CONNECTION_STRING env var if set,
+    /// otherwise defaults to postgres://postgres:postgres@localhost:5432/postgres
+    #[arg(long)]
+    external_postgres: bool,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[allow(unused_variables)]
+    let args = Args::parse();
+
     // Spin up ephemeral DHT + homeserver with minimal config
-    let testnet = EphemeralTestnet::builder().build().await?;
+    #[allow(unused_mut)]
+    let mut builder = EphemeralTestnet::builder();
+
+    #[cfg(feature = "embedded-postgres")]
+    let builder = if !args.external_postgres {
+        builder.with_embedded_postgres()
+    } else {
+        builder
+    };
+
+    let testnet = builder.build().await?;
     let homeserver = testnet.homeserver_app();
 
     // Intantiate a Pubky SDK wrapper that uses this testnet's preconfigured client for transport

@@ -15,16 +15,32 @@ struct Cli {
     /// Maximum tracing verbosity to enable: error|warn|info|debug|trace
     #[arg(long, default_value_t = LevelFilter::INFO, value_parser = clap::value_parser!(LevelFilter))]
     level: LevelFilter,
+
+    /// Use an external PostgreSQL instance instead of embedded postgres.
+    /// Connects to TEST_PUBKY_CONNECTION_STRING env var if set,
+    /// otherwise defaults to postgres://postgres:postgres@localhost:5432/postgres
+    #[arg(long)]
+    external_postgres: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let Cli { level } = Cli::parse();
-    init_tracing(level);
-    info!(%level, "Tracing initialized");
+    let cli = Cli::parse();
+    init_tracing(cli.level);
+    info!(level = %cli.level, "Tracing initialized");
 
     info!("Starting ephemeral testnet");
-    let testnet = EphemeralTestnet::builder().build().await?;
+    #[allow(unused_mut)]
+    let mut builder = EphemeralTestnet::builder();
+
+    #[cfg(feature = "embedded-postgres")]
+    let builder = if !cli.external_postgres {
+        builder.with_embedded_postgres()
+    } else {
+        builder
+    };
+
+    let testnet = builder.build().await?;
     let pubky = testnet.sdk()?;
     let homeserver = testnet.homeserver_app();
 
@@ -38,7 +54,7 @@ async fn main() -> Result<()> {
 
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
     let path = format!("/pub/logging.example/{timestamp}.txt");
-    let body = format!("Tracing level {} at {timestamp}", level);
+    let body = format!("Tracing level {} at {timestamp}", cli.level);
     info!(%path, "Writing sample data");
     session.storage().put(&path, body).await?;
 
