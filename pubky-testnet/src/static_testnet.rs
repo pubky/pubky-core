@@ -149,11 +149,11 @@ impl StaticTestnet {
         }
 
         let mut builder = pkarr::mainline::Dht::builder();
-        let dht = builder
+        builder
             .port(6881)
             .bootstrap(other_bootstrap_nodes)
-            .server_mode()
-            .build()?;
+            .server_mode();
+        let dht = builder.build()?;
         Ok(Some(dht))
     }
 

@@ -32,7 +32,7 @@ pub struct Testnet {
 impl Testnet {
     /// Run a new testnet with a local DHT.
     pub async fn new() -> Result<Self> {
-        let dht = pkarr::mainline::Testnet::builder(2).build()?;
+        let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet = Self {
             dht,
             pkarr_relays: vec![],
@@ -52,7 +52,7 @@ impl Testnet {
     pub async fn new_with_custom_postgres(
         postgres_connection_string: ConnectionString,
     ) -> Result<Self> {
-        let dht = pkarr::mainline::Testnet::builder(2).build()?;
+        let dht = pkarr::mainline::Testnet::new_async(2).await?;
         let testnet: Testnet = Self {
             dht,
             pkarr_relays: vec![],
