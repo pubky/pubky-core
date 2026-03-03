@@ -728,6 +728,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
+ "serde",
 ]
 
 [[package]]
@@ -868,6 +869,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
 ]
@@ -4048,6 +4050,7 @@ dependencies = [
  "base32",
  "base64 0.22.1",
  "bytes",
+ "chrono",
  "clap",
  "dav-server",
  "dav-server-opendalfs",
@@ -4080,6 +4083,7 @@ dependencies = [
  "sea-query",
  "sea-query-binder",
  "serde",
+ "serde_json",
  "serde_valid",
  "sqlx",
  "temp-env",

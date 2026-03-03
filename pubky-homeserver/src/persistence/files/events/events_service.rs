@@ -3,6 +3,7 @@ use crate::persistence::{
     sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;
+use sqlx::PgPool;
 use tokio::sync::broadcast;
 
 /// Maximum number of users allowed in a single event stream request.
@@ -10,6 +11,18 @@ use tokio::sync::broadcast;
 /// - Max users at 4KB: 3896 / 74 ≈ 52 users
 /// - Set to 50 for clean limit with safety margin for longer cursors
 pub const MAX_EVENT_STREAM_USERS: usize = 50;
+
+/// Postgres channel name for event notifications.
+pub(crate) const PG_NOTIFY_CHANNEL: &str = "events";
+
+/// SQL query to send a NOTIFY event.
+const PG_NOTIFY_QUERY: &str = "SELECT pg_notify('events', $1)";
+
+/// Warning threshold for pg_notify payload size.
+/// Postgres has a hard limit of 8KB for NOTIFY payloads. If the serialized
+/// event exceeds this threshold, a warning is logged. Typical events are
+/// ~200-400 bytes, so hitting this threshold indicates a potential issue.
+const PG_NOTIFY_WARN_THRESHOLD: usize = 4096;
 
 /// Service that handles all event-related business logic.
 #[derive(Clone, Debug)]
@@ -72,6 +85,45 @@ impl EventsService {
             Err(broadcast::error::SendError(_)) => {
                 // No active receivers - this is expected when no clients are listening
             }
+        }
+    }
+
+    /// Notify all instances about a new event via Postgres NOTIFY.
+    /// Call this AFTER the transaction has been committed.
+    ///
+    /// This sends a notification to all Postgres listeners (including this instance),
+    /// which will then broadcast the event to their local SSE subscribers.
+    pub async fn notify_event(&self, event: &EventEntity, pool: &PgPool) {
+        let payload = match serde_json::to_string(event) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(
+                    event_id = event.id,
+                    path = %event.path,
+                    "Failed to serialize event for NOTIFY: {}", e
+                );
+                return;
+            }
+        };
+
+        if payload.len() > PG_NOTIFY_WARN_THRESHOLD {
+            tracing::warn!(
+                event_id = event.id,
+                payload_size = payload.len(),
+                "Event payload size exceeds warning threshold. pg_notify has 8KB limit."
+            );
+        }
+
+        if let Err(e) = sqlx::query(PG_NOTIFY_QUERY)
+            .bind(&payload)
+            .execute(pool)
+            .await
+        {
+            tracing::error!(
+                event_id = event.id,
+                path = %event.path,
+                "Failed to send NOTIFY: {}", e
+            );
         }
     }
 

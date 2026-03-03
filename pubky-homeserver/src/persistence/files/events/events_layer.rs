@@ -162,7 +162,9 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
-                self.events_service.broadcast_event(event);
+                self.events_service
+                    .notify_event(&event, self.db.pool())
+                    .await;
             }
             Err(e) => {
                 drop(executor);
@@ -230,7 +232,9 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
                     tx.commit().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
-                    self.events_service.broadcast_event(event);
+                    self.events_service
+                        .notify_event(&event, self.db.pool())
+                        .await;
                 }
                 Err(e) => {
                     drop(executor);
