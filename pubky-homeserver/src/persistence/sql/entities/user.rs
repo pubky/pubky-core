@@ -1,5 +1,6 @@
+use crate::constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT};
 use pubky_common::crypto::PublicKey;
-use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
@@ -140,6 +141,57 @@ impl UserRepository {
         Ok(overview)
     }
 
+    /// Get disabled users in deterministic order using cursor pagination.
+    pub async fn list_disabled<'a>(
+        limit: Option<u16>,
+        cursor: Option<PublicKey>,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<DisabledUsersPage, sqlx::Error> {
+        let page_limit = limit
+            .unwrap_or(DEFAULT_LIST_LIMIT)
+            .min(DEFAULT_MAX_LIST_LIMIT);
+
+        let mut statement = Query::select()
+            .from(USER_TABLE)
+            .column(UserIden::PublicKey)
+            .and_where(Expr::col(UserIden::Disabled).eq(true))
+            .order_by(UserIden::PublicKey, Order::Asc)
+            // Fetch one extra item so we can determine whether a next page exists.
+            .limit((page_limit + 1).into())
+            .to_owned();
+
+        if let Some(cursor) = cursor {
+            statement = statement
+                .and_where(Expr::col(UserIden::PublicKey).gt(cursor.z32()))
+                .to_owned();
+        }
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let rows: Vec<PgRow> = sqlx::query_with(&query, values).fetch_all(con).await?;
+
+        let mut pubkeys = rows
+            .iter()
+            .map(|row| {
+                let raw_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
+                PublicKey::try_from_z32(raw_pubkey.as_str())
+                    .map_err(|e| sqlx::Error::Decode(Box::new(e)))
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()?;
+
+        let next_cursor = if pubkeys.len() > page_limit as usize {
+            pubkeys.pop();
+            pubkeys.last().cloned()
+        } else {
+            None
+        };
+
+        Ok(DisabledUsersPage {
+            users: pubkeys,
+            next_cursor,
+        })
+    }
+
     pub async fn update<'a>(
         user: &UserEntity,
         executor: &mut UnifiedExecutor<'a>,
@@ -210,6 +262,12 @@ pub struct UserOverview {
     pub count: u64,
     pub disabled_count: u64,
     pub total_used_mb: u64,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DisabledUsersPage {
+    pub users: Vec<PublicKey>,
+    pub next_cursor: Option<PublicKey>,
 }
 
 impl FromRow<'_, PgRow> for UserEntity {
@@ -386,5 +444,71 @@ mod tests {
         assert_eq!(overview.count, 3); // Total users
         assert_eq!(overview.disabled_count, 1); // One disabled user
         assert_eq!(overview.total_used_mb, 3072); // 1024 + 2048
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_disabled_with_pagination() {
+        let db = SqlDb::test().await;
+        let user1_pubkey = Keypair::random().public_key();
+        let user2_pubkey = Keypair::random().public_key();
+        let user3_pubkey = Keypair::random().public_key();
+        let user4_pubkey = Keypair::random().public_key();
+
+        let mut user1 = UserRepository::create(&user1_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let mut user2 = UserRepository::create(&user2_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let mut user3 = UserRepository::create(&user3_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let user4 = UserRepository::create(&user4_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        user1.disabled = true;
+        user2.disabled = true;
+        user3.disabled = true;
+        UserRepository::update(&user1, &mut db.pool().into())
+            .await
+            .unwrap();
+        UserRepository::update(&user2, &mut db.pool().into())
+            .await
+            .unwrap();
+        UserRepository::update(&user3, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let page1 = UserRepository::list_disabled(Some(2), None, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(page1.users.len(), 2);
+        assert!(page1.next_cursor.is_some());
+
+        let page2 =
+            UserRepository::list_disabled(Some(2), page1.next_cursor, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(page2.users.len(), 1);
+        assert!(page2.next_cursor.is_none());
+
+        let mut seen = page1
+            .users
+            .iter()
+            .chain(page2.users.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        seen.sort_by_key(|pk| pk.z32());
+
+        let mut expected = vec![user1.public_key, user2.public_key, user3.public_key];
+        expected.sort_by_key(|pk| pk.z32());
+
+        assert_eq!(seen, expected);
+        assert!(
+            !seen.contains(&user4.public_key),
+            "enabled user must not be listed"
+        );
     }
 }
