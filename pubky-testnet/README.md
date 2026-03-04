@@ -12,7 +12,7 @@ For testing without a separate Postgres installation, enable the `embedded-postg
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.7", features = ["embedded-postgres"] }
+pubky-testnet = { version = "0.6", features = ["embedded-postgres"] }
 ```
 
 ```rust,no_run
