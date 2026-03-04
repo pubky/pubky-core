@@ -19,26 +19,46 @@
     - Assign a reviewer. Every PR needs to be reviewed at least once. More reviews are possible on request.
 5. Always squash the PR when merging. One commit == one feature/fix.
 
+## Versioning
 
-## Releasing a crate
+### Unified Version Policy
 
-1. Bump the crate version: `./.scripts/set-version.sh $VERSION crate-name`
-   - Example: `./.scripts/set-version.sh 0.7.0 pubky-testnet`
-2. **If the crate depends on other workspace crates that changed, update those dependency versions in `Cargo.toml`.**
-3. Update the `CHANGELOG.md` with the new version
-4. Create and merge a PR with the version bump titled: `chore: crate-name vx.x.x`.
-5. Publish the crate: `./.scripts/publish-libs.sh crate-name`
-   - Example: `./.scripts/publish-libs.sh pubky-testnet`
+The following crates are released together on the same version schedule:
 
-**Note:** Dependencies must be published before dependents. For example, if `pubky-homeserver` needs a new version of `pubky-common`, publish `pubky-common` first, then update the version in `pubky-homeserver/Cargo.toml`, then publish `pubky-homeserver`.
+- `pubky-sdk`
+- `pubky-homeserver`
+- `pubky-testnet`
+- `pubky-common`
 
-### Releasing pubky-homeserver
+**All four crates always share the same version number.** When any of these crates is released, all are released together with the same version.
 
-`pubky-homeserver` is the only crate that needs a GitHub release with binary artifacts (other crates are libraries consumed via crates.io/npm).
+This policy exists for **clarity and compatibility guarantees**:
 
-After publishing to crates.io, create a [new Github release](https://github.com/pubky/pubky-core/releases/new):
-- Tag: `vx.x.x`
-- Title: `vx.x.x`
-- Description: Changelog for this release.
-- Upload artifacts from the [build-artifacts.yml workflow](./.github/workflows/build-artifacts.yml).
-  You can find them in [Github Actions](https://github.com/pubky/pubky-core/actions?query=branch%3Amain) for the main commit.
+1. **Compatibility assurance**: When `pubky-sdk` and `pubky-homeserver` share the same version (e.g., both at `0.6.0`), users know they are compatible and jointly tested. There's no guesswork about which SDK version works with which homeserver.
+
+2. **Testing clarity**: As a developer, your production code uses `pubky::Client` and your tests use `pubky_testnet::Testnet`. When both are at `0.7.0`, you know your tests exercise the exact same client behavior you'll get in production.
+
+### What If Only One Crate Needs Changes?
+
+If a change affects only one crate (e.g., a testnet-only feature), we still release all crates together:
+
+- **Minor changes**: Wait to bundle with other changes, or release all crates with the patch bump.
+- **Urgent changes**: Consider a pre-release version like `0.6.1-rc.1` if you absolutely cannot wait. This signals "this is not a full release" while keeping versions aligned.
+
+**Do not** release crates independently. The short-term convenience is not worth the long-term confusion it causes for users trying to match compatible versions.
+
+### Release Process
+
+1. Merge all PRs in the main branch that you want to include in the next version.
+2. Update versions of all crates and npm package with `./.scripts/set-version.sh $NEW_SEMVER_VERSION`.
+3. Create a PR with the title: `chore: vx.x.x`.
+4. Let the PR review and squash + merge.
+5. Publish crates and npm package.
+  - Checkout the `main` branch with the new version merged.
+  - Run `./.scripts/publish-libs.sh`.
+6. Create a [new Github release](https://github.com/pubky/pubky-core/releases/new).
+    - Tag: `vx.x.x`
+    - Title: `vx.x.x`
+    - Description: Changelog for the current version.
+    - Upload the different artifacts created by the [build-artifacts.yml workflow](./.github/workflows/build-artifacts.yml).
+    You can find them in [Github Actions](https://github.com/pubky/pubky-core/actions?query=branch%3Amain) for the new main commit.
