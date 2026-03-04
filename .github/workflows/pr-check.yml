@@ -275,8 +275,13 @@ jobs:
           profile: minimal
           toolchain: 1.89
           override: true
-      - name: Cache
+      - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+      - name: Cache Embedded-postgres binaries
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/pubky-testnet/postgresql
+          key: postgres-embedded-${{ runner.os }}
       - name: Run embedded postgres tests
         run: |
           cargo test -p pubky-testnet \
