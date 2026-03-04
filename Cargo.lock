@@ -4143,6 +4143,7 @@ dependencies = [
 name = "pubky-wasm"
 version = "0.7.0-rc.3"
 dependencies = [
+ "base64 0.22.1",
  "console_log",
  "futures-util",
  "getrandom 0.3.4",
@@ -4160,7 +4161,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
- "wasm-streams 0.5.0",
+ "wasm-streams 0.4.2",
  "web-sys",
 ]
 

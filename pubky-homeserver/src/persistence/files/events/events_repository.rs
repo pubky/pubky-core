@@ -1,6 +1,4 @@
-use std::{fmt::Display, str::FromStr};
-
-use pubky_common::crypto::Hash;
+use pubky_common::events::{EventCursor, EventType};
 use pubky_common::timestamp::Timestamp;
 use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
@@ -23,41 +21,6 @@ use crate::{
 };
 
 pub const EVENT_TABLE: &str = "events";
-
-/// Cursor for pagination in event queries.
-///
-/// Note: Uses `u64` internally, but Postgres BIGINT is signed (`i64`).
-/// sea_query/sqlx binds `u64` values, which works correctly as long as
-/// IDs stay within `i64::MAX` (~9.2 quintillion). Since event IDs are
-/// auto-incrementing from 1, this is not a practical concern.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EventCursor(u64);
-
-impl EventCursor {
-    /// Create a new cursor from an event ID
-    pub fn new(id: u64) -> Self {
-        Self(id)
-    }
-
-    /// Get the underlying ID value
-    pub fn id(&self) -> u64 {
-        self.0
-    }
-}
-
-impl Display for EventCursor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for EventCursor {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(EventCursor(s.parse()?))
-    }
-}
 
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository;
@@ -309,37 +272,9 @@ pub enum EventIden {
     ContentHash,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum EventType {
-    Put { content_hash: Hash },
-    Delete,
-}
-
-impl EventType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            EventType::Put { .. } => "PUT",
-            EventType::Delete => "DEL",
-        }
-    }
-
-    pub fn content_hash(&self) -> Option<&Hash> {
-        match self {
-            EventType::Put { content_hash } => Some(content_hash),
-            EventType::Delete => None,
-        }
-    }
-}
-
-impl Display for EventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use pubky_common::crypto::Keypair;
+    use pubky_common::crypto::{Hash, Keypair};
 
     use crate::{
         persistence::sql::{user::UserRepository, SqlDb},
@@ -355,12 +290,12 @@ mod tests {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
 
-        // Test create user
+        // Create user
         let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
             .await
             .unwrap();
 
-        // Test create session
+        // Create events
         for _ in 0..10 {
             let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new("/test").unwrap());
             let _ = EventRepository::create(
@@ -375,7 +310,7 @@ mod tests {
             .unwrap();
         }
 
-        // Test get session
+        // Test get events by cursor
         let events = EventRepository::get_by_cursor(
             Some(EventCursor::new(5)),
             Some(4),
@@ -399,13 +334,13 @@ mod tests {
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
 
-        // Test create user
+        // Create user
         let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
             .await
             .unwrap();
 
         let mut timestamp_events = Vec::new();
-        // Test create session
+        // Create events with specific timestamps
         for i in 0..10 {
             let timestamp = Timestamp::now().add(1_000_000 * i); // Add 1s for each event
             let created_at = timestamp_to_sqlx_datetime(&timestamp);
@@ -424,7 +359,7 @@ mod tests {
             timestamp_events.push((timestamp, event.id));
         }
 
-        // Test get session
+        // Test legacy cursor parsing
         for (timestamp, should_be_event_id) in timestamp_events {
             let cursor =
                 EventRepository::parse_cursor(&timestamp.to_string(), &mut db.pool().into())
