@@ -2,12 +2,6 @@
 
 All notable changes to the `pubky-testnet` crate will be documented in this file.
 
-## [0.7.2] - 2026-03-01
-
-### Changed
-
-- Set explicit versions for all workspace dependencies in `Cargo.toml` for better reproducibility when publishing
-
 ## [0.7.1] - 2026-02-27
 
 ### Changed
