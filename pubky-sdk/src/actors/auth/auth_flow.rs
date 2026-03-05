@@ -38,7 +38,7 @@
 //! # use std::time::Duration;
 //! # async fn ui() -> pubky::Result<()> {
 //! let flow = PubkyAuthFlow::builder(&Capabilities::default(), AuthFlowKind::signin())
-//!     .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
+//!     .relay(url::Url::parse("http://localhost:8080/inbox/")?) // your relay
 //!     .start()?; // starts background polling immediately
 //!
 //! // show_qr(flow.authorization_url()); // render QR or deeplink in your UI
@@ -67,7 +67,7 @@ use pubky_common::crypto::random_bytes;
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession, PublicKey,
     actors::{
-        DEFAULT_HTTP_RELAY,
+        DEFAULT_HTTP_RELAY_INBOX,
         auth::{
             auth_subscription::AuthSubscription,
             deep_links::{DeepLink, SigninDeepLink, SignupDeepLink},
@@ -225,7 +225,7 @@ impl PubkyAuthFlowBuilder {
     pub(crate) fn new(caps: Capabilities, auth_kind: AuthFlowKind) -> Self {
         Self {
             caps,
-            base_relay: Url::parse(DEFAULT_HTTP_RELAY)
+            base_relay: Url::parse(DEFAULT_HTTP_RELAY_INBOX)
                 .expect("Should be able to parse the default HTTP relay"),
             client: None,
             auth_kind,

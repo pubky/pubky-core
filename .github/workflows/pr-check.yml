@@ -6,6 +6,21 @@ on:
     branches: [main]
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up MSRV toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "1.89"
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Verify MSRV
+        run: cargo check --workspace --all-features
+
   fmt:
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +85,6 @@ jobs:
             pubky-common,
             pubky-homeserver,
             pubky-testnet,
-            http-relay,
             pkarr-republisher,
             e2e,
           ]

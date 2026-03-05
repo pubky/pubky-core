@@ -3,6 +3,7 @@ name = "pubky"
 description = "Pubky SDK"
 version = "0.6.0"
 edition = "2024"
+rust-version.workspace = true
 authors = [
     "SeverinAlexB <severin@synonym.to>",
     "SHAcollision <shacollision@synonym.to>",
@@ -60,6 +61,7 @@ futures-lite = { version = "2.6.0", default-features = false }
 [dev-dependencies]
 pubky-testnet = { path = "../pubky-testnet" } # used in docstring tests
 httpmock = "0.7"
+http-relay = { workspace = true, features = ["server", "link-compat"] }
 
 [package.metadata.docs.rs]
 all-features = true
@@ -106,7 +108,7 @@ map_err_ignore = "warn"
 redundant_type_annotations = "warn"
 renamed_function_params = "warn"
 semicolon_outside_block = "warn"
-string_to_string = "warn"
+implicit_clone = "warn"
 undocumented_unsafe_blocks = "warn"
 unnecessary_safety_comment = "warn"
 unnecessary_safety_doc = "warn"
