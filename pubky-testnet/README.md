@@ -34,6 +34,8 @@ async fn main() {
 
 The first run will download PostgreSQL binaries (~50-100MB), which are cached for subsequent runs.
 
+> **Important**: If you have multiple tests, see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests) below.
+
 ### Option 2: External PostgreSQL
 
 If you prefer to use an external Postgres instance:
@@ -127,6 +129,79 @@ async fn main() {
     let http_relay = testnet.http_relay();
 }
 ```
+
+## Sharing Embedded Postgres Across Tests
+
+When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts a **separate** PostgreSQL instance.
+
+The recommended pattern is to start **one** embedded postgres instance and share its connection string across all tests:
+
+```rust
+use pubky_testnet::EphemeralTestnet;
+use pubky_testnet::embedded_postgres::EmbeddedPostgres;
+use tokio::sync::OnceCell;
+
+// Shared embedded postgres instance for all tests in this module.
+// Started once, reused by every test via its connection string.
+static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
+
+async fn shared_postgres() -> &'static EmbeddedPostgres {
+    SHARED_PG
+        .get_or_init(|| async {
+            EmbeddedPostgres::start()
+                .await
+                .expect("Failed to start embedded postgres")
+        })
+        .await
+}
+
+#[tokio::test]
+async fn test_one() {
+    let pg = shared_postgres().await;
+    let testnet = EphemeralTestnet::builder()
+        .postgres(pg.connection_string().unwrap())
+        .build()
+        .await
+        .unwrap();
+    // ... test code
+}
+
+#[tokio::test]
+async fn test_two() {
+    let pg = shared_postgres().await;
+    let testnet = EphemeralTestnet::builder()
+        .postgres(pg.connection_string().unwrap())
+        .build()
+        .await
+        .unwrap();
+    // ... test code
+}
+```
+
+Each testnet still gets its own ephemeral database within the shared PostgreSQL instance, so tests remain isolated.
+
+## Troubleshooting
+
+### GitHub Rate Limiting During Binary Download
+
+The embedded PostgreSQL binary is downloaded from GitHub releases. If multiple tests (or repeated test runs) try to download concurrently, you may hit GitHub's API rate limit (60 requests/hour for unauthenticated requests), causing errors like `403 Forbidden` or `rate limit exceeded`.
+
+**Solutions (try in order):**
+
+1. **Set a GitHub token** to raise the rate limit from 60 to 5,000 requests/hour:
+   ```bash
+   export GITHUB_TOKEN=ghp_your_personal_access_token
+   cargo test
+   ```
+   The token does not need any scopes — a classic PAT with no permissions works.
+
+2. **Run a single test first** to populate the cache before running the full suite.
+
+3. **Share one embedded postgres instance** across tests (see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests)).
+
+4. **Wait for the rate limit to reset** (1 hour from first rate-limited request), then retry with one of the above solutions.
+
+**Cache location:** `~/.cache/pubky-testnet/postgresql/` (Linux/macOS). If you suspect a corrupt cache, delete this directory and retry.
 
 ## Binary (Static Testnet)
 
