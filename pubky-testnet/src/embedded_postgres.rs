@@ -14,6 +14,37 @@ use std::time::Duration;
 /// including creating a test database and providing a connection string.
 ///
 /// The embedded Postgres is automatically stopped when this struct is dropped.
+///
+/// # Sharing Across Tests (Recommended)
+///
+/// Each `EmbeddedPostgres::start()` downloads and starts a **separate** PostgreSQL server.
+/// The recommended pattern is to start **one** instance and share its connection string:
+///
+/// ```ignore
+/// use pubky_testnet::embedded_postgres::EmbeddedPostgres;
+/// use tokio::sync::OnceCell;
+///
+/// static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
+///
+/// async fn shared_postgres() -> &'static EmbeddedPostgres {
+///     SHARED_PG
+///         .get_or_init(|| async {
+///             EmbeddedPostgres::start().await.expect("Failed to start embedded postgres")
+///         })
+///         .await
+/// }
+///
+/// #[tokio::test]
+/// async fn my_test() {
+///     let pg = shared_postgres().await;
+///     let testnet = EphemeralTestnet::builder()
+///         .postgres(pg.connection_string().unwrap())
+///         .build()
+///         .await
+///         .unwrap();
+///     // Each testnet gets its own ephemeral database — tests remain isolated.
+/// }
+/// ```
 pub struct EmbeddedPostgres {
     pg: PostgreSQL,
     database_name: String,

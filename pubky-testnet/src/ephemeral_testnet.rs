@@ -130,6 +130,13 @@ impl EphemeralTestnetBuilder {
     ///
     /// **Note**: Cannot be combined with `.postgres()`. If both are set, `build()` will
     /// return an error.
+    ///
+    /// # Multiple Tests
+    ///
+    /// Each call to `.with_embedded_postgres()` starts a separate PostgreSQL server.
+    /// If you have many tests, prefer starting one [`EmbeddedPostgres`](crate::embedded_postgres::EmbeddedPostgres)
+    /// instance and passing its connection string via `.postgres()` instead.
+    /// See [`EmbeddedPostgres`](crate::embedded_postgres::EmbeddedPostgres) docs for the recommended pattern.
     #[cfg(feature = "embedded-postgres")]
     pub fn with_embedded_postgres(mut self) -> Self {
         self.use_embedded_postgres = true;
