@@ -197,7 +197,7 @@ impl AuthSubscription {
         let response = encrypted_channel
             .poll(client, None)
             .await?
-            .expect("Always Some() because no timeout is set");
+            .ok_or(AuthError::RequestExpired)?;
         let token = AuthToken::verify(&response)?;
 
         // ACK: confirms receipt for inbox channels, no-op for link.

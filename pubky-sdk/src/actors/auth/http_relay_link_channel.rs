@@ -12,7 +12,7 @@ use url::Url;
 use crate::{PubkyHttpClient, cross_log, util::check_http_status};
 
 /// Default HTTP relay base when none is supplied.
-/// Deprecated
+#[deprecated(note = "Use `DEFAULT_HTTP_RELAY_INBOX` with `HttpRelayInboxChannel` instead")]
 pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link";
 
 /// Internal poll error.

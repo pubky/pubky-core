@@ -2326,9 +2326,9 @@ dependencies = [
 
 [[package]]
 name = "http-relay"
-version = "0.6.0-rc.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34cb36d62da99760872c38e2b52d3f612f39f4e027304d67a340e46e29ecab5f"
+checksum = "01a248a7bcde42911210738cde3be1651984966a52f88be9ad4c0c036e2ef534"
 dependencies = [
  "anyhow",
  "axum",
@@ -6627,7 +6627,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

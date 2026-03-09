@@ -44,9 +44,10 @@ impl HttpRelayInboxChannel {
             ));
         }
         if channel_id.is_empty() {
-            return Err(crate::errors::Error::Parse(
-                url::ParseError::RelativeUrlWithCannotBeABaseBase,
-            ));
+            return Err(crate::errors::AuthError::Validation(
+                "channel_id must not be empty".into(),
+            )
+            .into());
         }
         Ok(Self {
             base_url,
@@ -304,9 +305,10 @@ impl FromStr for HttpRelayInboxChannel {
             .to_string();
 
         if channel_id.is_empty() {
-            return Err(crate::errors::Error::Parse(
-                url::ParseError::RelativeUrlWithCannotBeABaseBase,
-            ));
+            return Err(crate::errors::AuthError::Validation(
+                "channel_id must not be empty".into(),
+            )
+            .into());
         }
 
         url.path_segments_mut()
@@ -454,11 +456,11 @@ mod tests {
                 assert!(
                     matches!(
                         e,
-                        crate::errors::Error::Parse(
-                            url::ParseError::RelativeUrlWithCannotBeABaseBase
+                        crate::errors::Error::Authentication(
+                            crate::errors::AuthError::Validation(_)
                         )
                     ),
-                    "Expected parse error, got {e:?}"
+                    "Expected validation error, got {e:?}"
                 );
             }
         }
@@ -737,5 +739,26 @@ mod tests {
         let (produce_result, poll_result) = tokio::join!(produce_handle, poll_handle);
         produce_result.unwrap();
         poll_result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_poll_errors_after_max_failures() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path_contains("/inbox/");
+            then.status(500).body("Internal Server Error");
+        });
+
+        let base_url = Url::parse(&format!("{}/inbox", server.base_url())).unwrap();
+        let channel = random_channel(&base_url);
+        let client = PubkyHttpClient::new().unwrap();
+
+        // poll should fail after MAX_FAILURES (3) consecutive 500 errors
+        let result = channel
+            .poll(&client, Some(Duration::from_secs(30)))
+            .await;
+        assert!(result.is_err(), "Expected error after MAX_FAILURES, got {result:?}");
     }
 }
