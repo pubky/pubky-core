@@ -456,9 +456,9 @@ mod tests {
                 assert!(
                     matches!(
                         e,
-                        crate::errors::Error::Authentication(
-                            crate::errors::AuthError::Validation(_)
-                        )
+                        crate::errors::Error::Authentication(crate::errors::AuthError::Validation(
+                            _
+                        ))
                     ),
                     "Expected validation error, got {e:?}"
                 );
@@ -687,10 +687,7 @@ mod tests {
         let channel = random_channel(&inbox_base);
 
         // Zero-duration timeout should return None immediately
-        let result = channel
-            .poll(&client, Some(Duration::ZERO))
-            .await
-            .unwrap();
+        let result = channel.poll(&client, Some(Duration::ZERO)).await.unwrap();
         assert!(result.is_none());
     }
 
@@ -756,9 +753,10 @@ mod tests {
         let client = PubkyHttpClient::new().unwrap();
 
         // poll should fail after MAX_FAILURES (3) consecutive 500 errors
-        let result = channel
-            .poll(&client, Some(Duration::from_secs(30)))
-            .await;
-        assert!(result.is_err(), "Expected error after MAX_FAILURES, got {result:?}");
+        let result = channel.poll(&client, Some(Duration::from_secs(30))).await;
+        assert!(
+            result.is_err(),
+            "Expected error after MAX_FAILURES, got {result:?}"
+        );
     }
 }

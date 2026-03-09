@@ -57,7 +57,10 @@ pub use crate::actors::storage::{
     stats::ResourceStats,
 };
 #[doc(inline)]
-#[allow(deprecated, reason = "Re-exporting deprecated public API for backwards compat")]
+#[allow(
+    deprecated,
+    reason = "Re-exporting deprecated public API for backwards compat"
+)]
 pub use actors::DEFAULT_HTTP_RELAY;
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
 #[doc(inline)]

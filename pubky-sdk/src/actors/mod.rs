@@ -10,7 +10,10 @@ pub use auth::deep_links;
 pub use auth::http_relay_inbox_channel::{
     DEFAULT_HTTP_RELAY_INBOX, EncryptedHttpRelayInboxChannel, HttpRelayInboxChannel,
 };
-#[allow(deprecated, reason = "Re-exporting deprecated public API for backwards compat")]
+#[allow(
+    deprecated,
+    reason = "Re-exporting deprecated public API for backwards compat"
+)]
 pub use auth::http_relay_link_channel::DEFAULT_HTTP_RELAY;
 pub use event_stream::{Event, EventCursor, EventStreamBuilder, EventType};
 pub use pkdns::Pkdns;

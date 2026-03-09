@@ -1,5 +1,5 @@
 /// HTTP relay link channel implementation. Internal struct.
-/// This is the old version of the channel used for auth flows. 
+/// This is the old version of the channel used for auth flows.
 /// By default, it is already replaced by the inbox channel.
 /// Therefore, it can be removed in the future in a breaking change.
 use std::{fmt::Display, str::FromStr, time::Duration};
