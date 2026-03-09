@@ -308,6 +308,43 @@ mod tests {
     use super::*;
     use crate::Keypair;
 
+    #[test]
+    fn is_link_url_with_link_path() {
+        let url = Url::parse("https://relay.example.com/link").unwrap();
+        assert!(is_link_url(&url));
+    }
+
+    #[test]
+    fn is_link_url_with_link_trailing_slash() {
+        let url = Url::parse("https://relay.example.com/link/").unwrap();
+        assert!(is_link_url(&url));
+    }
+
+    #[test]
+    fn is_link_url_with_inbox_path() {
+        let url = Url::parse("https://relay.example.com/inbox").unwrap();
+        assert!(!is_link_url(&url));
+    }
+
+    #[test]
+    fn is_link_url_with_nested_link_path() {
+        let url = Url::parse("https://relay.example.com/api/v1/link").unwrap();
+        assert!(is_link_url(&url));
+    }
+
+    #[test]
+    fn is_link_url_with_root_path() {
+        let url = Url::parse("https://relay.example.com/").unwrap();
+        assert!(!is_link_url(&url));
+    }
+
+    #[test]
+    fn is_link_url_with_link_prefix_not_suffix() {
+        // "linkage" ends with "linkage", not "/link"
+        let url = Url::parse("https://relay.example.com/linkage").unwrap();
+        assert!(!is_link_url(&url));
+    }
+
     #[tokio::test]
     async fn subscribe_to_auth_token() {
         // Start a local relay so the test doesn't depend on production.

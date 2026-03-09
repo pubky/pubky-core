@@ -636,6 +636,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_check_ack_nonexistent_channel() {
+        let (_relay, inbox_base) = start_relay().await;
+        let client = PubkyHttpClient::new().unwrap();
+        let channel = random_channel(&inbox_base);
+
+        // No message was ever produced, so the channel doesn't exist.
+        let status = channel.check_ack(&client).await.unwrap();
+        assert_eq!(status, None);
+    }
+
+    #[tokio::test]
+    async fn test_await_ack_nonexistent_channel() {
+        let (_relay, inbox_base) = start_relay().await;
+        let client = PubkyHttpClient::new().unwrap();
+        let channel = random_channel(&inbox_base);
+
+        // No message produced → channel doesn't exist → Ok(None)
+        let result = channel
+            .await_ack(&client, Some(Duration::from_secs(2)))
+            .await
+            .unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_await_ack_server_timeout() {
+        let (_relay, inbox_base) = start_relay().await;
+        let client = PubkyHttpClient::new().unwrap();
+        let channel = random_channel(&inbox_base);
+
+        // Produce a message but never ACK it.
+        channel.produce(&client, b"no ack coming").await.unwrap();
+
+        // await_ack with a short client timeout should return Some(false)
+        // (either client timeout or server 408).
+        let result = channel
+            .await_ack(&client, Some(Duration::from_millis(500)))
+            .await
+            .unwrap();
+        assert_eq!(result, Some(false));
+    }
+
+    #[tokio::test]
+    async fn test_poll_returns_none_on_zero_timeout() {
+        let (_relay, inbox_base) = start_relay().await;
+        let client = PubkyHttpClient::new().unwrap();
+        let channel = random_channel(&inbox_base);
+
+        // Zero-duration timeout should return None immediately
+        let result = channel
+            .poll(&client, Some(Duration::ZERO))
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_poll_succeeds_after_delayed_produce() {
+        let (_relay, inbox_base) = start_relay().await;
+        let client = PubkyHttpClient::new().unwrap();
+        let channel = random_channel(&inbox_base);
+
+        // Produce after a delay — poll should retry on timeout and succeed.
+        let chan = channel.clone();
+        let produce_handle = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let client = PubkyHttpClient::new().unwrap();
+            chan.produce(&client, b"delayed msg").await.unwrap();
+        });
+
+        let result = channel
+            .poll(&client, Some(Duration::from_secs(10)))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, b"delayed msg");
+
+        produce_handle.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn test_encrypted_concurrent() {
         let (_relay, inbox_base) = start_relay().await;
         let encrypted_channel = EncryptedHttpRelayInboxChannel::random_secret(inbox_base).unwrap();
