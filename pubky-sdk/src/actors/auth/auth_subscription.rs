@@ -4,6 +4,7 @@ use futures_util::future::{AbortHandle, Abortable};
 
 use url::Url;
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::{
     AuthToken, PubkyHttpClient, PubkySession,
     actors::{
@@ -26,11 +27,13 @@ use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
 /// - Paths ending with `/link` or `/link/` → [`Link`](Self::Link)
 /// - Everything else (including `/inbox`) → [`Inbox`](Self::Inbox)
 #[derive(Clone)]
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 enum EncryptedAuthChannel {
     Inbox(EncryptedHttpRelayInboxChannel),
     Link(EncryptedHttpRelayLinkChannel),
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl EncryptedAuthChannel {
     /// Poll the underlying channel for a message.
     async fn poll(
@@ -54,6 +57,7 @@ impl EncryptedAuthChannel {
     }
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl fmt::Display for EncryptedAuthChannel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -63,6 +67,7 @@ impl fmt::Display for EncryptedAuthChannel {
     }
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl fmt::Debug for EncryptedAuthChannel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -219,6 +224,7 @@ pub struct AuthSubscriptionBuilder {
     client: Option<PubkyHttpClient>,
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl AuthSubscriptionBuilder {
     pub(crate) fn new(secret: [u8; 32]) -> Self {
         Self {

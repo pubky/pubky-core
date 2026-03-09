@@ -1,3 +1,7 @@
+/// HTTP relay link channel implementation. Internal struct.
+/// This is the old version of the channel used for auth flows. 
+/// By default, it is already replaced by the inbox channel.
+/// Therefore, it can be removed in the future in a breaking change.
 use std::{fmt::Display, str::FromStr, time::Duration};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -8,6 +12,7 @@ use url::Url;
 use crate::{PubkyHttpClient, cross_log, util::check_http_status};
 
 /// Default HTTP relay base when none is supplied.
+/// Deprecated
 pub const DEFAULT_HTTP_RELAY: &str = "https://httprelay.pubky.app/link";
 
 /// Internal poll error.
@@ -20,6 +25,8 @@ enum PollError {
 /// A HTTP relay link channel is a URL that is used to subscribe to a channel
 /// or produce a message to a channel. Internal struct.
 /// <https://httprelay.io/features/link>/
+/// Deprecated, use `HttpRelayInboxChannel` instead.
+#[deprecated(note = "Use `HttpRelayInboxChannel` instead")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRelayLinkChannel {
     /// The base URL of the relay.
@@ -28,6 +35,7 @@ pub struct HttpRelayLinkChannel {
     channel_id: String,
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl HttpRelayLinkChannel {
     /// Create a new HTTP relay link channel.
     pub fn new(base_url: Url, channel_id: String) -> crate::errors::Result<Self> {
@@ -168,12 +176,14 @@ impl HttpRelayLinkChannel {
     }
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl Display for HttpRelayLinkChannel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_url())
     }
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl FromStr for HttpRelayLinkChannel {
     type Err = crate::errors::Error;
 
@@ -204,13 +214,16 @@ impl FromStr for HttpRelayLinkChannel {
 }
 
 /// A encrypted HTTP relay channel that can produce and consume an encrypted message.
+/// Deprecated, use `EncryptedHttpRelayInboxChannel` instead.
+#[deprecated(note = "Use `EncryptedHttpRelayInboxChannel` instead")]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 pub struct EncryptedHttpRelayLinkChannel {
     channel: HttpRelayLinkChannel,
     secret: [u8; 32],
 }
 
-#[allow(dead_code, reason = "Internal use only")]
+#[allow(dead_code, deprecated, reason = "Internal use only")]
 impl EncryptedHttpRelayLinkChannel {
     pub fn new(relay_base_url: Url, secret: [u8; 32]) -> crate::errors::Result<Self> {
         let channel_id = URL_SAFE_NO_PAD.encode(hash(&secret).as_bytes());
@@ -264,6 +277,7 @@ impl EncryptedHttpRelayLinkChannel {
     }
 }
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 impl Display for EncryptedHttpRelayLinkChannel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.channel.to_url())
@@ -271,6 +285,7 @@ impl Display for EncryptedHttpRelayLinkChannel {
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
 mod tests {
     use pubky_common::crypto::random_bytes;
 
