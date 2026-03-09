@@ -70,8 +70,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let entry_path = ensure_valid_path(path)?;
-        self.inner.read(entry_path.as_str(), args).await
+        self.inner.read(path, args).await
     }
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
@@ -104,8 +103,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        let entry_path = ensure_valid_path(path)?;
-        self.inner.stat(entry_path.as_str(), args).await
+        self.inner.stat(path, args).await
     }
 
     async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
@@ -405,6 +403,20 @@ mod tests {
                 .write("test.txt", vec![0; 10])
                 .await
                 .expect_err("Should fail because the path doesn't start with a pubkey");
+
+            // Read-only operations (stat, read) should not enforce path validation,
+            // since the quota layer only needs to gate write operations.
+            // These must work on any path, including root and non-pubkey directories.
+            operator
+                .stat("/")
+                .await
+                .expect("stat on root should succeed");
+            // stat on a non-existent non-pubkey path should return NotFound,
+            let err = operator
+                .stat("some_dir/")
+                .await
+                .expect_err("should fail because path doesn't exist");
+            assert_eq!(err.kind(), opendal::ErrorKind::NotFound);
         }
     }
 
