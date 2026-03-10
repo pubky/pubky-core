@@ -173,7 +173,9 @@ impl Drop for AdminServer {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::Method;
     use axum_test::TestServer;
+    use base64::Engine;
 
     use crate::persistence::files::FileService;
 
@@ -229,5 +231,106 @@ mod tests {
             .expect_success()
             .await;
         response.assert_status_ok();
+    }
+
+    fn auth_header() -> String {
+        // AppState is created with password "" in create_test_server
+        let auth = base64::engine::general_purpose::STANDARD.encode("admin:");
+        format!("Basic {auth}")
+    }
+
+    /// PROPFIND and GET on /dav/ root should succeed.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_dav_root_propfind_and_get() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let auth_value = auth_header();
+
+        let propfind = Method::from_bytes(b"PROPFIND").unwrap();
+        let response = server
+            .method(propfind, "/dav/")
+            .add_header("Authorization", auth_value.as_str())
+            .add_header("Depth", "1")
+            .expect_success()
+            .await;
+        // WebDAV PROPFIND returns 207 Multi-Status on success
+        response.assert_status(axum::http::StatusCode::MULTI_STATUS);
+
+        let response = server
+            .get("/dav/")
+            .add_header("Authorization", auth_value.as_str())
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+    }
+
+    /// PUT a file via WebDAV, GET it back, then DELETE it.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_dav_put_get_delete_file() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let auth_value = auth_header();
+
+        // Register a user so writes are accepted by the entry layer
+        let keypair = Keypair::from_secret(&[0; 32]);
+        let pubkey = keypair.public_key();
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let file_content = b"hello webdav";
+        let file_url = format!("/dav/{}/pub/test.txt", pubkey.z32());
+
+        // PUT a file
+        let response = server
+            .put(&file_url)
+            .add_header("Authorization", auth_value.as_str())
+            .bytes(file_content.to_vec().into())
+            .expect_success()
+            .await;
+        response.assert_status(axum::http::StatusCode::CREATED);
+
+        // GET it back
+        let response = server
+            .get(&file_url)
+            .add_header("Authorization", auth_value.as_str())
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+        assert_eq!(response.as_bytes().as_ref(), file_content);
+
+        // PROPFIND on the user's pub directory should list the file
+        let propfind = Method::from_bytes(b"PROPFIND").unwrap();
+        let dir_url = format!("/dav/{}/pub/", pubkey.z32());
+        let response = server
+            .method(propfind, &dir_url)
+            .add_header("Authorization", auth_value.as_str())
+            .add_header("Depth", "1")
+            .expect_success()
+            .await;
+        response.assert_status(axum::http::StatusCode::MULTI_STATUS);
+        let body = response.text();
+        assert!(body.contains("test.txt"), "PROPFIND should list the file");
+
+        // DELETE the file
+        let response = server
+            .delete(&file_url)
+            .add_header("Authorization", auth_value.as_str())
+            .expect_success()
+            .await;
+        response.assert_status(axum::http::StatusCode::NO_CONTENT);
+
+        // GET should now return 404
+        let response = server
+            .get(&file_url)
+            .add_header("Authorization", auth_value.as_str())
+            .expect_failure()
+            .await;
+        response.assert_status(axum::http::StatusCode::NOT_FOUND);
     }
 }
