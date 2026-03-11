@@ -4,6 +4,7 @@ use pubky_common::crypto::Hash;
 use pubky_common::timestamp::Timestamp;
 use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
+use serde::{Deserialize, Serialize};
 use sqlx::{
     postgres::PgRow,
     types::chrono::{DateTime, Utc},
@@ -309,7 +310,7 @@ pub enum EventIden {
     ContentHash,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum EventType {
     Put { content_hash: Hash },
     Delete,
