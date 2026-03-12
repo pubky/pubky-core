@@ -2,7 +2,7 @@
 name = "e2e"
 edition.workspace = true
 rust-version.workspace = true
-version = "0.7.0-rc.1"
+version = "0.7.0-rc.3"
 publish = false
 
 [dependencies]

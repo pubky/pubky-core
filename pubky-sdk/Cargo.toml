@@ -1,7 +1,7 @@
 [package]
 name = "pubky"
 description = "Pubky SDK"
-version = "0.7.0-rc.2"
+version = "0.7.0-rc.3"
 edition = "2024"
 rust-version.workspace = true
 authors = [
@@ -29,7 +29,7 @@ default = []
 json = ["dep:serde", "reqwest/json"]
 
 [dependencies]
-pubky-common = { path = "../pubky-common", version = "0.6.0" }
+pubky-common = { path = "../pubky-common" }
 thiserror.workspace = true
 eventsource-stream = "0.2.3"
 url.workspace = true
