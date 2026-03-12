@@ -201,7 +201,10 @@ impl AuthSubscription {
         let token = AuthToken::verify(&response)?;
 
         // ACK: confirms receipt for inbox channels, no-op for link.
-        encrypted_channel.ack(client).await?;
+        // Best-effort: a failed ACK should not invalidate a verified token.
+        if let Err(e) = encrypted_channel.ack(client).await {
+            cross_log!(warn, "Inbox ACK failed (non-fatal): {e}");
+        }
 
         Ok(token)
     }
