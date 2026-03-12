@@ -1,5 +1,5 @@
 use crate::persistence::{
-    files::events::{events_repository::EventCursor, EventEntity, EventRepository, EventType},
+    files::events::{EventCursor, EventEntity, EventRepository, EventType},
     sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;

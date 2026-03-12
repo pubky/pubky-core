@@ -60,6 +60,7 @@ reqwest = { workspace = true, features = [
     "stream",
 ] }
 wasm-streams = "0.5"
+base64 = "0.22"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

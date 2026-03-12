@@ -65,7 +65,7 @@ test("eventStream: comprehensive", async (t) => {
       t.equal(typeof event.eventType, "string", "event type should be string");
       t.ok(event.resource, "event should have a resource");
       t.ok(event.resource.path, "resource should have a path");
-      t.ok(event.cursor, "event should have a cursor");
+      t.equal(typeof event.cursor, "string", "cursor should be string");
       t.equal(event.eventType, "PUT", "first 10 events should all be PUT");
       t.ok(event.contentHash, "PUT events should have contentHash");
     }
