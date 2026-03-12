@@ -179,6 +179,7 @@ impl StaticTestnet {
     async fn run_fixed_http_relay(&mut self) -> anyhow::Result<()> {
         let relay = HttpRelay::builder()
             .http_port(15412) // Random available port
+            .cors_allow_all(true)
             .run()
             .await?;
         self.testnet.http_relays.push(relay);

@@ -129,6 +129,7 @@ impl Testnet {
     pub async fn create_http_relay(&mut self) -> Result<&HttpRelay> {
         let relay = HttpRelay::builder()
             .http_port(0) // Random available port
+            .cors_allow_all(true)
             .run()
             .await?;
         self.http_relays.push(relay);
