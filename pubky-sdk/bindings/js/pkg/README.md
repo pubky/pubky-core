@@ -206,7 +206,7 @@ const pubky = new Pubky();
 const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 
 // Optional relay; defaults to Synonym-hosted relay if omitted
-const relay = "https://httprelay.pubky.app/link/"; // optional (defaults to this)
+const relay = "https://httprelay.pubky.app/inbox/"; // optional (defaults to this)
 
 // Start the auth polling
 const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin(), relay);

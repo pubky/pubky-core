@@ -73,7 +73,7 @@ npm run authenticator -- </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--ho
 Example URL looks like:
 
 ```
-pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=<...>&relay=http://localhost:15412/link
+pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=<...>&relay=http://localhost:15412/inbox
 ```
 
 You can run a Browser 3rd party app that requires authentication with [**3rd-party-app**](/examples/rust/3-auth_flow/3rd-party-app)

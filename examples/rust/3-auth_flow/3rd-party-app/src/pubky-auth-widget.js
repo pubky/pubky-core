@@ -5,8 +5,8 @@ import QRCode from "qrcode";
 // ✅ Import the SDK as an ES module (no window global)
 import * as pubky from "@synonymdev/pubky";
 
-const DEFAULT_HTTP_RELAY = "https://httprelay.staging.pubky.app/link/";
-const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
+const DEFAULT_HTTP_RELAY = "https://httprelay.staging.pubky.app/inbox/";
+const TESTNET_HTTP_RELAY = "http://localhost:15412/inbox";
 
 /**
  * <pubky-auth-widget>

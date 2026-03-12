@@ -57,7 +57,7 @@ pubkyauth:///
  for example 
  ```
 pubkyauth:///
-  ?relay=https://demo.httprelay.io/link
+  ?relay=https://httprelay.pubky.app/inbox
   &caps=/pub/pubky.app/:rw,/pub/example.com/nested:rw
   &secret=mAa8kGmlrynGzQLteDVW6-WeUGnfvHTpEmbNerbWfPI
  ```
