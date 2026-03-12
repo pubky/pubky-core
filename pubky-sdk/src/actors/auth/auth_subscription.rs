@@ -80,7 +80,7 @@ impl fmt::Debug for EncryptedAuthChannel {
 /// Returns `true` if the URL path ends with `/link` or `/link/`.
 fn is_link_url(url: &Url) -> bool {
     let path = url.path().trim_end_matches('/');
-    path.ends_with("/link") || path == "link"
+    path.ends_with("/link")
 }
 
 /// **auth subscription** (long polling for a single auth token) you *hold on to*.
