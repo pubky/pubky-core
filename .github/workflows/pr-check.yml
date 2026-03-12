@@ -6,6 +6,21 @@ on:
     branches: [main]
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up MSRV toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: "1.89"
+          override: true
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Verify MSRV
+        run: cargo check --workspace --all-features
+
   fmt:
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +85,6 @@ jobs:
             pubky-common,
             pubky-homeserver,
             pubky-testnet,
-            http-relay,
             pkarr-republisher,
             e2e,
           ]
@@ -231,7 +245,7 @@ jobs:
         working-directory: pubky-sdk/bindings/js/pkg
         run: npm run testnet > testnet.log 2>&1 &
 
-      - name: Wait for testnet homeserver
+      - name: Wait for testnet homeserver and HTTP relay
         run: |
           timeout=180
           count=0
@@ -245,6 +259,18 @@ jobs:
             count=$((count + 1))
           done
           echo "Testnet homeserver is ready."
+
+          count=0
+          until nc -zv 127.0.0.1 15412; do
+            if [ $count -ge $timeout ]; then
+              echo "Timeout: HTTP relay did not start within 3 minutes."
+              exit 1
+            fi
+            echo "Waiting for HTTP relay to be ready... ($count/$timeout)"
+            sleep 1
+            count=$((count + 1))
+          done
+          echo "HTTP relay is ready."
 
       - name: Node tests
         working-directory: pubky-sdk/bindings/js/pkg

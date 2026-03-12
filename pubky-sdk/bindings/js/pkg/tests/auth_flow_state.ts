@@ -2,7 +2,7 @@ import test from "tape";
 import { Pubky, AuthFlowKind } from "../index.js";
 import { assertPubkyError } from "./utils.js";
 
-const DEAD_RELAY = "http://127.0.0.1:9/link"; // port 9 is typically closed; yields quick connection refusal
+const DEAD_RELAY = "http://127.0.0.1:9/inbox"; // port 9 is typically closed; yields quick connection refusal
 
 // Ensure a second awaitApproval call returns a ClientStateError instead of panicking the WASM layer.
 test("AuthFlow: repeat awaitApproval reports ClientStateError", async (t) => {

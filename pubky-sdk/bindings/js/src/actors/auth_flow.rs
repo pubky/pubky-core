@@ -45,7 +45,7 @@ impl AuthFlow {
     /// - `AuthFlowKind.signup(homeserverPublicKey, signupToken)` - Sign up for a new account.
     ///
     /// @param {string} [relay]
-    /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/link/"`.
+    /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/inbox/"`.
     /// Defaults to the default Synonym-hosted relay when omitted.
     ///
     /// @returns {AuthFlow}

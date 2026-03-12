@@ -180,7 +180,7 @@ mod tests {
             .read_write("/")
             .read("/test")
             .finish();
-        let relay = Url::parse("https://httprelay.pubky.app/link/").unwrap();
+        let relay = Url::parse("https://httprelay.pubky.app/inbox/").unwrap();
         let secret = [123; 32];
         let homeserver =
             PublicKey::from_str("5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo").unwrap();
@@ -212,7 +212,7 @@ mod tests {
             .read_write("/")
             .read("/test")
             .finish();
-        let relay = Url::parse("https://httprelay.pubky.app/link/").unwrap();
+        let relay = Url::parse("https://httprelay.pubky.app/inbox/").unwrap();
         let secret = [123; 32];
         let homeserver =
             PublicKey::from_str("5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo").unwrap();

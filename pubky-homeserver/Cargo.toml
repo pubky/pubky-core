@@ -3,6 +3,7 @@ name = "pubky-homeserver"
 description = "Pubky core's homeserver."
 version = "0.6.0"
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 homepage.workspace = true

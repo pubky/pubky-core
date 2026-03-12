@@ -16,10 +16,10 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 );
 
 // relay base (no trailing slash is fine; the flow will append the channel id)
-const TESTNET_HTTP_RELAY = "http://localhost:15412/link";
+const TESTNET_HTTP_RELAY = "http://localhost:15412/inbox";
 
 test("signin deep link valid", async (t) => {
-  let url = "pubkyauth://signin?caps=/pub/pubky.app/:rw&relay=http://localhost:15412/link&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
+  let url = "pubkyauth://signin?caps=/pub/pubky.app/:rw&relay=http://localhost:15412/inbox&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
   const deepLink = SigninDeepLink.parse(url);
   t.equal(deepLink.capabilities, "/pub/pubky.app/:rw");
   t.equal(deepLink.baseRelayUrl, TESTNET_HTTP_RELAY);
@@ -32,7 +32,7 @@ test("signin deep link valid", async (t) => {
 
 
 test("signup deep link valid", async (t) => {
-  let url = "pubkyauth://signup?caps=/pub/pubky.app/:rw&relay=http://localhost:15412/link&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo&st=1234567890";
+  let url = "pubkyauth://signup?caps=/pub/pubky.app/:rw&relay=http://localhost:15412/inbox&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo&st=1234567890";
   const deepLink = SignupDeepLink.parse(url);
   t.equal(deepLink.capabilities, "/pub/pubky.app/:rw");
   t.equal(deepLink.baseRelayUrl, TESTNET_HTTP_RELAY);

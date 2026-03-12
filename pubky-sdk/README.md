@@ -236,7 +236,7 @@ let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read("pub/example.com/").finish();
 let auth_flow = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
     .client(pubky.client().clone())
-    .relay(url::Url::parse("http://localhost:8080/link/")?) // your relay
+    .relay(url::Url::parse("http://localhost:8080/inbox/")?) // your relay
     .start()?;
 # Ok(()) }
 ```

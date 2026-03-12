@@ -625,7 +625,7 @@ mod tests {
         let event = parse_sse_event(&sse).unwrap();
 
         // Empty string after prefix is still captured
-        assert_eq!(event.content_hash, Some("".to_string()));
+        assert_eq!(event.content_hash, Some(String::new()));
     }
 
     #[test]
@@ -637,7 +637,7 @@ mod tests {
 
         let event = parse_sse_event(&sse).unwrap();
 
-        assert_eq!(event.cursor.id(), 9223372036854775807u64);
+        assert_eq!(event.cursor.id(), 9_223_372_036_854_775_807_u64);
     }
 
     #[test]

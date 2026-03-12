@@ -78,7 +78,7 @@ impl Pubky {
     /// Examples:
     /// - `AuthFlowKind.signin()` - Sign in to an existing account.
     /// - `AuthFlowKind.signup(homeserverPublicKey, signupToken)` - Sign up for a new account.
-    /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/link/"`).
+    /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/inbox/"`).
     /// @returns {AuthFlow}
     /// A running auth flow. Show `authorizationUrl` as QR/deeplink,
     /// then `awaitApproval()` to obtain a `Session`.

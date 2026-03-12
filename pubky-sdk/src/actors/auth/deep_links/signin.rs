@@ -137,7 +137,7 @@ mod tests {
             .read_write("/")
             .read("/test")
             .finish();
-        let relay = Url::parse("https://httprelay.pubky.app/link/").unwrap();
+        let relay = Url::parse("https://httprelay.pubky.app/inbox/").unwrap();
         let secret = [123; 32];
         let deep_link = SigninDeepLink::new(capabilities.clone(), relay.clone(), secret);
         let deep_link_str = deep_link.to_string();
