@@ -32,11 +32,15 @@ jobs:
       - name: Verify version matches Cargo.toml
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          CARGO_VERSION=$(cargo pkgid -p pubky-homeserver | awk -F# '{print $NF}')
-          if [ "$CARGO_VERSION" != "$VERSION" ]; then
-            echo "::error::Version mismatch: tag is $VERSION but Cargo.toml has $CARGO_VERSION"
-            exit 1
-          fi
+          CRATES=("pubky-common" "pubky-sdk" "pubky-homeserver" "pubky-testnet")
+          for CRATE in "${CRATES[@]}"; do
+            CARGO_VERSION=$(cargo pkgid -p "$CRATE" | awk -F# '{print $NF}')
+            if [ "$CARGO_VERSION" != "$VERSION" ]; then
+              echo "::error::Version mismatch in $CRATE: tag is $VERSION but Cargo.toml has $CARGO_VERSION"
+              exit 1
+            fi
+          done
+          echo "All crate versions match tag: $VERSION"
 
   build-artifacts:
     name: Build Artifacts
