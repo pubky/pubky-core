@@ -3,17 +3,14 @@ use wasm_bindgen::prelude::*;
 use web_sys::ReadableStream;
 
 use crate::wrappers::event_stream::Event;
-use crate::wrappers::keys::PublicKey;
 
 /// Builder for creating an event stream subscription.
 ///
-/// Construct via `Pubky.eventStream()`.
+/// Construct via `Pubky.eventStreamForUser()` or `Pubky.eventStreamFor()`.
 ///
 /// @example
 /// ```typescript
-/// const stream = await pubky.eventStream()
-///   .addUser(user1Pubkey, null)
-///   .addUser(user2Pubkey, null)
+/// const stream = await pubky.eventStreamForUser(userPubkey, null)
 ///   .live()
 ///   .limit(100)
 ///   .path("/pub/")
@@ -28,39 +25,6 @@ pub struct EventStreamBuilder(pub(crate) pubky::EventStreamBuilder);
 
 #[wasm_bindgen]
 impl EventStreamBuilder {
-    /// Add a user to the event stream subscription.
-    ///
-    /// **Deprecated**: Use `eventStreamForUser()` for single-user streams or
-    /// `addUsers()` for adding multiple users.
-    ///
-    /// You can add up to 50 users total.
-    /// If the user is already in the subscription, their cursor position will be updated.
-    ///
-    /// @param {PublicKey} user - User public key
-    /// @param {string | null} cursor - Optional cursor position (event ID as string) to start from
-    /// @returns {EventStreamBuilder} - Builder for chaining
-    /// @throws {Error} - If trying to add more than 50 users or if cursor is invalid
-    /// @deprecated Use `eventStreamForUser()` or `addUsers()` instead
-    #[wasm_bindgen(js_name = "addUser")]
-    #[allow(deprecated)]
-    pub fn add_user(
-        self,
-        user: &PublicKey,
-        cursor: Option<String>,
-    ) -> Result<EventStreamBuilder, JsValue> {
-        let event_cursor = cursor
-            .map(|c| {
-                c.parse::<pubky::EventCursor>()
-                    .map_err(|e| JsValue::from_str(&format!("Invalid cursor: {e}")))
-            })
-            .transpose()?;
-        let builder = self
-            .0
-            .add_user(user.as_inner(), event_cursor)
-            .map_err(|e| JsValue::from_str(&format!("Failed to add user: {e}")))?;
-        Ok(EventStreamBuilder(builder))
-    }
-
     /// Add multiple users to the event stream subscription at once.
     ///
     /// Each user can have an independent cursor position. If a user already exists,
@@ -154,7 +118,7 @@ impl EventStreamBuilder {
     /// ## Cleanup
     /// To stop a live stream, use the reader's `cancel()` method:
     /// ```typescript
-    /// const stream = await pubky.eventStream().addUser(user, null).live().subscribe();
+    /// const stream = await pubky.eventStreamForUser(user, null).live().subscribe();
     /// const reader = stream.getReader();
     ///
     /// while (true) {

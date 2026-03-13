@@ -155,24 +155,6 @@ impl Pubky {
             .await
     }
 
-    /// Create an event stream builder for multi-user subscriptions.
-    ///
-    /// This allows you to subscribe to Server-Sent Events (SSE) from multiple users'
-    /// events on a homeserver `/events-stream` endpoint. Use `.add_user()` to add
-    /// users (up to 50), then call `.subscribe()`.
-    #[must_use]
-    #[deprecated(
-        since = "0.7.0",
-        note = "Use `event_stream_for_user` for single-user streams or `event_stream_for` for multi-user streams"
-    )]
-    #[allow(
-        deprecated,
-        reason = "This deprecated method calls the deprecated EventStreamBuilder::new"
-    )]
-    pub fn event_stream(&self) -> EventStreamBuilder {
-        EventStreamBuilder::new(self.client.clone())
-    }
-
     /// Create an event stream builder for a single user.
     ///
     /// This is the simplest way to subscribe to events for one user. The homeserver
@@ -228,8 +210,7 @@ impl Pubky {
     /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
     ///
     /// let mut stream = pubky.event_stream_for(&homeserver)
-    ///     .add_user(&user1, None)?
-    ///     .add_user(&user2, None)?
+    ///     .add_users([(&user1, None), (&user2, None)])?
     ///     .subscribe()
     ///     .await?;
     ///

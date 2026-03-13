@@ -173,20 +173,6 @@ impl Pubky {
         Ok(Session(session))
     }
 
-    /// Create an event stream builder for multi-user subscriptions.
-    ///
-    /// This allows you to subscribe to Server-Sent Events (SSE) from multiple users'
-    /// events on a homeserver `/events-stream` endpoint. Use `.addUser()` to add
-    /// users (up to 50), then call `.subscribe()`.
-    ///
-    /// @returns {EventStreamBuilder} A builder to add users and configure the event stream
-    /// @deprecated Use `eventStreamForUser()` for single-user streams or `eventStreamFor()` for multi-user streams
-    #[wasm_bindgen(js_name = "eventStream")]
-    #[allow(deprecated)]
-    pub fn event_stream(&self) -> EventStreamBuilder {
-        EventStreamBuilder(pubky::EventStreamBuilder::new(self.0.client().clone()))
-    }
-
     /// Create an event stream builder for a single user.
     ///
     /// This is the simplest way to subscribe to events for one user. The homeserver

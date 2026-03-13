@@ -84,7 +84,7 @@ pub struct Event {
 
 /// Builder for creating an event stream subscription.
 ///
-/// Construct via [`crate::Pubky::event_stream`] or [`crate::Pubky::event_stream_for`].
+/// Construct via [`crate::Pubky::event_stream_for_user`] or [`crate::Pubky::event_stream_for`].
 #[derive(Clone, Debug)]
 pub struct EventStreamBuilder {
     client: PubkyHttpClient,
@@ -97,23 +97,6 @@ pub struct EventStreamBuilder {
 }
 
 impl EventStreamBuilder {
-    /// Create a new event stream builder.
-    ///
-    /// Typically called via [`crate::Pubky::event_stream`].
-    #[must_use]
-    #[deprecated(since = "0.7.0", note = "Use `for_user` or `for_homeserver` instead")]
-    pub fn new(client: PubkyHttpClient) -> Self {
-        Self {
-            client,
-            users: Vec::new(),
-            homeserver: None,
-            limit: None,
-            live: false,
-            reverse: false,
-            path: None,
-        }
-    }
-
     /// Create an event stream builder for a single user.
     ///
     /// This is the simplest way to subscribe to events for one user. The homeserver
@@ -202,33 +185,6 @@ impl EventStreamBuilder {
         }
     }
 
-    /// Add a user to the event stream subscription.
-    ///
-    /// **Deprecated**: Use [`Self::for_user`] for single-user streams or
-    /// [`Self::add_users`] for adding multiple users.
-    ///
-    /// You can add up to 50 users total. Each user can have an independent cursor position.
-    /// If a user is added who already exists then their cursor value is overwritten with the newest value.
-    ///
-    /// # Errors
-    /// - Returns an error if trying to add more than 50 users
-    #[deprecated(since = "0.7.0", note = "Use `for_user` or `add_users` instead")]
-    pub fn add_user(mut self, user: &PublicKey, cursor: Option<EventCursor>) -> Result<Self> {
-        if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
-            existing.1 = cursor;
-            return Ok(self);
-        }
-
-        if self.users.len() >= 50 {
-            return Err(Error::from(RequestError::Validation {
-                message: "Cannot subscribe to more than 50 users".into(),
-            }));
-        }
-
-        self.users.push((user.clone(), cursor));
-        Ok(self)
-    }
-
     /// Add multiple users to the event stream subscription at once.
     ///
     /// # Errors
@@ -303,7 +259,7 @@ impl EventStreamBuilder {
     /// # Cleanup
     /// To stop the stream, simply drop it. The underlying HTTP connection will be closed.
     /// ```ignore
-    /// let stream = pubky.event_stream().add_user(&user, None)?.live().subscribe().await?;
+    /// let stream = pubky.event_stream_for_user(&user, None).live().subscribe().await?;
     /// // Process some events...
     /// drop(stream); // Connection closed
     /// ```
