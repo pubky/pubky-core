@@ -1,7 +1,7 @@
 [package]
 name = "pubky-testnet"
 description = "A local test network for Pubky Core development."
-version = "0.7.0-rc.3"
+version = "0.7.0-rc.5"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -20,8 +20,8 @@ tokio = { workspace = true, features = ["full"] }
 tracing-subscriber.workspace = true
 url.workspace = true
 
-pubky = { path = "../pubky-sdk", features = ["json"] }
-pubky-common = { path = "../pubky-common" }
+pubky = { path = "../pubky-sdk", features = ["json"] , version = "0.7.0-rc.5" }
+pubky-common = { path = "../pubky-common" , version = "0.7.0-rc.5" }
 pubky-homeserver = { path = "../pubky-homeserver", default-features = false, features = [
     "testing",
 ] }
