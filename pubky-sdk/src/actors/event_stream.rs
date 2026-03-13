@@ -1,12 +1,31 @@
 //! Event stream actor for subscribing to multi-user event feeds.
 //!
 //! This module provides a builder-style API for subscribing to Server-Sent Events (SSE)
-//! from a user's homeserver `/events-stream` endpoint.
+//! from a homeserver's `/events-stream` endpoint.
 //!
-//! IMPORTANT: Only the first User's pubky is used to identify the Homeserver which this code calls.
-//! It is the responsibility of the caller to ensure that all Users added are on the same Homeserver.
+//! # Example: Single user
+//! ```no_run
+//! use pubky::{Pubky, PublicKey};
+//! use futures_util::StreamExt;
 //!
-//! # Example
+//! # async fn example() -> pubky::Result<()> {
+//! let pubky = Pubky::new()?;
+//! let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+//!
+//! let mut stream = pubky.event_stream_for_user(&user, None)
+//!     .live()
+//!     .subscribe()
+//!     .await?;
+//!
+//! while let Some(result) = stream.next().await {
+//!     let event = result?;
+//!     println!("Event: {:?} at {}", event.event_type, event.resource);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Example: Multiple users on the same homeserver
 //! ```no_run
 //! use pubky::{Pubky, PublicKey, EventCursor};
 //! use futures_util::StreamExt;
@@ -16,9 +35,11 @@
 //! let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
 //! let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
 //!
-//! let mut stream = pubky.event_stream()
-//!     .add_user(&user1, None)?
-//!     .add_user(&user2, Some(EventCursor::new(100)))?
+//! // When subscribing to multiple users, specify the homeserver directly
+//! let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+//!
+//! let mut stream = pubky.event_stream_for(&homeserver)
+//!     .add_users([(&user1, None), (&user2, Some(EventCursor::new(100)))])?
 //!     .live()
 //!     .limit(100)
 //!     .path("/pub/")
@@ -33,116 +54,42 @@
 //! # }
 //! ```
 
-use std::fmt::Display;
 use std::pin::Pin;
-use std::str::FromStr;
 
 use crate::PublicKey;
+use base64::Engine;
 use eventsource_stream::Eventsource;
 use futures_util::{Stream, StreamExt};
+use pubky_common::crypto::Hash;
 use reqwest::Method;
 use url::Url;
+
+pub use pubky_common::events::{EventCursor, EventType};
 
 use crate::{
     Pkdns, PubkyHttpClient, PubkyResource, cross_log,
     errors::{Error, RequestError, Result},
 };
 
-/// Cursor for pagination in event queries.
-///
-/// The cursor represents the ID of an event and is used for pagination.
-/// It can be parsed from a string representation of an integer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EventCursor(u64);
-
-impl EventCursor {
-    /// Create a new cursor from an event ID.
-    #[must_use]
-    pub fn new(id: u64) -> Self {
-        Self(id)
-    }
-
-    /// Get the underlying ID value.
-    #[must_use]
-    pub fn id(&self) -> u64 {
-        self.0
-    }
-}
-
-impl Display for EventCursor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for EventCursor {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(EventCursor(s.parse()?))
-    }
-}
-
-impl From<u64> for EventCursor {
-    fn from(id: u64) -> Self {
-        EventCursor(id)
-    }
-}
-
-impl TryFrom<&str> for EventCursor {
-    type Error = std::num::ParseIntError;
-
-    fn try_from(s: &str) -> std::result::Result<Self, Self::Error> {
-        s.parse()
-    }
-}
-
-impl TryFrom<String> for EventCursor {
-    type Error = std::num::ParseIntError;
-
-    fn try_from(s: String) -> std::result::Result<Self, Self::Error> {
-        s.parse()
-    }
-}
-
-/// Type of event in the event stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EventType {
-    /// PUT event - resource created or updated.
-    Put,
-    /// DELETE event - resource deleted.
-    Delete,
-}
-
-impl std::fmt::Display for EventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EventType::Put => write!(f, "PUT"),
-            EventType::Delete => write!(f, "DEL"),
-        }
-    }
-}
-
 /// A single event from the event stream.
 #[derive(Debug, Clone)]
 pub struct Event {
-    /// Type of event (PUT or DEL).
+    /// Type of event (PUT with content hash, or DELETE).
     pub event_type: EventType,
     /// The resource that was created, updated, or deleted.
     pub resource: PubkyResource,
     /// Cursor for pagination (event ID).
     pub cursor: EventCursor,
-    /// Content hash (blake3) in hex format (only for PUT events with available hash).
-    pub content_hash: Option<String>,
 }
 
 /// Builder for creating an event stream subscription.
 ///
-/// Construct via [`crate::Pubky::event_stream`].
+/// Construct via [`crate::Pubky::event_stream_for_user`] or [`crate::Pubky::event_stream_for`].
 #[derive(Clone, Debug)]
 pub struct EventStreamBuilder {
     client: PubkyHttpClient,
     users: Vec<(PublicKey, Option<EventCursor>)>,
+    homeserver: Option<PublicKey>,
     limit: Option<u16>,
     live: bool,
     reverse: bool,
@@ -150,14 +97,42 @@ pub struct EventStreamBuilder {
 }
 
 impl EventStreamBuilder {
-    /// Create a new event stream builder.
+    /// Create an event stream builder for a single user.
     ///
-    /// Typically called via [`crate::Pubky::event_stream`].
+    /// This is the simplest way to subscribe to events for one user. The homeserver
+    /// is automatically resolved from the user's Pkarr record.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey, EventCursor};
+    /// use futures_util::StreamExt;
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    ///
+    /// let mut stream = pubky.event_stream_for_user(&user, None)
+    ///     .live()
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
-    pub fn new(client: PubkyHttpClient) -> Self {
+    pub fn for_user(
+        client: PubkyHttpClient,
+        user: &PublicKey,
+        cursor: Option<EventCursor>,
+    ) -> Self {
         Self {
             client,
-            users: Vec::new(),
+            users: vec![(user.clone(), cursor)],
+            homeserver: None,
             limit: None,
             live: false,
             reverse: false,
@@ -165,29 +140,98 @@ impl EventStreamBuilder {
         }
     }
 
-    /// Add a user to the event stream subscription.
+    /// Create a new event stream builder for a specific homeserver.
     ///
-    /// You can add up to 50 users total. Each user can have an independent cursor position.
-    /// If a user is added who already exists then their cursor value is overwritten with the newest value.
+    /// Use this when you already know the homeserver pubkey, avoiding Pkarr resolution.
+    /// You can obtain a homeserver pubkey via [`crate::Pubky::get_homeserver_of`].
     ///
-    /// IMPORTANT: Only the first added User's pubky is used to identify the Homeserver.
-    /// It is the responsibility of the caller to ensure that all Users added are on the same Homeserver.
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey};
+    /// use futures_util::StreamExt;
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
+    ///
+    /// // When subscribing to multiple users on the same homeserver,
+    /// // specify the homeserver directly to avoid redundant Pkarr lookups
+    /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+    ///
+    /// let mut stream = pubky.event_stream_for(&homeserver)
+    ///     .add_users([(&user1, None), (&user2, None)])?
+    ///     .live()
+    ///     .subscribe()
+    ///     .await?;
+    ///
+    /// while let Some(result) = stream.next().await {
+    ///     let event = result?;
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn for_homeserver(client: PubkyHttpClient, homeserver: &PublicKey) -> Self {
+        Self {
+            client,
+            users: Vec::new(),
+            homeserver: Some(homeserver.clone()),
+            limit: None,
+            live: false,
+            reverse: false,
+            path: None,
+        }
+    }
+
+    /// Add multiple users to the event stream subscription at once.
     ///
     /// # Errors
-    /// - Returns an error if trying to add more than 50 users
-    pub fn add_user(mut self, user: &PublicKey, cursor: Option<EventCursor>) -> Result<Self> {
-        if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
-            existing.1 = cursor;
-            return Ok(self);
-        }
+    /// - Returns an error if the total number of users would exceed 50
+    ///
+    /// # Example
+    /// ```no_run
+    /// use pubky::{Pubky, PublicKey, EventCursor};
+    ///
+    /// # async fn example() -> pubky::Result<()> {
+    /// let pubky = Pubky::new()?;
+    /// let homeserver = PublicKey::try_from("h9m4r...").unwrap();
+    /// let user1 = PublicKey::try_from("o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo").unwrap();
+    /// let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
+    ///
+    /// let users = [
+    ///     (&user1, None),
+    ///     (&user2, Some(EventCursor::new(100))),
+    /// ];
+    ///
+    /// let stream = pubky.event_stream_for(&homeserver)
+    ///     .add_users(users)?
+    ///     .live()
+    ///     .subscribe()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn add_users<'a>(
+        mut self,
+        users: impl IntoIterator<Item = (&'a PublicKey, Option<EventCursor>)>,
+    ) -> Result<Self> {
+        for (user, cursor) in users {
+            // Check if user already exists - update cursor if so
+            if let Some(existing) = self.users.iter_mut().find(|(u, _)| u == user) {
+                existing.1 = cursor;
+                continue;
+            }
 
-        if self.users.len() >= 50 {
-            return Err(Error::from(RequestError::Validation {
-                message: "Cannot subscribe to more than 50 users".into(),
-            }));
-        }
+            if self.users.len() >= 50 {
+                return Err(Error::from(RequestError::Validation {
+                    message: "Cannot subscribe to more than 50 users".into(),
+                }));
+            }
 
-        self.users.push((user.clone(), cursor));
+            self.users.push((user.clone(), cursor));
+        }
         Ok(self)
     }
 
@@ -215,7 +259,7 @@ impl EventStreamBuilder {
     /// # Cleanup
     /// To stop the stream, simply drop it. The underlying HTTP connection will be closed.
     /// ```ignore
-    /// let stream = pubky.event_stream().add_user(&user, None)?.live().subscribe().await?;
+    /// let stream = pubky.event_stream_for_user(&user, None).live().subscribe().await?;
     /// // Process some events...
     /// drop(stream); // Connection closed
     /// ```
@@ -300,16 +344,20 @@ impl EventStreamBuilder {
             }));
         }
 
-        // Resolve homeserver for the first user
-        let (first_user, _) = &self.users[0];
-        let homeserver = Pkdns::with_client(self.client.clone())
-            .get_homeserver_of(first_user)
-            .await
-            .ok_or_else(|| {
-                Error::from(RequestError::Validation {
-                    message: format!("Could not resolve homeserver for user {first_user}"),
-                })
-            })?;
+        // Use pre-set homeserver or resolve from first user
+        let homeserver = if let Some(hs) = &self.homeserver {
+            hs.clone()
+        } else {
+            let (first_user, _) = &self.users[0];
+            Pkdns::with_client(self.client.clone())
+                .get_homeserver_of(first_user)
+                .await
+                .ok_or_else(|| {
+                    Error::from(RequestError::Validation {
+                        message: format!("Could not resolve homeserver for user {first_user}"),
+                    })
+                })?
+        };
 
         cross_log!(
             info,
@@ -338,8 +386,12 @@ impl EventStreamBuilder {
                 Ok(sse_event) => match parse_sse_event(&sse_event) {
                     Ok(event) => Some(Ok(event)),
                     Err(e) => {
-                        cross_log!(warn, "Failed to parse SSE event: {}", e);
-                        Some(Err(e))
+                        // Skip unparseable events rather than failing the entire stream.
+                        // We don't control what homeservers return, and we shouldn't panic
+                        // on unexpected data.
+                        // This also provides forward compatibility for new event types.
+                        cross_log!(error, "Failed to parse SSE event, skipping: {}", e);
+                        None
                     }
                 },
                 Err(e) => {
@@ -402,23 +454,13 @@ impl EventStreamBuilder {
 /// event: PUT
 /// data: pubky://user_pubkey/pub/example.txt
 /// data: cursor: 42
-/// data: content_hash: abc123... (optional)
+/// data: content_hash: <base64 of raw 32-byte blake3 digest> (required for PUT events)
 /// ```
 fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
-    let event_type = match sse.event.as_str() {
-        "PUT" => EventType::Put,
-        "DEL" => EventType::Delete,
-        _ => {
-            return Err(Error::from(RequestError::Validation {
-                message: format!("Unknown event type: {}", sse.event),
-            }));
-        }
-    };
-
     // Parse SSE data by prefix
     let mut path: Option<String> = None;
     let mut cursor: Option<EventCursor> = None;
-    let mut content_hash: Option<String> = None;
+    let mut content_hash_base64: Option<String> = None;
 
     for (i, line) in sse.data.lines().enumerate() {
         if let Some(cursor_str) = line.strip_prefix("cursor: ") {
@@ -428,7 +470,7 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
                 })
             })?);
         } else if let Some(hash) = line.strip_prefix("content_hash: ") {
-            content_hash = Some(hash.to_string());
+            content_hash_base64 = Some(hash.to_string());
         } else if i == 0 {
             // First line without a known prefix is the path
             path = Some(line.to_string());
@@ -454,12 +496,54 @@ fn parse_sse_event(sse: &eventsource_stream::Event) -> Result<Event> {
         })
     })?;
 
+    let event_type = match sse.event.as_str() {
+        "PUT" => {
+            let content_hash = decode_content_hash(content_hash_base64.as_deref())?;
+            EventType::Put { content_hash }
+        }
+        "DEL" => EventType::Delete,
+        other => {
+            return Err(Error::from(RequestError::Validation {
+                message: format!("Unknown event type: {other}"),
+            }));
+        }
+    };
+
     Ok(Event {
         event_type,
         resource,
         cursor,
-        content_hash,
     })
+}
+
+/// Decode a base64-encoded content hash into a Hash.
+fn decode_content_hash(content_hash_base64: Option<&str>) -> Result<Hash> {
+    let b64 = content_hash_base64
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Error::from(RequestError::Validation {
+                message: "PUT event missing required content_hash".into(),
+            })
+        })?;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| {
+            Error::from(RequestError::Validation {
+                message: format!("Invalid content_hash base64 encoding: {e}"),
+            })
+        })?;
+
+    let hash_bytes: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
+        Error::from(RequestError::Validation {
+            message: format!(
+                "content_hash must be exactly 32 bytes, got {} bytes",
+                bytes.len()
+            ),
+        })
+    })?;
+
+    Ok(Hash::from_bytes(hash_bytes))
 }
 
 #[cfg(test)]
@@ -476,19 +560,31 @@ mod tests {
         }
     }
 
+    /// Helper to create a base64-encoded hash from bytes
+    fn encode_hash(bytes: [u8; 32]) -> String {
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
     #[test]
     fn parse_put_event_with_content_hash() {
+        let hash_bytes = [1u8; 32];
+        let hash_b64 = encode_hash(hash_bytes);
         let sse = make_sse(
             "PUT",
-            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/example.txt\ncursor: 42\ncontent_hash: abc123def456",
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/example.txt\ncursor: 42\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
 
-        assert_eq!(event.event_type, EventType::Put);
+        assert!(matches!(event.event_type, EventType::Put { .. }));
         assert_eq!(event.resource.path.as_str(), "/pub/example.txt");
         assert_eq!(event.cursor.id(), 42);
-        assert_eq!(event.content_hash, Some("abc123def456".to_string()));
+        assert_eq!(
+            event.event_type.content_hash(),
+            Some(&Hash::from_bytes(hash_bytes))
+        );
     }
 
     #[test]
@@ -503,35 +599,49 @@ mod tests {
         assert_eq!(event.event_type, EventType::Delete);
         assert_eq!(event.resource.path.as_str(), "/pub/deleted.txt");
         assert_eq!(event.cursor.id(), 100);
-        assert_eq!(event.content_hash, None);
+        assert_eq!(event.event_type.content_hash(), None);
     }
 
     #[test]
     fn parse_event_with_unknown_prefixed_lines_for_forward_compatibility() {
+        let hash_bytes = [2u8; 32];
+        let hash_b64 = encode_hash(hash_bytes);
         let sse = make_sse(
             "PUT",
-            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 50\nfuture_field: some_value\nanother_future: 123\ncontent_hash: hashvalue",
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 50\nfuture_field: some_value\nanother_future: 123\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
 
-        assert_eq!(event.event_type, EventType::Put);
+        assert!(matches!(event.event_type, EventType::Put { .. }));
         assert_eq!(event.cursor.id(), 50);
-        assert_eq!(event.content_hash, Some("hashvalue".to_string()));
+        assert_eq!(
+            event.event_type.content_hash(),
+            Some(&Hash::from_bytes(hash_bytes))
+        );
     }
 
     #[test]
     fn parse_event_with_lines_in_different_order() {
+        let hash_bytes = [3u8; 32];
+        let hash_b64 = encode_hash(hash_bytes);
         // cursor before content_hash, both after path
         let sse = make_sse(
             "PUT",
-            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/test.txt\ncontent_hash: hash123\ncursor: 999",
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/test.txt\ncontent_hash: {hash_b64}\ncursor: 999"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
 
         assert_eq!(event.cursor.id(), 999);
-        assert_eq!(event.content_hash, Some("hash123".to_string()));
+        assert_eq!(
+            event.event_type.content_hash(),
+            Some(&Hash::from_bytes(hash_bytes))
+        );
     }
 
     #[test]
@@ -550,7 +660,8 @@ mod tests {
 
     #[test]
     fn error_on_missing_path() {
-        let sse = make_sse("PUT", "cursor: 42\ncontent_hash: abc");
+        let hash_b64 = encode_hash([0u8; 32]);
+        let sse = make_sse("PUT", &format!("cursor: 42\ncontent_hash: {hash_b64}"));
 
         let result = parse_sse_event(&sse);
 
@@ -564,9 +675,12 @@ mod tests {
 
     #[test]
     fn error_on_missing_cursor() {
+        let hash_b64 = encode_hash([0u8; 32]);
         let sse = make_sse(
             "PUT",
-            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncontent_hash: abc",
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let result = parse_sse_event(&sse);
@@ -616,23 +730,41 @@ mod tests {
     }
 
     #[test]
-    fn parse_event_with_empty_content_hash() {
+    fn error_on_empty_content_hash() {
         let sse = make_sse(
             "PUT",
             "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: ",
         );
 
-        let event = parse_sse_event(&sse).unwrap();
+        let result = parse_sse_event(&sse);
 
-        // Empty string after prefix is still captured
-        assert_eq!(event.content_hash, Some(String::new()));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("missing required content_hash"), "Got: {err}");
+    }
+
+    #[test]
+    fn error_on_missing_content_hash() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1",
+        );
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("missing required content_hash"), "Got: {err}");
     }
 
     #[test]
     fn parse_event_with_large_cursor() {
+        let hash_b64 = encode_hash([0u8; 32]);
         let sse = make_sse(
             "PUT",
-            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 9223372036854775807",
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 9223372036854775807\ncontent_hash: {hash_b64}"
+            ),
         );
 
         let event = parse_sse_event(&sse).unwrap();
@@ -640,27 +772,233 @@ mod tests {
         assert_eq!(event.cursor.id(), 9_223_372_036_854_775_807_u64);
     }
 
+    // Note: EventCursor and EventType trait tests are in pubky-common/src/events.rs
+    // SDK tests focus on SSE parsing behavior specific to the SDK
+
     #[test]
-    fn cursor_display_and_from_str() {
-        let cursor = EventCursor::new(12345);
-        assert_eq!(cursor.to_string(), "12345");
+    fn error_on_invalid_base64_content_hash() {
+        let sse = make_sse(
+            "PUT",
+            "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: not-valid-base64!!!",
+        );
 
-        let parsed: EventCursor = "67890".parse().unwrap();
-        assert_eq!(parsed.id(), 67890);
+        let result = parse_sse_event(&sse);
 
-        let from_u64: EventCursor = 111u64.into();
-        assert_eq!(from_u64.id(), 111);
-
-        let try_from_str = EventCursor::try_from("222").unwrap();
-        assert_eq!(try_from_str.id(), 222);
-
-        let try_from_string = EventCursor::try_from("333".to_string()).unwrap();
-        assert_eq!(try_from_string.id(), 333);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid content_hash"), "Got: {err}");
     }
 
     #[test]
-    fn event_type_display() {
-        assert_eq!(EventType::Put.to_string(), "PUT");
-        assert_eq!(EventType::Delete.to_string(), "DEL");
+    fn error_on_wrong_length_content_hash() {
+        // Base64-encode only 16 bytes instead of 32
+        let short_hash = base64::engine::general_purpose::STANDARD.encode([1u8; 16]);
+        let sse = make_sse(
+            "PUT",
+            &format!(
+                "pubky://o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/pub/file.txt\ncursor: 1\ncontent_hash: {short_hash}"
+            ),
+        );
+
+        let result = parse_sse_event(&sse);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("32 bytes"), "Got: {err}");
+    }
+
+    // === Builder tests ===
+
+    fn test_pubkeys(count: usize) -> Vec<PublicKey> {
+        // Generate random test public keys
+        (0..count)
+            .map(|_| crate::Keypair::random().public_key())
+            .collect()
+    }
+
+    #[test]
+    fn builder_constructors_and_add_users() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(4);
+
+        // for_user initializes with single user and cursor
+        let builder =
+            EventStreamBuilder::for_user(client.clone(), &keys[0], Some(EventCursor::new(42)));
+        assert_eq!(builder.users.len(), 1);
+        assert_eq!(builder.users[0].0, keys[0]);
+        assert_eq!(builder.users[0].1, Some(EventCursor::new(42)));
+        assert!(builder.homeserver.is_none());
+
+        // for_homeserver initializes with homeserver and no users
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), &keys[0]);
+        assert!(builder.users.is_empty());
+        assert_eq!(builder.homeserver.as_ref(), Some(&keys[0]));
+
+        // add_users adds multiple users with cursors
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), &keys[0])
+            .add_users([
+                (&keys[1], None),
+                (&keys[2], Some(EventCursor::new(100))),
+                (&keys[3], Some(EventCursor::new(200))),
+            ])
+            .unwrap();
+        assert_eq!(builder.users.len(), 3);
+        assert_eq!(builder.users[0], (keys[1].clone(), None));
+        assert_eq!(
+            builder.users[1],
+            (keys[2].clone(), Some(EventCursor::new(100)))
+        );
+        assert_eq!(
+            builder.users[2],
+            (keys[3].clone(), Some(EventCursor::new(200)))
+        );
+
+        // add_users updates existing user's cursor
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), &keys[0])
+            .add_users([(&keys[1], Some(EventCursor::new(10))), (&keys[2], None)])
+            .unwrap()
+            .add_users([(&keys[1], Some(EventCursor::new(999)))])
+            .unwrap();
+        assert_eq!(builder.users.len(), 2);
+        assert_eq!(builder.users[0].1, Some(EventCursor::new(999))); // Updated
+        assert_eq!(builder.users[1].1, None); // Unchanged
+
+        // Builder chaining with live mode
+        let builder = EventStreamBuilder::for_user(client.clone(), &keys[0], None)
+            .limit(100)
+            .live()
+            .path("/pub/posts/".to_string());
+        assert_eq!(builder.limit, Some(100));
+        assert!(builder.live);
+        assert!(!builder.reverse);
+        assert_eq!(builder.path, Some("/pub/posts/".to_string()));
+
+        // Builder chaining with reverse mode
+        let builder = EventStreamBuilder::for_user(client, &keys[0], None)
+            .limit(50)
+            .reverse()
+            .path("/pub/files/".to_string());
+        assert_eq!(builder.limit, Some(50));
+        assert!(!builder.live);
+        assert!(builder.reverse);
+        assert_eq!(builder.path, Some("/pub/files/".to_string()));
+    }
+
+    #[test]
+    fn add_users_errors_on_exceeding_50_users() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(52);
+        let homeserver = &keys[0];
+        let users = &keys[1..]; // 51 users
+
+        let user_refs: Vec<_> = users.iter().map(|u| (u, None)).collect();
+
+        let result = EventStreamBuilder::for_homeserver(client, homeserver).add_users(user_refs);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("50 users"), "Got: {err}");
+    }
+
+    #[test]
+    fn build_request_url_constructs_correct_query_params() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(3);
+        let homeserver = &keys[0];
+        let user1 = &keys[1];
+        let user2 = &keys[2];
+
+        // Test with all options: multiple users, cursors, limit, live, path
+        let builder = EventStreamBuilder::for_homeserver(client.clone(), homeserver)
+            .add_users([(user1, None), (user2, Some(EventCursor::new(42)))])
+            .unwrap()
+            .limit(100)
+            .live()
+            .path("/pub/posts/");
+
+        let url = builder.build_request_url(homeserver).unwrap();
+
+        // Verify base URL
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.path(), "/events-stream");
+
+        // Verify query parameters
+        let query: Vec<_> = url.query_pairs().collect();
+
+        // Should have: user (x2), limit, live, path
+        assert_eq!(query.len(), 5, "Should have 5 query params: {:?}", query);
+
+        // Check user params
+        let user_params: Vec<_> = query
+            .iter()
+            .filter(|(k, _)| k == "user")
+            .map(|(_, v)| v.to_string())
+            .collect();
+        assert_eq!(user_params.len(), 2);
+        assert!(
+            user_params.iter().any(|v| v == &user1.z32()),
+            "Should have user1 without cursor"
+        );
+        assert!(
+            user_params
+                .iter()
+                .any(|v| v == &format!("{}:42", user2.z32())),
+            "Should have user2 with cursor"
+        );
+
+        // Check other params
+        assert!(query.iter().any(|(k, v)| k == "limit" && v == "100"));
+        assert!(query.iter().any(|(k, v)| k == "live" && v == "true"));
+        assert!(query.iter().any(|(k, v)| k == "path" && v == "/pub/posts/"));
+
+        // Test reverse mode (mutually exclusive with live)
+        let builder_reverse = EventStreamBuilder::for_homeserver(client, homeserver)
+            .add_users([(user1, None)])
+            .unwrap()
+            .reverse()
+            .limit(50);
+
+        let url_reverse = builder_reverse.build_request_url(homeserver).unwrap();
+        let query_reverse: Vec<_> = url_reverse.query_pairs().collect();
+
+        assert!(
+            query_reverse
+                .iter()
+                .any(|(k, v)| k == "reverse" && v == "true")
+        );
+        assert!(
+            !query_reverse.iter().any(|(k, _)| k == "live"),
+            "Should not have live param when reverse is set"
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_fails_with_no_users() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(1);
+        let homeserver = &keys[0];
+
+        // Building with empty users list succeeds
+        let empty: [(&PublicKey, Option<EventCursor>); 0] = [];
+        let builder = EventStreamBuilder::for_homeserver(client, homeserver)
+            .add_users(empty)
+            .unwrap();
+
+        assert!(builder.users.is_empty());
+        assert_eq!(builder.homeserver.as_ref(), Some(homeserver));
+
+        // But subscribe should fail
+        let result = builder.subscribe().await;
+
+        match result {
+            Ok(_) => panic!("Expected error, but subscribe succeeded"),
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("At least one user must be specified"),
+                    "Got: {err}"
+                );
+            }
+        }
     }
 }

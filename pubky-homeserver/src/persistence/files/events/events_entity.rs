@@ -1,16 +1,11 @@
 use pubky_common::crypto::Hash;
 use pubky_common::crypto::PublicKey;
+use pubky_common::events::{EventCursor, EventType};
 use sea_query::Iden;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::{
-    persistence::{
-        files::events::{
-            events_repository::{EventCursor, EventIden},
-            EventType,
-        },
-        sql::user::UserIden,
-    },
+    persistence::{files::events::events_repository::EventIden, sql::user::UserIden},
     shared::webdav::{EntryPath, WebDavPath},
 };
 
@@ -39,8 +34,6 @@ impl FromRow<'_, PgRow> for EventEntity {
         let user_pubkey =
             PublicKey::try_from_z32(&user_public_key).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let event_type_str: String = row.try_get(EventIden::Type.to_string().as_str())?;
-        let user_public_key =
-            PublicKey::try_from_z32(&user_public_key).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let path: String = row.try_get(EventIden::Path.to_string().as_str())?;
         let path = WebDavPath::new(&path).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
@@ -78,8 +71,8 @@ impl FromRow<'_, PgRow> for EventEntity {
             id,
             event_type,
             user_id,
-            user_pubkey,
-            path: EntryPath::new(user_public_key, path),
+            user_pubkey: user_pubkey.clone(),
+            path: EntryPath::new(user_pubkey, path),
             created_at,
         })
     }

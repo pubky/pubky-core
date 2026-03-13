@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag is on main
+        run: |
+          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
+            echo "::error::Tag must point to a commit on the main branch."
+            exit 1
+          fi
+      - name: Validate semver format
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SEMVER_REGEX="^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?(\+([0-9A-Za-z.-]+))?$"
+          if [[ ! "$VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not valid semver (expected e.g. v0.8.0, v1.0.0-rc.1)"
+            exit 1
+          fi
+      - name: Verify version matches Cargo.toml
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          CRATES=("pubky-common" "pubky-sdk" "pubky-homeserver" "pubky-testnet")
+          for CRATE in "${CRATES[@]}"; do
+            CARGO_VERSION=$(cargo pkgid -p "$CRATE" | awk -F# '{print $NF}')
+            if [ "$CARGO_VERSION" != "$VERSION" ]; then
+              echo "::error::Version mismatch in $CRATE: tag is $VERSION but Cargo.toml has $CARGO_VERSION"
+              exit 1
+            fi
+          done
+          echo "All crate versions match tag: $VERSION"
+
+  build-artifacts:
+    name: Build Artifacts
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
+      - name: Build Artifacts
+        run: .scripts/build-artifacts.sh
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: target/github-release/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces
+      - name: Publish crates
+        run: cargo ws publish --no-git-commit --publish-as-is
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Build and publish npm package
+        working-directory: pubky-sdk/bindings/js/pkg
+        run: |
+          npm ci
+          npm run build
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
