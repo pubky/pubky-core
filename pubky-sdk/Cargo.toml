@@ -1,7 +1,7 @@
 [package]
 name = "pubky"
 description = "Pubky SDK"
-version = "0.7.0-rc.5"
+version = "0.7.0"
 edition = "2024"
 rust-version.workspace = true
 authors = [
@@ -29,7 +29,7 @@ default = []
 json = ["dep:serde", "reqwest/json"]
 
 [dependencies]
-pubky-common = { path = "../pubky-common" , version = "0.7.0-rc.5" }
+pubky-common = { path = "../pubky-common" , version = "0.7.0" }
 thiserror.workspace = true
 eventsource-stream = "0.2.3"
 url.workspace = true
@@ -59,7 +59,7 @@ wasm-bindgen-futures = "0.4.50"
 futures-lite = { version = "2.6.0", default-features = false }
 
 [dev-dependencies]
-pubky-testnet = { path = "../pubky-testnet" , version = "0.7.0-rc.5" } # used in docstring tests
+pubky-testnet = { path = "../pubky-testnet" , version = "0.7.0" } # used in docstring tests
 httpmock = "0.7"
 http-relay = { workspace = true, features = ["server", "link-compat"] }
 
