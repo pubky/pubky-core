@@ -2,12 +2,12 @@
 name = "e2e"
 edition.workspace = true
 rust-version.workspace = true
-version = "0.7.0-rc.5"
+version = "0.7.0"
 publish = false
 
 [dependencies]
-pubky-testnet = { path = "../pubky-testnet" , version = "0.7.0-rc.5" }
-pubky-common = { path = "../pubky-common" , version = "0.7.0-rc.5" }
+pubky-testnet = { path = "../pubky-testnet" , version = "0.7.0" }
+pubky-common = { path = "../pubky-common" , version = "0.7.0" }
 tokio = { workspace = true, features = ["full", "test-util"] }
 tracing-subscriber.workspace = true
 pkarr = { workspace = true }
