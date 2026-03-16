@@ -30,9 +30,12 @@ pub struct Testnet {
 }
 
 impl Testnet {
-    /// Run a new testnet with a local DHT.
-    pub async fn new() -> Result<Self> {
-        let dht = pkarr::mainline::Testnet::builder(2).build()?;
+    fn new_inner(seeded: bool) -> Result<Self> {
+        let dht = match seeded {
+            true => pkarr::mainline::Testnet::new(2)?,
+            false => pkarr::mainline::Testnet::new_unseeded(2)?,
+        };
+
         let testnet = Self {
             dht,
             pkarr_relays: vec![],
@@ -44,6 +47,16 @@ impl Testnet {
         };
 
         Ok(testnet)
+    }
+
+    /// Run a new testnet with a (fully-initialized) local DHT.
+    pub async fn new() -> Result<Self> {
+        Self::new_inner(true)
+    }
+
+    /// Run a new testnet with a (faster, but partially-initialized) local DHT.
+    pub async fn new_unseeded() -> Result<Self> {
+        Self::new_inner(false)
     }
 
     /// Run a new testnet with a local DHT.
