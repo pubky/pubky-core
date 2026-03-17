@@ -1,13 +1,14 @@
 [package]
 name = "pkarr-republisher"
 description = "A pkarr packet republisher."
-version = "0.7.0"
+version = "0.5.1"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
+publish = false
 keywords = ["pkarr", "mainline", "pubky"]
 categories = ["web-programming"]
 

@@ -11,11 +11,10 @@ members = [
 ]
 default-members = [
   "pubky-common",
-  "pkarr-republisher",
   "pubky-homeserver",
   "pubky-testnet",
   "pubky-sdk",
-] # `ws publish` will only attempt to publish these ones. 
+] # `ws publish` will only attempt to publish these ones.
 resolver = "2"
 
 [workspace.package]
