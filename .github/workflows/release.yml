@@ -34,7 +34,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           CRATES=("pubky-common" "pubky" "pubky-homeserver" "pubky-testnet")
           for CRATE in "${CRATES[@]}"; do
-            CARGO_VERSION=$(cargo pkgid -p "$CRATE" | awk -F# '{print $NF}')
+            CARGO_VERSION=$(cargo pkgid -p "$CRATE" | sed 's/.*#//;s/.*@//')
             if [ "$CARGO_VERSION" != "$VERSION" ]; then
               echo "::error::Version mismatch in $CRATE: tag is $VERSION but Cargo.toml has $CARGO_VERSION"
               exit 1
