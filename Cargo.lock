@@ -3697,7 +3697,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-republisher"
-version = "0.7.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -4199,7 +4199,7 @@ dependencies = [
 
 [[package]]
 name = "pubky_test_utils"
-version = "0.7.0"
+version = "0.1.0"
 dependencies = [
  "pubky_test_utils_drop_db_helper",
  "pubky_test_utils_macro",
@@ -4207,14 +4207,14 @@ dependencies = [
 
 [[package]]
 name = "pubky_test_utils_drop_db_helper"
-version = "0.7.0"
+version = "0.1.0"
 dependencies = [
  "sqlx",
 ]
 
 [[package]]
 name = "pubky_test_utils_macro"
-version = "0.7.0"
+version = "0.1.0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
