@@ -11,6 +11,7 @@ members = [
 ]
 default-members = [
   "pubky-common",
+  "pkarr-republisher",
   "pubky-homeserver",
   "pubky-testnet",
   "pubky-sdk",

@@ -32,7 +32,7 @@ jobs:
       - name: Verify version matches Cargo.toml
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          CRATES=("pubky-common" "pubky" "pubky-homeserver" "pubky-testnet")
+          CRATES=("pubky-common" "pkarr-republisher" "pubky" "pubky-homeserver" "pubky-testnet")
           for CRATE in "${CRATES[@]}"; do
             CARGO_VERSION=$(cargo pkgid -p "$CRATE" | sed 's/.*#//;s/.*@//')
             if [ "$CARGO_VERSION" != "$VERSION" ]; then
