@@ -16,7 +16,6 @@ anyhow.workspace = true
 pkarr = { workspace = true, features = ["default"] }
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
-futures-lite = { version = "2.6.1" }
 thiserror.workspace = true
 
 # bin dependencies
