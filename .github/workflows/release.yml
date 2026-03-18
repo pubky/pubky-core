@@ -120,7 +120,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm (v11 required for trusted publishing)
+        run: npm install -g npm@11.11.1
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build and publish npm package
