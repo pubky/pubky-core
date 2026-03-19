@@ -34,7 +34,7 @@ heed = "0.21.0"
 hex = "0.4.3"
 httpdate = "1.0.3"
 postcard = { version = "1.1.1", features = ["alloc"] }
-pkarr = { workspace = true, features = ["dht", "lmdb-cache", "tls"] }
+pkarr = { workspace = true, features = ["default", "dht", "lmdb-cache", "tls"] }
 pubky-common = { path = "../pubky-common" , version = "0.7.0" }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }

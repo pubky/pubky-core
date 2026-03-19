@@ -9,7 +9,6 @@ mod key_republisher;
 // Allow dead code to preserve the full API surface for potential future extraction
 // back into a standalone crate.
 #[allow(dead_code)]
-#[path = "pkarr-republisher/mod.rs"]
 pub(crate) mod pkarr_republisher;
 mod user_keys_republisher;
 
