@@ -1,3 +1,10 @@
+//! Server data directory and configuration.
+//!
+//! Manages the on-disk data directory (default `~/.pubky/`) which contains the
+//! server keypair, `config.toml`, and file storage. [`ConfigToml`] is loaded by
+//! merging embedded defaults with user overrides and controls all server behavior
+//! (listen addresses, signup mode, storage backend, rate limits, logging, etc.).
+
 mod config_toml;
 mod data_dir;
 mod domain;

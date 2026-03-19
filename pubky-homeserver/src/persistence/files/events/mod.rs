@@ -1,3 +1,11 @@
+//! Event system for file change notifications.
+//!
+//! - [`EventEntity`]: Represents a PUT or DEL event with path, content hash, and cursor ID.
+//! - [`EventsLayer`]: OpenDAL middleware that intercepts writes/deletes to create events.
+//! - [`EventRepository`]: Database queries for historical event retrieval and cursor pagination.
+//! - [`EventsService`]: In-memory broadcast channel (capacity 1000) for real-time SSE
+//!   streaming, combined with database persistence for historical replay.
+
 mod events_entity;
 mod events_layer;
 pub(crate) mod events_repository;

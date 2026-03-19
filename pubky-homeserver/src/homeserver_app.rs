@@ -1,3 +1,10 @@
+//! Top-level application orchestrator.
+//!
+//! [`HomeserverApp`] owns and coordinates the three HTTP servers
+//! ([`ClientServer`], [`AdminServer`], [`MetricsServer`]) and the background
+//! DHT republishers. It handles startup (config loading, database connection,
+//! migration) and graceful shutdown.
+
 use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{ClientServer, ClientServerBuildError};
 use crate::metrics_server::{MetricsServer, MetricsServerBuildError};
