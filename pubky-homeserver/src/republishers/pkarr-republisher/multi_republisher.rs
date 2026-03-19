@@ -1,7 +1,5 @@
-use crate::{
-    republisher::{RepublishError, RepublishInfo, RepublisherSettings},
-    ResilientClient, ResilientClientBuilderError,
-};
+use super::republisher::{RepublishError, RepublishInfo, RepublisherSettings};
+use super::{ResilientClient, ResilientClientBuilderError};
 use pkarr::PublicKey;
 use std::collections::HashMap;
 use tokio::time::Instant;
@@ -189,7 +187,8 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey};
 
-    use crate::{multi_republisher::MultiRepublisher, republisher::RepublisherSettings};
+    use super::MultiRepublisher;
+    use crate::republishers::pkarr_republisher::republisher::RepublisherSettings;
 
     async fn publish_sample_packets(client: &pkarr::Client, count: usize) -> Vec<PublicKey> {
         let keys: Vec<Keypair> = (0..count).map(|_| Keypair::random()).collect();

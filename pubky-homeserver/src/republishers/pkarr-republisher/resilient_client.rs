@@ -2,7 +2,7 @@ use std::num::NonZeroU8;
 
 use pkarr::{mainline::async_dht::AsyncDht, PublicKey, SignedPacket};
 
-use crate::{
+use super::{
     count_key_on_dht, PublishError, PublishInfo, Publisher, PublisherSettings, RepublishError,
     RepublishInfo, Republisher, RepublisherSettings, RetrySettings,
 };

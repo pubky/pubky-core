@@ -2,7 +2,6 @@
 members = [
   "pubky-*",
   "pubky-sdk/bindings/js",
-  "pkarr-republisher",
   "e2e",
   "test_utils/test_macro",
   "test_utils/drop_db_helper",
@@ -11,7 +10,6 @@ members = [
 ]
 default-members = [
   "pubky-common",
-  "pkarr-republisher",
   "pubky-homeserver",
   "pubky-testnet",
   "pubky-sdk",

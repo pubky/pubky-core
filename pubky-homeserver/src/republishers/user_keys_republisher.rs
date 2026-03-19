@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use pkarr_republisher::{
+use super::pkarr_republisher::{
     MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
 };
 use pubky_common::crypto::PublicKey;

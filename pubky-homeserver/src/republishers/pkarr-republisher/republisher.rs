@@ -5,10 +5,8 @@ use pkarr::PublicKey;
 use pkarr::SignedPacket;
 use std::{num::NonZeroU8, sync::Arc, time::Duration};
 
-use crate::{
-    publisher::{PublishError, Publisher, PublisherSettings},
-    RetrySettings,
-};
+use super::publisher::{PublishError, Publisher, PublisherSettings};
+use super::RetrySettings;
 
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum RepublishError {
@@ -248,7 +246,7 @@ impl Republisher {
 mod tests {
     use std::{num::NonZeroU8, time::Duration};
 
-    use crate::republisher::{Republisher, RepublisherSettings};
+    use super::{Republisher, RepublisherSettings};
     use pkarr::{dns::Name, Keypair, PublicKey};
 
     async fn publish_sample_packets(client: &pkarr::Client) -> PublicKey {

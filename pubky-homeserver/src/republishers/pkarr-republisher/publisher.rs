@@ -5,7 +5,7 @@
 use pkarr::{mainline::async_dht::AsyncDht, PublicKey, SignedPacket};
 use std::{num::NonZeroU8, time::Duration};
 
-use crate::verify::count_key_on_dht;
+use super::verify::count_key_on_dht;
 
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum PublishError {
@@ -243,7 +243,7 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey, SignedPacket};
 
-    use crate::publisher::{PublishError, Publisher, PublisherSettings};
+    use super::{PublishError, Publisher, PublisherSettings};
 
     fn sample_packet() -> (PublicKey, SignedPacket) {
         let key = Keypair::random();
