@@ -885,7 +885,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -4082,7 +4081,6 @@ dependencies = [
  "base32",
  "base64 0.22.1",
  "bytes",
- "chrono",
  "clap",
  "dav-server",
  "dav-server-opendalfs",
@@ -4115,7 +4113,6 @@ dependencies = [
  "sea-query",
  "sea-query-binder",
  "serde",
- "serde_json",
  "serde_valid",
  "sqlx",
  "temp-env",

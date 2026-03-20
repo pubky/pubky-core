@@ -5,7 +5,6 @@ use pubky_common::crypto::Hash;
 use pubky_common::timestamp::Timestamp;
 use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
-use serde::{Deserialize, Serialize};
 use sqlx::{
     postgres::PgRow,
     types::chrono::{DateTime, Utc},
@@ -30,6 +29,19 @@ pub const EVENT_TABLE: &str = "events";
 pub struct EventRepository;
 
 impl EventRepository {
+    /// Get the maximum event ID in the database.
+    /// Returns 0 if no events exist.
+    pub async fn get_max_id<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<u64, sqlx::Error> {
+        let (query, values) = Query::select()
+            .expr(Expr::col((EVENT_TABLE, EventIden::Id)).max())
+            .from(EVENT_TABLE)
+            .build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
+        let max_id: Option<i64> = row.try_get(0)?;
+        Ok(max_id.unwrap_or(0) as u64)
+    }
+
     /// Create a new event.
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'a>(
@@ -276,7 +288,7 @@ pub enum EventIden {
     ContentHash,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum EventType {
     Put { content_hash: Hash },
     Delete,

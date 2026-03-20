@@ -127,7 +127,7 @@ impl AppContext {
 
         let events_service = EventsService::new(1000);
 
-        let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone());
+        let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone()).await;
 
         let file_service =
             FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())

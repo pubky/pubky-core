@@ -1,17 +1,15 @@
-use chrono::NaiveDateTime;
 use pubky_common::crypto::Hash;
 use pubky_common::crypto::PublicKey;
 use pubky_common::events::{EventCursor, EventType};
 use sea_query::Iden;
-use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgRow, FromRow, Row};
+use sqlx::{postgres::PgRow, types::chrono::NaiveDateTime, FromRow, Row};
 
 use crate::{
     persistence::{files::events::events_repository::EventIden, sql::user::UserIden},
     shared::webdav::{EntryPath, WebDavPath},
 };
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EventEntity {
     pub id: u64,
     pub user_id: i32,
@@ -77,103 +75,5 @@ impl FromRow<'_, PgRow> for EventEntity {
             path: entry_path,
             created_at,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pubky_common::crypto::Keypair;
-
-    /// Test that EventEntity can be serialized to JSON and deserialized back.
-    /// This is critical for the pg_notify payload to survive the roundtrip.
-    #[test]
-    fn test_event_entity_serde_roundtrip() {
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/test.txt").unwrap());
-
-        let event = EventEntity {
-            id: 12345,
-            user_id: 42,
-            user_pubkey: pubkey,
-            event_type: EventType::Put {
-                content_hash: Hash::from_bytes([1; 32]),
-            },
-            path,
-            created_at: NaiveDateTime::parse_from_str("2024-01-15 10:30:00", "%Y-%m-%d %H:%M:%S")
-                .unwrap(),
-        };
-
-        // Serialize to JSON (what pg_notify does)
-        let json = serde_json::to_string(&event).expect("Failed to serialize EventEntity");
-
-        // Deserialize back (what PgEventListener does)
-        let deserialized: EventEntity =
-            serde_json::from_str(&json).expect("Failed to deserialize EventEntity");
-
-        assert_eq!(event, deserialized);
-    }
-
-    /// Test that DELETE events also roundtrip correctly.
-    #[test]
-    fn test_event_entity_serde_roundtrip_delete() {
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/deleted.txt").unwrap());
-
-        let event = EventEntity {
-            id: 99999,
-            user_id: 1,
-            user_pubkey: pubkey,
-            event_type: EventType::Delete,
-            path,
-            created_at: NaiveDateTime::parse_from_str("2024-06-20 15:45:30", "%Y-%m-%d %H:%M:%S")
-                .unwrap(),
-        };
-
-        let json = serde_json::to_string(&event).expect("Failed to serialize");
-        let deserialized: EventEntity = serde_json::from_str(&json).expect("Failed to deserialize");
-
-        assert_eq!(event, deserialized);
-    }
-
-    /// Test that the JSON payload size is reasonable (pg_notify has 8KB limit).
-    #[test]
-    fn test_event_entity_json_size_is_reasonable() {
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        // Use a reasonably long path to test size
-        let path = EntryPath::new(
-            pubkey.clone(),
-            WebDavPath::new("/pub/some/nested/directory/structure/file.json").unwrap(),
-        );
-
-        let event = EventEntity {
-            id: u64::MAX, // Worst case for ID size
-            user_id: i32::MAX,
-            user_pubkey: pubkey,
-            event_type: EventType::Put {
-                content_hash: Hash::from_bytes([255; 32]),
-            },
-            path,
-            created_at: NaiveDateTime::parse_from_str("2024-12-31 23:59:59", "%Y-%m-%d %H:%M:%S")
-                .unwrap(),
-        };
-
-        let json = serde_json::to_string(&event).expect("Failed to serialize");
-
-        // Should be well under 8KB (pg_notify limit)
-        // Typical size is ~200-400 bytes
-        assert!(
-            json.len() < 4096,
-            "JSON payload size {} exceeds warning threshold",
-            json.len()
-        );
-        assert!(
-            json.len() < 8192,
-            "JSON payload size {} exceeds pg_notify limit",
-            json.len()
-        );
     }
 }
