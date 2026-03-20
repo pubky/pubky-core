@@ -1,4 +1,8 @@
 use pubky_common::events::{EventCursor, EventType};
+use std::{fmt::Display, str::FromStr};
+
+use pubky_common::crypto::Hash;
+use serde::{Deserialize, Serialize};
 use pubky_common::timestamp::Timestamp;
 use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
@@ -270,6 +274,34 @@ pub enum EventIden {
     Path,
     CreatedAt,
     ContentHash,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum EventType {
+    Put { content_hash: Hash },
+    Delete,
+}
+
+impl EventType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EventType::Put { .. } => "PUT",
+            EventType::Delete => "DEL",
+        }
+    }
+
+    pub fn content_hash(&self) -> Option<&Hash> {
+        match self {
+            EventType::Put { content_hash } => Some(content_hash),
+            EventType::Delete => None,
+        }
+    }
+}
+
+impl Display for EventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 #[cfg(test)]
