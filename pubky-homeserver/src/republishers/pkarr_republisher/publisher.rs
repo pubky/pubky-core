@@ -15,19 +15,10 @@ pub enum PublishError {
     PublishFailed(#[from] pkarr::errors::PublishError),
 }
 
+#[cfg(test)]
 impl PublishError {
-    pub fn is_insufficiently_published(&self) -> bool {
-        if let PublishError::InsuffientlyPublished { .. } = self {
-            return true;
-        }
-        false
-    }
-
-    pub fn is_publish_failed(&self) -> bool {
-        if let PublishError::PublishFailed { .. } = self {
-            return true;
-        }
-        false
+    fn is_insufficiently_published(&self) -> bool {
+        matches!(self, PublishError::InsuffientlyPublished { .. })
     }
 }
 
@@ -35,15 +26,12 @@ impl PublishError {
 pub struct PublishInfo {
     /// How many nodes the key got published on.
     pub published_nodes_count: usize,
-    /// Number of publishing attempts needed to successfully publish.
-    pub attempts_needed: usize,
 }
 
 impl PublishInfo {
-    pub fn new(published_nodes_count: usize, attempts_needed: usize) -> Self {
+    pub fn new(published_nodes_count: usize) -> Self {
         Self {
             published_nodes_count,
-            attempts_needed,
         }
     }
 }
@@ -59,10 +47,8 @@ pub struct RetrySettings {
     pub(crate) max_retry_delay: Duration,
 }
 
+#[cfg(test)]
 impl RetrySettings {
-    pub fn new() -> Self {
-        Self::default()
-    }
     /// Maximum number of republishing retries before giving up.
     pub fn max_retries(&mut self, max_retries: NonZeroU8) -> &mut Self {
         self.max_retries = max_retries;
@@ -92,12 +78,11 @@ impl Default for RetrySettings {
     }
 }
 
-/// Settings for creating a republisher
+/// Settings for creating a publisher
 #[derive(Debug, Clone)]
 pub struct PublisherSettings {
     pub(crate) client: Option<pkarr::Client>,
     pub(crate) min_sufficient_node_publish_count: NonZeroU8,
-    pub retry_settings: RetrySettings,
 }
 
 impl Default for PublisherSettings {
@@ -105,16 +90,11 @@ impl Default for PublisherSettings {
         Self {
             client: None,
             min_sufficient_node_publish_count: NonZeroU8::new(10).expect("Should always be > 0"),
-            retry_settings: RetrySettings::default(),
         }
     }
 }
 
 impl PublisherSettings {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Set a custom pkarr client
     pub fn pkarr_client(&mut self, client: pkarr::Client) -> &mut Self {
         self.client = Some(client);
@@ -127,33 +107,19 @@ impl PublisherSettings {
         self.min_sufficient_node_publish_count = count;
         self
     }
-
-    /// Set settings in relation to retries.
-    pub fn retry_settings(&mut self, settings: RetrySettings) -> &mut Self {
-        self.retry_settings = settings;
-        self
-    }
 }
 
 /// Tries to publish a single key and verifies the keys has been published to
 /// a sufficient number of nodes.
-/// Retries in case of errors with an exponential backoff.
 #[derive(Debug, Clone)]
 pub struct Publisher {
     pub packet: SignedPacket,
     client: pkarr::Client,
     dht: AsyncDht,
     min_sufficient_node_publish_count: NonZeroU8,
-    retry_settings: RetrySettings,
 }
 
 impl Publisher {
-    /// Creates a new Publisher with a new pkarr client.
-    pub fn new(packet: SignedPacket) -> Result<Self, pkarr::errors::BuildError> {
-        let settings = PublisherSettings::default();
-        Self::new_with_settings(packet, settings)
-    }
-
     pub fn new_with_settings(
         packet: SignedPacket,
         settings: PublisherSettings,
@@ -168,7 +134,6 @@ impl Publisher {
             client,
             dht,
             min_sufficient_node_publish_count: settings.min_sufficient_node_publish_count,
-            retry_settings: settings.retry_settings,
         })
     }
 
@@ -177,16 +142,7 @@ impl Publisher {
         self.packet.public_key()
     }
 
-    /// Exponential backoff delay starting with `INITIAL_DELAY_MS` and maxing out at  `MAX_DELAY_MS`
-    fn get_retry_delay(&self, retry_count: u8) -> Duration {
-        let initial_ms = self.retry_settings.initial_retry_delay.as_millis() as u64;
-        let multiplicator = 2u64.pow(retry_count as u32);
-        let delay_ms = initial_ms * multiplicator;
-        let delay = Duration::from_millis(delay_ms);
-        delay.min(self.retry_settings.max_retry_delay)
-    }
-
-    /// Republish a single public key.
+    /// Publish a single public key.
     pub async fn publish_once(&self) -> Result<PublishInfo, PublishError> {
         if let Err(e) = self.client.publish(&self.packet, None).await {
             return Err(e.into());
@@ -202,44 +158,13 @@ impl Publisher {
             });
         }
 
-        Ok(PublishInfo::new(published_nodes_count, 1))
-    }
-
-    // Publishes the key with an exponential backoff
-    pub async fn publish(&self) -> Result<PublishInfo, PublishError> {
-        let max_retries = self.retry_settings.max_retries.get();
-        let mut last_error: Option<PublishError> = None;
-        for retry_count in 0..max_retries {
-            let human_retry_count = retry_count + 1;
-            match self.publish_once().await {
-                Ok(mut info) => {
-                    info.attempts_needed = human_retry_count as usize;
-                    return Ok(info);
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        "{human_retry_count}/{max_retries} Failed to publish {}: {e}",
-                        self.get_public_key()
-                    );
-                    last_error = Some(e);
-                }
-            }
-
-            let delay = self.get_retry_delay(retry_count);
-            tracing::debug!(
-                "{} {human_retry_count}/{max_retries} Sleep for {delay:?} before trying again.",
-                self.get_public_key()
-            );
-            tokio::time::sleep(delay).await;
-        }
-
-        Err(last_error.expect("infallible"))
+        Ok(PublishInfo::new(published_nodes_count))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{num::NonZeroU8, time::Duration};
+    use std::num::NonZeroU8;
 
     use pkarr::{dns::Name, Keypair, PublicKey, SignedPacket};
 
@@ -305,35 +230,5 @@ mod tests {
         {
             assert_eq!(published_nodes_count, 3);
         };
-    }
-
-    #[tokio::test]
-    async fn retry_delay() {
-        let dht = pkarr::mainline::Testnet::builder(3).build().unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
-        let pkarr_client = pkarr_builder.clone().build().unwrap();
-        let (_, packet) = sample_packet();
-
-        let required_nodes = 1;
-        let mut settings = PublisherSettings::default();
-        settings
-            .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
-        settings
-            .retry_settings
-            .max_retries(NonZeroU8::new(10).unwrap())
-            .initial_retry_delay(Duration::from_millis(100))
-            .max_retry_delay(Duration::from_secs(10));
-        let publisher = Publisher::new_with_settings(packet, settings).unwrap();
-
-        let first_delay = publisher.get_retry_delay(0);
-        assert_eq!(first_delay.as_millis(), 100);
-        let second_delay = publisher.get_retry_delay(1);
-        assert_eq!(second_delay.as_millis(), 200);
-        let third_delay = publisher.get_retry_delay(2);
-        assert_eq!(third_delay.as_millis(), 400);
-        let ninth_delay = publisher.get_retry_delay(9);
-        assert_eq!(ninth_delay.as_millis(), 10_000);
     }
 }

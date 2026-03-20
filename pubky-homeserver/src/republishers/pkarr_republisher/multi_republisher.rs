@@ -1,5 +1,5 @@
 use super::republisher::{RepublishError, RepublishInfo, RepublisherSettings};
-use super::{ResilientClient, ResilientClientBuilderError};
+use super::resilient_client::{ResilientClient, ResilientClientBuilderError};
 use pkarr::PublicKey;
 use std::collections::HashMap;
 use tokio::time::Instant;
@@ -21,11 +21,6 @@ impl MultiRepublishResult {
 
     pub fn is_empty(&self) -> bool {
         self.results.is_empty()
-    }
-
-    /// All keys
-    pub fn all_keys(&self) -> Vec<PublicKey> {
-        self.results.keys().cloned().collect()
     }
 
     /// Successfully published keys
@@ -74,10 +69,6 @@ pub struct MultiRepublisher {
 }
 
 impl MultiRepublisher {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Create a new republisher with the settings.
     /// The republisher ignores the settings.client but instead uses the client_builder to create multiple
     /// pkarr clients instead of just one.
