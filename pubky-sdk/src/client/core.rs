@@ -233,6 +233,16 @@ impl PubkyHttpClientBuilder {
             #[cfg(not(target_arch = "wasm32"))]
             icann_http: icann_http_builder.build()?,
 
+            #[cfg(not(target_arch = "wasm32"))]
+            transport_cache: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+
+            #[cfg(not(target_arch = "wasm32"))]
+            resolve_guards: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+
             #[cfg(target_arch = "wasm32")]
             testnet_host: self.testnet_host.clone(),
         })
@@ -332,6 +342,14 @@ pub struct PubkyHttpClient {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) icann_http: reqwest::Client,
+
+    /// Per-homeserver cache of transport decisions (`PubkyTLS` vs ICANN fallback).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) transport_cache: super::http_targets::native::TransportCache,
+
+    /// Guards to coalesce concurrent in-flight transport resolutions per host.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) resolve_guards: super::http_targets::native::ResolveGuards,
 
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
