@@ -17,17 +17,11 @@ pub enum RepublishError {
 
 impl RepublishError {
     pub fn is_missing(&self) -> bool {
-        if let RepublishError::Missing = self {
-            return true;
-        }
-        false
+        matches!(self, RepublishError::Missing)
     }
 
     pub fn is_publish_failed(&self) -> bool {
-        if let RepublishError::PublishFailed { .. } = self {
-            return true;
-        }
-        false
+        matches!(self, RepublishError::PublishFailed { .. })
     }
 }
 
@@ -84,7 +78,10 @@ impl RepublisherSettings {
         self.retry_settings = settings;
         self
     }
+}
 
+#[cfg(test)]
+impl RepublisherSettings {
     /// Set a closure that determines whether a packet should be republished
     pub fn republish_condition<F>(&mut self, f: F) -> &mut Self
     where
@@ -93,10 +90,7 @@ impl RepublisherSettings {
         self.republish_condition = Some(Arc::new(f));
         self
     }
-}
 
-#[cfg(test)]
-impl RepublisherSettings {
     /// Set the minimum sufficient number of nodes a key needs to be stored in
     /// to be considered a success
     pub fn min_sufficient_node_publish_count(&mut self, count: NonZeroU8) -> &mut Self {
@@ -119,7 +113,7 @@ impl Default for RepublisherSettings {
 /// Tries to republish a single key.
 /// Retries in case of errors with an exponential backoff.
 pub struct Republisher {
-    pub public_key: PublicKey,
+    public_key: PublicKey,
     client: pkarr::Client,
     min_sufficient_node_publish_count: NonZeroU8,
     retry_settings: RetrySettings,

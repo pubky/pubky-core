@@ -10,7 +10,7 @@ use super::verify::count_key_on_dht;
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum PublishError {
     #[error("Packet has been republished but to an insufficient number of {published_nodes_count} nodes.")]
-    InsuffientlyPublished { published_nodes_count: usize },
+    InsufficientlyPublished { published_nodes_count: usize },
     #[error(transparent)]
     PublishFailed(#[from] pkarr::errors::PublishError),
 }
@@ -18,7 +18,7 @@ pub enum PublishError {
 #[cfg(test)]
 impl PublishError {
     fn is_insufficiently_published(&self) -> bool {
-        matches!(self, PublishError::InsuffientlyPublished { .. })
+        matches!(self, PublishError::InsufficientlyPublished { .. })
     }
 }
 
@@ -113,7 +113,7 @@ impl PublisherSettings {
 /// a sufficient number of nodes.
 #[derive(Debug, Clone)]
 pub struct Publisher {
-    pub packet: SignedPacket,
+    packet: SignedPacket,
     client: pkarr::Client,
     dht: AsyncDht,
     min_sufficient_node_publish_count: NonZeroU8,
@@ -153,7 +153,7 @@ impl Publisher {
         // -- Sev April 2025 --
         let published_nodes_count = count_key_on_dht(&self.get_public_key(), &self.dht).await;
         if published_nodes_count < self.min_sufficient_node_publish_count.get().into() {
-            return Err(PublishError::InsuffientlyPublished {
+            return Err(PublishError::InsufficientlyPublished {
                 published_nodes_count,
             });
         }
@@ -224,7 +224,7 @@ mod tests {
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(err.is_insufficiently_published());
-        if let PublishError::InsuffientlyPublished {
+        if let PublishError::InsufficientlyPublished {
             published_nodes_count,
         } = err
         {

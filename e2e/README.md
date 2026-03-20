@@ -7,9 +7,9 @@ This workspace member contains Pubky End2End tests. Run them with `cargo test`.
 
 ### Unit Testing
 
-Each member of this workspace, for example `pkarr-republisher`, are tested individually
-in their respective member folder. Dependencies like the `pubky-homeserver`
-should be mocked. Focus on testing the individual components and not all of Pubky.
+Each member of this workspace, for example `pubky-homeserver`, are tested individually
+in their respective member folder. Dependencies should be mocked. Focus on testing
+the individual components and not all of Pubky.
 
 ### E2E Testing
 
