@@ -90,7 +90,14 @@ impl PgEventListener {
             let wake = wake.clone();
             let last_broadcast_id = last_broadcast_id.clone();
             tokio::spawn(async move {
-                Self::poll_loop(pool, events_service, wake, last_broadcast_id, fallback_poll_interval).await;
+                Self::poll_loop(
+                    pool,
+                    events_service,
+                    wake,
+                    last_broadcast_id,
+                    fallback_poll_interval,
+                )
+                .await;
             })
         };
 
@@ -322,6 +329,29 @@ mod tests {
         assert_eq!(recv_b.id, event_id, "Instance B should receive the event");
     }
 
+    /// Helper: create an event in the DB without sending NOTIFY.
+    async fn create_event_silent(
+        db: &SqlDb,
+        user_id: i32,
+        path: &str,
+        pubkey: &pubky_common::crypto::PublicKey,
+    ) -> u64 {
+        let entry_path = EntryPath::new(pubkey.clone(), WebDavPath::new(path).unwrap());
+        let mut tx = db.pool().begin().await.unwrap();
+        let event = EventRepository::create(
+            user_id,
+            EventType::Put {
+                content_hash: Hash::from_bytes([1; 32]),
+            },
+            &entry_path,
+            &mut UnifiedExecutor::from(&mut tx),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        event.id
+    }
+
     /// Test that events are eventually delivered even without NOTIFY (fallback polling).
     #[tokio::test]
     #[pubky_test_utils::test]
@@ -350,20 +380,7 @@ mod tests {
         let mut rx = events_service.subscribe();
 
         // Create event in DB but do NOT send NOTIFY
-        let entry_path =
-            EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/silent.txt").unwrap());
-        let mut tx = db.pool().begin().await.unwrap();
-        let event = EventRepository::create(
-            user.id,
-            EventType::Put {
-                content_hash: Hash::from_bytes([1; 32]),
-            },
-            &entry_path,
-            &mut UnifiedExecutor::from(&mut tx),
-        )
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
+        let event_id = create_event_silent(&db, user.id, "/pub/silent.txt", &pubkey).await;
 
         // The event should still be delivered via fallback polling (1s interval in this test).
         let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -371,6 +388,269 @@ mod tests {
             .expect("Timeout - fallback polling did not deliver the event")
             .expect("Channel closed");
 
-        assert_eq!(received.id, event.id);
+        assert_eq!(received.id, event_id);
+    }
+
+    /// Test that get_max_id returns 0 on an empty table and the correct ID after inserts.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_max_id() {
+        let db = SqlDb::test().await;
+
+        // Empty table should return 0
+        let max_id = EventRepository::get_max_id(&mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(max_id, 0);
+
+        // Insert some events
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        let mut last_id = 0;
+        for i in 1..=3 {
+            last_id =
+                create_event_silent(&db, user.id, &format!("/pub/file{}.txt", i), &pubkey).await;
+        }
+
+        let max_id = EventRepository::get_max_id(&mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(max_id, last_id);
+    }
+
+    /// Test that events created before the listener starts are NOT broadcast.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_pre_existing_events_not_broadcast() {
+        let db = SqlDb::test().await;
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        // Create events BEFORE starting the listener
+        for i in 1..=5 {
+            create_event_silent(&db, user.id, &format!("/pub/old{}.txt", i), &pubkey).await;
+        }
+
+        let events_service = EventsService::new(100);
+        let _listener = PgEventListener::start(db.pool(), events_service.clone()).await;
+        let mut rx = events_service.subscribe();
+
+        // Create one NEW event after the listener started
+        let new_id =
+            create_event_and_notify(&db, &events_service, user.id, "/pub/new.txt", &pubkey).await;
+
+        // Should only receive the new event, not the 5 pre-existing ones
+        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("Timeout waiting for event")
+            .expect("Channel closed");
+        assert_eq!(received.id, new_id);
+    }
+
+    /// Test that dropping a listener and starting a new one correctly catches up.
+    /// Simulates: instance crash → events produced during downtime → instance restart.
+    /// The new listener should skip gap events (they're already in the DB for cursor-based
+    /// SSE catch-up) and only broadcast events created after restart.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_listener_restart_skips_gap_and_resumes() {
+        let db = SqlDb::test().await;
+        let events_service = EventsService::new(100);
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        // Phase 1: Start listener, verify it works
+        let listener = PgEventListener::start(db.pool(), events_service.clone()).await;
+        let mut rx = events_service.subscribe();
+
+        let initial_id = create_event_and_notify(
+            &db,
+            &events_service,
+            user.id,
+            "/pub/before-crash.txt",
+            &pubkey,
+        )
+        .await;
+
+        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("Timeout")
+            .expect("Channel closed");
+        assert_eq!(received.id, initial_id);
+
+        // Phase 2: Drop listener (simulates crash)
+        drop(listener);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Phase 3: Create events during the gap (no listener running)
+        let mut gap_ids = Vec::new();
+        for i in 1..=3 {
+            let id =
+                create_event_silent(&db, user.id, &format!("/pub/during-gap{}.txt", i), &pubkey)
+                    .await;
+            gap_ids.push(id);
+        }
+
+        // Phase 4: Start a NEW listener (simulates instance restart)
+        let _listener2 = PgEventListener::start(db.pool(), events_service.clone()).await;
+
+        // Phase 5: Create a new event after restart
+        let post_restart_id = create_event_and_notify(
+            &db,
+            &events_service,
+            user.id,
+            "/pub/after-restart.txt",
+            &pubkey,
+        )
+        .await;
+
+        // Phase 6: The subscriber should receive ONLY the post-restart event.
+        // Gap events are skipped because the new listener initialized last_broadcast_id
+        // to the DB max (which includes the gap events).
+        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("Timeout waiting for post-restart event")
+            .expect("Channel closed");
+        assert_eq!(
+            received.id, post_restart_id,
+            "Should receive the post-restart event, not a gap event"
+        );
+    }
+
+    /// Test that gap events are delivered when the NOTIFY listener reconnects internally.
+    /// Simulates the scenario where the Postgres LISTEN connection drops momentarily
+    /// but the PgEventListener stays alive. The poll loop's fallback timer should
+    /// catch events produced while NOTIFY was unavailable.
+    ///
+    /// We approximate this by:
+    /// 1. Starting a listener with a short fallback poll interval
+    /// 2. Creating events without NOTIFY (simulating lost notifications)
+    /// 3. Verifying they arrive via fallback polling with no gaps
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_internal_reconnect_catches_gap_events() {
+        let db = SqlDb::test().await;
+        let events_service = EventsService::new(100);
+
+        let _listener = PgEventListener::start_with_poll_interval(
+            db.pool(),
+            events_service.clone(),
+            Duration::from_secs(1),
+        )
+        .await;
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        let mut rx = events_service.subscribe();
+
+        // First, deliver an event normally to advance last_broadcast_id
+        let first_id = create_event_and_notify(
+            &db,
+            &events_service,
+            user.id,
+            "/pub/before-gap.txt",
+            &pubkey,
+        )
+        .await;
+        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("Timeout")
+            .expect("Channel closed");
+        assert_eq!(received.id, first_id);
+
+        // Now create events WITHOUT notify (simulating lost notifications during reconnect)
+        let mut gap_ids = Vec::new();
+        for i in 1..=3 {
+            let id =
+                create_event_silent(&db, user.id, &format!("/pub/gap{}.txt", i), &pubkey).await;
+            gap_ids.push(id);
+        }
+
+        // All gap events should arrive via fallback polling, in order, with no gaps
+        for (idx, expected_id) in gap_ids.iter().enumerate() {
+            let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Timeout waiting for gap event {}/{}",
+                        idx + 1,
+                        gap_ids.len()
+                    )
+                })
+                .expect("Channel closed");
+            assert_eq!(
+                received.id,
+                *expected_id,
+                "Gap event {} should be delivered in order",
+                idx + 1
+            );
+        }
+    }
+
+    /// Test that the batch loop handles more than 100 events correctly.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_batch_boundary_over_100_events() {
+        let db = SqlDb::test().await;
+        let events_service = EventsService::new(250);
+
+        let _listener = PgEventListener::start(db.pool(), events_service.clone()).await;
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        let mut rx = events_service.subscribe();
+
+        // Create 150 events (exceeds the batch size of 100)
+        let total = 150;
+        let mut expected_ids = Vec::new();
+        for i in 1..=total {
+            let id =
+                create_event_silent(&db, user.id, &format!("/pub/batch{}.txt", i), &pubkey).await;
+            expected_ids.push(id);
+        }
+
+        // Send a single NOTIFY to wake the poll loop
+        events_service.notify_event(db.pool()).await;
+
+        // All 150 events should be delivered in order
+        for (idx, expected_id) in expected_ids.iter().enumerate() {
+            let received = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("Timeout waiting for event {}/{}", idx + 1, total))
+                .expect("Channel closed");
+            assert_eq!(
+                received.id,
+                *expected_id,
+                "Event {} out of order: expected {}, got {}",
+                idx + 1,
+                expected_id,
+                received.id
+            );
+        }
     }
 }

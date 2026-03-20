@@ -15,9 +15,6 @@ pub const MAX_EVENT_STREAM_USERS: usize = 50;
 /// Postgres channel name for event notifications.
 pub(crate) const PG_NOTIFY_CHANNEL: &str = "events";
 
-/// SQL query to send a NOTIFY event (empty payload - just a wake-up signal).
-const PG_NOTIFY_QUERY: &str = "SELECT pg_notify('events', '')";
-
 /// Service that handles all event-related business logic.
 #[derive(Clone, Debug)]
 pub struct EventsService {
@@ -91,7 +88,8 @@ impl EventsService {
     /// database for actual events, so a missed NOTIFY only adds latency (up to
     /// the fallback poll interval) — it never causes missed events.
     pub async fn notify_event(&self, pool: &PgPool) {
-        if let Err(e) = sqlx::query(PG_NOTIFY_QUERY).execute(pool).await {
+        let query = format!("SELECT pg_notify('{}', '')", PG_NOTIFY_CHANNEL);
+        if let Err(e) = sqlx::query(&query).execute(pool).await {
             tracing::error!("Failed to send NOTIFY: {}", e);
         }
     }
