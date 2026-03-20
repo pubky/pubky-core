@@ -1,3 +1,11 @@
+//! Event streaming endpoints.
+//!
+//! Provides two ways to consume file change events:
+//! - `GET /events/` — Historical plain-text feed with cursor-based pagination.
+//! - `GET /events-stream` — Server-Sent Events with a two-phase approach:
+//!   first replays historical events from the database, then switches to
+//!   real-time broadcast for live updates.
+
 use axum::{
     body::Body,
     extract::{RawQuery, State},

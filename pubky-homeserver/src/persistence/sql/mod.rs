@@ -1,3 +1,10 @@
+//! PostgreSQL persistence.
+//!
+//! Manages the connection pool ([`SqlDb`]), schema migrations ([`Migrator`]),
+//! and entity repositories for users, sessions, entries, events, and signup codes.
+//! The [`UnifiedExecutor`] abstraction allows repository methods to work with
+//! both pooled connections and explicit transactions.
+
 mod connection_string;
 mod entities;
 mod migration;

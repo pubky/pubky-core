@@ -1,3 +1,11 @@
+//! Authorization middleware.
+//!
+//! Enforces access control on every request:
+//! - **Reads** to `/pub/*` are always allowed (public data).
+//! - **Writes** (`PUT`/`DELETE`) require a valid session cookie whose capabilities
+//!   grant write access to the target path and whose user matches the tenant.
+//! - Non-public paths are forbidden for external requests.
+
 use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::persistence::sql::session::{SessionRepository, SessionSecret};
 use crate::shared::{HttpError, HttpResult};

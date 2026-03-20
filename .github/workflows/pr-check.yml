@@ -85,7 +85,6 @@ jobs:
             pubky-common,
             pubky-homeserver,
             pubky-testnet,
-            pkarr-republisher,
             e2e,
           ]
     runs-on: ubuntu-latest

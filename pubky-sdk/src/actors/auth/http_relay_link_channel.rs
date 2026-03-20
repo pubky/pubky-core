@@ -56,12 +56,6 @@ impl HttpRelayLinkChannel {
         })
     }
 
-    /// The base URL of the relay.
-    #[cfg(test)]
-    pub fn base_url(&self) -> &Url {
-        &self.base_url
-    }
-
     /// The full URL of the relay channel.
     ///
     /// # Errors

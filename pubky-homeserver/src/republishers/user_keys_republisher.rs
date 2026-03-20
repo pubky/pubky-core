@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use pkarr_republisher::{
+use super::pkarr_republisher::{
     MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
 };
 use pubky_common::crypto::PublicKey;
@@ -96,8 +96,7 @@ impl UserKeysRepublisher {
             tracing::debug!("No user keys to republish.");
             return Ok(MultiRepublishResult::new(HashMap::new()));
         }
-        let mut settings = RepublisherSettings::default();
-        settings.republish_condition(|_| true);
+        let settings = RepublisherSettings::default();
         let republisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
         // TODO: Only publish if user points to this home server.
         let pkarr_keys: Vec<pkarr::PublicKey> =

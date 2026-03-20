@@ -1,3 +1,9 @@
+//! Tenant identification layer.
+//!
+//! Extracts the user's public key from the HTTP Host header (set via TLS SNI
+//! on the Pubky socket, or directly on ICANN requests) and injects it as a
+//! [`PubkyHost`] extension so downstream handlers know which tenant is being addressed.
+
 use crate::client_server::extractors::PubkyHost;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;

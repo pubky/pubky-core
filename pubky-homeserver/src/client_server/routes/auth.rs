@@ -1,3 +1,9 @@
+//! Authentication route handlers (signup and signin).
+//!
+//! Both flows verify a client-provided `AuthToken` (public key + signature),
+//! create or look up the user, and return a session cookie. Signup may
+//! additionally require a signup token depending on server configuration.
+
 use crate::persistence::sql::{
     session::SessionRepository,
     signup_code::{SignupCodeId, SignupCodeRepository},
