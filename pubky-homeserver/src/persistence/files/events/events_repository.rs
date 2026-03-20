@@ -36,7 +36,8 @@ impl EventRepository {
         let con = executor.get_con().await?;
         let row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let max_id: Option<i64> = row.try_get(0)?;
-        Ok(max_id.unwrap_or(0) as u64)
+        let max_id = max_id.unwrap_or(0);
+        Ok(u64::try_from(max_id).unwrap_or(0))
     }
 
     /// Create a new event.

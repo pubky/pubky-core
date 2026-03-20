@@ -7,15 +7,22 @@
 //! This design guarantees sequential delivery with no gaps: events are always read
 //! from the database in order, so a missed NOTIFY or listener reconnection cannot
 //! cause events to be skipped.
+//!
+//! **Latency trade-off:** Even the instance that writes an event does not broadcast
+//! it directly in-process. Instead it round-trips through Postgres (NOTIFY → DB read
+//! → broadcast). This adds a small amount of latency compared to direct broadcasting,
+//! but is the correct trade-off for horizontal scalability - every instance sees every
+//! event without needing its own broadcast path.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::{postgres::PgListener, PgPool};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
+use crate::constants::DEFAULT_MAX_LIST_LIMIT;
 use crate::persistence::files::events::{
     EventCursor, EventRepository, EventsService, PG_NOTIFY_CHANNEL,
 };
@@ -26,6 +33,11 @@ use crate::persistence::sql::UnifiedExecutor;
 /// In the happy path, NOTIFY wakes the poll loop immediately.
 const DEFAULT_FALLBACK_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
+const _: () = assert!(
+    PgEventListener::BATCH_SIZE <= DEFAULT_MAX_LIST_LIMIT,
+    "BATCH_SIZE must not exceed DEFAULT_MAX_LIST_LIMIT",
+);
+
 /// Background service that polls the events table and broadcasts new events locally.
 ///
 /// Uses Postgres NOTIFY as a wake-up hint to minimize latency. The database is
@@ -34,6 +46,7 @@ const DEFAULT_FALLBACK_POLL_INTERVAL: Duration = Duration::from_secs(30);
 pub struct PgEventListener {
     poll_handle: Option<JoinHandle<()>>,
     listen_handle: Option<JoinHandle<()>>,
+    cancel: CancellationToken,
 }
 
 impl PgEventListener {
@@ -46,7 +59,7 @@ impl PgEventListener {
     /// On startup, initializes `last_broadcast_id` to the current max event ID,
     /// so only new events created after startup are broadcast.
     #[must_use = "the listener stops receiving events when dropped"]
-    pub async fn start(pool: &PgPool, events_service: EventsService) -> Self {
+    pub async fn start(pool: &PgPool, events_service: EventsService) -> Result<Self, sqlx::Error> {
         Self::start_with_poll_interval(pool, events_service, DEFAULT_FALLBACK_POLL_INTERVAL).await
     }
 
@@ -56,55 +69,67 @@ impl PgEventListener {
         pool: &PgPool,
         events_service: EventsService,
         fallback_poll_interval: Duration,
-    ) -> Self {
+    ) -> Result<Self, sqlx::Error> {
         let pool = pool.clone();
         let wake = Arc::new(Notify::new());
+        let cancel = CancellationToken::new();
 
         // Initialize last_broadcast_id to current max event ID before spawning tasks,
         // so only events created after this point are broadcast.
-        let initial_id = match EventRepository::get_max_id(&mut UnifiedExecutor::from(&pool)).await
-        {
-            Ok(max_id) => {
-                tracing::info!("PgEventListener starting, last_broadcast_id = {}", max_id);
-                max_id
+        // Retry a few times before giving up — starting from 0 would replay the entire
+        // event history, so we treat this as a hard failure after retries are exhausted.
+        let mut last_err = None;
+        let mut initial_id = None;
+        for attempt in 1..=3 {
+            match EventRepository::get_max_id(&mut UnifiedExecutor::from(&pool)).await {
+                Ok(max_id) => {
+                    tracing::info!("PgEventListener starting, last_broadcast_id = {}", max_id);
+                    initial_id = Some(max_id);
+                    break;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get max event ID (attempt {}/3): {}", attempt, e);
+                    last_err = Some(e);
+                    if attempt < 3 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
             }
-            Err(e) => {
-                tracing::error!(
-                    "Failed to get max event ID on startup: {}. Starting from 0.",
-                    e
-                );
-                0
-            }
+        }
+        let initial_id = match initial_id {
+            Some(id) => id,
+            None => return Err(last_err.expect("last_err must be set when initial_id is None")),
         };
-        let last_broadcast_id = Arc::new(AtomicU64::new(initial_id));
-
         let listen_handle = {
             let pool = pool.clone();
             let wake = wake.clone();
+            let cancel = cancel.clone();
             tokio::spawn(async move {
-                Self::listen_loop(pool, wake).await;
+                Self::listen_loop(pool, wake, cancel).await;
             })
         };
 
         let poll_handle = {
             let wake = wake.clone();
-            let last_broadcast_id = last_broadcast_id.clone();
+            let cancel = cancel.clone();
             tokio::spawn(async move {
                 Self::poll_loop(
                     pool,
                     events_service,
                     wake,
-                    last_broadcast_id,
+                    initial_id,
                     fallback_poll_interval,
+                    cancel,
                 )
                 .await;
             })
         };
 
-        Self {
+        Ok(Self {
             poll_handle: Some(poll_handle),
             listen_handle: Some(listen_handle),
-        }
+            cancel,
+        })
     }
 
     /// Main poll loop: reads new events from DB and broadcasts them.
@@ -113,16 +138,24 @@ impl PgEventListener {
         pool: PgPool,
         events_service: EventsService,
         wake: Arc<Notify>,
-        last_broadcast_id: Arc<AtomicU64>,
+        mut last_broadcast_id: u64,
         fallback_poll_interval: Duration,
+        cancel: CancellationToken,
     ) {
         loop {
-            // Wait for NOTIFY hint or timeout
-            _ = tokio::time::timeout(fallback_poll_interval, wake.notified()).await;
+            // Wait for NOTIFY hint, timeout, or cancellation
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    tracing::info!("Poll loop cancelled, shutting down");
+                    return;
+                }
+                _ = tokio::time::timeout(fallback_poll_interval, wake.notified()) => {}
+            }
 
             // Poll DB for new events
             if let Err(e) =
-                Self::broadcast_new_events(&pool, &events_service, &last_broadcast_id).await
+                Self::broadcast_new_events(&pool, &events_service, &mut last_broadcast_id, &wake)
+                    .await
             {
                 tracing::error!("Error polling events from DB: {}", e);
                 tokio::time::sleep(Duration::from_secs(1)).await;
@@ -131,18 +164,26 @@ impl PgEventListener {
     }
 
     /// Query DB for events after last_broadcast_id and broadcast them in order.
+    /// Processes up to `MAX_BATCHES_PER_WAKE` batches per wake cycle to bound latency
+    /// under sustained write pressure. Remaining events will be picked up on the next cycle.
+    const MAX_BATCHES_PER_WAKE: usize = 10;
+    /// Must not exceed `DEFAULT_MAX_LIST_LIMIT` (1000), which caps the limit in
+    /// `EventRepository::get_by_cursor`. If it did, `is_full_batch` would never
+    /// trigger and the multi-batch continuation logic would silently break.
+    const BATCH_SIZE: u16 = 100;
+
     async fn broadcast_new_events(
         pool: &PgPool,
         events_service: &EventsService,
-        last_broadcast_id: &AtomicU64,
+        last_broadcast_id: &mut u64,
+        wake: &Notify,
     ) -> Result<(), sqlx::Error> {
-        loop {
-            let current_id = last_broadcast_id.load(Ordering::Relaxed);
-            let cursor = EventCursor::new(current_id);
+        for _ in 0..Self::MAX_BATCHES_PER_WAKE {
+            let cursor = EventCursor::new(*last_broadcast_id);
 
             let events = EventRepository::get_by_cursor(
                 Some(cursor),
-                Some(100),
+                Some(Self::BATCH_SIZE),
                 &mut UnifiedExecutor::from(pool),
             )
             .await?;
@@ -151,23 +192,40 @@ impl PgEventListener {
                 return Ok(());
             }
 
+            let is_full_batch = events.len() == Self::BATCH_SIZE as usize;
+
             for event in &events {
                 events_service.broadcast_event(event.clone());
-                last_broadcast_id.store(event.id, Ordering::Relaxed);
+                *last_broadcast_id = event.id;
             }
 
-            // If we got a full batch, there might be more - loop to fetch the rest.
+            if !is_full_batch {
+                return Ok(());
+            }
+
             // Yield to let other tasks run between batches.
             tokio::task::yield_now().await;
         }
+
+        // Hit the batch cap — wake ourselves immediately to continue without
+        // waiting for the fallback poll interval.
+        tracing::debug!(
+            "Hit max batch cap ({}), scheduling immediate continuation",
+            Self::MAX_BATCHES_PER_WAKE
+        );
+        wake.notify_one();
+        Ok(())
     }
 
     /// LISTEN loop: receives Postgres NOTIFY and wakes the poll loop.
-    /// Handles reconnection on errors.
-    async fn listen_loop(pool: PgPool, wake: Arc<Notify>) {
+    /// Handles reconnection on errors. Exits when the cancellation token is triggered.
+    async fn listen_loop(pool: PgPool, wake: Arc<Notify>, cancel: CancellationToken) {
         loop {
-            match Self::run_listener(&pool, &wake).await {
-                Ok(()) => break,
+            if cancel.is_cancelled() {
+                tracing::info!("Listen loop cancelled, shutting down");
+                return;
+            }
+            match Self::run_listener(&pool, &wake, &cancel).await {
                 Err(e) => {
                     tracing::error!("PgListener error: {}. Reconnecting in 1s...", e);
                     // Wake the poll loop so it can catch up on any events missed
@@ -175,13 +233,18 @@ impl PgEventListener {
                     wake.notify_one();
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
+                Ok(()) => return, // Cancelled
             }
         }
     }
 
-    /// Run the NOTIFY listener until an error occurs.
+    /// Run the NOTIFY listener until an error occurs or cancellation is requested.
     /// Ignores the payload - just wakes the poll loop.
-    async fn run_listener(pool: &PgPool, wake: &Notify) -> Result<(), sqlx::Error> {
+    async fn run_listener(
+        pool: &PgPool,
+        wake: &Notify,
+        cancel: &CancellationToken,
+    ) -> Result<(), sqlx::Error> {
         let mut listener = PgListener::connect_with(pool).await?;
         listener.listen(PG_NOTIFY_CHANNEL).await?;
 
@@ -192,14 +255,23 @@ impl PgEventListener {
         wake.notify_one();
 
         loop {
-            let _notification = listener.recv().await?;
-            wake.notify_one();
+            tokio::select! {
+                _ = cancel.cancelled() => return Ok(()),
+                result = listener.recv() => {
+                    result?;
+                    wake.notify_one();
+                }
+            }
         }
     }
 }
 
 impl Drop for PgEventListener {
     fn drop(&mut self) {
+        tracing::info!("PgEventListener shutting down");
+        // Signal both tasks to exit their loops gracefully.
+        self.cancel.cancel();
+        // Abort as a fallback in case a task is blocked on a non-cancellation-aware future.
         if let Some(handle) = self.poll_handle.take() {
             handle.abort();
         }
@@ -217,11 +289,11 @@ mod tests {
     use crate::shared::webdav::{EntryPath, WebDavPath};
     use pubky_common::crypto::{Hash, Keypair};
     use std::time::Duration;
+    use tokio::sync::broadcast;
 
     /// Helper: create a real event in the DB and send a NOTIFY to wake the listener.
     async fn create_event_and_notify(
         db: &SqlDb,
-        events_service: &EventsService,
         user_id: i32,
         path: &str,
         pubkey: &pubky_common::crypto::PublicKey,
@@ -241,51 +313,9 @@ mod tests {
         tx.commit().await.unwrap();
 
         // Send NOTIFY to wake the listener (empty payload, just a hint)
-        events_service.notify_event(db.pool()).await;
+        EventsService::notify_event(db.pool()).await;
 
         event.id
-    }
-
-    /// Test that events created in DB are broadcast to subscribers via the poll loop.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_events_broadcast_from_db() {
-        let db = SqlDb::test().await;
-        let events_service = EventsService::new(100);
-
-        let _listener = PgEventListener::start(db.pool(), events_service.clone()).await;
-
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        let user =
-            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
-                .await
-                .unwrap();
-
-        let mut rx = events_service.subscribe();
-
-        // Create 3 events in the DB
-        let mut expected_ids = Vec::new();
-        for i in 1..=3 {
-            let id = create_event_and_notify(
-                &db,
-                &events_service,
-                user.id,
-                &format!("/pub/file{}.txt", i),
-                &pubkey,
-            )
-            .await;
-            expected_ids.push(id);
-        }
-
-        // Receive all 3 events in order
-        for expected_id in &expected_ids {
-            let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-                .await
-                .expect("Timeout waiting for event")
-                .expect("Channel closed");
-            assert_eq!(received.id, *expected_id);
-        }
     }
 
     /// Test that two instances sharing the same DB both receive all events.
@@ -295,10 +325,14 @@ mod tests {
         let db = SqlDb::test().await;
 
         let events_service_a = EventsService::new(100);
-        let _listener_a = PgEventListener::start(db.pool(), events_service_a.clone()).await;
+        let _listener_a = PgEventListener::start(db.pool(), events_service_a.clone())
+            .await
+            .unwrap();
 
         let events_service_b = EventsService::new(100);
-        let _listener_b = PgEventListener::start(db.pool(), events_service_b.clone()).await;
+        let _listener_b = PgEventListener::start(db.pool(), events_service_b.clone())
+            .await
+            .unwrap();
 
         let keypair = Keypair::random();
         let pubkey = keypair.public_key();
@@ -311,9 +345,7 @@ mod tests {
         let mut rx_b = events_service_b.subscribe();
 
         // Instance A writes an event
-        let event_id =
-            create_event_and_notify(&db, &events_service_a, user.id, "/pub/from-a.txt", &pubkey)
-                .await;
+        let event_id = create_event_and_notify(&db, user.id, "/pub/from-a.txt", &pubkey).await;
 
         // Both instances should receive it
         let recv_a = tokio::time::timeout(Duration::from_secs(5), rx_a.recv())
@@ -352,20 +384,22 @@ mod tests {
         event.id
     }
 
-    /// Test that events are eventually delivered even without NOTIFY (fallback polling).
+    /// Test that fallback polling delivers events when NOTIFY is unavailable.
+    /// Covers: normal event delivery, then silent events (simulating lost NOTIFYs
+    /// during a listener reconnect), verifying all arrive in order with no gaps.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_fallback_polling_without_notify() {
+    async fn test_fallback_polling_delivers_gap_events() {
         let db = SqlDb::test().await;
         let events_service = EventsService::new(100);
 
-        // Start listener with a short poll interval for faster testing
         let _listener = PgEventListener::start_with_poll_interval(
             db.pool(),
             events_service.clone(),
-            Duration::from_secs(1),
+            Duration::from_millis(500),
         )
-        .await;
+        .await
+        .unwrap();
 
         let keypair = Keypair::random();
         let pubkey = keypair.public_key();
@@ -374,21 +408,43 @@ mod tests {
                 .await
                 .unwrap();
 
-        // Small delay to let the listener initialize
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
         let mut rx = events_service.subscribe();
 
-        // Create event in DB but do NOT send NOTIFY
-        let event_id = create_event_silent(&db, user.id, "/pub/silent.txt", &pubkey).await;
-
-        // The event should still be delivered via fallback polling (1s interval in this test).
+        // Phase 1: Deliver an event normally via NOTIFY to advance last_broadcast_id
+        let first_id = create_event_and_notify(&db, user.id, "/pub/normal.txt", &pubkey).await;
         let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
-            .expect("Timeout - fallback polling did not deliver the event")
+            .expect("Timeout")
             .expect("Channel closed");
+        assert_eq!(received.id, first_id);
 
-        assert_eq!(received.id, event_id);
+        // Phase 2: Create events WITHOUT NOTIFY (simulating lost notifications)
+        let mut gap_ids = Vec::new();
+        for i in 1..=5 {
+            let id =
+                create_event_silent(&db, user.id, &format!("/pub/gap{}.txt", i), &pubkey).await;
+            gap_ids.push(id);
+        }
+
+        // Phase 3: All gap events should arrive via fallback polling, in order
+        for (idx, expected_id) in gap_ids.iter().enumerate() {
+            let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Timeout waiting for gap event {}/{} — fallback polling failed",
+                        idx + 1,
+                        gap_ids.len()
+                    )
+                })
+                .expect("Channel closed");
+            assert_eq!(
+                received.id,
+                *expected_id,
+                "Gap event {} should be delivered in order",
+                idx + 1
+            );
+        }
     }
 
     /// Test that get_max_id returns 0 on an empty table and the correct ID after inserts.
@@ -423,40 +479,6 @@ mod tests {
         assert_eq!(max_id, last_id);
     }
 
-    /// Test that events created before the listener starts are NOT broadcast.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_pre_existing_events_not_broadcast() {
-        let db = SqlDb::test().await;
-
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        let user =
-            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
-                .await
-                .unwrap();
-
-        // Create events BEFORE starting the listener
-        for i in 1..=5 {
-            create_event_silent(&db, user.id, &format!("/pub/old{}.txt", i), &pubkey).await;
-        }
-
-        let events_service = EventsService::new(100);
-        let _listener = PgEventListener::start(db.pool(), events_service.clone()).await;
-        let mut rx = events_service.subscribe();
-
-        // Create one NEW event after the listener started
-        let new_id =
-            create_event_and_notify(&db, &events_service, user.id, "/pub/new.txt", &pubkey).await;
-
-        // Should only receive the new event, not the 5 pre-existing ones
-        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("Timeout waiting for event")
-            .expect("Channel closed");
-        assert_eq!(received.id, new_id);
-    }
-
     /// Test that dropping a listener and starting a new one correctly catches up.
     /// Simulates: instance crash → events produced during downtime → instance restart.
     /// The new listener should skip gap events (they're already in the DB for cursor-based
@@ -475,17 +497,13 @@ mod tests {
                 .unwrap();
 
         // Phase 1: Start listener, verify it works
-        let listener = PgEventListener::start(db.pool(), events_service.clone()).await;
+        let listener = PgEventListener::start(db.pool(), events_service.clone())
+            .await
+            .unwrap();
         let mut rx = events_service.subscribe();
 
-        let initial_id = create_event_and_notify(
-            &db,
-            &events_service,
-            user.id,
-            "/pub/before-crash.txt",
-            &pubkey,
-        )
-        .await;
+        let initial_id =
+            create_event_and_notify(&db, user.id, "/pub/before-crash.txt", &pubkey).await;
 
         let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
@@ -507,17 +525,13 @@ mod tests {
         }
 
         // Phase 4: Start a NEW listener (simulates instance restart)
-        let _listener2 = PgEventListener::start(db.pool(), events_service.clone()).await;
+        let _listener2 = PgEventListener::start(db.pool(), events_service.clone())
+            .await
+            .unwrap();
 
         // Phase 5: Create a new event after restart
-        let post_restart_id = create_event_and_notify(
-            &db,
-            &events_service,
-            user.id,
-            "/pub/after-restart.txt",
-            &pubkey,
-        )
-        .await;
+        let post_restart_id =
+            create_event_and_notify(&db, user.id, "/pub/after-restart.txt", &pubkey).await;
 
         // Phase 6: The subscriber should receive ONLY the post-restart event.
         // Gap events are skipped because the new listener initialized last_broadcast_id
@@ -532,81 +546,6 @@ mod tests {
         );
     }
 
-    /// Test that gap events are delivered when the NOTIFY listener reconnects internally.
-    /// Simulates the scenario where the Postgres LISTEN connection drops momentarily
-    /// but the PgEventListener stays alive. The poll loop's fallback timer should
-    /// catch events produced while NOTIFY was unavailable.
-    ///
-    /// We approximate this by:
-    /// 1. Starting a listener with a short fallback poll interval
-    /// 2. Creating events without NOTIFY (simulating lost notifications)
-    /// 3. Verifying they arrive via fallback polling with no gaps
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_internal_reconnect_catches_gap_events() {
-        let db = SqlDb::test().await;
-        let events_service = EventsService::new(100);
-
-        let _listener = PgEventListener::start_with_poll_interval(
-            db.pool(),
-            events_service.clone(),
-            Duration::from_secs(1),
-        )
-        .await;
-
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-        let user =
-            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
-                .await
-                .unwrap();
-
-        let mut rx = events_service.subscribe();
-
-        // First, deliver an event normally to advance last_broadcast_id
-        let first_id = create_event_and_notify(
-            &db,
-            &events_service,
-            user.id,
-            "/pub/before-gap.txt",
-            &pubkey,
-        )
-        .await;
-        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("Timeout")
-            .expect("Channel closed");
-        assert_eq!(received.id, first_id);
-
-        // Now create events WITHOUT notify (simulating lost notifications during reconnect)
-        let mut gap_ids = Vec::new();
-        for i in 1..=3 {
-            let id =
-                create_event_silent(&db, user.id, &format!("/pub/gap{}.txt", i), &pubkey).await;
-            gap_ids.push(id);
-        }
-
-        // All gap events should arrive via fallback polling, in order, with no gaps
-        for (idx, expected_id) in gap_ids.iter().enumerate() {
-            let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-                .await
-                .unwrap_or_else(|_| {
-                    panic!(
-                        "Timeout waiting for gap event {}/{}",
-                        idx + 1,
-                        gap_ids.len()
-                    )
-                })
-                .expect("Channel closed");
-            assert_eq!(
-                received.id,
-                *expected_id,
-                "Gap event {} should be delivered in order",
-                idx + 1
-            );
-        }
-    }
-
     /// Test that the batch loop handles more than 100 events correctly.
     #[tokio::test]
     #[pubky_test_utils::test]
@@ -614,7 +553,9 @@ mod tests {
         let db = SqlDb::test().await;
         let events_service = EventsService::new(250);
 
-        let _listener = PgEventListener::start(db.pool(), events_service.clone()).await;
+        let _listener = PgEventListener::start(db.pool(), events_service.clone())
+            .await
+            .unwrap();
 
         let keypair = Keypair::random();
         let pubkey = keypair.public_key();
@@ -635,7 +576,7 @@ mod tests {
         }
 
         // Send a single NOTIFY to wake the poll loop
-        events_service.notify_event(db.pool()).await;
+        EventsService::notify_event(db.pool()).await;
 
         // All 150 events should be delivered in order
         for (idx, expected_id) in expected_ids.iter().enumerate() {
@@ -652,5 +593,157 @@ mod tests {
                 received.id
             );
         }
+    }
+
+    /// Test that concurrent writers produce events that are all delivered in order.
+    /// Multiple tasks write events simultaneously while the listener is running.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_concurrent_writers() {
+        let db = SqlDb::test().await;
+        let events_service = EventsService::new(500);
+
+        let _listener = PgEventListener::start(db.pool(), events_service.clone())
+            .await
+            .unwrap();
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        let mut rx = events_service.subscribe();
+
+        // Spawn 10 tasks that each create 5 events concurrently
+        let num_tasks = 10;
+        let events_per_task = 5;
+        let mut handles = Vec::new();
+        for task_idx in 0..num_tasks {
+            let db = db.clone();
+            let pubkey = pubkey.clone();
+            let user_id = user.id;
+            handles.push(tokio::spawn(async move {
+                let mut ids = Vec::new();
+                for event_idx in 0..events_per_task {
+                    let id = create_event_and_notify(
+                        &db,
+                        user_id,
+                        &format!("/pub/t{}-e{}.txt", task_idx, event_idx),
+                        &pubkey,
+                    )
+                    .await;
+                    ids.push(id);
+                }
+                ids
+            }));
+        }
+
+        // Collect all created event IDs
+        let mut all_ids = Vec::new();
+        for handle in handles {
+            all_ids.extend(handle.await.unwrap());
+        }
+        all_ids.sort();
+
+        let total = all_ids.len();
+        assert_eq!(total, num_tasks * events_per_task);
+
+        // Receive all events — they must arrive in strictly ascending ID order
+        let mut received_ids = Vec::new();
+        for i in 0..total {
+            let received = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("Timeout waiting for event {}/{}", i + 1, total))
+                .expect("Channel closed");
+            received_ids.push(received.id);
+        }
+
+        // Verify monotonically increasing (the poll loop reads by ID order)
+        for window in received_ids.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "Events not in order: {} should be before {}",
+                window[0],
+                window[1]
+            );
+        }
+        // Verify we got every event
+        assert_eq!(received_ids, all_ids);
+    }
+
+    /// Test that a slow subscriber that falls behind the broadcast channel capacity
+    /// experiences a Lagged error but can recover by re-subscribing.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_broadcast_channel_overflow_lagged_receiver() {
+        let db = SqlDb::test().await;
+        // Use a very small channel capacity to force overflow
+        let channel_capacity = 4;
+        let events_service = EventsService::new(channel_capacity);
+
+        let _listener = PgEventListener::start_with_poll_interval(
+            db.pool(),
+            events_service.clone(),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        // Subscribe but do NOT read — simulate a slow consumer
+        let mut rx = events_service.subscribe();
+
+        // Create more events than the channel can hold
+        let overflow_count = channel_capacity + 10;
+        let mut all_ids = Vec::new();
+        for i in 0..overflow_count {
+            let id =
+                create_event_and_notify(&db, user.id, &format!("/pub/overflow{}.txt", i), &pubkey)
+                    .await;
+            all_ids.push(id);
+        }
+
+        // Poll until we see a Lagged error (with timeout instead of fixed sleep).
+        // The poll loop will broadcast all events, overflowing the small channel.
+        let mut saw_lagged = false;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Ok(_)) => continue, // Consume buffered events
+                Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
+                    saw_lagged = true;
+                    assert!(
+                        n > 0,
+                        "Lagged count should be positive when channel overflows"
+                    );
+                    break;
+                }
+                Ok(Err(broadcast::error::RecvError::Closed)) => {
+                    panic!("Channel should not be closed")
+                }
+                Err(_) => break, // Timeout
+            }
+        }
+        assert!(
+            saw_lagged,
+            "Slow receiver should have been lagged by channel overflow"
+        );
+
+        // After lagging, the receiver can still receive new events
+        let new_id =
+            create_event_and_notify(&db, user.id, "/pub/after-overflow.txt", &pubkey).await;
+        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("Timeout waiting for post-overflow event")
+            .expect("Channel closed");
+        assert_eq!(received.id, new_id);
     }
 }

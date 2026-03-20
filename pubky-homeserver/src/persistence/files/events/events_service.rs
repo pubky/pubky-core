@@ -54,7 +54,7 @@ impl EventsService {
     /// let mut tx = db.pool().begin().await?;
     /// let event = events_service.create_event(..., &mut (&mut tx).into()).await?;
     /// tx.commit().await?;
-    /// events_service.notify_event(pool).await;
+    /// EventsService::notify_event(pool).await;
     /// ```
     pub async fn create_event<'a>(
         &self,
@@ -72,7 +72,7 @@ impl EventsService {
     /// ## Timing
     /// It's critical to broadcast only after commit to avoid race conditions where
     /// subscribers receive events that don't exist in the database yet.
-    pub fn broadcast_event(&self, event: EventEntity) {
+    pub(crate) fn broadcast_event(&self, event: EventEntity) {
         match self.event_tx.send(event) {
             Ok(_) => {} // Successfully broadcast to receivers
             Err(broadcast::error::SendError(_)) => {
@@ -87,9 +87,12 @@ impl EventsService {
     /// This is a best-effort wake-up signal. The PgEventListener will poll the
     /// database for actual events, so a missed NOTIFY only adds latency (up to
     /// the fallback poll interval) — it never causes missed events.
-    pub async fn notify_event(&self, pool: &PgPool) {
-        let query = format!("SELECT pg_notify('{}', '')", PG_NOTIFY_CHANNEL);
-        if let Err(e) = sqlx::query(&query).execute(pool).await {
+    pub async fn notify_event(pool: &PgPool) {
+        if let Err(e) = sqlx::query("SELECT pg_notify($1, '')")
+            .bind(PG_NOTIFY_CHANNEL)
+            .execute(pool)
+            .await
+        {
             tracing::error!("Failed to send NOTIFY: {}", e);
         }
     }

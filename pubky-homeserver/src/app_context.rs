@@ -47,6 +47,9 @@ pub enum AppContextConversionError {
     /// Failed to build pkarr client.
     #[error("Failed to build pkarr client: {0}")]
     Pkarr(pkarr::errors::BuildError),
+    /// Failed to start the Postgres event listener.
+    #[error("Failed to start Postgres event listener: {0}")]
+    PgEventListener(sqlx::Error),
     /// Failed to initialize metrics.
     #[error("Failed to initialize metrics: {0}")]
     Metrics(MetricsInitError),
@@ -127,7 +130,9 @@ impl AppContext {
 
         let events_service = EventsService::new(1000);
 
-        let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone()).await;
+        let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone())
+            .await
+            .map_err(AppContextConversionError::PgEventListener)?;
 
         let file_service =
             FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())
