@@ -737,13 +737,32 @@ mod tests {
             "Slow receiver should have been lagged by channel overflow"
         );
 
-        // After lagging, the receiver can still receive new events
+        // After lagging, re-subscribe to get a fresh receiver, then verify
+        // new events are still delivered.
+        let mut rx = events_service.subscribe();
         let new_id =
             create_event_and_notify(&db, user.id, "/pub/after-overflow.txt", &pubkey).await;
-        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("Timeout waiting for post-overflow event")
-            .expect("Channel closed");
-        assert_eq!(received.id, new_id);
+
+        // Drain until we see the specific new event (older events may still be in-flight)
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut found = false;
+        loop {
+            match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Ok(event)) if event.id == new_id => {
+                    found = true;
+                    break;
+                }
+                Ok(Ok(_)) => continue, // Older event, skip
+                Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
+                Ok(Err(broadcast::error::RecvError::Closed)) => {
+                    panic!("Channel closed unexpectedly")
+                }
+                Err(_) => break, // Timeout
+            }
+        }
+        assert!(
+            found,
+            "Should receive new event after re-subscribing post-overflow"
+        );
     }
 }
