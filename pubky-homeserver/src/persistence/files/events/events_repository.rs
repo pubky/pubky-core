@@ -26,6 +26,20 @@ pub const EVENT_TABLE: &str = "events";
 pub struct EventRepository;
 
 impl EventRepository {
+    /// Get the maximum event ID in the database.
+    /// Returns 0 if no events exist.
+    pub async fn get_max_id<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<u64, sqlx::Error> {
+        let (query, values) = Query::select()
+            .expr(Expr::col((EVENT_TABLE, EventIden::Id)).max())
+            .from(EVENT_TABLE)
+            .build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
+        let max_id: Option<i64> = row.try_get(0)?;
+        let max_id = max_id.unwrap_or(0);
+        Ok(u64::try_from(max_id).unwrap_or(0))
+    }
+
     /// Create a new event.
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'a>(

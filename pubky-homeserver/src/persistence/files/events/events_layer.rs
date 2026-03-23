@@ -157,12 +157,21 @@ impl<R: oio::Write> oio::Write for WriterWrapper<R> {
             )
             .await
         {
-            Ok(event) => {
+            Ok(_) => {
                 drop(executor);
                 tx.commit().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
-                self.events_service.broadcast_event(event);
+                // Best-effort NOTIFY on a separate connection - if this fails,
+                // the fallback poll interval will still pick up the event.
+                // Safe because Postgres read-committed isolation guarantees the
+                // committed row is visible to any new transaction, but this
+                // assumes a single Postgres instance (no read replicas in the
+                // poll path).
+                let pool = self.db.pool().clone();
+                drop(tokio::spawn(async move {
+                    EventsService::notify_event(&pool).await;
+                }));
             }
             Err(e) => {
                 drop(executor);
@@ -205,6 +214,7 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
             .drain(0..deleted_files_count)
             .collect::<Vec<_>>();
 
+        let mut any_committed = false;
         for path in deleted_paths {
             let mut tx =
                 self.db.pool().begin().await.map_err(|e| {
@@ -225,12 +235,12 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
                 .create_event(user_id, EventType::Delete, &path, &mut executor)
                 .await
             {
-                Ok(event) => {
+                Ok(_) => {
                     drop(executor);
                     tx.commit().await.map_err(|e| {
                         opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                     })?;
-                    self.events_service.broadcast_event(event);
+                    any_committed = true;
                 }
                 Err(e) => {
                     drop(executor);
@@ -244,6 +254,14 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
                     );
                 }
             };
+        }
+        // Best-effort NOTIFY — if this fails, the fallback poll interval
+        // will still pick up the events.
+        if any_committed {
+            let pool = self.db.pool().clone();
+            drop(tokio::spawn(async move {
+                EventsService::notify_event(&pool).await;
+            }));
         }
         Ok(deleted_files_count)
     }

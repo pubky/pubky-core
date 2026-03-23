@@ -3,6 +3,7 @@ use crate::persistence::{
     sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;
+use sqlx::PgPool;
 use tokio::sync::broadcast;
 
 /// Maximum number of users allowed in a single event stream request.
@@ -10,6 +11,9 @@ use tokio::sync::broadcast;
 /// - Max users at 4KB: 3896 / 74 ≈ 52 users
 /// - Set to 50 for clean limit with safety margin for longer cursors
 pub const MAX_EVENT_STREAM_USERS: usize = 50;
+
+/// Postgres channel name for event notifications.
+pub(crate) const PG_NOTIFY_CHANNEL: &str = "events";
 
 /// Service that handles all event-related business logic.
 #[derive(Clone, Debug)]
@@ -41,14 +45,16 @@ impl EventsService {
     }
 
     /// Create a new event in the database.
-    /// The event will be returned but NOT broadcast - use `broadcast_event` after transaction commit.
+    /// The event will be returned but NOT broadcast — call `notify_event` after transaction
+    /// commit to wake up all PgEventListener instances, which will read and broadcast
+    /// the event from the database.
     ///
     /// ## Usage Pattern
     /// ```rust,ignore
     /// let mut tx = db.pool().begin().await?;
     /// let event = events_service.create_event(..., &mut (&mut tx).into()).await?;
     /// tx.commit().await?;
-    /// events_service.broadcast_event(event);
+    /// EventsService::notify_event(pool).await;
     /// ```
     pub async fn create_event<'a>(
         &self,
@@ -66,12 +72,28 @@ impl EventsService {
     /// ## Timing
     /// It's critical to broadcast only after commit to avoid race conditions where
     /// subscribers receive events that don't exist in the database yet.
-    pub fn broadcast_event(&self, event: EventEntity) {
+    pub(crate) fn broadcast_event(&self, event: EventEntity) {
         match self.event_tx.send(event) {
             Ok(_) => {} // Successfully broadcast to receivers
             Err(broadcast::error::SendError(_)) => {
                 // No active receivers - this is expected when no clients are listening
             }
+        }
+    }
+
+    /// Send a Postgres NOTIFY to wake up all PgEventListener instances.
+    /// Call this AFTER the transaction has been committed.
+    ///
+    /// This is a best-effort wake-up signal. The PgEventListener will poll the
+    /// database for actual events, so a missed NOTIFY only adds latency (up to
+    /// the fallback poll interval) — it never causes missed events.
+    pub async fn notify_event(pool: &PgPool) {
+        if let Err(e) = sqlx::query("SELECT pg_notify($1, '')")
+            .bind(PG_NOTIFY_CHANNEL)
+            .execute(pool)
+            .await
+        {
+            tracing::error!("Failed to send NOTIFY: {}", e);
         }
     }
 
