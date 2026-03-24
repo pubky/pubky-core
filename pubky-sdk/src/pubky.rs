@@ -56,9 +56,7 @@ use crate::PublicKey;
 
 use crate::{
     Capabilities, EventCursor, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient,
-    PubkySigner, PublicStorage, Result,
-    actors::AuthFlowKind,
-    deep_links::DeepLink,
+    PubkySigner, PublicStorage, Result, actors::AuthFlowKind, deep_links::DeepLink,
     errors::AuthError,
 };
 
@@ -303,12 +301,9 @@ impl Pubky {
 /// Parse a `pubkyauth://` URL into the components needed to rebuild an auth flow.
 ///
 /// Rejects `SeedExport` deep links since they cannot be resumed as auth flows.
-fn parse_auth_deep_link(
-    url: &str,
-) -> Result<(Capabilities, url::Url, [u8; 32], AuthFlowKind)> {
-    let deep_link = DeepLink::from_str(url).map_err(|e| {
-        AuthError::Validation(format!("Failed to parse authorization URL: {e}"))
-    })?;
+fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], AuthFlowKind)> {
+    let deep_link = DeepLink::from_str(url)
+        .map_err(|e| AuthError::Validation(format!("Failed to parse authorization URL: {e}")))?;
 
     match &deep_link {
         DeepLink::Signin(s) => Ok((
@@ -323,9 +318,8 @@ fn parse_auth_deep_link(
             *s.secret(),
             AuthFlowKind::signup(s.homeserver().clone(), s.signup_token()),
         )),
-        DeepLink::SeedExport(_) => Err(AuthError::Validation(
-            "Only signin and signup URLs can be resumed.".into(),
-        )
-        .into()),
+        DeepLink::SeedExport(_) => {
+            Err(AuthError::Validation("Only signin and signup URLs can be resumed.".into()).into())
+        }
     }
 }
