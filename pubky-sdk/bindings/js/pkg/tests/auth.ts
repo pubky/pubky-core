@@ -161,6 +161,157 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   t.end();
 });
 
+test("Auth: resume signin flow reconnects to same channel", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const pubky = signer.publicKey.z32();
+
+  const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
+
+  // 1) Start a flow and save the URL (as the app would before a refresh).
+  const originalFlow = sdk.startAuthFlow(capabilities, AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
+  const savedUrl = originalFlow.authorizationUrl;
+  // Explicitly free the WASM handle — simulates page refresh killing WASM memory.
+  // JS block scoping does NOT trigger WASM destructors; .free() does.
+  originalFlow.free();
+
+  // 2) Signer approves while the original flow is gone (token waits in the relay inbox).
+  {
+    const signupToken = await createSignupToken();
+    await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+    await signer.approveAuthRequest(savedUrl);
+  }
+
+  // 3) Resume from the saved URL — reconnects to the same relay channel.
+  const resumedFlow = sdk.resumeAuthFlow(savedUrl);
+
+  t.equal(
+    resumedFlow.authorizationUrl,
+    savedUrl,
+    "resumed flow produces the same authorization URL",
+  );
+
+  const session = await resumedFlow.awaitApproval();
+
+  t.equal(
+    session.info.publicKey.z32(),
+    pubky,
+    "resumed flow session belongs to expected user",
+  );
+  t.deepEqual(
+    session.info.capabilities,
+    capabilities.split(","),
+    "resumed flow session capabilities match",
+  );
+
+  t.end();
+});
+
+test("Auth: resume signup flow preserves signup params and channel", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const pubky = signer.publicKey.z32();
+  const signupToken = await createSignupToken();
+
+  const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
+
+  // 1) Start a signup flow and save URL before refresh.
+  const originalFlow = sdk.startAuthFlow(
+    capabilities,
+    AuthFlowKind.signup(HOMESERVER_PUBLICKEY, signupToken),
+    TESTNET_HTTP_RELAY,
+  );
+  const savedUrl = originalFlow.authorizationUrl;
+
+  // Signup-specific params are present in the persisted URL.
+  const savedParsed = new URL(savedUrl);
+  t.equal(
+    savedParsed.searchParams.get("hs"),
+    HOMESERVER_PUBLICKEY.z32(),
+    "saved URL keeps homeserver parameter",
+  );
+  t.equal(
+    savedParsed.searchParams.get("st"),
+    signupToken,
+    "saved URL keeps signup token parameter",
+  );
+
+  // Simulate page refresh destroying the in-memory flow handle.
+  originalFlow.free();
+
+  // 2) Signer approves while original flow is gone.
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.approveAuthRequest(savedUrl);
+
+  // 3) Resume from persisted URL.
+  const resumedFlow = sdk.resumeAuthFlow(savedUrl);
+
+  t.equal(
+    resumedFlow.authorizationUrl,
+    savedUrl,
+    "resumed signup flow produces the same authorization URL",
+  );
+
+  const resumedParsed = new URL(resumedFlow.authorizationUrl);
+  t.equal(
+    resumedParsed.searchParams.get("hs"),
+    HOMESERVER_PUBLICKEY.z32(),
+    "resumed URL keeps homeserver parameter",
+  );
+  t.equal(
+    resumedParsed.searchParams.get("st"),
+    signupToken,
+    "resumed URL keeps signup token parameter",
+  );
+
+  const session = await resumedFlow.awaitApproval();
+
+  t.equal(
+    session.info.publicKey.z32(),
+    pubky,
+    "resumed signup flow session belongs to expected user",
+  );
+  t.deepEqual(
+    session.info.capabilities,
+    capabilities.split(","),
+    "resumed signup flow session capabilities match",
+  );
+
+  t.end();
+});
+
+test("resumeAuthFlow: rejects invalid URL", async (t) => {
+  const sdk = Pubky.testnet();
+
+  try {
+    sdk.resumeAuthFlow("https://not-a-pubkyauth-url.com");
+    t.fail("resumeAuthFlow() should throw on non-pubkyauth URL");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "AuthenticationError", "invalid URL -> AuthenticationError");
+    t.ok(
+      /Failed to parse/i.test(error.message),
+      "error message explains parse failure",
+    );
+  }
+
+  try {
+    sdk.resumeAuthFlow("pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8");
+    t.fail("resumeAuthFlow() should reject seed export URLs");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "AuthenticationError", "seed export URL -> AuthenticationError");
+    t.ok(
+      /Only signin and signup/i.test(error.message),
+      "error message explains only auth URLs are valid",
+    );
+  }
+
+  t.end();
+});
+
 // Covers the pure string validator without running the flow.
 // Ensures normalization behavior and precise error reporting.
 test("validateCapabilities(): ok, normalize, and precise errors", async (t) => {

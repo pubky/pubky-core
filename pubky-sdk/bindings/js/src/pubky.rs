@@ -103,6 +103,18 @@ impl Pubky {
         Ok(flow)
     }
 
+    /// Resume a previously started **pubkyauth** flow from its saved `authorizationUrl`.
+    ///
+    /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
+    /// @returns {AuthFlow} A flow reconnected to the original relay channel.
+    /// @throws {PubkyError}
+    /// - `{ name: "AuthenticationError" }` if the URL is invalid or not a signin/signup link
+    /// - `{ name: "RequestError" }` on network/relay failure
+    #[wasm_bindgen(js_name = "resumeAuthFlow")]
+    pub fn resume_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
+        AuthFlow::resume_with_client(authorization_url, Some(self.0.client().clone()))
+    }
+
     /// Create a `Signer` from an existing `Keypair`.
     ///
     /// @param {Keypair} keypair The user’s keys.
