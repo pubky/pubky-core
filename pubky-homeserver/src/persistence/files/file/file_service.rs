@@ -271,10 +271,7 @@ mod tests {
         let buffer = Buffer::from(test_data.as_slice());
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
-        file_service
-            .write(&path, buffer.clone())
-            .await
-            .unwrap();
+        file_service.write(&path, buffer.clone()).await.unwrap();
         let content = file_service.get(&path).await.unwrap();
         assert_eq!(content.as_ref(), test_data);
 

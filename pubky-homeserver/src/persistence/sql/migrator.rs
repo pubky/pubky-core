@@ -158,7 +158,6 @@ impl<'a> Migrator<'a> {
         sqlx::query_with(&query, values).execute(&mut **tx).await?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]
