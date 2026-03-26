@@ -73,28 +73,23 @@ impl<'a> Migrator<'a> {
     /// Runs a single migration.
     async fn run_migration(&self, migration: &dyn MigrationTrait) -> anyhow::Result<()> {
         tracing::info!("Running migration {}", migration.name());
-        let mut tx = self.db.pool().begin().await?;
-        // Execute the migration
-        let result: Result<(), anyhow::Error> = {
+
+        let result: anyhow::Result<()> = async {
+            let mut tx = self.db.pool().begin().await?;
             migration.up(&mut tx).await?;
             self.mark_migration_as_done(&mut tx, migration.name())
                 .await
-                .map_err(|e| e.context("Failed to mark migration as done".to_string()))?;
+                .map_err(|e| e.context("Failed to mark migration as done"))?;
+            tx.commit().await?;
             Ok(())
-        };
-
-        // Depending on the result, commit or rollback the transaction
-        match result {
-            Ok(_) => {
-                tx.commit().await?;
-                tracing::info!("Migration {} applied successfully", migration.name());
-            }
-            Err(e) => {
-                tracing::error!("Failed to run migration {}: {}", migration.name(), e);
-                tx.rollback().await?;
-            }
         }
-        Ok(())
+        .await;
+
+        match &result {
+            Ok(()) => tracing::info!("Migration {} applied successfully", migration.name()),
+            Err(e) => tracing::error!("Failed to run migration {}: {}", migration.name(), e),
+        }
+        result
     }
 
     /// Creates the migration table if it doesn't exist.
