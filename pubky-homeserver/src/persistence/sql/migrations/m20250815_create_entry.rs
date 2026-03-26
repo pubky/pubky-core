@@ -4,9 +4,9 @@ use sea_query::{
 };
 use sqlx::Transaction;
 
-use crate::persistence::{
-    lmdb::tables::users::USERS_TABLE,
-    sql::{entities::user::UserIden, migration::MigrationTrait},
+use crate::persistence::sql::{
+    entities::user::{UserIden, USER_TABLE},
+    migration::MigrationTrait,
 };
 
 const TABLE: &str = "entries";
@@ -56,7 +56,7 @@ impl MigrationTrait for M20250815CreateEntryMigration {
         let foreign_key = ForeignKey::create()
             .name("fk_entry_user")
             .from(TABLE, EntryIden::User)
-            .to(USERS_TABLE, UserIden::Id)
+            .to(USER_TABLE, UserIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
         let query = foreign_key.build(PostgresQueryBuilder);
@@ -103,12 +103,11 @@ mod tests {
     use sea_query_binder::SqlxBinder;
 
     use super::*;
-    use crate::persistence::{
-        lmdb::tables::users::USERS_TABLE,
-        sql::{
-            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
-            SqlDb,
-        },
+    use crate::persistence::sql::{
+        entities::user::{UserIden, USER_TABLE},
+        migrations::M20250806CreateUserMigration,
+        migrator::Migrator,
+        SqlDb,
     };
     use sqlx::{postgres::PgRow, FromRow, Row};
 
@@ -165,7 +164,7 @@ mod tests {
         // Create a user
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
-            .into_table(USERS_TABLE)
+            .into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
             .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()
@@ -245,7 +244,7 @@ mod tests {
         // Create a user
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
-            .into_table(USERS_TABLE)
+            .into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
             .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()

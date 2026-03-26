@@ -159,15 +159,6 @@ impl<'a> Migrator<'a> {
         Ok(())
     }
 
-    /// Checks if a migration is needed.
-    /// This is done by checking if the migration name is in the migrations table.
-    pub async fn has_migration_already_been_applied(
-        &self,
-        migration_name: &str,
-    ) -> anyhow::Result<bool> {
-        let already_applied_migrations = self.get_applied_migrations().await?;
-        Ok(already_applied_migrations.contains(&migration_name.to_string()))
-    }
 }
 
 #[cfg(test)]

@@ -11,7 +11,6 @@ use crate::{
     metrics_server::routes::metrics::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
-        lmdb::{is_migration_needed, migrate_lmdb_to_sql, LmDB},
         sql::{Migrator, PgEventListener, SqlDb},
     },
     ConfigToml, DataDir,
@@ -32,9 +31,6 @@ pub enum AppContextConversionError {
     /// Failed to read or create keypair.
     #[error("Failed to read or create keypair: {0}")]
     Keypair(anyhow::Error),
-    /// Failed to open LMDB.
-    #[error("Failed to open LMDB: {0}")]
-    LmDB(anyhow::Error),
     /// Failed to open SQL DB.
     #[error("Failed to open SQL DB: {0}")]
     SqlDb(sqlx::Error),
@@ -109,24 +105,11 @@ impl AppContext {
             .read_or_create_keypair()
             .map_err(AppContextConversionError::Keypair)?;
 
-        let db_path = dir.path().join("data/lmdb");
-        let db = unsafe { LmDB::open(&db_path).map_err(AppContextConversionError::LmDB)? };
-
         let sql_db = Self::connect_to_sql_db(&conf).await?;
         Migrator::new(&sql_db)
             .run()
             .await
             .map_err(AppContextConversionError::Migrations)?;
-
-        // TODO: Remove this after the migration is complete.
-        if is_migration_needed(&sql_db)
-            .await
-            .map_err(AppContextConversionError::Migrations)?
-        {
-            migrate_lmdb_to_sql(db.clone(), &sql_db)
-                .await
-                .map_err(AppContextConversionError::Migrations)?;
-        }
 
         let events_service = EventsService::new(1000);
 
