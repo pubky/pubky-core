@@ -265,11 +265,13 @@ mod tests {
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
         assert!(applied_migrations.is_empty());
 
-        let result =
-            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
-                .fetch_one(db.pool())
-                .await;
-        assert!(result.is_err(), "Table should not exist");
+        let rows = sqlx::query(
+            "SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'test_table';",
+        )
+        .fetch_all(db.pool())
+        .await
+        .expect("Query should succeed");
+        assert!(rows.is_empty(), "Table should not exist after rollback");
     }
 
     #[tokio::test]
