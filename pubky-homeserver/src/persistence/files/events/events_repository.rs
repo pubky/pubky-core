@@ -99,6 +99,9 @@ impl EventRepository {
         // order, creating a window where a later ID is visible before an earlier
         // one, causing the poll-based event broadcaster to skip events.
         // The lock is transaction-scoped and auto-releases on commit/rollback.
+        // In autocommit mode (bare pool connection) the lock is harmless: the
+        // implicit transaction covers the entire statement, so there is no
+        // interleaving window to begin with.
         sqlx::query("SELECT pg_advisory_xact_lock($1)")
             .bind(Self::EVENT_INSERT_LOCK_ID)
             .execute(&mut *con)

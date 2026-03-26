@@ -673,6 +673,101 @@ mod tests {
         assert_eq!(received_ids, all_ids);
     }
 
+    /// Regression test for MVCC visibility gaps under concurrent writes.
+    ///
+    /// Uses a barrier to force all tasks to insert events simultaneously,
+    /// maximising the chance of out-of-order commits. The advisory lock
+    /// serialises inserts so that IDs are always committed in ascending order.
+    /// Without the lock, the poll loop could advance its cursor past an
+    /// uncommitted lower ID and permanently skip it.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_concurrent_barrier_inserts_no_skipped_events() {
+        let db = SqlDb::test().await;
+        let events_service = EventsService::new(500);
+
+        let _listener = PgEventListener::start_with_poll_interval(
+            db.pool(),
+            events_service.clone(),
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap();
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user =
+            crate::persistence::sql::user::UserRepository::create(&pubkey, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        let mut rx = events_service.subscribe();
+
+        // All tasks wait on the barrier before inserting, forcing true concurrency.
+        let num_tasks: usize = 20;
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(num_tasks));
+
+        let mut handles = Vec::new();
+        for i in 0..num_tasks {
+            let db = db.clone();
+            let pubkey = pubkey.clone();
+            let user_id = user.id;
+            let barrier = barrier.clone();
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                let entry_path = EntryPath::new(
+                    pubkey,
+                    WebDavPath::new(&format!("/pub/race{}.txt", i)).unwrap(),
+                );
+                let mut tx = db.pool().begin().await.unwrap();
+                let event = EventRepository::create(
+                    user_id,
+                    EventType::Put {
+                        content_hash: Hash::from_bytes([1; 32]),
+                    },
+                    &entry_path,
+                    &mut UnifiedExecutor::from(&mut tx),
+                )
+                .await
+                .unwrap();
+                tx.commit().await.unwrap();
+                EventsService::notify_event(db.pool()).await;
+                event.id
+            }));
+        }
+
+        let mut all_ids: Vec<u64> = Vec::new();
+        for h in handles {
+            all_ids.push(h.await.unwrap());
+        }
+        all_ids.sort();
+        assert_eq!(all_ids.len(), num_tasks);
+
+        // Receive all events from the poll loop
+        let mut received_ids = Vec::new();
+        for i in 0..num_tasks {
+            let received = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("Timeout at event {}/{}", i + 1, num_tasks))
+                .expect("Channel closed");
+            received_ids.push(received.id);
+        }
+
+        // Every event must be delivered, in strictly ascending order
+        for window in received_ids.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "Events out of order: {} before {}",
+                window[0],
+                window[1],
+            );
+        }
+        assert_eq!(
+            received_ids, all_ids,
+            "All events must be delivered with no gaps"
+        );
+    }
+
     /// Test that a slow subscriber that falls behind the broadcast channel capacity
     /// experiences a Lagged error but can recover by re-subscribing.
     #[tokio::test]
