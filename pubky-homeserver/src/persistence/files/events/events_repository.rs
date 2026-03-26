@@ -26,6 +26,10 @@ pub const EVENT_TABLE: &str = "events";
 pub struct EventRepository;
 
 impl EventRepository {
+    /// Advisory lock ID used to serialize event inserts.
+    /// Ensures auto-increment IDs are always committed in order.
+    const EVENT_INSERT_LOCK_ID: i64 = 0x6576656e_74730000; // "events"
+
     /// Get the maximum event ID in the database.
     /// Returns 0 if no events exist.
     pub async fn get_max_id<'a>(executor: &mut UnifiedExecutor<'a>) -> Result<u64, sqlx::Error> {
@@ -89,6 +93,16 @@ impl EventRepository {
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
 
         let con = executor.get_con().await?;
+
+        // Serialize event creation so that auto-increment IDs are committed in
+        // order. Without this, concurrent transactions can commit out of sequence
+        // order, creating a window where a later ID is visible before an earlier
+        // one, causing the poll-based event broadcaster to skip events.
+        // The lock is transaction-scoped and auto-releases on commit/rollback.
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(Self::EVENT_INSERT_LOCK_ID)
+            .execute(&mut *con)
+            .await?;
         let ret_row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
         let event_id: i64 = ret_row.try_get(EventIden::Id.to_string().as_str())?;
         Ok(EventEntity {
