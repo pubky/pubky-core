@@ -92,17 +92,17 @@ mod tests {
     use sea_query::{Iden, Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
 
-    use crate::persistence::{
-        lmdb::tables::users::USERS_TABLE,
-        sql::{
-            entities::{entry::EntryIden, user::UserIden},
-            migrations::{
-                M20250806CreateUserMigration, M20250814CreateEventMigration,
-                M20250815CreateEntryMigration,
-            },
-            migrator::Migrator,
-            SqlDb,
+    use crate::persistence::sql::{
+        entities::{
+            entry::EntryIden,
+            user::{UserIden, USER_TABLE},
         },
+        migrations::{
+            M20250806CreateUserMigration, M20250814CreateEventMigration,
+            M20250815CreateEntryMigration,
+        },
+        migrator::Migrator,
+        SqlDb,
     };
     use sqlx::{postgres::PgRow, FromRow, Row};
 
@@ -156,7 +156,7 @@ mod tests {
         // Create a user
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
-            .into_table(USERS_TABLE)
+            .into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
             .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()
@@ -301,7 +301,7 @@ mod tests {
         // Create a user
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
-            .into_table(USERS_TABLE)
+            .into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
             .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()

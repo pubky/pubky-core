@@ -73,28 +73,23 @@ impl<'a> Migrator<'a> {
     /// Runs a single migration.
     async fn run_migration(&self, migration: &dyn MigrationTrait) -> anyhow::Result<()> {
         tracing::info!("Running migration {}", migration.name());
-        let mut tx = self.db.pool().begin().await?;
-        // Execute the migration
-        let result: Result<(), anyhow::Error> = {
+
+        let result: anyhow::Result<()> = async {
+            let mut tx = self.db.pool().begin().await?;
             migration.up(&mut tx).await?;
             self.mark_migration_as_done(&mut tx, migration.name())
                 .await
-                .map_err(|e| e.context("Failed to mark migration as done".to_string()))?;
+                .map_err(|e| e.context("Failed to mark migration as done"))?;
+            tx.commit().await?;
             Ok(())
-        };
-
-        // Depending on the result, commit or rollback the transaction
-        match result {
-            Ok(_) => {
-                tx.commit().await?;
-                tracing::info!("Migration {} applied successfully", migration.name());
-            }
-            Err(e) => {
-                tracing::error!("Failed to run migration {}: {}", migration.name(), e);
-                tx.rollback().await?;
-            }
         }
-        Ok(())
+        .await;
+
+        match &result {
+            Ok(()) => tracing::info!("Migration {} applied successfully", migration.name()),
+            Err(e) => tracing::error!("Failed to run migration {}: {}", migration.name(), e),
+        }
+        result
     }
 
     /// Creates the migration table if it doesn't exist.
@@ -157,16 +152,6 @@ impl<'a> Migrator<'a> {
 
         sqlx::query_with(&query, values).execute(&mut **tx).await?;
         Ok(())
-    }
-
-    /// Checks if a migration is needed.
-    /// This is done by checking if the migration name is in the migrations table.
-    pub async fn has_migration_already_been_applied(
-        &self,
-        migration_name: &str,
-    ) -> anyhow::Result<bool> {
-        let already_applied_migrations = self.get_applied_migrations().await?;
-        Ok(already_applied_migrations.contains(&migration_name.to_string()))
     }
 }
 
@@ -280,11 +265,13 @@ mod tests {
         let applied_migrations = migrator.get_applied_migrations().await.unwrap();
         assert!(applied_migrations.is_empty());
 
-        let result =
-            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table';")
-                .fetch_one(db.pool())
-                .await;
-        assert!(result.is_err(), "Table should not exist");
+        let rows = sqlx::query(
+            "SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'test_table';",
+        )
+        .fetch_all(db.pool())
+        .await
+        .expect("Query should succeed");
+        assert!(rows.is_empty(), "Table should not exist after rollback");
     }
 
     #[tokio::test]

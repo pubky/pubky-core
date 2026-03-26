@@ -4,11 +4,7 @@ pub enum FileIoError {
     #[error("File not found")]
     NotFound,
     #[error("DB error: {0}")]
-    Db(#[from] heed::Error),
-    #[error("DB error: {0}")]
     SqlDb(#[from] sqlx::Error),
-    #[error("DB serialization error: {0}")]
-    DbSerialization(#[from] postcard::Error),
     #[error("OpenDAL error: {0}")]
     OpenDAL(#[from] opendal::Error),
     #[error("Temp file error: {0}")]

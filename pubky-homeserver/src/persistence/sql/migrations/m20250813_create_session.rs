@@ -3,9 +3,9 @@ use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, PostgresQue
 
 use sqlx::Transaction;
 
-use crate::persistence::{
-    lmdb::tables::users::USERS_TABLE,
-    sql::{entities::user::UserIden, migration::MigrationTrait},
+use crate::persistence::sql::{
+    entities::user::{UserIden, USER_TABLE},
+    migration::MigrationTrait,
 };
 
 const TABLE: &str = "sessions";
@@ -47,7 +47,7 @@ impl MigrationTrait for M20250813CreateSessionMigration {
         let foreign_key = ForeignKey::create()
             .name("fk_session_user")
             .from(TABLE, SessionIden::User)
-            .to(USERS_TABLE, UserIden::Id)
+            .to(USER_TABLE, UserIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
         let query = foreign_key.build(PostgresQueryBuilder);
@@ -88,12 +88,11 @@ mod tests {
     use sea_query_binder::SqlxBinder;
     use sqlx::{postgres::PgRow, FromRow, Row};
 
-    use crate::persistence::{
-        lmdb::tables::users::USERS_TABLE,
-        sql::{
-            entities::user::UserIden, migrations::M20250806CreateUserMigration, migrator::Migrator,
-            SqlDb,
-        },
+    use crate::persistence::sql::{
+        entities::user::{UserIden, USER_TABLE},
+        migrations::M20250806CreateUserMigration,
+        migrator::Migrator,
+        SqlDb,
     };
 
     use super::*;
@@ -147,7 +146,7 @@ mod tests {
         let pubkey = Keypair::random().public_key();
         let secret = "6HHZ06GHB964CZMDAA0WCNV2C8";
         let statement = Query::insert()
-            .into_table(USERS_TABLE)
+            .into_table(USER_TABLE)
             .columns([UserIden::PublicKey])
             .values(vec![SimpleExpr::Value(pubkey.z32().into())])
             .unwrap()
