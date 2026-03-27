@@ -117,22 +117,49 @@ pub async fn signup(
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
 }
 
-/// Fails if user doesn’t exist, otherwise logs them in by creating a session.
+/// Signs in an existing user. Dispatches between deprecated cookie and grant/JWT flows
+/// based on the Content-Type header.
+///
+/// - `application/json` → grant-based auth (returns JWT)
+/// - Otherwise → deprecated AuthToken-based auth (returns cookie)
 pub async fn signin(
     State(state): State<AppState>,
     cookies: Cookies,
     Host(host): Host,
+    headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
-    // 1) Verify the AuthToken in the request body
+    if is_json_content_type(&headers) {
+        let request: super::grant_session::CreateGrantSessionRequest =
+            serde_json::from_slice(&body).map_err(|e| {
+                HttpError::new_with_message(
+                    StatusCode::BAD_REQUEST,
+                    format!("Invalid JSON body: {e}"),
+                )
+            })?;
+        return super::grant_session::create_grant_session(
+            State(state),
+            axum::Json(request),
+        )
+        .await
+        .map(|r| r.into_response());
+    }
+
+    // Deprecated flow: AuthToken + cookie
     let token = state.verifier.verify(&body)?;
     let public_key = token.public_key();
-
-    // 2) Ensure user *does* exist
     let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
+    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities())
+        .await
+        .map(|r| r.into_response())
+}
 
-    // 3) Create the session & set cookie
-    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
+fn is_json_content_type(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.starts_with("application/json"))
+        .unwrap_or(false)
 }
 
 /// Creates and stores a session, sets the cookie, returns session as JSON/string.
@@ -201,6 +228,61 @@ mod tests {
     use pubky_common::crypto::Keypair;
 
     use super::*;
+
+    #[test]
+    fn json_content_type_detected() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        assert!(is_json_content_type(&headers));
+    }
+
+    #[test]
+    fn json_content_type_with_charset() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+        assert!(is_json_content_type(&headers));
+    }
+
+    #[test]
+    fn non_json_content_type() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        );
+        assert!(!is_json_content_type(&headers));
+    }
+
+    #[test]
+    fn missing_content_type() {
+        let headers = axum::http::HeaderMap::new();
+        assert!(!is_json_content_type(&headers));
+    }
+
+    #[test]
+    fn test_configure_session_cookie_secure() {
+        let mut cookie = Cookie::new("key", "value");
+        configure_session_cookie(&mut cookie, "example.com");
+        assert!(cookie.secure().unwrap_or(false));
+        assert!(cookie.http_only().unwrap_or(false));
+        assert_eq!(cookie.same_site(), Some(SameSite::None));
+        assert_eq!(cookie.path(), Some("/"));
+    }
+
+    #[test]
+    fn test_configure_session_cookie_insecure() {
+        let mut cookie = Cookie::new("key", "value");
+        configure_session_cookie(&mut cookie, "localhost");
+        assert!(!cookie.secure().unwrap_or(false));
+        assert!(cookie.http_only().unwrap_or(false));
+        assert_eq!(cookie.path(), Some("/"));
+    }
 
     #[test]
     fn test_is_secure() {

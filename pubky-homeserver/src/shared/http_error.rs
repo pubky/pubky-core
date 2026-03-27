@@ -130,3 +130,86 @@ impl From<pubky_common::auth::Error> for HttpError {
         Self::bad_request(error)
     }
 }
+
+impl From<crate::client_server::auth::grant_verifier::Error> for HttpError {
+    fn from(error: crate::client_server::auth::grant_verifier::Error) -> Self {
+        use crate::client_server::auth::grant_verifier::Error;
+        match error {
+            Error::InvalidSignature | Error::Expired => {
+                Self::unauthorized_with_message(error.to_string())
+            }
+            _ => Self::bad_request(error),
+        }
+    }
+}
+
+impl From<crate::client_server::auth::pop_verifier::Error> for HttpError {
+    fn from(error: crate::client_server::auth::pop_verifier::Error) -> Self {
+        Self::unauthorized_with_message(error.to_string())
+    }
+}
+
+impl From<crate::client_server::auth::access_jwt_issuer::Error> for HttpError {
+    fn from(error: crate::client_server::auth::access_jwt_issuer::Error) -> Self {
+        Self::unauthorized_with_message(error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    #[test]
+    fn test_grant_verifier_error_mapping() {
+        use crate::client_server::auth::grant_verifier::Error;
+
+        // Security errors -> UNAUTHORIZED
+        let resp = HttpError::from(Error::InvalidSignature).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(Error::Expired).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Malformed input errors -> BAD_REQUEST
+        let resp = HttpError::from(Error::InvalidFormat).into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let resp = HttpError::from(Error::InvalidHeaderType).into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let resp = HttpError::from(Error::InvalidTimestamp).into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_pop_verifier_error_mapping() {
+        use crate::client_server::auth::pop_verifier::Error;
+
+        let resp = HttpError::from(Error::InvalidSignature).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(Error::AudienceMismatch).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(Error::TimestampOutOfRange).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(Error::InvalidTimestamp).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_access_jwt_error_mapping() {
+        use crate::client_server::auth::access_jwt_issuer::Error;
+
+        let resp = HttpError::from(Error::InvalidSignature).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(Error::Expired).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(Error::InvalidTimestamp).into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+}

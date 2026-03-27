@@ -6,9 +6,10 @@
 
 mod app;
 pub(crate) mod app_state;
+pub(crate) mod auth;
 mod err_if_user_is_invalid;
-mod extractors;
-mod layers;
+mod middleware;
+mod query_params;
 pub(crate) mod routes;
 
 pub use app::create_app;

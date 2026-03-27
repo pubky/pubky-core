@@ -232,7 +232,8 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use crate::{
-        auth::TIMESTAMP_WINDOW, capabilities::Capability, crypto::Keypair, timestamp::Timestamp,
+        auth::auth_token::TIMESTAMP_WINDOW, capabilities::Capability, crypto::Keypair,
+        timestamp::Timestamp,
     };
 
     use super::*;

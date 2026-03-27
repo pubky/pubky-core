@@ -26,7 +26,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
-use super::layers::{
+use super::middleware::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
@@ -127,6 +127,7 @@ impl ClientServer {
             user_quota_bytes: quota_bytes,
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
+            homeserver_keypair: context.keypair.clone(),
         };
         super::create_app(state.clone(), context)
     }

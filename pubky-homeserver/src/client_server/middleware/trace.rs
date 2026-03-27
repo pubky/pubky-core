@@ -7,7 +7,7 @@ use tower_http::trace::{
 };
 use tracing::{Level, Span};
 
-use crate::client_server::extractors::PubkyHost;
+use super::pubky_host::PubkyHost;
 
 // Silence events path from logs to avoid noisy logs. Only log when there is an error.
 const TRACING_EXCLUDED_PATHS: [&str; 1] = ["/events/"];

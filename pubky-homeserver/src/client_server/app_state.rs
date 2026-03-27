@@ -4,6 +4,7 @@ use crate::persistence::files::FileService;
 use crate::persistence::sql::SqlDb;
 use crate::SignupMode;
 use pubky_common::auth::AuthVerifier;
+use pubky_common::crypto::Keypair;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
@@ -16,4 +17,6 @@ pub(crate) struct AppState {
     pub(crate) user_quota_bytes: Option<u64>,
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
+    /// Homeserver keypair for JWT signing (reuses TLS keypair).
+    pub(crate) homeserver_keypair: Keypair,
 }
