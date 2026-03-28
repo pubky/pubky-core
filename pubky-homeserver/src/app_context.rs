@@ -93,14 +93,15 @@ impl AppContext {
 
     /// Create a new AppContext from a setup source.
     pub async fn read_from<S: SetupSource + 'static>(
-        dir: S,
+        setup_source: S,
     ) -> Result<Self, AppContextConversionError> {
-        dir.ensure_data_dir_exists_and_is_writable()
+        setup_source
+            .ensure_data_dir_exists_and_is_writable()
             .map_err(AppContextConversionError::SetupSource)?;
-        let conf = dir
+        let conf = setup_source
             .read_or_create_config_file()
             .map_err(AppContextConversionError::Config)?;
-        let keypair = dir
+        let keypair = setup_source
             .read_or_create_keypair()
             .map_err(AppContextConversionError::Keypair)?;
 
@@ -118,7 +119,7 @@ impl AppContext {
 
         let file_service = FileService::new_from_config(
             &conf,
-            dir.data_dir_path(),
+            setup_source.data_dir_path(),
             sql_db.clone(),
             events_service.clone(),
         )
@@ -135,7 +136,7 @@ impl AppContext {
             pkarr_builder,
             config_toml: conf,
             keypair,
-            setup_source: Arc::new(dir),
+            setup_source: Arc::new(setup_source),
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),

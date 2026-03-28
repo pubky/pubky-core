@@ -64,6 +64,16 @@ impl HomeserverPaths {
         }
     }
 
+    /// Returns the resolved config file path.
+    pub fn config_file_path(&self) -> &PathBuf {
+        &self.config_file_path
+    }
+
+    /// Returns the resolved secret key file path.
+    pub fn secret_file_path(&self) -> &PathBuf {
+        &self.secret_file_path
+    }
+
     /// Expands the data directory to the home directory if it starts with "~".
     /// Return the full path to the data directory.
     fn expand_home_dir(path: PathBuf) -> PathBuf {
@@ -92,18 +102,6 @@ impl HomeserverPaths {
         config_file.write_all(config_string.as_bytes())?;
 
         Ok(())
-    }
-}
-
-impl HomeserverPaths {
-    /// Returns the resolved config file path.
-    pub fn config_file_path(&self) -> &PathBuf {
-        &self.config_file_path
-    }
-
-    /// Returns the resolved secret key file path.
-    pub fn secret_file_path(&self) -> &PathBuf {
-        &self.secret_file_path
     }
 }
 
