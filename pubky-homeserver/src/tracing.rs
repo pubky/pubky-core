@@ -8,19 +8,31 @@
 //! This way, we don't miss any logs, for example config file loading errors.
 //!
 
-use crate::{ConfigToml, PersistentDataDir};
-use std::path::Path;
+use crate::{ConfigToml, HomeserverPaths, SetupSource};
 use tracing_subscriber::EnvFilter;
 
-fn read_config_from_file(data_dir: &Path) -> anyhow::Result<ConfigToml> {
-    let data_dir = PersistentDataDir::new(data_dir.to_path_buf());
-    let config_file_path = data_dir.get_config_file_path();
-    let config = ConfigToml::from_file(config_file_path)?;
-    Ok(config)
+/// Initialize tracing from a [`HomeserverPaths`].
+///
+/// Reads (or creates) the config file via the `SetupSource` trait, then
+/// delegates to [`init_from_config`].  Falls back to
+/// `ConfigToml::default()` when the config cannot be read.
+pub fn init_tracing(homeserver_paths: &HomeserverPaths) -> anyhow::Result<()> {
+    let config = match homeserver_paths.read_or_create_config_file() {
+        Ok(config) => config,
+        Err(e) => {
+            println!("Failed to read config from file: {}", e);
+            ConfigToml::default()
+        }
+    };
+
+    init_from_config_if_set(&config)
 }
 
-/// Initialize tracing logger based on the values defined in the config file.
-pub fn init_tracing_logs_with_config_if_set(config: &ConfigToml) -> anyhow::Result<()> {
+/// Initialize tracing logger based on the values defined in a config.
+///
+/// This is `pub(crate)` so that [`crate::HomeserverApp::start`] can call
+/// it with an already-loaded `ConfigToml` without re-reading the file.
+pub(crate) fn init_from_config_if_set(config: &ConfigToml) -> anyhow::Result<()> {
     let config = match &config.logging {
         Some(config) => config,
         None => return Ok(()),
@@ -35,24 +47,11 @@ pub fn init_tracing_logs_with_config_if_set(config: &ConfigToml) -> anyhow::Resu
         }
         filter
     });
+
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .try_init()
         .map_err(|e| anyhow::anyhow!("Failed to initialize tracing: {}", e))?;
 
     Ok(())
-}
-
-/// Initialize tracing logger based on the values defined in the config file.
-/// If the config file is not found, use default values.
-pub fn init_tracing_logs_if_set(data_dir: &Path) -> anyhow::Result<()> {
-    let config = match read_config_from_file(data_dir) {
-        Ok(config) => config,
-        Err(e) => {
-            println!("Failed to read config from file: {}", e);
-            ConfigToml::default()
-        }
-    };
-
-    init_tracing_logs_with_config_if_set(&config)
 }

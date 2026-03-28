@@ -11,8 +11,8 @@ use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::AppContext;
 #[cfg(any(test, feature = "testing"))]
-use crate::MockDataDir;
-use crate::{AppContextConversionError, PersistentDataDir};
+use crate::MockSetupSource;
+use crate::{AppContextConversionError, HomeserverPaths};
 use axum::routing::{any, delete, post};
 use axum::{routing::get, Router};
 use axum_server::Handle;
@@ -60,9 +60,9 @@ pub enum AdminServerBuildError {
     #[error("Failed to create admin server: {0}")]
     Server(anyhow::Error),
 
-    /// Failed to boostrap from the data directory.
-    #[error("Failed to boostrap from the data directory: {0}")]
-    DataDir(AppContextConversionError),
+    /// Failed to bootstrap from the setup source.
+    #[error("Failed to bootstrap from the setup source: {0}")]
+    SetupSource(AppContextConversionError),
 }
 
 /// Admin server
@@ -78,26 +78,30 @@ pub struct AdminServer {
 }
 
 impl AdminServer {
-    /// Create a new admin server from a data directory.
-    pub async fn from_data_dir(data_dir: PersistentDataDir) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::read_from(data_dir)
+    /// Create a new admin server from homeserver paths.
+    pub async fn from_homeserver_paths(
+        paths: HomeserverPaths,
+    ) -> Result<Self, AdminServerBuildError> {
+        let context = AppContext::read_from(paths)
             .await
-            .map_err(AdminServerBuildError::DataDir)?;
+            .map_err(AdminServerBuildError::SetupSource)?;
         Self::start(&context).await
     }
 
-    /// Create a new admin server from a data directory path.
-    pub async fn from_data_dir_path(data_dir_path: PathBuf) -> Result<Self, AdminServerBuildError> {
-        let data_dir = PersistentDataDir::new(data_dir_path);
-        Self::from_data_dir(data_dir).await
+    /// Create a new admin server from a setup path.
+    pub async fn from_setup_path(setup_path: PathBuf) -> Result<Self, AdminServerBuildError> {
+        let paths = HomeserverPaths::new(setup_path);
+        Self::from_homeserver_paths(paths).await
     }
 
-    /// Create a new admin server from a mock data directory.
+    /// Create a new admin server from a mock setup source.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn from_mock_dir(mock_dir: MockDataDir) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::read_from(mock_dir)
+    pub async fn from_mock_setup_source(
+        setup_source: MockSetupSource,
+    ) -> Result<Self, AdminServerBuildError> {
+        let context = AppContext::read_from(setup_source)
             .await
-            .map_err(AdminServerBuildError::DataDir)?;
+            .map_err(AdminServerBuildError::SetupSource)?;
         Self::start(&context).await
     }
 

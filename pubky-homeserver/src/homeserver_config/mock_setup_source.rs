@@ -1,0 +1,120 @@
+use std::path::{Path, PathBuf};
+
+use super::SetupSource;
+
+/// Mock setup source for testing.
+///
+/// By default it uses a temporary directory that is removed when the value is dropped.
+/// Use [`MockSetupSource::new_persistent_data_dir`] to point at a real directory that
+/// survives across restarts.
+#[derive(Debug, Clone)]
+pub struct MockSetupSource {
+    root: MockDataDir,
+    /// The configuration for the homeserver.
+    pub config_toml: super::ConfigToml,
+    /// The keypair for the homeserver.
+    pub keypair: pubky_common::crypto::Keypair,
+}
+
+impl MockSetupSource {
+    /// Create a new [`MockSetupSource`] with an ephemeral temporary directory.
+    ///
+    /// If keypair is not provided, a new one will be generated.
+    pub fn new(
+        config_toml: super::ConfigToml,
+        keypair: Option<pubky_common::crypto::Keypair>,
+    ) -> anyhow::Result<Self> {
+        let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
+
+        Ok(Self {
+            root: MockDataDir::Temp(std::sync::Arc::new(tempfile::TempDir::new()?)),
+            config_toml,
+            keypair,
+        })
+    }
+
+    /// Create a [`MockSetupSource`] backed by an existing (persistent) directory.
+    ///
+    /// The directory is **not** cleaned up on drop. Use this when you need
+    /// data to survive across process restarts (e.g. integration tests that
+    /// verify persistence).
+    pub fn new_persistent_data_dir(
+        data_dir: PathBuf,
+        config_toml: super::ConfigToml,
+        keypair: Option<pubky_common::crypto::Keypair>,
+    ) -> anyhow::Result<Self> {
+        let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
+        std::fs::create_dir_all(&data_dir)?;
+
+        Ok(Self {
+            root: MockDataDir::Persistent(data_dir),
+            config_toml,
+            keypair,
+        })
+    }
+
+    /// Returns true if the root of this [`MockSetupSource`] is a temporary directory.
+    pub fn is_temp(&self) -> bool {
+        matches!(self.root, MockDataDir::Temp(_))
+    }
+
+    /// Creates a mock data directory with a config and keypair appropriate for testing.
+    ///
+    /// Uses [`ConfigToml::default_test_config()`] which enables the admin server.
+    /// For lightweight tests, use [`MockSetupSource::new()`] with [`ConfigToml::minimal_test_config()`].
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test() -> Self {
+        let config = super::ConfigToml::default_test_config();
+        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
+
+        Self::new(config, Some(keypair)).expect("failed to create MockSetupSource")
+    }
+
+    /// Creates a [`MockSetupSource`] with a config and keypair for testing, backed by a real directory.
+    ///
+    /// Same as [`MockSetupSource::test()`] but with a real directory that is not cleaned up on drop.
+    /// Use this for integration tests that need to verify persistence across process restarts.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test_persistent_data_dir(data_dir: PathBuf) -> Self {
+        let config = super::ConfigToml::default_test_config();
+        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
+
+        Self::new_persistent_data_dir(data_dir, config, Some(keypair))
+            .expect("failed to create MockSetupSource")
+    }
+}
+
+impl Default for MockSetupSource {
+    fn default() -> Self {
+        Self::test()
+    }
+}
+
+impl SetupSource for MockSetupSource {
+    fn data_dir_path(&self) -> &Path {
+        match &self.root {
+            MockDataDir::Temp(temp_dir) => temp_dir.path(),
+            MockDataDir::Persistent(path) => path.as_path(),
+        }
+    }
+
+    fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
+        Ok(()) // Always ok because this is validated by the tempfile crate or create_dir_all.
+    }
+
+    fn read_or_create_config_file(&self) -> anyhow::Result<super::ConfigToml> {
+        Ok(self.config_toml.clone())
+    }
+
+    fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
+        Ok(self.keypair.clone())
+    }
+}
+
+/// Backing storage for a [`MockSetupSource`]: either a temporary directory that is
+/// cleaned up on drop, or a caller-supplied persistent path.
+#[derive(Debug, Clone)]
+enum MockDataDir {
+    Temp(std::sync::Arc<tempfile::TempDir>),
+    Persistent(PathBuf),
+}

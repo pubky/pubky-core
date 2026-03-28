@@ -2,7 +2,7 @@ use super::build_full_testnet;
 use bytes::Bytes;
 use pubky_testnet::{
     pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
-    pubky_homeserver::MockDataDir,
+    pubky_homeserver::MockSetupSource,
     Testnet,
 };
 use rand::rng;
@@ -148,10 +148,10 @@ async fn put_quota_applied() {
     let mut testnet = Testnet::new().await.unwrap();
     let pubky = testnet.sdk().unwrap();
 
-    let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
+    let mut mock_setup_source = MockSetupSource::test();
+    mock_setup_source.config_toml.general.user_storage_quota_mb = 1; // 1 MB
     let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
+        .create_homeserver_app_with_mock(mock_setup_source)
         .await
         .unwrap();
 

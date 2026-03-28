@@ -1,6 +1,6 @@
 //! Background task to republish the homeserver's pkarr packet to the DHT.
 //!
-//! This task is started by the [crate::HomeserverCore] and runs until the homeserver is stopped.
+//! This task is started by the [crate::HomeserverApp] and runs until the homeserver is stopped.
 //!
 //! The task is responsible for:
 //! - Republishing the homeserver's pkarr packet to the DHT every hour.

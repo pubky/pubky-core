@@ -11,10 +11,10 @@ use crate::metrics_server::{MetricsServer, MetricsServerBuildError};
 use crate::republishers::{
     HomeserverKeyRepublisher, KeyRepublisherBuildError, UserKeysRepublisher,
 };
-use crate::tracing::init_tracing_logs_with_config_if_set;
+use crate::tracing::init_from_config_if_set;
 #[cfg(any(test, feature = "testing"))]
-use crate::MockDataDir;
-use crate::{app_context::AppContext, data_directory::PersistentDataDir};
+use crate::MockSetupSource;
+use crate::{app_context::AppContext, homeserver_config::HomeserverPaths};
 use anyhow::Result;
 use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
@@ -62,22 +62,22 @@ pub struct HomeserverApp {
 }
 
 impl HomeserverApp {
-    /// Run the homeserver with configurations from a data directory.
-    pub async fn start_with_persistent_data_dir_path(dir_path: PathBuf) -> Result<Self> {
-        let data_dir = PersistentDataDir::new(dir_path);
-        let context = AppContext::read_from(data_dir).await?;
+    /// Run the homeserver with configurations from a homeserver setup data path.
+    pub async fn start_from_setup_path(path: PathBuf) -> Result<Self> {
+        let paths = HomeserverPaths::new(path);
+        let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
-    /// Run the homeserver with configurations from a data directory.
-    pub async fn start_with_persistent_data_dir(dir: PersistentDataDir) -> Result<Self> {
-        let context = AppContext::read_from(dir).await?;
+    /// Run the homeserver with resolved homeserver paths.
+    pub async fn start_from_homeserver_paths(paths: HomeserverPaths) -> Result<Self> {
+        let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
-    /// Run the homeserver with configurations from a data directory mock.
+    /// Run the homeserver with configurations from a mock setup source.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn start_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
+    pub async fn start_with_mock_setup_source(dir: MockSetupSource) -> Result<Self> {
         let context = AppContext::read_from(dir).await?;
         Self::start(context).await
     }
@@ -85,9 +85,12 @@ impl HomeserverApp {
     /// Run a Homeserver
     pub async fn start(context: AppContext) -> Result<Self> {
         // Tracing Subscriber initialization based on the config file.
-        let _ = init_tracing_logs_with_config_if_set(&context.config_toml);
+        let _ = init_from_config_if_set(&context.config_toml);
 
-        tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
+        tracing::debug!(
+            "Homeserver data dir: {}",
+            context.setup_source.data_dir_path().display()
+        );
 
         let user_keys_republisher =
             UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);

@@ -1,7 +1,9 @@
 use crate::Testnet;
 use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
-use pubky_homeserver::{ConfigToml, ConnectionString, HomeserverApp, MockDataDir};
+use pubky_homeserver::{
+    storage_config::StorageConfigToml, ConfigToml, ConnectionString, HomeserverApp, MockSetupSource,
+};
 
 #[cfg(feature = "embedded-postgres")]
 use crate::embedded_postgres::EmbeddedPostgres;
@@ -78,6 +80,7 @@ pub struct EphemeralTestnetBuilder {
     homeserver_config: Option<ConfigToml>,
     homeserver_keypair: Option<Keypair>,
     http_relay: bool,
+    data_dir: Option<std::path::PathBuf>,
     #[cfg(feature = "embedded-postgres")]
     use_embedded_postgres: bool,
 }
@@ -90,6 +93,7 @@ impl EphemeralTestnetBuilder {
             homeserver_config: None,
             homeserver_keypair: None,
             http_relay: false,
+            data_dir: None,
             #[cfg(feature = "embedded-postgres")]
             use_embedded_postgres: false,
         }
@@ -116,6 +120,19 @@ impl EphemeralTestnetBuilder {
     /// Enable the HTTP relay (disabled by default).
     pub fn with_http_relay(mut self) -> Self {
         self.http_relay = true;
+        self
+    }
+
+    /// Set a persistent data directory for the homeserver.
+    ///
+    /// When set, the homeserver will use `{data_dir}/data/files` as its file storage
+    /// root and the directory **will not** be removed when the testnet is dropped.
+    /// This is useful for integration tests that verify data survives a restart.
+    ///
+    /// Without this option, an in-memory storage backend is used (the default for
+    /// fast, hermetic tests).
+    pub fn data_dir(mut self, path: std::path::PathBuf) -> Self {
+        self.data_dir = Some(path);
         self
     }
 
@@ -190,8 +207,15 @@ impl EphemeralTestnetBuilder {
         let keypair = self
             .homeserver_keypair
             .unwrap_or_else(|| Keypair::from_secret(&[0; 32]));
-        let mock_dir = MockDataDir::new(config, Some(keypair))?;
-        testnet.create_homeserver_app_with_mock(mock_dir).await?;
+        let mock_setup_source = if let Some(data_dir) = self.data_dir {
+            config.storage = StorageConfigToml::FileSystem;
+            MockSetupSource::new_persistent_data_dir(data_dir, config, Some(keypair))?
+        } else {
+            MockSetupSource::new(config, Some(keypair))?
+        };
+        testnet
+            .create_homeserver_app_with_mock(mock_setup_source)
+            .await?;
 
         Ok(EphemeralTestnet {
             testnet,
@@ -320,8 +344,10 @@ impl EphemeralTestnet {
             config.general.database_url = connection_string.clone();
         }
 
-        let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
-        self.testnet.create_homeserver_app_with_mock(mock_dir).await
+        let mock_setup_source = MockSetupSource::new(config, Some(Keypair::random()))?;
+        self.testnet
+            .create_homeserver_app_with_mock(mock_setup_source)
+            .await
     }
 
     /// Create a new pubky client builder.

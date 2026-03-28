@@ -1,11 +1,11 @@
 use super::AppState;
 
 #[cfg(any(test, feature = "testing"))]
-use crate::MockDataDir;
+use crate::MockSetupSource;
 
 use crate::{
     app_context::{AppContext, AppContextConversionError},
-    PersistentDataDir,
+    HomeserverPaths,
 };
 use anyhow::Result;
 use futures_util::TryFutureExt;
@@ -31,7 +31,7 @@ use super::layers::{
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
-/// Errors that can occur when building a `HomeserverCore`.
+/// Errors that can occur when building a `ClientServer`.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientServerBuildError {
     /// Failed to run the ICANN web server.
@@ -40,7 +40,7 @@ pub enum ClientServerBuildError {
     /// Failed to run the Pubky TLS web server.
     #[error("Pubky TLS web server error: {0}")]
     PubkyTlsServer(anyhow::Error),
-    /// Failed to convert the data directory to an AppContext.
+    /// Failed to convert the setup source to an AppContext.
     #[error("AppContext conversion error: {0}")]
     AppContext(AppContextConversionError),
 }
@@ -65,28 +65,26 @@ pub struct ClientServer {
 
 impl ClientServer {
     /// Run the homeserver with configurations from a data directory.
-    pub async fn start_with_persistent_data_dir_path(
-        dir_path: PathBuf,
-    ) -> Result<Self, ClientServerBuildError> {
-        let data_dir = PersistentDataDir::new(dir_path);
-        let context = AppContext::read_from(data_dir).await?;
+    pub async fn start_from_setup_path(path: PathBuf) -> Result<Self, ClientServerBuildError> {
+        let paths = HomeserverPaths::new(path);
+        let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub async fn start_with_persistent_data_dir(
-        dir: PersistentDataDir,
+    pub async fn start_from_homeserver_paths(
+        paths: HomeserverPaths,
     ) -> Result<Self, ClientServerBuildError> {
-        let context = AppContext::read_from(dir).await?;
+        let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
-    /// Run the homeserver with configurations from a data directory mock.
+    /// Run the homeserver with configurations from a mock setup source.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn start_with_mock_data_dir(
-        dir: MockDataDir,
+    pub async fn start_with_mock_setup_source(
+        setup_source: MockSetupSource,
     ) -> Result<Self, ClientServerBuildError> {
-        let context = AppContext::read_from(dir).await?;
+        let context = AppContext::read_from(setup_source).await?;
         Self::start(context).await
     }
 

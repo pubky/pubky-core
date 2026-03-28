@@ -10,7 +10,7 @@ use super::{
 };
 
 use crate::{
-    data_directory::log_level::{LogLevel, TargetLevel},
+    homeserver_config::log_level::{LogLevel, TargetLevel},
     persistence::sql::ConnectionString,
     shared::toml_merge,
 };
@@ -259,7 +259,7 @@ impl FromStr for ConfigToml {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_directory::log_level::LogLevel;
+    use crate::homeserver_config::log_level::LogLevel;
 
     use super::*;
     use std::{

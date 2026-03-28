@@ -2,7 +2,7 @@
 //!
 //! [`OpendalService`](opendal_service::OpendalService) configures the appropriate
 //! storage operator (filesystem, in-memory, or GCS) based on the server's
-//! [`StorageConfig`](crate::data_directory::storage_config::StorageConfig).
+//! [`StorageConfig`](crate::homeserver_config::storage_config::StorageConfig).
 
 pub mod opendal_service;
 #[cfg(test)]
