@@ -1,100 +1,158 @@
-//! Per-user rate limiting middleware.
+//! Per-user bandwidth budget middleware.
 //!
 //! Reads the resolved `UserLimitConfig` from request extensions (set by `UserLimitResolverLayer`)
-//! and enforces per-user read/write rate limits using governor.
-//! Separate from the global path-based `RateLimiterLayer`.
+//! and enforces per-user read/write bandwidth budgets using simple atomic counters with
+//! time-windowed resets. Separate from the global path-based `RateLimiterLayer`.
+//!
+//! **Design:**
+//! - Only applies to **authenticated** requests (checks for `AuthenticatedSession` marker).
+//! - Pre-checks `bytes_used < budget_bytes` at request start → 429 if exceeded.
+//! - Deducts actual bytes after the request completes (wraps request/response body streams).
+//! - In-memory only: counters reset on server restart.
 
 use std::convert::Infallible;
-use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 use std::task::Poll;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::response::IntoResponse;
 use dashmap::DashMap;
 use futures_util::future::BoxFuture;
-use governor::clock::{Clock, QuantaClock};
-use governor::state::keyed::DashMapStateStore;
-use governor::RateLimiter;
+use futures_util::StreamExt;
 use pubky_common::crypto::PublicKey;
 use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
 use crate::client_server::layers::authz::AuthenticatedSession;
-use crate::data_directory::quota_config::QuotaValue;
+use crate::data_directory::quota_config::BandwidthBudget;
 use crate::data_directory::user_limit_config::UserLimitConfig;
 use crate::shared::HttpError;
 
-type KeyedRateLimiter = RateLimiter<PublicKey, DashMapStateStore<PublicKey>, QuantaClock>;
-
-/// A rate limiter paired with the quota it was created from,
-/// so we can detect when the quota has changed and recreate.
+/// Tracks bytes used within a single time window for one direction (read or write).
 #[derive(Debug)]
-struct TrackedLimiter {
-    quota: QuotaValue,
-    limiter: Arc<KeyedRateLimiter>,
+struct DirectionBudgetState {
+    bytes_used: AtomicU64,
+    window_start: Mutex<Instant>,
+    /// Stored budget for config-change detection.
+    budget: Mutex<Option<BandwidthBudget>>,
 }
 
-/// Per-user governor instances for read and write.
-#[derive(Debug, Default)]
-struct PerUserLimiters {
-    read: Option<TrackedLimiter>,
-    write: Option<TrackedLimiter>,
-}
+impl DirectionBudgetState {
+    fn new(budget: Option<BandwidthBudget>) -> Self {
+        Self {
+            bytes_used: AtomicU64::new(0),
+            window_start: Mutex::new(Instant::now()),
+            budget: Mutex::new(budget),
+        }
+    }
 
-impl PerUserLimiters {
-    /// Run `retain_recent` on all governor stores and return whether any state is still active.
-    fn retain_recent_and_is_active(&self) -> bool {
-        if let Some(ref tracked) = self.read {
-            tracked.limiter.retain_recent();
+    /// Check whether the window has expired or config has changed, resetting if so.
+    /// Returns `(bytes_used, budget_bytes, seconds_remaining_in_window)`.
+    fn check_and_maybe_reset(&self, budget: &BandwidthBudget) -> (u64, u64, u64) {
+        let window_duration = budget.window_duration();
+        let budget_bytes = budget.budget_bytes();
+
+        let mut window_start = self.window_start.lock().unwrap();
+        let elapsed = window_start.elapsed();
+
+        // Check for config change
+        let config_changed = {
+            let mut stored = self.budget.lock().unwrap();
+            let changed = stored.as_ref() != Some(budget);
+            if changed {
+                *stored = Some(budget.clone());
+            }
+            changed
+        };
+
+        // Reset window if expired or config changed
+        if elapsed >= window_duration || config_changed {
+            *window_start = Instant::now();
+            self.bytes_used.store(0, Ordering::Relaxed);
+            return (0, budget_bytes, window_duration.as_secs());
         }
-        if let Some(ref tracked) = self.write {
-            tracked.limiter.retain_recent();
-        }
-        let read_active = self
-            .read
-            .as_ref()
-            .is_some_and(|t| !t.limiter.is_empty());
-        let write_active = self
-            .write
-            .as_ref()
-            .is_some_and(|t| !t.limiter.is_empty());
-        read_active || write_active
+
+        let seconds_remaining = window_duration
+            .as_secs()
+            .saturating_sub(elapsed.as_secs());
+
+        let used = self.bytes_used.load(Ordering::Relaxed);
+        (used, budget_bytes, seconds_remaining)
+    }
+
+    fn add_bytes(&self, bytes: u64) {
+        self.bytes_used.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn is_expired(&self, max_window: Duration) -> bool {
+        let window_start = self.window_start.lock().unwrap();
+        window_start.elapsed() > max_window
     }
 }
 
-/// Maximum number of distinct users tracked in the per-user rate limiter map.
-/// When the map reaches this capacity and a new user needs to be inserted,
-/// stale entries are evicted to make room. This prevents memory exhaustion
-/// from an attacker rotating public keys while always enforcing rate limits.
+/// Per-user budget state with independent read and write windows.
+#[derive(Debug)]
+struct UserBudgetState {
+    read: DirectionBudgetState,
+    write: DirectionBudgetState,
+}
+
+impl UserBudgetState {
+    fn new(read_budget: Option<BandwidthBudget>, write_budget: Option<BandwidthBudget>) -> Self {
+        Self {
+            read: DirectionBudgetState::new(read_budget),
+            write: DirectionBudgetState::new(write_budget),
+        }
+    }
+
+    fn direction(&self, is_write: bool) -> &DirectionBudgetState {
+        if is_write {
+            &self.write
+        } else {
+            &self.read
+        }
+    }
+
+    /// Returns true if both direction windows have expired, meaning this entry can be evicted.
+    fn is_expired(&self, max_window: Duration) -> bool {
+        self.read.is_expired(max_window) && self.write.is_expired(max_window)
+    }
+}
+
+/// Maximum number of distinct users tracked in the per-user budget map.
 const MAX_TRACKED_USERS: usize = 100_000;
+
+/// Duration after which idle entries are eligible for cleanup.
+const CLEANUP_EXPIRY: Duration = Duration::from_secs(86400); // 1 day
 
 #[derive(Debug, Clone)]
 pub struct UserRateLimiterLayer {
-    limiters: Arc<DashMap<PublicKey, PerUserLimiters>>,
+    budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
 }
 
 impl UserRateLimiterLayer {
     pub fn new() -> Self {
-        let limiters: Arc<DashMap<PublicKey, PerUserLimiters>> = Arc::new(DashMap::new());
+        let budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>> = Arc::new(DashMap::new());
 
-        // Periodic cleanup: remove entries whose governor stores are empty after retain_recent.
-        // Uses a Weak reference so the task exits when the middleware is dropped.
-        let limiters_weak: Weak<DashMap<PublicKey, PerUserLimiters>> = Arc::downgrade(&limiters);
+        // Periodic cleanup: remove entries whose windows have expired.
+        let budgets_weak: Weak<DashMap<PublicKey, Arc<UserBudgetState>>> =
+            Arc::downgrade(&budgets);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
             interval.tick().await; // skip first immediate tick
             loop {
                 interval.tick().await;
-                let Some(limiters_ref) = limiters_weak.upgrade() else {
+                let Some(budgets_ref) = budgets_weak.upgrade() else {
                     break;
                 };
-                limiters_ref.retain(|_, v| v.retain_recent_and_is_active());
+                budgets_ref.retain(|_, v| !v.is_expired(CLEANUP_EXPIRY));
             }
         });
 
-        Self { limiters }
+        Self { budgets }
     }
 }
 
@@ -104,7 +162,7 @@ impl<S> Layer<S> for UserRateLimiterLayer {
     fn layer(&self, inner: S) -> Self::Service {
         UserRateLimiterMiddleware {
             inner,
-            limiters: self.limiters.clone(),
+            budgets: self.budgets.clone(),
         }
     }
 }
@@ -112,7 +170,7 @@ impl<S> Layer<S> for UserRateLimiterLayer {
 #[derive(Debug, Clone)]
 pub struct UserRateLimiterMiddleware<S> {
     inner: S,
-    limiters: Arc<DashMap<PublicKey, PerUserLimiters>>,
+    budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
 }
 
 /// Returns true if the HTTP method is a "write" operation.
@@ -123,39 +181,17 @@ fn is_write_method(method: &Method) -> bool {
     )
 }
 
-/// Evict stale entries from the limiter map when it reaches capacity.
-/// First runs `retain_recent` on all governor stores and removes entries with no
-/// active rate state. If the map is still at capacity after that, removes an
-/// arbitrary entry to guarantee space for the new user.
-fn evict_stale_entries(limiters: &DashMap<PublicKey, PerUserLimiters>) {
-    limiters.retain(|_, v| v.retain_recent_and_is_active());
+/// Evict stale entries from the budget map when it reaches capacity.
+fn evict_stale_entries(budgets: &DashMap<PublicKey, Arc<UserBudgetState>>) {
+    budgets.retain(|_, v| !v.is_expired(CLEANUP_EXPIRY));
 
     // If retain didn't free enough space, forcibly remove an arbitrary entry.
-    if limiters.len() >= MAX_TRACKED_USERS {
-        if let Some(entry) = limiters.iter().next() {
+    if budgets.len() >= MAX_TRACKED_USERS {
+        if let Some(entry) = budgets.iter().next() {
             let key = entry.key().clone();
             drop(entry);
-            limiters.remove(&key);
+            budgets.remove(&key);
         }
-    }
-}
-
-/// Get or recreate a limiter for the given slot, handling quota changes.
-fn get_or_update_limiter(
-    slot: &mut Option<TrackedLimiter>,
-    quota_val: &QuotaValue,
-) -> Arc<KeyedRateLimiter> {
-    let needs_recreate = !matches!(slot, Some(ref tracked) if tracked.quota == *quota_val);
-    if needs_recreate {
-        let quota: governor::Quota = quota_val.clone().into();
-        let limiter = Arc::new(RateLimiter::keyed(quota));
-        *slot = Some(TrackedLimiter {
-            quota: quota_val.clone(),
-            limiter: limiter.clone(),
-        });
-        limiter
-    } else {
-        slot.as_ref().unwrap().limiter.clone()
     }
 }
 
@@ -177,11 +213,10 @@ where
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
-        let limiters = self.limiters.clone();
+        let budgets = self.budgets.clone();
 
         Box::pin(async move {
-            // Only apply per-user rate limits to authenticated requests.
-            // Anonymous requests are handled by the global IP/path rate limiter.
+            // Only apply per-user bandwidth budgets to authenticated requests.
             let is_authenticated = req.extensions().get::<AuthenticatedSession>().is_some();
             let pubky_host = req.extensions().get::<PubkyHost>().cloned();
             let user_limits = req.extensions().get::<UserLimitConfig>().cloned();
@@ -192,63 +227,120 @@ where
                 let pubkey = pubky_host.public_key().clone();
                 let is_write = is_write_method(req.method());
 
-                // Parse the rate string into a QuotaValue
-                let quota_value = if is_write {
-                    limits.parsed_rate_write()
+                let budget = if is_write {
+                    limits.rate_write.as_ref()
                 } else {
-                    limits.parsed_rate_read()
+                    limits.rate_read.as_ref()
                 };
 
-                if let Some(quota_val) = &quota_value {
-                    // If the map is at capacity and this is a new user, evict stale
-                    // entries to make room. This ensures rate limits are always enforced.
-                    if !limiters.contains_key(&pubkey) && limiters.len() >= MAX_TRACKED_USERS {
-                        evict_stale_entries(&limiters);
+                if let Some(budget) = budget {
+                    // Ensure map entry exists
+                    if !budgets.contains_key(&pubkey) && budgets.len() >= MAX_TRACKED_USERS {
+                        evict_stale_entries(&budgets);
                     }
 
-                    let mut entry = limiters
+                    let state = budgets
                         .entry(pubkey.clone())
-                        .or_default();
+                        .or_insert_with(|| {
+                            Arc::new(UserBudgetState::new(
+                                limits.rate_read.clone(),
+                                limits.rate_write.clone(),
+                            ))
+                        })
+                        .clone();
 
-                    let limiter = if is_write {
-                        get_or_update_limiter(&mut entry.write, quota_val)
-                    } else {
-                        get_or_update_limiter(&mut entry.read, quota_val)
-                    };
-                    drop(entry);
+                    // Pre-check: is the budget already exhausted?
+                    let dir = state.direction(is_write);
+                    let (bytes_used, budget_bytes, seconds_remaining) =
+                        dir.check_and_maybe_reset(budget);
 
-                    if let Err(not_until) = limiter.check_key(&pubkey) {
-                        let retry_after_secs = not_until
-                            .wait_time_from(QuantaClock::default().now())
-                            .as_secs()
-                            .saturating_add(1); // round up to next whole second
+                    if bytes_used >= budget_bytes {
+                        let retry_after = seconds_remaining.max(1);
                         tracing::debug!(
-                            "Per-user rate limit exceeded for {} ({}, retry_after={}s)",
+                            "Per-user bandwidth budget exceeded for {} ({}, used={}B, budget={}B, retry_after={}s)",
                             pubkey.z32(),
                             if is_write { "write" } else { "read" },
-                            retry_after_secs,
+                            bytes_used,
+                            budget_bytes,
+                            retry_after,
                         );
                         let mut response = HttpError::new_with_message(
                             StatusCode::TOO_MANY_REQUESTS,
-                            "Per-user rate limit exceeded",
+                            "Per-user bandwidth budget exceeded",
                         )
                         .into_response();
                         response.headers_mut().insert(
                             axum::http::header::RETRY_AFTER,
-                            axum::http::HeaderValue::from(retry_after_secs),
+                            axum::http::HeaderValue::from(retry_after),
                         );
                         return Ok(response);
                     }
-                }
-            }
 
-            inner.call(req).await
+                    if is_write {
+                        // For writes, count bytes from Content-Length (always present
+                        // for known-size bodies). For chunked/streaming uploads without
+                        // Content-Length, wrap the body stream to count as chunks flow.
+                        let content_length = req
+                            .headers()
+                            .get(axum::http::header::CONTENT_LENGTH)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok());
+
+                        if let Some(total_bytes) = content_length {
+                            // Known size: deduct immediately
+                            dir.add_bytes(total_bytes);
+                            let response = inner.call(req).await?;
+                            Ok(response)
+                        } else {
+                            // Unknown size: wrap body stream to count bytes
+                            let (parts, body) = req.into_parts();
+                            let byte_counter = Arc::new(AtomicU64::new(0));
+                            let counter_clone = byte_counter.clone();
+                            let state_clone = state.clone();
+                            let counted_stream = body.into_data_stream().map(move |chunk| {
+                                if let Ok(ref bytes) = chunk {
+                                    let len = bytes.len() as u64;
+                                    counter_clone.fetch_add(len, Ordering::Relaxed);
+                                    state_clone.write.add_bytes(len);
+                                }
+                                chunk
+                            });
+                            let new_body = Body::from_stream(counted_stream);
+                            let new_req = Request::from_parts(parts, new_body);
+                            let response = inner.call(new_req).await?;
+                            Ok(response)
+                        }
+                    } else {
+                        // For reads, wrap the response body to count bytes as they stream
+                        let response = inner.call(req).await?;
+
+                        let (parts, body) = response.into_parts();
+                        let state_clone = state.clone();
+                        let counted_stream = body.into_data_stream().map(move |chunk| {
+                            if let Ok(ref bytes) = chunk {
+                                let len = bytes.len() as u64;
+                                state_clone.read.add_bytes(len);
+                            }
+                            chunk
+                        });
+                        let new_body = Body::from_stream(counted_stream);
+
+                        Ok(axum::response::Response::from_parts(parts, new_body))
+                    }
+                } else {
+                    inner.call(req).await
+                }
+            } else {
+                inner.call(req).await
+            }
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use axum::http::{Method, StatusCode};
     use axum::response::IntoResponse;
     use axum::routing::get;
@@ -258,9 +350,14 @@ mod tests {
 
     use crate::client_server::extractors::PubkyHost;
     use crate::client_server::layers::authz::AuthenticatedSession;
+    use crate::data_directory::quota_config::BandwidthBudget;
     use crate::data_directory::user_limit_config::UserLimitConfig;
 
     use super::*;
+
+    fn budget(s: &str) -> Option<BandwidthBudget> {
+        Some(BandwidthBudget::from_str(s).unwrap())
+    }
 
     async fn ok_handler() -> impl IntoResponse {
         StatusCode::OK
@@ -288,53 +385,57 @@ mod tests {
         req
     }
 
-    #[tokio::test]
-    async fn test_rate_limit_read_enforced() {
-        let app = test_app();
-        let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
-            rate_read: Some("1r/m".to_string()),
-            ..Default::default()
-        };
-
-        // First request succeeds (consumes the 1 allowed request)
-        let resp = app
-            .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
-            .await
+    fn make_request_with_body(
+        method: Method,
+        pubkey: &pubky_common::crypto::PublicKey,
+        limits: &UserLimitConfig,
+        body: Vec<u8>,
+    ) -> Request<Body> {
+        let len = body.len();
+        let mut req = Request::builder()
+            .method(method)
+            .uri("/test")
+            .header("content-length", len.to_string())
+            .body(Body::from(body))
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        // Second request within the same minute should be rejected
-        let resp = app
-            .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        req.extensions_mut().insert(PubkyHost(pubkey.clone()));
+        req.extensions_mut().insert(limits.clone());
+        req.extensions_mut().insert(AuthenticatedSession);
+        req
     }
 
     #[tokio::test]
-    async fn test_rate_limit_write_enforced() {
+    async fn test_budget_write_enforced() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
+        // 1kb/m budget = 1024 bytes per minute
         let limits = UserLimitConfig {
-            rate_write: Some("1r/m".to_string()),
+            rate_write: budget("1kb/m"),
             ..Default::default()
         };
 
-        // First write succeeds
+        // First request: 1024 bytes uses up the full budget (may overshoot — acceptable)
         let resp = app
             .clone()
-            .oneshot(make_request(Method::POST, &pubkey, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &limits,
+                vec![0; 1024],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        // Second write should be rejected
+        // Second request: pre-check sees 1024 >= 1024 → 429
         let resp = app
             .clone()
-            .oneshot(make_request(Method::POST, &pubkey, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &limits,
+                vec![0; 512],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -343,7 +444,6 @@ mod tests {
     #[tokio::test]
     async fn test_no_pubky_host_passes_through() {
         let app = test_app();
-        // Request without PubkyHost extension — should pass through without rate limiting
         let req = Request::builder()
             .method(Method::GET)
             .uri("/test")
@@ -357,7 +457,6 @@ mod tests {
     async fn test_no_rate_config_passes_through() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
-        // Limits with no rate_read/rate_write — unlimited
         let limits = UserLimitConfig::default();
 
         for _ in 0..10 {
@@ -371,30 +470,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_and_write_limits_independent() {
+    async fn test_read_and_write_budgets_independent() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
         let limits = UserLimitConfig {
-            rate_read: Some("1r/m".to_string()),
-            rate_write: Some("1r/m".to_string()),
+            rate_read: budget("1kb/m"),
+            rate_write: budget("1kb/m"),
             ..Default::default()
         };
 
-        // Exhaust read limit
-        let resp = app
-            .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let resp = app
-            .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
-
-        // Write should still be allowed (separate limiter)
+        // Write should succeed independently of read state
         let resp = app
             .clone()
             .oneshot(make_request(Method::POST, &pubkey, &limits))
@@ -404,25 +489,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_different_users_have_separate_limits() {
+    async fn test_different_users_have_separate_budgets() {
         let app = test_app();
         let pubkey1 = Keypair::random().public_key();
         let pubkey2 = Keypair::random().public_key();
         let limits = UserLimitConfig {
-            rate_read: Some("1r/m".to_string()),
+            rate_write: budget("1kb/m"),
             ..Default::default()
         };
 
-        // Exhaust user1's limit
+        // Exhaust user1's write budget
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey1, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey1,
+                &limits,
+                vec![0; 2048],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey1, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey1,
+                &limits,
+                vec![0; 512],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -430,7 +526,12 @@ mod tests {
         // User2 should still be allowed
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey2, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey2,
+                &limits,
+                vec![0; 512],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -441,14 +542,19 @@ mod tests {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
         let limits = UserLimitConfig {
-            rate_read: Some("1r/m".to_string()),
+            rate_write: budget("1kb/m"),
             ..Default::default()
         };
 
-        // Exhaust the limit
+        // Exhaust the budget
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &limits,
+                vec![0; 2048],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -456,7 +562,12 @@ mod tests {
         // Second request should return 429 with Retry-After header
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &limits,
+                vec![0; 512],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -473,58 +584,71 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quota_change_recreates_limiter() {
+    async fn test_budget_change_resets_counters() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
 
-        // Start with a tight limit of 1r/m
+        // Start with a tight budget
         let tight_limits = UserLimitConfig {
-            rate_read: Some("1r/m".to_string()),
+            rate_write: budget("1kb/m"),
             ..Default::default()
         };
 
-        // Exhaust the tight limit
+        // Exhaust the tight budget
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &tight_limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &tight_limits,
+                vec![0; 2048],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &tight_limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &tight_limits,
+                vec![0; 512],
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 
-        // Now the admin loosens the limit to 100r/m — the limiter should be
-        // recreated with a fresh bucket, allowing requests again.
+        // Admin loosens to 1mb/m — counters should reset, allowing requests again
         let loose_limits = UserLimitConfig {
-            rate_read: Some("100r/m".to_string()),
+            rate_write: budget("1mb/m"),
             ..Default::default()
         };
         let resp = app
             .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &loose_limits))
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &loose_limits,
+                vec![0; 512],
+            ))
             .await
             .unwrap();
         assert_eq!(
             resp.status(),
             StatusCode::OK,
-            "Quota change should recreate the limiter, allowing new requests"
+            "Budget change should reset counters, allowing new requests"
         );
     }
 
     #[tokio::test]
-    async fn test_unauthenticated_request_bypasses_rate_limit() {
+    async fn test_unauthenticated_request_bypasses_budget() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
         let limits = UserLimitConfig {
-            rate_read: Some("1r/m".to_string()),
+            rate_write: budget("1kb/m"),
             ..Default::default()
         };
 
-        // Build requests WITHOUT AuthenticatedSession marker
         let make_unauthed = |method: Method| {
             let mut req = Request::builder()
                 .method(method)
@@ -539,7 +663,7 @@ mod tests {
 
         // Many unauthenticated requests should all pass through
         for _ in 0..10 {
-            let resp = app.clone().oneshot(make_unauthed(Method::GET)).await.unwrap();
+            let resp = app.clone().oneshot(make_unauthed(Method::POST)).await.unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
         }
     }

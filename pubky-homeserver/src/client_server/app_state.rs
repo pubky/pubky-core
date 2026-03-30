@@ -12,8 +12,6 @@ pub(crate) struct AppState {
     pub(crate) sql_db: SqlDb,
     pub(crate) file_service: FileService,
     pub(crate) signup_mode: SignupMode,
-    /// If `Some(bytes)` the quota is enforced, else unlimited.
-    pub(crate) user_quota_bytes: Option<u64>,
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
 }

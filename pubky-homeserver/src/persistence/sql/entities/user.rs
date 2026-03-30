@@ -176,11 +176,34 @@ impl UserRepository {
     }
 
     /// Set per-user custom limits. Replaces any existing custom limits entirely.
+    ///
+    /// Rate limit strings are validated by roundtripping through `BandwidthBudget`
+    /// parsing to ensure only well-formed values reach the database.
     pub async fn set_custom_limits<'a>(
         user_id: i32,
         config: &UserLimitConfig,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), sqlx::Error> {
+        // Validate rate strings roundtrip correctly before writing to DB.
+        // This is a defence-in-depth check — callers should already hold parsed
+        // BandwidthBudget values, but we verify here to prevent corrupt data.
+        if let Some(ref rate) = config.rate_read {
+            let s = rate.to_string();
+            let _: crate::data_directory::quota_config::BandwidthBudget = s.parse().map_err(|e| {
+                sqlx::Error::Protocol(format!(
+                    "rate_read roundtrip validation failed for \"{s}\": {e}"
+                ))
+            })?;
+        }
+        if let Some(ref rate) = config.rate_write {
+            let s = rate.to_string();
+            let _: crate::data_directory::quota_config::BandwidthBudget = s.parse().map_err(|e| {
+                sqlx::Error::Protocol(format!(
+                    "rate_write roundtrip validation failed for \"{s}\": {e}"
+                ))
+            })?;
+        }
+
         let statement = Query::update()
             .table(USER_TABLE)
             .values(vec![
@@ -194,11 +217,11 @@ impl UserRepository {
                 ),
                 (
                     UserIden::LimitRateRead,
-                    SimpleExpr::Value(config.rate_read.clone().into()),
+                    SimpleExpr::Value(config.rate_read_str().into()),
                 ),
                 (
                     UserIden::LimitRateWrite,
-                    SimpleExpr::Value(config.rate_write.clone().into()),
+                    SimpleExpr::Value(config.rate_write_str().into()),
                 ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
@@ -300,8 +323,8 @@ impl UserEntity {
     pub fn apply_custom_limits(&mut self, config: &UserLimitConfig) {
         self.limit_storage_quota_mb = config.storage_quota_mb.map(|v| v as i64);
         self.limit_max_sessions = config.max_sessions.map(|v| v as i32);
-        self.limit_rate_read = config.rate_read.clone();
-        self.limit_rate_write = config.rate_write.clone();
+        self.limit_rate_read = config.rate_read_str();
+        self.limit_rate_write = config.rate_write_str();
     }
 
     /// Extract custom limits, returning `None` if all limit columns are NULL
@@ -313,6 +336,49 @@ impl UserEntity {
             self.limit_rate_read.clone(),
             self.limit_rate_write.clone(),
         )
+    }
+
+    /// Build a `UserLimitConfig` directly from the DB columns.
+    /// All-NULL columns produce an all-unlimited config (the DB is the source of truth).
+    pub fn limits(&self) -> UserLimitConfig {
+        UserLimitConfig {
+            storage_quota_mb: self.limit_storage_quota_mb.and_then(|v| {
+                u64::try_from(v)
+                    .map_err(|_| {
+                        tracing::warn!(
+                            "Negative limit_storage_quota_mb ({v}) for user {}; treating as zero quota",
+                            self.public_key.z32()
+                        );
+                    })
+                    .ok()
+            }),
+            max_sessions: self.limit_max_sessions.and_then(|v| {
+                u32::try_from(v)
+                    .map_err(|_| {
+                        tracing::warn!(
+                            "Negative limit_max_sessions ({v}) for user {}; treating as zero",
+                            self.public_key.z32()
+                        );
+                    })
+                    .ok()
+            }),
+            rate_read: self.limit_rate_read.as_ref().and_then(|s| {
+                s.parse().map_err(|e| {
+                    tracing::warn!(
+                        "Invalid rate_read \"{}\" for user {}: {e}; treating as unlimited",
+                        s, self.public_key.z32()
+                    );
+                }).ok()
+            }),
+            rate_write: self.limit_rate_write.as_ref().and_then(|s| {
+                s.parse().map_err(|e| {
+                    tracing::warn!(
+                        "Invalid rate_write \"{}\" for user {}: {e}; treating as unlimited",
+                        s, self.public_key.z32()
+                    );
+                }).ok()
+            }),
+        }
     }
 }
 
@@ -515,6 +581,9 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_set_and_clear_custom_limits() {
+        use std::str::FromStr;
+        use crate::data_directory::quota_config::BandwidthBudget;
+
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
         let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
@@ -528,8 +597,8 @@ mod tests {
         let config = UserLimitConfig {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some("100r/m".to_string()),
-            rate_write: Some("50r/s".to_string()),
+            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            rate_write: Some(BandwidthBudget::from_str("50mb/s").unwrap()),
         };
         UserRepository::set_custom_limits(user.id, &config, &mut db.pool().into())
             .await
@@ -553,7 +622,96 @@ mod tests {
     }
 
     #[test]
+    fn test_limits_all_null_returns_all_unlimited() {
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            limit_storage_quota_mb: None,
+            limit_max_sessions: None,
+            limit_rate_read: None,
+            limit_rate_write: None,
+        };
+
+        let limits = user.limits();
+        assert_eq!(limits, UserLimitConfig::default());
+        assert_eq!(limits.storage_quota_mb, None);
+        assert_eq!(limits.max_sessions, None);
+        assert_eq!(limits.rate_read, None);
+        assert_eq!(limits.rate_write, None);
+    }
+
+    #[test]
+    fn test_limits_mixed_null_and_values() {
+        use std::str::FromStr;
+        use crate::data_directory::quota_config::BandwidthBudget;
+
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            limit_storage_quota_mb: Some(500),
+            limit_max_sessions: None,
+            limit_rate_read: Some("100mb/m".to_string()),
+            limit_rate_write: None,
+        };
+
+        let limits = user.limits();
+        assert_eq!(limits.storage_quota_mb, Some(500));
+        assert_eq!(limits.max_sessions, None);
+        assert_eq!(limits.rate_read, Some(BandwidthBudget::from_str("100mb/m").unwrap()));
+        assert_eq!(limits.rate_write, None);
+    }
+
+    #[test]
+    fn test_limits_negative_values_treated_as_none() {
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            limit_storage_quota_mb: Some(-1),
+            limit_max_sessions: Some(-5),
+            limit_rate_read: None,
+            limit_rate_write: None,
+        };
+
+        let limits = user.limits();
+        // Negative values fail u64/u32 conversion → None (with warning logged)
+        assert_eq!(limits.storage_quota_mb, None);
+        assert_eq!(limits.max_sessions, None);
+    }
+
+    #[test]
+    fn test_limits_invalid_rate_string_treated_as_unlimited() {
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            limit_storage_quota_mb: None,
+            limit_max_sessions: None,
+            limit_rate_read: Some("garbage".to_string()),
+            limit_rate_write: Some("also_garbage".to_string()),
+        };
+
+        let limits = user.limits();
+        // Invalid rate strings fail parse → None (with warning logged)
+        assert_eq!(limits.rate_read, None);
+        assert_eq!(limits.rate_write, None);
+    }
+
+    #[test]
     fn test_apply_custom_limits() {
+        use std::str::FromStr;
+        use crate::data_directory::quota_config::BandwidthBudget;
+
         let mut user = UserEntity {
             id: 1,
             public_key: Keypair::random().public_key(),
@@ -569,14 +727,14 @@ mod tests {
         let config = UserLimitConfig {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some("100r/m".to_string()),
-            rate_write: Some("50r/s".to_string()),
+            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            rate_write: Some(BandwidthBudget::from_str("50mb/s").unwrap()),
         };
         user.apply_custom_limits(&config);
 
         assert_eq!(user.limit_storage_quota_mb, Some(500));
         assert_eq!(user.limit_max_sessions, Some(10));
-        assert_eq!(user.limit_rate_read, Some("100r/m".to_string()));
-        assert_eq!(user.limit_rate_write, Some("50r/s".to_string()));
+        assert_eq!(user.limit_rate_read, Some("100mb/m".to_string()));
+        assert_eq!(user.limit_rate_write, Some("50mb/s".to_string()));
     }
 }

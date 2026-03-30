@@ -86,23 +86,35 @@ pub struct AdminToml {
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
     /// Deprecated: use `storage_limit_mb` instead. Kept for backward compatibility.
-    /// Set to 0 for unlimited.
+    /// Set to 0 for unlimited. Note: unlike `storage_limit_mb`, the value 0 here
+    /// means "unlimited", not "zero quota".
     #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
-    /// Default per-user storage quota in MB. None = unlimited.
+    /// Default per-user storage quota in MB. `None` = unlimited.
     /// Takes precedence over the deprecated `user_storage_quota_mb` if both are set.
+    ///
+    /// **Important:** `Some(0)` means "zero quota" (no storage), NOT unlimited.
+    /// Omit the field entirely for unlimited storage.
+    ///
+    /// These defaults are also used by [`M20260327AddUserLimitColumnsMigration`] to
+    /// backfill existing user rows on first run. After that one-time migration,
+    /// changing this value only affects newly created users. Use the admin API to
+    /// update existing users.
     #[serde(default)]
     pub storage_limit_mb: Option<u64>,
-    /// Default maximum concurrent sessions per user. None = unlimited.
+    /// Default maximum concurrent sessions per user. `None` = unlimited.
+    /// See `storage_limit_mb` for backfill/migration behavior.
     #[serde(default)]
     pub max_sessions: Option<u32>,
-    /// Default per-user read rate limit (e.g. "100r/m"). None = unlimited.
+    /// Default per-user read bandwidth budget (e.g. "500mb/d"). `None` = unlimited.
+    /// See `storage_limit_mb` for backfill/migration behavior.
     #[serde(default)]
-    pub user_rate_read: Option<String>,
-    /// Default per-user write rate limit (e.g. "50r/m"). None = unlimited.
+    pub user_rate_read: Option<super::quota_config::BandwidthBudget>,
+    /// Default per-user write bandwidth budget (e.g. "100mb/h"). `None` = unlimited.
+    /// See `storage_limit_mb` for backfill/migration behavior.
     #[serde(default)]
-    pub user_rate_write: Option<String>,
+    pub user_rate_write: Option<super::quota_config::BandwidthBudget>,
 }
 
 /// A config for Homeserver tracing subscriber configuration

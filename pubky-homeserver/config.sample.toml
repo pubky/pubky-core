@@ -14,18 +14,42 @@ signup_mode = "token_required"
 # Set it to 0 for unlimited.
 user_storage_quota_mb = 0
 
+# --- Per-user default limits ---
+#
+# These values serve as the deploy-time defaults for per-user resource limits.
+# They are applied in two ways:
+#
+#   1. NEW USERS: Any user created after the server starts will inherit these
+#      defaults (unless a signup token carries its own custom limits).
+#
+#   2. MIGRATION BACKFILL (one-time): When the m20260327_add_user_limit_columns
+#      migration runs for the first time, these values are written ("frozen")
+#      into every existing user row. After that, changing these TOML values
+#      will NOT retroactively update existing users. To change an existing
+#      user's limits, use the admin API:
+#        - PUT  /users/{pubkey}/limits   — set custom limits
+#        - DELETE /users/{pubkey}/limits — revert to current deploy-time defaults
+#
+# Within a limit config, omitted (or null) fields mean "unlimited".
+
 # Default per-user storage quota in MB. Omit for unlimited.
-# Takes precedence over `user_storage_quota_mb` if both are set.
+# Takes precedence over the deprecated `user_storage_quota_mb` if both are set.
+#
+# IMPORTANT: Unlike the deprecated `user_storage_quota_mb` where 0 = unlimited,
+# here 0 means "zero quota" (no storage allowed). Omit the field entirely for
+# unlimited storage.
 # storage_limit_mb = 500
 
 # Default maximum concurrent sessions per user. Omit for unlimited.
 # max_sessions = 10
 
-# Default per-user read rate limit (e.g. "100r/m"). Omit for unlimited.
-# user_rate_read = "100r/m"
+# Default per-user read bandwidth budget. Omit for unlimited.
+# Total bytes allowed per time window. Accepts bandwidth units (kb, mb, gb)
+# with time units (s, m, h, d). Example: "500mb/d" = 500 MB per day.
+# user_rate_read = "500mb/d"
 
-# Default per-user write rate limit (e.g. "50r/m"). Omit for unlimited.
-# user_rate_write = "50r/m"
+# Default per-user write bandwidth budget. Omit for unlimited.
+# user_rate_write = "100mb/h"
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.

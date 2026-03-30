@@ -127,12 +127,15 @@ pub async fn signup(
 
         SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
 
-        // 4) Create the new user record, applying custom limits from the token if present
+        // 4) Create the new user record, applying custom limits from the token
+        //    or deploy-time defaults so every user row has explicit limits.
         let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-        if let Some(custom_limits) = &code.custom_limits() {
-            UserRepository::set_custom_limits(user.id, custom_limits, uexecutor!(tx)).await?;
-            user.apply_custom_limits(custom_limits);
-        }
+        let limits_to_apply = code
+            .custom_limits()
+            .or_else(|| user_limits.as_ref().map(|ext| ext.0.clone()))
+            .unwrap_or_default();
+        UserRepository::set_custom_limits(user.id, &limits_to_apply, uexecutor!(tx)).await?;
+        user.apply_custom_limits(&limits_to_apply);
         tx.commit().await?;
 
         let max_sessions = resolve_max_sessions(&user, &user_limits);
@@ -140,8 +143,15 @@ pub async fn signup(
             .await;
     }
 
-    // 4) Create the new user record (open signup, no token)
-    let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
+    // 4) Create the new user record (open signup, no token).
+    //    Apply deploy-time defaults so every user row has explicit limits.
+    let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
+    let defaults = user_limits
+        .as_ref()
+        .map(|ext| ext.0.clone())
+        .unwrap_or_default();
+    UserRepository::set_custom_limits(user.id, &defaults, uexecutor!(tx)).await?;
+    user.apply_custom_limits(&defaults);
     tx.commit().await?;
 
     // 5) Create session & set cookie

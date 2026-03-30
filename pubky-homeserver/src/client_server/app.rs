@@ -114,19 +114,11 @@ impl ClientServer {
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
-        let quota_mb = context.config_toml.general.user_storage_quota_mb;
-        let quota_bytes = if quota_mb == 0 {
-            None
-        } else {
-            Some(quota_mb * 1024 * 1024)
-        };
-
         let state = AppState {
             verifier: AuthVerifier::default(),
             sql_db: context.sql_db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
-            user_quota_bytes: quota_bytes,
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
         };

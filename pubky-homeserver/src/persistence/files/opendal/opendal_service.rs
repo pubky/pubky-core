@@ -28,10 +28,9 @@ pub fn build_storage_operator(
     storage_config: &StorageConfigToml,
     data_directory: &Path,
     db: &SqlDb,
-    user_quota_bytes: u64,
     events_service: EventsService,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
+    let user_quota_layer = UserQuotaLayer::new(db.clone());
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
@@ -85,15 +84,10 @@ pub fn build_storage_operator(
 /// Data dir path is used to expand the data directory placeholder in the config.
 #[cfg(test)]
 pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Operator, FileIoError> {
-    let quota_bytes = match context.config_toml.general.user_storage_quota_mb {
-        0 => u64::MAX,
-        other => other * 1024 * 1024,
-    };
     build_storage_operator(
         &context.config_toml.storage,
         context.data_dir.path(),
         &context.sql_db,
-        quota_bytes,
         context.events_service.clone(),
     )
 }
@@ -116,11 +110,10 @@ impl OpendalService {
         config: &StorageConfigToml,
         data_directory: &Path,
         db: &SqlDb,
-        user_quota_bytes: u64,
         events_service: EventsService,
     ) -> Result<Self, FileIoError> {
         let operator =
-            build_storage_operator(config, data_directory, db, user_quota_bytes, events_service)?;
+            build_storage_operator(config, data_directory, db, events_service)?;
         Ok(Self { operator })
     }
 
@@ -298,14 +291,24 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_quota_exceeded_error() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubky, &mut context.sql_db.pool().into())
+        let user = UserRepository::create(&pubky, &mut context.sql_db.pool().into())
             .await
             .unwrap();
+        // Set 1 MB storage quota on the user row
+        crate::persistence::sql::user::UserRepository::set_custom_limits(
+            user.id,
+            &crate::data_directory::user_limit_config::UserLimitConfig {
+                storage_quota_mb: Some(1),
+                ..Default::default()
+            },
+            &mut context.sql_db.pool().into(),
+        )
+        .await
+        .unwrap();
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         let write_result = service.write(&path, vec![42u8; 1024 * 1024]).await;
         assert!(write_result.is_err());

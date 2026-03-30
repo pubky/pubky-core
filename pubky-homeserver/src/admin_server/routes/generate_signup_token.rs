@@ -3,7 +3,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use crate::{
     data_directory::user_limit_config::UserLimitConfig,
     persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository},
-    shared::{HttpError, HttpResult},
+    shared::HttpResult,
 };
 
 use super::super::app_state::AppState;
@@ -34,9 +34,7 @@ pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,
     Json(config): Json<UserLimitConfig>,
 ) -> HttpResult<impl IntoResponse> {
-    config.validate().map_err(|msg| {
-        HttpError::new_with_message(StatusCode::BAD_REQUEST, msg)
-    })?;
-
+    // Bandwidth budget strings are validated by BandwidthBudget deserialization —
+    // invalid values cause a 422 from axum's Json extractor.
     create_signup_code(&state, Some(&config)).await
 }

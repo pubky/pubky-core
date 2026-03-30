@@ -55,10 +55,8 @@ pub async fn put_user_limits(
     Path(pubkey_str): Path<String>,
     Json(config): Json<UserLimitConfig>,
 ) -> HttpResult<impl IntoResponse> {
-    config.validate().map_err(|msg| {
-        HttpError::new_with_message(StatusCode::BAD_REQUEST, msg)
-    })?;
-
+    // Bandwidth budget strings are validated by BandwidthBudget deserialization —
+    // invalid values cause a 422 from axum's Json extractor.
     let user = resolve_user(&state, &pubkey_str).await?;
 
     UserRepository::set_custom_limits(user.id, &config, &mut state.sql_db.pool().into()).await?;

@@ -14,7 +14,9 @@ use futures_util::future::BoxFuture;
 use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
-use crate::data_directory::user_limit_config::{CachedUserLimits, UserLimitConfig, UserLimitsCache};
+use crate::data_directory::user_limit_config::{
+    CachedUserLimits, UserLimitConfig, UserLimitsCache, MAX_CACHED_USER_LIMITS,
+};
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
 
@@ -113,9 +115,15 @@ where
 
                     match UserRepository::get(&pubkey, &mut sql_db.pool().into()).await {
                         Ok(user) => {
-                            // If user has custom limits, use those; otherwise use defaults.
-                            let resolved = user.custom_limits().unwrap_or_else(|| defaults.clone());
-                            // Only cache when the user exists in DB
+                            // The DB is the source of truth: every user row has explicit
+                            // limits (set during signup or backfilled by migration).
+                            // All-NULL columns = all unlimited.
+                            let resolved = user.limits();
+                            // Only cache when the user exists in DB.
+                            // Evict expired entries if at capacity to prevent unbounded growth.
+                            if cache.len() >= MAX_CACHED_USER_LIMITS {
+                                cache.retain(|_, entry| !entry.is_expired());
+                            }
                             cache.insert(pubkey, CachedUserLimits::new(resolved.clone()));
                             resolved
                         }
@@ -271,6 +279,45 @@ mod tests {
         assert!(json["max_sessions"].is_null()); // unlimited, not the default 5
 
         // Should now be cached
+        assert!(cache.contains_key(&pubkey));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_resolver_user_with_null_columns_returns_unlimited() {
+        let db = SqlDb::test().await;
+        let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
+        let defaults = UserLimitConfig {
+            storage_quota_mb: Some(42),
+            max_sessions: Some(7),
+            ..Default::default()
+        };
+
+        // Create a user but do NOT set any custom limits — all columns remain NULL.
+        let pubkey = Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let app = build_test_app(defaults, cache.clone(), db);
+
+        let mut req = axum::http::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(PubkyHost(pubkey.clone()));
+
+        let resp = app.oneshot(req).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        // All-NULL columns → all unlimited (null), NOT the deploy-time defaults
+        assert!(json["storage_quota_mb"].is_null());
+        assert!(json["max_sessions"].is_null());
+
+        // Should be cached (user exists in DB)
         assert!(cache.contains_key(&pubkey));
     }
 

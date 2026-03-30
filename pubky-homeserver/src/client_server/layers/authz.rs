@@ -8,7 +8,7 @@
 //!
 //! When a request has a valid session, an [`AuthenticatedSession`] marker is
 //! inserted into the request extensions so downstream layers (e.g. per-user
-//! rate limiting) can distinguish authenticated from anonymous requests.
+//! bandwidth budgets) can distinguish authenticated from anonymous requests.
 
 use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::persistence::sql::session::{SessionRepository, SessionSecret};
@@ -26,7 +26,7 @@ use tower::{Layer, Service};
 use tower_cookies::Cookies;
 
 /// Marker inserted into request extensions when the request has a valid session.
-/// Downstream middleware (e.g. per-user rate limiting) can check for this to
+/// Downstream middleware (e.g. per-user bandwidth budgets) can check for this to
 /// distinguish authenticated from anonymous requests.
 #[derive(Debug, Clone)]
 pub struct AuthenticatedSession;
@@ -114,7 +114,7 @@ where
                 Ok(false) => {
                     // Allowed without session (e.g. public read). Check if there
                     // happens to be a valid session anyway so downstream layers
-                    // (per-user rate limiting) can offer authenticated-user quotas.
+                    // (per-user bandwidth budgets) can charge the authenticated user.
                     if has_valid_session(&state, cookies, pubky.public_key()).await {
                         req.extensions_mut().insert(AuthenticatedSession);
                     }

@@ -6,10 +6,13 @@ use axum::{
 };
 use futures_util::stream::StreamExt;
 
+use axum::Extension;
+
 use crate::{
     client_server::{
         err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState,
     },
+    data_directory::user_limit_config::UserLimitConfig,
     persistence::{
         files::WriteStreamError,
         sql::{entry::EntryRepository, user::UserRepository, UnifiedExecutor},
@@ -37,17 +40,22 @@ pub async fn put(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
+    user_limits: Option<Extension<UserLimitConfig>>,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
     get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    // Check if the size hint exceeds the quota so we can fail early
+    // Check if the size hint exceeds the per-user quota so we can fail early.
+    // The quota comes from the resolved UserLimitConfig (DB → per-user column).
+    let user_quota_bytes = user_limits
+        .and_then(|ext| ext.0.storage_quota_mb)
+        .map(|mb| mb.saturating_mul(1024 * 1024));
     let content_size_hint = body.size_hint().exact();
     fail_if_size_hint_bigger_than_user_quota(
         content_size_hint,
-        state.user_quota_bytes,
+        user_quota_bytes,
         &entry_path,
         &mut state.sql_db.pool().into(),
     )
@@ -135,6 +143,28 @@ mod tests {
         )
         .await
         .expect("should not fail");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_no_quota_means_unlimited() {
+        let db = SqlDb::test().await;
+        let pubkey = Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
+        let body = Body::from("test");
+
+        // None quota = unlimited — should always succeed regardless of size hint
+        fail_if_size_hint_bigger_than_user_quota(
+            body.size_hint().exact(),
+            None,
+            &entry,
+            &mut db.pool().into(),
+        )
+        .await
+        .expect("no quota should mean unlimited");
     }
 
     #[tokio::test]

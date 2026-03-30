@@ -1,8 +1,8 @@
 use super::build_full_testnet;
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
-    pubky_homeserver::MockDataDir,
+    pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, PubkyHttpClient, StatusCode},
+    pubky_homeserver::{ConfigToml, MockDataDir},
     Testnet,
 };
 use rand::rng;
@@ -915,4 +915,151 @@ async fn write_same_path_separate_users() {
     assert_eq!(content_length, content1.len() as u64);
     let read_bytes_b = response.bytes().await.unwrap();
     assert_eq!(read_bytes_b, content1);
+}
+
+/// Test that per-user quota set via admin API is enforced.
+/// User A gets a 1 MB custom quota via admin API; user B has no custom quota (unlimited).
+/// User A is blocked when exceeding 1 MB; user B can write freely.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn per_user_quota_via_admin_api() {
+    let config = ConfigToml::default_test_config();
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Create two users
+    let signer_a = pubky.signer(Keypair::random());
+    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_a = signer_a.public_key().z32();
+
+    let signer_b = pubky.signer(Keypair::random());
+    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+
+    // Set a 1 MB quota on user A via admin API
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let resp = admin_client
+        .request(
+            Method::PUT,
+            &format!("http://{admin_socket}/users/{pubkey_a}/limits"),
+        )
+        .header("X-Admin-Password", &admin_password)
+        .header("content-type", "application/json")
+        .body(r#"{"storage_quota_mb": 1}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // User A: 600 KB write → OK
+    let data_600k: Vec<u8> = vec![0; 600_000];
+    let resp = session_a
+        .storage()
+        .put("/pub/data", data_600k.clone())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // User A: another 600 KB at a different path (total 1.2 MB) → 507
+    let err = session_a
+        .storage()
+        .put("/pub/data2", data_600k.clone())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Request(RequestError::Server { status, .. })
+            if status == StatusCode::INSUFFICIENT_STORAGE
+    ));
+
+    // User B: has no custom quota (unlimited) — same 600 KB writes should both succeed
+    let resp = session_b
+        .storage()
+        .put("/pub/data", data_600k.clone())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let resp = session_b
+        .storage()
+        .put("/pub/data2", data_600k)
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+}
+
+/// Test that per-user bandwidth rate limits set via admin API return 429.
+/// User A gets a tight write budget (1kb/s); after exhausting it, further writes get 429.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn per_user_rate_limit_429_via_admin_api() {
+    let config = ConfigToml::default_test_config();
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Create a user
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_z32 = signer.public_key().z32();
+
+    // Set a tight write budget (1kb/s) via admin API
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let resp = admin_client
+        .request(
+            Method::PUT,
+            &format!("http://{admin_socket}/users/{pubkey_z32}/limits"),
+        )
+        .header("X-Admin-Password", &admin_password)
+        .header("content-type", "application/json")
+        .body(r#"{"rate_write": "1kb/s"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // First write: 1024 bytes uses up the full 1kb/s budget
+    let resp = session
+        .storage()
+        .put("/pub/rate_test1", vec![0u8; 1024])
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Second write should be rejected with 429
+    let err = session
+        .storage()
+        .put("/pub/rate_test2", vec![0u8; 512])
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::Request(RequestError::Server { status, .. })
+                if status == StatusCode::TOO_MANY_REQUESTS
+        ),
+        "Expected 429 TOO_MANY_REQUESTS, got: {err:?}"
+    );
 }

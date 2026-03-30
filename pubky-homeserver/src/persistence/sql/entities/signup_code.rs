@@ -18,11 +18,36 @@ pub struct SignupCodeRepository;
 impl SignupCodeRepository {
     /// Create a new signup code, optionally with custom limits for users who redeem it.
     /// The executor can either be db.pool() or a transaction.
+    ///
+    /// Rate limit strings are validated by roundtripping through `BandwidthBudget`
+    /// parsing to ensure only well-formed values reach the database.
     pub async fn create<'a>(
         id: &SignupCodeId,
         custom_limits: Option<&UserLimitConfig>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
+        // Validate rate strings before writing to DB (defence-in-depth).
+        if let Some(config) = custom_limits {
+            if let Some(ref rate) = config.rate_read {
+                let s = rate.to_string();
+                let _: crate::data_directory::quota_config::BandwidthBudget =
+                    s.parse().map_err(|e| {
+                        sqlx::Error::Protocol(format!(
+                            "rate_read roundtrip validation failed for \"{s}\": {e}"
+                        ))
+                    })?;
+            }
+            if let Some(ref rate) = config.rate_write {
+                let s = rate.to_string();
+                let _: crate::data_directory::quota_config::BandwidthBudget =
+                    s.parse().map_err(|e| {
+                        sqlx::Error::Protocol(format!(
+                            "rate_write roundtrip validation failed for \"{s}\": {e}"
+                        ))
+                    })?;
+            }
+        }
+
         let statement = Query::insert()
             .into_table(SIGNUP_CODE_TABLE)
             .columns([
@@ -46,12 +71,12 @@ impl SignupCodeRepository {
                 ),
                 SimpleExpr::Value(
                     custom_limits
-                        .and_then(|c| c.rate_read.clone())
+                        .and_then(|c| c.rate_read_str())
                         .into(),
                 ),
                 SimpleExpr::Value(
                     custom_limits
-                        .and_then(|c| c.rate_write.clone())
+                        .and_then(|c| c.rate_write_str())
                         .into(),
                 ),
             ])
@@ -325,13 +350,16 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_with_custom_limits() {
+        use std::str::FromStr;
+        use crate::data_directory::quota_config::BandwidthBudget;
+
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
 
         let config = UserLimitConfig {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some("100r/m".to_string()),
+            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
             rate_write: None,
         };
 

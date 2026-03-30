@@ -181,13 +181,20 @@ impl Drop for AdminServer {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use axum::http::Method;
     use axum_test::TestServer;
     use base64::Engine;
 
+    use crate::data_directory::quota_config::BandwidthBudget;
     use crate::persistence::files::FileService;
 
     use super::*;
+
+    fn bw(s: &str) -> BandwidthBudget {
+        BandwidthBudget::from_str(s).unwrap()
+    }
 
     fn create_test_server(context: &AppContext) -> TestServer {
         TestServer::new(create_app(
@@ -411,7 +418,7 @@ mod tests {
         let body = serde_json::json!({
             "storage_quota_mb": 500,
             "max_sessions": 10,
-            "rate_read": "100r/m"
+            "rate_read": "100mb/m"
         });
         let response = server
             .put(&url)
@@ -432,7 +439,7 @@ mod tests {
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 500);
         assert_eq!(json["max_sessions"], 10);
-        assert_eq!(json["rate_read"], "100r/m");
+        assert_eq!(json["rate_read"], "100mb/m");
 
         // DELETE overrides
         let response = server
@@ -471,7 +478,7 @@ mod tests {
 
         let url = format!("/users/{}/limits", pubkey.z32());
 
-        // PUT with invalid rate string should be rejected
+        // PUT with invalid rate string should be rejected (422 from serde validation)
         let body = serde_json::json!({
             "rate_read": "garbage"
         });
@@ -482,7 +489,7 @@ mod tests {
             .bytes(serde_json::to_vec(&body).unwrap().into())
             .expect_failure()
             .await;
-        response.assert_status_bad_request();
+        response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[tokio::test]
@@ -514,7 +521,7 @@ mod tests {
         let body = serde_json::json!({
             "storage_quota_mb": 1024,
             "max_sessions": 5,
-            "rate_read": "200r/m"
+            "rate_read": "200mb/m"
         });
         let response = server
             .post("/generate_signup_token")
@@ -534,7 +541,7 @@ mod tests {
         let limits = code.custom_limits().expect("should have custom limits");
         assert_eq!(limits.storage_quota_mb, Some(1024));
         assert_eq!(limits.max_sessions, Some(5));
-        assert_eq!(limits.rate_read, Some("200r/m".to_string()));
+        assert_eq!(limits.rate_read, Some(bw("200mb/m")));
         assert_eq!(limits.rate_write, None);
     }
 
@@ -561,8 +568,8 @@ mod tests {
         let body = serde_json::json!({
             "storage_quota_mb": 500,
             "max_sessions": 10,
-            "rate_read": "100r/m",
-            "rate_write": "50r/m"
+            "rate_read": "100mb/m",
+            "rate_write": "50mb/m"
         });
         server
             .put(&url)
@@ -614,7 +621,7 @@ mod tests {
         let custom_limits = UserLimitConfig {
             storage_quota_mb: Some(1024),
             max_sessions: Some(5),
-            rate_read: Some("200r/m".to_string()),
+            rate_read: Some(bw("200mb/m")),
             rate_write: None,
         };
         let code_id = SignupCodeId::random();
@@ -647,7 +654,7 @@ mod tests {
         let user_limits = user.custom_limits().expect("user should have custom limits");
         assert_eq!(user_limits.storage_quota_mb, Some(1024));
         assert_eq!(user_limits.max_sessions, Some(5));
-        assert_eq!(user_limits.rate_read, Some("200r/m".to_string()));
+        assert_eq!(user_limits.rate_read, Some(bw("200mb/m")));
         assert_eq!(user_limits.rate_write, None);
     }
 }
