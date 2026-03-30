@@ -369,7 +369,6 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_directory::user_limit_config::UserLimitConfig;
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
@@ -381,27 +380,6 @@ mod tests {
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         Ok(user.used_bytes)
-    }
-
-    /// Helper: create a user with a storage quota in MB.
-    async fn create_user_with_quota_mb(
-        db: &SqlDb,
-        pubkey: &PublicKey,
-        quota_mb: u64,
-    ) -> crate::persistence::sql::user::UserEntity {
-        let user = UserRepository::create(pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        let config = UserLimitConfig {
-            storage_quota_mb: Some(quota_mb),
-            ..Default::default()
-        };
-        UserRepository::set_custom_limits(user.id, &config, &mut db.pool().into())
-            .await
-            .unwrap();
-        UserRepository::get(pubkey, &mut db.pool().into())
-            .await
-            .unwrap()
     }
 
     #[tokio::test]
@@ -457,7 +435,7 @@ mod tests {
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
         let user_pubkey1_raw = user_pubkey1.z32();
         // Create user with 1 MB quota
-        create_user_with_quota_mb(&db, &user_pubkey1, 1).await;
+        UserRepository::create_with_quota_mb(&db,&user_pubkey1, 1).await;
 
         // Write a file and see if the user usage is updated
         operator
@@ -530,7 +508,7 @@ mod tests {
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
         let user_pubkey1_raw = user_pubkey1.z32();
         // 1 MB quota — exactly 1,048,576 bytes including metadata.
-        create_user_with_quota_mb(&db, &user_pubkey1, 1).await;
+        UserRepository::create_with_quota_mb(&db,&user_pubkey1, 1).await;
         let one_mb: usize = 1024 * 1024;
         let max_content = one_mb - FILE_METADATA_SIZE as usize;
 
@@ -617,7 +595,7 @@ mod tests {
         let user_raw = user_pubkey.z32();
 
         // Create user with 1 MB storage quota
-        create_user_with_quota_mb(&db, &user_pubkey, 1).await;
+        UserRepository::create_with_quota_mb(&db,&user_pubkey, 1).await;
 
         // Small write should succeed (well within 1 MB)
         operator
@@ -675,7 +653,7 @@ mod tests {
         let user_raw = user_pubkey.z32();
 
         // Create user with 0 MB quota = zero storage allowed
-        create_user_with_quota_mb(&db, &user_pubkey, 0).await;
+        UserRepository::create_with_quota_mb(&db,&user_pubkey, 0).await;
 
         // Even a small write should be rejected
         operator
@@ -696,7 +674,7 @@ mod tests {
         let user_raw = user_pubkey.z32();
 
         // Create user with 0 MB quota (no storage)
-        let user = create_user_with_quota_mb(&db, &user_pubkey, 0).await;
+        let user = UserRepository::create_with_quota_mb(&db,&user_pubkey, 0).await;
 
         // Write should fail
         operator

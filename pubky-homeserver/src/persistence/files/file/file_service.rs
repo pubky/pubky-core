@@ -285,20 +285,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user = UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        // Set 1 MB quota on the user row
-        crate::persistence::sql::user::UserRepository::set_custom_limits(
-            user.id,
-            &crate::data_directory::user_limit_config::UserLimitConfig {
-                storage_quota_mb: Some(1),
-                ..Default::default()
-            },
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -327,19 +314,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user = UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        UserRepository::set_custom_limits(
-            user.id,
-            &crate::data_directory::user_limit_config::UserLimitConfig {
-                storage_quota_mb: Some(1),
-                ..Default::default()
-            },
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -371,19 +346,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user = UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        UserRepository::set_custom_limits(
-            user.id,
-            &crate::data_directory::user_limit_config::UserLimitConfig {
-                storage_quota_mb: Some(1),
-                ..Default::default()
-            },
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 - FILE_METADATA_SIZE as usize];
@@ -408,19 +371,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user = UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        UserRepository::set_custom_limits(
-            user.id,
-            &crate::data_directory::user_limit_config::UserLimitConfig {
-                storage_quota_mb: Some(1),
-                ..Default::default()
-            },
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 + 1];
@@ -452,19 +403,7 @@ mod tests {
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user = UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        UserRepository::set_custom_limits(
-            user.id,
-            &crate::data_directory::user_limit_config::UserLimitConfig {
-                storage_quota_mb: Some(1),
-                ..Default::default()
-            },
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];

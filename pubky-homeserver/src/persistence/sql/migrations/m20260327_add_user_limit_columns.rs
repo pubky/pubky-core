@@ -63,8 +63,8 @@ impl MigrationTrait for M20260327AddUserLimitColumnsMigration {
         )
         .bind(defaults.storage_quota_mb.map(|v| v as i64))
         .bind(defaults.max_sessions.map(|v| v as i32))
-        .bind(defaults.rate_read_str())
-        .bind(defaults.rate_write_str())
+        .bind(UserLimitConfig::rate_str(&defaults.rate_read))
+        .bind(UserLimitConfig::rate_str(&defaults.rate_write))
         .execute(&mut **tx)
         .await?;
 

@@ -133,14 +133,25 @@ impl UserLimitConfig {
         })
     }
 
-    /// Serialise rate fields to the string representation stored in DB columns.
-    pub fn rate_read_str(&self) -> Option<String> {
-        self.rate_read.as_ref().map(|v| v.to_string())
+    /// Serialise a rate field to the string representation stored in DB columns.
+    pub fn rate_str(budget: &Option<BandwidthBudget>) -> Option<String> {
+        budget.as_ref().map(|v| v.to_string())
     }
 
-    /// Serialise rate fields to the string representation stored in DB columns.
-    pub fn rate_write_str(&self) -> Option<String> {
-        self.rate_write.as_ref().map(|v| v.to_string())
+    /// Validate that rate budget fields survive a Display → FromStr roundtrip.
+    ///
+    /// Defence-in-depth: callers already hold parsed `BandwidthBudget` values,
+    /// but this check prevents corrupt data from reaching the database.
+    pub fn validate_rate_roundtrips(&self) -> Result<(), String> {
+        for (label, budget) in [("rate_read", &self.rate_read), ("rate_write", &self.rate_write)] {
+            if let Some(ref b) = budget {
+                let s = b.to_string();
+                s.parse::<BandwidthBudget>().map_err(|e| {
+                    format!("{label} roundtrip validation failed for \"{s}\": {e}")
+                })?;
+            }
+        }
+        Ok(())
     }
 }
 

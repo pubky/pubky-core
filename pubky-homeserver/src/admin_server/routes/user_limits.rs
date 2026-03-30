@@ -32,18 +32,15 @@ async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEnti
 
 /// GET /users/{pubkey}/limits — return the user's effective limits.
 ///
-/// If the user has custom limits, returns those. Otherwise returns deploy-time defaults.
+/// Every user row has explicit limit columns (set during signup or migration
+/// backfill), so `limits()` is always the source of truth.
 pub async fn get_user_limits(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let user = resolve_user(&state, &pubkey_str).await?;
 
-    let effective = user
-        .custom_limits()
-        .unwrap_or_else(|| state.default_user_limits.clone());
-
-    Ok(Json(effective))
+    Ok(Json(user.limits()))
 }
 
 /// PUT /users/{pubkey}/limits — set per-user custom limits (replaces entirely).

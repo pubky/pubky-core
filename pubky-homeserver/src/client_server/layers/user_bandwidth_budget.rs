@@ -129,11 +129,11 @@ const MAX_TRACKED_USERS: usize = 100_000;
 const CLEANUP_EXPIRY: Duration = Duration::from_secs(86400); // 1 day
 
 #[derive(Debug, Clone)]
-pub struct UserRateLimiterLayer {
+pub struct UserBandwidthBudgetLayer {
     budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
 }
 
-impl UserRateLimiterLayer {
+impl UserBandwidthBudgetLayer {
     pub fn new() -> Self {
         let budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>> = Arc::new(DashMap::new());
 
@@ -156,11 +156,11 @@ impl UserRateLimiterLayer {
     }
 }
 
-impl<S> Layer<S> for UserRateLimiterLayer {
-    type Service = UserRateLimiterMiddleware<S>;
+impl<S> Layer<S> for UserBandwidthBudgetLayer {
+    type Service = UserBandwidthBudgetMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        UserRateLimiterMiddleware {
+        UserBandwidthBudgetMiddleware {
             inner,
             budgets: self.budgets.clone(),
         }
@@ -168,7 +168,7 @@ impl<S> Layer<S> for UserRateLimiterLayer {
 }
 
 #[derive(Debug, Clone)]
-pub struct UserRateLimiterMiddleware<S> {
+pub struct UserBandwidthBudgetMiddleware<S> {
     inner: S,
     budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
 }
@@ -195,7 +195,81 @@ fn evict_stale_entries(budgets: &DashMap<PublicKey, Arc<UserBudgetState>>) {
     }
 }
 
-impl<S> Service<Request<Body>> for UserRateLimiterMiddleware<S>
+/// Build a 429 response with a Retry-After header.
+fn budget_exceeded_response(retry_after_secs: u64) -> axum::response::Response {
+    let mut response = HttpError::new_with_message(
+        StatusCode::TOO_MANY_REQUESTS,
+        "Per-user bandwidth budget exceeded",
+    )
+    .into_response();
+    response.headers_mut().insert(
+        axum::http::header::RETRY_AFTER,
+        axum::http::HeaderValue::from(retry_after_secs),
+    );
+    response
+}
+
+/// Count bytes written in the request body, deducting from the budget.
+///
+/// If Content-Length is present, deducts immediately. Otherwise wraps the body
+/// stream to count bytes as chunks flow through.
+async fn count_write_bytes<S>(
+    req: Request<Body>,
+    dir: &DirectionBudgetState,
+    state: &Arc<UserBudgetState>,
+    inner: &mut S,
+) -> Result<axum::response::Response, Infallible>
+where
+    S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>,
+{
+    let content_length = req
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+
+    if let Some(total_bytes) = content_length {
+        dir.add_bytes(total_bytes);
+        inner.call(req).await
+    } else {
+        let (parts, body) = req.into_parts();
+        let state_clone = state.clone();
+        let counted_stream = body.into_data_stream().map(move |chunk| {
+            if let Ok(ref bytes) = chunk {
+                state_clone.write.add_bytes(bytes.len() as u64);
+            }
+            chunk
+        });
+        let new_req = Request::from_parts(parts, Body::from_stream(counted_stream));
+        inner.call(new_req).await
+    }
+}
+
+/// Wrap the response body to count bytes read as they stream out.
+async fn count_read_bytes<S>(
+    req: Request<Body>,
+    state: &Arc<UserBudgetState>,
+    inner: &mut S,
+) -> Result<axum::response::Response, Infallible>
+where
+    S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>,
+{
+    let response = inner.call(req).await?;
+    let (parts, body) = response.into_parts();
+    let state_clone = state.clone();
+    let counted_stream = body.into_data_stream().map(move |chunk| {
+        if let Ok(ref bytes) = chunk {
+            state_clone.read.add_bytes(bytes.len() as u64);
+        }
+        chunk
+    });
+    Ok(axum::response::Response::from_parts(
+        parts,
+        Body::from_stream(counted_stream),
+    ))
+}
+
+impl<S> Service<Request<Body>> for UserBandwidthBudgetMiddleware<S>
 where
     S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
         + Send
@@ -216,122 +290,61 @@ where
         let budgets = self.budgets.clone();
 
         Box::pin(async move {
-            // Only apply per-user bandwidth budgets to authenticated requests.
             let is_authenticated = req.extensions().get::<AuthenticatedSession>().is_some();
             let pubky_host = req.extensions().get::<PubkyHost>().cloned();
             let user_limits = req.extensions().get::<UserLimitConfig>().cloned();
 
-            if let (true, Some(pubky_host), Some(limits)) =
+            let (true, Some(pubky_host), Some(limits)) =
                 (is_authenticated, pubky_host, user_limits)
-            {
-                let pubkey = pubky_host.public_key().clone();
-                let is_write = is_write_method(req.method());
+            else {
+                return inner.call(req).await;
+            };
 
-                let budget = if is_write {
-                    limits.rate_write.as_ref()
-                } else {
-                    limits.rate_read.as_ref()
-                };
-
-                if let Some(budget) = budget {
-                    // Ensure map entry exists
-                    if !budgets.contains_key(&pubkey) && budgets.len() >= MAX_TRACKED_USERS {
-                        evict_stale_entries(&budgets);
-                    }
-
-                    let state = budgets
-                        .entry(pubkey.clone())
-                        .or_insert_with(|| {
-                            Arc::new(UserBudgetState::new(
-                                limits.rate_read.clone(),
-                                limits.rate_write.clone(),
-                            ))
-                        })
-                        .clone();
-
-                    // Pre-check: is the budget already exhausted?
-                    let dir = state.direction(is_write);
-                    let (bytes_used, budget_bytes, seconds_remaining) =
-                        dir.check_and_maybe_reset(budget);
-
-                    if bytes_used >= budget_bytes {
-                        let retry_after = seconds_remaining.max(1);
-                        tracing::debug!(
-                            "Per-user bandwidth budget exceeded for {} ({}, used={}B, budget={}B, retry_after={}s)",
-                            pubkey.z32(),
-                            if is_write { "write" } else { "read" },
-                            bytes_used,
-                            budget_bytes,
-                            retry_after,
-                        );
-                        let mut response = HttpError::new_with_message(
-                            StatusCode::TOO_MANY_REQUESTS,
-                            "Per-user bandwidth budget exceeded",
-                        )
-                        .into_response();
-                        response.headers_mut().insert(
-                            axum::http::header::RETRY_AFTER,
-                            axum::http::HeaderValue::from(retry_after),
-                        );
-                        return Ok(response);
-                    }
-
-                    if is_write {
-                        // For writes, count bytes from Content-Length (always present
-                        // for known-size bodies). For chunked/streaming uploads without
-                        // Content-Length, wrap the body stream to count as chunks flow.
-                        let content_length = req
-                            .headers()
-                            .get(axum::http::header::CONTENT_LENGTH)
-                            .and_then(|v| v.to_str().ok())
-                            .and_then(|s| s.parse::<u64>().ok());
-
-                        if let Some(total_bytes) = content_length {
-                            // Known size: deduct immediately
-                            dir.add_bytes(total_bytes);
-                            let response = inner.call(req).await?;
-                            Ok(response)
-                        } else {
-                            // Unknown size: wrap body stream to count bytes
-                            let (parts, body) = req.into_parts();
-                            let byte_counter = Arc::new(AtomicU64::new(0));
-                            let counter_clone = byte_counter.clone();
-                            let state_clone = state.clone();
-                            let counted_stream = body.into_data_stream().map(move |chunk| {
-                                if let Ok(ref bytes) = chunk {
-                                    let len = bytes.len() as u64;
-                                    counter_clone.fetch_add(len, Ordering::Relaxed);
-                                    state_clone.write.add_bytes(len);
-                                }
-                                chunk
-                            });
-                            let new_body = Body::from_stream(counted_stream);
-                            let new_req = Request::from_parts(parts, new_body);
-                            let response = inner.call(new_req).await?;
-                            Ok(response)
-                        }
-                    } else {
-                        // For reads, wrap the response body to count bytes as they stream
-                        let response = inner.call(req).await?;
-
-                        let (parts, body) = response.into_parts();
-                        let state_clone = state.clone();
-                        let counted_stream = body.into_data_stream().map(move |chunk| {
-                            if let Ok(ref bytes) = chunk {
-                                let len = bytes.len() as u64;
-                                state_clone.read.add_bytes(len);
-                            }
-                            chunk
-                        });
-                        let new_body = Body::from_stream(counted_stream);
-
-                        Ok(axum::response::Response::from_parts(parts, new_body))
-                    }
-                } else {
-                    inner.call(req).await
-                }
+            let pubkey = pubky_host.public_key().clone();
+            let is_write = is_write_method(req.method());
+            let budget = if is_write {
+                limits.rate_write.as_ref()
             } else {
-                inner.call(req).await
+                limits.rate_read.as_ref()
+            };
+
+            let Some(budget) = budget else {
+                return inner.call(req).await;
+            };
+
+            if !budgets.contains_key(&pubkey) && budgets.len() >= MAX_TRACKED_USERS {
+                evict_stale_entries(&budgets);
+            }
+
+            let state = budgets
+                .entry(pubkey.clone())
+                .or_insert_with(|| {
+                    Arc::new(UserBudgetState::new(
+                        limits.rate_read.clone(),
+                        limits.rate_write.clone(),
+                    ))
+                })
+                .clone();
+
+            let dir = state.direction(is_write);
+            let (bytes_used, budget_bytes, seconds_remaining) =
+                dir.check_and_maybe_reset(budget);
+
+            if bytes_used >= budget_bytes {
+                let retry_after = seconds_remaining.max(1);
+                tracing::debug!(
+                    "Per-user bandwidth budget exceeded for {} ({}, used={}B, budget={}B, retry_after={}s)",
+                    pubkey.z32(),
+                    if is_write { "write" } else { "read" },
+                    bytes_used, budget_bytes, retry_after,
+                );
+                return Ok(budget_exceeded_response(retry_after));
+            }
+
+            if is_write {
+                count_write_bytes(req, dir, &state, &mut inner).await
+            } else {
+                count_read_bytes(req, &state, &mut inner).await
             }
         })
     }
@@ -366,7 +379,7 @@ mod tests {
     fn test_app() -> Router {
         Router::new()
             .route("/test", get(ok_handler).post(ok_handler))
-            .layer(UserRateLimiterLayer::new())
+            .layer(UserBandwidthBudgetLayer::new())
     }
 
     fn make_request(
@@ -479,13 +492,57 @@ mod tests {
             ..Default::default()
         };
 
-        // Write should succeed independently of read state
+        // Exhaust the read budget
         let resp = app
             .clone()
-            .oneshot(make_request(Method::POST, &pubkey, &limits))
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+
+        // Exhaust write budget with a large body
+        let resp = app
+            .clone()
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &limits,
+                vec![0; 2048],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Write should be exhausted now
+        let resp = app
+            .clone()
+            .oneshot(make_request_with_body(
+                Method::POST,
+                &pubkey,
+                &limits,
+                vec![0; 1],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "Write budget should be exhausted"
+        );
+
+        // Read should still work (independent budget, reads count response bytes not request bytes)
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .await
+            .unwrap();
+        // Read passes the pre-check because the handler returns an empty body,
+        // so bytes_used stays at 0 for reads (only response body bytes are counted).
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Read budget should be independent of write"
+        );
     }
 
     #[tokio::test]

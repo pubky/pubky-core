@@ -184,25 +184,9 @@ impl UserRepository {
         config: &UserLimitConfig,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), sqlx::Error> {
-        // Validate rate strings roundtrip correctly before writing to DB.
-        // This is a defence-in-depth check — callers should already hold parsed
-        // BandwidthBudget values, but we verify here to prevent corrupt data.
-        if let Some(ref rate) = config.rate_read {
-            let s = rate.to_string();
-            let _: crate::data_directory::quota_config::BandwidthBudget = s.parse().map_err(|e| {
-                sqlx::Error::Protocol(format!(
-                    "rate_read roundtrip validation failed for \"{s}\": {e}"
-                ))
-            })?;
-        }
-        if let Some(ref rate) = config.rate_write {
-            let s = rate.to_string();
-            let _: crate::data_directory::quota_config::BandwidthBudget = s.parse().map_err(|e| {
-                sqlx::Error::Protocol(format!(
-                    "rate_write roundtrip validation failed for \"{s}\": {e}"
-                ))
-            })?;
-        }
+        config
+            .validate_rate_roundtrips()
+            .map_err(sqlx::Error::Protocol)?;
 
         let statement = Query::update()
             .table(USER_TABLE)
@@ -217,11 +201,11 @@ impl UserRepository {
                 ),
                 (
                     UserIden::LimitRateRead,
-                    SimpleExpr::Value(config.rate_read_str().into()),
+                    SimpleExpr::Value(UserLimitConfig::rate_str(&config.rate_read).into()),
                 ),
                 (
                     UserIden::LimitRateWrite,
-                    SimpleExpr::Value(config.rate_write_str().into()),
+                    SimpleExpr::Value(UserLimitConfig::rate_str(&config.rate_write).into()),
                 ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
@@ -286,6 +270,26 @@ impl UserRepository {
     }
 }
 
+#[cfg(test)]
+impl UserRepository {
+    /// Test helper: create a user with a storage quota in MB.
+    pub async fn create_with_quota_mb(
+        db: &crate::persistence::sql::SqlDb,
+        pubkey: &pubky_common::crypto::PublicKey,
+        quota_mb: u64,
+    ) -> UserEntity {
+        let user = Self::create(pubkey, &mut db.pool().into()).await.unwrap();
+        let config = UserLimitConfig {
+            storage_quota_mb: Some(quota_mb),
+            ..Default::default()
+        };
+        Self::set_custom_limits(user.id, &config, &mut db.pool().into())
+            .await
+            .unwrap();
+        Self::get(pubkey, &mut db.pool().into()).await.unwrap()
+    }
+}
+
 /// Iden for the user table.
 /// Basically a list of columns in the user table
 #[derive(Iden)]
@@ -323,62 +327,20 @@ impl UserEntity {
     pub fn apply_custom_limits(&mut self, config: &UserLimitConfig) {
         self.limit_storage_quota_mb = config.storage_quota_mb.map(|v| v as i64);
         self.limit_max_sessions = config.max_sessions.map(|v| v as i32);
-        self.limit_rate_read = config.rate_read_str();
-        self.limit_rate_write = config.rate_write_str();
+        self.limit_rate_read = UserLimitConfig::rate_str(&config.rate_read);
+        self.limit_rate_write = UserLimitConfig::rate_str(&config.rate_write);
     }
 
-    /// Extract custom limits, returning `None` if all limit columns are NULL
-    /// (user uses deploy-time defaults).
-    pub fn custom_limits(&self) -> Option<UserLimitConfig> {
+    /// Build a `UserLimitConfig` directly from the DB columns.
+    /// All-NULL columns produce an all-unlimited config (the DB is the source of truth).
+    pub fn limits(&self) -> UserLimitConfig {
         UserLimitConfig::from_nullable_columns(
             self.limit_storage_quota_mb,
             self.limit_max_sessions,
             self.limit_rate_read.clone(),
             self.limit_rate_write.clone(),
         )
-    }
-
-    /// Build a `UserLimitConfig` directly from the DB columns.
-    /// All-NULL columns produce an all-unlimited config (the DB is the source of truth).
-    pub fn limits(&self) -> UserLimitConfig {
-        UserLimitConfig {
-            storage_quota_mb: self.limit_storage_quota_mb.and_then(|v| {
-                u64::try_from(v)
-                    .map_err(|_| {
-                        tracing::warn!(
-                            "Negative limit_storage_quota_mb ({v}) for user {}; treating as zero quota",
-                            self.public_key.z32()
-                        );
-                    })
-                    .ok()
-            }),
-            max_sessions: self.limit_max_sessions.and_then(|v| {
-                u32::try_from(v)
-                    .map_err(|_| {
-                        tracing::warn!(
-                            "Negative limit_max_sessions ({v}) for user {}; treating as zero",
-                            self.public_key.z32()
-                        );
-                    })
-                    .ok()
-            }),
-            rate_read: self.limit_rate_read.as_ref().and_then(|s| {
-                s.parse().map_err(|e| {
-                    tracing::warn!(
-                        "Invalid rate_read \"{}\" for user {}: {e}; treating as unlimited",
-                        s, self.public_key.z32()
-                    );
-                }).ok()
-            }),
-            rate_write: self.limit_rate_write.as_ref().and_then(|s| {
-                s.parse().map_err(|e| {
-                    tracing::warn!(
-                        "Invalid rate_write \"{}\" for user {}: {e}; treating as unlimited",
-                        s, self.public_key.z32()
-                    );
-                }).ok()
-            }),
-        }
+        .unwrap_or_default()
     }
 }
 
@@ -444,7 +406,7 @@ mod tests {
         assert!(!created_user.disabled);
         assert_eq!(created_user.used_bytes, 0);
         assert_eq!(created_user.id, 1);
-        assert_eq!(created_user.custom_limits(), None);
+        assert_eq!(created_user.limits(), UserLimitConfig::default());
 
         // Test get user
         let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
@@ -590,8 +552,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Initially no custom limits
-        assert_eq!(user.custom_limits(), None);
+        // Initially all limits are unlimited (default)
+        assert_eq!(user.limits(), UserLimitConfig::default());
 
         // Set custom limits
         let config = UserLimitConfig {
@@ -608,7 +570,7 @@ mod tests {
         let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(user.custom_limits(), Some(config));
+        assert_eq!(user.limits(), config);
 
         // Clear custom limits
         UserRepository::clear_custom_limits(user.id, &mut db.pool().into())
@@ -618,7 +580,7 @@ mod tests {
         let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(user.custom_limits(), None);
+        assert_eq!(user.limits(), UserLimitConfig::default());
     }
 
     #[test]

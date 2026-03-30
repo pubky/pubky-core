@@ -651,7 +651,7 @@ mod tests {
         let user = UserRepository::get(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
-        let user_limits = user.custom_limits().expect("user should have custom limits");
+        let user_limits = user.limits();
         assert_eq!(user_limits.storage_quota_mb, Some(1024));
         assert_eq!(user_limits.max_sessions, Some(5));
         assert_eq!(user_limits.rate_read, Some(bw("200mb/m")));

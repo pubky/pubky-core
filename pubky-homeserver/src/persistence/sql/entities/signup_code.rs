@@ -26,26 +26,10 @@ impl SignupCodeRepository {
         custom_limits: Option<&UserLimitConfig>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
-        // Validate rate strings before writing to DB (defence-in-depth).
         if let Some(config) = custom_limits {
-            if let Some(ref rate) = config.rate_read {
-                let s = rate.to_string();
-                let _: crate::data_directory::quota_config::BandwidthBudget =
-                    s.parse().map_err(|e| {
-                        sqlx::Error::Protocol(format!(
-                            "rate_read roundtrip validation failed for \"{s}\": {e}"
-                        ))
-                    })?;
-            }
-            if let Some(ref rate) = config.rate_write {
-                let s = rate.to_string();
-                let _: crate::data_directory::quota_config::BandwidthBudget =
-                    s.parse().map_err(|e| {
-                        sqlx::Error::Protocol(format!(
-                            "rate_write roundtrip validation failed for \"{s}\": {e}"
-                        ))
-                    })?;
-            }
+            config
+                .validate_rate_roundtrips()
+                .map_err(sqlx::Error::Protocol)?;
         }
 
         let statement = Query::insert()
@@ -71,12 +55,12 @@ impl SignupCodeRepository {
                 ),
                 SimpleExpr::Value(
                     custom_limits
-                        .and_then(|c| c.rate_read_str())
+                        .and_then(|c| UserLimitConfig::rate_str(&c.rate_read))
                         .into(),
                 ),
                 SimpleExpr::Value(
                     custom_limits
-                        .and_then(|c| c.rate_write_str())
+                        .and_then(|c| UserLimitConfig::rate_str(&c.rate_write))
                         .into(),
                 ),
             ])

@@ -295,20 +295,7 @@ mod tests {
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pubky_common::crypto::Keypair::random().public_key();
-        let user = UserRepository::create(&pubky, &mut context.sql_db.pool().into())
-            .await
-            .unwrap();
-        // Set 1 MB storage quota on the user row
-        crate::persistence::sql::user::UserRepository::set_custom_limits(
-            user.id,
-            &crate::data_directory::user_limit_config::UserLimitConfig {
-                storage_quota_mb: Some(1),
-                ..Default::default()
-            },
-            &mut context.sql_db.pool().into(),
-        )
-        .await
-        .unwrap();
+        UserRepository::create_with_quota_mb(&context.sql_db, &pubky, 1).await;
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         let write_result = service.write(&path, vec![42u8; 1024 * 1024]).await;
         assert!(write_result.is_err());

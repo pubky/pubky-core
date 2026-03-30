@@ -33,16 +33,10 @@ use crate::data_directory::user_limit_config::UserLimitConfig;
 
 /// Resolve the effective max_sessions for a user.
 ///
-/// If the user has custom limits, uses those. Otherwise falls back to the
-/// middleware-resolved deploy-time defaults (if present in request extensions).
-fn resolve_max_sessions(
-    user: &UserEntity,
-    user_limits: &Option<Extension<UserLimitConfig>>,
-) -> Option<u32> {
-    if let Some(custom) = user.custom_limits() {
-        return custom.max_sessions;
-    }
-    user_limits.as_ref().and_then(|ext| ext.0.max_sessions)
+/// Every user row has explicit limit columns (set during signup or migration
+/// backfill), so `limits()` is always the source of truth.
+fn resolve_max_sessions(user: &UserEntity) -> Option<u32> {
+    user.limits().max_sessions
 }
 
 use tower_cookies::{
@@ -138,7 +132,7 @@ pub async fn signup(
         user.apply_custom_limits(&limits_to_apply);
         tx.commit().await?;
 
-        let max_sessions = resolve_max_sessions(&user, &user_limits);
+        let max_sessions = resolve_max_sessions(&user);
         return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions)
             .await;
     }
@@ -155,7 +149,7 @@ pub async fn signup(
     tx.commit().await?;
 
     // 5) Create session & set cookie
-    let max_sessions = resolve_max_sessions(&user, &user_limits);
+    let max_sessions = resolve_max_sessions(&user);
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions).await
 }
 
@@ -164,7 +158,6 @@ pub async fn signin(
     State(state): State<AppState>,
     cookies: Cookies,
     Host(host): Host,
-    user_limits: Option<Extension<UserLimitConfig>>,
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify the AuthToken in the request body
@@ -175,7 +168,7 @@ pub async fn signin(
     let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
 
     // 3) Create the session & set cookie
-    let max_sessions = resolve_max_sessions(&user, &user_limits);
+    let max_sessions = resolve_max_sessions(&user);
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions).await
 }
 
