@@ -104,7 +104,7 @@ impl TransportResolver {
         }
 
         // Both exist — probe direct endpoint reachability.
-        if probe_reachable(&direct_addrs).await {
+        if probe_reachable(&direct_addrs, PROBE_TIMEOUT).await {
             ResolvedTransport::PubkyTls
         } else {
             cross_log!(
@@ -116,9 +116,9 @@ impl TransportResolver {
     }
 }
 
-async fn probe_reachable(addrs: &[std::net::SocketAddr]) -> bool {
+async fn probe_reachable(addrs: &[std::net::SocketAddr], timeout: Duration) -> bool {
     for addr in addrs {
-        if let Ok(Ok(_)) = tokio::time::timeout(PROBE_TIMEOUT, TcpStream::connect(addr)).await {
+        if let Ok(Ok(_)) = tokio::time::timeout(timeout, TcpStream::connect(addr)).await {
             return true;
         }
     }
@@ -302,7 +302,7 @@ mod tests {
     #[tokio::test]
     async fn probe_unreachable_returns_false() {
         let addr = "192.0.2.1:1".parse().unwrap(); // TEST-NET-1, RFC 5737
-        assert!(!probe_reachable(&[addr]).await);
+        assert!(!probe_reachable(&[addr], Duration::from_millis(100)).await);
     }
 
     /// Helper: build a pkarr client with a pre-cached signed packet (no real network).
@@ -313,6 +313,31 @@ mod tests {
         let cache_key: pkarr::CacheKey = keypair.public_key().into();
         client.pkarr.cache().unwrap().put(&cache_key, packet);
         client.pkarr
+    }
+
+    #[test]
+    fn build_pubky_request_icann_rewrites_url_and_sets_header() {
+        let client = PubkyHttpClient::builder()
+            .pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]))
+            .build()
+            .unwrap();
+        let z32 = "o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy";
+        let url = Url::parse(&format!("https://{z32}/pub/app/file.txt")).unwrap();
+        let transport = ResolvedTransport::Icann {
+            domain: "example.com".to_string(),
+            port: Some(8443),
+        };
+
+        let req = client
+            .build_pubky_request(Method::GET, &url, z32, &transport)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(req.url().host_str(), Some("example.com"));
+        assert_eq!(req.url().port(), Some(8443));
+        assert_eq!(req.url().path(), "/pub/app/file.txt");
+        assert_eq!(req.headers().get("pubky-host").unwrap(), z32);
     }
 
     #[tokio::test]
