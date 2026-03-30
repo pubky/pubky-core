@@ -14,7 +14,7 @@ use axum::http::{Method, Request, StatusCode};
 use axum::response::IntoResponse;
 use dashmap::DashMap;
 use futures_util::future::BoxFuture;
-use governor::clock::QuantaClock;
+use governor::clock::{Clock, QuantaClock};
 use governor::state::keyed::DashMapStateStore;
 use governor::RateLimiter;
 use pubky_common::crypto::PublicKey;
@@ -217,17 +217,27 @@ where
                     };
                     drop(entry);
 
-                    if limiter.check_key(&pubkey).is_err() {
+                    if let Err(not_until) = limiter.check_key(&pubkey) {
+                        let retry_after_secs = not_until
+                            .wait_time_from(QuantaClock::default().now())
+                            .as_secs()
+                            .saturating_add(1); // round up to next whole second
                         tracing::debug!(
-                            "Per-user rate limit exceeded for {} ({})",
+                            "Per-user rate limit exceeded for {} ({}, retry_after={}s)",
                             pubkey.z32(),
-                            if is_write { "write" } else { "read" }
+                            if is_write { "write" } else { "read" },
+                            retry_after_secs,
                         );
-                        return Ok(HttpError::new_with_message(
+                        let mut response = HttpError::new_with_message(
                             StatusCode::TOO_MANY_REQUESTS,
                             "Per-user rate limit exceeded",
                         )
-                        .into_response());
+                        .into_response();
+                        response.headers_mut().insert(
+                            axum::http::header::RETRY_AFTER,
+                            axum::http::HeaderValue::from(retry_after_secs),
+                        );
+                        return Ok(response);
                     }
                 }
             }
@@ -424,6 +434,85 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_retry_after_header_present() {
+        let app = test_app();
+        let pubkey = Keypair::random().public_key();
+        let limits = UserLimitConfig {
+            rate_read: Some("1r/m".to_string()),
+            ..Default::default()
+        };
+
+        // Exhaust the limit
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Second request should return 429 with Retry-After header
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after = resp
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .expect("429 response should include Retry-After header");
+        let secs: u64 = retry_after
+            .to_str()
+            .unwrap()
+            .parse()
+            .expect("Retry-After should be a number");
+        assert!(secs > 0, "Retry-After should be at least 1 second");
+    }
+
+    #[tokio::test]
+    async fn test_quota_change_recreates_limiter() {
+        let app = test_app();
+        let pubkey = Keypair::random().public_key();
+
+        // Start with a tight limit of 1r/m
+        let tight_limits = UserLimitConfig {
+            rate_read: Some("1r/m".to_string()),
+            ..Default::default()
+        };
+
+        // Exhaust the tight limit
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &tight_limits))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &tight_limits))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        // Now the admin loosens the limit to 100r/m — the limiter should be
+        // recreated with a fresh bucket, allowing requests again.
+        let loose_limits = UserLimitConfig {
+            rate_read: Some("100r/m".to_string()),
+            ..Default::default()
+        };
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &loose_limits))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Quota change should recreate the limiter, allowing new requests"
+        );
     }
 
     #[tokio::test]
