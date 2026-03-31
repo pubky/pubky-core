@@ -191,7 +191,7 @@ mod tests {
         auth::jws::{ClientId, GrantId, TokenId},
     };
 
-    use crate::client_server::auth::persistence::grant::{GrantRepository, NewGrant};
+    use crate::client_server::auth::jwt::persistence::grant::{GrantRepository, NewGrant};
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
     async fn setup_user_and_grant(db: &SqlDb) -> GrantId {

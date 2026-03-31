@@ -21,19 +21,17 @@ pub mod write;
 
 pub fn router(state: AppState) -> Router<AppState> {
     // Data routes — public reads need no auth, writes use WriteAccess extractor
-    let data_routes = Router::new().route(
-        "/{*path}",
-        get(read::get)
-            .head(read::head)
-            .put(write::put)
-            .delete(write::delete),
-    );
-
-    crate::client_server::auth::tenant_router()
-        .merge(data_routes)
+    Router::new()
+        .route(
+            "/{*path}",
+            get(read::get)
+                .head(read::head)
+                .put(write::put)
+                .delete(write::delete),
+        )
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         // XXX: dzdidi - WebDAV compliant auth. Which is actually http basic auth so we need some magic here
         // to make session based auth look like http auth while also accepting http basic auth for webDAV comp
-        .layer(AuthenticationLayer::new(state.clone()))
+        .layer(AuthenticationLayer::new(state.auth_state))
 }

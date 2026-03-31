@@ -1,7 +1,6 @@
-//! Grant management endpoints (root only).
+//! JWT/grant-based route handlers.
 //!
-//! These endpoints allow Ring (or any root-capability session) to list
-//! active grants and revoke specific grants.
+//! Grant session creation and grant management endpoints.
 
 use axum::{
     extract::{Path, State},
@@ -10,19 +9,36 @@ use axum::{
     Json,
 };
 use pubky_common::auth::jws::GrantId;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    client_server::{
-        auth::{
-            middleware::authentication::AuthSession,
-            persistence::grant::GrantEntity,
-            AuthService,
-        },
-        AppState,
-    },
-    shared::{HttpError, HttpResult},
-};
+use super::crypto::jws_crypto::JwsCompact;
+use super::persistence::grant::GrantEntity;
+use super::service::AuthService;
+use crate::client_server::auth::AuthSession;
+use crate::client_server::auth::AuthState;
+use crate::shared::{HttpError, HttpResult};
+
+// ── Grant session creation ─────────────────────────────────────────────────
+
+/// JSON request body for grant-based session creation.
+#[derive(Deserialize)]
+pub struct CreateGrantSessionRequest {
+    /// Grant JWS (user-signed).
+    pub grant: JwsCompact,
+    /// PoP proof JWS (client-signed).
+    pub pop: JwsCompact,
+}
+
+/// Handle `POST /session` with JSON body (grant-based auth).
+pub async fn create_grant_session(
+    State(state): State<AuthState>,
+    Json(request): Json<CreateGrantSessionRequest>,
+) -> HttpResult<impl IntoResponse> {
+    let response = state.auth_service.create_grant_session(request).await?;
+    Ok(Json(response))
+}
+
+// ── Grant management ───────────────────────────────────────────────────────
 
 /// Summary of an active grant, returned by `GET /sessions`.
 #[derive(Serialize)]
@@ -50,7 +66,7 @@ impl From<GrantEntity> for GrantInfo {
 ///
 /// Requires root capability.
 pub async fn list_grants(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     auth: AuthSession,
 ) -> HttpResult<impl IntoResponse> {
     AuthService::require_root_capability(&auth)?;
@@ -66,7 +82,7 @@ pub async fn list_grants(
 ///
 /// Requires root capability.
 pub async fn revoke_grant(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     auth: AuthSession,
     Path(grant_id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
@@ -90,7 +106,7 @@ mod tests {
         crypto::Keypair,
     };
 
-    use crate::client_server::auth::middleware::authentication::{AuthSession, BearerSession};
+    use crate::client_server::auth::jwt::auth::BearerSession;
 
     fn bearer_auth(caps: Capabilities) -> AuthSession {
         AuthSession::Bearer(BearerSession {

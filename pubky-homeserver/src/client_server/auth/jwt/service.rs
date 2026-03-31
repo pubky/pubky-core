@@ -19,19 +19,20 @@ use crate::{
     shared::{HttpError, HttpResult},
 };
 
+use super::auth::BearerSession;
 use super::crypto::{
     access_jwt_issuer::AccessJwt,
     grant_verifier::Grant,
     jws_crypto::JwsCompact,
     pop_verifier::{PopProof, PopVerificationContext, POP_NONCE_GC_THRESHOLD_SECS},
 };
-use super::middleware::authentication::{AuthSession, BearerSession};
 use super::persistence::{
     grant::{GrantEntity, GrantRepository, NewGrant},
     grant_session::{GrantSessionRepository, NewGrantSession},
     pop_nonce::PopNonceRepository,
 };
-use super::routes::grant_session::CreateGrantSessionRequest;
+use super::routes::CreateGrantSessionRequest;
+use crate::client_server::auth::AuthSession;
 
 /// Default JWT lifetime: 1 hour.
 const DEFAULT_JWT_LIFETIME_SECS: u64 = 3600;
@@ -52,6 +53,11 @@ impl AuthService {
             sql_db,
             homeserver_keypair,
         }
+    }
+
+    /// The homeserver's public key (used for JWT audience checks and session info).
+    pub fn homeserver_public_key(&self) -> pubky_common::crypto::PublicKey {
+        self.homeserver_keypair.public_key()
     }
 
     /// Full grant-based session creation: verify grant → find user → verify PoP

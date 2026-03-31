@@ -1,29 +1,34 @@
-//! Self-contained authentication module for the grant-based JWT auth flow.
+//! Self-contained authentication module.
 //!
-//! Owns the full auth vertical slice:
-//! - **crypto**: Grant verification, PoP verification, Access JWT minting
-//! - **persistence**: Grant, GrantSession, PopNonce repositories
+//! Organized into two sub-modules by auth method:
+//! - **cookie**: Deprecated cookie-based authentication (session persistence, routes, auth logic)
+//! - **jwt**: Grant-based JWT authentication (crypto, persistence, service, routes, auth logic)
+//!
+//! Shared types:
+//! - **session**: [`AuthSession`] enum bridging both auth methods
 //! - **middleware**: Authentication layer (Bearer/Cookie), authorization (WriteAccess)
-//! - **routes**: Signin, grant session creation, session management
-//! - **service**: AuthService facade orchestrating the full auth flow
 //! - **router**: Pre-configured axum routers for base and tenant routes
+//! - **state**: Auth-specific sub-state extracted via `FromRef`
 
-pub mod crypto;
+pub mod cookie;
+pub mod jwt;
 pub mod middleware;
-pub mod persistence;
 mod router;
-pub mod routes;
-mod service;
+mod routes;
+mod session;
+mod state;
 
 // Re-export crypto submodules at their original paths so external consumers
 // (e.g. http_error.rs From impls) don't need path changes.
-pub use crypto::access_jwt_issuer;
-pub use crypto::grant_verifier;
-pub use crypto::pop_verifier;
+pub use jwt::crypto::access_jwt_issuer;
+pub use jwt::crypto::grant_verifier;
+pub use jwt::crypto::pop_verifier;
 
 // Re-export key middleware types for external consumers.
 pub use middleware::authentication::AuthenticationLayer;
 pub use middleware::authorization::WriteAccess;
 
 pub use router::{base_router, tenant_router};
-pub use service::AuthService;
+pub use jwt::service::AuthService;
+pub use session::AuthSession;
+pub use state::AuthState;

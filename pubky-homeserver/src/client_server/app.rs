@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::Result;
 use futures_util::TryFutureExt;
-use pubky_common::auth::AuthVerifier;
+
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -120,20 +120,14 @@ impl ClientServer {
             Some(quota_mb * 1024 * 1024)
         };
 
-        let auth_service = auth::AuthService::new(
-            context.sql_db.clone(),
-            context.keypair.clone(),
-        );
         let state = AppState {
-            verifier: AuthVerifier::default(),
+            auth_state: auth::AuthState::new(context),
             sql_db: context.sql_db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
             user_quota_bytes: quota_bytes,
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
-            homeserver_keypair: context.keypair.clone(),
-            auth_service,
         };
         super::create_app(state.clone(), context)
     }
@@ -221,7 +215,6 @@ impl Drop for ClientServer {
 fn base() -> Router<AppState> {
     Router::new()
         .route("/", get(root::handler))
-        .merge(auth::base_router())
         .route("/signup_tokens/{token}", get(signup_tokens::get))
         // Events
         .route("/events/", get(events::feed))
@@ -233,15 +226,18 @@ fn base() -> Router<AppState> {
 }
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
+    let auth_state = state.auth_state.clone();
     let app = base()
         .merge(tenants::router(state.clone()))
+        .with_state(state)
+        .merge(auth::base_router(auth_state.clone()))
+        .merge(auth::tenant_router(auth_state))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
         ))
-        .layer(PubkyHostLayer)
-        .with_state(state);
+        .layer(PubkyHostLayer);
 
     // Apply trace and pubky host layers to the complete router.
     with_trace_layer(app)

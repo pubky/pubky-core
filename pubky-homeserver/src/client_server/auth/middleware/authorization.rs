@@ -8,7 +8,7 @@
 //! authentication, and the [`AuthenticationLayer`] already rejects invalid
 //! Bearer tokens.
 
-use super::authentication::AuthSession;
+use crate::client_server::auth::AuthSession;
 use crate::shared::HttpError;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -100,7 +100,7 @@ fn check_capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client_server::auth::middleware::authentication::BearerSession;
+    use crate::client_server::auth::jwt::auth::BearerSession;
     use axum::body::Body;
     use axum::http::Request;
     use pubky_common::auth::jws::{GrantId, TokenId};

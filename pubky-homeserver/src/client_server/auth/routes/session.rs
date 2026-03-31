@@ -11,25 +11,25 @@ use tower_cookies::{Cookie, Cookies};
 use crate::{
     client_server::{
         auth::{
-            middleware::authentication::{session_secret_from_cookies, AuthSession},
-            persistence::grant::GrantRepository,
+            cookie::auth::session_secret_from_cookies,
+            cookie::persistence::SessionRepository,
+            cookie::routes::configure_session_cookie,
+            jwt::persistence::grant::GrantRepository,
+            AuthSession,
+            AuthState,
         },
         err_if_user_is_invalid::get_user_or_http_error,
         middleware::pubky_host::PubkyHost,
-        AppState,
     },
-    persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
 };
-
-use super::signin::configure_session_cookie;
 
 /// GET /session — return current session info.
 ///
 /// For Bearer (grant): returns JSON `GrantSessionInfo`.
 /// For Cookie (deprecated): returns postcard-serialized `SessionInfo`.
 pub async fn session(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
@@ -61,7 +61,7 @@ pub async fn session(
 
 /// GET /session with AuthSession — returns appropriate format based on auth method.
 pub async fn session_with_auth(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     auth: AuthSession,
     cookies: Cookies,
     pubky: PubkyHost,
@@ -76,7 +76,7 @@ pub async fn session_with_auth(
             .map_err(|_| HttpError::not_found())?;
 
             let info = GrantSessionInfo {
-                homeserver: state.homeserver_keypair.public_key(),
+                homeserver: state.auth_service.homeserver_public_key(),
                 pubky: bearer.user_key,
                 client_id: grant.client_id.clone(),
                 capabilities: bearer.capabilities.to_vec(),
@@ -104,7 +104,7 @@ pub async fn session_with_auth(
 /// For Bearer (grant): revokes the underlying grant and all its sessions.
 /// For Cookie (deprecated): deletes the session and removes the cookie.
 pub async fn signout(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     cookies: Cookies,
     Host(host): Host,
     pubky: PubkyHost,
@@ -125,7 +125,7 @@ pub async fn signout(
 
 /// DELETE /session with AuthSession — dispatches based on auth method.
 pub async fn signout_with_auth(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     auth: AuthSession,
     cookies: Cookies,
     Host(host): Host,
