@@ -191,13 +191,8 @@ mod tests {
         auth::jws::{ClientId, GrantId, TokenId},
     };
 
-    use crate::persistence::sql::{
-        entities::{
-            grant::{GrantRepository, NewGrant},
-            user::UserRepository,
-        },
-        SqlDb,
-    };
+    use crate::client_server::auth::persistence::grant::{GrantRepository, NewGrant};
+    use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
     async fn setup_user_and_grant(db: &SqlDb) -> GrantId {
         let pubkey = Keypair::random().public_key();
@@ -259,34 +254,36 @@ mod tests {
         let db = SqlDb::test().await;
         let grant_id = setup_user_and_grant(&db).await;
 
+        // With MAX_SESSIONS_PER_GRANT = 1, each new session evicts the previous one.
         let s1 = make_new_session(&grant_id);
         let s1_token = s1.token_id.clone();
         GrantSessionRepository::create(&s1, &mut db.pool().into())
             .await
             .unwrap();
 
+        // s2 evicts s1
         let s2 = make_new_session(&grant_id);
         let s2_token = s2.token_id.clone();
         GrantSessionRepository::create(&s2, &mut db.pool().into())
             .await
             .unwrap();
 
-        // Third session should evict the oldest (s1)
+        let result =
+            GrantSessionRepository::get_by_token_id(&s1_token, &mut db.pool().into()).await;
+        assert!(result.is_err(), "s1 should have been evicted by s2");
+
+        // s3 evicts s2
         let s3 = make_new_session(&grant_id);
         let s3_token = s3.token_id.clone();
         GrantSessionRepository::create(&s3, &mut db.pool().into())
             .await
             .unwrap();
 
-        // s1 should be evicted
         let result =
-            GrantSessionRepository::get_by_token_id(&s1_token, &mut db.pool().into()).await;
-        assert!(result.is_err());
+            GrantSessionRepository::get_by_token_id(&s2_token, &mut db.pool().into()).await;
+        assert!(result.is_err(), "s2 should have been evicted by s3");
 
-        // s2 and s3 should still exist
-        GrantSessionRepository::get_by_token_id(&s2_token, &mut db.pool().into())
-            .await
-            .unwrap();
+        // Only s3 survives
         GrantSessionRepository::get_by_token_id(&s3_token, &mut db.pool().into())
             .await
             .unwrap();
@@ -318,9 +315,9 @@ mod tests {
             .await
             .unwrap();
 
-        // 2 sessions for grant_a
+        // With MAX_SESSIONS_PER_GRANT = 1, each grant independently holds 1 session.
+        // sa2 evicts sa1, sb2 evicts sb1.
         let sa1 = make_new_session(&grant_a);
-        let sa1_token = sa1.token_id.clone();
         GrantSessionRepository::create(&sa1, &mut db.pool().into())
             .await
             .unwrap();
@@ -330,9 +327,7 @@ mod tests {
             .await
             .unwrap();
 
-        // 2 sessions for grant_b
         let sb1 = make_new_session(&grant_b_id);
-        let sb1_token = sb1.token_id.clone();
         GrantSessionRepository::create(&sb1, &mut db.pool().into())
             .await
             .unwrap();
@@ -342,14 +337,8 @@ mod tests {
             .await
             .unwrap();
 
-        // All 4 sessions should be retrievable
-        GrantSessionRepository::get_by_token_id(&sa1_token, &mut db.pool().into())
-            .await
-            .unwrap();
+        // Only the latest session per grant survives
         GrantSessionRepository::get_by_token_id(&sa2_token, &mut db.pool().into())
-            .await
-            .unwrap();
-        GrantSessionRepository::get_by_token_id(&sb1_token, &mut db.pool().into())
             .await
             .unwrap();
         GrantSessionRepository::get_by_token_id(&sb2_token, &mut db.pool().into())

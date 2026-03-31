@@ -8,9 +8,6 @@
 //! - [`signup_code`]: Token-gated registration codes.
 
 pub mod entry;
-pub mod grant;
-pub mod grant_session;
-pub mod pop_nonce;
 pub mod session;
 pub mod signup_code;
 pub mod user;

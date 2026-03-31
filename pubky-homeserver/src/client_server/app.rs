@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::{
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use axum_server::{
@@ -29,7 +29,8 @@ use tower_http::cors::CorsLayer;
 use super::middleware::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
 };
-use super::routes::{auth, events, root, signup_tokens, tenants};
+use super::auth;
+use super::routes::{events, root, signup_tokens, tenants};
 
 /// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
@@ -119,6 +120,10 @@ impl ClientServer {
             Some(quota_mb * 1024 * 1024)
         };
 
+        let auth_service = auth::AuthService::new(
+            context.sql_db.clone(),
+            context.keypair.clone(),
+        );
         let state = AppState {
             verifier: AuthVerifier::default(),
             sql_db: context.sql_db.clone(),
@@ -128,6 +133,7 @@ impl ClientServer {
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
             homeserver_keypair: context.keypair.clone(),
+            auth_service,
         };
         super::create_app(state.clone(), context)
     }
@@ -215,9 +221,8 @@ impl Drop for ClientServer {
 fn base() -> Router<AppState> {
     Router::new()
         .route("/", get(root::handler))
-        .route("/signup", post(auth::signup))
+        .merge(auth::base_router())
         .route("/signup_tokens/{token}", get(signup_tokens::get))
-        .route("/session", post(auth::signin))
         // Events
         .route("/events/", get(events::feed))
         .route("/events-stream", get(events::feed_stream))

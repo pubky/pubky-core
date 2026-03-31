@@ -40,12 +40,12 @@
 //! }
 //! ```
 
-use super::pubky_host::PubkyHost;
-use crate::client_server::auth::access_jwt_issuer::AccessJwt;
-use crate::client_server::auth::jws_crypto::JwsCompact;
+use crate::client_server::auth::crypto::access_jwt_issuer::AccessJwt;
+use crate::client_server::auth::crypto::jws_crypto::JwsCompact;
+use crate::client_server::auth::persistence::grant::{GrantEntity, GrantRepository};
+use crate::client_server::auth::persistence::grant_session::GrantSessionRepository;
+use crate::client_server::middleware::pubky_host::PubkyHost;
 use crate::client_server::AppState;
-use crate::persistence::sql::grant::{GrantEntity, GrantRepository};
-use crate::persistence::sql::grant_session::GrantSessionRepository;
 use crate::persistence::sql::session::{SessionEntity, SessionRepository, SessionSecret};
 use crate::shared::HttpError;
 use axum::extract::FromRequestParts;
@@ -363,6 +363,10 @@ mod tests {
         } else {
             Some(quota_mb * 1024 * 1024)
         };
+        let auth_service = crate::client_server::auth::AuthService::new(
+            context.sql_db.clone(),
+            context.keypair.clone(),
+        );
         AppState {
             verifier: AuthVerifier::default(),
             sql_db: context.sql_db.clone(),
@@ -372,6 +376,7 @@ mod tests {
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
             homeserver_keypair: context.keypair.clone(),
+            auth_service,
         }
     }
 

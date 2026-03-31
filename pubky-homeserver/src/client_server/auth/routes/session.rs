@@ -10,19 +10,19 @@ use tower_cookies::{Cookie, Cookies};
 
 use crate::{
     client_server::{
+        auth::{
+            middleware::authentication::{session_secret_from_cookies, AuthSession},
+            persistence::grant::GrantRepository,
+        },
         err_if_user_is_invalid::get_user_or_http_error,
-        middleware::authentication::{session_secret_from_cookies, AuthSession},
         middleware::pubky_host::PubkyHost,
-        routes::auth::configure_session_cookie,
         AppState,
     },
-    persistence::sql::{
-        grant::GrantRepository,
-        grant_session::GrantSessionRepository,
-        session::SessionRepository,
-    },
+    persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
 };
+
+use super::signin::configure_session_cookie;
 
 /// GET /session — return current session info.
 ///
@@ -34,10 +34,6 @@ pub async fn session(
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
-
-    // Try grant-based Bearer auth first (via extensions set by middleware)
-    // Note: AuthSession may not be in extensions if the path was public-read
-    // For GET /session, the middleware does insert it since it's a session management path.
 
     // Try deprecated cookie path
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
@@ -113,9 +109,6 @@ pub async fn signout(
     Host(host): Host,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    // Check if we have a Bearer token (grant) via AuthSession in extensions
-    // The middleware inserts AuthSession for session management paths
-
     // Try deprecated cookie signout (always works if cookie is present)
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         SessionRepository::delete(&secret, &mut state.sql_db.pool().into()).await?;
@@ -140,17 +133,10 @@ pub async fn signout_with_auth(
 ) -> HttpResult<impl IntoResponse> {
     match auth {
         AuthSession::Bearer(bearer) => {
-            // Revoke the grant and delete all sessions for it
-            GrantRepository::revoke(&bearer.grant_id, &mut state.sql_db.pool().into()).await?;
-            GrantSessionRepository::delete_all_for_grant(
-                &bearer.grant_id,
-                &mut state.sql_db.pool().into(),
-            )
-            .await?;
+            state.auth_service.signout_bearer(&bearer).await?;
             Ok(())
         }
         AuthSession::Cookie(_) => {
-            // Deprecated cookie signout
             if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
                 SessionRepository::delete(&secret, &mut state.sql_db.pool().into()).await?;
             }

@@ -1,3 +1,4 @@
+use crate::client_server::auth::AuthService;
 use crate::metrics_server::routes::metrics::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
@@ -19,4 +20,6 @@ pub(crate) struct AppState {
     pub(crate) metrics: Metrics,
     /// Homeserver keypair for JWT signing (reuses TLS keypair).
     pub(crate) homeserver_keypair: Keypair,
+    /// Auth service for grant-based JWT authentication flows.
+    pub(crate) auth_service: AuthService,
 }

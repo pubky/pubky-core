@@ -100,7 +100,7 @@ fn check_capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client_server::middleware::authentication::BearerSession;
+    use crate::client_server::auth::middleware::authentication::BearerSession;
     use axum::body::Body;
     use axum::http::Request;
     use pubky_common::auth::jws::{GrantId, TokenId};

@@ -9,20 +9,17 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use pubky_common::{
-    capabilities::Action,
-    auth::jws::GrantId,
-};
+use pubky_common::auth::jws::GrantId;
 use serde::Serialize;
 
 use crate::{
     client_server::{
-        middleware::authentication::AuthSession,
+        auth::{
+            middleware::authentication::AuthSession,
+            persistence::grant::GrantEntity,
+            AuthService,
+        },
         AppState,
-    },
-    persistence::sql::{
-        grant::{GrantEntity, GrantRepository},
-        grant_session::GrantSessionRepository,
     },
     shared::{HttpError, HttpResult},
 };
@@ -56,11 +53,10 @@ pub async fn list_grants(
     State(state): State<AppState>,
     auth: AuthSession,
 ) -> HttpResult<impl IntoResponse> {
-    require_root_capability(&auth)?;
+    AuthService::require_root_capability(&auth)?;
 
-    let user_id = resolve_user_id(&state, &auth).await?;
-    let grants =
-        GrantRepository::list_active_for_user(user_id, &mut state.sql_db.pool().into()).await?;
+    let user_id = state.auth_service.resolve_user_id(&auth).await?;
+    let grants = state.auth_service.list_active_grants(user_id).await?;
 
     let infos: Vec<GrantInfo> = grants.into_iter().map(GrantInfo::from).collect();
     Ok(Json(infos))
@@ -74,51 +70,14 @@ pub async fn revoke_grant(
     auth: AuthSession,
     Path(grant_id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
-    require_root_capability(&auth)?;
+    AuthService::require_root_capability(&auth)?;
 
-    let grant_id =
-        GrantId::parse(&grant_id).map_err(|_| {
-            HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid grant ID format")
-        })?;
+    let grant_id = GrantId::parse(&grant_id).map_err(|_| {
+        HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid grant ID format")
+    })?;
 
-    // Revoke grant
-    GrantRepository::revoke(&grant_id, &mut state.sql_db.pool().into()).await?;
-
-    // Delete all sessions minted from this grant
-    GrantSessionRepository::delete_all_for_grant(&grant_id, &mut state.sql_db.pool().into())
-        .await?;
-
+    state.auth_service.revoke_grant(&grant_id).await?;
     Ok(StatusCode::OK)
-}
-
-/// Check that the authenticated session has root capability (/:rw).
-fn require_root_capability(auth: &AuthSession) -> HttpResult<()> {
-    let has_root = auth.capabilities().iter().any(|cap| {
-        cap.scope == "/" && cap.actions.contains(&Action::Read) && cap.actions.contains(&Action::Write)
-    });
-
-    if has_root {
-        Ok(())
-    } else {
-        Err(HttpError::forbidden_with_message(
-            "Root capability required",
-        ))
-    }
-}
-
-/// Resolve the database user ID from the auth session.
-async fn resolve_user_id(state: &AppState, auth: &AuthSession) -> HttpResult<i32> {
-    match auth {
-        AuthSession::Bearer(b) => {
-            let grant = GrantRepository::get_by_grant_id(
-                &b.grant_id,
-                &mut state.sql_db.pool().into(),
-            )
-            .await?;
-            Ok(grant.user_id)
-        }
-        AuthSession::Cookie(c) => Ok(c.session.user_id),
-    }
 }
 
 #[cfg(test)]
@@ -126,12 +85,12 @@ mod tests {
     use super::*;
     use axum::response::IntoResponse;
     use pubky_common::{
+        auth::jws::{ClientId, GrantId, TokenId},
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
-        auth::jws::{ClientId, GrantId, TokenId},
     };
 
-    use crate::client_server::middleware::authentication::{AuthSession, BearerSession};
+    use crate::client_server::auth::middleware::authentication::{AuthSession, BearerSession};
 
     fn bearer_auth(caps: Capabilities) -> AuthSession {
         AuthSession::Bearer(BearerSession {
@@ -145,29 +104,21 @@ mod tests {
     #[test]
     fn test_require_root_capability_accepts_root() {
         let auth = bearer_auth(Capabilities::builder().cap(Capability::root()).finish());
-        assert!(require_root_capability(&auth).is_ok());
+        assert!(AuthService::require_root_capability(&auth).is_ok());
     }
 
     #[test]
     fn test_require_root_capability_rejects_read_only() {
-        let auth = bearer_auth(
-            Capabilities::builder()
-                .read("/")
-                .finish(),
-        );
-        let err = require_root_capability(&auth).unwrap_err();
+        let auth = bearer_auth(Capabilities::builder().read("/").finish());
+        let err = AuthService::require_root_capability(&auth).unwrap_err();
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]
     fn test_require_root_capability_rejects_scoped_rw() {
-        let auth = bearer_auth(
-            Capabilities::builder()
-                .read_write("/pub/app/")
-                .finish(),
-        );
-        let err = require_root_capability(&auth).unwrap_err();
+        let auth = bearer_auth(Capabilities::builder().read_write("/pub/app/").finish());
+        let err = AuthService::require_root_capability(&auth).unwrap_err();
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
