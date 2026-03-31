@@ -1,6 +1,10 @@
 //! Middleware that resolves per-user limits and inserts them into request extensions.
 //!
-//! If the user has custom limits in the DB, uses those. Otherwise uses deploy-time defaults.
+//! Looks up the user in the DB (with a shared cache) and inserts their
+//! `UserLimitConfig` into request extensions. If the user does not exist in the
+//! DB, no config is inserted — downstream layers simply see no extension and
+//! skip enforcement.
+//!
 //! The cache is shared with the admin server for immediate eviction on PUT/DELETE.
 
 use std::convert::Infallible;
@@ -15,20 +19,19 @@ use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::user_limit_config::{
-    CachedUserLimits, UserLimitConfig, UserLimitsCache, MAX_CACHED_USER_LIMITS,
+    CachedUserLimits, UserLimitsCache, MAX_CACHED_USER_LIMITS,
 };
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
 
 #[derive(Debug, Clone)]
 pub struct UserLimitResolverLayer {
-    defaults: UserLimitConfig,
     cache: UserLimitsCache,
     sql_db: SqlDb,
 }
 
 impl UserLimitResolverLayer {
-    pub fn new(defaults: UserLimitConfig, cache: UserLimitsCache, sql_db: SqlDb) -> Self {
+    pub fn new(cache: UserLimitsCache, sql_db: SqlDb) -> Self {
         // Spawn a periodic cleanup task to evict expired entries and prevent
         // unbounded memory growth from requests with rotating public keys.
         let cache_weak = Arc::downgrade(&cache);
@@ -44,11 +47,7 @@ impl UserLimitResolverLayer {
             }
         });
 
-        Self {
-            defaults,
-            cache,
-            sql_db,
-        }
+        Self { cache, sql_db }
     }
 }
 
@@ -58,7 +57,6 @@ impl<S> Layer<S> for UserLimitResolverLayer {
     fn layer(&self, inner: S) -> Self::Service {
         UserLimitResolverMiddleware {
             inner,
-            defaults: self.defaults.clone(),
             cache: self.cache.clone(),
             sql_db: self.sql_db.clone(),
         }
@@ -68,7 +66,6 @@ impl<S> Layer<S> for UserLimitResolverLayer {
 #[derive(Debug, Clone)]
 pub struct UserLimitResolverMiddleware<S> {
     inner: S,
-    defaults: UserLimitConfig,
     cache: UserLimitsCache,
     sql_db: SqlDb,
 }
@@ -92,7 +89,6 @@ where
     fn call(&mut self, mut req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
         let cache = self.cache.clone();
-        let defaults = self.defaults.clone();
         let sql_db = self.sql_db.clone();
 
         Box::pin(async move {
@@ -107,7 +103,7 @@ where
                     .map(|entry| entry.config.clone());
 
                 let resolved = if let Some(config) = cached_hit {
-                    config
+                    Some(config)
                 } else {
                     // Cache miss or expired — query DB for user entity.
                     // Remove stale entry if present.
@@ -119,28 +115,30 @@ where
                             // limits (set during signup or backfilled by migration).
                             // All-NULL columns = all unlimited.
                             let resolved = user.limits();
-                            // Only cache when the user exists in DB.
                             // Evict expired entries if at capacity to prevent unbounded growth.
                             if cache.len() >= MAX_CACHED_USER_LIMITS {
                                 cache.retain(|_, entry| !entry.is_expired());
                             }
                             cache.insert(pubkey, CachedUserLimits::new(resolved.clone()));
-                            resolved
+                            Some(resolved)
                         }
-                        // User not found — use defaults but do NOT cache
-                        // (the user may be created later with custom limits)
-                        Err(sqlx::Error::RowNotFound) => defaults.clone(),
+                        // User not found — no limits to insert. Downstream layers
+                        // will see no extension and skip enforcement.
+                        // Not cached so a subsequent signup can populate it.
+                        Err(sqlx::Error::RowNotFound) => None,
                         Err(e) => {
                             tracing::warn!(
-                                "Failed to query user limits for {}: {e}; using defaults",
+                                "Failed to query user limits for {}: {e}; skipping",
                                 pubkey.z32()
                             );
-                            defaults.clone()
+                            None
                         }
                     }
                 };
 
-                req.extensions_mut().insert(resolved);
+                if let Some(config) = resolved {
+                    req.extensions_mut().insert(config);
+                }
             }
 
             inner.call(req).await
@@ -167,9 +165,7 @@ mod tests {
     use super::*;
 
     /// Handler that extracts the resolved limits and returns them as JSON.
-    async fn echo_limits(
-        limits: Option<Extension<UserLimitConfig>>,
-    ) -> impl IntoResponse {
+    async fn echo_limits(limits: Option<Extension<UserLimitConfig>>) -> impl IntoResponse {
         match limits {
             Some(Extension(config)) => {
                 let body = serde_json::json!({
@@ -182,10 +178,10 @@ mod tests {
         }
     }
 
-    fn build_test_app(defaults: UserLimitConfig, cache: UserLimitsCache, sql_db: SqlDb) -> Router {
+    fn build_test_app(cache: UserLimitsCache, sql_db: SqlDb) -> Router {
         Router::new()
             .route("/test", get(echo_limits))
-            .layer(UserLimitResolverLayer::new(defaults, cache, sql_db))
+            .layer(UserLimitResolverLayer::new(cache, sql_db))
     }
 
     #[tokio::test]
@@ -193,30 +189,23 @@ mod tests {
     async fn test_resolver_no_pubky_host_skips() {
         let db = SqlDb::test().await;
         let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
-        let app = build_test_app(UserLimitConfig::default(), cache, db);
+        let app = build_test_app(cache, db);
 
         let req = axum::http::Request::builder()
             .uri("/test")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024)
-            .await
-            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         assert_eq!(body, "no_limits");
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_resolver_defaults_for_unknown_user() {
+    async fn test_resolver_unknown_user_inserts_no_limits() {
         let db = SqlDb::test().await;
         let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
-        let defaults = UserLimitConfig {
-            storage_quota_mb: Some(42),
-            max_sessions: Some(7),
-            ..Default::default()
-        };
-        let app = build_test_app(defaults, cache.clone(), db);
+        let app = build_test_app(cache.clone(), db);
 
         let pubkey = Keypair::random().public_key();
         let mut req = axum::http::Request::builder()
@@ -226,12 +215,9 @@ mod tests {
         req.extensions_mut().insert(PubkyHost(pubkey.clone()));
 
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["storage_quota_mb"], 42);
-        assert_eq!(json["max_sessions"], 7);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        // No user in DB → no limits extension inserted
+        assert_eq!(body, "no_limits");
 
         // Unknown user should NOT be cached
         assert!(!cache.contains_key(&pubkey));
@@ -242,11 +228,6 @@ mod tests {
     async fn test_resolver_user_with_custom_limits() {
         let db = SqlDb::test().await;
         let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
-        let defaults = UserLimitConfig {
-            storage_quota_mb: Some(10),
-            max_sessions: Some(5),
-            ..Default::default()
-        };
 
         let pubkey = Keypair::random().public_key();
         let user = UserRepository::create(&pubkey, &mut db.pool().into())
@@ -261,7 +242,7 @@ mod tests {
             .await
             .unwrap();
 
-        let app = build_test_app(defaults, cache.clone(), db);
+        let app = build_test_app(cache.clone(), db);
 
         let mut req = axum::http::Request::builder()
             .uri("/test")
@@ -270,9 +251,7 @@ mod tests {
         req.extensions_mut().insert(PubkyHost(pubkey.clone()));
 
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024)
-            .await
-            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         // Custom limits used — not defaults
         assert_eq!(json["storage_quota_mb"], 999);
@@ -287,11 +266,6 @@ mod tests {
     async fn test_resolver_user_with_null_columns_returns_unlimited() {
         let db = SqlDb::test().await;
         let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
-        let defaults = UserLimitConfig {
-            storage_quota_mb: Some(42),
-            max_sessions: Some(7),
-            ..Default::default()
-        };
 
         // Create a user but do NOT set any custom limits — all columns remain NULL.
         let pubkey = Keypair::random().public_key();
@@ -299,7 +273,7 @@ mod tests {
             .await
             .unwrap();
 
-        let app = build_test_app(defaults, cache.clone(), db);
+        let app = build_test_app(cache.clone(), db);
 
         let mut req = axum::http::Request::builder()
             .uri("/test")
@@ -308,9 +282,7 @@ mod tests {
         req.extensions_mut().insert(PubkyHost(pubkey.clone()));
 
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024)
-            .await
-            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
         // All-NULL columns → all unlimited (null), NOT the deploy-time defaults
@@ -326,11 +298,6 @@ mod tests {
     async fn test_resolver_cache_hit() {
         let db = SqlDb::test().await;
         let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
-        let defaults = UserLimitConfig {
-            storage_quota_mb: Some(10),
-            max_sessions: Some(5),
-            ..Default::default()
-        };
 
         let pubkey = Keypair::random().public_key();
         // Pre-populate cache with custom values (no user in DB needed for cache hit)
@@ -341,7 +308,7 @@ mod tests {
         };
         cache.insert(pubkey.clone(), CachedUserLimits::new(cached_config));
 
-        let app = build_test_app(defaults, cache, db);
+        let app = build_test_app(cache, db);
 
         let mut req = axum::http::Request::builder()
             .uri("/test")
@@ -350,9 +317,7 @@ mod tests {
         req.extensions_mut().insert(PubkyHost(pubkey.clone()));
 
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024)
-            .await
-            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         // Should return cached values, not defaults
         assert_eq!(json["storage_quota_mb"], 777);

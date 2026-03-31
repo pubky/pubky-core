@@ -8,33 +8,41 @@ use crate::{
 
 use super::super::app_state::AppState;
 
-/// Shared helper: create a signup code with optional custom limits.
+/// Shared helper: create a signup code with the given limits.
 async fn create_signup_code(
     state: &AppState,
-    custom_limits: Option<&UserLimitConfig>,
+    limits: &UserLimitConfig,
 ) -> HttpResult<impl IntoResponse> {
     let code = SignupCodeRepository::create(
         &SignupCodeId::random(),
-        custom_limits,
+        limits,
         &mut state.sql_db.pool().into(),
     )
     .await?;
     Ok((StatusCode::OK, code.id.0))
 }
 
-/// GET /generate_signup_token — create a signup token without custom limits.
+/// GET /generate_signup_token — create a token with the server's deploy-time defaults.
+///
+/// The token inherits the current deploy-time default limits from the TOML config.
+/// Users who redeem this token will get those defaults written to their user row.
+/// To create a token with explicit custom limits (including "all unlimited"),
+/// use the POST endpoint instead.
 pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
-    create_signup_code(&state, None).await
+    create_signup_code(&state, &state.default_user_limits).await
 }
 
-/// POST /generate_signup_token — create a signup token with custom limits.
+/// POST /generate_signup_token — create a token with explicit custom limits.
 ///
-/// All fields in the JSON body are optional. Omitted fields = unlimited.
+/// All fields in the JSON body are optional. Omitted fields = unlimited (`null`).
+/// This differs from the GET endpoint: GET writes the server's deploy-time defaults,
+/// while POST writes exactly what the caller specifies. An empty body `{}` means
+/// "explicitly all unlimited" — the resulting token will grant no restrictions.
 pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,
     Json(config): Json<UserLimitConfig>,
 ) -> HttpResult<impl IntoResponse> {
     // Bandwidth budget strings are validated by BandwidthBudget deserialization —
     // invalid values cause a 422 from axum's Json extractor.
-    create_signup_code(&state, Some(&config)).await
+    create_signup_code(&state, &config).await
 }

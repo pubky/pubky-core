@@ -339,10 +339,9 @@ mod tests {
                 .fetch_one(&mut *tx)
                 .await
                 .unwrap();
-            let count =
-                SessionRepository::count_by_user_id(user_id, &mut (&mut tx).into())
-                    .await
-                    .unwrap();
+            let count = SessionRepository::count_by_user_id(user_id, &mut (&mut tx).into())
+                .await
+                .unwrap();
             if count >= i64::from(max) {
                 tx.rollback().await.unwrap();
                 return Err(format!("Max sessions ({max}) reached, count={count}"));

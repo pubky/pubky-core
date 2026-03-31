@@ -107,18 +107,10 @@ where
             // Authorize the request
             match authorize(&state, req.method(), cookies, pubky.public_key(), path).await {
                 Err(e) => return Ok(e.into_response()),
-                Ok(true) => {
-                    // Session was validated — mark as authenticated for downstream layers.
+                Ok(AuthzResult::Authenticated) => {
                     req.extensions_mut().insert(AuthenticatedSession);
                 }
-                Ok(false) => {
-                    // Allowed without session (e.g. public read). Check if there
-                    // happens to be a valid session anyway so downstream layers
-                    // (per-user bandwidth budgets) can charge the authenticated user.
-                    if has_valid_session(&state, cookies, pubky.public_key()).await {
-                        req.extensions_mut().insert(AuthenticatedSession);
-                    }
-                }
+                Ok(AuthzResult::Anonymous) => {}
             }
 
             // If authorized, proceed to the inner service
@@ -127,21 +119,31 @@ where
     }
 }
 
-/// Authorize the request. Returns `Ok(true)` when a session was validated,
-/// `Ok(false)` when the request is allowed without a session (e.g. public read).
+/// Result of the authorization check.
+enum AuthzResult {
+    /// A valid session was found and verified.
+    Authenticated,
+    /// The request is allowed without a session (or no valid session was present).
+    Anonymous,
+}
+
+/// Authorize the request. For paths that don't require a session (public reads,
+/// `/session`), a lightweight session probe is still performed so that
+/// downstream layers (e.g. per-user bandwidth budgets) can identify the user
+/// — but only when a session cookie is actually present in the request.
 async fn authorize(
     state: &AppState,
     method: &Method,
     cookies: &Cookies,
     public_key: &PublicKey,
     path: &str,
-) -> HttpResult<bool> {
+) -> HttpResult<AuthzResult> {
     if path == "/session" {
-        // Checking (or deleting) one's session is ok for everyone
-        return Ok(false);
+        // Checking (or deleting) one's session is ok for everyone.
+        return Ok(AuthzResult::Anonymous);
     } else if path.starts_with("/pub/") {
         if method == Method::GET || method == Method::HEAD {
-            return Ok(false);
+            return Ok(probe_session(state, cookies, public_key).await);
         }
     } else if path.starts_with("/dav/") {
         // XXX: at least for now
@@ -207,7 +209,7 @@ async fn authorize(
                 .actions
                 .contains(&pubky_common::capabilities::Action::Write)
     }) {
-        Ok(true)
+        Ok(AuthzResult::Authenticated)
     } else {
         tracing::warn!(
             "SessionInfo {} pubkey {} does not have write access to {}. Access forbidden",
@@ -221,16 +223,21 @@ async fn authorize(
     }
 }
 
-/// Lightweight check: does the request carry a valid session cookie for this pubkey?
-/// Only performs a DB lookup if a session cookie is actually present, so anonymous
-/// requests incur no overhead.
-async fn has_valid_session(state: &AppState, cookies: &Cookies, public_key: &PublicKey) -> bool {
+/// Lightweight session probe: if the request carries a valid session cookie for
+/// this pubkey, return `Authenticated`; otherwise `Anonymous`.
+/// Only performs a DB lookup when a session cookie is actually present, so
+/// anonymous requests incur no overhead.
+async fn probe_session(
+    state: &AppState,
+    cookies: &Cookies,
+    public_key: &PublicKey,
+) -> AuthzResult {
     let Some(session_secret) = session_secret_from_cookies(cookies, public_key) else {
-        return false;
+        return AuthzResult::Anonymous;
     };
     match SessionRepository::get_by_secret(&session_secret, &mut state.sql_db.pool().into()).await {
-        Ok(session) => &session.user_pubkey == public_key,
-        Err(_) => false,
+        Ok(session) if &session.user_pubkey == public_key => AuthzResult::Authenticated,
+        _ => AuthzResult::Anonymous,
     }
 }
 
@@ -244,4 +251,127 @@ pub fn session_secret_from_cookies(
         .get(&public_key.z32())
         .map(|c| c.value().to_string())?;
     SessionSecret::new(value).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use axum::response::IntoResponse;
+    use axum::routing::get;
+    use axum::{Extension, Router};
+    use pubky_common::capabilities::{Capabilities, Capability};
+    use pubky_common::crypto::Keypair;
+    use tower::ServiceExt;
+    use tower_cookies::CookieManagerLayer;
+
+    use crate::app_context::AppContext;
+    use crate::client_server::extractors::PubkyHost;
+    use crate::persistence::sql::session::SessionRepository;
+    use crate::persistence::sql::user::UserRepository;
+
+    use pubky_common::auth::AuthVerifier;
+
+    use super::*;
+
+    /// Handler that checks whether `AuthenticatedSession` was inserted.
+    async fn check_auth_marker(
+        marker: Option<Extension<AuthenticatedSession>>,
+    ) -> impl IntoResponse {
+        if marker.is_some() {
+            (StatusCode::OK, "authenticated")
+        } else {
+            (StatusCode::OK, "anonymous")
+        }
+    }
+
+    /// Build a minimal app with the auth layer around a test handler.
+    fn build_auth_app(state: AppState) -> Router {
+        Router::new()
+            .route("/pub/data", get(check_auth_marker))
+            .layer(AuthorizationLayer::new(state))
+            .layer(CookieManagerLayer::new())
+    }
+
+    fn make_get_request(pubkey: &PublicKey, session_cookie: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder().method(Method::GET).uri("/pub/data");
+        if let Some(cookie_val) = session_cookie {
+            builder = builder.header("cookie", format!("{}={}", pubkey.z32(), cookie_val));
+        }
+        let mut req = builder.body(Body::empty()).unwrap();
+        req.extensions_mut().insert(PubkyHost(pubkey.clone()));
+        req
+    }
+
+    fn test_app_state(context: &AppContext) -> AppState {
+        use crate::persistence::files::FileService;
+        AppState {
+            verifier: AuthVerifier::default(),
+            sql_db: context.sql_db.clone(),
+            file_service: FileService::new_from_context(context).unwrap(),
+            signup_mode: context.config_toml.general.signup_mode.clone(),
+            metrics: context.metrics.clone(),
+            events_service: context.events_service.clone(),
+            default_user_limits: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_public_read_without_cookie_is_anonymous() {
+        let context = AppContext::test().await;
+        let app = build_auth_app(test_app_state(&context));
+        let pubkey = Keypair::random().public_key();
+
+        let resp = app.oneshot(make_get_request(&pubkey, None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        assert_eq!(body, "anonymous");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_public_read_with_valid_cookie_is_authenticated() {
+        let context = AppContext::test().await;
+        let state = test_app_state(&context);
+        let app = build_auth_app(state);
+
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let user = UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+        let caps = Capabilities::builder().cap(Capability::root()).finish();
+        let secret = SessionRepository::create(user.id, &caps, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let resp = app
+            .oneshot(make_get_request(&pubkey, Some(&secret.to_string())))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        assert_eq!(body, "authenticated");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_public_read_with_invalid_cookie_is_anonymous() {
+        let context = AppContext::test().await;
+        let app = build_auth_app(test_app_state(&context));
+        let pubkey = Keypair::random().public_key();
+
+        // Use a bogus session secret
+        let resp = app
+            .oneshot(make_get_request(
+                &pubkey,
+                Some("bogus-secret-value-000000000000000000000"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        assert_eq!(body, "anonymous");
+    }
 }

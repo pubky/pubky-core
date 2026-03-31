@@ -121,6 +121,7 @@ impl ClientServer {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
+            default_user_limits: UserLimitConfig::from_general_toml(&context.config_toml.general),
         };
         super::create_app(state.clone(), context)
     }
@@ -221,9 +222,6 @@ fn base() -> Router<AppState> {
 }
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
-    let default_user_limits =
-        UserLimitConfig::from_general_toml(&context.config_toml.general);
-
     let app = base()
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
@@ -232,7 +230,6 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
             context.config_toml.drive.rate_limits.clone(),
         ))
         .layer(UserLimitResolverLayer::new(
-            default_user_limits,
             context.user_limits_cache.clone(),
             context.sql_db.clone(),
         ))

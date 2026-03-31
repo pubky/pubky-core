@@ -193,19 +193,19 @@ impl UserRepository {
             .values(vec![
                 (
                     UserIden::LimitStorageQuotaMb,
-                    SimpleExpr::Value(config.storage_quota_mb.map(|v| v as i64).into()),
+                    SimpleExpr::Value(config.storage_quota_mb_i64().into()),
                 ),
                 (
                     UserIden::LimitMaxSessions,
-                    SimpleExpr::Value(config.max_sessions.map(|v| v as i32).into()),
+                    SimpleExpr::Value(config.max_sessions_i32().into()),
                 ),
                 (
                     UserIden::LimitRateRead,
-                    SimpleExpr::Value(UserLimitConfig::rate_str(&config.rate_read).into()),
+                    SimpleExpr::Value(config.rate_read_str().into()),
                 ),
                 (
                     UserIden::LimitRateWrite,
-                    SimpleExpr::Value(UserLimitConfig::rate_str(&config.rate_write).into()),
+                    SimpleExpr::Value(config.rate_write_str().into()),
                 ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
@@ -217,7 +217,7 @@ impl UserRepository {
         Ok(())
     }
 
-    /// Clear per-user custom limits (revert to deploy-time defaults).
+    /// Clear per-user custom limits (set all limit columns to NULL = unlimited).
     pub async fn clear_custom_limits<'a>(
         user_id: i32,
         executor: &mut UnifiedExecutor<'a>,
@@ -325,10 +325,10 @@ pub struct UserEntity {
 impl UserEntity {
     /// Apply a custom limit config to this in-memory entity.
     pub fn apply_custom_limits(&mut self, config: &UserLimitConfig) {
-        self.limit_storage_quota_mb = config.storage_quota_mb.map(|v| v as i64);
-        self.limit_max_sessions = config.max_sessions.map(|v| v as i32);
-        self.limit_rate_read = UserLimitConfig::rate_str(&config.rate_read);
-        self.limit_rate_write = UserLimitConfig::rate_str(&config.rate_write);
+        self.limit_storage_quota_mb = config.storage_quota_mb_i64();
+        self.limit_max_sessions = config.max_sessions_i32();
+        self.limit_rate_read = config.rate_read_str();
+        self.limit_rate_write = config.rate_write_str();
     }
 
     /// Build a `UserLimitConfig` directly from the DB columns.
@@ -543,8 +543,8 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_set_and_clear_custom_limits() {
-        use std::str::FromStr;
         use crate::data_directory::quota_config::BandwidthBudget;
+        use std::str::FromStr;
 
         let db = SqlDb::test().await;
         let user_pubkey = Keypair::random().public_key();
@@ -607,8 +607,8 @@ mod tests {
 
     #[test]
     fn test_limits_mixed_null_and_values() {
-        use std::str::FromStr;
         use crate::data_directory::quota_config::BandwidthBudget;
+        use std::str::FromStr;
 
         let user = UserEntity {
             id: 1,
@@ -625,7 +625,10 @@ mod tests {
         let limits = user.limits();
         assert_eq!(limits.storage_quota_mb, Some(500));
         assert_eq!(limits.max_sessions, None);
-        assert_eq!(limits.rate_read, Some(BandwidthBudget::from_str("100mb/m").unwrap()));
+        assert_eq!(
+            limits.rate_read,
+            Some(BandwidthBudget::from_str("100mb/m").unwrap())
+        );
         assert_eq!(limits.rate_write, None);
     }
 
@@ -671,8 +674,8 @@ mod tests {
 
     #[test]
     fn test_apply_custom_limits() {
-        use std::str::FromStr;
         use crate::data_directory::quota_config::BandwidthBudget;
+        use std::str::FromStr;
 
         let mut user = UserEntity {
             id: 1,

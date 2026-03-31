@@ -1,7 +1,10 @@
 use super::build_full_testnet;
 use bytes::Bytes;
 use pubky_testnet::{
-    pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, PubkyHttpClient, StatusCode},
+    pubky::{
+        errors::RequestError, Error, IntoPubkyResource, Keypair, Method, PubkyHttpClient,
+        StatusCode,
+    },
     pubky_homeserver::{ConfigToml, MockDataDir},
     Testnet,
 };
@@ -1052,6 +1055,83 @@ async fn per_user_rate_limit_429_via_admin_api() {
     let err = session
         .storage()
         .put("/pub/rate_test2", vec![0u8; 512])
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::Request(RequestError::Server { status, .. })
+                if status == StatusCode::TOO_MANY_REQUESTS
+        ),
+        "Expected 429 TOO_MANY_REQUESTS, got: {err:?}"
+    );
+}
+
+/// Test that per-user write bandwidth budget set via admin API is enforced.
+///
+/// The write budget counts Content-Length bytes with a minimum of 256 bytes per
+/// request (MIN_WRITE_COST_BYTES). The first request that crosses the boundary
+/// is allowed through (soft limit), but subsequent requests are rejected with 429.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn write_bandwidth_budget_enforced_via_admin_api() {
+    let config = ConfigToml::default_test_config();
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Create a user
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_z32 = signer.public_key().z32();
+
+    // Set a tight write bandwidth budget (1kb/m = 1024 bytes per minute) via admin API
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let resp = admin_client
+        .request(
+            Method::PUT,
+            &format!("http://{admin_socket}/users/{pubkey_z32}/limits"),
+        )
+        .header("X-Admin-Password", &admin_password)
+        .header("content-type", "application/json")
+        .body(r#"{"rate_write": "1kb/m"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // First write: 512 bytes fits within 1024-byte budget — should succeed
+    let resp = session
+        .storage()
+        .put("/pub/test1.txt", vec![0u8; 512])
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Second write: 1024 bytes pushes over budget (512 already used + 1024 = 1536 > 1024).
+    // The request that *crosses* the boundary is allowed through (soft limit).
+    let resp = session
+        .storage()
+        .put("/pub/test2.txt", vec![0u8; 1024])
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Third write: budget is now exhausted (previous >= budget_bytes) — rejected with 429
+    let err = session
+        .storage()
+        .put("/pub/test3.txt", vec![0u8; 256])
         .await
         .unwrap_err();
     assert!(

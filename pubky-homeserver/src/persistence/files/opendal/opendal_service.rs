@@ -112,8 +112,7 @@ impl OpendalService {
         db: &SqlDb,
         events_service: EventsService,
     ) -> Result<Self, FileIoError> {
-        let operator =
-            build_storage_operator(config, data_directory, db, events_service)?;
+        let operator = build_storage_operator(config, data_directory, db, events_service)?;
         Ok(Self { operator })
     }
 

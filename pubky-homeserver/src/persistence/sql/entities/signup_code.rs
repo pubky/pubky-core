@@ -16,21 +16,19 @@ pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 pub struct SignupCodeRepository;
 
 impl SignupCodeRepository {
-    /// Create a new signup code, optionally with custom limits for users who redeem it.
+    /// Create a new signup code with the given limits for users who redeem it.
     /// The executor can either be db.pool() or a transaction.
     ///
     /// Rate limit strings are validated by roundtripping through `BandwidthBudget`
     /// parsing to ensure only well-formed values reach the database.
     pub async fn create<'a>(
         id: &SignupCodeId,
-        custom_limits: Option<&UserLimitConfig>,
+        limits: &UserLimitConfig,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
-        if let Some(config) = custom_limits {
-            config
-                .validate_rate_roundtrips()
-                .map_err(sqlx::Error::Protocol)?;
-        }
+        limits
+            .validate_rate_roundtrips()
+            .map_err(sqlx::Error::Protocol)?;
 
         let statement = Query::insert()
             .into_table(SIGNUP_CODE_TABLE)
@@ -43,26 +41,10 @@ impl SignupCodeRepository {
             ])
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
-                SimpleExpr::Value(
-                    custom_limits
-                        .and_then(|c| c.storage_quota_mb.map(|v| v as i64))
-                        .into(),
-                ),
-                SimpleExpr::Value(
-                    custom_limits
-                        .and_then(|c| c.max_sessions.map(|v| v as i32))
-                        .into(),
-                ),
-                SimpleExpr::Value(
-                    custom_limits
-                        .and_then(|c| UserLimitConfig::rate_str(&c.rate_read))
-                        .into(),
-                ),
-                SimpleExpr::Value(
-                    custom_limits
-                        .and_then(|c| UserLimitConfig::rate_str(&c.rate_write))
-                        .into(),
-                ),
+                SimpleExpr::Value(limits.storage_quota_mb_i64().into()),
+                SimpleExpr::Value(limits.max_sessions_i32().into()),
+                SimpleExpr::Value(limits.rate_read_str().into()),
+                SimpleExpr::Value(limits.rate_write_str().into()),
             ])
             .unwrap()
             .returning_all()
@@ -70,8 +52,7 @@ impl SignupCodeRepository {
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
-        let code: SignupCodeEntity =
-            sqlx::query_as_with(&query, values).fetch_one(con).await?;
+        let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(code)
     }
 
@@ -314,10 +295,14 @@ mod tests {
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
 
-        // Test create code without custom limits
-        let code = SignupCodeRepository::create(&signup_code_id, None, &mut db.pool().into())
-            .await
-            .unwrap();
+        // Test create code with default (all-unlimited) limits
+        let code = SignupCodeRepository::create(
+            &signup_code_id,
+            &UserLimitConfig::default(),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
         assert_eq!(code.custom_limits(), None);
@@ -334,8 +319,8 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_with_custom_limits() {
-        use std::str::FromStr;
         use crate::data_directory::quota_config::BandwidthBudget;
+        use std::str::FromStr;
 
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
@@ -347,13 +332,9 @@ mod tests {
             rate_write: None,
         };
 
-        let code = SignupCodeRepository::create(
-            &signup_code_id,
-            Some(&config),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        let code = SignupCodeRepository::create(&signup_code_id, &config, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(code.custom_limits(), Some(config.clone()));
 
         // Verify get also returns the config
@@ -368,9 +349,13 @@ mod tests {
     async fn test_mark_as_used() {
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
-        let _ = SignupCodeRepository::create(&signup_code_id, None, &mut db.pool().into())
-            .await
-            .unwrap();
+        let _ = SignupCodeRepository::create(
+            &signup_code_id,
+            &UserLimitConfig::default(),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
 
         let user_pubkey = Keypair::random().public_key();
 
@@ -401,15 +386,27 @@ mod tests {
         let code2 = SignupCodeId::random();
         let code3 = SignupCodeId::random();
 
-        let _ = SignupCodeRepository::create(&code1, None, &mut db.pool().into())
-            .await
-            .unwrap();
-        let _ = SignupCodeRepository::create(&code2, None, &mut db.pool().into())
-            .await
-            .unwrap();
-        let _ = SignupCodeRepository::create(&code3, None, &mut db.pool().into())
-            .await
-            .unwrap();
+        let _ = SignupCodeRepository::create(
+            &code1,
+            &UserLimitConfig::default(),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let _ = SignupCodeRepository::create(
+            &code2,
+            &UserLimitConfig::default(),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let _ = SignupCodeRepository::create(
+            &code3,
+            &UserLimitConfig::default(),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
 
         // After creating 3 codes, all should be unused
         let overview = SignupCodeRepository::get_overview(&mut db.pool().into())

@@ -43,12 +43,8 @@ impl FileService {
         db: SqlDb,
         events_service: EventsService,
     ) -> Result<Self, FileIoError> {
-        let opendal_service = OpendalService::new_from_config(
-            &config.storage,
-            data_directory,
-            &db,
-            events_service,
-        )?;
+        let opendal_service =
+            OpendalService::new_from_config(&config.storage, data_directory, &db, events_service)?;
         Ok(Self::new(opendal_service, db))
     }
 

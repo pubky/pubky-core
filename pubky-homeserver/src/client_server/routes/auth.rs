@@ -20,7 +20,6 @@ use axum::{
     http::StatusCode,
     http::{header, HeaderValue},
     response::IntoResponse,
-    Extension,
 };
 use axum_extra::extract::Host;
 use bytes::Bytes;
@@ -28,8 +27,6 @@ use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 use pubky_common::session::SessionInfo;
 use std::collections::HashMap;
-
-use crate::data_directory::user_limit_config::UserLimitConfig;
 
 /// Resolve the effective max_sessions for a user.
 ///
@@ -45,6 +42,9 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
+/// Session cookie lifetime.
+const SESSION_COOKIE_MAX_AGE_DAYS: i64 = 365;
+
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
 ///
 /// Note: This endpoint uses action-oriented path `/signup` which is not RESTful.
@@ -58,7 +58,6 @@ pub async fn signup(
     State(state): State<AppState>,
     cookies: Cookies,
     Host(host): Host,
-    user_limits: Option<Extension<UserLimitConfig>>,
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
@@ -121,36 +120,47 @@ pub async fn signup(
 
         SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
 
-        // 4) Create the new user record, applying custom limits from the token
-        //    or deploy-time defaults so every user row has explicit limits.
+        // 4) Create the new user record with the token's limits.
+        //    Every token has explicit limits: either deploy-time defaults (GET
+        //    endpoint / migration backfill) or caller-specified values (POST
+        //    endpoint, where omitted fields = unlimited).
         let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-        let limits_to_apply = code
-            .custom_limits()
-            .or_else(|| user_limits.as_ref().map(|ext| ext.0.clone()))
-            .unwrap_or_default();
-        UserRepository::set_custom_limits(user.id, &limits_to_apply, uexecutor!(tx)).await?;
-        user.apply_custom_limits(&limits_to_apply);
+        let limits = code.custom_limits().unwrap_or_default();
+        UserRepository::set_custom_limits(user.id, &limits, uexecutor!(tx)).await?;
+        user.apply_custom_limits(&limits);
         tx.commit().await?;
 
         let max_sessions = resolve_max_sessions(&user);
-        return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions)
-            .await;
+        return create_session_and_cookie(
+            &state,
+            cookies,
+            &host,
+            &user,
+            token.capabilities(),
+            max_sessions,
+        )
+        .await;
     }
 
     // 4) Create the new user record (open signup, no token).
     //    Apply deploy-time defaults so every user row has explicit limits.
     let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-    let defaults = user_limits
-        .as_ref()
-        .map(|ext| ext.0.clone())
-        .unwrap_or_default();
-    UserRepository::set_custom_limits(user.id, &defaults, uexecutor!(tx)).await?;
-    user.apply_custom_limits(&defaults);
+    let defaults = &state.default_user_limits;
+    UserRepository::set_custom_limits(user.id, defaults, uexecutor!(tx)).await?;
+    user.apply_custom_limits(defaults);
     tx.commit().await?;
 
     // 5) Create session & set cookie
     let max_sessions = resolve_max_sessions(&user);
-    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions).await
+    create_session_and_cookie(
+        &state,
+        cookies,
+        &host,
+        &user,
+        token.capabilities(),
+        max_sessions,
+    )
+    .await
 }
 
 /// Fails if user doesn’t exist, otherwise logs them in by creating a session.
@@ -169,7 +179,15 @@ pub async fn signin(
 
     // 3) Create the session & set cookie
     let max_sessions = resolve_max_sessions(&user);
-    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions).await
+    create_session_and_cookie(
+        &state,
+        cookies,
+        &host,
+        &user,
+        token.capabilities(),
+        max_sessions,
+    )
+    .await
 }
 
 /// Creates and stores a session, sets the cookie, returns session as JSON/string.
@@ -194,8 +212,7 @@ async fn create_session_and_cookie(
             .fetch_one(&mut *tx)
             .await?;
 
-        let count =
-            SessionRepository::count_by_user_id(user.id, uexecutor!(tx)).await?;
+        let count = SessionRepository::count_by_user_id(user.id, uexecutor!(tx)).await?;
         if count >= i64::from(max) {
             return Err(HttpError::new_with_message(
                 StatusCode::TOO_MANY_REQUESTS,
@@ -204,15 +221,13 @@ async fn create_session_and_cookie(
         }
     }
 
-    let session_secret =
-        SessionRepository::create(user.id, capabilities, uexecutor!(tx)).await?;
+    let session_secret = SessionRepository::create(user.id, capabilities, uexecutor!(tx)).await?;
     tx.commit().await?;
 
     // 3) Build and set cookie
     let mut cookie = Cookie::new(user.public_key.z32(), session_secret.to_string());
     configure_session_cookie(&mut cookie, host);
-    // Set the cookie to expire in one year.
-    let one_year = Duration::days(365);
+    let one_year = Duration::days(SESSION_COOKIE_MAX_AGE_DAYS);
     let expiry = OffsetDateTime::now_utc() + one_year;
     cookie.set_max_age(one_year);
     cookie.set_expires(expiry);

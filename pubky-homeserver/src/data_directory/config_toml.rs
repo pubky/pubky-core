@@ -97,7 +97,7 @@ pub struct GeneralToml {
     /// **Important:** `Some(0)` means "zero quota" (no storage), NOT unlimited.
     /// Omit the field entirely for unlimited storage.
     ///
-    /// These defaults are also used by [`M20260327AddUserLimitColumnsMigration`] to
+    /// These defaults are also used by [`M20260327AddLimitColumnsMigration`] to
     /// backfill existing user rows on first run. After that one-time migration,
     /// changing this value only affects newly created users. Use the admin API to
     /// update existing users.

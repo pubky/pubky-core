@@ -16,9 +16,8 @@ use super::super::app_state::AppState;
 
 /// Parse a z32 public key path param and fetch the corresponding user entity.
 async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEntity> {
-    let pubkey = PublicKey::try_from_z32(pubkey_str).map_err(|_| {
-        HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid public key")
-    })?;
+    let pubkey = PublicKey::try_from_z32(pubkey_str)
+        .map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid public key"))?;
 
     UserRepository::get(&pubkey, &mut state.sql_db.pool().into())
         .await
@@ -45,8 +44,8 @@ pub async fn get_user_limits(
 
 /// PUT /users/{pubkey}/limits — set per-user custom limits (replaces entirely).
 ///
-/// All fields in the JSON body are optional. Omitted fields = unlimited.
-/// To revert to deploy-time defaults, use DELETE instead.
+/// All fields in the JSON body are optional. Omitted fields default to
+/// **unlimited** (`null`), NOT to the server's deploy-time defaults.
 pub async fn put_user_limits(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
@@ -64,7 +63,9 @@ pub async fn put_user_limits(
     Ok(StatusCode::OK)
 }
 
-/// DELETE /users/{pubkey}/limits — remove per-user custom limits (revert to defaults).
+/// DELETE /users/{pubkey}/limits — clear all per-user limit columns (set to NULL).
+///
+/// This makes the user **unlimited** on all dimensions (storage, sessions, rates).
 pub async fn delete_user_limits(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,

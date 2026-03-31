@@ -15,6 +15,28 @@ use opendal::Result;
 /// This prevents the user from writing zero byte files that don't count against the quota.
 pub(crate) const FILE_METADATA_SIZE: u64 = 256;
 
+/// Check that adding `bytes_delta` to the current usage would not exceed the
+/// per-user storage quota. `quota_mb` of `None` means unlimited.
+fn check_quota_not_exceeded(
+    current_bytes: u64,
+    bytes_delta: i64,
+    quota_mb: Option<i64>,
+) -> opendal::Result<()> {
+    let quota_bytes = quota_mb
+        .and_then(|mb| u64::try_from(mb).ok())
+        .map(|mb| mb.saturating_mul(1024 * 1024));
+    if let Some(quota) = quota_bytes {
+        let new_total = current_bytes as i128 + bytes_delta as i128;
+        if new_total > 0 && (new_total as u64) > quota {
+            return Err(opendal::Error::new(
+                opendal::ErrorKind::RateLimited,
+                "User quota exceeded",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The user quota layer is a layer that wraps the operator and updates the user quota when a file is written or deleted.
 /// It is used to limit the amount of data that a user can store in the homeserver.
 /// It will also enforce that only paths in the form of {pubkey}/{path} are allowed.
@@ -168,7 +190,6 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
     }
 
     async fn close(&mut self) -> Result<opendal::Metadata> {
-        // Update the user quota.
         let mut tx = self
             .db
             .pool()
@@ -183,33 +204,17 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
                     format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
                 )
             })?;
-        let current_user_bytes = user.used_bytes;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;
-
         let bytes_delta = if file_already_exists {
             self.bytes_count as i64 - current_file_size as i64
         } else {
             self.bytes_count as i64 - current_file_size as i64 + FILE_METADATA_SIZE as i64
         };
 
-        // Per-user storage quota from DB. None = unlimited (no check).
-        let effective_quota = user
-            .limit_storage_quota_mb
-            .and_then(|mb| u64::try_from(mb).ok())
-            .map(|mb| mb.saturating_mul(1024 * 1024));
+        check_quota_not_exceeded(user.used_bytes, bytes_delta, user.limit_storage_quota_mb)?;
 
-        // Check if the user quota is exceeded before we commit/close the file.
-        if let Some(quota) = effective_quota {
-            let new_total = current_user_bytes as i128 + bytes_delta as i128;
-            if new_total > 0 && (new_total as u64) > quota {
-                return Err(opendal::Error::new(
-                    opendal::ErrorKind::RateLimited,
-                    "User quota exceeded",
-                ));
-            }
-        }
-        let metadata = self.inner.close().await?; // Actually write the file to the storage.
+        let metadata = self.inner.close().await?;
         user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
         UserRepository::update(&user, uexecutor!(tx))
             .await
@@ -369,6 +374,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
+    use crate::data_directory::user_limit_config::UserLimitConfig;
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
@@ -435,7 +441,7 @@ mod tests {
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
         let user_pubkey1_raw = user_pubkey1.z32();
         // Create user with 1 MB quota
-        UserRepository::create_with_quota_mb(&db,&user_pubkey1, 1).await;
+        UserRepository::create_with_quota_mb(&db, &user_pubkey1, 1).await;
 
         // Write a file and see if the user usage is updated
         operator
@@ -508,7 +514,7 @@ mod tests {
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
         let user_pubkey1_raw = user_pubkey1.z32();
         // 1 MB quota — exactly 1,048,576 bytes including metadata.
-        UserRepository::create_with_quota_mb(&db,&user_pubkey1, 1).await;
+        UserRepository::create_with_quota_mb(&db, &user_pubkey1, 1).await;
         let one_mb: usize = 1024 * 1024;
         let max_content = one_mb - FILE_METADATA_SIZE as usize;
 
@@ -595,7 +601,7 @@ mod tests {
         let user_raw = user_pubkey.z32();
 
         // Create user with 1 MB storage quota
-        UserRepository::create_with_quota_mb(&db,&user_pubkey, 1).await;
+        UserRepository::create_with_quota_mb(&db, &user_pubkey, 1).await;
 
         // Small write should succeed (well within 1 MB)
         operator
@@ -607,10 +613,7 @@ mod tests {
 
         // Write > 1 MB should fail
         operator
-            .write(
-                format!("{user_raw}/huge.txt").as_str(),
-                vec![0; 1_048_576],
-            )
+            .write(format!("{user_raw}/huge.txt").as_str(), vec![0; 1_048_576])
             .await
             .expect_err("Should fail: exceeds per-user limit of 1 MB");
     }
@@ -653,7 +656,7 @@ mod tests {
         let user_raw = user_pubkey.z32();
 
         // Create user with 0 MB quota = zero storage allowed
-        UserRepository::create_with_quota_mb(&db,&user_pubkey, 0).await;
+        UserRepository::create_with_quota_mb(&db, &user_pubkey, 0).await;
 
         // Even a small write should be rejected
         operator
@@ -674,7 +677,7 @@ mod tests {
         let user_raw = user_pubkey.z32();
 
         // Create user with 0 MB quota (no storage)
-        let user = UserRepository::create_with_quota_mb(&db,&user_pubkey, 0).await;
+        let user = UserRepository::create_with_quota_mb(&db, &user_pubkey, 0).await;
 
         // Write should fail
         operator

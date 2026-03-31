@@ -9,8 +9,7 @@ use crate::persistence::sql::{
         M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,
         M20250813CreateSessionMigration, M20250814CreateEventMigration,
         M20250815CreateEntryMigration, M20251014EventsTableIndexAndContentHashMigration,
-        M20260327AddSignupCodeLimitColumnsMigration,
-        M20260327AddUserLimitColumnsMigration,
+        M20260327AddLimitColumnsMigration,
     },
     sql_db::SqlDb,
 };
@@ -46,10 +45,9 @@ impl<'a> Migrator<'a> {
             Box::new(M20250814CreateEventMigration),
             Box::new(M20250815CreateEntryMigration),
             Box::new(M20251014EventsTableIndexAndContentHashMigration),
-            Box::new(M20260327AddUserLimitColumnsMigration {
+            Box::new(M20260327AddLimitColumnsMigration {
                 defaults: self.default_user_limits.clone(),
             }),
-            Box::new(M20260327AddSignupCodeLimitColumnsMigration),
         ]
     }
 

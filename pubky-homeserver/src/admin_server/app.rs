@@ -449,7 +449,7 @@ mod tests {
             .await;
         response.assert_status_ok();
 
-        // GET after delete should show defaults again (null = no limit)
+        // GET after delete should show unlimited (null = no limit)
         let response = server
             .get(&url)
             .add_header("X-Admin-Password", "test")
@@ -599,9 +599,18 @@ mod tests {
             .await;
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 200);
-        assert!(json["max_sessions"].is_null(), "max_sessions should be unlimited after PUT replace");
-        assert!(json["rate_read"].is_null(), "rate_read should be unlimited after PUT replace");
-        assert!(json["rate_write"].is_null(), "rate_write should be unlimited after PUT replace");
+        assert!(
+            json["max_sessions"].is_null(),
+            "max_sessions should be unlimited after PUT replace"
+        );
+        assert!(
+            json["rate_read"].is_null(),
+            "rate_read should be unlimited after PUT replace"
+        );
+        assert!(
+            json["rate_write"].is_null(),
+            "rate_write should be unlimited after PUT replace"
+        );
     }
 
     /// Verify that signup token custom limits are propagated to the user
@@ -625,7 +634,7 @@ mod tests {
             rate_write: None,
         };
         let code_id = SignupCodeId::random();
-        let code = SignupCodeRepository::create(&code_id, Some(&custom_limits), &mut db.pool().into())
+        let code = SignupCodeRepository::create(&code_id, &custom_limits, &mut db.pool().into())
             .await
             .unwrap();
 
