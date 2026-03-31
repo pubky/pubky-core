@@ -9,8 +9,8 @@
 
 use chrono::{DateTime, Utc};
 use pubky_common::{
-    crypto::PublicKey,
     auth::jws::{GrantId, PopNonce},
+    crypto::PublicKey,
 };
 use serde::{Deserialize, Serialize};
 
@@ -55,6 +55,8 @@ pub struct PopVerificationContext<'a> {
     pub cnf_key: &'a PublicKey,
     /// The homeserver's own public key z32 string.
     pub expected_audience: &'a str,
+    /// The Grant's `jti` — the PoP's `gid` must match.
+    pub expected_grant_id: &'a GrantId,
 }
 
 impl PopProof {
@@ -69,6 +71,7 @@ impl PopProof {
     pub fn verify(compact: &JwsCompact, context: &PopVerificationContext) -> Result<Self, Error> {
         let raw = verify_signature(compact.as_str(), context.cnf_key)?;
         check_audience(&raw, context.expected_audience)?;
+        check_grant_binding(&raw, context.expected_grant_id)?;
         check_timestamp(&raw)?;
         parse_verified_pop(raw)
     }
@@ -85,6 +88,13 @@ fn verify_signature(compact: &str, cnf_key: &PublicKey) -> Result<PopProofClaims
 fn check_audience(raw: &PopProofClaims, expected: &str) -> Result<(), Error> {
     if raw.aud.z32() != expected {
         return Err(Error::AudienceMismatch);
+    }
+    Ok(())
+}
+
+fn check_grant_binding(raw: &PopProofClaims, expected: &GrantId) -> Result<(), Error> {
+    if raw.gid != *expected {
+        return Err(Error::GrantIdMismatch);
     }
     Ok(())
 }
@@ -122,6 +132,10 @@ pub enum Error {
     /// The `aud` claim does not match this homeserver.
     #[error("PoP audience mismatch")]
     AudienceMismatch,
+
+    /// The `gid` claim does not match the Grant's `jti`.
+    #[error("PoP grant ID mismatch")]
+    GrantIdMismatch,
 
     /// The `iat` timestamp is outside the ±3 minute window.
     #[error("PoP timestamp out of range")]
@@ -167,6 +181,7 @@ mod tests {
         let context = PopVerificationContext {
             cnf_key: &cnf_key,
             expected_audience: &aud,
+            expected_grant_id: &raw.gid,
         };
 
         let pop = PopProof::verify(&compact, &context).unwrap();
@@ -187,6 +202,7 @@ mod tests {
         let context = PopVerificationContext {
             cnf_key: &wrong_pk,
             expected_audience: &aud,
+            expected_grant_id: &raw.gid,
         };
 
         let result = PopProof::verify(&compact, &context);
@@ -204,10 +220,31 @@ mod tests {
         let context = PopVerificationContext {
             cnf_key: &cnf_key,
             expected_audience: "wrong-audience",
+            expected_grant_id: &raw.gid,
         };
 
         let result = PopProof::verify(&compact, &context);
         assert!(matches!(result, Err(Error::AudienceMismatch)));
+    }
+
+    #[test]
+    fn reject_wrong_grant_id() {
+        let client_kp = Keypair::random();
+        let hs_kp = Keypair::random();
+        let raw = make_valid_pop(&hs_kp);
+        let compact = sign_pop(&client_kp, &raw);
+
+        let cnf_key = client_kp.public_key();
+        let aud = hs_kp.public_key().z32();
+        let wrong_gid = GrantId::generate();
+        let context = PopVerificationContext {
+            cnf_key: &cnf_key,
+            expected_audience: &aud,
+            expected_grant_id: &wrong_gid,
+        };
+
+        let result = PopProof::verify(&compact, &context);
+        assert!(matches!(result, Err(Error::GrantIdMismatch)));
     }
 
     #[test]
@@ -223,6 +260,7 @@ mod tests {
         let context = PopVerificationContext {
             cnf_key: &cnf_key,
             expected_audience: &aud,
+            expected_grant_id: &raw.gid,
         };
 
         let result = PopProof::verify(&compact, &context);

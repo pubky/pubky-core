@@ -1,151 +1,68 @@
-//! Authentication middleware.
+//! Composed authentication middleware.
 //!
-//! The [`AuthenticationLayer`] tries to authenticate each request via Bearer JWT
-//! or deprecated session cookie. On success it inserts an [`AuthSession`] into
-//! request extensions.
+//! The [`AuthenticationLayer`] composes JWT and cookie authentication into a
+//! single layer. JWT runs first; cookie only activates when no Bearer token
+//! was present.
 //!
-//! - **Bearer token present but invalid** → rejects with 401 and a specific error message.
-//! - **No credentials or invalid cookie** → forwards without an identity (never rejects).
+//! - **Bearer token present and valid** → `AuthSession::Bearer` (cookie skipped).
+//! - **Bearer token present but invalid** → rejects with 401 (cookie never runs).
+//! - **No Bearer, valid cookie** → `AuthSession::Cookie`.
+//! - **No credentials** → forwards without an identity.
 
-use crate::client_server::auth::cookie::auth::authenticate_cookie;
-use crate::client_server::auth::jwt::auth::extract_bearer_token;
-use crate::client_server::auth::jwt::auth::authenticate_bearer;
-use crate::client_server::auth::jwt::crypto::jws_crypto::JwsCompact;
-use crate::client_server::auth::AuthSession;
+use crate::client_server::auth::cookie::middleware::{
+    CookieAuthenticationLayer, CookieAuthenticationMiddleware,
+};
+use crate::client_server::auth::jwt::middleware::{
+    JwtAuthenticationLayer, JwtAuthenticationMiddleware,
+};
 use crate::client_server::auth::AuthState;
-use crate::client_server::middleware::pubky_host::PubkyHost;
-use crate::shared::HttpError;
-use axum::response::IntoResponse;
-use axum::{body::Body, http::Request};
-use futures_util::future::BoxFuture;
-use pubky_common::crypto::PublicKey;
-use std::{convert::Infallible, task::Poll};
-use tower::{Layer, Service};
-use tower_cookies::Cookies;
+use tower::Layer;
 
 // ── Layer ───────────────────────────────────────────────────────────────────
 
 /// Tower layer that resolves credentials into an [`AuthSession`].
 ///
-/// Inserts an `AuthSession` into request extensions when authentication
-/// succeeds. Rejects with 401 if a Bearer token is present but invalid.
-/// Requests without credentials or with invalid cookies are forwarded
-/// without an identity for downstream layers to handle.
+/// Composes JWT (outer) and cookie (inner) authentication middlewares.
+/// JWT runs first on the request path; the cookie middleware only activates
+/// when no `AuthSession` was set by the JWT layer.
 #[derive(Debug, Clone)]
 pub struct AuthenticationLayer {
-    state: AuthState,
+    jwt: JwtAuthenticationLayer,
+    cookie: CookieAuthenticationLayer,
 }
 
 impl AuthenticationLayer {
     pub fn new(state: AuthState) -> Self {
-        Self { state }
-    }
-}
-
-impl<S> Layer<S> for AuthenticationLayer {
-    type Service = AuthenticationMiddleware<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        AuthenticationMiddleware {
-            inner,
-            state: self.state.clone(),
+        Self {
+            jwt: JwtAuthenticationLayer::new(state.clone()),
+            cookie: CookieAuthenticationLayer::new(state),
         }
     }
 }
 
-/// Middleware that resolves Bearer JWT or deprecated cookie credentials.
-#[derive(Debug, Clone)]
-pub struct AuthenticationMiddleware<S> {
-    inner: S,
-    state: AuthState,
-}
+impl<S> Layer<S> for AuthenticationLayer {
+    type Service = JwtAuthenticationMiddleware<CookieAuthenticationMiddleware<S>>;
 
-impl<S> Service<Request<Body>> for AuthenticationMiddleware<S>
-where
-    S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
-        + Send
-        + 'static
-        + Clone,
-    S::Future: Send + 'static,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(|e| match e {})
+    fn layer(&self, inner: S) -> Self::Service {
+        // JWT wraps cookie wraps inner → JWT runs first on the request path.
+        self.jwt.layer(self.cookie.layer(inner))
     }
-
-    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
-        let state = self.state.clone();
-        let mut inner = self.inner.clone();
-
-        Box::pin(async move {
-            let bearer_token = match extract_bearer_token(&req) {
-                Ok(token) => token,
-                Err(e) => return Ok(e.into_response()),
-            };
-            let cookies = req.extensions().get::<Cookies>().cloned();
-            let pubky = req.extensions().get::<PubkyHost>().cloned();
-
-            match resolve_auth_session(
-                &state,
-                bearer_token.as_ref(),
-                cookies.as_ref(),
-                pubky.as_ref().map(|p| p.public_key()),
-            )
-            .await
-            {
-                Ok(Some(session)) => {
-                    req.extensions_mut().insert(session);
-                }
-                Ok(None) => {}
-                Err(e) => return Ok(e.into_response()),
-            }
-
-            inner.call(req).await.map_err(|e| match e {})
-        })
-    }
-}
-
-/// Try to resolve an [`AuthSession`] from Bearer token or cookie.
-///
-/// - `Ok(Some(session))` — authentication succeeded.
-/// - `Ok(None)` — no credentials presented (or cookie auth failed silently).
-/// - `Err(HttpError)` — Bearer token was present but invalid.
-async fn resolve_auth_session(
-    state: &AuthState,
-    bearer_token: Option<&JwsCompact>,
-    cookies: Option<&Cookies>,
-    public_key: Option<&PublicKey>,
-) -> Result<Option<AuthSession>, HttpError> {
-    if let Some(token) = bearer_token {
-        return authenticate_bearer(state, token).await.map(Some);
-    }
-
-    let Some(cookies) = cookies else {
-        return Ok(None);
-    };
-    let Some(public_key) = public_key else {
-        return Ok(None);
-    };
-    Ok(authenticate_cookie(state, cookies, public_key).await)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app_context::AppContext;
-    use crate::client_server::auth::jwt::crypto::access_jwt_issuer::AccessJwt;
-    use crate::client_server::auth::AuthState;
-    use axum::http::StatusCode;
+    use crate::client_server::auth::AuthSession;
+    use crate::client_server::middleware::pubky_host::PubkyHost;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
     use axum::response::IntoResponse;
-    use pubky_common::auth::access_jwt::AccessJwtClaims;
-    use pubky_common::auth::jws::{GrantId, TokenId};
     use pubky_common::auth::AuthVerifier;
     use pubky_common::crypto::Keypair;
+    use std::convert::Infallible;
     use std::sync::Arc;
-    use tower::ServiceExt;
+    use tower::{Service, ServiceExt};
 
     async fn test_state() -> (AuthState, Keypair) {
         let context = AppContext::test().await;
@@ -162,7 +79,6 @@ mod tests {
         (state, keypair)
     }
 
-    /// Inner service that asserts whether AuthSession was inserted into extensions.
     fn assert_handler(
         expect_auth: bool,
     ) -> impl Service<
@@ -186,26 +102,10 @@ mod tests {
         })
     }
 
-    fn mint_jwt(homeserver_keypair: &Keypair) -> String {
-        let user_kp = Keypair::random();
-        let now = chrono::Utc::now().timestamp() as u64;
-        let claims = AccessJwtClaims {
-            iss: homeserver_keypair.public_key(),
-            sub: user_kp.public_key(),
-            gid: GrantId::generate(),
-            jti: TokenId::generate(),
-            iat: now,
-            exp: now + 3600,
-        };
-        AccessJwt::mint(homeserver_keypair, &claims)
-    }
-
-    // --- middleware: no credentials ---
-
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn no_credentials_forwards_without_auth_session() {
-        let (state, _hs_keypair) = test_state().await;
+        let (state, _) = test_state().await;
         let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
 
         let req = Request::builder()
@@ -216,154 +116,11 @@ mod tests {
         let resp = svc.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
-
-    // --- middleware: Bearer token edge cases ---
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn malformed_bearer_token_rejects_with_401() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", "Bearer not-a-valid-jws")
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn valid_jws_with_wrong_signature_rejects_with_401() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let wrong_keypair = Keypair::random();
-        let token = mint_jwt(&wrong_keypair);
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", format!("Bearer {}", token))
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn valid_jwt_but_no_session_in_db_rejects_with_401() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state.clone()).layer(assert_handler(false));
-
-        let token = mint_jwt(&_hs_keypair);
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", format!("Bearer {}", token))
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn expired_jwt_rejects_with_401() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state.clone()).layer(assert_handler(false));
-
-        let user_kp = Keypair::random();
-        let claims = AccessJwtClaims {
-            iss: _hs_keypair.public_key(),
-            sub: user_kp.public_key(),
-            gid: GrantId::generate(),
-            jti: TokenId::generate(),
-            iat: 1000,
-            exp: 2000, // far in the past
-        };
-        let token = AccessJwt::mint(&_hs_keypair, &claims);
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", format!("Bearer {}", token))
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    // --- middleware: non-Bearer auth schemes ---
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn basic_auth_header_rejected_with_401() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", "Basic dXNlcjpwYXNz")
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    // --- middleware: cookie edge cases ---
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn cookie_with_no_pubky_host_forwards_without_auth() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let req = Request::builder()
-            .uri("/session")
-            .header("Cookie", "somekey=somevalue")
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn cookie_with_unknown_session_secret_forwards_without_auth() {
-        let (state, _hs_keypair) = test_state().await;
-        let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let pk = Keypair::random().public_key();
-        let mut req = Request::builder()
-            .uri("/session")
-            .body(Body::empty())
-            .unwrap();
-        req.extensions_mut().insert(PubkyHost(pk.clone()));
-        let cookies = tower_cookies::Cookies::default();
-        cookies.add(tower_cookies::Cookie::new(
-            pk.z32(),
-            "nonexistent-secret-value",
-        ));
-        req.extensions_mut().insert(cookies);
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    // --- middleware: Bearer priority ---
 
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn invalid_bearer_rejects_even_with_valid_cookie_present() {
-        let (state, _hs_keypair) = test_state().await;
+        let (state, _) = test_state().await;
         let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
 
         let pk = Keypair::random().public_key();

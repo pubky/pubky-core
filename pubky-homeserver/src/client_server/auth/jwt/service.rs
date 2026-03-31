@@ -147,6 +147,7 @@ impl AuthService {
         let context = PopVerificationContext {
             cnf_key: &grant.cnf_key,
             expected_audience: &hs_pubkey_z32,
+            expected_grant_id: &grant.grant_id,
         };
         PopProof::verify(compact, &context).map_err(|e| {
             HttpError::new_with_message(StatusCode::UNAUTHORIZED, format!("Invalid PoP proof: {e}"))
