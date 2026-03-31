@@ -31,10 +31,9 @@ pub struct Testnet {
 
 impl Testnet {
     fn new_inner(seeded: bool) -> Result<Self> {
-        let dht = match seeded {
-            true => pkarr::mainline::Testnet::new(2)?,
-            false => pkarr::mainline::Testnet::new_unseeded(2)?,
-        };
+        let dht = pkarr::mainline::Testnet::builder(2)
+            .seeded(seeded)
+            .build()?;
 
         let testnet = Self {
             dht,
