@@ -42,21 +42,30 @@ use crate::data_directory::quota_config::BandwidthBudget;
 use crate::data_directory::user_limit_config::UserLimitConfig;
 use crate::shared::HttpError;
 
+/// Window state protected by a single mutex to avoid split-lock inconsistency.
+#[derive(Debug)]
+struct WindowState {
+    window_start: Instant,
+    budget: Option<BandwidthBudget>,
+}
+
 /// Tracks bytes used within a single time window for one direction (read or write).
 #[derive(Debug)]
 struct DirectionBudgetState {
     bytes_used: AtomicU64,
-    window_start: Mutex<Instant>,
-    /// Stored budget for config-change detection.
-    budget: Mutex<Option<BandwidthBudget>>,
+    /// Window start and stored budget config, guarded by a single lock to prevent
+    /// inconsistent reads when both are checked/reset together.
+    window: Mutex<WindowState>,
 }
 
 impl DirectionBudgetState {
     fn new(budget: Option<BandwidthBudget>) -> Self {
         Self {
             bytes_used: AtomicU64::new(0),
-            window_start: Mutex::new(Instant::now()),
-            budget: Mutex::new(budget),
+            window: Mutex::new(WindowState {
+                window_start: Instant::now(),
+                budget,
+            }),
         }
     }
 
@@ -66,22 +75,18 @@ impl DirectionBudgetState {
         let window_duration = budget.window_duration();
         let budget_bytes = budget.budget_bytes();
 
-        let mut window_start = self.window_start.lock().unwrap();
-        let elapsed = window_start.elapsed();
+        let mut state = self.window.lock().unwrap();
+        let elapsed = state.window_start.elapsed();
 
         // Check for config change
-        let config_changed = {
-            let mut stored = self.budget.lock().unwrap();
-            let changed = stored.as_ref() != Some(budget);
-            if changed {
-                *stored = Some(budget.clone());
-            }
-            changed
-        };
+        let config_changed = state.budget.as_ref() != Some(budget);
+        if config_changed {
+            state.budget = Some(budget.clone());
+        }
 
         // Reset window if expired or config changed
         if elapsed >= window_duration || config_changed {
-            *window_start = Instant::now();
+            state.window_start = Instant::now();
             self.bytes_used.store(0, Ordering::Relaxed);
             return (0, budget_bytes, window_duration.as_secs());
         }
@@ -120,8 +125,8 @@ impl DirectionBudgetState {
     }
 
     fn is_expired(&self, max_window: Duration) -> bool {
-        let window_start = self.window_start.lock().unwrap();
-        window_start.elapsed() > max_window
+        let state = self.window.lock().unwrap();
+        state.window_start.elapsed() > max_window
     }
 }
 
@@ -880,5 +885,114 @@ mod tests {
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
         }
+    }
+
+    #[tokio::test]
+    async fn test_evict_stale_entries_removes_expired() {
+        let budgets: DashMap<pubky_common::crypto::PublicKey, Arc<UserBudgetState>> =
+            DashMap::new();
+
+        let pk1 = Keypair::random().public_key();
+        let pk2 = Keypair::random().public_key();
+        let pk3 = Keypair::random().public_key();
+
+        // pk1: expired — manually set window_start to the past
+        let state1 = Arc::new(UserBudgetState::new(None, None));
+        {
+            let mut ws = state1.read.window.lock().unwrap();
+            ws.window_start = Instant::now() - CLEANUP_EXPIRY - Duration::from_secs(1);
+        }
+        {
+            let mut ws = state1.write.window.lock().unwrap();
+            ws.window_start = Instant::now() - CLEANUP_EXPIRY - Duration::from_secs(1);
+        }
+        budgets.insert(pk1.clone(), state1);
+
+        // pk2: fresh — should survive
+        budgets.insert(pk2.clone(), Arc::new(UserBudgetState::new(None, None)));
+
+        // pk3: only read expired, write still fresh — should survive
+        let state3 = Arc::new(UserBudgetState::new(None, None));
+        {
+            let mut ws = state3.read.window.lock().unwrap();
+            ws.window_start = Instant::now() - CLEANUP_EXPIRY - Duration::from_secs(1);
+        }
+        budgets.insert(pk3.clone(), state3);
+
+        evict_stale_entries(&budgets);
+
+        assert!(
+            !budgets.contains_key(&pk1),
+            "Fully expired entry should be evicted"
+        );
+        assert!(
+            budgets.contains_key(&pk2),
+            "Fresh entry should survive eviction"
+        );
+        assert!(
+            budgets.contains_key(&pk3),
+            "Partially expired entry should survive eviction"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_read_counts_response_bytes_through_middleware() {
+        // Verifies that authenticated GET requests have their response bytes
+        // counted against the read budget by the full middleware chain.
+        async fn handler_2kb() -> impl IntoResponse {
+            (StatusCode::OK, vec![0u8; 2048])
+        }
+
+        let layer = UserBandwidthBudgetLayer::new();
+        let app = Router::new()
+            .route("/test", get(handler_2kb))
+            .layer(layer.clone());
+
+        let pubkey = Keypair::random().public_key();
+        let limits = UserLimitConfig {
+            rate_read: budget("1kb/m"),
+            ..Default::default()
+        };
+
+        // First authenticated read: passes pre-check (0 < 1024) but response
+        // body is 2048 bytes, pushing usage over the budget.
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        // Must consume the body so the counting stream runs.
+        let _ = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+
+        // Second authenticated read: pre-check sees 2048 >= 1024 → 429
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "Authenticated read should be rate-limited after response body bytes exceed budget"
+        );
+
+        // Verify that an unauthenticated read is NOT affected
+        let mut unauthed_req = Request::builder()
+            .method(Method::GET)
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
+        unauthed_req
+            .extensions_mut()
+            .insert(PubkyHost(pubkey.clone()));
+        unauthed_req.extensions_mut().insert(limits.clone());
+        // No AuthenticatedSession marker
+        let resp = app.clone().oneshot(unauthed_req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Unauthenticated read should bypass budget"
+        );
     }
 }

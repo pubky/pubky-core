@@ -959,7 +959,7 @@ async fn per_user_quota_via_admin_api() {
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
-        .body(r#"{"storage_quota_mb": 1}"#)
+        .body(r#"{"storage_quota_mb": 1, "max_sessions": null, "rate_read": null, "rate_write": null}"#)
         .send()
         .await
         .unwrap();
@@ -1037,7 +1037,7 @@ async fn per_user_rate_limit_429_via_admin_api() {
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
-        .body(r#"{"rate_write": "1kb/s"}"#)
+        .body(r#"{"storage_quota_mb": null, "max_sessions": null, "rate_read": null, "rate_write": "1kb/s"}"#)
         .send()
         .await
         .unwrap();
@@ -1105,7 +1105,7 @@ async fn write_bandwidth_budget_enforced_via_admin_api() {
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
-        .body(r#"{"rate_write": "1kb/m"}"#)
+        .body(r#"{"storage_quota_mb": null, "max_sessions": null, "rate_read": null, "rate_write": "1kb/m"}"#)
         .send()
         .await
         .unwrap();

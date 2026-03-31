@@ -776,7 +776,7 @@ async fn max_sessions_enforced_via_admin_api() {
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
-        .body(r#"{"max_sessions": 2}"#)
+        .body(r#"{"storage_quota_mb": null, "max_sessions": 2, "rate_read": null, "rate_write": null}"#)
         .send()
         .await
         .unwrap();

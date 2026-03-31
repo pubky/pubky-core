@@ -414,11 +414,12 @@ mod tests {
             .await;
         response.assert_status_ok();
 
-        // PUT overrides
+        // PUT overrides (all fields required — null = unlimited)
         let body = serde_json::json!({
             "storage_quota_mb": 500,
             "max_sessions": 10,
-            "rate_read": "100mb/m"
+            "rate_read": "100mb/m",
+            "rate_write": null
         });
         let response = server
             .put(&url)
@@ -480,13 +481,60 @@ mod tests {
 
         // PUT with invalid rate string should be rejected (422 from serde validation)
         let body = serde_json::json!({
-            "rate_read": "garbage"
+            "storage_quota_mb": null,
+            "max_sessions": null,
+            "rate_read": "rubbish",
+            "rate_write": null
         });
         let response = server
             .put(&url)
             .add_header("X-Admin-Password", "test")
             .content_type("application/json")
             .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_failure()
+            .await;
+        response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    /// Omitting a required field in the PUT body should return 422.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_user_limits_missing_field_rejected() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let url = format!("/users/{}/limits", pubkey.z32());
+
+        // Missing rate_write field — should be rejected
+        let body = serde_json::json!({
+            "storage_quota_mb": 500,
+            "max_sessions": 10,
+            "rate_read": "100mb/m"
+        });
+        let response = server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_failure()
+            .await;
+        response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Empty body — also rejected
+        let response = server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(b"{}".to_vec().into())
             .expect_failure()
             .await;
         response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
@@ -517,11 +565,12 @@ mod tests {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
 
-        // POST with custom limits
+        // POST with custom limits (all fields required — null = unlimited)
         let body = serde_json::json!({
             "storage_quota_mb": 1024,
             "max_sessions": 5,
-            "rate_read": "200mb/m"
+            "rate_read": "200mb/m",
+            "rate_write": null
         });
         let response = server
             .post("/generate_signup_token")
@@ -579,9 +628,12 @@ mod tests {
             .expect_success()
             .await;
 
-        // 2) PUT with only storage_quota_mb — the other three become unlimited (null)
+        // 2) PUT with storage_quota_mb=200, others explicitly unlimited
         let body = serde_json::json!({
-            "storage_quota_mb": 200
+            "storage_quota_mb": 200,
+            "max_sessions": null,
+            "rate_read": null,
+            "rate_write": null
         });
         server
             .put(&url)

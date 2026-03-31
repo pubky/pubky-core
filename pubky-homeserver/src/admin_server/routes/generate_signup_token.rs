@@ -6,6 +6,8 @@ use crate::{
     shared::HttpResult,
 };
 
+use super::user_limits::ExplicitUserLimitConfig;
+
 use super::super::app_state::AppState;
 
 /// Shared helper: create a signup code with the given limits.
@@ -34,15 +36,14 @@ pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<
 
 /// POST /generate_signup_token — create a token with explicit custom limits.
 ///
-/// All fields in the JSON body are optional. Omitted fields = unlimited (`null`).
+/// All four fields are **required**. Use `null` for unlimited.
+/// Omitting a field returns 422, preventing accidental unlimited grants.
 /// This differs from the GET endpoint: GET writes the server's deploy-time defaults,
-/// while POST writes exactly what the caller specifies. An empty body `{}` means
-/// "explicitly all unlimited" — the resulting token will grant no restrictions.
+/// while POST writes exactly what the caller specifies.
 pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,
-    Json(config): Json<UserLimitConfig>,
+    Json(explicit): Json<ExplicitUserLimitConfig>,
 ) -> HttpResult<impl IntoResponse> {
-    // Bandwidth budget strings are validated by BandwidthBudget deserialization —
-    // invalid values cause a 422 from axum's Json extractor.
+    let config: UserLimitConfig = explicit.into();
     create_signup_code(&state, &config).await
 }

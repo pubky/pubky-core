@@ -662,8 +662,8 @@ mod tests {
             used_bytes: 0,
             limit_storage_quota_mb: None,
             limit_max_sessions: None,
-            limit_rate_read: Some("garbage".to_string()),
-            limit_rate_write: Some("also_garbage".to_string()),
+            limit_rate_read: Some("rubbish".to_string()),
+            limit_rate_write: Some("also_rubbish".to_string()),
         };
 
         let limits = user.limits();

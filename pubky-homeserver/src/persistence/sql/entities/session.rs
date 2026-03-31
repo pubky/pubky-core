@@ -379,4 +379,71 @@ mod tests {
         let result = try_create_session(&db, user.id, max_sessions, &caps).await;
         assert!(result.is_err(), "Should be rejected: back at limit");
     }
+
+    /// Verify that concurrent session creation is serialized by `FOR UPDATE`
+    /// and the max_sessions limit cannot be exceeded by racing requests.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_concurrent_session_creation_serialized() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let caps = Capabilities::builder().cap(Capability::root()).finish();
+        let max_sessions: u32 = 1;
+
+        // Spawn 10 concurrent tasks, each trying to create a session.
+        // With max_sessions=1, exactly 1 should succeed and 9 should fail.
+        let mut handles = Vec::new();
+        for _ in 0..10 {
+            let db = db.clone();
+            let caps = caps.clone();
+            let user_id = user.id;
+            handles.push(tokio::spawn(async move {
+                let mut tx = db.pool().begin().await.unwrap();
+                sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
+                    .bind(user_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+                let count =
+                    SessionRepository::count_by_user_id(user_id, &mut (&mut tx).into())
+                        .await
+                        .unwrap();
+                if count >= i64::from(max_sessions) {
+                    tx.rollback().await.unwrap();
+                    return Err(());
+                }
+                let _secret =
+                    SessionRepository::create(user_id, &caps, &mut (&mut tx).into())
+                        .await
+                        .unwrap();
+                tx.commit().await.unwrap();
+                Ok(())
+            }));
+        }
+
+        let results: Vec<_> = futures_util::future::join_all(handles)
+            .await
+            .into_iter()
+            .map(|r| r.unwrap())
+            .collect();
+
+        let successes = results.iter().filter(|r| r.is_ok()).count();
+        let failures = results.iter().filter(|r| r.is_err()).count();
+
+        assert_eq!(
+            successes, 1,
+            "Exactly 1 concurrent session creation should succeed with max_sessions=1"
+        );
+        assert_eq!(failures, 9);
+
+        // Verify the actual count in DB
+        let count =
+            SessionRepository::count_by_user_id(user.id, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(count, 1, "DB should have exactly 1 session");
+    }
 }

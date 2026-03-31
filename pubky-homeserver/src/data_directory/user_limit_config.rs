@@ -328,7 +328,7 @@ mod tests {
         let config = UserLimitConfig::from_nullable_columns(
             None,
             None,
-            Some("garbage".to_string()),
+            Some("rubbish".to_string()),
             Some("100mb/m".to_string()),
         );
         assert_eq!(
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_serde_rejects_invalid_rate_string() {
-        let json = r#"{"rate_read": "garbage"}"#;
+        let json = r#"{"rate_read": "rubbish"}"#;
         let result: Result<UserLimitConfig, _> = serde_json::from_str(json);
         assert!(
             result.is_err(),

@@ -113,6 +113,9 @@ impl AppContext {
             crate::data_directory::user_limit_config::UserLimitConfig::from_general_toml(
                 &conf.general,
             );
+        default_user_limits
+            .validate_rate_roundtrips()
+            .map_err(|e| AppContextConversionError::Config(anyhow::anyhow!(e)))?;
         Migrator::new(&sql_db, default_user_limits)
             .run()
             .await
