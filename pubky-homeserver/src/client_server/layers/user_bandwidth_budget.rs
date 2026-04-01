@@ -5,9 +5,9 @@
 //! time-windowed resets. Separate from the global path-based `RateLimiterLayer`.
 //!
 //! **Design:**
-//! - Only applies to **authenticated** requests (checks for `AuthenticatedSession`
-//!   marker). Anonymous reads of public data are not counted — external scrapers
-//!   are handled by the global IP-based `RateLimiterLayer` instead.
+//! - Applies to all requests with a resolved content owner (`PubkyHost`) and
+//!   `UserLimitConfig`, regardless of authentication status. Both anonymous and
+//!   authenticated reads count against the **content owner's** read budget.
 //! - **Writes** use atomic `fetch_add` + rollback: the estimated cost is reserved
 //!   atomically before the request proceeds. If Content-Length is present, the full
 //!   cost is reserved; otherwise `MIN_WRITE_COST_BYTES` is reserved and streaming
@@ -36,7 +36,6 @@ use pubky_common::crypto::PublicKey;
 use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
-use crate::client_server::layers::authz::AuthenticatedSession;
 use crate::data_directory::quota_config::BandwidthBudget;
 use crate::data_directory::user_limit_config::UserLimitConfig;
 use crate::shared::HttpError;
@@ -342,13 +341,10 @@ where
         let budgets = self.budgets.clone();
 
         Box::pin(async move {
-            let is_authenticated = req.extensions().get::<AuthenticatedSession>().is_some();
             let pubky_host = req.extensions().get::<PubkyHost>().cloned();
             let user_limits = req.extensions().get::<UserLimitConfig>().cloned();
 
-            let (true, Some(pubky_host), Some(limits)) =
-                (is_authenticated, pubky_host, user_limits)
-            else {
+            let (Some(pubky_host), Some(limits)) = (pubky_host, user_limits) else {
                 return inner.call(req).await;
             };
 
@@ -429,7 +425,6 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::client_server::extractors::PubkyHost;
-    use crate::client_server::layers::authz::AuthenticatedSession;
     use crate::data_directory::quota_config::BandwidthBudget;
     use crate::data_directory::user_limit_config::UserLimitConfig;
 
@@ -461,7 +456,6 @@ mod tests {
             .unwrap();
         req.extensions_mut().insert(PubkyHost(pubkey.clone()));
         req.extensions_mut().insert(limits.clone());
-        req.extensions_mut().insert(AuthenticatedSession);
         req
     }
 
@@ -480,7 +474,6 @@ mod tests {
             .unwrap();
         req.extensions_mut().insert(PubkyHost(pubkey.clone()));
         req.extensions_mut().insert(limits.clone());
-        req.extensions_mut().insert(AuthenticatedSession);
         req
     }
 
@@ -839,38 +832,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_unauthenticated_request_bypasses_budget() {
-        let app = test_app();
-        let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
-            rate_write: budget("1kb/m"),
-            ..Default::default()
-        };
-
-        let make_unauthed = |method: Method| {
-            let mut req = Request::builder()
-                .method(method)
-                .uri("/test")
-                .body(Body::empty())
-                .unwrap();
-            req.extensions_mut().insert(PubkyHost(pubkey.clone()));
-            req.extensions_mut().insert(limits.clone());
-            // No AuthenticatedSession inserted
-            req
-        };
-
-        // Many unauthenticated requests should all pass through
-        for _ in 0..10 {
-            let resp = app
-                .clone()
-                .oneshot(make_unauthed(Method::POST))
-                .await
-                .unwrap();
-            assert_eq!(resp.status(), StatusCode::OK);
-        }
-    }
-
-    #[tokio::test]
     async fn test_read_budget_atomic_reservation_limits_concurrent_reads() {
         // Each read reserves MIN_READ_COST_BYTES (256) atomically.
         // With a 1kb budget (1024 bytes), at most 4 reads can pass the
@@ -957,9 +918,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_authenticated_read_counts_response_bytes_through_middleware() {
-        // Verifies that authenticated GET requests have their response bytes
-        // counted against the read budget by the full middleware chain.
+    async fn test_read_counts_response_bytes_through_middleware() {
+        // Verifies that GET requests have their response bytes counted against
+        // the content owner's read budget by the full middleware chain,
+        // regardless of authentication status.
         async fn handler_2kb() -> impl IntoResponse {
             (StatusCode::OK, vec![0u8; 2048])
         }
@@ -975,8 +937,8 @@ mod tests {
             ..Default::default()
         };
 
-        // First authenticated read: atomically reserves MIN_READ_COST_BYTES
-        // (256), then the response body adds 2048 bytes. Total: 2304 > 1024.
+        // First read: atomically reserves MIN_READ_COST_BYTES (256), then the
+        // response body adds 2048 bytes via streaming. Total: 2304 > 1024.
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))
@@ -986,7 +948,9 @@ mod tests {
         // Must consume the body so the counting stream runs.
         let _ = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
 
-        // Second authenticated read: try_reserve sees 2304 >= 1024 → 429
+        // Second read: try_reserve sees 2304 >= 1024 → 429.
+        // This works the same whether the reader is authenticated or not —
+        // the budget is keyed on the content owner (PubkyHost).
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))
@@ -995,25 +959,7 @@ mod tests {
         assert_eq!(
             resp.status(),
             StatusCode::TOO_MANY_REQUESTS,
-            "Authenticated read should be rate-limited after response body bytes exceed budget"
-        );
-
-        // Verify that an unauthenticated read is NOT affected
-        let mut unauthed_req = Request::builder()
-            .method(Method::GET)
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
-        unauthed_req
-            .extensions_mut()
-            .insert(PubkyHost(pubkey.clone()));
-        unauthed_req.extensions_mut().insert(limits.clone());
-        // No AuthenticatedSession marker
-        let resp = app.clone().oneshot(unauthed_req).await.unwrap();
-        assert_eq!(
-            resp.status(),
-            StatusCode::OK,
-            "Unauthenticated read should bypass budget"
+            "Read should be rate-limited after response body bytes exceed owner's budget"
         );
     }
 }

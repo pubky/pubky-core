@@ -29,8 +29,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         // TODO: different max size for sessions and other routes?
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-        // Per-user bandwidth budgets run AFTER auth so that unauthenticated write
-        // requests (which auth rejects) cannot burn a victim's budget.
+        // Per-user bandwidth budgets run AFTER auth so that rejected write
+        // requests do not consume the content owner's budget.
         .layer(UserBandwidthBudgetLayer::new())
         // XXX: dzdidi - WebDAV compliant auth. Which is actually http basic auth so we need some magic here
         // to make session based auth look like http auth while also accepting http basic auth for webDAV comp
