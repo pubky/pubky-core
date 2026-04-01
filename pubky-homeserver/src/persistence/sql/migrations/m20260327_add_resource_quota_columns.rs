@@ -18,8 +18,8 @@ use crate::persistence::sql::migration::MigrationTrait;
 /// deploy-time defaults — so pre-existing unused tokens must carry explicit
 /// values.
 ///
-/// The deploy-time defaults are read from `[general]` in `config.toml` via
-/// [`UserResourceQuota::from_general_toml`].
+/// The deploy-time defaults are read from `[quotas]` in `config.toml` via
+/// [`UserResourceQuota::from_config`].
 pub struct M20260327AddResourceQuotaColumnsMigration {
     pub defaults: UserResourceQuota,
 }

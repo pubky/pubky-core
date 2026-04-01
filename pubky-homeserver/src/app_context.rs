@@ -110,9 +110,7 @@ impl AppContext {
 
         let sql_db = Self::connect_to_sql_db(&conf).await?;
         let default_user_resource_quota =
-            crate::data_directory::user_resource_quota::UserResourceQuota::from_general_toml(
-                &conf.general,
-            );
+            crate::data_directory::user_resource_quota::UserResourceQuota::from_config(&conf);
         default_user_resource_quota
             .validate_rate_roundtrips()
             .map_err(|e| AppContextConversionError::Config(anyhow::anyhow!(e)))?;

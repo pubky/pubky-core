@@ -30,25 +30,26 @@ user_storage_quota_mb = 0
 #        - PUT  /users/{pubkey}/resource-quotas   — set custom quotas
 #        - DELETE /users/{pubkey}/resource-quotas — make fully unlimited
 #
-# Within a quota config, omitted (or null) fields mean "unlimited".
+# Within this section, omitted fields mean "unlimited".
+[quotas]
 
 # Default per-user storage quota in MB. Omit for unlimited.
-# Takes precedence over the deprecated `user_storage_quota_mb` if both are set.
+# Takes precedence over the deprecated `[general] user_storage_quota_mb` if both are set.
 #
 # IMPORTANT: 0 means "zero quota" (no storage allowed). Omit the field entirely for
 # unlimited storage.
-# quota_storage_mb = 1024
+# storage_quota_mb = 1024
 
 # Default maximum concurrent sessions per user. Omit for unlimited.
-# quota_max_sessions = 3
+# max_sessions = 3
 
 # Default per-user read bandwidth budget. Omit for unlimited.
 # Total bytes allowed per time window. Accepts bandwidth units (kb, mb, gb)
 # with time units (s, m, h, d). Example: "500mb/d" = 500 MB per day.
-# quota_rate_read = "500mb/d"
+# rate_read = "500mb/d"
 
 # Default per-user write bandwidth budget. Omit for unlimited.
-# quota_rate_write = "100mb/h"
+# rate_write = "100mb/h"
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.

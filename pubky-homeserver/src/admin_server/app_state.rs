@@ -65,7 +65,7 @@ impl AppState {
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
-        self.default_user_resource_quota = UserResourceQuota::from_general_toml(&config.general);
+        self.default_user_resource_quota = UserResourceQuota::from_config(config);
         self
     }
 }

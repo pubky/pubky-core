@@ -13,6 +13,7 @@ use crate::{
     data_directory::log_level::{LogLevel, TargetLevel},
     persistence::sql::ConnectionString,
     shared::toml_merge,
+    user_resource_quota::UserResourceQuota,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -85,30 +86,10 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
-    /// Deprecated: use `quota_storage_mb` instead. Kept for backward compatibility.
+    /// Deprecated: use `[quotas] storage_quota_mb` instead. Kept for backward compatibility.
     #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
-    /// Default per-user storage quota in MB. `None` = unlimited.
-    /// Takes precedence over the deprecated `user_storage_quota_mb` if both are set.
-    ///
-    /// **Important:** `Some(0)` means "zero quota" (no storage), NOT unlimited.
-    /// Omit the field entirely for unlimited storage.
-    ///
-    /// These defaults are also used by [`M20260327AddResourceQuotaColumnsMigration`] to
-    /// backfill existing user rows on first run. After that one-time migration,
-    /// changing this value only affects newly created users.
-    #[serde(default)]
-    pub quota_storage_mb: Option<u64>,
-    /// Default maximum concurrent sessions per user. `None` = unlimited.
-    #[serde(default)]
-    pub quota_max_sessions: Option<u32>,
-    /// Default per-user read bandwidth budget (e.g. "500mb/d"). `None` = unlimited.
-    #[serde(default)]
-    pub quota_rate_read: Option<super::quota_config::BandwidthBudget>,
-    /// Default per-user write bandwidth budget (e.g. "100mb/h"). `None` = unlimited.
-    #[serde(default)]
-    pub quota_rate_write: Option<super::quota_config::BandwidthBudget>,
 }
 
 /// A config for Homeserver tracing subscriber configuration
@@ -137,8 +118,11 @@ pub struct MetricsToml {
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
-    /// General application settings (signup mode, quotas, database URL).
+    /// General application settings (signup mode, database URL).
     pub general: GeneralToml,
+    /// Default per-user resource quotas (storage, sessions, bandwidth budgets).
+    #[serde(default)]
+    pub quotas: UserResourceQuota,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
     /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
@@ -373,5 +357,114 @@ mod tests {
             module_levels: vec![],
         });
         assert_eq!(merged.logging, expected_logging);
+    }
+
+    #[test]
+    fn test_quotas_section_parsed_from_toml() {
+        let s = r#"
+[quotas]
+storage_quota_mb = 500
+max_sessions = 3
+rate_read = "100mb/d"
+rate_write = "50mb/h"
+"#;
+        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
+        assert_eq!(parsed.quotas.storage_quota_mb, Some(500));
+        assert_eq!(parsed.quotas.max_sessions, Some(3));
+        assert_eq!(
+            parsed.quotas.rate_read,
+            Some(
+                crate::data_directory::quota_config::BandwidthBudget::from_str("100mb/d").unwrap()
+            )
+        );
+        assert_eq!(
+            parsed.quotas.rate_write,
+            Some(crate::data_directory::quota_config::BandwidthBudget::from_str("50mb/h").unwrap())
+        );
+    }
+
+    #[test]
+    fn test_quotas_section_partial_fields() {
+        // Only setting some fields — omitted fields should be None (unlimited)
+        let s = r#"
+[quotas]
+storage_quota_mb = 1024
+"#;
+        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
+        assert_eq!(parsed.quotas.storage_quota_mb, Some(1024));
+        assert_eq!(parsed.quotas.max_sessions, None);
+        assert_eq!(parsed.quotas.rate_read, None);
+        assert_eq!(parsed.quotas.rate_write, None);
+    }
+
+    #[test]
+    fn test_quotas_section_omitted_equals_default() {
+        // No [quotas] section at all — should produce all-unlimited defaults
+        let s = "";
+        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
+        assert_eq!(parsed.quotas, UserResourceQuota::default());
+    }
+
+    #[test]
+    fn test_quotas_invalid_rate_string_rejected() {
+        let s = r#"
+[quotas]
+rate_read = "rubbish"
+"#;
+        let result = ConfigToml::from_str_with_defaults(s);
+        assert!(
+            result.is_err(),
+            "Invalid rate string should fail config parsing"
+        );
+    }
+
+    #[test]
+    fn test_quotas_request_units_rejected() {
+        // BandwidthBudget should reject request-count units like "100r/m"
+        let s = r#"
+[quotas]
+rate_read = "100r/m"
+"#;
+        let result = ConfigToml::from_str_with_defaults(s);
+        assert!(
+            result.is_err(),
+            "Request-unit rate strings should be rejected in [quotas]"
+        );
+    }
+
+    #[test]
+    fn test_quotas_with_deprecated_storage_both_set() {
+        // When both [general] user_storage_quota_mb and [quotas] storage_quota_mb are set,
+        // from_config should prefer [quotas]
+        let s = r#"
+[general]
+user_storage_quota_mb = 100
+
+[quotas]
+storage_quota_mb = 500
+"#;
+        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
+        let effective = UserResourceQuota::from_config(&parsed);
+        assert_eq!(
+            effective.storage_quota_mb,
+            Some(500),
+            "[quotas] should take precedence over deprecated [general] field"
+        );
+    }
+
+    #[test]
+    fn test_quotas_deprecated_fallback_when_quotas_omitted() {
+        // When only [general] user_storage_quota_mb is set, from_config should fall back to it
+        let s = r#"
+[general]
+user_storage_quota_mb = 256
+"#;
+        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
+        let effective = UserResourceQuota::from_config(&parsed);
+        assert_eq!(
+            effective.storage_quota_mb,
+            Some(256),
+            "Should fall back to deprecated [general] field when [quotas] omits storage"
+        );
     }
 }

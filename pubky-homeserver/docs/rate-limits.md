@@ -54,10 +54,10 @@ Four independent quotas enforced per user's resources (identified by the tenant 
 
 | Quota | Config field | Purpose |
 |-------|-------------|-----------|
-| Storage quota | `quota_storage_mb` | Maximum total bytes a user can store. |
-| Max sessions | `quota_max_sessions` | Maximum concurrent authenticated sessions. |
-| Read bandwidth budget | `quota_rate_read` | Total bytes that can be read from a user's data per time window. |
-| Write bandwidth budget | `quota_rate_write` | Total bytes that can be written to a user's data per time window. |
+| Storage quota | `storage_quota_mb` | Maximum total bytes a user can store. |
+| Max sessions | `max_sessions` | Maximum concurrent authenticated sessions. |
+| Read bandwidth budget | `rate_read` | Total bytes that can be read from a user's data per time window. |
+| Write bandwidth budget | `rate_write` | Total bytes that can be written to a user's data per time window. |
 
 For all four fields, `null` / `None` means **unlimited**.
 
@@ -65,14 +65,14 @@ For all four fields, `null` / `None` means **unlimited**.
 
 #### Deploy-time defaults (config.toml)
 
-Set in the `[general]` section. These apply to **newly created users** and were backfilled onto existing users during the initial migration:
+Set in the `[quotas]` section. These apply to **newly created users** and were backfilled onto existing users during the initial migration:
 
 ```toml
-[general]
-quota_storage_mb = 500        # 500 MB quota. Omit for unlimited.
-quota_max_sessions = 10       # 10 concurrent sessions. Omit for unlimited.
-quota_rate_read = "500mb/d"   # 500 MB read per day. Omit for unlimited.
-quota_rate_write = "100mb/h"  # 100 MB write per hour. Omit for unlimited.
+[quotas]
+storage_quota_mb = 500        # 500 MB quota. Omit for unlimited.
+max_sessions = 10             # 10 concurrent sessions. Omit for unlimited.
+rate_read = "500mb/d"         # 500 MB read per day. Omit for unlimited.
+rate_write = "100mb/h"        # 100 MB write per hour. Omit for unlimited.
 ```
 
 After the one-time database migration, changing these values in config.toml only affects users created afterwards. Existing users keep whatever was written to their DB row.

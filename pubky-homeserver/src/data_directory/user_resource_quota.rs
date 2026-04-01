@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use pubky_common::crypto::PublicKey;
 use serde::{Deserialize, Serialize};
 
-use super::config_toml::GeneralToml;
+use super::config_toml::ConfigToml;
 use crate::data_directory::quota_config::BandwidthBudget;
 
 /// How long a cached limit entry is considered fresh before re-resolving from DB.
@@ -65,7 +65,7 @@ pub type UserResourceQuotaCache = Arc<DashMap<PublicKey, CachedUserResourceQuota
 /// Per-user resource quotas. `None` fields mean "unlimited / no quota".
 ///
 /// Used in three contexts:
-/// 1. **Deploy-time defaults** — parsed from TOML config via [`UserResourceQuota::from_general_toml`].
+/// 1. **Deploy-time defaults** — the `[quotas]` section in `config.toml`, via [`UserResourceQuota::from_config`].
 /// 2. **Per-user config** — stored on the user row in the DB.
 /// 3. **Signup token config** — attached to a signup code; applied to the user on signup.
 ///
@@ -88,28 +88,26 @@ pub struct UserResourceQuota {
 }
 
 impl UserResourceQuota {
-    /// Construct default quotas from the general config section.
+    /// Construct deploy-time default quotas from the config file.
     ///
-    /// For backward compatibility, the deprecated `user_storage_quota_mb = 0` is
-    /// treated as unlimited (`None`). The newer `quota_storage_mb` field uses
-    /// `Option` directly — `Some(0)` means "zero quota", not unlimited.
+    /// Uses the `[quotas]` section directly. For backward compatibility, if
+    /// `storage_quota_mb` is not set in `[quotas]`, falls back to the deprecated
+    /// `[general] user_storage_quota_mb` (where `0` means unlimited).
     ///
     /// The result of this function is used both as the runtime default for new
     /// users and as the backfill value in [`M20260327AddResourceQuotaColumnsMigration`],
     /// which "freezes" these defaults onto existing user rows during the one-time
     /// migration. See that migration's docs for details.
-    pub fn from_general_toml(general: &GeneralToml) -> Self {
-        Self {
-            storage_quota_mb: general
-                .quota_storage_mb
-                .or(match general.user_storage_quota_mb {
-                    0 => None,
-                    n => Some(n),
-                }),
-            max_sessions: general.quota_max_sessions,
-            rate_read: general.quota_rate_read.clone(),
-            rate_write: general.quota_rate_write.clone(),
+    pub fn from_config(config: &ConfigToml) -> Self {
+        let mut quotas = config.quotas.clone();
+        // Backward compat: fall back to deprecated [general] user_storage_quota_mb
+        if quotas.storage_quota_mb.is_none() {
+            quotas.storage_quota_mb = match config.general.user_storage_quota_mb {
+                0 => None,
+                n => Some(n),
+            };
         }
+        quotas
     }
 
     /// Convert nullable DB columns into an `Option<UserResourceQuota>`.
@@ -222,64 +220,67 @@ mod tests {
 
     use super::*;
 
+    /// Helper: build a `ConfigToml` with custom quotas and default everything else.
+    fn config_with_quotas(quotas: UserResourceQuota) -> ConfigToml {
+        ConfigToml {
+            quotas,
+            ..ConfigToml::default()
+        }
+    }
+
     #[test]
-    fn test_from_general_toml_new_fields() {
-        let general = GeneralToml {
-            quota_storage_mb: Some(500),
-            quota_max_sessions: Some(10),
-            quota_rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
-            quota_rate_write: Some(BandwidthBudget::from_str("50mb/m").unwrap()),
-            ..Default::default()
-        };
-        let config = UserResourceQuota::from_general_toml(&general);
-        assert_eq!(config.storage_quota_mb, Some(500));
-        assert_eq!(config.max_sessions, Some(10));
+    fn test_from_config_quotas_section() {
+        let config = config_with_quotas(UserResourceQuota {
+            storage_quota_mb: Some(500),
+            max_sessions: Some(10),
+            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            rate_write: Some(BandwidthBudget::from_str("50mb/m").unwrap()),
+        });
+        let result = UserResourceQuota::from_config(&config);
+        assert_eq!(result.storage_quota_mb, Some(500));
+        assert_eq!(result.max_sessions, Some(10));
         assert_eq!(
-            config.rate_read,
+            result.rate_read,
             Some(BandwidthBudget::from_str("100mb/m").unwrap())
         );
         assert_eq!(
-            config.rate_write,
+            result.rate_write,
             Some(BandwidthBudget::from_str("50mb/m").unwrap())
         );
     }
 
     #[test]
-    fn test_from_general_toml_deprecated_storage_fallback() {
-        let general = GeneralToml {
-            user_storage_quota_mb: 1024,
-            ..Default::default()
-        };
-        let config = UserResourceQuota::from_general_toml(&general);
-        assert_eq!(config.storage_quota_mb, Some(1024));
+    fn test_from_config_deprecated_storage_fallback() {
+        let mut config = ConfigToml::default();
+        config.general.user_storage_quota_mb = 1024;
+        let result = UserResourceQuota::from_config(&config);
+        assert_eq!(result.storage_quota_mb, Some(1024));
     }
 
     #[test]
-    fn test_from_general_toml_new_field_takes_precedence() {
-        let general = GeneralToml {
-            user_storage_quota_mb: 100,   // old
-            quota_storage_mb: Some(500), // new takes precedence
+    fn test_from_config_quotas_section_takes_precedence() {
+        let mut config = config_with_quotas(UserResourceQuota {
+            storage_quota_mb: Some(500),
             ..Default::default()
-        };
-        let config = UserResourceQuota::from_general_toml(&general);
-        assert_eq!(config.storage_quota_mb, Some(500));
+        });
+        config.general.user_storage_quota_mb = 100; // deprecated, should be ignored
+        let result = UserResourceQuota::from_config(&config);
+        assert_eq!(result.storage_quota_mb, Some(500));
     }
 
     #[test]
-    fn test_from_general_toml_deprecated_zero_is_unlimited() {
-        let general = GeneralToml {
-            user_storage_quota_mb: 0,
-            ..Default::default()
-        };
-        let config = UserResourceQuota::from_general_toml(&general);
-        assert_eq!(config.storage_quota_mb, None);
+    fn test_from_config_deprecated_zero_is_unlimited() {
+        let mut config = ConfigToml::default();
+        config.general.user_storage_quota_mb = 0;
+        let result = UserResourceQuota::from_config(&config);
+        assert_eq!(result.storage_quota_mb, None);
     }
 
     #[test]
-    fn test_from_general_toml_all_defaults_unlimited() {
-        let general = GeneralToml::default();
-        let config = UserResourceQuota::from_general_toml(&general);
-        assert_eq!(config, UserResourceQuota::default());
+    fn test_from_config_all_defaults_unlimited() {
+        let config = ConfigToml::default();
+        let result = UserResourceQuota::from_config(&config);
+        assert_eq!(result, UserResourceQuota::default());
     }
 
     #[test]
