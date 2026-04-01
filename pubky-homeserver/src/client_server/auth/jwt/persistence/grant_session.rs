@@ -1,7 +1,7 @@
 //! Repository for grant-based session entities.
 
 use pubky_common::auth::jws::{GrantId, TokenId};
-use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Alias, CommonTableExpression, Expr, Iden, PostgresQueryBuilder, Query, WithClause, WithQuery};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
@@ -10,36 +10,48 @@ use crate::persistence::sql::{
     UnifiedExecutor,
 };
 
-/// Maximum active sessions per grant on a single homeserver (per proposal).
-const MAX_SESSIONS_PER_GRANT: i64 = 1;
-
 /// Repository for grant-based session CRUD operations.
 pub struct GrantSessionRepository;
 
 impl GrantSessionRepository {
-    /// Create a new session, enforcing the max-1-per-grant limit.
+    /// Create a new session, atomically evicting all previous sessions for the grant.
     ///
-    /// If the grant already has 1 sessions, the oldest is evicted before
-    /// inserting the new one.
+    /// Uses a CTE to DELETE + INSERT in a single statement, preventing race
+    /// conditions where concurrent requests could temporarily exceed the
+    /// one-session-per-grant limit.
     pub async fn create<'a>(
         session: &NewGrantSession,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), sqlx::Error> {
-        Self::enforce_session_limit(&session.grant_id, executor).await?;
+        let delete_cte = CommonTableExpression::new()
+            .query(
+                Query::delete()
+                    .from_table(GRANT_SESSIONS_TABLE)
+                    .and_where(
+                        Expr::col(GrantSessionIden::GrantId).eq(session.grant_id.to_string()),
+                    )
+                    .to_owned(),
+            )
+            .table_name(Alias::new("delete_old"))
+            .to_owned();
 
-        let statement = Query::insert()
+        let insert = Query::insert()
             .into_table(GRANT_SESSIONS_TABLE)
             .columns([
                 GrantSessionIden::TokenId,
                 GrantSessionIden::GrantId,
                 GrantSessionIden::ExpiresAt,
             ])
-            .values(vec![
-                SimpleExpr::Value(session.token_id.to_string().into()),
-                SimpleExpr::Value(session.grant_id.to_string().into()),
-                SimpleExpr::Value((session.expires_at as i64).into()),
+            .values_panic([
+                session.token_id.to_string().into(),
+                session.grant_id.to_string().into(),
+                (session.expires_at as i64).into(),
             ])
-            .expect("Failed to build insert statement")
+            .to_owned();
+
+        let statement = WithQuery::new()
+            .with_clause(WithClause::new().cte(delete_cte).to_owned())
+            .query(insert)
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -86,61 +98,6 @@ impl GrantSessionRepository {
         Ok(())
     }
 
-    /// Enforce the max sessions per grant limit by evicting the oldest if needed.
-    async fn enforce_session_limit<'a>(
-        grant_id: &GrantId,
-        executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), sqlx::Error> {
-        let count = Self::count_for_grant(grant_id, executor).await?;
-        if count >= MAX_SESSIONS_PER_GRANT {
-            Self::delete_oldest_for_grant(grant_id, executor).await?;
-        }
-        Ok(())
-    }
-
-    async fn count_for_grant<'a>(
-        grant_id: &GrantId,
-        executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<i64, sqlx::Error> {
-        let statement = Query::select()
-            .from(GRANT_SESSIONS_TABLE)
-            .expr(Expr::col(GrantSessionIden::Id).count())
-            .and_where(Expr::col(GrantSessionIden::GrantId).eq(grant_id.to_string()))
-            .to_owned();
-
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
-        let con = executor.get_con().await?;
-        let row: PgRow = sqlx::query_with(&query, values).fetch_one(con).await?;
-        row.try_get::<i64, _>(0)
-    }
-
-    async fn delete_oldest_for_grant<'a>(
-        grant_id: &GrantId,
-        executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), sqlx::Error> {
-        // Delete the session with the smallest id (oldest) for this grant
-        let subquery = Query::select()
-            .from(GRANT_SESSIONS_TABLE)
-            .column(GrantSessionIden::Id)
-            .and_where(Expr::col(GrantSessionIden::GrantId).eq(grant_id.to_string()))
-            .order_by(GrantSessionIden::Id, Order::Asc)
-            .limit(1)
-            .to_owned();
-
-        let (sub_sql, sub_values) = subquery.build_sqlx(PostgresQueryBuilder);
-
-        // Use raw SQL for the DELETE with subquery since sea-query doesn't support DELETE ... WHERE id IN (subquery) easily
-        let sql = format!(
-            "DELETE FROM {} WHERE {} = ({})",
-            GRANT_SESSIONS_TABLE,
-            GrantSessionIden::Id.to_string(),
-            sub_sql
-        );
-
-        let con = executor.get_con().await?;
-        sqlx::query_with(&sql, sub_values).execute(con).await?;
-        Ok(())
-    }
 }
 
 /// Data needed to create a new grant session.

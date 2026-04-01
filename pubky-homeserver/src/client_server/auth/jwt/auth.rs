@@ -26,6 +26,8 @@ pub struct BearerSession {
     pub grant_id: GrantId,
     /// Token ID (session cache key).
     pub token_id: TokenId,
+    /// When the JWT token expires (Unix seconds).
+    pub token_expires_at: u64,
 }
 
 /// Extract and parse Bearer token from the Authorization header.
@@ -59,9 +61,10 @@ pub async fn authenticate_bearer(
     let jwt = AccessJwt::verify(token, &state.auth_service.homeserver_public_key())
         .map_err(|_| HttpError::unauthorized_with_message("Invalid or expired JWT"))?;
 
-    GrantSessionRepository::get_by_token_id(&jwt.token_id, &mut state.sql_db.pool().into())
-        .await
-        .map_err(|_| HttpError::unauthorized_with_message("Session not found"))?;
+    let session =
+        GrantSessionRepository::get_by_token_id(&jwt.token_id, &mut state.sql_db.pool().into())
+            .await
+            .map_err(|_| HttpError::unauthorized_with_message("Session not found"))?;
 
     let grant = lookup_active_grant(state, &jwt.grant_id).await?;
 
@@ -70,6 +73,7 @@ pub async fn authenticate_bearer(
         capabilities: grant.capabilities,
         grant_id: jwt.grant_id,
         token_id: jwt.token_id,
+        token_expires_at: session.expires_at as u64,
     }))
 }
 

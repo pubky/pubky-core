@@ -155,6 +155,18 @@ mod tests {
         .into_response();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
+        let resp = HttpError::from(AuthServiceError::InvalidPopProof(
+            pop_verifier::Error::InvalidFormat,
+        ))
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        let resp = HttpError::from(AuthServiceError::InvalidPopProof(
+            pop_verifier::Error::InvalidHeaderType,
+        ))
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
         // User lookup
         let resp = HttpError::from(AuthServiceError::UserNotFound).into_response();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);

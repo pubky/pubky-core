@@ -89,7 +89,7 @@ pub async fn get_session(
         client_id: grant.client_id.clone(),
         capabilities: bearer.capabilities.to_vec(),
         grant_id: bearer.grant_id.clone(),
-        token_expires_at: 0, // TODO: store in bearer session
+        token_expires_at: bearer.token_expires_at,
         grant_expires_at: grant.expires_at as u64,
         created_at: grant.created_at.and_utc().timestamp() as u64,
     };
@@ -116,8 +116,8 @@ pub struct GrantInfo {
     pub grant_id: GrantId,
     pub client_id: String,
     pub capabilities: String,
-    pub issued_at: i64,
-    pub expires_at: i64,
+    pub issued_at: u64,
+    pub expires_at: u64,
 }
 
 impl From<GrantEntity> for GrantInfo {
@@ -126,8 +126,8 @@ impl From<GrantEntity> for GrantInfo {
             grant_id: entity.grant_id,
             client_id: entity.client_id.to_string(),
             capabilities: entity.capabilities.to_string(),
-            issued_at: entity.issued_at,
-            expires_at: entity.expires_at,
+            issued_at: entity.issued_at as u64,
+            expires_at: entity.expires_at as u64,
         }
     }
 }
@@ -179,11 +179,13 @@ mod tests {
     use crate::client_server::auth::jwt::auth::BearerSession;
 
     fn bearer_auth(caps: Capabilities) -> AuthSession {
+        let now = chrono::Utc::now().timestamp() as u64;
         AuthSession::Bearer(BearerSession {
             user_key: Keypair::random().public_key(),
             capabilities: caps,
             grant_id: GrantId::generate(),
             token_id: TokenId::generate(),
+            token_expires_at: now + 3600,
         })
     }
 

@@ -70,10 +70,20 @@ impl PopProof {
     /// Nonce replay checking is done separately via the database.
     pub fn verify(compact: &JwsCompact, context: &PopVerificationContext) -> Result<Self, Error> {
         let raw = verify_signature(compact.as_str(), context.cnf_key)?;
+        check_header_type(compact.as_str())?;
         check_audience(&raw, context.expected_audience)?;
         check_grant_binding(&raw, context.expected_grant_id)?;
         check_timestamp(&raw)?;
         parse_verified_pop(raw)
+    }
+}
+
+/// Check that the JWS header has `typ: "pubky-pop"`.
+fn check_header_type(compact: &str) -> Result<(), Error> {
+    let header = jsonwebtoken::decode_header(compact).map_err(|_| Error::InvalidFormat)?;
+    match header.typ.as_deref() {
+        Some("pubky-pop") => Ok(()),
+        _ => Err(Error::InvalidHeaderType),
     }
 }
 
@@ -125,6 +135,14 @@ fn parse_verified_pop(raw: PopProofClaims) -> Result<PopProof, Error> {
 /// Errors from PoP proof verification.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    /// The JWS format is invalid or unparseable.
+    #[error("invalid PoP format")]
+    InvalidFormat,
+
+    /// The JWS header `typ` is not `"pubky-pop"`.
+    #[error("invalid PoP header type, expected pubky-pop")]
+    InvalidHeaderType,
+
     /// The Ed25519 signature does not match the `cnf` key.
     #[error("invalid PoP signature")]
     InvalidSignature,
@@ -245,6 +263,30 @@ mod tests {
 
         let result = PopProof::verify(&compact, &context);
         assert!(matches!(result, Err(Error::GrantIdMismatch)));
+    }
+
+    #[test]
+    fn reject_wrong_header_type() {
+        let client_kp = Keypair::random();
+        let hs_kp = Keypair::random();
+        let raw = make_valid_pop(&hs_kp);
+
+        // Sign with wrong typ header
+        let header = jws_crypto::eddsa_header("JWT");
+        let enc = jws_crypto::encoding_key(&client_kp);
+        let compact =
+            JwsCompact::parse(&jsonwebtoken::encode(&header, &raw, &enc).unwrap()).unwrap();
+
+        let cnf_key = client_kp.public_key();
+        let aud = hs_kp.public_key().z32();
+        let context = PopVerificationContext {
+            cnf_key: &cnf_key,
+            expected_audience: &aud,
+            expected_grant_id: &raw.gid,
+        };
+
+        let result = PopProof::verify(&compact, &context);
+        assert!(matches!(result, Err(Error::InvalidHeaderType)));
     }
 
     #[test]

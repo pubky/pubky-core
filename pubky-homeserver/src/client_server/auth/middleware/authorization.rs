@@ -117,6 +117,7 @@ mod tests {
             capabilities,
             grant_id: GrantId::generate(),
             token_id: TokenId::generate(),
+            token_expires_at: 9999999999,
         })
     }
 
