@@ -2,8 +2,10 @@
 //!
 //! Grant session creation and grant management endpoints.
 
+use std::collections::HashMap;
+
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -36,6 +38,26 @@ pub async fn create_grant_session(
     Json(request): Json<CreateGrantSessionRequest>,
 ) -> HttpResult<impl IntoResponse> {
     let response = state.auth_service.create_grant_session(request).await?;
+    Ok(Json(response))
+}
+
+/// `POST /auth/jwt/signup` — create a new user and return a JWT session.
+///
+/// Same input as session creation (grant + PoP), but creates the user first.
+/// Optional `signup_token` query param when signup tokens are required.
+pub async fn signup(
+    State(state): State<AuthState>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(request): Json<CreateGrantSessionRequest>,
+) -> HttpResult<impl IntoResponse> {
+    let response = state
+        .auth_service
+        .signup_grant_session(
+            request,
+            &state.signup_mode,
+            params.get("signup_token").map(|s| s.as_str()),
+        )
+        .await?;
     Ok(Json(response))
 }
 

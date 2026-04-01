@@ -30,6 +30,7 @@ pub fn base_router(auth_state: AuthState) -> Router<()> {
         .route("/signup", post(cookie::routes::signup))
         .route("/session", post(cookie::routes::signin))
         // JWT
+        .route("/auth/jwt/signup", post(jwt::routes::signup))
         .route(
             "/auth/jwt/session",
             post(jwt::routes::create_grant_session),
