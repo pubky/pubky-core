@@ -217,40 +217,6 @@ impl UserRepository {
         Ok(())
     }
 
-    /// Clear per-user custom limits (set all limit columns to NULL = unlimited).
-    pub async fn clear_resource_quota<'a>(
-        user_id: i32,
-        executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), sqlx::Error> {
-        let statement = Query::update()
-            .table(USER_TABLE)
-            .values(vec![
-                (
-                    UserIden::QuotaStorageMb,
-                    SimpleExpr::Value(Option::<i64>::None.into()),
-                ),
-                (
-                    UserIden::QuotaMaxSessions,
-                    SimpleExpr::Value(Option::<i32>::None.into()),
-                ),
-                (
-                    UserIden::QuotaRateRead,
-                    SimpleExpr::Value(Option::<String>::None.into()),
-                ),
-                (
-                    UserIden::QuotaRateWrite,
-                    SimpleExpr::Value(Option::<String>::None.into()),
-                ),
-            ])
-            .and_where(Expr::col(UserIden::Id).eq(user_id))
-            .to_owned();
-
-        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
-        let con = executor.get_con().await?;
-        sqlx::query_with(&query, values).execute(con).await?;
-        Ok(())
-    }
-
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
     #[cfg(test)]
@@ -542,7 +508,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_set_and_clear_resource_quota() {
+    async fn test_set_resource_quota() {
         use crate::data_directory::quota_config::BandwidthBudget;
         use std::str::FromStr;
 
@@ -572,10 +538,14 @@ mod tests {
             .unwrap();
         assert_eq!(user.resource_quota(), config);
 
-        // Clear custom limits
-        UserRepository::clear_resource_quota(user.id, &mut db.pool().into())
-            .await
-            .unwrap();
+        // Overwrite with all-unlimited via set_resource_quota
+        UserRepository::set_resource_quota(
+            user.id,
+            &UserResourceQuota::default(),
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
 
         let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
             .await

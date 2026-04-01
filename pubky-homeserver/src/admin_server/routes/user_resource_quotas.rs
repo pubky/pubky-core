@@ -144,26 +144,6 @@ pub async fn put_user_resource_quota(
     Ok(StatusCode::OK)
 }
 
-/// DELETE /users/{pubkey}/resource-quotas — clear all per-user limit columns (set to NULL).
-///
-/// **Warning:** This makes the user **fully unlimited** on all dimensions
-/// (storage, sessions, rates). It does NOT revert to deploy-time defaults —
-/// there is no "use defaults" state. To apply specific limits, use
-/// `PUT /users/{pubkey}/resource-quotas` instead.
-pub async fn delete_user_resource_quota(
-    State(state): State<AppState>,
-    Path(pubkey_str): Path<String>,
-) -> HttpResult<impl IntoResponse> {
-    let user = resolve_user(&state, &pubkey_str).await?;
-
-    UserRepository::clear_resource_quota(user.id, &mut state.sql_db.pool().into()).await?;
-
-    // Evict from shared cache so the next request re-resolves from DB
-    state.user_resource_quota_cache.remove(&user.public_key);
-
-    Ok(StatusCode::OK)
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -282,15 +262,23 @@ mod tests {
         assert_eq!(json["max_sessions"], 10);
         assert_eq!(json["rate_read"], "100mb/m");
 
-        // DELETE overrides
+        // PUT all-null to make unlimited
+        let body = serde_json::json!({
+            "storage_quota_mb": null,
+            "max_sessions": null,
+            "rate_read": null,
+            "rate_write": null
+        });
         let response = server
-            .delete(&url)
+            .put(&url)
             .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
             .expect_success()
             .await;
         response.assert_status_ok();
 
-        // GET after delete should show unlimited (null = no limit)
+        // GET after all-null PUT should show unlimited
         let response = server
             .get(&url)
             .add_header("X-Admin-Password", "test")

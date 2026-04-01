@@ -27,8 +27,7 @@ user_storage_quota_mb = 0
 #      into every existing user row. After that, changing these TOML values
 #      will NOT retroactively update existing users. To change an existing
 #      user's quotas, use the admin API:
-#        - PUT  /users/{pubkey}/resource-quotas   — set custom quotas
-#        - DELETE /users/{pubkey}/resource-quotas — make fully unlimited
+#        - PUT /users/{pubkey}/resource-quotas — set custom quotas (use null for unlimited)
 #
 # Within this section, omitted fields mean "unlimited".
 [quotas]

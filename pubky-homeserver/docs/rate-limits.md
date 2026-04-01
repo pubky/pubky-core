@@ -106,4 +106,4 @@ Override resource quotas for a specific user via the admin server:
 }
 ```
 
-**DELETE** `/users/{pubkey}/resource-quotas` — clear all custom resource quotas (sets all DB columns to NULL). The user becomes **fully unlimited**. This does not revert to deploy-time defaults.
+To make a user fully unlimited, PUT with all fields set to `null`.

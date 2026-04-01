@@ -34,8 +34,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
         .route(
             "/users/{pubkey}/resource-quotas",
             get(user_resource_quotas::get_user_resource_quota)
-                .put(user_resource_quotas::put_user_resource_quota)
-                .delete(user_resource_quotas::delete_user_resource_quota),
+                .put(user_resource_quotas::put_user_resource_quota),
         )
         .layer(AdminAuthLayer::new(password.to_string()))
 }
