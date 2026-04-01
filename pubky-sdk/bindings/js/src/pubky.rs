@@ -73,6 +73,10 @@ impl Pubky {
     /// - `actions` is any combo of `r` and/or `w` (order normalized; `wr` -> `rw`).
     /// Pass `""` for no scopes (read-only public session).
     ///
+    /// **Security:** `authorizationUrl` contains the `client_secret` in plaintext.
+    /// If you need resume after refresh/app switch, save it in `sessionStorage`
+    /// (not `localStorage`), then delete it once approval arrives or is abandoned.
+    ///
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
     /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
     /// Examples:
@@ -101,6 +105,25 @@ impl Pubky {
         let flow =
             AuthFlow::start_with_client(capabilities, kind, relay, Some(self.0.client().clone()))?;
         Ok(flow)
+    }
+
+    /// Resume a previously started **pubkyauth** flow from its saved `authorizationUrl`.
+    ///
+    /// The relay inbox retains messages for **~5 minutes**. Resume is only
+    /// viable within that window; afterwards start a fresh flow.
+    ///
+    /// **Security:** The URL contains the `client_secret` in plaintext.
+    /// Delete it from storage as soon as the resumed flow completes.
+    /// See `startAuthFlow()` docs for full storage guidance.
+    ///
+    /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
+    /// @returns {AuthFlow} A flow reconnected to the original relay channel.
+    /// @throws {PubkyError}
+    /// - `{ name: "AuthenticationError" }` if the URL is invalid or not a signin/signup link
+    /// - `{ name: "RequestError" }` on network/relay failure
+    #[wasm_bindgen(js_name = "resumeAuthFlow")]
+    pub fn resume_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
+        AuthFlow::resume_with_client(authorization_url, Some(self.0.client().clone()))
     }
 
     /// Create a `Signer` from an existing `Keypair`.

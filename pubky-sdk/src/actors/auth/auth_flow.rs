@@ -59,6 +59,16 @@
 //! `client_secret` and POSTs it to the channel; your app long-polls `GET` on the same
 //! URL and decrypts the payload locally. The relay **cannot decrypt anything**, it
 //! simply forwards bytes.
+//!
+//! ## Persisting `authorization_url` for resume
+//!
+//! [`PubkyAuthFlow::authorization_url()`] embeds the `client_secret` in plaintext.
+//! If you persist it to survive refresh/restart and later call
+//! [`Pubky::resume_auth_flow`](crate::Pubky::resume_auth_flow), treat it as a
+//! short-lived secret: store it only in appropriate secure storage and delete
+//! it once the flow completes or is abandoned.
+//!
+//! The relay inbox TTL is ~5 minutes; after expiry, start a fresh flow.
 
 use url::Url;
 
@@ -116,6 +126,12 @@ impl PubkyAuthFlow {
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
     ///
     /// Contains the **capabilities**, **`client_secret`** (base64url), and **relay** base.
+    ///
+    /// # Security
+    ///
+    /// This URL contains the `client_secret` in plaintext. Treat it as a
+    /// short-lived secret and delete it after the flow completes.
+    /// See the [module-level docs](self) for storage guidance.
     #[must_use]
     pub fn authorization_url(&self) -> Url {
         self.auth_url.clone().into()
@@ -293,5 +309,103 @@ impl PubkyAuthFlowBuilder {
                 signup_token.clone(),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Keypair, Pubky};
+    use std::str::FromStr;
+
+    async fn assert_resume_reconnects(auth_kind: AuthFlowKind) {
+        let relay = http_relay::HttpRelay::builder()
+            .http_port(0)
+            .run()
+            .await
+            .unwrap();
+        let inbox_base = relay.local_url().join("inbox").unwrap();
+        let client = PubkyHttpClient::new().unwrap();
+        let pubky = Pubky::with_client(client.clone());
+
+        let caps = Capabilities::default();
+        let flow = PubkyAuthFlow::builder(&caps, auth_kind)
+            .client(client.clone())
+            .relay(inbox_base)
+            .start()
+            .unwrap();
+
+        let auth_url_str = flow.authorization_url().as_str().to_string();
+
+        let deep_link = DeepLink::from_str(&auth_url_str).unwrap();
+        let secret = match &deep_link {
+            DeepLink::Signin(s) => *s.secret(),
+            DeepLink::Signup(s) => *s.secret(),
+            _ => panic!("Expected signin or signup deep link"),
+        };
+
+        // Drop the original flow — simulates a page refresh wiping WASM memory.
+        drop(flow);
+
+        // Signer approves while the original flow is gone (token waits in the relay inbox).
+        let keypair = Keypair::random();
+        let token = AuthToken::sign(&keypair, caps);
+        let token_bytes = token.serialize();
+
+        let encrypted_channel =
+            crate::actors::auth::http_relay_inbox_channel::EncryptedHttpRelayInboxChannel::new(
+                relay.local_url().join("inbox").unwrap(),
+                secret,
+            )
+            .unwrap();
+        encrypted_channel
+            .produce(&client, &token_bytes)
+            .await
+            .unwrap();
+
+        let resumed = pubky.resume_auth_flow(&auth_url_str).unwrap();
+
+        assert_eq!(
+            resumed.authorization_url().as_str(),
+            auth_url_str,
+            "resumed flow produces the same authorization URL"
+        );
+
+        let received_token = resumed.await_token().await.unwrap();
+        assert_eq!(
+            received_token, token,
+            "resumed flow retrieves the original token"
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_signin_reconnects_to_same_channel() {
+        assert_resume_reconnects(AuthFlowKind::signin()).await;
+    }
+
+    #[tokio::test]
+    async fn resume_signup_reconnects_to_same_channel() {
+        let homeserver = Keypair::random().public_key();
+        let signup_token = Some("test-signup-token".to_string());
+        assert_resume_reconnects(AuthFlowKind::signup(homeserver, signup_token)).await;
+    }
+
+    #[test]
+    fn resume_rejects_invalid_url() {
+        let client = PubkyHttpClient::new().unwrap();
+        let pubky = Pubky::with_client(client);
+
+        let result = pubky.resume_auth_flow("https://not-a-pubkyauth-url.com");
+        assert!(result.is_err(), "non-pubkyauth URL should fail to resume");
+    }
+
+    #[test]
+    fn resume_rejects_seed_export_url() {
+        let client = PubkyHttpClient::new().unwrap();
+        let pubky = Pubky::with_client(client);
+
+        let url = "pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
+        let result = pubky.resume_auth_flow(url);
+        assert!(result.is_err(), "seed export URL should fail to resume");
     }
 }
