@@ -59,6 +59,16 @@
 //! `client_secret` and POSTs it to the channel; your app long-polls `GET` on the same
 //! URL and decrypts the payload locally. The relay **cannot decrypt anything**, it
 //! simply forwards bytes.
+//!
+//! ## Persisting `authorization_url` for resume
+//!
+//! [`PubkyAuthFlow::authorization_url()`] embeds the `client_secret` in plaintext.
+//! If you persist it to survive refresh/restart and later call
+//! [`Pubky::resume_auth_flow`](crate::Pubky::resume_auth_flow), treat it as a
+//! short-lived secret: store it only in appropriate secure storage and delete
+//! it once the flow completes or is abandoned.
+//!
+//! The relay inbox TTL is ~5 minutes; after expiry, start a fresh flow.
 
 use url::Url;
 
@@ -116,6 +126,12 @@ impl PubkyAuthFlow {
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
     ///
     /// Contains the **capabilities**, **`client_secret`** (base64url), and **relay** base.
+    ///
+    /// # Security
+    ///
+    /// This URL contains the `client_secret` in plaintext. Treat it as a
+    /// short-lived secret and delete it after the flow completes.
+    /// See the [module-level docs](self) for storage guidance.
     #[must_use]
     pub fn authorization_url(&self) -> Url {
         self.auth_url.clone().into()

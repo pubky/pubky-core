@@ -130,8 +130,13 @@ impl Pubky {
     /// and rebuilds the flow against the same relay channel. If the signer
     /// already approved, the first `try_poll_once()` returns a session.
     ///
-    /// The relay inbox persists messages for ~5 minutes; resume is only
-    /// viable within that window.
+    /// The relay inbox persists messages for **~5 minutes**; resume is only
+    /// viable within that window. After the TTL expires the channel is gone
+    /// and you must start a fresh flow with [`start_auth_flow`](Self::start_auth_flow).
+    ///
+    /// The `authorization_url` contains the `client_secret`; follow
+    /// [`start_auth_flow`](Self::start_auth_flow) storage guidance and delete it
+    /// once resume completes or is abandoned.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if the URL cannot be parsed

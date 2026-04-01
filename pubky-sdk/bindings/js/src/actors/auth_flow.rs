@@ -97,6 +97,12 @@ impl AuthFlow {
     /// Resume a previously started auth flow from its saved `authorizationUrl` (standalone).
     /// Prefer `pubky.resumeAuthFlow()` to reuse a facade client; this creates a default (mainnet) client.
     ///
+    /// Relay messages expire after ~5 minutes; resume is only viable in that window.
+    /// See `Pubky.resumeAuthFlow()` / `Pubky.startAuthFlow()` for full guidance.
+    ///
+    /// **Security:** `authorizationUrl` contains the `client_secret`.
+    /// Delete it from storage as soon as resume completes or is abandoned.
+    ///
     /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
     /// @returns {AuthFlow} A flow reconnected to the original relay channel.
     /// @throws {PubkyError}
@@ -121,10 +127,14 @@ impl AuthFlow {
 
     /// Return the authorization deep link (URL) to show as QR or open on the signer device.
     ///
+    /// **Security:** This URL contains the `client_secret` in plaintext.
+    /// Treat it as a short-lived secret and delete it after the flow completes.
+    /// See `Pubky.startAuthFlow()` docs for storage guidance.
+    ///
     /// @returns {string} A `pubkyauth://…` or `https://…` URL with channel info.
     ///
     /// @example
-    /// renderQr(flow.authorizationUrl());
+    /// renderQr(flow.authorizationUrl);
     #[wasm_bindgen(js_name = "authorizationUrl", getter)]
     pub fn authorization_url(&self) -> String {
         self.authorization_url.clone()
