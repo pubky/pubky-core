@@ -37,7 +37,10 @@ pub async fn create_grant_session(
     State(state): State<AuthState>,
     Json(request): Json<CreateGrantSessionRequest>,
 ) -> HttpResult<impl IntoResponse> {
-    let response = state.auth_service.create_grant_session(request).await?;
+    let response = state
+        .auth_service
+        .create_grant_session(&request.grant, &request.pop)
+        .await?;
     Ok(Json(response))
 }
 
@@ -53,7 +56,8 @@ pub async fn signup(
     let response = state
         .auth_service
         .signup_grant_session(
-            request,
+            &request.grant,
+            &request.pop,
             &state.signup_mode,
             params.get("signup_token").map(|s| s.as_str()),
         )
@@ -193,7 +197,7 @@ mod tests {
     fn test_require_root_capability_rejects_read_only() {
         let auth = bearer_auth(Capabilities::builder().read("/").finish());
         let err = AuthService::require_root_capability(&auth).unwrap_err();
-        let resp = err.into_response();
+        let resp = HttpError::from(err).into_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
@@ -201,7 +205,7 @@ mod tests {
     fn test_require_root_capability_rejects_scoped_rw() {
         let auth = bearer_auth(Capabilities::builder().read_write("/pub/app/").finish());
         let err = AuthService::require_root_capability(&auth).unwrap_err();
-        let resp = err.into_response();
+        let resp = HttpError::from(err).into_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 

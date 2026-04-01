@@ -17,12 +17,6 @@ mod router;
 mod session;
 mod state;
 
-// Re-export crypto submodules at their original paths so external consumers
-// (e.g. http_error.rs From impls) don't need path changes.
-pub use jwt::crypto::access_jwt_issuer;
-pub use jwt::crypto::grant_verifier;
-pub use jwt::crypto::pop_verifier;
-
 // Re-export key middleware types for external consumers.
 pub use middleware::authentication::AuthenticationLayer;
 pub use middleware::authorization::WriteAccess;

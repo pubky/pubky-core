@@ -56,3 +56,4 @@ pub mod middleware;
 pub mod persistence;
 pub mod routes;
 pub mod service;
+pub mod service_error;
