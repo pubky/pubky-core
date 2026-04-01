@@ -1,4 +1,7 @@
-//! Cookie-based authentication route handlers (signup and cookie session creation).
+//! Cookie-based authentication route handlers.
+//!
+//! Contains all cookie-specific handlers: signup, signin, get_session, signout.
+//! Each handler is a full axum handler wired directly from `router.rs`.
 
 use crate::persistence::sql::{
     signup_code::{SignupCodeId, SignupCodeRepository},
@@ -8,6 +11,8 @@ use crate::persistence::sql::{
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     client_server::auth::AuthState,
+    client_server::err_if_user_is_invalid::get_user_or_http_error,
+    client_server::middleware::pubky_host::PubkyHost,
     SignupMode,
 };
 use axum::{
@@ -137,6 +142,61 @@ pub(crate) async fn create_session_and_cookie(
         HeaderValue::from_static("application/octet-stream"),
     );
     Ok(resp)
+}
+
+/// `POST /session` — sign in an existing user via deprecated AuthToken + cookie flow.
+pub async fn signin(
+    State(state): State<AuthState>,
+    cookies: Cookies,
+    Host(host): Host,
+    body: Bytes,
+) -> HttpResult<impl IntoResponse> {
+    let token = state.verifier.verify(&body)?;
+    let public_key = token.public_key();
+    let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
+    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
+}
+
+/// `GET /session` — returns session info as postcard-serialized binary.
+pub async fn get_session(
+    auth: crate::client_server::auth::AuthSession,
+) -> HttpResult<impl IntoResponse> {
+    let crate::client_server::auth::AuthSession::Cookie(cookie_session) = auth else {
+        return Err(HttpError::unauthorized());
+    };
+    let legacy_session = cookie_session.session.to_legacy();
+    let mut resp = legacy_session.serialize().into_response();
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    Ok(resp)
+}
+
+/// `DELETE /session` — deletes DB session and sets removal cookie.
+pub async fn signout(
+    State(state): State<AuthState>,
+    auth: crate::client_server::auth::AuthSession,
+    cookies: Cookies,
+    Host(host): Host,
+    pubky: PubkyHost,
+) -> HttpResult<impl IntoResponse> {
+    let crate::client_server::auth::AuthSession::Cookie(cookie_session) = auth else {
+        return Err(HttpError::unauthorized());
+    };
+
+    SessionRepository::delete(
+        &cookie_session.session.secret,
+        &mut state.sql_db.pool().into(),
+    )
+    .await?;
+
+    let mut removal = Cookie::new(pubky.public_key().z32(), String::new());
+    removal.make_removal();
+    configure_session_cookie(&mut removal, &host);
+    cookies.add(removal);
+
+    Ok(StatusCode::OK.into_response())
 }
 
 pub(crate) fn configure_session_cookie(cookie: &mut Cookie<'static>, host: &str) {

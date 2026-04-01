@@ -8,11 +8,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use pubky_common::auth::grant_session::GrantSessionInfo;
 use pubky_common::auth::jws::GrantId;
 use serde::{Deserialize, Serialize};
 
 use super::crypto::jws_crypto::JwsCompact;
-use super::persistence::grant::GrantEntity;
+use super::persistence::grant::{GrantEntity, GrantRepository};
 use super::service::AuthService;
 use crate::client_server::auth::AuthSession;
 use crate::client_server::auth::AuthState;
@@ -29,13 +30,56 @@ pub struct CreateGrantSessionRequest {
     pub pop: JwsCompact,
 }
 
-/// Handle `POST /session` with JSON body (grant-based auth).
+/// `POST /auth/jwt/session` — exchange grant + PoP for a JWT.
 pub async fn create_grant_session(
     State(state): State<AuthState>,
     Json(request): Json<CreateGrantSessionRequest>,
 ) -> HttpResult<impl IntoResponse> {
     let response = state.auth_service.create_grant_session(request).await?;
     Ok(Json(response))
+}
+
+// ── Session info & signout ─────────────────────────────────────────────────
+
+/// `GET /auth/jwt/session` — returns grant session info as JSON.
+pub async fn get_session(
+    State(state): State<AuthState>,
+    auth: AuthSession,
+) -> HttpResult<impl IntoResponse> {
+    let AuthSession::Bearer(bearer) = auth else {
+        return Err(HttpError::unauthorized());
+    };
+
+    let grant = GrantRepository::get_by_grant_id(
+        &bearer.grant_id,
+        &mut state.sql_db.pool().into(),
+    )
+    .await
+    .map_err(|_| HttpError::not_found())?;
+
+    let info = GrantSessionInfo {
+        homeserver: state.auth_service.homeserver_public_key(),
+        pubky: bearer.user_key.clone(),
+        client_id: grant.client_id.clone(),
+        capabilities: bearer.capabilities.to_vec(),
+        grant_id: bearer.grant_id.clone(),
+        token_expires_at: 0, // TODO: store in bearer session
+        grant_expires_at: grant.expires_at as u64,
+        created_at: grant.created_at.and_utc().timestamp() as u64,
+    };
+    Ok(Json(info))
+}
+
+/// `DELETE /auth/jwt/session` — revokes the grant and all its sessions.
+pub async fn signout(
+    State(state): State<AuthState>,
+    auth: AuthSession,
+) -> HttpResult<impl IntoResponse> {
+    let AuthSession::Bearer(bearer) = auth else {
+        return Err(HttpError::unauthorized());
+    };
+    state.auth_service.signout_bearer(&bearer).await?;
+    Ok(StatusCode::OK)
 }
 
 // ── Grant management ───────────────────────────────────────────────────────

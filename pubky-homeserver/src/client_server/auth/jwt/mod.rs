@@ -28,7 +28,7 @@
 //!
 //! # Flow
 //!
-//! ## 1. Session creation (`POST /session`, JSON body)
+//! ## 1. Session creation (`POST /auth/jwt/session`, JSON body)
 //!
 //! The client sends a **Grant JWS** + **PoP JWS**. The homeserver verifies both
 //! (signature, expiry, PoP audience/nonce/timestamp), stores the Grant idempotently,
@@ -36,15 +36,14 @@
 //!
 //! ## 2. Authenticating requests
 //!
-//! [`JwtAuthenticationMiddleware`](middleware::JwtAuthenticationMiddleware) runs **before**
-//! cookie middleware. It verifies the `Authorization: Bearer` JWT, looks up the session
-//! by `jti`, and checks the Grant is not revoked/expired. A present-but-invalid Bearer
-//! token is rejected immediately (no cookie fallback).
+//! [`JwtAuthenticationMiddleware`](middleware::JwtAuthenticationMiddleware) verifies the
+//! `Authorization: Bearer` JWT, looks up the session by `jti`, and checks the Grant is
+//! not revoked/expired. A present-but-invalid Bearer token is rejected immediately.
 //!
 //! ## 3. Grant management (root capability required)
 //!
-//! - `GET /sessions` — list active Grants.
-//! - `DELETE /session/{grant_id}` — revoke a Grant and delete all its sessions.
+//! - `GET /auth/jwt/sessions` — list active Grants.
+//! - `DELETE /auth/jwt/session/{grant_id}` — revoke a Grant and delete all its sessions.
 //!
 //! ## 4. Replay protection
 //!

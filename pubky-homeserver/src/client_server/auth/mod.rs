@@ -14,7 +14,6 @@ pub mod cookie;
 pub mod jwt;
 pub mod middleware;
 mod router;
-mod routes;
 mod session;
 mod state;
 
