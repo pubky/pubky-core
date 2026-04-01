@@ -18,7 +18,7 @@ mod signup_mode;
 /// Opendal config for the TomlConfig.
 pub mod storage_config;
 /// Per-user resource limit configuration.
-pub mod user_limit_config;
+pub mod user_resource_quota;
 
 mod log_level;
 pub use config_toml::{AdminToml, ConfigReadError, ConfigToml, LoggingToml, MetricsToml};

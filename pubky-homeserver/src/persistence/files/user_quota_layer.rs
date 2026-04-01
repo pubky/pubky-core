@@ -41,7 +41,7 @@ fn check_quota_not_exceeded(
 /// It is used to limit the amount of data that a user can store in the homeserver.
 /// It will also enforce that only paths in the form of {pubkey}/{path} are allowed.
 ///
-/// The per-user storage quota is read from the `limit_storage_quota_mb` column on
+/// The per-user storage quota is read from the `quota_storage_mb` column on
 /// the user row in the database. `None` means unlimited storage. The deprecated
 /// `user_storage_quota_mb` config field is only used during migration backfill.
 #[derive(Clone)]
@@ -212,7 +212,7 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             self.bytes_count as i64 - current_file_size as i64 + FILE_METADATA_SIZE as i64
         };
 
-        check_quota_not_exceeded(user.used_bytes, bytes_delta, user.limit_storage_quota_mb)?;
+        check_quota_not_exceeded(user.used_bytes, bytes_delta, user.quota_storage_mb)?;
 
         let metadata = self.inner.close().await?;
         user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
@@ -374,7 +374,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_directory::user_limit_config::UserLimitConfig;
+    use crate::data_directory::user_resource_quota::UserResourceQuota;
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
@@ -618,7 +618,7 @@ mod tests {
             .expect_err("Should fail: exceeds per-user limit of 1 MB");
     }
 
-    /// Verify that `limit_storage_quota_mb = None` means unlimited storage.
+    /// Verify that `quota_storage_mb = None` means unlimited storage.
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_none_storage_quota_means_unlimited() {
@@ -686,11 +686,11 @@ mod tests {
             .expect_err("Should fail: zero quota");
 
         // Admin raises quota to 1 MB
-        let config = UserLimitConfig {
+        let config = UserResourceQuota {
             storage_quota_mb: Some(1),
             ..Default::default()
         };
-        UserRepository::set_custom_limits(user.id, &config, &mut db.pool().into())
+        UserRepository::set_resource_quota(user.id, &config, &mut db.pool().into())
             .await
             .unwrap();
 

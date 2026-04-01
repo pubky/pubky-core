@@ -1,12 +1,12 @@
 //! Per-user bandwidth budget middleware.
 //!
-//! Reads the resolved `UserLimitConfig` from request extensions (set by `UserLimitResolverLayer`)
+//! Reads the resolved `UserResourceQuota` from request extensions (set by `UserResourceQuotaResolverLayer`)
 //! and enforces per-user read/write bandwidth budgets using simple atomic counters with
 //! time-windowed resets. Separate from the global path-based `RateLimiterLayer`.
 //!
 //! **Design:**
 //! - Applies to all requests with a resolved content owner (`PubkyHost`) and
-//!   `UserLimitConfig`, regardless of authentication status. Both anonymous and
+//!   `UserResourceQuota`, regardless of authentication status. Both anonymous and
 //!   authenticated reads count against the **content owner's** read budget.
 //! - **Writes** use atomic `fetch_add` + rollback: the estimated cost is reserved
 //!   atomically before the request proceeds. If Content-Length is present, the full
@@ -37,7 +37,7 @@ use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::quota_config::BandwidthBudget;
-use crate::data_directory::user_limit_config::UserLimitConfig;
+use crate::data_directory::user_resource_quota::UserResourceQuota;
 use crate::shared::HttpError;
 
 /// Window state protected by a single mutex to avoid split-lock inconsistency.
@@ -167,11 +167,11 @@ const CLEANUP_EXPIRY: Duration = Duration::from_secs(24 * 60 * 60); // 1 day
 const CLEANUP_INTERVAL_SECS: u64 = 60;
 
 #[derive(Debug, Clone)]
-pub struct UserBandwidthBudgetLayer {
+pub struct UserQuotaBudgetLayer {
     budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
 }
 
-impl UserBandwidthBudgetLayer {
+impl UserQuotaBudgetLayer {
     pub fn new() -> Self {
         let budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>> = Arc::new(DashMap::new());
 
@@ -193,11 +193,11 @@ impl UserBandwidthBudgetLayer {
     }
 }
 
-impl<S> Layer<S> for UserBandwidthBudgetLayer {
-    type Service = UserBandwidthBudgetMiddleware<S>;
+impl<S> Layer<S> for UserQuotaBudgetLayer {
+    type Service = UserQuotaBudgetMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        UserBandwidthBudgetMiddleware {
+        UserQuotaBudgetMiddleware {
             inner,
             budgets: self.budgets.clone(),
         }
@@ -205,7 +205,7 @@ impl<S> Layer<S> for UserBandwidthBudgetLayer {
 }
 
 #[derive(Debug, Clone)]
-pub struct UserBandwidthBudgetMiddleware<S> {
+pub struct UserQuotaBudgetMiddleware<S> {
     inner: S,
     budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
 }
@@ -320,7 +320,7 @@ where
     ))
 }
 
-impl<S> Service<Request<Body>> for UserBandwidthBudgetMiddleware<S>
+impl<S> Service<Request<Body>> for UserQuotaBudgetMiddleware<S>
 where
     S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
         + Send
@@ -342,9 +342,9 @@ where
 
         Box::pin(async move {
             let pubky_host = req.extensions().get::<PubkyHost>().cloned();
-            let user_limits = req.extensions().get::<UserLimitConfig>().cloned();
+            let user_resource_quota = req.extensions().get::<UserResourceQuota>().cloned();
 
-            let (Some(pubky_host), Some(limits)) = (pubky_host, user_limits) else {
+            let (Some(pubky_host), Some(limits)) = (pubky_host, user_resource_quota) else {
                 return inner.call(req).await;
             };
 
@@ -426,7 +426,7 @@ mod tests {
 
     use crate::client_server::extractors::PubkyHost;
     use crate::data_directory::quota_config::BandwidthBudget;
-    use crate::data_directory::user_limit_config::UserLimitConfig;
+    use crate::data_directory::user_resource_quota::UserResourceQuota;
 
     use super::*;
 
@@ -441,13 +441,13 @@ mod tests {
     fn test_app() -> Router {
         Router::new()
             .route("/test", get(ok_handler).post(ok_handler).delete(ok_handler))
-            .layer(UserBandwidthBudgetLayer::new())
+            .layer(UserQuotaBudgetLayer::new())
     }
 
     fn make_request(
         method: Method,
         pubkey: &pubky_common::crypto::PublicKey,
-        limits: &UserLimitConfig,
+        limits: &UserResourceQuota,
     ) -> Request<Body> {
         let mut req = Request::builder()
             .method(method)
@@ -462,7 +462,7 @@ mod tests {
     fn make_request_with_body(
         method: Method,
         pubkey: &pubky_common::crypto::PublicKey,
-        limits: &UserLimitConfig,
+        limits: &UserResourceQuota,
         body: Vec<u8>,
     ) -> Request<Body> {
         let len = body.len();
@@ -482,7 +482,7 @@ mod tests {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
         // 1kb/m budget = 1024 bytes per minute
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_write: budget("1kb/m"),
             ..Default::default()
         };
@@ -530,7 +530,7 @@ mod tests {
     async fn test_no_rate_config_passes_through() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig::default();
+        let limits = UserResourceQuota::default();
 
         for _ in 0..10 {
             let resp = app
@@ -546,7 +546,7 @@ mod tests {
     async fn test_read_and_write_budgets_independent() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_read: budget("1kb/m"),
             rate_write: budget("1kb/m"),
             ..Default::default()
@@ -603,7 +603,7 @@ mod tests {
         let app = test_app();
         let pubkey1 = Keypair::random().public_key();
         let pubkey2 = Keypair::random().public_key();
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_write: budget("1kb/m"),
             ..Default::default()
         };
@@ -651,7 +651,7 @@ mod tests {
     async fn test_retry_after_header_present() {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_write: budget("1kb/m"),
             ..Default::default()
         };
@@ -699,7 +699,7 @@ mod tests {
         let pubkey = Keypair::random().public_key();
 
         // Start with a tight budget
-        let tight_limits = UserLimitConfig {
+        let tight_limits = UserResourceQuota {
             rate_write: budget("1kb/m"),
             ..Default::default()
         };
@@ -729,7 +729,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 
         // Admin loosens to 1mb/m — counters should reset, allowing requests again
-        let loose_limits = UserLimitConfig {
+        let loose_limits = UserResourceQuota {
             rate_write: budget("1mb/m"),
             ..Default::default()
         };
@@ -755,7 +755,7 @@ mod tests {
         let app = test_app();
         let pubkey = Keypair::random().public_key();
         // Budget just under 4 × MIN_WRITE_COST_BYTES (4 × 256 = 1024 = 1kb)
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_write: budget("1kb/m"),
             ..Default::default()
         };
@@ -798,10 +798,10 @@ mod tests {
 
         let app = Router::new()
             .route("/test", get(big_handler))
-            .layer(UserBandwidthBudgetLayer::new());
+            .layer(UserQuotaBudgetLayer::new());
 
         let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_read: budget("1kb/m"),
             ..Default::default()
         };
@@ -838,7 +838,7 @@ mod tests {
         // atomic reservation (4 × 256 = 1024). The 5th must be rejected.
         let app = test_app(); // handler returns empty body
         let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_read: budget("1kb/m"),
             ..Default::default()
         };
@@ -926,13 +926,13 @@ mod tests {
             (StatusCode::OK, vec![0u8; 2048])
         }
 
-        let layer = UserBandwidthBudgetLayer::new();
+        let layer = UserQuotaBudgetLayer::new();
         let app = Router::new()
             .route("/test", get(handler_2kb))
             .layer(layer.clone());
 
         let pubkey = Keypair::random().public_key();
-        let limits = UserLimitConfig {
+        let limits = UserResourceQuota {
             rate_read: budget("1kb/m"),
             ..Default::default()
         };

@@ -1,7 +1,7 @@
 //! Middleware that resolves per-user limits and inserts them into request extensions.
 //!
 //! Looks up the user in the DB (with a shared cache) and inserts their
-//! `UserLimitConfig` into request extensions. If the user does not exist in the
+//! `UserResourceQuota` into request extensions. If the user does not exist in the
 //! DB, no config is inserted — downstream layers simply see no extension and
 //! skip enforcement.
 //!
@@ -20,8 +20,9 @@ use tower::{Layer, Service};
 use pubky_common::crypto::PublicKey;
 
 use crate::client_server::extractors::PubkyHost;
-use crate::data_directory::user_limit_config::{
-    CachedUserLimits, UserLimitConfig, UserLimitsCache, MAX_CACHED_USER_LIMITS,
+use crate::data_directory::user_resource_quota::{
+    CachedUserResourceQuota, UserResourceQuota, UserResourceQuotaCache,
+    MAX_CACHED_USER_RESOURCE_QUOTAS,
 };
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
@@ -30,13 +31,13 @@ use crate::persistence::sql::SqlDb;
 const CLEANUP_INTERVAL_SECS: u64 = 60;
 
 #[derive(Debug, Clone)]
-pub struct UserLimitResolverLayer {
-    cache: UserLimitsCache,
+pub struct UserResourceQuotaResolverLayer {
+    cache: UserResourceQuotaCache,
     sql_db: SqlDb,
 }
 
-impl UserLimitResolverLayer {
-    pub fn new(cache: UserLimitsCache, sql_db: SqlDb) -> Self {
+impl UserResourceQuotaResolverLayer {
+    pub fn new(cache: UserResourceQuotaCache, sql_db: SqlDb) -> Self {
         // Spawn a periodic cleanup task to evict expired entries and prevent
         // unbounded memory growth from requests with rotating public keys.
         let cache_weak = Arc::downgrade(&cache);
@@ -56,11 +57,11 @@ impl UserLimitResolverLayer {
     }
 }
 
-impl<S> Layer<S> for UserLimitResolverLayer {
-    type Service = UserLimitResolverMiddleware<S>;
+impl<S> Layer<S> for UserResourceQuotaResolverLayer {
+    type Service = UserResourceQuotaResolverMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        UserLimitResolverMiddleware {
+        UserResourceQuotaResolverMiddleware {
             inner,
             cache: self.cache.clone(),
             sql_db: self.sql_db.clone(),
@@ -69,9 +70,9 @@ impl<S> Layer<S> for UserLimitResolverLayer {
 }
 
 #[derive(Debug, Clone)]
-pub struct UserLimitResolverMiddleware<S> {
+pub struct UserResourceQuotaResolverMiddleware<S> {
     inner: S,
-    cache: UserLimitsCache,
+    cache: UserResourceQuotaCache,
     sql_db: SqlDb,
 }
 
@@ -80,9 +81,9 @@ pub struct UserLimitResolverMiddleware<S> {
 /// Returns `Some(config)` for known users, `None` for unknown or on error.
 async fn resolve_limits(
     pubkey: &PublicKey,
-    cache: &UserLimitsCache,
+    cache: &UserResourceQuotaCache,
     sql_db: &SqlDb,
-) -> Option<UserLimitConfig> {
+) -> Option<UserResourceQuota> {
     // Check cache: use entry if present and not expired.
     // `Some(Some(config))` = cached positive hit
     // `Some(None)` = cached negative hit (user not found)
@@ -100,20 +101,23 @@ async fn resolve_limits(
     cache.remove(pubkey);
 
     // Evict expired entries if at capacity to prevent unbounded growth.
-    if cache.len() >= MAX_CACHED_USER_LIMITS {
+    if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
         cache.retain(|_, entry| !entry.is_expired());
     }
 
     match UserRepository::get(pubkey, &mut sql_db.pool().into()).await {
         Ok(user) => {
-            let resolved = user.limits();
-            cache.insert(pubkey.clone(), CachedUserLimits::new(resolved.clone()));
+            let resolved = user.resource_quota();
+            cache.insert(
+                pubkey.clone(),
+                CachedUserResourceQuota::new(resolved.clone()),
+            );
             Some(resolved)
         }
         // Cache a negative entry with a short TTL to prevent repeated DB queries
         // for non-existent users, while allowing subsequent signup to take effect.
         Err(sqlx::Error::RowNotFound) => {
-            cache.insert(pubkey.clone(), CachedUserLimits::not_found());
+            cache.insert(pubkey.clone(), CachedUserResourceQuota::not_found());
             None
         }
         Err(e) => {
@@ -126,7 +130,7 @@ async fn resolve_limits(
     }
 }
 
-impl<S> Service<Request<Body>> for UserLimitResolverMiddleware<S>
+impl<S> Service<Request<Body>> for UserResourceQuotaResolverMiddleware<S>
 where
     S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
         + Send
@@ -171,14 +175,14 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::client_server::extractors::PubkyHost;
-    use crate::data_directory::user_limit_config::UserLimitConfig;
+    use crate::data_directory::user_resource_quota::UserResourceQuota;
     use crate::persistence::sql::user::UserRepository;
     use crate::persistence::sql::SqlDb;
 
     use super::*;
 
     /// Handler that extracts the resolved limits and returns them as JSON.
-    async fn echo_limits(limits: Option<Extension<UserLimitConfig>>) -> impl IntoResponse {
+    async fn echo_limits(limits: Option<Extension<UserResourceQuota>>) -> impl IntoResponse {
         match limits {
             Some(Extension(config)) => {
                 let body = serde_json::json!({
@@ -191,17 +195,17 @@ mod tests {
         }
     }
 
-    fn build_test_app(cache: UserLimitsCache, sql_db: SqlDb) -> Router {
+    fn build_test_app(cache: UserResourceQuotaCache, sql_db: SqlDb) -> Router {
         Router::new()
             .route("/test", get(echo_limits))
-            .layer(UserLimitResolverLayer::new(cache, sql_db))
+            .layer(UserResourceQuotaResolverLayer::new(cache, sql_db))
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_resolver_no_pubky_host_skips() {
         let db = SqlDb::test().await;
-        let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
+        let cache: UserResourceQuotaCache = Arc::new(dashmap::DashMap::new());
         let app = build_test_app(cache, db);
 
         let req = axum::http::Request::builder()
@@ -217,7 +221,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_resolver_unknown_user_inserts_no_limits() {
         let db = SqlDb::test().await;
-        let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
+        let cache: UserResourceQuotaCache = Arc::new(dashmap::DashMap::new());
         let app = build_test_app(cache.clone(), db);
 
         let pubkey = Keypair::random().public_key();
@@ -243,20 +247,20 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_resolver_user_with_custom_limits() {
+    async fn test_resolver_user_with_resource_quota() {
         let db = SqlDb::test().await;
-        let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
+        let cache: UserResourceQuotaCache = Arc::new(dashmap::DashMap::new());
 
         let pubkey = Keypair::random().public_key();
         let user = UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
-        let custom = UserLimitConfig {
+        let custom = UserResourceQuota {
             storage_quota_mb: Some(999),
             max_sessions: None, // unlimited
             ..Default::default()
         };
-        UserRepository::set_custom_limits(user.id, &custom, &mut db.pool().into())
+        UserRepository::set_resource_quota(user.id, &custom, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -283,7 +287,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_resolver_user_with_null_columns_returns_unlimited() {
         let db = SqlDb::test().await;
-        let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
+        let cache: UserResourceQuotaCache = Arc::new(dashmap::DashMap::new());
 
         // Create a user but do NOT set any custom limits — all columns remain NULL.
         let pubkey = Keypair::random().public_key();
@@ -315,16 +319,16 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_resolver_cache_hit() {
         let db = SqlDb::test().await;
-        let cache: UserLimitsCache = Arc::new(dashmap::DashMap::new());
+        let cache: UserResourceQuotaCache = Arc::new(dashmap::DashMap::new());
 
         let pubkey = Keypair::random().public_key();
         // Pre-populate cache with custom values (no user in DB needed for cache hit)
-        let cached_config = UserLimitConfig {
+        let cached_config = UserResourceQuota {
             storage_quota_mb: Some(777),
             max_sessions: Some(3),
             ..Default::default()
         };
-        cache.insert(pubkey.clone(), CachedUserLimits::new(cached_config));
+        cache.insert(pubkey.clone(), CachedUserResourceQuota::new(cached_config));
 
         let app = build_test_app(cache, db);
 

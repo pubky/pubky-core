@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     data_directory::quota_config::BandwidthBudget,
-    data_directory::user_limit_config::UserLimitConfig,
+    data_directory::user_resource_quota::UserResourceQuota,
     persistence::sql::user::{UserEntity, UserRepository},
     shared::{HttpError, HttpResult},
 };
@@ -18,7 +18,7 @@ use super::super::app_state::AppState;
 
 /// Admin API input for setting user limits.
 ///
-/// Unlike [`UserLimitConfig`], every field is **required** — omitting a field
+/// Unlike [`UserResourceQuota`], every field is **required** — omitting a field
 /// causes a 422 deserialization error. Use explicit `null` to mean "unlimited".
 /// This prevents accidentally granting unlimited access by forgetting a field.
 ///
@@ -32,7 +32,7 @@ use super::super::app_state::AppState;
 /// }
 /// ```
 #[derive(Debug, Clone)]
-pub(crate) struct ExplicitUserLimitConfig {
+pub(crate) struct ExplicitUserResourceQuota {
     /// Maximum storage in MB. `null` = unlimited.
     pub storage_quota_mb: Option<u64>,
     /// Maximum concurrent sessions. `null` = unlimited.
@@ -43,7 +43,7 @@ pub(crate) struct ExplicitUserLimitConfig {
     pub rate_write: Option<BandwidthBudget>,
 }
 
-impl<'de> Deserialize<'de> for ExplicitUserLimitConfig {
+impl<'de> Deserialize<'de> for ExplicitUserResourceQuota {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for ExplicitUserLimitConfig {
 
         let r: Required = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
 
-        Ok(ExplicitUserLimitConfig {
+        Ok(ExplicitUserResourceQuota {
             storage_quota_mb: r.storage_quota_mb,
             max_sessions: r.max_sessions,
             rate_read: r.rate_read,
@@ -85,8 +85,8 @@ impl<'de> Deserialize<'de> for ExplicitUserLimitConfig {
     }
 }
 
-impl From<ExplicitUserLimitConfig> for UserLimitConfig {
-    fn from(e: ExplicitUserLimitConfig) -> Self {
+impl From<ExplicitUserResourceQuota> for UserResourceQuota {
+    fn from(e: ExplicitUserResourceQuota) -> Self {
         Self {
             storage_quota_mb: e.storage_quota_mb,
             max_sessions: e.max_sessions,
@@ -111,55 +111,55 @@ async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEnti
         })
 }
 
-/// GET /users/{pubkey}/limits — return the user's effective limits.
+/// GET /users/{pubkey}/resource-quotas — return the user's effective limits.
 ///
 /// Every user row has explicit limit columns (set during signup or migration
 /// backfill), so `limits()` is always the source of truth.
-pub async fn get_user_limits(
+pub async fn get_user_resource_quota(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let user = resolve_user(&state, &pubkey_str).await?;
 
-    Ok(Json(user.limits()))
+    Ok(Json(user.resource_quota()))
 }
 
-/// PUT /users/{pubkey}/limits — set per-user custom limits (replaces entirely).
+/// PUT /users/{pubkey}/resource-quotas — set per-user custom limits (replaces entirely).
 ///
 /// All four fields are **required**. Use `null` for unlimited.
 /// Omitting a field returns 422, preventing accidental unlimited grants.
-pub async fn put_user_limits(
+pub async fn put_user_resource_quota(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
-    Json(explicit): Json<ExplicitUserLimitConfig>,
+    Json(explicit): Json<ExplicitUserResourceQuota>,
 ) -> HttpResult<impl IntoResponse> {
-    let config: UserLimitConfig = explicit.into();
+    let config: UserResourceQuota = explicit.into();
     let user = resolve_user(&state, &pubkey_str).await?;
 
-    UserRepository::set_custom_limits(user.id, &config, &mut state.sql_db.pool().into()).await?;
+    UserRepository::set_resource_quota(user.id, &config, &mut state.sql_db.pool().into()).await?;
 
     // Evict from shared cache so the next request re-resolves from DB
-    state.user_limits_cache.remove(&user.public_key);
+    state.user_resource_quota_cache.remove(&user.public_key);
 
     Ok(StatusCode::OK)
 }
 
-/// DELETE /users/{pubkey}/limits — clear all per-user limit columns (set to NULL).
+/// DELETE /users/{pubkey}/resource-quotas — clear all per-user limit columns (set to NULL).
 ///
 /// **Warning:** This makes the user **fully unlimited** on all dimensions
 /// (storage, sessions, rates). It does NOT revert to deploy-time defaults —
 /// there is no "use defaults" state. To apply specific limits, use
-/// `PUT /users/{pubkey}/limits` instead.
-pub async fn delete_user_limits(
+/// `PUT /users/{pubkey}/resource-quotas` instead.
+pub async fn delete_user_resource_quota(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let user = resolve_user(&state, &pubkey_str).await?;
 
-    UserRepository::clear_custom_limits(user.id, &mut state.sql_db.pool().into()).await?;
+    UserRepository::clear_resource_quota(user.id, &mut state.sql_db.pool().into()).await?;
 
     // Evict from shared cache so the next request re-resolves from DB
-    state.user_limits_cache.remove(&user.public_key);
+    state.user_resource_quota_cache.remove(&user.public_key);
 
     Ok(StatusCode::OK)
 }
@@ -177,11 +177,11 @@ mod tests {
 
     #[test]
     fn test_explicit_config_requires_all_fields() {
-        let result: Result<ExplicitUserLimitConfig, _> =
+        let result: Result<ExplicitUserResourceQuota, _> =
             serde_json::from_str(r#"{"storage_quota_mb": 500}"#);
         assert!(result.is_err(), "Missing fields should be rejected");
 
-        let result: Result<ExplicitUserLimitConfig, _> = serde_json::from_str(r#"{}"#);
+        let result: Result<ExplicitUserResourceQuota, _> = serde_json::from_str(r#"{}"#);
         assert!(result.is_err(), "Empty object should be rejected");
     }
 
@@ -193,8 +193,8 @@ mod tests {
             "rate_read": "100mb/m",
             "rate_write": null
         }"#;
-        let explicit: ExplicitUserLimitConfig = serde_json::from_str(json).unwrap();
-        let config: UserLimitConfig = explicit.into();
+        let explicit: ExplicitUserResourceQuota = serde_json::from_str(json).unwrap();
+        let config: UserResourceQuota = explicit.into();
         assert_eq!(config.storage_quota_mb, Some(500));
         assert_eq!(config.max_sessions, None);
         assert_eq!(
@@ -224,14 +224,14 @@ mod tests {
             "rate_read": null,
             "rate_write": null
         }"#;
-        let explicit: ExplicitUserLimitConfig = serde_json::from_str(json).unwrap();
-        let config: UserLimitConfig = explicit.into();
-        assert_eq!(config, UserLimitConfig::default());
+        let explicit: ExplicitUserResourceQuota = serde_json::from_str(json).unwrap();
+        let config: UserResourceQuota = explicit.into();
+        assert_eq!(config, UserResourceQuota::default());
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_user_limits_crud() {
+    async fn test_user_resource_quota_crud() {
         use crate::persistence::sql::user::UserRepository;
         use pubky_common::crypto::Keypair;
 
@@ -244,7 +244,7 @@ mod tests {
             .await
             .unwrap();
 
-        let url = format!("/users/{}/limits", pubkey.z32());
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
         // GET defaults (no overrides set)
         let response = server
@@ -304,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_user_limits_invalid_rate_rejected() {
+    async fn test_user_resource_quota_invalid_rate_rejected() {
         use crate::persistence::sql::user::UserRepository;
         use pubky_common::crypto::Keypair;
 
@@ -317,7 +317,7 @@ mod tests {
             .await
             .unwrap();
 
-        let url = format!("/users/{}/limits", pubkey.z32());
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
         // PUT with invalid rate string should be rejected (422 from serde validation)
         let body = serde_json::json!({
@@ -339,7 +339,7 @@ mod tests {
     /// Omitting a required field in the PUT body should return 422.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_user_limits_missing_field_rejected() {
+    async fn test_user_resource_quota_missing_field_rejected() {
         use crate::persistence::sql::user::UserRepository;
         use pubky_common::crypto::Keypair;
 
@@ -352,7 +352,7 @@ mod tests {
             .await
             .unwrap();
 
-        let url = format!("/users/{}/limits", pubkey.z32());
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
         // Missing rate_write field — should be rejected
         let body = serde_json::json!({
@@ -382,12 +382,12 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_user_limits_nonexistent_user() {
+    async fn test_user_resource_quota_nonexistent_user() {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
 
-        let url = format!("/users/{}/limits", pubkey.z32());
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
         let response = server
             .get(&url)
@@ -397,11 +397,11 @@ mod tests {
         response.assert_status(axum::http::StatusCode::NOT_FOUND);
     }
 
-    /// PUT /users/{pubkey}/limits replaces the entire custom config.
+    /// PUT /users/{pubkey}/resource-quotas replaces the entire custom config.
     /// Fields not included in the JSON body default to None (unlimited).
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_put_user_limits_replaces_all_fields() {
+    async fn test_put_user_resource_quota_replaces_all_fields() {
         use crate::persistence::sql::user::UserRepository;
         use pubky_common::crypto::Keypair;
 
@@ -414,7 +414,7 @@ mod tests {
             .await
             .unwrap();
 
-        let url = format!("/users/{}/limits", pubkey.z32());
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
         // 1) PUT all four fields
         let body = serde_json::json!({

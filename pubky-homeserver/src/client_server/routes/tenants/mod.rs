@@ -6,7 +6,7 @@
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
 use crate::client_server::{
-    layers::{authz::AuthorizationLayer, user_bandwidth_budget::UserBandwidthBudgetLayer},
+    layers::{authz::AuthorizationLayer, user_quota_budget::UserQuotaBudgetLayer},
     AppState,
 };
 
@@ -31,7 +31,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         // Per-user bandwidth budgets run AFTER auth so that rejected write
         // requests do not consume the content owner's budget.
-        .layer(UserBandwidthBudgetLayer::new())
+        .layer(UserQuotaBudgetLayer::new())
         // XXX: dzdidi - WebDAV compliant auth. Which is actually http basic auth so we need some magic here
         // to make session based auth look like http auth while also accepting http basic auth for webDAV comp
         .layer(AuthorizationLayer::new(state.clone()))

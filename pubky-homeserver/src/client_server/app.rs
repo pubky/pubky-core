@@ -5,7 +5,7 @@ use crate::MockDataDir;
 
 use crate::{
     app_context::{AppContext, AppContextConversionError},
-    data_directory::user_limit_config::UserLimitConfig,
+    data_directory::user_resource_quota::UserResourceQuota,
     PersistentDataDir,
 };
 use anyhow::Result;
@@ -29,7 +29,7 @@ use tower_http::cors::CorsLayer;
 
 use super::layers::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
-    user_limit_resolver::UserLimitResolverLayer,
+    user_resource_quota_resolver::UserResourceQuotaResolverLayer,
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
@@ -121,7 +121,9 @@ impl ClientServer {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
-            default_user_limits: UserLimitConfig::from_general_toml(&context.config_toml.general),
+            default_user_resource_quota: UserResourceQuota::from_general_toml(
+                &context.config_toml.general,
+            ),
         };
         super::create_app(state.clone(), context)
     }
@@ -229,8 +231,8 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
         ))
-        .layer(UserLimitResolverLayer::new(
-            context.user_limits_cache.clone(),
+        .layer(UserResourceQuotaResolverLayer::new(
+            context.user_resource_quota_cache.clone(),
             context.sql_db.clone(),
         ))
         .layer(PubkyHostLayer)

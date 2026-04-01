@@ -113,7 +113,7 @@ async fn per_user_quota_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_a}/limits"),
+            &format!("http://{admin_socket}/users/{pubkey_a}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -191,7 +191,7 @@ async fn per_user_rate_limit_429_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/limits"),
+            &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -259,7 +259,7 @@ async fn write_bandwidth_budget_enforced_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/limits"),
+            &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -334,7 +334,7 @@ async fn max_sessions_enforced_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/limits"),
+            &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")

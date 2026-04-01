@@ -7,7 +7,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
-use crate::data_directory::user_limit_config::UserLimitConfig;
+use crate::data_directory::user_resource_quota::UserResourceQuota;
 use crate::persistence::sql::UnifiedExecutor;
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
@@ -23,7 +23,7 @@ impl SignupCodeRepository {
     /// parsing to ensure only well-formed values reach the database.
     pub async fn create<'a>(
         id: &SignupCodeId,
-        limits: &UserLimitConfig,
+        limits: &UserResourceQuota,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
         limits
@@ -34,10 +34,10 @@ impl SignupCodeRepository {
             .into_table(SIGNUP_CODE_TABLE)
             .columns([
                 SignupCodeIden::Id,
-                SignupCodeIden::LimitStorageQuotaMb,
-                SignupCodeIden::LimitMaxSessions,
-                SignupCodeIden::LimitRateRead,
-                SignupCodeIden::LimitRateWrite,
+                SignupCodeIden::QuotaStorageMb,
+                SignupCodeIden::QuotaMaxSessions,
+                SignupCodeIden::QuotaRateRead,
+                SignupCodeIden::QuotaRateWrite,
             ])
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
@@ -68,10 +68,10 @@ impl SignupCodeRepository {
                 SignupCodeIden::Id,
                 SignupCodeIden::CreatedAt,
                 SignupCodeIden::UsedBy,
-                SignupCodeIden::LimitStorageQuotaMb,
-                SignupCodeIden::LimitMaxSessions,
-                SignupCodeIden::LimitRateRead,
-                SignupCodeIden::LimitRateWrite,
+                SignupCodeIden::QuotaStorageMb,
+                SignupCodeIden::QuotaMaxSessions,
+                SignupCodeIden::QuotaRateRead,
+                SignupCodeIden::QuotaRateWrite,
             ])
             .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
             .to_owned();
@@ -147,10 +147,10 @@ pub enum SignupCodeIden {
     Id,
     CreatedAt,
     UsedBy,
-    LimitStorageQuotaMb,
-    LimitMaxSessions,
-    LimitRateRead,
-    LimitRateWrite,
+    QuotaStorageMb,
+    QuotaMaxSessions,
+    QuotaRateRead,
+    QuotaRateWrite,
 }
 
 /// Signup code id in the format of "JZY0-D6MY-ZFNG".
@@ -221,23 +221,23 @@ pub struct SignupCodeEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub used_by: Option<PublicKey>,
     /// Per-user storage quota in MB. `None` = use defaults / unlimited.
-    pub limit_storage_quota_mb: Option<i64>,
+    pub quota_storage_mb: Option<i64>,
     /// Per-user max sessions. `None` = use defaults / unlimited.
-    pub limit_max_sessions: Option<i32>,
+    pub quota_max_sessions: Option<i32>,
     /// Per-user read rate limit. `None` = use defaults / unlimited.
-    pub limit_rate_read: Option<String>,
+    pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = use defaults / unlimited.
-    pub limit_rate_write: Option<String>,
+    pub quota_rate_write: Option<String>,
 }
 
 impl SignupCodeEntity {
     /// Extract custom limits, returning `None` if all limit columns are NULL.
-    pub fn custom_limits(&self) -> Option<UserLimitConfig> {
-        UserLimitConfig::from_nullable_columns(
-            self.limit_storage_quota_mb,
-            self.limit_max_sessions,
-            self.limit_rate_read.clone(),
-            self.limit_rate_write.clone(),
+    pub fn resource_quota(&self) -> Option<UserResourceQuota> {
+        UserResourceQuota::from_nullable_columns(
+            self.quota_storage_mb,
+            self.quota_max_sessions,
+            self.quota_rate_read.clone(),
+            self.quota_rate_write.clone(),
         )
     }
 }
@@ -261,23 +261,23 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             })
             .transpose()?;
 
-        let limit_storage_quota_mb: Option<i64> =
-            row.try_get(SignupCodeIden::LimitStorageQuotaMb.to_string().as_str())?;
-        let limit_max_sessions: Option<i32> =
-            row.try_get(SignupCodeIden::LimitMaxSessions.to_string().as_str())?;
-        let limit_rate_read: Option<String> =
-            row.try_get(SignupCodeIden::LimitRateRead.to_string().as_str())?;
-        let limit_rate_write: Option<String> =
-            row.try_get(SignupCodeIden::LimitRateWrite.to_string().as_str())?;
+        let quota_storage_mb: Option<i64> =
+            row.try_get(SignupCodeIden::QuotaStorageMb.to_string().as_str())?;
+        let quota_max_sessions: Option<i32> =
+            row.try_get(SignupCodeIden::QuotaMaxSessions.to_string().as_str())?;
+        let quota_rate_read: Option<String> =
+            row.try_get(SignupCodeIden::QuotaRateRead.to_string().as_str())?;
+        let quota_rate_write: Option<String> =
+            row.try_get(SignupCodeIden::QuotaRateWrite.to_string().as_str())?;
 
         Ok(SignupCodeEntity {
             id,
             created_at,
             used_by,
-            limit_storage_quota_mb,
-            limit_max_sessions,
-            limit_rate_read,
-            limit_rate_write,
+            quota_storage_mb,
+            quota_max_sessions,
+            quota_rate_read,
+            quota_rate_write,
         })
     }
 }
@@ -298,14 +298,14 @@ mod tests {
         // Test create code with default (all-unlimited) limits
         let code = SignupCodeRepository::create(
             &signup_code_id,
-            &UserLimitConfig::default(),
+            &UserResourceQuota::default(),
             &mut db.pool().into(),
         )
         .await
         .unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
-        assert_eq!(code.custom_limits(), None);
+        assert_eq!(code.resource_quota(), None);
 
         // Test get code
         let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
@@ -313,19 +313,19 @@ mod tests {
             .unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
-        assert_eq!(code.custom_limits(), None);
+        assert_eq!(code.resource_quota(), None);
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_create_with_custom_limits() {
+    async fn test_create_with_resource_quota() {
         use crate::data_directory::quota_config::BandwidthBudget;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
 
-        let config = UserLimitConfig {
+        let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
             rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
@@ -335,13 +335,13 @@ mod tests {
         let code = SignupCodeRepository::create(&signup_code_id, &config, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(code.custom_limits(), Some(config.clone()));
+        assert_eq!(code.resource_quota(), Some(config.clone()));
 
         // Verify get also returns the config
         let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(code.custom_limits(), Some(config));
+        assert_eq!(code.resource_quota(), Some(config));
     }
 
     #[tokio::test]
@@ -351,7 +351,7 @@ mod tests {
         let signup_code_id = SignupCodeId::random();
         let _ = SignupCodeRepository::create(
             &signup_code_id,
-            &UserLimitConfig::default(),
+            &UserResourceQuota::default(),
             &mut db.pool().into(),
         )
         .await
@@ -388,21 +388,21 @@ mod tests {
 
         let _ = SignupCodeRepository::create(
             &code1,
-            &UserLimitConfig::default(),
+            &UserResourceQuota::default(),
             &mut db.pool().into(),
         )
         .await
         .unwrap();
         let _ = SignupCodeRepository::create(
             &code2,
-            &UserLimitConfig::default(),
+            &UserResourceQuota::default(),
             &mut db.pool().into(),
         )
         .await
         .unwrap();
         let _ = SignupCodeRepository::create(
             &code3,
-            &UserLimitConfig::default(),
+            &UserResourceQuota::default(),
             &mut db.pool().into(),
         )
         .await
@@ -458,14 +458,14 @@ mod tests {
         }
 
         // 1) Create a signup code with custom limits
-        let custom_limits = UserLimitConfig {
+        let resource_quota = UserResourceQuota {
             storage_quota_mb: Some(1024),
             max_sessions: Some(5),
             rate_read: Some(bw("200mb/m")),
             rate_write: None,
         };
         let code_id = SignupCodeId::random();
-        let code = SignupCodeRepository::create(&code_id, &custom_limits, &mut db.pool().into())
+        let code = SignupCodeRepository::create(&code_id, &resource_quota, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -479,11 +479,11 @@ mod tests {
         SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())
             .await
             .unwrap();
-        if let Some(token_limits) = &code.custom_limits() {
-            UserRepository::set_custom_limits(user.id, token_limits, &mut (&mut tx).into())
+        if let Some(token_limits) = &code.resource_quota() {
+            UserRepository::set_resource_quota(user.id, token_limits, &mut (&mut tx).into())
                 .await
                 .unwrap();
-            user.apply_custom_limits(token_limits);
+            user.apply_resource_quota(token_limits);
         }
         tx.commit().await.unwrap();
 
@@ -491,10 +491,10 @@ mod tests {
         let user = UserRepository::get(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
-        let user_limits = user.limits();
-        assert_eq!(user_limits.storage_quota_mb, Some(1024));
-        assert_eq!(user_limits.max_sessions, Some(5));
-        assert_eq!(user_limits.rate_read, Some(bw("200mb/m")));
-        assert_eq!(user_limits.rate_write, None);
+        let user_resource_quota = user.resource_quota();
+        assert_eq!(user_resource_quota.storage_quota_mb, Some(1024));
+        assert_eq!(user_resource_quota.max_sessions, Some(5));
+        assert_eq!(user_resource_quota.rate_read, Some(bw("200mb/m")));
+        assert_eq!(user_resource_quota.rate_write, None);
     }
 }

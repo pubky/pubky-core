@@ -85,7 +85,7 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
-    /// Deprecated: use `storage_limit_mb` instead. Kept for backward compatibility.
+    /// Deprecated: use `quota_storage_mb` instead. Kept for backward compatibility.
     #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
@@ -95,20 +95,20 @@ pub struct GeneralToml {
     /// **Important:** `Some(0)` means "zero quota" (no storage), NOT unlimited.
     /// Omit the field entirely for unlimited storage.
     ///
-    /// These defaults are also used by [`M20260327AddLimitColumnsMigration`] to
+    /// These defaults are also used by [`M20260327AddResourceQuotaColumnsMigration`] to
     /// backfill existing user rows on first run. After that one-time migration,
     /// changing this value only affects newly created users.
     #[serde(default)]
-    pub storage_limit_mb: Option<u64>,
+    pub quota_storage_mb: Option<u64>,
     /// Default maximum concurrent sessions per user. `None` = unlimited.
     #[serde(default)]
-    pub max_sessions: Option<u32>,
+    pub quota_max_sessions: Option<u32>,
     /// Default per-user read bandwidth budget (e.g. "500mb/d"). `None` = unlimited.
     #[serde(default)]
-    pub user_rate_read: Option<super::quota_config::BandwidthBudget>,
+    pub quota_rate_read: Option<super::quota_config::BandwidthBudget>,
     /// Default per-user write bandwidth budget (e.g. "100mb/h"). `None` = unlimited.
     #[serde(default)]
-    pub user_rate_write: Option<super::quota_config::BandwidthBudget>,
+    pub quota_rate_write: Option<super::quota_config::BandwidthBudget>,
 }
 
 /// A config for Homeserver tracing subscriber configuration
@@ -137,7 +137,7 @@ pub struct MetricsToml {
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
-    /// General application settings (signup mode, quotas, backups).
+    /// General application settings (signup mode, quotas, database URL).
     pub general: GeneralToml,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,

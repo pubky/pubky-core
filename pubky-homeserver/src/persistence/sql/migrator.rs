@@ -2,14 +2,14 @@ use sea_query::{ColumnDef, Expr, PostgresQueryBuilder, Query, SimpleExpr, Table}
 use sea_query_binder::SqlxBinder;
 use sqlx::{Row, Transaction};
 
-use crate::data_directory::user_limit_config::UserLimitConfig;
+use crate::data_directory::user_resource_quota::UserResourceQuota;
 use crate::persistence::sql::{
     migration::MigrationTrait,
     migrations::{
         M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,
         M20250813CreateSessionMigration, M20250814CreateEventMigration,
         M20250815CreateEntryMigration, M20251014EventsTableIndexAndContentHashMigration,
-        M20260327AddLimitColumnsMigration,
+        M20260327AddResourceQuotaColumnsMigration,
     },
     sql_db::SqlDb,
 };
@@ -23,7 +23,9 @@ pub struct Migrator<'a> {
 }
 
 /// Returns the full list of migrations to run. Add new migrations here.
-pub fn all_migrations(default_user_limits: UserLimitConfig) -> Vec<Box<dyn MigrationTrait>> {
+pub fn all_migrations(
+    default_user_resource_quota: UserResourceQuota,
+) -> Vec<Box<dyn MigrationTrait>> {
     vec![
         Box::new(M20250806CreateUserMigration),
         Box::new(M20250812CreateSignupCodeMigration),
@@ -31,8 +33,8 @@ pub fn all_migrations(default_user_limits: UserLimitConfig) -> Vec<Box<dyn Migra
         Box::new(M20250814CreateEventMigration),
         Box::new(M20250815CreateEntryMigration),
         Box::new(M20251014EventsTableIndexAndContentHashMigration),
-        Box::new(M20260327AddLimitColumnsMigration {
-            defaults: default_user_limits,
+        Box::new(M20260327AddResourceQuotaColumnsMigration {
+            defaults: default_user_resource_quota,
         }),
     ]
 }
@@ -45,8 +47,8 @@ impl<'a> Migrator<'a> {
     }
 
     /// Runs all migrations that are not yet applied.
-    pub async fn run(&self, default_user_limits: UserLimitConfig) -> anyhow::Result<()> {
-        self.run_migrations(all_migrations(default_user_limits))
+    pub async fn run(&self, default_user_resource_quota: UserResourceQuota) -> anyhow::Result<()> {
+        self.run_migrations(all_migrations(default_user_resource_quota))
             .await
     }
 

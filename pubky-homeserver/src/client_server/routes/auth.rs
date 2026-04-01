@@ -33,20 +33,20 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
-use crate::data_directory::user_limit_config::UserLimitConfig;
+use crate::data_directory::user_resource_quota::UserResourceQuota;
 
 /// How long a session cookie is valid before expiring.
 const SESSION_EXPIRY_DAYS: i64 = 365;
 
 /// Create a user record with explicit limits and commit the transaction.
-async fn create_user_with_limits(
+async fn create_user_with_resource_quota(
     public_key: &PublicKey,
-    limits: &UserLimitConfig,
+    limits: &UserResourceQuota,
     mut tx: sqlx::Transaction<'static, sqlx::Postgres>,
 ) -> HttpResult<UserEntity> {
     let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-    UserRepository::set_custom_limits(user.id, limits, uexecutor!(tx)).await?;
-    user.apply_custom_limits(limits);
+    UserRepository::set_resource_quota(user.id, limits, uexecutor!(tx)).await?;
+    user.apply_resource_quota(limits);
     tx.commit().await?;
     Ok(user)
 }
@@ -127,14 +127,15 @@ pub async fn signup(
         SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
 
         // 4) Create the new user record with the token's limits.
-        let limits = code.custom_limits().unwrap_or_default();
-        let user = create_user_with_limits(public_key, &limits, tx).await?;
+        let limits = code.resource_quota().unwrap_or_default();
+        let user = create_user_with_resource_quota(public_key, &limits, tx).await?;
         return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities())
             .await;
     }
 
     // 4) Create the new user record (open signup, no token).
-    let user = create_user_with_limits(public_key, &state.default_user_limits, tx).await?;
+    let user =
+        create_user_with_resource_quota(public_key, &state.default_user_resource_quota, tx).await?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
@@ -171,7 +172,7 @@ async fn create_session_and_cookie(
 ) -> HttpResult<impl IntoResponse> {
     let mut tx = state.sql_db.pool().begin().await?;
 
-    if let Some(max) = user.limits().max_sessions {
+    if let Some(max) = user.resource_quota().max_sessions {
         // Lock the user row for the duration of this transaction to serialize
         // concurrent session creation attempts for the same user.
         sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")

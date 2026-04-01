@@ -16,25 +16,25 @@ const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// Maximum length of the VARCHAR column used for rate budget strings in the DB.
-/// Matches the `VARCHAR(32)` used in the `m20260327_add_limit_columns` migration.
+/// Matches the `VARCHAR(32)` used in the `m20260327_add_resource_quota_columns` migration.
 pub const MAX_RATE_COLUMN_LEN: usize = 32;
 
 /// Maximum number of entries in the user limits cache. Prevents unbounded memory
 /// growth from requests for many distinct users between periodic cleanup sweeps.
-pub const MAX_CACHED_USER_LIMITS: usize = 100_000;
+pub const MAX_CACHED_USER_RESOURCE_QUOTAS: usize = 100_000;
 
 /// A cached user limit config with an expiry timestamp.
 #[derive(Debug, Clone)]
-pub struct CachedUserLimits {
+pub struct CachedUserResourceQuota {
     /// The resolved limit configuration, or `None` for a negative (user-not-found) entry.
-    pub config: Option<UserLimitConfig>,
+    pub config: Option<UserResourceQuota>,
     cached_at: Instant,
     ttl: Duration,
 }
 
-impl CachedUserLimits {
+impl CachedUserResourceQuota {
     /// Wrap a resolved config with a fresh timestamp.
-    pub fn new(config: UserLimitConfig) -> Self {
+    pub fn new(config: UserResourceQuota) -> Self {
         Self {
             config: Some(config),
             cached_at: Instant::now(),
@@ -60,19 +60,19 @@ impl CachedUserLimits {
 /// Shared cache for resolved per-user limits.
 /// Used by both admin (for eviction on PUT/DELETE) and client (for resolution) servers.
 /// Entries expire after [`CACHE_TTL`] and are re-resolved from the database.
-pub type UserLimitsCache = Arc<DashMap<PublicKey, CachedUserLimits>>;
+pub type UserResourceQuotaCache = Arc<DashMap<PublicKey, CachedUserResourceQuota>>;
 
-/// Per-user resource limits. `None` fields mean "unlimited / no limit".
+/// Per-user resource quotas. `None` fields mean "unlimited / no quota".
 ///
 /// Used in three contexts:
-/// 1. **Deploy-time defaults** — parsed from TOML config via [`UserLimitConfig::from_general_toml`].
+/// 1. **Deploy-time defaults** — parsed from TOML config via [`UserResourceQuota::from_general_toml`].
 /// 2. **Per-user config** — stored on the user row in the DB.
 /// 3. **Signup token config** — attached to a signup code; applied to the user on signup.
 ///
 /// There is no merging: if a user has a custom config, it is used as-is. If not, deploy-time
 /// defaults apply. Within a config, each `None` field means "unlimited".
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct UserLimitConfig {
+pub struct UserResourceQuota {
     /// Maximum storage in MB. `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_quota_mb: Option<u64>,
@@ -87,32 +87,32 @@ pub struct UserLimitConfig {
     pub rate_write: Option<BandwidthBudget>,
 }
 
-impl UserLimitConfig {
-    /// Construct default limits from the general config section.
+impl UserResourceQuota {
+    /// Construct default quotas from the general config section.
     ///
     /// For backward compatibility, the deprecated `user_storage_quota_mb = 0` is
-    /// treated as unlimited (`None`). The newer `storage_limit_mb` field uses
+    /// treated as unlimited (`None`). The newer `quota_storage_mb` field uses
     /// `Option` directly — `Some(0)` means "zero quota", not unlimited.
     ///
     /// The result of this function is used both as the runtime default for new
-    /// users and as the backfill value in [`M20260327AddLimitColumnsMigration`],
+    /// users and as the backfill value in [`M20260327AddResourceQuotaColumnsMigration`],
     /// which "freezes" these defaults onto existing user rows during the one-time
     /// migration. See that migration's docs for details.
     pub fn from_general_toml(general: &GeneralToml) -> Self {
         Self {
             storage_quota_mb: general
-                .storage_limit_mb
+                .quota_storage_mb
                 .or(match general.user_storage_quota_mb {
                     0 => None,
                     n => Some(n),
                 }),
-            max_sessions: general.max_sessions,
-            rate_read: general.user_rate_read.clone(),
-            rate_write: general.user_rate_write.clone(),
+            max_sessions: general.quota_max_sessions,
+            rate_read: general.quota_rate_read.clone(),
+            rate_write: general.quota_rate_write.clone(),
         }
     }
 
-    /// Convert nullable DB columns into an `Option<UserLimitConfig>`.
+    /// Convert nullable DB columns into an `Option<UserResourceQuota>`.
     /// Returns `None` when all columns are NULL (user has no custom config; use defaults).
     /// If any column is non-NULL, returns `Some` — NULL fields within that mean "unlimited".
     pub fn from_nullable_columns(
@@ -133,7 +133,7 @@ impl UserLimitConfig {
                 u64::try_from(v)
                     .map_err(|_| {
                         tracing::warn!(
-                            "Negative limit_storage_quota_mb ({v}) in DB; treating as zero quota"
+                            "Negative quota_storage_mb ({v}) in DB; treating as zero quota"
                         );
                     })
                     .ok()
@@ -141,7 +141,7 @@ impl UserLimitConfig {
             max_sessions: max_sessions.and_then(|v| {
                 u32::try_from(v)
                     .map_err(|_| {
-                        tracing::warn!("Negative limit_max_sessions ({v}) in DB; treating as zero");
+                        tracing::warn!("Negative quota_max_sessions ({v}) in DB; treating as zero");
                     })
                     .ok()
             }),
@@ -225,13 +225,13 @@ mod tests {
     #[test]
     fn test_from_general_toml_new_fields() {
         let general = GeneralToml {
-            storage_limit_mb: Some(500),
-            max_sessions: Some(10),
-            user_rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
-            user_rate_write: Some(BandwidthBudget::from_str("50mb/m").unwrap()),
+            quota_storage_mb: Some(500),
+            quota_max_sessions: Some(10),
+            quota_rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            quota_rate_write: Some(BandwidthBudget::from_str("50mb/m").unwrap()),
             ..Default::default()
         };
-        let config = UserLimitConfig::from_general_toml(&general);
+        let config = UserResourceQuota::from_general_toml(&general);
         assert_eq!(config.storage_quota_mb, Some(500));
         assert_eq!(config.max_sessions, Some(10));
         assert_eq!(
@@ -250,18 +250,18 @@ mod tests {
             user_storage_quota_mb: 1024,
             ..Default::default()
         };
-        let config = UserLimitConfig::from_general_toml(&general);
+        let config = UserResourceQuota::from_general_toml(&general);
         assert_eq!(config.storage_quota_mb, Some(1024));
     }
 
     #[test]
     fn test_from_general_toml_new_field_takes_precedence() {
         let general = GeneralToml {
-            user_storage_quota_mb: 100,  // old
-            storage_limit_mb: Some(500), // new takes precedence
+            user_storage_quota_mb: 100,   // old
+            quota_storage_mb: Some(500), // new takes precedence
             ..Default::default()
         };
-        let config = UserLimitConfig::from_general_toml(&general);
+        let config = UserResourceQuota::from_general_toml(&general);
         assert_eq!(config.storage_quota_mb, Some(500));
     }
 
@@ -271,28 +271,28 @@ mod tests {
             user_storage_quota_mb: 0,
             ..Default::default()
         };
-        let config = UserLimitConfig::from_general_toml(&general);
+        let config = UserResourceQuota::from_general_toml(&general);
         assert_eq!(config.storage_quota_mb, None);
     }
 
     #[test]
     fn test_from_general_toml_all_defaults_unlimited() {
         let general = GeneralToml::default();
-        let config = UserLimitConfig::from_general_toml(&general);
-        assert_eq!(config, UserLimitConfig::default());
+        let config = UserResourceQuota::from_general_toml(&general);
+        assert_eq!(config, UserResourceQuota::default());
     }
 
     #[test]
     fn test_from_nullable_columns_all_null() {
         assert_eq!(
-            UserLimitConfig::from_nullable_columns(None, None, None, None),
+            UserResourceQuota::from_nullable_columns(None, None, None, None),
             None
         );
     }
 
     #[test]
     fn test_from_nullable_columns_with_values() {
-        let config = UserLimitConfig::from_nullable_columns(
+        let config = UserResourceQuota::from_nullable_columns(
             Some(500),
             Some(10),
             Some("100mb/m".to_string()),
@@ -300,7 +300,7 @@ mod tests {
         );
         assert_eq!(
             config,
-            Some(UserLimitConfig {
+            Some(UserResourceQuota {
                 storage_quota_mb: Some(500),
                 max_sessions: Some(10),
                 rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
@@ -311,11 +311,11 @@ mod tests {
 
     #[test]
     fn test_from_nullable_columns_all_negative() {
-        let config = UserLimitConfig::from_nullable_columns(Some(-1), Some(-5), None, None);
+        let config = UserResourceQuota::from_nullable_columns(Some(-1), Some(-5), None, None);
         // Negative values fail try_from → None (unlimited), but a warning is logged.
         assert_eq!(
             config,
-            Some(UserLimitConfig {
+            Some(UserResourceQuota {
                 storage_quota_mb: None,
                 max_sessions: None,
                 rate_read: None,
@@ -326,10 +326,10 @@ mod tests {
 
     #[test]
     fn test_from_nullable_columns_mixed_negative_and_positive() {
-        let config = UserLimitConfig::from_nullable_columns(Some(-1), Some(10), None, None);
+        let config = UserResourceQuota::from_nullable_columns(Some(-1), Some(10), None, None);
         assert_eq!(
             config,
-            Some(UserLimitConfig {
+            Some(UserResourceQuota {
                 storage_quota_mb: None, // negative → warning + None
                 max_sessions: Some(10),
                 rate_read: None,
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_from_nullable_columns_invalid_rate_string() {
-        let config = UserLimitConfig::from_nullable_columns(
+        let config = UserResourceQuota::from_nullable_columns(
             None,
             None,
             Some("rubbish".to_string()),
@@ -348,7 +348,7 @@ mod tests {
         );
         assert_eq!(
             config,
-            Some(UserLimitConfig {
+            Some(UserResourceQuota {
                 storage_quota_mb: None,
                 max_sessions: None,
                 rate_read: None, // invalid string → warning + None (unlimited)
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn test_from_nullable_columns_legacy_request_units_treated_as_unlimited() {
         // Legacy "100r/m" strings fail BandwidthBudget parse → None (with warning)
-        let config = UserLimitConfig::from_nullable_columns(
+        let config = UserResourceQuota::from_nullable_columns(
             None,
             None,
             Some("100r/m".to_string()),
@@ -368,7 +368,7 @@ mod tests {
         );
         assert_eq!(
             config,
-            Some(UserLimitConfig {
+            Some(UserResourceQuota {
                 storage_quota_mb: None,
                 max_sessions: None,
                 rate_read: None,
@@ -379,20 +379,20 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip() {
-        let config = UserLimitConfig {
+        let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
             rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
             rate_write: None,
         };
         let json = serde_json::to_string(&config).unwrap();
-        let deserialized: UserLimitConfig = serde_json::from_str(&json).unwrap();
+        let deserialized: UserResourceQuota = serde_json::from_str(&json).unwrap();
         assert_eq!(config, deserialized);
     }
 
     #[test]
     fn test_serde_none_fields_omitted() {
-        let config = UserLimitConfig {
+        let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             ..Default::default()
         };
@@ -403,14 +403,14 @@ mod tests {
 
     #[test]
     fn test_serde_empty_json_is_all_unlimited() {
-        let config: UserLimitConfig = serde_json::from_str("{}").unwrap();
-        assert_eq!(config, UserLimitConfig::default());
+        let config: UserResourceQuota = serde_json::from_str("{}").unwrap();
+        assert_eq!(config, UserResourceQuota::default());
     }
 
     #[test]
     fn test_serde_rejects_invalid_rate_string() {
         let json = r#"{"rate_read": "rubbish"}"#;
-        let result: Result<UserLimitConfig, _> = serde_json::from_str(json);
+        let result: Result<UserResourceQuota, _> = serde_json::from_str(json);
         assert!(
             result.is_err(),
             "Invalid rate string should fail deserialization"
@@ -422,7 +422,7 @@ mod tests {
         // All realistic budget strings should be well under 32 characters.
         let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
         for s in budgets {
-            let config = UserLimitConfig {
+            let config = UserResourceQuota {
                 rate_read: Some(BandwidthBudget::from_str(s).unwrap()),
                 rate_write: Some(BandwidthBudget::from_str(s).unwrap()),
                 ..Default::default()
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(MAX_RATE_COLUMN_LEN, 32);
 
         // A normal config should pass.
-        let config = UserLimitConfig {
+        let config = UserResourceQuota {
             rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
             ..Default::default()
         };

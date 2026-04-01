@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::routes::{
     dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root, user_limits,
+    generate_signup_token, info, root, user_resource_quotas,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -32,10 +32,10 @@ fn create_protected_router(password: &str) -> Router<AppState> {
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
         .route(
-            "/users/{pubkey}/limits",
-            get(user_limits::get_user_limits)
-                .put(user_limits::put_user_limits)
-                .delete(user_limits::delete_user_limits),
+            "/users/{pubkey}/resource-quotas",
+            get(user_resource_quotas::get_user_resource_quota)
+                .put(user_resource_quotas::put_user_resource_quota)
+                .delete(user_resource_quotas::delete_user_resource_quota),
         )
         .layer(AdminAuthLayer::new(password.to_string()))
 }
@@ -119,7 +119,7 @@ impl AdminServer {
             context.file_service.clone(),
             &password,
         )
-        .with_user_limits_cache(context.user_limits_cache.clone())
+        .with_user_resource_quota_cache(context.user_resource_quota_cache.clone())
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
             &context.config_toml,
@@ -589,7 +589,7 @@ mod tests {
         let code = SignupCodeRepository::get(&code_id, &mut context.sql_db.pool().into())
             .await
             .unwrap();
-        let limits = code.custom_limits().expect("should have custom limits");
+        let limits = code.resource_quota().expect("should have custom limits");
         assert_eq!(limits.storage_quota_mb, Some(1024));
         assert_eq!(limits.max_sessions, Some(5));
         assert_eq!(limits.rate_read, Some(bw("200mb/m")));

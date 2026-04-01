@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sqlx::Transaction;
 
-use crate::data_directory::user_limit_config::UserLimitConfig;
+use crate::data_directory::user_resource_quota::UserResourceQuota;
 use crate::persistence::sql::migration::MigrationTrait;
 
 /// Adds per-user limit columns to both the `users` and `signup_codes` tables,
@@ -10,7 +10,7 @@ use crate::persistence::sql::migration::MigrationTrait;
 /// **Users backfill:** Freezes the current deploy-time defaults onto every
 /// existing user row whose limit columns are all NULL. After this migration,
 /// changing the TOML config only affects *newly created* users. Use the admin
-/// API (`PUT /users/{pubkey}/limits`) to change existing users.
+/// API (`PUT /users/{pubkey}/resource-quotas`) to change existing users.
 ///
 /// **Signup codes backfill:** Writes deploy-time defaults onto every *unused*
 /// token whose limit columns are all NULL. At signup time the token's limits
@@ -19,21 +19,21 @@ use crate::persistence::sql::migration::MigrationTrait;
 /// values.
 ///
 /// The deploy-time defaults are read from `[general]` in `config.toml` via
-/// [`UserLimitConfig::from_general_toml`].
-pub struct M20260327AddLimitColumnsMigration {
-    pub defaults: UserLimitConfig,
+/// [`UserResourceQuota::from_general_toml`].
+pub struct M20260327AddResourceQuotaColumnsMigration {
+    pub defaults: UserResourceQuota,
 }
 
 /// Add the four limit columns to the given table.
-async fn add_limit_columns(
+async fn add_resource_quota_columns(
     tx: &mut Transaction<'static, sqlx::Postgres>,
     table: &str,
 ) -> anyhow::Result<()> {
     for (col, typ) in [
-        ("limit_storage_quota_mb", "BIGINT"),
-        ("limit_max_sessions", "INTEGER"),
-        ("limit_rate_read", "VARCHAR(32)"),
-        ("limit_rate_write", "VARCHAR(32)"),
+        ("quota_storage_mb", "BIGINT"),
+        ("quota_max_sessions", "INTEGER"),
+        ("quota_rate_read", "VARCHAR(32)"),
+        ("quota_rate_write", "VARCHAR(32)"),
     ] {
         sqlx::query(&format!(
             "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"
@@ -45,10 +45,10 @@ async fn add_limit_columns(
 }
 
 /// Bind the four limit values and execute an UPDATE statement.
-async fn backfill_limits(
+async fn backfill_resource_quotas(
     tx: &mut Transaction<'static, sqlx::Postgres>,
     sql: &str,
-    defaults: &UserLimitConfig,
+    defaults: &UserResourceQuota,
 ) -> anyhow::Result<()> {
     sqlx::query(sql)
         .bind(defaults.storage_quota_mb_i64())
@@ -61,37 +61,37 @@ async fn backfill_limits(
 }
 
 #[async_trait]
-impl MigrationTrait for M20260327AddLimitColumnsMigration {
+impl MigrationTrait for M20260327AddResourceQuotaColumnsMigration {
     async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         // 1. Add limit columns to both tables.
-        add_limit_columns(tx, "users").await?;
-        add_limit_columns(tx, "signup_codes").await?;
+        add_resource_quota_columns(tx, "users").await?;
+        add_resource_quota_columns(tx, "signup_codes").await?;
 
         // 2. Backfill existing users with the configured defaults.
-        backfill_limits(
+        backfill_resource_quotas(
             tx,
             "UPDATE users
-             SET limit_storage_quota_mb = $1, limit_max_sessions = $2,
-                 limit_rate_read = $3, limit_rate_write = $4
-             WHERE limit_storage_quota_mb IS NULL
-               AND limit_max_sessions IS NULL
-               AND limit_rate_read IS NULL
-               AND limit_rate_write IS NULL",
+             SET quota_storage_mb = $1, quota_max_sessions = $2,
+                 quota_rate_read = $3, quota_rate_write = $4
+             WHERE quota_storage_mb IS NULL
+               AND quota_max_sessions IS NULL
+               AND quota_rate_read IS NULL
+               AND quota_rate_write IS NULL",
             &self.defaults,
         )
         .await?;
 
         // 3. Backfill unused tokens with deploy-time defaults.
-        backfill_limits(
+        backfill_resource_quotas(
             tx,
             "UPDATE signup_codes
-             SET limit_storage_quota_mb = $1, limit_max_sessions = $2,
-                 limit_rate_read = $3, limit_rate_write = $4
+             SET quota_storage_mb = $1, quota_max_sessions = $2,
+                 quota_rate_read = $3, quota_rate_write = $4
              WHERE used_by IS NULL
-               AND limit_storage_quota_mb IS NULL
-               AND limit_max_sessions IS NULL
-               AND limit_rate_read IS NULL
-               AND limit_rate_write IS NULL",
+               AND quota_storage_mb IS NULL
+               AND quota_max_sessions IS NULL
+               AND quota_rate_read IS NULL
+               AND quota_rate_write IS NULL",
             &self.defaults,
         )
         .await?;
@@ -100,7 +100,7 @@ impl MigrationTrait for M20260327AddLimitColumnsMigration {
     }
 
     fn name(&self) -> &str {
-        "m20260327_add_limit_columns"
+        "m20260327_add_resource_quota_columns"
     }
 }
 
@@ -109,7 +109,7 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-    use crate::data_directory::user_limit_config::UserLimitConfig;
+    use crate::data_directory::user_resource_quota::UserResourceQuota;
     use crate::persistence::sql::entities::signup_code::{
         SignupCodeId, SignupCodeIden, SIGNUP_CODE_TABLE,
     };
@@ -126,7 +126,7 @@ mod tests {
     use sea_query_binder::SqlxBinder;
 
     /// Helper: run all prior migrations, optionally including the limit columns migration.
-    async fn run_migrations(db: &SqlDb, limit_defaults: Option<UserLimitConfig>) {
+    async fn run_migrations(db: &SqlDb, limit_defaults: Option<UserResourceQuota>) {
         let migrator = Migrator::new(db);
         let mut migrations: Vec<Box<dyn crate::persistence::sql::migration::MigrationTrait>> = vec![
             Box::new(M20250806CreateUserMigration),
@@ -137,7 +137,9 @@ mod tests {
             Box::new(M20251014EventsTableIndexAndContentHashMigration),
         ];
         if let Some(defaults) = limit_defaults {
-            migrations.push(Box::new(M20260327AddLimitColumnsMigration { defaults }));
+            migrations.push(Box::new(M20260327AddResourceQuotaColumnsMigration {
+                defaults,
+            }));
         }
         migrator
             .run_migrations(migrations)
@@ -149,7 +151,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_adds_columns_to_users() {
         let db = SqlDb::test_without_migrations().await;
-        run_migrations(&db, Some(UserLimitConfig::default())).await;
+        run_migrations(&db, Some(UserResourceQuota::default())).await;
 
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
@@ -165,7 +167,7 @@ mod tests {
             .unwrap();
 
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT limit_storage_quota_mb, limit_max_sessions, limit_rate_read, limit_rate_write FROM users WHERE public_key = $1",
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
         .fetch_one(db.pool())
@@ -178,7 +180,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_adds_columns_to_signup_codes() {
         let db = SqlDb::test_without_migrations().await;
-        run_migrations(&db, Some(UserLimitConfig::default())).await;
+        run_migrations(&db, Some(UserResourceQuota::default())).await;
 
         let code_id = SignupCodeId::random();
         let statement = Query::insert()
@@ -194,7 +196,7 @@ mod tests {
             .unwrap();
 
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT limit_storage_quota_mb, limit_max_sessions, limit_rate_read, limit_rate_write FROM signup_codes WHERE id = $1",
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())
         .fetch_one(db.pool())
@@ -222,7 +224,7 @@ mod tests {
             .await
             .unwrap();
 
-        let defaults = UserLimitConfig {
+        let defaults = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
             rate_read: Some(
@@ -232,14 +234,14 @@ mod tests {
         };
         let migrator = Migrator::new(&db);
         migrator
-            .run_migrations(vec![Box::new(M20260327AddLimitColumnsMigration {
+            .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
                 defaults,
             })])
             .await
             .unwrap();
 
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT limit_storage_quota_mb, limit_max_sessions, limit_rate_read, limit_rate_write FROM users WHERE public_key = $1",
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
         .fetch_one(db.pool())
@@ -272,14 +274,14 @@ mod tests {
 
         let migrator = Migrator::new(&db);
         migrator
-            .run_migrations(vec![Box::new(M20260327AddLimitColumnsMigration {
-                defaults: UserLimitConfig::default(),
+            .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
+                defaults: UserResourceQuota::default(),
             })])
             .await
             .unwrap();
 
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT limit_storage_quota_mb, limit_max_sessions, limit_rate_read, limit_rate_write FROM users WHERE public_key = $1",
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
         .fetch_one(db.pool())
@@ -309,7 +311,7 @@ mod tests {
             .await
             .unwrap();
 
-        let defaults = UserLimitConfig {
+        let defaults = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
             rate_read: Some(
@@ -319,7 +321,7 @@ mod tests {
         };
         let migrator = Migrator::new(&db);
         migrator
-            .run_migrations(vec![Box::new(M20260327AddLimitColumnsMigration {
+            .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
                 defaults,
             })])
             .await
@@ -327,7 +329,7 @@ mod tests {
 
         // Unused token should be backfilled
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT limit_storage_quota_mb, limit_max_sessions, limit_rate_read, limit_rate_write FROM signup_codes WHERE id = $1",
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM signup_codes WHERE id = $1",
         )
         .bind(unused_code.to_string())
         .fetch_one(db.pool())
@@ -340,7 +342,7 @@ mod tests {
 
         // Used token should NOT be backfilled
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT limit_storage_quota_mb, limit_max_sessions, limit_rate_read, limit_rate_write FROM signup_codes WHERE id = $1",
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM signup_codes WHERE id = $1",
         )
         .bind(used_code.to_string())
         .fetch_one(db.pool())

@@ -15,5 +15,6 @@ pub(crate) struct AppState {
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
     /// Deploy-time default user limits, applied to new users during open signup.
-    pub(crate) default_user_limits: crate::data_directory::user_limit_config::UserLimitConfig,
+    pub(crate) default_user_resource_quota:
+        crate::data_directory::user_resource_quota::UserResourceQuota,
 }
