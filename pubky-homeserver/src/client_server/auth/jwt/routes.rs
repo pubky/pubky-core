@@ -2,26 +2,23 @@
 //!
 //! Grant session creation and grant management endpoints.
 
-use std::collections::HashMap;
-
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use pubky_common::auth::grant_session::GrantSessionInfo;
 use pubky_common::auth::jws::GrantId;
 use serde::{Deserialize, Serialize};
 
 use super::crypto::jws_crypto::JwsCompact;
-use super::persistence::grant::{GrantEntity, GrantRepository};
+use super::persistence::grant::GrantEntity;
 use super::service::AuthService;
 use crate::client_server::auth::AuthSession;
 use crate::client_server::auth::AuthState;
 use crate::shared::{HttpError, HttpResult};
 
-// ── Grant session creation ─────────────────────────────────────────────────
+// ── Request/response types ─────────────────────────────────────────────────
 
 /// JSON request body for grant-based session creation.
 #[derive(Deserialize)]
@@ -31,6 +28,36 @@ pub struct CreateGrantSessionRequest {
     /// PoP proof JWS (client-signed).
     pub pop: JwsCompact,
 }
+
+/// Query parameters for the signup endpoint.
+#[derive(Deserialize)]
+pub(crate) struct SignupParams {
+    signup_token: Option<String>,
+}
+
+/// Summary of an active grant, returned by `GET /sessions`.
+#[derive(Serialize)]
+struct GrantInfo {
+    grant_id: GrantId,
+    client_id: String,
+    capabilities: String,
+    issued_at: u64,
+    expires_at: u64,
+}
+
+impl From<GrantEntity> for GrantInfo {
+    fn from(g: GrantEntity) -> Self {
+        Self {
+            grant_id: g.grant_id,
+            client_id: g.client_id.to_string(),
+            capabilities: g.capabilities.to_string(),
+            issued_at: g.issued_at as u64,
+            expires_at: g.expires_at as u64,
+        }
+    }
+}
+
+// ── Grant session creation ─────────────────────────────────────────────────
 
 /// `POST /auth/jwt/session` — exchange grant + PoP for a JWT.
 pub async fn create_grant_session(
@@ -50,7 +77,7 @@ pub async fn create_grant_session(
 /// Optional `signup_token` query param when signup tokens are required.
 pub async fn signup(
     State(state): State<AuthState>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(params): Query<SignupParams>,
     Json(request): Json<CreateGrantSessionRequest>,
 ) -> HttpResult<impl IntoResponse> {
     let response = state
@@ -59,7 +86,7 @@ pub async fn signup(
             &request.grant,
             &request.pop,
             &state.signup_mode,
-            params.get("signup_token").map(|s| s.as_str()),
+            params.signup_token.as_deref(),
         )
         .await?;
     Ok(Json(response))
@@ -75,24 +102,7 @@ pub async fn get_session(
     let AuthSession::Bearer(bearer) = auth else {
         return Err(HttpError::unauthorized());
     };
-
-    let grant = GrantRepository::get_by_grant_id(
-        &bearer.grant_id,
-        &mut state.sql_db.pool().into(),
-    )
-    .await
-    .map_err(|_| HttpError::not_found())?;
-
-    let info = GrantSessionInfo {
-        homeserver: state.auth_service.homeserver_public_key(),
-        pubky: bearer.user_key.clone(),
-        client_id: grant.client_id.clone(),
-        capabilities: bearer.capabilities.to_vec(),
-        grant_id: bearer.grant_id.clone(),
-        token_expires_at: bearer.token_expires_at,
-        grant_expires_at: grant.expires_at as u64,
-        created_at: grant.created_at.and_utc().timestamp() as u64,
-    };
+    let info = state.auth_service.get_bearer_session_info(&bearer).await?;
     Ok(Json(info))
 }
 
@@ -110,28 +120,6 @@ pub async fn signout(
 
 // ── Grant management ───────────────────────────────────────────────────────
 
-/// Summary of an active grant, returned by `GET /sessions`.
-#[derive(Serialize)]
-pub struct GrantInfo {
-    pub grant_id: GrantId,
-    pub client_id: String,
-    pub capabilities: String,
-    pub issued_at: u64,
-    pub expires_at: u64,
-}
-
-impl From<GrantEntity> for GrantInfo {
-    fn from(entity: GrantEntity) -> Self {
-        Self {
-            grant_id: entity.grant_id,
-            client_id: entity.client_id.to_string(),
-            capabilities: entity.capabilities.to_string(),
-            issued_at: entity.issued_at as u64,
-            expires_at: entity.expires_at as u64,
-        }
-    }
-}
-
 /// `GET /sessions` — list all active grants for the authenticated user.
 ///
 /// Requires root capability.
@@ -142,10 +130,14 @@ pub async fn list_grants(
     AuthService::require_root_capability(&auth)?;
 
     let user_id = state.auth_service.resolve_user_id(&auth).await?;
-    let grants = state.auth_service.list_active_grants(user_id).await?;
-
-    let infos: Vec<GrantInfo> = grants.into_iter().map(GrantInfo::from).collect();
-    Ok(Json(infos))
+    let grants: Vec<GrantInfo> = state
+        .auth_service
+        .list_active_grants(user_id)
+        .await?
+        .into_iter()
+        .map(GrantInfo::from)
+        .collect();
+    Ok(Json(grants))
 }
 
 /// `DELETE /session/{gid}` — revoke a specific grant and all its sessions.
@@ -171,7 +163,7 @@ mod tests {
     use super::*;
     use axum::response::IntoResponse;
     use pubky_common::{
-        auth::jws::{ClientId, GrantId, TokenId},
+        auth::jws::{GrantId, TokenId},
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
     };
@@ -209,33 +201,5 @@ mod tests {
         let err = AuthService::require_root_capability(&auth).unwrap_err();
         let resp = HttpError::from(err).into_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    }
-
-    #[test]
-    fn test_grant_info_from_entity() {
-        let grant_id = GrantId::generate();
-        let client_id = ClientId::new("example.app").unwrap();
-        let caps = Capabilities::builder().cap(Capability::root()).finish();
-
-        let entity = GrantEntity {
-            id: 1,
-            grant_id: grant_id.clone(),
-            user_id: 42,
-            user_pubkey: Keypair::random().public_key(),
-            client_id: client_id.clone(),
-            client_cnf_key: "cnf".to_string(),
-            capabilities: caps.clone(),
-            issued_at: 1000,
-            expires_at: 2000,
-            revoked_at: None,
-            created_at: chrono::Utc::now().naive_utc(),
-        };
-
-        let info = GrantInfo::from(entity);
-        assert_eq!(info.grant_id, grant_id);
-        assert_eq!(info.client_id, client_id.to_string());
-        assert_eq!(info.capabilities, caps.to_string());
-        assert_eq!(info.issued_at, 1000);
-        assert_eq!(info.expires_at, 2000);
     }
 }

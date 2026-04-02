@@ -12,6 +12,7 @@ use super::AuthService;
 #[derive(Clone, Debug)]
 pub struct AuthState {
     pub(crate) auth_service: AuthService,
+    /// Database handle for deprecated cookie auth. JWT flows use `auth_service`.
     pub(crate) sql_db: SqlDb,
     pub(crate) verifier: AuthVerifier,
     pub(crate) signup_mode: SignupMode,

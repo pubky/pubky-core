@@ -9,8 +9,6 @@ use pubky_common::crypto::PublicKey;
 
 use super::crypto::access_jwt_issuer::AccessJwt;
 use super::crypto::jws_crypto::JwsCompact;
-use super::persistence::grant::{GrantEntity, GrantRepository};
-use super::persistence::grant_session::GrantSessionRepository;
 use crate::client_server::auth::AuthSession;
 use crate::client_server::auth::AuthState;
 use crate::shared::HttpError;
@@ -53,7 +51,8 @@ pub fn extract_bearer_token(req: &Request<Body>) -> Result<Option<JwsCompact>, H
 
 /// Authenticate via grant-based JWT Bearer token.
 ///
-/// Returns `Err` with a specific error message if the token is present but invalid.
+/// Verifies the JWT signature and expiry, then delegates session and grant
+/// lookup to `AuthService` (use-case layer).
 pub async fn authenticate_bearer(
     state: &AuthState,
     token: &JwsCompact,
@@ -61,41 +60,13 @@ pub async fn authenticate_bearer(
     let jwt = AccessJwt::verify(token, &state.auth_service.homeserver_public_key())
         .map_err(|_| HttpError::unauthorized_with_message("Invalid or expired JWT"))?;
 
-    let session =
-        GrantSessionRepository::get_by_token_id(&jwt.token_id, &mut state.sql_db.pool().into())
-            .await
-            .map_err(|_| HttpError::unauthorized_with_message("Session not found"))?;
-
-    let grant = lookup_active_grant(state, &jwt.grant_id).await?;
-
-    Ok(AuthSession::Bearer(BearerSession {
-        user_key: jwt.user_key,
-        capabilities: grant.capabilities,
-        grant_id: jwt.grant_id,
-        token_id: jwt.token_id,
-        token_expires_at: session.expires_at as u64,
-    }))
-}
-
-/// Look up a grant and verify it's not revoked or expired.
-async fn lookup_active_grant(
-    state: &AuthState,
-    grant_id: &GrantId,
-) -> Result<GrantEntity, HttpError> {
-    let grant = GrantRepository::get_by_grant_id(grant_id, &mut state.sql_db.pool().into())
+    let bearer = state
+        .auth_service
+        .resolve_bearer_session(&jwt)
         .await
-        .map_err(|_| HttpError::unauthorized_with_message("Grant not found"))?;
+        .map_err(HttpError::from)?;
 
-    if grant.revoked_at.is_some() {
-        return Err(HttpError::unauthorized_with_message("Grant has been revoked"));
-    }
-
-    let now = chrono::Utc::now().timestamp();
-    if grant.expires_at <= now {
-        return Err(HttpError::unauthorized_with_message("Grant has expired"));
-    }
-
-    Ok(grant)
+    Ok(AuthSession::Bearer(bearer))
 }
 
 #[cfg(test)]

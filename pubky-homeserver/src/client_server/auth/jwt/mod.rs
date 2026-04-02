@@ -52,6 +52,7 @@
 
 pub mod auth;
 pub mod crypto;
+mod error_mapping;
 pub mod middleware;
 pub mod persistence;
 pub mod routes;

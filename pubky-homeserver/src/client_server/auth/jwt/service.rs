@@ -7,11 +7,11 @@ use chrono::Utc;
 use pubky_common::{
     auth::access_jwt::AccessJwtClaims,
     auth::grant_session::{GrantSessionInfo, GrantSessionResponse},
-    auth::jws::{GrantId, TokenId},
+    auth::jws::GrantId,
+    auth::jws::TokenId,
     capabilities::Action,
     crypto::{Keypair, PublicKey},
 };
-
 use crate::{
     persistence::sql::{
         signup_code::{SignupCodeId, SignupCodeRepository},
@@ -80,8 +80,8 @@ impl AuthService {
         self.mint_session(&grant).await
     }
 
-    /// Grant-based signup: verify grant → create user → verify PoP
-    /// → check nonce replay → check revocation → store grant → mint JWT.
+    /// Grant-based signup: verify grant → check revocation → verify PoP
+    /// → check nonce replay → create user → store grant → mint JWT.
     ///
     /// Like [`create_grant_session`] but creates the user instead of requiring one.
     pub async fn signup_grant_session(
@@ -92,12 +92,13 @@ impl AuthService {
         signup_token: Option<&str>,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         let grant = self.verify_grant(grant_jws)?;
+        self.check_grant_not_revoked(&grant).await?;
         let pop = self.verify_pop_proof(pop_jws, &grant)?;
+        self.check_nonce_replay(&pop).await?;
+        // All validation passed — now create the user.
         let user = self
             .create_new_user(&grant.issuer_key, signup_mode, signup_token)
             .await?;
-        self.check_nonce_replay(&pop).await?;
-        self.check_grant_not_revoked(&grant).await?;
         self.store_grant(&grant, &user).await?;
         self.mint_session(&grant).await
     }
@@ -115,9 +116,26 @@ impl AuthService {
         &self,
         user_id: i32,
     ) -> Result<Vec<GrantEntity>, AuthServiceError> {
-        let grants =
-            GrantRepository::list_active_for_user(user_id, &mut self.sql_db.pool().into()).await?;
-        Ok(grants)
+        Ok(GrantRepository::list_active_for_user(user_id, &mut self.sql_db.pool().into()).await?)
+    }
+
+    /// Return session info for a bearer session.
+    pub async fn get_bearer_session_info(
+        &self,
+        bearer: &BearerSession,
+    ) -> Result<GrantSessionInfo, AuthServiceError> {
+        let grant = self.get_grant(&bearer.grant_id).await?;
+
+        Ok(GrantSessionInfo {
+            homeserver: self.homeserver_keypair.public_key(),
+            pubky: bearer.user_key.clone(),
+            client_id: grant.client_id.clone(),
+            capabilities: bearer.capabilities.to_vec(),
+            grant_id: bearer.grant_id.clone(),
+            token_expires_at: bearer.token_expires_at,
+            grant_expires_at: grant.expires_at as u64,
+            created_at: grant.created_at.and_utc().timestamp() as u64,
+        })
     }
 
     /// Sign out a bearer session: revoke its grant and delete all sessions.
@@ -125,15 +143,47 @@ impl AuthService {
         self.revoke_grant(&bearer.grant_id).await
     }
 
+    /// Resolve a verified Access JWT into a BearerSession.
+    ///
+    /// Looks up the session by token ID, validates the grant is active
+    /// (not revoked, not expired), and returns the resolved session.
+    pub async fn resolve_bearer_session(
+        &self,
+        jwt: &AccessJwt,
+    ) -> Result<BearerSession, AuthServiceError> {
+        let session =
+            GrantSessionRepository::get_by_token_id(&jwt.token_id, &mut self.sql_db.pool().into())
+                .await
+                .map_err(|e| match e {
+                    sqlx::Error::RowNotFound => AuthServiceError::SessionNotFound,
+                    other => AuthServiceError::Internal(other),
+                })?;
+
+        let grant = self.get_grant(&jwt.grant_id).await?;
+
+        if grant.revoked_at.is_some() {
+            return Err(AuthServiceError::GrantRevoked);
+        }
+
+        let now = chrono::Utc::now().timestamp();
+        if grant.expires_at <= now {
+            return Err(AuthServiceError::GrantExpired);
+        }
+
+        Ok(BearerSession {
+            user_key: jwt.user_key.clone(),
+            capabilities: grant.capabilities,
+            grant_id: jwt.grant_id.clone(),
+            token_id: jwt.token_id.clone(),
+            token_expires_at: session.expires_at as u64,
+        })
+    }
+
     /// Resolve the database user ID from an auth session.
     pub async fn resolve_user_id(&self, auth: &AuthSession) -> Result<i32, AuthServiceError> {
         match auth {
             AuthSession::Bearer(b) => {
-                let grant = GrantRepository::get_by_grant_id(
-                    &b.grant_id,
-                    &mut self.sql_db.pool().into(),
-                )
-                .await?;
+                let grant = self.get_grant(&b.grant_id).await?;
                 Ok(grant.user_id)
             }
             AuthSession::Cookie(c) => Ok(c.user_id),
@@ -156,6 +206,15 @@ impl AuthService {
     }
 
     // ── Private helpers ─────────────────────────────────────────────────
+
+    /// Look up a grant by ID. Returns `GrantNotFound` if missing.
+    async fn get_grant(&self, grant_id: &GrantId) -> Result<GrantEntity, AuthServiceError> {
+        match GrantRepository::get_by_grant_id(grant_id, &mut self.sql_db.pool().into()).await {
+            Ok(grant) => Ok(grant),
+            Err(sqlx::Error::RowNotFound) => Err(AuthServiceError::GrantNotFound),
+            Err(e) => Err(AuthServiceError::Internal(e)),
+        }
+    }
 
     /// Verify the grant JWS signature, type header, and expiry.
     fn verify_grant(&self, compact: &JwsCompact) -> Result<Grant, AuthServiceError> {
