@@ -3,16 +3,11 @@
 //! Contains all cookie-specific handlers: signup, signin, get_session, signout.
 //! Each handler is a full axum handler wired directly from `router.rs`.
 
-use crate::persistence::sql::{
-    signup_code::{SignupCodeId, SignupCodeRepository},
-    uexecutor,
-    user::{UserEntity, UserRepository},
-};
+use crate::persistence::sql::user::{UserEntity, UserRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     client_server::auth::AuthState,
     client_server::middleware::pubky_host::PubkyHost,
-    SignupMode,
 };
 use axum::{
     extract::{Query, State},
@@ -35,11 +30,6 @@ use tower_cookies::{
 use super::persistence::SessionRepository;
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
-///
-/// 1) Check if signup tokens are required (signup mode is token_required).
-/// 2) Ensure the user *does not* already exist.
-/// 3) Create new user if needed.
-/// 4) Create a session and set the cookie (using the shared helper).
 pub async fn signup(
     State(state): State<AuthState>,
     cookies: Cookies,
@@ -47,71 +37,12 @@ pub async fn signup(
     Query(params): Query<HashMap<String, String>>,
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
-    // 1) Verify AuthToken from request body
     let token = state.verifier.verify(&body)?;
-    let public_key = token.public_key();
-
-    let mut tx = state.sql_db.pool().begin().await?;
-    // 2) Ensure the user does *not* already exist
-    match UserRepository::get(public_key, uexecutor!(tx)).await {
-        Ok(_) => {
-            return Err(HttpError::new_with_message(
-                StatusCode::CONFLICT,
-                "User already exists",
-            ));
-        }
-        Err(sqlx::Error::RowNotFound) => {
-            // User does not exist, continue
-        }
-        Err(e) => {
-            return Err(e.into());
-        }
-    }
-
-    // 3) If signup_mode == token_required, require & validate a `signup_token` param.
-    if state.signup_mode == SignupMode::TokenRequired {
-        let signup_token_param = params
-            .get("signup_token")
-            .ok_or(HttpError::new_with_message(
-                StatusCode::BAD_REQUEST,
-                "Token required",
-            ))?;
-        let signup_code_id = SignupCodeId::new(signup_token_param.clone()).map_err(|e| {
-            HttpError::new_with_message(
-                StatusCode::BAD_REQUEST,
-                format!("Invalid signup token format: {}", e),
-            )
-        })?;
-
-        // Validate it in the DB (marks it used)
-        let code = match SignupCodeRepository::get(&signup_code_id, uexecutor!(tx)).await {
-            Ok(code) => code,
-            Err(sqlx::Error::RowNotFound) => {
-                return Err(HttpError::new_with_message(
-                    StatusCode::UNAUTHORIZED,
-                    "Invalid token",
-                ));
-            }
-            Err(e) => {
-                return Err(e.into());
-            }
-        };
-
-        if code.used_by.is_some() {
-            return Err(HttpError::new_with_message(
-                StatusCode::UNAUTHORIZED,
-                "Token already used",
-            ));
-        }
-
-        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
-    }
-
-    // 4) Create the new user record
-    let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-    tx.commit().await?;
-
-    // 5) Create session & set cookie
+    let signup_token = params.get("signup_token").map(|s| s.as_str());
+    let user = state
+        .auth_service
+        .create_new_user(token.public_key(), &state.signup_mode, signup_token)
+        .await?;
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
 }
 

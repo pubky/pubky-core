@@ -33,7 +33,8 @@ impl AccessJwt {
     pub fn mint(homeserver_keypair: &Keypair, raw: &AccessJwtClaims) -> String {
         let header = jws_crypto::eddsa_header("JWT");
         let enc = jws_crypto::encoding_key(homeserver_keypair);
-        jsonwebtoken::encode(&header, raw, &enc).expect("JWT encoding should not fail")
+        jsonwebtoken::encode(&header, raw, &enc)
+            .expect("invariant: encoding valid claims with a valid key")
     }
 
     /// Verify an Access JWT against the homeserver's public key.

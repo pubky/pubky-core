@@ -44,7 +44,7 @@ impl GrantRepository {
                 SimpleExpr::Value((grant.issued_at as i64).into()),
                 SimpleExpr::Value((grant.expires_at as i64).into()),
             ])
-            .expect("Failed to build insert statement")
+            .expect("invariant: values count matches columns count")
             .on_conflict(
                 sea_query::OnConflict::column(GrantIden::GrantId)
                     .do_nothing()
@@ -195,46 +195,47 @@ pub struct GrantEntity {
 
 impl FromRow<'_, PgRow> for GrantEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let id: i32 = row.try_get(GrantIden::Id.to_string().as_str())?;
-        let grant_id: String = row.try_get(GrantIden::GrantId.to_string().as_str())?;
-        let grant_id =
-            GrantId::parse(&grant_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        let user_id: i32 = row.try_get(GrantIden::User.to_string().as_str())?;
-        let user_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
-        let user_pubkey: PublicKey = user_pubkey
-            .try_into()
-            .map_err(|e: pkarr::errors::PublicKeyError| sqlx::Error::Decode(e.into()))?;
-        let client_id: String = row.try_get(GrantIden::ClientId.to_string().as_str())?;
-        let client_id =
-            ClientId::new(&client_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        let client_cnf_key: String =
-            row.try_get(GrantIden::ClientCnfKey.to_string().as_str())?;
-        let capabilities: String =
-            row.try_get(GrantIden::Capabilities.to_string().as_str())?;
-        let capabilities: Capabilities = capabilities
-            .as_str()
-            .try_into()
-            .map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))?;
-        let issued_at: i64 = row.try_get(GrantIden::IssuedAt.to_string().as_str())?;
-        let expires_at: i64 = row.try_get(GrantIden::ExpiresAt.to_string().as_str())?;
-        let revoked_at: Option<i64> =
-            row.try_get(GrantIden::RevokedAt.to_string().as_str())?;
-        let created_at = row.try_get(GrantIden::CreatedAt.to_string().as_str())?;
-
+        let (id, grant_id, user_id, user_pubkey, client_id, client_cnf_key) =
+            parse_identity_fields(row)?;
+        let (capabilities, issued_at, expires_at, revoked_at, created_at) =
+            parse_temporal_fields(row)?;
         Ok(GrantEntity {
-            id,
-            grant_id,
-            user_id,
-            user_pubkey,
-            client_id,
-            client_cnf_key,
-            capabilities,
-            issued_at,
-            expires_at,
-            revoked_at,
-            created_at,
+            id, grant_id, user_id, user_pubkey, client_id, client_cnf_key,
+            capabilities, issued_at, expires_at, revoked_at, created_at,
         })
     }
+}
+
+fn parse_identity_fields(
+    row: &PgRow,
+) -> Result<(i32, GrantId, i32, PublicKey, ClientId, String), sqlx::Error> {
+    let id: i32 = row.try_get(GrantIden::Id.to_string().as_str())?;
+    let grant_id: String = row.try_get(GrantIden::GrantId.to_string().as_str())?;
+    let grant_id = GrantId::parse(&grant_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
+    let user_id: i32 = row.try_get(GrantIden::User.to_string().as_str())?;
+    let user_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
+    let user_pubkey: PublicKey = user_pubkey
+        .try_into()
+        .map_err(|e: pkarr::errors::PublicKeyError| sqlx::Error::Decode(e.into()))?;
+    let client_id: String = row.try_get(GrantIden::ClientId.to_string().as_str())?;
+    let client_id = ClientId::new(&client_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
+    let client_cnf_key: String = row.try_get(GrantIden::ClientCnfKey.to_string().as_str())?;
+    Ok((id, grant_id, user_id, user_pubkey, client_id, client_cnf_key))
+}
+
+fn parse_temporal_fields(
+    row: &PgRow,
+) -> Result<(Capabilities, i64, i64, Option<i64>, sqlx::types::chrono::NaiveDateTime), sqlx::Error> {
+    let capabilities: String = row.try_get(GrantIden::Capabilities.to_string().as_str())?;
+    let capabilities: Capabilities = capabilities
+        .as_str()
+        .try_into()
+        .map_err(|e: pubky_common::capabilities::Error| sqlx::Error::Decode(e.into()))?;
+    let issued_at: i64 = row.try_get(GrantIden::IssuedAt.to_string().as_str())?;
+    let expires_at: i64 = row.try_get(GrantIden::ExpiresAt.to_string().as_str())?;
+    let revoked_at: Option<i64> = row.try_get(GrantIden::RevokedAt.to_string().as_str())?;
+    let created_at = row.try_get(GrantIden::CreatedAt.to_string().as_str())?;
+    Ok((capabilities, issued_at, expires_at, revoked_at, created_at))
 }
 
 #[cfg(test)]

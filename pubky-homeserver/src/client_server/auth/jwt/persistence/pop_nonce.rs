@@ -25,7 +25,7 @@ impl PopNonceRepository {
             .into_table(POP_NONCES_TABLE)
             .columns([PopNonceIden::Nonce])
             .values(vec![SimpleExpr::Value(nonce.to_string().into())])
-            .expect("Failed to build insert statement")
+            .expect("invariant: values count matches columns count")
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);

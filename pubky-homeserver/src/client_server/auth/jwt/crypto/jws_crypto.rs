@@ -72,13 +72,15 @@ const ED25519_SPKI_PREFIX: [u8; 12] = [
 /// potential key derivation mismatches between `ring` and `ed25519-dalek`.
 pub fn encoding_key(keypair: &Keypair) -> EncodingKey {
     let pem = ed25519_keypair_to_pem(keypair);
-    EncodingKey::from_ed_pem(pem.as_bytes()).expect("PEM encoding should be valid")
+    EncodingKey::from_ed_pem(pem.as_bytes())
+        .expect("invariant: PEM is constructed from valid Ed25519 key bytes")
 }
 
 /// Create a `jsonwebtoken` [`DecodingKey`] from a pubky [`PublicKey`].
 pub fn decoding_key(pubkey: &PublicKey) -> DecodingKey {
     let pem = ed25519_pubkey_to_pem(pubkey.as_bytes());
-    DecodingKey::from_ed_pem(pem.as_bytes()).expect("PEM encoding should be valid")
+    DecodingKey::from_ed_pem(pem.as_bytes())
+        .expect("invariant: PEM is constructed from valid Ed25519 key bytes")
 }
 
 /// Create a JWS header for EdDSA with a custom `typ`.

@@ -81,7 +81,7 @@ impl AuthVerifier {
             public_key: token.public_key().clone(),
         };
 
-        let mut guard = self.replay_guard.lock().unwrap();
+        let mut guard = self.replay_guard.lock().unwrap_or_else(|e| e.into_inner());
         guard.gc();
         guard.check_and_track(id)?;
 

@@ -72,10 +72,10 @@ impl AuthService {
         pop_jws: &JwsCompact,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         let grant = self.verify_grant(grant_jws)?;
-        let user = self.find_user(&grant).await?;
+        self.check_grant_not_revoked(&grant).await?;
         let pop = self.verify_pop_proof(pop_jws, &grant)?;
         self.check_nonce_replay(&pop).await?;
-        self.check_grant_not_revoked(&grant).await?;
+        let user = self.find_user(&grant).await?;
         self.store_grant(&grant, &user).await?;
         self.mint_session(&grant).await
     }
@@ -172,48 +172,53 @@ impl AuthService {
     }
 
     /// Create a new user with optional signup token validation, all in one transaction.
-    async fn create_new_user(
+    pub(crate) async fn create_new_user(
         &self,
         public_key: &PublicKey,
         signup_mode: &SignupMode,
         signup_token: Option<&str>,
     ) -> Result<UserEntity, AuthServiceError> {
         let mut tx = self.sql_db.pool().begin().await?;
-
-        // User must NOT already exist
-        match UserRepository::get(public_key, uexecutor!(tx)).await {
-            Ok(_) => return Err(AuthServiceError::UserAlreadyExists),
-            Err(sqlx::Error::RowNotFound) => {}
-            Err(e) => return Err(AuthServiceError::Internal(e)),
-        }
-
-        // Validate signup token if required
+        Self::ensure_user_not_exists(public_key, &mut tx).await?;
         if *signup_mode == SignupMode::TokenRequired {
-            let token_str = signup_token
-                .ok_or(AuthServiceError::SignupTokenRequired)?;
-            let signup_code_id = SignupCodeId::new(token_str.to_string()).map_err(|e| {
-                AuthServiceError::InvalidSignupTokenFormat(e.to_string())
-            })?;
-
-            let code = match SignupCodeRepository::get(&signup_code_id, uexecutor!(tx)).await {
-                Ok(code) => code,
-                Err(sqlx::Error::RowNotFound) => {
-                    return Err(AuthServiceError::InvalidSignupToken);
-                }
-                Err(e) => return Err(AuthServiceError::Internal(e)),
-            };
-
-            if code.used_by.is_some() {
-                return Err(AuthServiceError::SignupTokenAlreadyUsed);
-            }
-
-            SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx))
-                .await?;
+            Self::validate_and_consume_signup_token(signup_token, public_key, &mut tx).await?;
         }
-
         let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
         tx.commit().await?;
         Ok(user)
+    }
+
+    /// Reject if the user already exists. Passes if user is not found.
+    async fn ensure_user_not_exists(
+        public_key: &PublicKey,
+        tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+    ) -> Result<(), AuthServiceError> {
+        match UserRepository::get(public_key, uexecutor!(*tx)).await {
+            Ok(_) => Err(AuthServiceError::UserAlreadyExists),
+            Err(sqlx::Error::RowNotFound) => Ok(()),
+            Err(e) => Err(AuthServiceError::Internal(e)),
+        }
+    }
+
+    /// Validate and consume a signup token within the given transaction.
+    async fn validate_and_consume_signup_token(
+        signup_token: Option<&str>,
+        public_key: &PublicKey,
+        tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+    ) -> Result<(), AuthServiceError> {
+        let token_str = signup_token.ok_or(AuthServiceError::SignupTokenRequired)?;
+        let code_id = SignupCodeId::new(token_str.to_string())
+            .map_err(|e| AuthServiceError::InvalidSignupTokenFormat(e.to_string()))?;
+        let code = match SignupCodeRepository::get(&code_id, uexecutor!(*tx)).await {
+            Ok(code) => code,
+            Err(sqlx::Error::RowNotFound) => return Err(AuthServiceError::InvalidSignupToken),
+            Err(e) => return Err(AuthServiceError::Internal(e)),
+        };
+        if code.used_by.is_some() {
+            return Err(AuthServiceError::SignupTokenAlreadyUsed);
+        }
+        SignupCodeRepository::mark_as_used(&code_id, public_key, uexecutor!(*tx)).await?;
+        Ok(())
     }
 
     /// Verify the PoP proof signature, audience, grant binding, and timestamp window.
@@ -282,36 +287,51 @@ impl AuthService {
         let token_id = TokenId::generate();
         let jwt_exp = now + DEFAULT_JWT_LIFETIME_SECS;
 
-        let raw_jwt = AccessJwtClaims {
-            iss: self.homeserver_keypair.public_key(),
-            sub: grant.issuer_key.clone(),
-            gid: grant.grant_id.clone(),
-            jti: token_id.clone(),
-            iat: now,
-            exp: jwt_exp,
-        };
+        let claims = build_access_jwt_claims(&self.homeserver_keypair, grant, &token_id, now, jwt_exp);
+        let token = AccessJwt::mint(&self.homeserver_keypair, &claims);
 
-        let token = AccessJwt::mint(&self.homeserver_keypair, &raw_jwt);
-
-        let new_session = NewGrantSession {
-            token_id: token_id.clone(),
-            grant_id: grant.grant_id.clone(),
-            expires_at: jwt_exp,
-        };
+        let new_session = NewGrantSession { token_id, grant_id: grant.grant_id.clone(), expires_at: jwt_exp };
         GrantSessionRepository::create(&new_session, &mut self.sql_db.pool().into()).await?;
 
-        Ok(GrantSessionResponse {
-            token,
-            session: GrantSessionInfo {
-                homeserver: self.homeserver_keypair.public_key(),
-                pubky: grant.issuer_key.clone(),
-                client_id: grant.client_id.clone(),
-                capabilities: grant.capabilities.to_vec(),
-                grant_id: grant.grant_id.clone(),
-                token_expires_at: jwt_exp,
-                grant_expires_at: grant.expires_at.timestamp() as u64,
-                created_at: now,
-            },
-        })
+        Ok(build_session_response(token, grant, self.homeserver_keypair.public_key(), jwt_exp, now))
+    }
+}
+
+fn build_access_jwt_claims(
+    keypair: &Keypair,
+    grant: &Grant,
+    token_id: &TokenId,
+    now: u64,
+    jwt_exp: u64,
+) -> AccessJwtClaims {
+    AccessJwtClaims {
+        iss: keypair.public_key(),
+        sub: grant.issuer_key.clone(),
+        gid: grant.grant_id.clone(),
+        jti: token_id.clone(),
+        iat: now,
+        exp: jwt_exp,
+    }
+}
+
+fn build_session_response(
+    token: String,
+    grant: &Grant,
+    homeserver: PublicKey,
+    jwt_exp: u64,
+    now: u64,
+) -> GrantSessionResponse {
+    GrantSessionResponse {
+        token,
+        session: GrantSessionInfo {
+            homeserver,
+            pubky: grant.issuer_key.clone(),
+            client_id: grant.client_id.clone(),
+            capabilities: grant.capabilities.to_vec(),
+            grant_id: grant.grant_id.clone(),
+            token_expires_at: jwt_exp,
+            grant_expires_at: grant.expires_at.timestamp() as u64,
+            created_at: now,
+        },
     }
 }
