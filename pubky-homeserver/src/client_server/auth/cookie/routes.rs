@@ -11,7 +11,6 @@ use crate::persistence::sql::{
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     client_server::auth::AuthState,
-    client_server::err_if_user_is_invalid::get_user_or_http_error,
     client_server::middleware::pubky_host::PubkyHost,
     SignupMode,
 };
@@ -153,7 +152,12 @@ pub async fn signin(
 ) -> HttpResult<impl IntoResponse> {
     let token = state.verifier.verify(&body)?;
     let public_key = token.public_key();
-    let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
+    let user = UserRepository::get(public_key, &mut state.sql_db.pool().into())
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::RowNotFound => HttpError::not_found(),
+            e => e.into(),
+        })?;
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
 }
 
