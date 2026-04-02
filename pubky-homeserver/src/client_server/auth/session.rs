@@ -11,7 +11,7 @@ use axum::response::IntoResponse;
 use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 
-use super::cookie::auth::CookieSession;
+use super::cookie::persistence::SessionEntity;
 use super::jwt::auth::BearerSession;
 
 /// Resolved authentication context — inserted into request extensions by the
@@ -19,7 +19,7 @@ use super::jwt::auth::BearerSession;
 #[derive(Clone, Debug)]
 pub enum AuthSession {
     /// Deprecated cookie-based session.
-    Cookie(CookieSession),
+    Cookie(SessionEntity),
     /// Grant-based JWT Bearer token session.
     Bearer(BearerSession),
 }
@@ -28,7 +28,7 @@ impl AuthSession {
     /// Capabilities regardless of auth method.
     pub fn capabilities(&self) -> &Capabilities {
         match self {
-            AuthSession::Cookie(c) => &c.session.capabilities,
+            AuthSession::Cookie(c) => &c.capabilities,
             AuthSession::Bearer(b) => &b.capabilities,
         }
     }
@@ -36,7 +36,7 @@ impl AuthSession {
     /// User public key regardless of auth method.
     pub fn user_key(&self) -> &PublicKey {
         match self {
-            AuthSession::Cookie(c) => &c.session.user_pubkey,
+            AuthSession::Cookie(c) => &c.user_pubkey,
             AuthSession::Bearer(b) => &b.user_key,
         }
     }

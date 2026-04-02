@@ -36,7 +36,6 @@
 //!
 //! Deletes the session row from the database and sends a removal cookie.
 
-pub mod auth;
 pub mod middleware;
 pub mod persistence;
 pub mod routes;

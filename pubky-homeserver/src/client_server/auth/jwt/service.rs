@@ -136,7 +136,7 @@ impl AuthService {
                 .await?;
                 Ok(grant.user_id)
             }
-            AuthSession::Cookie(c) => Ok(c.session.user_id),
+            AuthSession::Cookie(c) => Ok(c.user_id),
         }
     }
 

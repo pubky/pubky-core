@@ -168,7 +168,7 @@ pub async fn get_session(
     let crate::client_server::auth::AuthSession::Cookie(cookie_session) = auth else {
         return Err(HttpError::unauthorized());
     };
-    let legacy_session = cookie_session.session.to_legacy();
+    let legacy_session = cookie_session.to_legacy();
     let mut resp = legacy_session.serialize().into_response();
     resp.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -190,7 +190,7 @@ pub async fn signout(
     };
 
     SessionRepository::delete(
-        &cookie_session.session.secret,
+        &cookie_session.secret,
         &mut state.sql_db.pool().into(),
     )
     .await?;
