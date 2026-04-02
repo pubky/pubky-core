@@ -160,11 +160,16 @@ async fn per_user_quota_via_admin_api() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
-/// Test that per-user bandwidth rate limits set via admin API return 429.
-/// User A gets a tight write budget (1kb/s); after exhausting it, further writes get 429.
+/// Test that per-user write speed override set via admin API throttles uploads.
+///
+/// The default path limit for PUT /pub/** is 1mb/s. We override a specific user
+/// to 1kb/s via admin API, then upload 3 KB. At 1kb/s the upload should take >2s
+/// (same pattern as `test_limit_upload` in rate_limiting.rs).
 #[tokio::test]
 #[pubky_testnet::test]
-async fn per_user_rate_limit_429_via_admin_api() {
+async fn per_user_speed_override_throttles_via_admin_api() {
+    use std::time::{Duration, Instant};
+
     let config = ConfigToml::default_test_config();
     let admin_password = config.admin.admin_password.clone();
 
@@ -181,17 +186,20 @@ async fn per_user_rate_limit_429_via_admin_api() {
         .expect("admin server should be enabled")
         .listen_socket();
 
-    // Create a user
-    let signer = pubky.signer(Keypair::random());
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubkey_z32 = signer.public_key().z32();
+    // Create two users
+    let signer_a = pubky.signer(Keypair::random());
+    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_a_z32 = signer_a.public_key().z32();
 
-    // Set a tight write budget (1kb/s) via admin API
+    let signer_b = pubky.signer(Keypair::random());
+    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+
+    // Override user A to 1kb/s write speed via admin API
     let admin_client = PubkyHttpClient::new().unwrap();
     let resp = admin_client
         .request(
             Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
+            &format!("http://{admin_socket}/users/{pubkey_a_z32}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -201,104 +209,36 @@ async fn per_user_rate_limit_429_via_admin_api() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // First write: 1024 bytes uses up the full 1kb/s budget
-    let resp = session
+    let body = vec![0u8; 3 * 1024]; // 3 KB
+
+    // User A (1kb/s override): 3 KB upload should take >2s due to throttling
+    let start = Instant::now();
+    let resp = session_a
         .storage()
-        .put("/pub/rate_test1", vec![0u8; 1024])
+        .put("/pub/rate_test", body.clone())
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
-
-    // Second write should be rejected with 429
-    let err = session
-        .storage()
-        .put("/pub/rate_test2", vec![0u8; 512])
-        .await
-        .unwrap_err();
+    let elapsed_a = start.elapsed();
     assert!(
-        matches!(
-            err,
-            Error::Request(RequestError::Server { status, .. })
-                if status == StatusCode::TOO_MANY_REQUESTS
-        ),
-        "Expected 429 TOO_MANY_REQUESTS, got: {err:?}"
+        elapsed_a > Duration::from_secs(2),
+        "User A upload should be throttled to ~1kb/s (elapsed {:?})",
+        elapsed_a
     );
-}
 
-/// Test that per-user write bandwidth budget set via admin API is enforced.
-///
-/// The write budget counts Content-Length bytes with a minimum of 256 bytes per
-/// request (MIN_WRITE_COST_BYTES). The first request that crosses the boundary
-/// is allowed through (soft limit), but subsequent requests are rejected with 429.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn write_bandwidth_budget_enforced_via_admin_api() {
-    let config = ConfigToml::default_test_config();
-    let admin_password = config.admin.admin_password.clone();
-
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
-    let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
-        .await
-        .unwrap();
-
-    let admin_socket = server
-        .admin_server()
-        .expect("admin server should be enabled")
-        .listen_socket();
-
-    // Create a user
-    let signer = pubky.signer(Keypair::random());
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubkey_z32 = signer.public_key().z32();
-
-    // Set a tight write bandwidth budget (1kb/m = 1024 bytes per minute) via admin API
-    let admin_client = PubkyHttpClient::new().unwrap();
-    let resp = admin_client
-        .request(
-            Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
-        )
-        .header("X-Admin-Password", &admin_password)
-        .header("content-type", "application/json")
-        .body(r#"{"storage_quota_mb": null, "max_sessions": null, "rate_read": null, "rate_write": "1kb/m"}"#)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // First write: 512 bytes fits within 1024-byte budget — should succeed
-    let resp = session
+    // User B (no override, uses default 1mb/s): same upload should be fast (<2s)
+    let start = Instant::now();
+    let resp = session_b
         .storage()
-        .put("/pub/test1.txt", vec![0u8; 512])
+        .put("/pub/rate_test", body)
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
-
-    // Second write: 1024 bytes pushes over budget (512 already used + 1024 = 1536 > 1024).
-    // The request that *crosses* the boundary is allowed through (soft limit).
-    let resp = session
-        .storage()
-        .put("/pub/test2.txt", vec![0u8; 1024])
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::CREATED);
-
-    // Third write: budget is now exhausted (previous >= budget_bytes) — rejected with 429
-    let err = session
-        .storage()
-        .put("/pub/test3.txt", vec![0u8; 256])
-        .await
-        .unwrap_err();
+    let elapsed_b = start.elapsed();
     assert!(
-        matches!(
-            err,
-            Error::Request(RequestError::Server { status, .. })
-                if status == StatusCode::TOO_MANY_REQUESTS
-        ),
-        "Expected 429 TOO_MANY_REQUESTS, got: {err:?}"
+        elapsed_b < Duration::from_secs(2),
+        "User B upload should use default speed, not be throttled (elapsed {:?})",
+        elapsed_b
     );
 }
 

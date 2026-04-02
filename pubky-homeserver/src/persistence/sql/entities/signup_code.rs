@@ -19,7 +19,7 @@ impl SignupCodeRepository {
     /// Create a new signup code with the given limits for users who redeem it.
     /// The executor can either be db.pool() or a transaction.
     ///
-    /// Rate limit strings are validated by roundtripping through `BandwidthBudget`
+    /// Rate limit strings are validated by roundtripping through `BandwidthRate`
     /// parsing to ensure only well-formed values reach the database.
     pub async fn create<'a>(
         id: &SignupCodeId,
@@ -319,7 +319,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_with_resource_quota() {
-        use crate::data_directory::quota_config::BandwidthBudget;
+        use crate::data_directory::quota_config::BandwidthRate;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -328,7 +328,7 @@ mod tests {
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: None,
         };
 
@@ -447,14 +447,14 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_signup_token_limits_applied_to_user() {
-        use crate::data_directory::quota_config::BandwidthBudget;
+        use crate::data_directory::quota_config::BandwidthRate;
         use crate::persistence::sql::user::UserRepository;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
 
-        fn bw(s: &str) -> BandwidthBudget {
-            BandwidthBudget::from_str(s).unwrap()
+        fn bw(s: &str) -> BandwidthRate {
+            BandwidthRate::from_str(s).unwrap()
         }
 
         // 1) Create a signup code with custom limits

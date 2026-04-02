@@ -42,13 +42,15 @@ user_storage_quota_mb = 0
 # Default maximum concurrent sessions per user. Omit for unlimited.
 # max_sessions = 3
 
-# Default per-user read bandwidth budget. Omit for unlimited.
-# Total bytes allowed per time window. Accepts bandwidth units (kb, mb, gb)
-# with time units (s, m, h, d). Example: "500mb/d" = 500 MB per day.
-# rate_read = "500mb/d"
+# Default per-user read speed limit override. Omit for unlimited.
+# When set, overrides the global path-based speed limit for matching user-keyed
+# read limits.
+# Accepts bandwidth units (kb, mb, gb) with time units (s, m, h, d).
+# Example: "10mb/s" = throttle reads to 10 MB/s per user.
+# rate_read = "10mb/s"
 
-# Default per-user write bandwidth budget. Omit for unlimited.
-# rate_write = "100mb/h"
+# Default per-user write speed limit override. Omit for unlimited.
+# rate_write = "5mb/s"
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.

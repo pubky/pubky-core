@@ -8,7 +8,7 @@ use pubky_common::crypto::PublicKey;
 use serde::Deserialize;
 
 use crate::{
-    data_directory::quota_config::BandwidthBudget,
+    data_directory::quota_config::BandwidthRate,
     data_directory::user_resource_quota::UserResourceQuota,
     persistence::sql::user::{UserEntity, UserRepository},
     shared::{HttpError, HttpResult},
@@ -37,10 +37,10 @@ pub(crate) struct ExplicitUserResourceQuota {
     pub storage_quota_mb: Option<u64>,
     /// Maximum concurrent sessions. `null` = unlimited.
     pub max_sessions: Option<u32>,
-    /// Per-user read bandwidth budget (e.g. "500mb/d"). `null` = unlimited.
-    pub rate_read: Option<BandwidthBudget>,
-    /// Per-user write bandwidth budget (e.g. "100mb/h"). `null` = unlimited.
-    pub rate_write: Option<BandwidthBudget>,
+    /// Per-user read speed limit override (e.g. "10mb/s"). `null` = unlimited.
+    pub rate_read: Option<BandwidthRate>,
+    /// Per-user write speed limit override (e.g. "5mb/s"). `null` = unlimited.
+    pub rate_write: Option<BandwidthRate>,
 }
 
 impl<'de> Deserialize<'de> for ExplicitUserResourceQuota {
@@ -52,8 +52,8 @@ impl<'de> Deserialize<'de> for ExplicitUserResourceQuota {
         struct Required {
             storage_quota_mb: Option<u64>,
             max_sessions: Option<u32>,
-            rate_read: Option<BandwidthBudget>,
-            rate_write: Option<BandwidthBudget>,
+            rate_read: Option<BandwidthRate>,
+            rate_write: Option<BandwidthRate>,
         }
 
         // serde treats Option<T> as implicitly optional (absent → None).
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(config.max_sessions, None);
         assert_eq!(
             config.rate_read,
-            Some(BandwidthBudget::from_str("100mb/m").unwrap())
+            Some(BandwidthRate::from_str("100mb/m").unwrap())
         );
         assert_eq!(config.rate_write, None);
     }

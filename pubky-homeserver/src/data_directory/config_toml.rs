@@ -373,13 +373,11 @@ rate_write = "50mb/h"
         assert_eq!(parsed.quotas.max_sessions, Some(3));
         assert_eq!(
             parsed.quotas.rate_read,
-            Some(
-                crate::data_directory::quota_config::BandwidthBudget::from_str("100mb/d").unwrap()
-            )
+            Some(crate::data_directory::quota_config::BandwidthRate::from_str("100mb/d").unwrap())
         );
         assert_eq!(
             parsed.quotas.rate_write,
-            Some(crate::data_directory::quota_config::BandwidthBudget::from_str("50mb/h").unwrap())
+            Some(crate::data_directory::quota_config::BandwidthRate::from_str("50mb/h").unwrap())
         );
     }
 
@@ -420,7 +418,7 @@ rate_read = "rubbish"
 
     #[test]
     fn test_quotas_request_units_rejected() {
-        // BandwidthBudget should reject request-count units like "100r/m"
+        // BandwidthRate should reject request-count units like "100r/m"
         let s = r#"
 [quotas]
 rate_read = "100r/m"

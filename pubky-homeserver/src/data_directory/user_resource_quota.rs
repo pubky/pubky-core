@@ -6,7 +6,7 @@ use pubky_common::crypto::PublicKey;
 use serde::{Deserialize, Serialize};
 
 use super::config_toml::ConfigToml;
-use crate::data_directory::quota_config::BandwidthBudget;
+use crate::data_directory::quota_config::BandwidthRate;
 
 /// How long a cached limit entry is considered fresh before re-resolving from DB.
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
@@ -15,7 +15,7 @@ const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 /// Short TTL so that a subsequent signup populates limits promptly.
 const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(30);
 
-/// Maximum length of the VARCHAR column used for rate budget strings in the DB.
+/// Maximum length of the VARCHAR column used for rate strings in the DB.
 /// Matches the `VARCHAR(32)` used in the `m20260327_add_resource_quota_columns` migration.
 pub const MAX_RATE_COLUMN_LEN: usize = 32;
 
@@ -79,12 +79,12 @@ pub struct UserResourceQuota {
     /// Maximum concurrent sessions. `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_sessions: Option<u32>,
-    /// Per-user read bandwidth budget (e.g. "500mb/d"). `None` = unlimited.
+    /// Per-user read speed limit override (e.g. "10mb/s"). `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_read: Option<BandwidthBudget>,
-    /// Per-user write bandwidth budget (e.g. "100mb/h"). `None` = unlimited.
+    pub rate_read: Option<BandwidthRate>,
+    /// Per-user write speed limit override (e.g. "5mb/s"). `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_write: Option<BandwidthBudget>,
+    pub rate_write: Option<BandwidthRate>,
 }
 
 impl UserResourceQuota {
@@ -149,7 +149,7 @@ impl UserResourceQuota {
     }
 
     /// Serialise a rate field to the string representation stored in DB columns.
-    pub fn rate_str(budget: &Option<BandwidthBudget>) -> Option<String> {
+    pub fn rate_str(budget: &Option<BandwidthRate>) -> Option<String> {
         budget.as_ref().map(|v| v.to_string())
     }
 
@@ -177,9 +177,9 @@ impl UserResourceQuota {
         Self::rate_str(&self.rate_write)
     }
 
-    /// Validate that rate budget fields survive a Display → FromStr roundtrip.
+    /// Validate that rate fields survive a Display → FromStr roundtrip.
     ///
-    /// Defence-in-depth: callers already hold parsed `BandwidthBudget` values,
+    /// Defence-in-depth: callers already hold parsed `BandwidthRate` values,
     /// but this check prevents corrupt data from reaching the database.
     pub fn validate_rate_roundtrips(&self) -> Result<(), String> {
         for (label, budget) in [
@@ -193,7 +193,7 @@ impl UserResourceQuota {
                         "{label} string \"{s}\" exceeds DB column limit of {MAX_RATE_COLUMN_LEN} characters"
                     ));
                 }
-                s.parse::<BandwidthBudget>()
+                s.parse::<BandwidthRate>()
                     .map_err(|e| format!("{label} roundtrip validation failed for \"{s}\": {e}"))?;
             }
         }
@@ -201,10 +201,10 @@ impl UserResourceQuota {
     }
 }
 
-/// Parse a bandwidth budget string from a DB column into a [`BandwidthBudget`].
+/// Parse a bandwidth rate string from a DB column into a [`BandwidthRate`].
 /// Logs a warning and returns `None` if the string is malformed (including
 /// legacy request-unit strings like `"100r/m"`).
-fn parse_rate_column(column: &str, value: Option<String>) -> Option<BandwidthBudget> {
+fn parse_rate_column(column: &str, value: Option<String>) -> Option<BandwidthRate> {
     value.and_then(|s| {
         s.parse()
             .map_err(|e| {
@@ -233,19 +233,19 @@ mod tests {
         let config = config_with_quotas(UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
-            rate_write: Some(BandwidthBudget::from_str("50mb/m").unwrap()),
+            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: Some(BandwidthRate::from_str("50mb/m").unwrap()),
         });
         let result = UserResourceQuota::from_config(&config);
         assert_eq!(result.storage_quota_mb, Some(500));
         assert_eq!(result.max_sessions, Some(10));
         assert_eq!(
             result.rate_read,
-            Some(BandwidthBudget::from_str("100mb/m").unwrap())
+            Some(BandwidthRate::from_str("100mb/m").unwrap())
         );
         assert_eq!(
             result.rate_write,
-            Some(BandwidthBudget::from_str("50mb/m").unwrap())
+            Some(BandwidthRate::from_str("50mb/m").unwrap())
         );
     }
 
@@ -304,7 +304,7 @@ mod tests {
             Some(UserResourceQuota {
                 storage_quota_mb: Some(500),
                 max_sessions: Some(10),
-                rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+                rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
                 rate_write: None,
             })
         );
@@ -353,14 +353,14 @@ mod tests {
                 storage_quota_mb: None,
                 max_sessions: None,
                 rate_read: None, // invalid string → warning + None (unlimited)
-                rate_write: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+                rate_write: Some(BandwidthRate::from_str("100mb/m").unwrap()),
             })
         );
     }
 
     #[test]
     fn test_from_nullable_columns_legacy_request_units_treated_as_unlimited() {
-        // Legacy "100r/m" strings fail BandwidthBudget parse → None (with warning)
+        // Legacy "100r/m" strings fail BandwidthRate parse → None (with warning)
         let config = UserResourceQuota::from_nullable_columns(
             None,
             None,
@@ -383,7 +383,7 @@ mod tests {
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: None,
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -424,8 +424,8 @@ mod tests {
         let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
         for s in budgets {
             let config = UserResourceQuota {
-                rate_read: Some(BandwidthBudget::from_str(s).unwrap()),
-                rate_write: Some(BandwidthBudget::from_str(s).unwrap()),
+                rate_read: Some(BandwidthRate::from_str(s).unwrap()),
+                rate_write: Some(BandwidthRate::from_str(s).unwrap()),
                 ..Default::default()
             };
             config.validate_rate_roundtrips().unwrap_or_else(|e| {
@@ -450,13 +450,13 @@ mod tests {
 
         // A normal config should pass.
         let config = UserResourceQuota {
-            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
+            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
             ..Default::default()
         };
         assert!(config.validate_rate_roundtrips().is_ok());
 
         // Verify that the string representation of all standard budgets is under the limit.
-        let budget = BandwidthBudget::from_str("100mb/m").unwrap();
+        let budget = BandwidthRate::from_str("100mb/m").unwrap();
         let s = budget.to_string();
         assert!(
             s.len() <= MAX_RATE_COLUMN_LEN,

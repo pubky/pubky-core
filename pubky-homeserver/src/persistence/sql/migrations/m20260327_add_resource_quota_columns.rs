@@ -228,7 +228,7 @@ mod tests {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
             rate_read: Some(
-                crate::data_directory::quota_config::BandwidthBudget::from_str("100mb/m").unwrap(),
+                crate::data_directory::quota_config::BandwidthRate::from_str("100mb/m").unwrap(),
             ),
             rate_write: None,
         };
@@ -315,7 +315,7 @@ mod tests {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
             rate_read: Some(
-                crate::data_directory::quota_config::BandwidthBudget::from_str("100mb/m").unwrap(),
+                crate::data_directory::quota_config::BandwidthRate::from_str("100mb/m").unwrap(),
             ),
             rate_write: None,
         };

@@ -6,13 +6,10 @@ use axum::{
 };
 use futures_util::stream::StreamExt;
 
-use axum::Extension;
-
 use crate::{
     client_server::{
         err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState,
     },
-    data_directory::user_resource_quota::UserResourceQuota,
     persistence::{
         files::WriteStreamError,
         sql::{entry::EntryRepository, user::UserRepository, UnifiedExecutor},
@@ -40,17 +37,16 @@ pub async fn put(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
-    user_resource_quota: Option<Extension<UserResourceQuota>>,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
+    let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     // Check if the size hint exceeds the per-user quota so we can fail early.
-    // The quota comes from the resolved UserResourceQuota (DB → per-user column).
-    let user_quota_bytes = user_resource_quota
-        .and_then(|ext| ext.0.storage_quota_mb)
+    let user_quota_bytes = user
+        .resource_quota()
+        .storage_quota_mb
         .map(|mb| mb.saturating_mul(1024 * 1024));
     let content_size_hint = body.size_hint().exact();
     fail_if_size_hint_bigger_than_user_quota(

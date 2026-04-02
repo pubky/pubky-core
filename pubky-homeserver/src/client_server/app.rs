@@ -29,7 +29,6 @@ use tower_http::cors::CorsLayer;
 
 use super::layers::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
-    user_resource_quota_resolver::UserResourceQuotaResolverLayer,
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
@@ -228,8 +227,6 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(CorsLayer::very_permissive())
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
-        ))
-        .layer(UserResourceQuotaResolverLayer::new(
             context.user_resource_quota_cache.clone(),
             context.sql_db.clone(),
         ))

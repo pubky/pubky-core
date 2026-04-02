@@ -1,4 +1,4 @@
-mod bandwidth_budget;
+mod bandwidth_rate;
 mod glob_pattern;
 mod http_method;
 mod limit_key;
@@ -7,7 +7,7 @@ mod quota_value;
 mod rate_unit;
 mod time_unit;
 
-pub use bandwidth_budget::BandwidthBudget;
+pub use bandwidth_rate::BandwidthRate;
 pub use glob_pattern::GlobPattern;
 pub use http_method::HttpMethod;
 pub use limit_key::{LimitKey, LimitKeyType};

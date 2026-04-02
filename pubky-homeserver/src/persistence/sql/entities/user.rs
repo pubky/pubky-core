@@ -177,7 +177,7 @@ impl UserRepository {
 
     /// Set per-user custom limits. Replaces any existing custom limits entirely.
     ///
-    /// Rate limit strings are validated by roundtripping through `BandwidthBudget`
+    /// Rate limit strings are validated by roundtripping through `BandwidthRate`
     /// parsing to ensure only well-formed values reach the database.
     pub async fn set_resource_quota<'a>(
         user_id: i32,
@@ -509,7 +509,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_set_resource_quota() {
-        use crate::data_directory::quota_config::BandwidthBudget;
+        use crate::data_directory::quota_config::BandwidthRate;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -525,8 +525,8 @@ mod tests {
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
-            rate_write: Some(BandwidthBudget::from_str("50mb/s").unwrap()),
+            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: Some(BandwidthRate::from_str("50mb/s").unwrap()),
         };
         UserRepository::set_resource_quota(user.id, &config, &mut db.pool().into())
             .await
@@ -577,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_limits_mixed_null_and_values() {
-        use crate::data_directory::quota_config::BandwidthBudget;
+        use crate::data_directory::quota_config::BandwidthRate;
         use std::str::FromStr;
 
         let user = UserEntity {
@@ -597,7 +597,7 @@ mod tests {
         assert_eq!(limits.max_sessions, None);
         assert_eq!(
             limits.rate_read,
-            Some(BandwidthBudget::from_str("100mb/m").unwrap())
+            Some(BandwidthRate::from_str("100mb/m").unwrap())
         );
         assert_eq!(limits.rate_write, None);
     }
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_apply_resource_quota() {
-        use crate::data_directory::quota_config::BandwidthBudget;
+        use crate::data_directory::quota_config::BandwidthRate;
         use std::str::FromStr;
 
         let mut user = UserEntity {
@@ -662,8 +662,8 @@ mod tests {
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthBudget::from_str("100mb/m").unwrap()),
-            rate_write: Some(BandwidthBudget::from_str("50mb/s").unwrap()),
+            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: Some(BandwidthRate::from_str("50mb/s").unwrap()),
         };
         user.apply_resource_quota(&config);
 
