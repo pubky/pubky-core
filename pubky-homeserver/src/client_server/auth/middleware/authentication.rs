@@ -58,7 +58,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use axum::response::IntoResponse;
-    use pubky_common::auth::AuthVerifier;
+    use crate::client_server::auth::cookie::verifier::AuthVerifier;
     use pubky_common::crypto::Keypair;
     use std::convert::Infallible;
     use std::sync::Arc;

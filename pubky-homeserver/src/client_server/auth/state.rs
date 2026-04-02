@@ -3,7 +3,7 @@
 use crate::app_context::AppContext;
 use crate::persistence::sql::SqlDb;
 use crate::SignupMode;
-use pubky_common::auth::AuthVerifier;
+use super::cookie::verifier::AuthVerifier;
 
 use super::AuthService;
 

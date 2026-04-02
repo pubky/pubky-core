@@ -99,7 +99,7 @@ mod tests {
     use axum::response::IntoResponse;
     use pubky_common::auth::access_jwt::AccessJwtClaims;
     use pubky_common::auth::jws::{GrantId, TokenId};
-    use pubky_common::auth::AuthVerifier;
+    use crate::client_server::auth::cookie::verifier::AuthVerifier;
     use pubky_common::crypto::Keypair;
     use std::sync::Arc;
     use tower::ServiceExt;

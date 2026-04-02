@@ -40,3 +40,4 @@ pub mod auth;
 pub mod middleware;
 pub mod persistence;
 pub mod routes;
+pub(crate) mod verifier;
