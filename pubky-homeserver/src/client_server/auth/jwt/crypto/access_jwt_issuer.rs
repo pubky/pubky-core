@@ -4,52 +4,37 @@
 //! The JWT is used as the `Authorization: Bearer` token on every request.
 //! Homeserver-only — the SDK only decodes JWTs without verification.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use pubky_common::{
     auth::access_jwt::AccessJwtClaims,
-    auth::jws::{GrantId, TokenId},
     crypto::{Keypair, PublicKey},
 };
 
 use super::jws_crypto::{self, JwsCompact};
 
-/// Verified access JWT — the type the homeserver works with after verification.
-#[derive(Clone, Debug)]
-pub struct AccessJwt {
-    /// User public key.
-    pub user_key: PublicKey,
-    /// Grant ID (for revocation checks and cold-cache recovery).
-    pub grant_id: GrantId,
-    /// Token ID (session cache key).
-    pub token_id: TokenId,
-    /// When the token was issued.
-    pub issued_at: DateTime<Utc>,
-    /// When the token expires.
-    pub expires_at: DateTime<Utc>,
+/// Mint a new Access JWT signed by the homeserver.
+pub fn mint_access_jwt(homeserver_keypair: &Keypair, claims: &AccessJwtClaims) -> JwsCompact {
+    let header = jws_crypto::eddsa_header("JWT");
+    let enc = jws_crypto::encoding_key(homeserver_keypair);
+    let token = jsonwebtoken::encode(&header, claims, &enc)
+        .expect("invariant: encoding valid claims with a valid key");
+    JwsCompact::from_trusted(token)
 }
 
-impl AccessJwt {
-    /// Mint a new Access JWT signed by the homeserver.
-    pub fn mint(homeserver_keypair: &Keypair, raw: &AccessJwtClaims) -> JwsCompact {
-        let header = jws_crypto::eddsa_header("JWT");
-        let enc = jws_crypto::encoding_key(homeserver_keypair);
-        let token = jsonwebtoken::encode(&header, raw, &enc)
-            .expect("invariant: encoding valid claims with a valid key");
-        JwsCompact::from_trusted(token)
+/// Verify an Access JWT against the homeserver's public key.
+///
+/// Checks:
+/// 1. EdDSA signature is valid against the homeserver's public key
+/// 2. Token has not expired
+pub fn verify_access_jwt(
+    compact: &JwsCompact,
+    homeserver_pubkey: &PublicKey,
+) -> Result<AccessJwtClaims, Error> {
+    let claims = verify_signature(compact.as_str(), homeserver_pubkey)?;
+    if claims.is_expired(Utc::now().timestamp() as u64) {
+        return Err(Error::Expired);
     }
-
-    /// Verify an Access JWT against the homeserver's public key.
-    ///
-    /// Checks:
-    /// 1. EdDSA signature is valid against the homeserver's public key
-    /// 2. Token has not expired
-    pub fn verify(compact: &JwsCompact, homeserver_pubkey: &PublicKey) -> Result<Self, Error> {
-        let raw = verify_signature(compact.as_str(), homeserver_pubkey)?;
-        if raw.is_expired(Utc::now().timestamp() as u64) {
-            return Err(Error::Expired);
-        };
-        parse_verified_jwt(raw)
-    }
+    Ok(claims)
 }
 
 fn verify_signature(
@@ -63,19 +48,6 @@ fn verify_signature(
     Ok(token_data.claims)
 }
 
-fn parse_verified_jwt(raw: AccessJwtClaims) -> Result<AccessJwt, Error> {
-    let issued_at = DateTime::from_timestamp(raw.iat as i64, 0).ok_or(Error::InvalidTimestamp)?;
-    let expires_at = DateTime::from_timestamp(raw.exp as i64, 0).ok_or(Error::InvalidTimestamp)?;
-
-    Ok(AccessJwt {
-        user_key: raw.sub,
-        grant_id: raw.gid,
-        token_id: raw.jti,
-        issued_at,
-        expires_at,
-    })
-}
-
 /// Errors from Access JWT operations.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -86,20 +58,19 @@ pub enum Error {
     /// The JWT has expired.
     #[error("JWT has expired")]
     Expired,
-
-    /// A timestamp could not be converted to a valid datetime.
-    #[error("invalid timestamp in JWT")]
-    InvalidTimestamp,
 }
 
 #[cfg(test)]
 mod tests {
-    use pubky_common::crypto::Keypair;
+    use pubky_common::{
+        auth::jws::{GrantId, TokenId},
+        crypto::Keypair,
+    };
+
+    use super::*;
 
     /// Default JWT lifetime: 1 hour.
     const DEFAULT_JWT_LIFETIME_SECS: u64 = 3600;
-
-    use super::*;
 
     fn make_raw_jwt(hs_kp: &Keypair, user_kp: &Keypair) -> AccessJwtClaims {
         let now = Utc::now().timestamp() as u64;
@@ -119,12 +90,12 @@ mod tests {
         let user_kp = Keypair::random();
         let raw = make_raw_jwt(&hs_kp, &user_kp);
 
-        let token = AccessJwt::mint(&hs_kp, &raw);
-        let jwt = AccessJwt::verify(&token, &hs_kp.public_key()).unwrap();
+        let token = mint_access_jwt(&hs_kp, &raw);
+        let claims = verify_access_jwt(&token, &hs_kp.public_key()).unwrap();
 
-        assert_eq!(jwt.user_key, user_kp.public_key());
-        assert_eq!(jwt.grant_id, raw.gid);
-        assert_eq!(jwt.token_id, raw.jti);
+        assert_eq!(claims.sub, user_kp.public_key());
+        assert_eq!(claims.gid, raw.gid);
+        assert_eq!(claims.jti, raw.jti);
     }
 
     #[test]
@@ -134,8 +105,8 @@ mod tests {
         let user_kp = Keypair::random();
         let raw = make_raw_jwt(&hs_kp, &user_kp);
 
-        let token = AccessJwt::mint(&hs_kp, &raw);
-        let result = AccessJwt::verify(&token, &wrong_kp.public_key());
+        let token = mint_access_jwt(&hs_kp, &raw);
+        let result = verify_access_jwt(&token, &wrong_kp.public_key());
         assert!(matches!(result, Err(Error::InvalidSignature)));
     }
 
@@ -146,8 +117,8 @@ mod tests {
         let mut raw = make_raw_jwt(&hs_kp, &user_kp);
         raw.exp = 1000; // far in the past
 
-        let token = AccessJwt::mint(&hs_kp, &raw);
-        let result = AccessJwt::verify(&token, &hs_kp.public_key());
+        let token = mint_access_jwt(&hs_kp, &raw);
+        let result = verify_access_jwt(&token, &hs_kp.public_key());
         assert!(matches!(result, Err(Error::Expired)));
     }
 }

@@ -24,7 +24,7 @@ use crate::{
 
 use super::auth::BearerSession;
 use super::crypto::{
-    access_jwt_issuer::AccessJwt,
+    access_jwt_issuer::{mint_access_jwt, verify_access_jwt},
     grant_verifier::verify_grant,
     jws_crypto::JwsCompact,
     pop_verifier::{PopProof, PopVerificationContext, POP_NONCE_GC_THRESHOLD_SECS},
@@ -139,22 +139,22 @@ impl AuthService {
     /// (not revoked, not expired), and returns the resolved session.
     pub async fn resolve_bearer_session(
         &self,
-        jwt: &AccessJwt,
+        jwt: &AccessJwtClaims,
     ) -> Result<BearerSession, AuthServiceError> {
         let session = map_not_found(
-            GrantSessionRepository::get_by_token_id(&jwt.token_id, &mut self.sql_db.pool().into())
+            GrantSessionRepository::get_by_token_id(&jwt.jti, &mut self.sql_db.pool().into())
                 .await,
             AuthServiceError::SessionNotFound,
         )?;
 
-        let grant = self.get_grant(&jwt.grant_id).await?;
+        let grant = self.get_grant(&jwt.gid).await?;
         grant.require_active(Utc::now().timestamp())?;
 
         Ok(BearerSession {
-            user_key: jwt.user_key.clone(),
+            user_key: jwt.sub.clone(),
             capabilities: grant.capabilities,
-            grant_id: jwt.grant_id.clone(),
-            token_id: jwt.token_id.clone(),
+            grant_id: jwt.gid.clone(),
+            token_id: jwt.jti.clone(),
             token_expires_at: session.expires_at as u64,
         })
     }
@@ -362,7 +362,7 @@ impl AuthService {
         let jwt_exp = now + DEFAULT_JWT_LIFETIME_SECS;
 
         let claims = build_access_jwt_claims(&self.homeserver_keypair, grant, &token_id, now, jwt_exp);
-        let token = AccessJwt::mint(&self.homeserver_keypair, &claims);
+        let token = mint_access_jwt(&self.homeserver_keypair, &claims);
 
         let new_session = NewGrantSession { token_id, grant_id: grant.jti.clone(), expires_at: jwt_exp };
         GrantSessionRepository::create(&new_session, executor).await?;
@@ -600,7 +600,7 @@ mod tests {
 
         // Verify the minted JWT and resolve
         let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
         let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
 
         assert_eq!(bearer.user_key, user_kp.public_key());
@@ -620,7 +620,7 @@ mod tests {
         service.revoke_grant(&raw_grant.jti).await.unwrap();
 
         let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
         let err = service.resolve_bearer_session(&jwt).await.unwrap_err();
         // Session was deleted by revoke_grant, so SessionNotFound (or GrantRevoked depending on timing)
         assert!(matches!(err, AuthServiceError::SessionNotFound | AuthServiceError::GrantRevoked));
@@ -643,8 +643,8 @@ mod tests {
             iat: now,
             exp: now + 3600,
         };
-        let token = AccessJwt::mint(&service.homeserver_keypair, &claims);
-        let jwt = AccessJwt::verify(&token, &hs_kp_pub).unwrap();
+        let token = mint_access_jwt(&service.homeserver_keypair, &claims);
+        let jwt = verify_access_jwt(&token, &hs_kp_pub).unwrap();
 
         let err = service.resolve_bearer_session(&jwt).await.unwrap_err();
         assert!(matches!(err, AuthServiceError::SessionNotFound));
@@ -662,7 +662,7 @@ mod tests {
 
         let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
         let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
         let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
 
         let info = service.get_bearer_session_info(&bearer).await.unwrap();
@@ -698,7 +698,7 @@ mod tests {
 
         let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
         let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
         let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
 
         service.signout_bearer(&bearer).await.unwrap();
@@ -720,7 +720,7 @@ mod tests {
 
         let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
         let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
         let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
 
         let resolved = service.resolve_user_id(&AuthSession::Bearer(bearer)).await.unwrap();

@@ -118,7 +118,7 @@ where
 mod tests {
     use super::*;
     use crate::app_context::AppContext;
-    use crate::client_server::auth::jwt::crypto::access_jwt_issuer::AccessJwt;
+    use crate::client_server::auth::jwt::crypto::access_jwt_issuer::mint_access_jwt;
     use crate::client_server::auth::AuthSession;
     use crate::client_server::auth::AuthState;
     use axum::http::StatusCode;
@@ -179,7 +179,7 @@ mod tests {
             iat: now,
             exp: now + 3600,
         };
-        AccessJwt::mint(homeserver_keypair, &claims).to_string()
+        mint_access_jwt(homeserver_keypair, &claims).to_string()
     }
 
     #[tokio::test]
@@ -265,7 +265,7 @@ mod tests {
             iat: 1000,
             exp: 2000, // far in the past
         };
-        let token = AccessJwt::mint(&hs_keypair, &claims);
+        let token = mint_access_jwt(&hs_keypair, &claims);
 
         let req = Request::builder()
             .uri("/pub/file.txt")

@@ -6,7 +6,7 @@ use pubky_common::auth::jws::{GrantId, TokenId};
 use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 
-use super::crypto::access_jwt_issuer::AccessJwt;
+use super::crypto::access_jwt_issuer::verify_access_jwt;
 use super::crypto::jws_crypto::JwsCompact;
 use crate::client_server::auth::AuthSession;
 use crate::client_server::auth::AuthState;
@@ -35,7 +35,7 @@ pub async fn authenticate_bearer(
     state: &AuthState,
     token: &JwsCompact,
 ) -> Result<AuthSession, HttpError> {
-    let jwt = AccessJwt::verify(token, &state.auth_service.homeserver_public_key())
+    let jwt = verify_access_jwt(token, &state.auth_service.homeserver_public_key())
         .map_err(|_| HttpError::unauthorized_with_message("Invalid or expired JWT"))?;
 
     let bearer = state
