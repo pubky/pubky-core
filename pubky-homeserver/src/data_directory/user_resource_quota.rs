@@ -348,6 +348,111 @@ impl UserResourceQuota {
             ..Default::default()
         }
     }
+
+    /// Merge a patch into this quota: only fields present in the patch are updated.
+    pub fn merge(&mut self, patch: &UserResourceQuotaPatch) {
+        if let Some(v) = patch.storage_quota_mb {
+            self.storage_quota_mb = v;
+        }
+        if let Some(v) = patch.max_sessions {
+            self.max_sessions = v;
+        }
+        if let Some(ref v) = patch.rate_read {
+            self.rate_read = v.clone();
+        }
+        if let Some(ref v) = patch.rate_write {
+            self.rate_write = v.clone();
+        }
+    }
+}
+
+/// Partial update for `UserResourceQuota`.
+///
+/// Used by the PATCH endpoint: only fields present in the JSON body are
+/// applied to the existing quota. Absent fields are left unchanged.
+///
+/// - `storage_quota_mb` / `max_sessions`: absent → keep, null → None (no limit), value → Some(n)
+/// - `rate_read` / `rate_write`: absent → keep, null → Unlimited, value → Value(T)
+#[derive(Debug, Clone, Default)]
+pub struct UserResourceQuotaPatch {
+    /// If `Some`, overwrite storage_quota_mb. Inner `None` = no limit.
+    pub storage_quota_mb: Option<Option<u64>>,
+    /// If `Some`, overwrite max_sessions. Inner `None` = no limit.
+    pub max_sessions: Option<Option<u32>>,
+    /// If `Some`, overwrite rate_read. `Unlimited` = no limit, `Value` = explicit.
+    pub rate_read: Option<QuotaOverride<BandwidthRate>>,
+    /// If `Some`, overwrite rate_write. `Unlimited` = no limit, `Value` = explicit.
+    pub rate_write: Option<QuotaOverride<BandwidthRate>>,
+}
+
+impl<'de> Deserialize<'de> for UserResourceQuotaPatch {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// null → Some(None), value → Some(Some(v)).
+        fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+        where
+            T: Deserialize<'de>,
+            D: Deserializer<'de>,
+        {
+            let inner = Option::<T>::deserialize(deserializer)?;
+            Ok(Some(inner))
+        }
+
+        /// null → Some(Unlimited), value → Some(Value(v)).
+        fn rate_option<'de, D>(
+            deserializer: D,
+        ) -> Result<Option<QuotaOverride<BandwidthRate>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let inner = Option::<BandwidthRate>::deserialize(deserializer)?;
+            Ok(Some(match inner {
+                None => QuotaOverride::Unlimited,
+                Some(v) => QuotaOverride::Value(v),
+            }))
+        }
+
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(default, deserialize_with = "double_option")]
+            storage_quota_mb: Option<Option<u64>>,
+            #[serde(default, deserialize_with = "double_option")]
+            max_sessions: Option<Option<u32>>,
+            #[serde(default, deserialize_with = "rate_option")]
+            rate_read: Option<QuotaOverride<BandwidthRate>>,
+            #[serde(default, deserialize_with = "rate_option")]
+            rate_write: Option<QuotaOverride<BandwidthRate>>,
+        }
+
+        let h = Helper::deserialize(deserializer)?;
+        Ok(UserResourceQuotaPatch {
+            storage_quota_mb: h.storage_quota_mb,
+            max_sessions: h.max_sessions,
+            rate_read: h.rate_read,
+            rate_write: h.rate_write,
+        })
+    }
+}
+
+impl UserResourceQuotaPatch {
+    /// Validate that any rate fields with values survive a roundtrip.
+    pub fn validate_rate_roundtrips(&self) -> Result<(), String> {
+        for (label, field) in [
+            ("rate_read", &self.rate_read),
+            ("rate_write", &self.rate_write),
+        ] {
+            if let Some(QuotaOverride::Value(ref b)) = field {
+                let s = b.to_string();
+                if s.len() > MAX_RATE_COLUMN_LEN {
+                    return Err(format!(
+                        "{label} string \"{s}\" exceeds DB column limit of {MAX_RATE_COLUMN_LEN} characters"
+                    ));
+                }
+                s.parse::<BandwidthRate>()
+                    .map_err(|e| format!("{label} roundtrip validation failed for \"{s}\": {e}"))?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -622,5 +727,81 @@ mod tests {
         let q = UserResourceQuota::storage_default_from_config(1024);
         assert_eq!(q.storage_quota_mb, Some(1024));
         assert_eq!(q.max_sessions, None);
+    }
+
+    // ── Patch deserialization ────────────────────────────────────────
+
+    #[test]
+    fn test_patch_empty_body_changes_nothing() {
+        let patch: UserResourceQuotaPatch = serde_json::from_str("{}").unwrap();
+        assert!(patch.storage_quota_mb.is_none());
+        assert!(patch.max_sessions.is_none());
+        assert!(patch.rate_read.is_none());
+        assert!(patch.rate_write.is_none());
+    }
+
+    #[test]
+    fn test_patch_null_sets_unlimited() {
+        let json = r#"{"rate_read": null, "storage_quota_mb": null}"#;
+        let patch: UserResourceQuotaPatch = serde_json::from_str(json).unwrap();
+        // storage: null → Some(None) = remove limit
+        assert_eq!(patch.storage_quota_mb, Some(None));
+        // rate: null → Some(Unlimited)
+        assert_eq!(patch.rate_read, Some(QuotaOverride::Unlimited));
+        // absent → None (unchanged)
+        assert!(patch.max_sessions.is_none());
+        assert!(patch.rate_write.is_none());
+    }
+
+    #[test]
+    fn test_patch_value_sets_value() {
+        let json = r#"{"storage_quota_mb": 500, "rate_write": "10mb/s"}"#;
+        let patch: UserResourceQuotaPatch = serde_json::from_str(json).unwrap();
+        assert_eq!(patch.storage_quota_mb, Some(Some(500)));
+        assert_eq!(
+            patch.rate_write,
+            Some(QuotaOverride::Value(
+                BandwidthRate::from_str("10mb/s").unwrap()
+            ))
+        );
+        assert!(patch.max_sessions.is_none());
+        assert!(patch.rate_read.is_none());
+    }
+
+    #[test]
+    fn test_merge_applies_only_present_fields() {
+        let mut base = UserResourceQuota {
+            storage_quota_mb: Some(500),
+            max_sessions: Some(10),
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
+        };
+
+        // Patch only storage_quota_mb and rate_write; others should be unchanged
+        let patch: UserResourceQuotaPatch =
+            serde_json::from_str(r#"{"storage_quota_mb": 200, "rate_write": null}"#).unwrap();
+        base.merge(&patch);
+
+        assert_eq!(base.storage_quota_mb, Some(200));
+        assert_eq!(base.max_sessions, Some(10)); // unchanged
+        assert_eq!(
+            base.rate_read,
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+        ); // unchanged
+        assert_eq!(base.rate_write, QuotaOverride::Unlimited); // patched
+    }
+
+    #[test]
+    fn test_merge_empty_patch_is_noop() {
+        let original = UserResourceQuota {
+            storage_quota_mb: Some(500),
+            max_sessions: Some(10),
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Unlimited,
+        };
+        let mut patched = original.clone();
+        let patch: UserResourceQuotaPatch = serde_json::from_str("{}").unwrap();
+        patched.merge(&patch);
+        assert_eq!(patched, original);
     }
 }

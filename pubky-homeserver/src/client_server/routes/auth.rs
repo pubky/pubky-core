@@ -195,6 +195,9 @@ async fn create_session_and_cookie(
 
         let count = SessionRepository::count_by_user_id(user.id, uexecutor!(tx)).await?;
         if count >= i64::from(max) {
+            // Explicitly rollback to release the FOR UPDATE lock immediately,
+            // rather than waiting for `tx` to be dropped when the future completes.
+            tx.rollback().await?;
             return Err(HttpError::new_with_message(
                 StatusCode::TOO_MANY_REQUESTS,
                 format!("Maximum sessions ({max}) reached"),

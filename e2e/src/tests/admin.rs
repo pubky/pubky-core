@@ -112,7 +112,7 @@ async fn per_user_quota_via_admin_api() {
     let admin_client = PubkyHttpClient::new().unwrap();
     let resp = admin_client
         .request(
-            Method::PUT,
+            Method::PATCH,
             &format!("http://{admin_socket}/users/{pubkey_a}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
@@ -207,7 +207,7 @@ async fn per_user_speed_override_throttles_via_admin_api() {
     let admin_client = PubkyHttpClient::new().unwrap();
     let resp = admin_client
         .request(
-            Method::PUT,
+            Method::PATCH,
             &format!("http://{admin_socket}/users/{pubkey_a_z32}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)
@@ -282,7 +282,7 @@ async fn max_sessions_enforced_via_admin_api() {
     let admin_client = PubkyHttpClient::new().unwrap();
     let resp = admin_client
         .request(
-            Method::PUT,
+            Method::PATCH,
             &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
         )
         .header("X-Admin-Password", &admin_password)

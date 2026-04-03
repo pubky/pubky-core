@@ -7,7 +7,7 @@ use axum::{
 use pubky_common::crypto::PublicKey;
 
 use crate::{
-    data_directory::user_resource_quota::UserResourceQuota,
+    data_directory::user_resource_quota::UserResourceQuotaPatch,
     persistence::sql::user::{UserEntity, UserRepository},
     shared::{HttpError, HttpResult},
 };
@@ -39,22 +39,25 @@ pub async fn get_user_resource_quota(
     Ok(Json(user.resource_quota()))
 }
 
-/// PUT /users/{pubkey}/resource-quotas — set per-user custom limits (replaces entirely).
+/// PATCH /users/{pubkey}/resource-quotas — update per-user custom limits.
 ///
-/// Accepts a partial JSON body:
-/// - `storage_quota_mb` / `max_sessions`: absent or null → no limit, value → explicit limit
-/// - `rate_read` / `rate_write`: absent → Default, null → Unlimited, value → explicit limit
-pub async fn put_user_resource_quota(
+/// Only fields present in the JSON body are updated; absent fields are left unchanged.
+/// - `storage_quota_mb` / `max_sessions`: absent → keep, null → no limit, value → explicit limit
+/// - `rate_read` / `rate_write`: absent → keep, null → Unlimited, value → explicit limit
+pub async fn patch_user_resource_quota(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
-    Json(config): Json<UserResourceQuota>,
+    Json(patch): Json<UserResourceQuotaPatch>,
 ) -> HttpResult<impl IntoResponse> {
-    // Validate rate strings before touching the DB — return 422 for bad values.
-    config
+    patch
         .validate_rate_roundtrips()
         .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
     let user = resolve_user(&state, &pubkey_str).await?;
+
+    // Read current config, apply the patch, and write back.
+    let mut config = user.resource_quota();
+    config.merge(&patch);
 
     UserRepository::set_resource_quota(user.id, &config, &mut state.sql_db.pool().into()).await?;
 
@@ -73,7 +76,7 @@ mod tests {
     use super::*;
     use crate::admin_server::app::create_app;
     use crate::data_directory::quota_config::BandwidthRate;
-    use crate::data_directory::user_resource_quota::QuotaOverride;
+    use crate::data_directory::user_resource_quota::{QuotaOverride, UserResourceQuota};
     use crate::persistence::files::FileService;
     use crate::AppContext;
 
@@ -167,14 +170,14 @@ mod tests {
         let json: serde_json::Value = response.json();
         assert_eq!(json, serde_json::json!({}));
 
-        // PUT with partial body (absent fields = Default)
+        // PATCH with partial body (absent fields = keep existing)
         let body = serde_json::json!({
             "storage_quota_mb": 500,
             "max_sessions": 10,
             "rate_read": "100mb/m"
         });
         let response = server
-            .put(&url)
+            .patch(&url)
             .add_header("X-Admin-Password", "test")
             .content_type("application/json")
             .bytes(serde_json::to_vec(&body).unwrap().into())
@@ -196,7 +199,7 @@ mod tests {
         // rate_write was Default → should be absent from JSON
         assert!(json.get("rate_write").is_none());
 
-        // PUT with null fields to make unlimited
+        // PATCH with null fields to make unlimited
         let body = serde_json::json!({
             "storage_quota_mb": null,
             "max_sessions": null,
@@ -204,7 +207,7 @@ mod tests {
             "rate_write": null
         });
         let response = server
-            .put(&url)
+            .patch(&url)
             .add_header("X-Admin-Password", "test")
             .content_type("application/json")
             .bytes(serde_json::to_vec(&body).unwrap().into())
@@ -212,7 +215,7 @@ mod tests {
             .await;
         response.assert_status_ok();
 
-        // GET after all-null PUT: storage/sessions are None (omitted),
+        // GET after all-null PATCH: storage/sessions are None (omitted),
         // rate fields are Unlimited (serialized as null)
         let response = server
             .get(&url)
@@ -251,7 +254,7 @@ mod tests {
             "rate_read": "rubbish"
         });
         let response = server
-            .put(&url)
+            .patch(&url)
             .add_header("X-Admin-Password", "test")
             .content_type("application/json")
             .bytes(serde_json::to_vec(&body).unwrap().into())
@@ -277,74 +280,6 @@ mod tests {
         response.assert_status(axum::http::StatusCode::NOT_FOUND);
     }
 
-    /// PUT /users/{pubkey}/resource-quotas replaces the entire config.
-    /// Absent fields become Default (NULL in DB).
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_put_user_resource_quota_replaces_all_fields() {
-        use crate::persistence::sql::user::UserRepository;
-        use pubky_common::crypto::Keypair;
-
-        let context = AppContext::test().await;
-        let server = create_test_server(&context);
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-
-        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
-            .await
-            .unwrap();
-
-        let url = format!("/users/{}/resource-quotas", pubkey.z32());
-
-        // 1) PUT all four fields with values
-        let body = serde_json::json!({
-            "storage_quota_mb": 500,
-            "max_sessions": 10,
-            "rate_read": "100mb/m",
-            "rate_write": "50mb/m"
-        });
-        server
-            .put(&url)
-            .add_header("X-Admin-Password", "test")
-            .content_type("application/json")
-            .bytes(serde_json::to_vec(&body).unwrap().into())
-            .expect_success()
-            .await;
-
-        // 2) PUT with only storage_quota_mb — others become Default
-        let body = serde_json::json!({
-            "storage_quota_mb": 200
-        });
-        server
-            .put(&url)
-            .add_header("X-Admin-Password", "test")
-            .content_type("application/json")
-            .bytes(serde_json::to_vec(&body).unwrap().into())
-            .expect_success()
-            .await;
-
-        // 3) Verify: storage_quota_mb is 200, others are Default (absent from JSON)
-        let response = server
-            .get(&url)
-            .add_header("X-Admin-Password", "test")
-            .expect_success()
-            .await;
-        let json: serde_json::Value = response.json();
-        assert_eq!(json["storage_quota_mb"], 200);
-        assert!(
-            json.get("max_sessions").is_none(),
-            "max_sessions should be Default (absent) after PUT replace"
-        );
-        assert!(
-            json.get("rate_read").is_none(),
-            "rate_read should be Default (absent) after PUT replace"
-        );
-        assert!(
-            json.get("rate_write").is_none(),
-            "rate_write should be Default (absent) after PUT replace"
-        );
-    }
-
     /// Test that Default vs Unlimited are distinguishable for rate fields in GET response.
     #[tokio::test]
     #[pubky_test_utils::test]
@@ -363,12 +298,12 @@ mod tests {
 
         let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
-        // PUT: rate_read = null (Unlimited), rate_write absent (Default)
+        // PATCH: rate_read = null (Unlimited), rate_write absent (unchanged = Default)
         let body = serde_json::json!({
             "rate_read": null
         });
         server
-            .put(&url)
+            .patch(&url)
             .add_header("X-Admin-Password", "test")
             .content_type("application/json")
             .bytes(serde_json::to_vec(&body).unwrap().into())
@@ -395,5 +330,140 @@ mod tests {
         // storage/sessions: null and absent both map to None → both omitted
         assert!(json.get("storage_quota_mb").is_none());
         assert!(json.get("max_sessions").is_none());
+    }
+
+    /// PATCH only updates the fields present in the body; absent fields are left unchanged.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_patch_user_resource_quota_merges() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
+
+        // 1) PUT all four fields
+        let body = serde_json::json!({
+            "storage_quota_mb": 500,
+            "max_sessions": 10,
+            "rate_read": "100mb/m",
+            "rate_write": "50mb/m"
+        });
+        server
+            .patch(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+
+        // 2) PATCH only storage_quota_mb — others should be unchanged
+        let patch = serde_json::json!({
+            "storage_quota_mb": 200
+        });
+        server
+            .patch(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&patch).unwrap().into())
+            .expect_success()
+            .await;
+
+        // 3) Verify: storage_quota_mb changed, all others preserved
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let json: serde_json::Value = response.json();
+        assert_eq!(json["storage_quota_mb"], 200);
+        assert_eq!(json["max_sessions"], 10);
+        assert_eq!(json["rate_read"], "100mb/m");
+        assert_eq!(json["rate_write"], "50mb/m");
+
+        // 4) PATCH rate_write to null (Unlimited), leave rest unchanged
+        let patch = serde_json::json!({
+            "rate_write": null
+        });
+        server
+            .patch(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&patch).unwrap().into())
+            .expect_success()
+            .await;
+
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let json: serde_json::Value = response.json();
+        assert_eq!(json["storage_quota_mb"], 200);
+        assert_eq!(json["max_sessions"], 10);
+        assert_eq!(json["rate_read"], "100mb/m");
+        assert!(
+            json["rate_write"].is_null(),
+            "rate_write should be Unlimited (null)"
+        );
+
+        // 5) Empty PATCH should change nothing
+        let patch = serde_json::json!({});
+        server
+            .patch(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&patch).unwrap().into())
+            .expect_success()
+            .await;
+
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let json: serde_json::Value = response.json();
+        assert_eq!(json["storage_quota_mb"], 200);
+        assert_eq!(json["max_sessions"], 10);
+        assert_eq!(json["rate_read"], "100mb/m");
+        assert!(json["rate_write"].is_null());
+    }
+
+    /// PATCH with invalid rate string should be rejected with 422.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_patch_invalid_rate_rejected() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
+        let patch = serde_json::json!({
+            "rate_read": "rubbish"
+        });
+        let response = server
+            .patch(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&patch).unwrap().into())
+            .expect_failure()
+            .await;
+        response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 }

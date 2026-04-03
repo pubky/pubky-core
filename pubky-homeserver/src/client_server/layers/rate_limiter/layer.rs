@@ -252,20 +252,20 @@ impl LimitTuple {
 
 /// Resolve limits for a single user: check cache, fall back to DB on miss.
 ///
-/// Returns `Some(config)` for known users, `None` for unknown or on error.
+/// Returns `Ok(Some(config))` for known users, `Ok(None)` for unknown users,
+/// or `Err` if the DB query fails.
 ///
 /// ## Cache capacity behaviour
 ///
 /// The cache is bounded by [`MAX_CACHED_USER_RESOURCE_QUOTAS`]. When a miss
 /// occurs at capacity, expired entries are evicted first. If the cache is
-/// still full after eviction, a random entry is evicted to make room.
-/// This ensures new entries are always cached, avoiding repeated DB hits
-/// for the same user during high-traffic bursts.
+/// still full after eviction, 10% of entries are evicted (arbitrary order)
+/// to make room in bulk and avoid per-request churn.
 async fn resolve_limits(
     pubkey: &PublicKey,
     cache: &UserResourceQuotaCache,
     sql_db: &SqlDb,
-) -> Option<UserResourceQuota> {
+) -> Result<Option<UserResourceQuota>, sqlx::Error> {
     // Check cache: use entry if present and not expired.
     let cached = cache
         .get(pubkey)
@@ -273,22 +273,26 @@ async fn resolve_limits(
         .map(|entry| entry.config.clone());
 
     if let Some(maybe_config) = cached {
-        return maybe_config;
+        return Ok(maybe_config);
     }
 
     // Cache miss or expired — query DB.
     cache.remove(pubkey);
 
-    // Make room if at capacity: evict expired entries first, then a random
-    // entry if still full.
+    // Make room if at capacity: evict expired entries first, then ~10%
+    // in bulk if still full to avoid per-request churn.
     if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
         cache.retain(|_, entry| !entry.is_expired());
 
         if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
-            // Evict a random entry. DashMap iteration order is arbitrary
-            // (hash-bucket based), which provides sufficient randomness here.
-            if let Some(entry) = cache.iter().next() {
-                cache.remove(entry.key());
+            let to_evict = MAX_CACHED_USER_RESOURCE_QUOTAS / 10;
+            let keys: Vec<_> = cache
+                .iter()
+                .take(to_evict.max(1))
+                .map(|entry| entry.key().clone())
+                .collect();
+            for key in keys {
+                cache.remove(&key);
             }
         }
     }
@@ -300,21 +304,15 @@ async fn resolve_limits(
                 pubkey.clone(),
                 CachedUserResourceQuota::new(resolved.clone()),
             );
-            Some(resolved)
+            Ok(Some(resolved))
         }
         // Cache a negative entry with a short TTL to prevent repeated DB queries
         // for non-existent users, while allowing subsequent signup to take effect.
         Err(sqlx::Error::RowNotFound) => {
             cache.insert(pubkey.clone(), CachedUserResourceQuota::not_found());
-            None
+            Ok(None)
         }
-        Err(e) => {
-            tracing::warn!(
-                "Failed to query user limits for {}: {e}; skipping",
-                pubkey.z32()
-            );
-            None
-        }
+        Err(e) => Err(e),
     }
 }
 
@@ -470,7 +468,20 @@ where
             // Resolve per-user quota only when a user-keyed speed limit matched.
             let user_quota = if needs_user_quota {
                 if let Some(ref pubkey) = user_pubkey {
-                    resolve_limits(pubkey, &cache, &sql_db).await
+                    match resolve_limits(pubkey, &cache, &sql_db).await {
+                        Ok(quota) => quota,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to resolve user limits for {}: {e}",
+                                pubkey.z32()
+                            );
+                            return Ok(HttpError::new_with_message(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Failed to resolve user limits",
+                            )
+                            .into_response());
+                        }
+                    }
                 } else {
                     None
                 }
