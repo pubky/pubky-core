@@ -127,7 +127,7 @@ impl AuthService {
         })
     }
 
-    /// Sign out a bearer session: revoke its grant and delete all sessions.
+    /// Sign out: Revoke its grant and delete all sessions.
     pub async fn signout_bearer(&self, bearer: &BearerSession) -> Result<(), AuthServiceError> {
         self.revoke_grant(&bearer.grant_id).await
     }
@@ -374,7 +374,7 @@ impl AuthService {
         let new_session = NewGrantSession { token_id, grant_id: grant.grant_id.clone(), expires_at: jwt_exp };
         GrantSessionRepository::create(&new_session, executor).await?;
 
-        Ok(build_session_response(token, grant, self.homeserver_keypair.public_key(), jwt_exp, now))
+        Ok(build_session_response(token.to_string(), grant, self.homeserver_keypair.public_key(), jwt_exp, now))
     }
 }
 

@@ -27,6 +27,13 @@ impl JwsCompact {
         Ok(Self(s.to_string()))
     }
 
+    /// Wrap a string that is **known** to be valid JWS Compact (e.g. output of
+    /// `jsonwebtoken::encode`). Skips the three-part check.
+    pub(crate) fn from_trusted(s: String) -> Self {
+        debug_assert_eq!(s.splitn(4, '.').count(), 3, "not a valid JWS Compact");
+        Self(s)
+    }
+
     /// Returns the inner string.
     pub fn as_str(&self) -> &str {
         &self.0

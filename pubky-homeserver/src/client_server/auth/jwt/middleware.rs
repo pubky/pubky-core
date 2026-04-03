@@ -179,7 +179,7 @@ mod tests {
             iat: now,
             exp: now + 3600,
         };
-        AccessJwt::mint(homeserver_keypair, &claims)
+        AccessJwt::mint(homeserver_keypair, &claims).to_string()
     }
 
     #[tokio::test]

@@ -30,11 +30,12 @@ pub struct AccessJwt {
 
 impl AccessJwt {
     /// Mint a new Access JWT signed by the homeserver.
-    pub fn mint(homeserver_keypair: &Keypair, raw: &AccessJwtClaims) -> String {
+    pub fn mint(homeserver_keypair: &Keypair, raw: &AccessJwtClaims) -> JwsCompact {
         let header = jws_crypto::eddsa_header("JWT");
         let enc = jws_crypto::encoding_key(homeserver_keypair);
-        jsonwebtoken::encode(&header, raw, &enc)
-            .expect("invariant: encoding valid claims with a valid key")
+        let token = jsonwebtoken::encode(&header, raw, &enc)
+            .expect("invariant: encoding valid claims with a valid key");
+        JwsCompact::from_trusted(token)
     }
 
     /// Verify an Access JWT against the homeserver's public key.
@@ -123,7 +124,7 @@ mod tests {
         let user_kp = Keypair::random();
         let raw = make_raw_jwt(&hs_kp, &user_kp);
 
-        let token = JwsCompact::parse(&AccessJwt::mint(&hs_kp, &raw)).unwrap();
+        let token = AccessJwt::mint(&hs_kp, &raw);
         let jwt = AccessJwt::verify(&token, &hs_kp.public_key()).unwrap();
 
         assert_eq!(jwt.user_key, user_kp.public_key());
@@ -138,7 +139,7 @@ mod tests {
         let user_kp = Keypair::random();
         let raw = make_raw_jwt(&hs_kp, &user_kp);
 
-        let token = JwsCompact::parse(&AccessJwt::mint(&hs_kp, &raw)).unwrap();
+        let token = AccessJwt::mint(&hs_kp, &raw);
         let result = AccessJwt::verify(&token, &wrong_kp.public_key());
         assert!(matches!(result, Err(Error::InvalidSignature)));
     }
@@ -150,7 +151,7 @@ mod tests {
         let mut raw = make_raw_jwt(&hs_kp, &user_kp);
         raw.exp = 1000; // far in the past
 
-        let token = JwsCompact::parse(&AccessJwt::mint(&hs_kp, &raw)).unwrap();
+        let token = AccessJwt::mint(&hs_kp, &raw);
         let result = AccessJwt::verify(&token, &hs_kp.public_key());
         assert!(matches!(result, Err(Error::Expired)));
     }

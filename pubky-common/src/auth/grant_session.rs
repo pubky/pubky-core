@@ -32,7 +32,6 @@ pub struct GrantSessionResponse {
 /// Session metadata returned alongside the JWT.
 ///
 /// Timestamps are Unix seconds (not microseconds).
-/// `pubky_timestamp::Timestamp` uses microseconds — different semantics.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GrantSessionInfo {
     /// Homeserver that issued this session.
