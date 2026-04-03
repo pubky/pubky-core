@@ -86,7 +86,7 @@ fn check_capabilities(
 ) -> Result<(), HttpError> {
     let has_access = capabilities
         .iter()
-        .any(|cap| path.starts_with(&cap.scope) && cap.actions.contains(&Action::Write));
+        .any(|cap| cap.scope_covers_path(path) && cap.actions.contains(&Action::Write));
 
     if has_access {
         Ok(())
@@ -165,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn extractor_rejects_write_with_wrong_scope() {
-        let auth = bearer_session_with_caps(scoped_caps("/pub/other.app"));
+        let auth = bearer_session_with_caps(scoped_caps("/pub/other.app/"));
         let mut parts = parts_with_auth("/pub/my.app/data.json", Some(auth));
         let result = WriteAccess::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());
@@ -189,10 +189,18 @@ mod tests {
 
     #[tokio::test]
     async fn extractor_allows_scoped_write_matching_path() {
-        let auth = bearer_session_with_caps(scoped_caps("/pub/my.app"));
+        let auth = bearer_session_with_caps(scoped_caps("/pub/my.app/"));
         let mut parts = parts_with_auth("/pub/my.app/data.json", Some(auth));
         let result = WriteAccess::from_request_parts(&mut parts, &()).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn extractor_rejects_scope_prefix_without_boundary() {
+        let auth = bearer_session_with_caps(scoped_caps("/pub/app"));
+        let mut parts = parts_with_auth("/pub/app-evil/data.json", Some(auth));
+        let result = WriteAccess::from_request_parts(&mut parts, &()).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -240,13 +248,25 @@ mod tests {
 
     #[test]
     fn scoped_capability_grants_access_to_subpath() {
-        let caps = scoped_caps("/pub/my.app");
+        let caps = scoped_caps("/pub/my.app/");
         assert!(check_capabilities(&caps, "/pub/my.app/nested/file").is_ok());
     }
 
     #[test]
     fn scoped_capability_denies_access_to_sibling_path() {
-        let caps = scoped_caps("/pub/my.app");
+        let caps = scoped_caps("/pub/my.app/");
         assert!(check_capabilities(&caps, "/pub/other.app/file").is_err());
+    }
+
+    #[test]
+    fn scoped_capability_without_slash_rejects_prefix_attack() {
+        let caps = scoped_caps("/pub/app");
+        assert!(check_capabilities(&caps, "/pub/app-evil/file").is_err());
+    }
+
+    #[test]
+    fn scoped_capability_without_slash_allows_exact_match() {
+        let caps = scoped_caps("/pub/app");
+        assert!(check_capabilities(&caps, "/pub/app").is_ok());
     }
 }

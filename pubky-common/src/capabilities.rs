@@ -122,8 +122,35 @@ impl Capability {
         }
     }
 
+    /// Whether this is the root capability (`/:rw`).
+    pub fn is_root(&self) -> bool {
+        *self == Self::root()
+    }
+
+    /// Whether this capability's scope covers the given path.
+    ///
+    /// Segment-based scope matching: every segment in `parent` must match
+    /// the corresponding segment in `child`, and `parent` must not be
+    /// more specific (deeper) than `child`. `/pub/app` covers `/pub/app/file.txt`
+    /// but NOT `/pub/app-evil/file`. Trailing slashes are ignored.
+    pub fn scope_covers_path(&self, path: &str) -> bool {
+        let parent_parts: Vec<&str> = self.scope.split('/').filter(|s| !s.is_empty()).collect();
+        let child_parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+
+        if parent_parts.len() > child_parts.len() {
+            return false;
+        }
+
+        parent_parts
+            .iter()
+            .zip(child_parts.iter())
+            .all(|(p, c)| p == c)
+    }
+
+    /// Whether this capability fully covers `other` — i.e. the scope is equal or
+    /// broader, and every action (read/write) in `other` is also present in `self`.
     fn covers(&self, other: &Capability) -> bool {
-        if !scope_covers(&self.scope, &other.scope) {
+        if !self.scope_covers_path(&other.scope) {
             return false;
         }
 
@@ -589,18 +616,6 @@ fn normalize_scope(mut s: String) -> String {
         s.insert(0, '/');
     }
     s
-}
-
-fn scope_covers(parent: &str, child: &str) -> bool {
-    if parent == child {
-        return true;
-    }
-
-    if !parent.ends_with('/') {
-        return false;
-    }
-
-    child.starts_with(parent)
 }
 
 fn sanitize_caps(caps: Vec<Capability>) -> Vec<Capability> {

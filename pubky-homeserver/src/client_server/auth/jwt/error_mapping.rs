@@ -64,105 +64,75 @@ mod tests {
     use crate::client_server::auth::jwt::crypto::pop_verifier;
     use axum::response::IntoResponse;
 
+    fn assert_status(error: AuthServiceError, expected: StatusCode) {
+        let resp = HttpError::from(error).into_response();
+        assert_eq!(resp.status(), expected);
+    }
+
     #[test]
-    fn test_auth_service_error_mapping() {
-        // Grant verification: security errors -> UNAUTHORIZED
-        let resp = HttpError::from(AuthServiceError::InvalidGrant(
-            grant_verifier::Error::InvalidSignature,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    fn grant_errors_map_correctly() {
+        assert_status(
+            AuthServiceError::InvalidGrant(grant_verifier::Error::InvalidSignature),
+            StatusCode::UNAUTHORIZED,
+        );
+        assert_status(
+            AuthServiceError::InvalidGrant(grant_verifier::Error::Expired),
+            StatusCode::UNAUTHORIZED,
+        );
+        assert_status(
+            AuthServiceError::InvalidGrant(grant_verifier::Error::InvalidFormat),
+            StatusCode::BAD_REQUEST,
+        );
+        assert_status(
+            AuthServiceError::InvalidGrant(grant_verifier::Error::InvalidHeaderType),
+            StatusCode::BAD_REQUEST,
+        );
+        assert_status(
+            AuthServiceError::InvalidGrant(grant_verifier::Error::InvalidTimestamp),
+            StatusCode::BAD_REQUEST,
+        );
+    }
 
-        let resp = HttpError::from(AuthServiceError::InvalidGrant(
-            grant_verifier::Error::Expired,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    #[test]
+    fn pop_errors_map_to_unauthorized() {
+        assert_status(
+            AuthServiceError::InvalidPopProof(pop_verifier::Error::InvalidSignature),
+            StatusCode::UNAUTHORIZED,
+        );
+        assert_status(
+            AuthServiceError::InvalidPopProof(pop_verifier::Error::AudienceMismatch),
+            StatusCode::UNAUTHORIZED,
+        );
+        assert_status(
+            AuthServiceError::InvalidPopProof(pop_verifier::Error::InvalidFormat),
+            StatusCode::UNAUTHORIZED,
+        );
+        assert_status(
+            AuthServiceError::InvalidPopProof(pop_verifier::Error::InvalidHeaderType),
+            StatusCode::UNAUTHORIZED,
+        );
+    }
 
-        // Grant verification: malformed input -> BAD_REQUEST
-        let resp = HttpError::from(AuthServiceError::InvalidGrant(
-            grant_verifier::Error::InvalidFormat,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    #[test]
+    fn signup_and_user_errors_map_correctly() {
+        assert_status(AuthServiceError::UserNotFound, StatusCode::NOT_FOUND);
+        assert_status(AuthServiceError::GrantNotFound, StatusCode::NOT_FOUND);
+        assert_status(AuthServiceError::UserAlreadyExists, StatusCode::CONFLICT);
+        assert_status(AuthServiceError::SignupTokenRequired, StatusCode::BAD_REQUEST);
+        assert_status(
+            AuthServiceError::InvalidSignupTokenFormat("bad".into()),
+            StatusCode::BAD_REQUEST,
+        );
+        assert_status(AuthServiceError::InvalidSignupToken, StatusCode::UNAUTHORIZED);
+        assert_status(AuthServiceError::SignupTokenAlreadyUsed, StatusCode::UNAUTHORIZED);
+    }
 
-        let resp = HttpError::from(AuthServiceError::InvalidGrant(
-            grant_verifier::Error::InvalidHeaderType,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-        let resp = HttpError::from(AuthServiceError::InvalidGrant(
-            grant_verifier::Error::InvalidTimestamp,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-        // PoP verification -> UNAUTHORIZED
-        let resp = HttpError::from(AuthServiceError::InvalidPopProof(
-            pop_verifier::Error::InvalidSignature,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::InvalidPopProof(
-            pop_verifier::Error::AudienceMismatch,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::InvalidPopProof(
-            pop_verifier::Error::InvalidFormat,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::InvalidPopProof(
-            pop_verifier::Error::InvalidHeaderType,
-        ))
-        .into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        // User lookup
-        let resp = HttpError::from(AuthServiceError::UserNotFound).into_response();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-
-        // Grant lookup
-        let resp = HttpError::from(AuthServiceError::GrantNotFound).into_response();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-
-        // Signup errors
-        let resp = HttpError::from(AuthServiceError::UserAlreadyExists).into_response();
-        assert_eq!(resp.status(), StatusCode::CONFLICT);
-
-        let resp = HttpError::from(AuthServiceError::SignupTokenRequired).into_response();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-        let resp =
-            HttpError::from(AuthServiceError::InvalidSignupTokenFormat("bad".into()))
-                .into_response();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-        let resp = HttpError::from(AuthServiceError::InvalidSignupToken).into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::SignupTokenAlreadyUsed).into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        // Security failures
-        let resp = HttpError::from(AuthServiceError::NonceReplay).into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::GrantRevoked).into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::GrantExpired).into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::SessionNotFound).into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        let resp = HttpError::from(AuthServiceError::RootCapabilityRequired).into_response();
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    #[test]
+    fn security_and_session_errors_map_correctly() {
+        assert_status(AuthServiceError::NonceReplay, StatusCode::UNAUTHORIZED);
+        assert_status(AuthServiceError::GrantRevoked, StatusCode::UNAUTHORIZED);
+        assert_status(AuthServiceError::GrantExpired, StatusCode::UNAUTHORIZED);
+        assert_status(AuthServiceError::SessionNotFound, StatusCode::UNAUTHORIZED);
+        assert_status(AuthServiceError::RootCapabilityRequired, StatusCode::FORBIDDEN);
     }
 }

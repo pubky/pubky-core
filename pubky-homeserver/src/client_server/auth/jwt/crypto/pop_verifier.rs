@@ -111,12 +111,7 @@ fn check_grant_binding(raw: &PopProofClaims, expected: &GrantId) -> Result<(), E
 
 fn check_timestamp(raw: &PopProofClaims) -> Result<(), Error> {
     let now = Utc::now().timestamp() as u64;
-    let diff = if now >= raw.iat {
-        now - raw.iat
-    } else {
-        raw.iat - now
-    };
-    if diff > POP_MAX_AGE_SECS {
+    if now.abs_diff(raw.iat) > POP_MAX_AGE_SECS {
         return Err(Error::TimestampOutOfRange);
     }
     Ok(())

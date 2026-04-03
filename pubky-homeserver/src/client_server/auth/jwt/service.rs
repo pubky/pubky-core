@@ -9,13 +9,12 @@ use pubky_common::{
     auth::grant_session::{GrantSessionInfo, GrantSessionResponse},
     auth::jws::GrantId,
     auth::jws::TokenId,
-    capabilities::Action,
     crypto::{Keypair, PublicKey},
 };
 use crate::{
     persistence::sql::{
         signup_code::{SignupCodeId, SignupCodeRepository},
-        uexecutor,
+        uexecutor, UnifiedExecutor,
         user::{UserEntity, UserRepository},
         SqlDb,
     },
@@ -64,26 +63,18 @@ impl AuthService {
         self.homeserver_keypair.public_key()
     }
 
-    /// Full grant-based session creation: verify grant → find user → verify PoP
-    /// → check nonce replay → check revocation → store grant → mint JWT.
+    /// Full grant-based session creation: verify → find user → store → mint.
     pub async fn create_grant_session(
         &self,
         grant_jws: &JwsCompact,
         pop_jws: &JwsCompact,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
-        let grant = self.verify_grant(grant_jws)?;
-        self.check_grant_not_revoked(&grant).await?;
-        let pop = self.verify_pop_proof(pop_jws, &grant)?;
-        self.check_nonce_replay(&pop).await?;
+        let grant = self.verify_grant_and_pop(grant_jws, pop_jws).await?;
         let user = self.find_user(&grant).await?;
-        self.store_grant(&grant, &user).await?;
-        self.mint_session(&grant).await
+        self.store_and_mint(&grant, &user).await
     }
 
-    /// Grant-based signup: verify grant → check revocation → verify PoP
-    /// → check nonce replay → create user → store grant → mint JWT.
-    ///
-    /// Like [`create_grant_session`] but creates the user instead of requiring one.
+    /// Grant-based signup: verify → create user → store → mint (all-or-nothing).
     pub async fn signup_grant_session(
         &self,
         grant_jws: &JwsCompact,
@@ -91,23 +82,21 @@ impl AuthService {
         signup_mode: &SignupMode,
         signup_token: Option<&str>,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
-        let grant = self.verify_grant(grant_jws)?;
-        self.check_grant_not_revoked(&grant).await?;
-        let pop = self.verify_pop_proof(pop_jws, &grant)?;
-        self.check_nonce_replay(&pop).await?;
-        // All validation passed — now create the user.
-        let user = self
-            .create_new_user(&grant.issuer_key, signup_mode, signup_token)
-            .await?;
-        self.store_grant(&grant, &user).await?;
-        self.mint_session(&grant).await
+        let grant = self.verify_grant_and_pop(grant_jws, pop_jws).await?;
+        let mut tx = self.sql_db.pool().begin().await?;
+        let user = Self::create_user_in_tx(&grant.issuer_key, signup_mode, signup_token, &mut tx).await?;
+        Self::store_grant(&grant, &user, uexecutor!(tx)).await?;
+        let response = self.mint_session(&grant, uexecutor!(tx)).await?;
+        tx.commit().await?;
+        Ok(response)
     }
 
-    /// Revoke a grant and delete all its sessions.
+    /// Revoke a grant and delete all its sessions atomically.
     pub async fn revoke_grant(&self, grant_id: &GrantId) -> Result<(), AuthServiceError> {
-        GrantRepository::revoke(grant_id, &mut self.sql_db.pool().into()).await?;
-        GrantSessionRepository::delete_all_for_grant(grant_id, &mut self.sql_db.pool().into())
-            .await?;
+        let mut tx = self.sql_db.pool().begin().await?;
+        GrantRepository::revoke(grant_id, uexecutor!(tx)).await?;
+        GrantSessionRepository::delete_all_for_grant(grant_id, uexecutor!(tx)).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -192,13 +181,7 @@ impl AuthService {
 
     /// Check that the session has root capability.
     pub fn require_root_capability(auth: &AuthSession) -> Result<(), AuthServiceError> {
-        let has_root = auth.capabilities().iter().any(|cap| {
-            cap.scope == "/"
-                && cap.actions.contains(&Action::Read)
-                && cap.actions.contains(&Action::Write)
-        });
-
-        if has_root {
+        if auth.capabilities().iter().any(|cap| cap.is_root()) {
             Ok(())
         } else {
             Err(AuthServiceError::RootCapabilityRequired)
@@ -206,6 +189,30 @@ impl AuthService {
     }
 
     // ── Private helpers ─────────────────────────────────────────────────
+
+    /// Shared verification pipeline: verify grant → check revocation → verify PoP → check nonce.
+    async fn verify_grant_and_pop(
+        &self,
+        grant_jws: &JwsCompact,
+        pop_jws: &JwsCompact,
+    ) -> Result<Grant, AuthServiceError> {
+        let grant = self.verify_grant(grant_jws)?;
+        self.check_grant_not_revoked(&grant).await?;
+        let pop = self.verify_pop_proof(pop_jws, &grant)?;
+        self.check_nonce_replay(&pop).await?;
+        Ok(grant)
+    }
+
+    /// Shared tail: persist grant → mint JWT session.
+    /// No tx needed because store_grant is idempotent and mint_session only creates a session row.
+    async fn store_and_mint(
+        &self,
+        grant: &Grant,
+        user: &UserEntity,
+    ) -> Result<GrantSessionResponse, AuthServiceError> {
+        Self::store_grant(grant, user, &mut self.sql_db.pool().into()).await?;
+        self.mint_session(grant, &mut self.sql_db.pool().into()).await
+    }
 
     /// Look up a grant by ID. Returns `GrantNotFound` if missing.
     async fn get_grant(&self, grant_id: &GrantId) -> Result<GrantEntity, AuthServiceError> {
@@ -238,12 +245,23 @@ impl AuthService {
         signup_token: Option<&str>,
     ) -> Result<UserEntity, AuthServiceError> {
         let mut tx = self.sql_db.pool().begin().await?;
-        Self::ensure_user_not_exists(public_key, &mut tx).await?;
-        if *signup_mode == SignupMode::TokenRequired {
-            Self::validate_and_consume_signup_token(signup_token, public_key, &mut tx).await?;
-        }
-        let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
+        let user = Self::create_user_in_tx(public_key, signup_mode, signup_token, &mut tx).await?;
         tx.commit().await?;
+        Ok(user)
+    }
+
+    /// Inner user-creation logic that participates in an existing transaction.
+    async fn create_user_in_tx(
+        public_key: &PublicKey,
+        signup_mode: &SignupMode,
+        signup_token: Option<&str>,
+        tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+    ) -> Result<UserEntity, AuthServiceError> {
+        Self::ensure_user_not_exists(public_key, tx).await?;
+        if *signup_mode == SignupMode::TokenRequired {
+            Self::validate_and_consume_signup_token(signup_token, public_key, tx).await?;
+        }
+        let user = UserRepository::create(public_key, uexecutor!(*tx)).await?;
         Ok(user)
     }
 
@@ -297,11 +315,14 @@ impl AuthService {
 
     /// Reject replayed PoP nonces. Garbage-collects expired nonces first.
     async fn check_nonce_replay(&self, pop: &PopProof) -> Result<(), AuthServiceError> {
-        let _ = PopNonceRepository::garbage_collect(
+        if let Err(e) = PopNonceRepository::garbage_collect(
             POP_NONCE_GC_THRESHOLD_SECS,
             &mut self.sql_db.pool().into(),
         )
-        .await;
+        .await
+        {
+            tracing::warn!("PoP nonce garbage collection failed: {e}");
+        }
 
         PopNonceRepository::check_and_track(&pop.nonce, &mut self.sql_db.pool().into())
             .await
@@ -319,10 +340,10 @@ impl AuthService {
     }
 
     /// Persist the grant idempotently (ON CONFLICT DO NOTHING).
-    async fn store_grant(
-        &self,
+    async fn store_grant<'a>(
         grant: &Grant,
         user: &UserEntity,
+        executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), AuthServiceError> {
         let new_grant = NewGrant {
             grant_id: grant.grant_id.clone(),
@@ -333,14 +354,15 @@ impl AuthService {
             issued_at: grant.issued_at.timestamp() as u64,
             expires_at: grant.expires_at.timestamp() as u64,
         };
-        GrantRepository::create(&new_grant, &mut self.sql_db.pool().into()).await?;
+        GrantRepository::create(&new_grant, executor).await?;
         Ok(())
     }
 
     /// Mint a new access JWT and persist the session row.
-    async fn mint_session(
+    async fn mint_session<'a>(
         &self,
         grant: &Grant,
+        executor: &mut UnifiedExecutor<'a>,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         let now = Utc::now().timestamp() as u64;
         let token_id = TokenId::generate();
@@ -350,7 +372,7 @@ impl AuthService {
         let token = AccessJwt::mint(&self.homeserver_keypair, &claims);
 
         let new_session = NewGrantSession { token_id, grant_id: grant.grant_id.clone(), expires_at: jwt_exp };
-        GrantSessionRepository::create(&new_session, &mut self.sql_db.pool().into()).await?;
+        GrantSessionRepository::create(&new_session, executor).await?;
 
         Ok(build_session_response(token, grant, self.homeserver_keypair.public_key(), jwt_exp, now))
     }

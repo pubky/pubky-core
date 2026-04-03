@@ -97,7 +97,6 @@ impl GrantSessionRepository {
         sqlx::query_with(&query, values).execute(con).await?;
         Ok(())
     }
-
 }
 
 /// Data needed to create a new grant session.

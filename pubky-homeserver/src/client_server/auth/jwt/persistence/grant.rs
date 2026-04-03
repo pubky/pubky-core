@@ -198,7 +198,7 @@ impl FromRow<'_, PgRow> for GrantEntity {
         let (id, grant_id, user_id, user_pubkey, client_id, client_cnf_key) =
             parse_identity_fields(row)?;
         let (capabilities, issued_at, expires_at, revoked_at, created_at) =
-            parse_temporal_fields(row)?;
+            parse_grant_metadata(row)?;
         Ok(GrantEntity {
             id, grant_id, user_id, user_pubkey, client_id, client_cnf_key,
             capabilities, issued_at, expires_at, revoked_at, created_at,
@@ -223,7 +223,7 @@ fn parse_identity_fields(
     Ok((id, grant_id, user_id, user_pubkey, client_id, client_cnf_key))
 }
 
-fn parse_temporal_fields(
+fn parse_grant_metadata(
     row: &PgRow,
 ) -> Result<(Capabilities, i64, i64, Option<i64>, sqlx::types::chrono::NaiveDateTime), sqlx::Error> {
     let capabilities: String = row.try_get(GrantIden::Capabilities.to_string().as_str())?;
