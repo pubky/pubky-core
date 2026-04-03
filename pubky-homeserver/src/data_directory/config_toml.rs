@@ -13,7 +13,6 @@ use crate::{
     data_directory::log_level::{LogLevel, TargetLevel},
     persistence::sql::ConnectionString,
     shared::toml_merge,
-    user_resource_quota::UserResourceQuota,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -120,9 +119,6 @@ pub struct MetricsToml {
 pub struct ConfigToml {
     /// General application settings (signup mode, database URL).
     pub general: GeneralToml,
-    /// Default per-user resource quotas (storage, sessions, bandwidth budgets).
-    #[serde(default)]
-    pub quotas: UserResourceQuota,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
     /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
@@ -360,109 +356,12 @@ mod tests {
     }
 
     #[test]
-    fn test_quotas_section_parsed_from_toml() {
-        let s = r#"
-[quotas]
-storage_quota_mb = 500
-max_sessions = 3
-rate_read = "100mb/d"
-rate_write = "50mb/h"
-"#;
-        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
-        assert_eq!(parsed.quotas.storage_quota_mb, Some(500));
-        assert_eq!(parsed.quotas.max_sessions, Some(3));
-        assert_eq!(
-            parsed.quotas.rate_read,
-            Some(crate::data_directory::quota_config::BandwidthRate::from_str("100mb/d").unwrap())
-        );
-        assert_eq!(
-            parsed.quotas.rate_write,
-            Some(crate::data_directory::quota_config::BandwidthRate::from_str("50mb/h").unwrap())
-        );
-    }
-
-    #[test]
-    fn test_quotas_section_partial_fields() {
-        // Only setting some fields — omitted fields should be None (unlimited)
-        let s = r#"
-[quotas]
-storage_quota_mb = 1024
-"#;
-        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
-        assert_eq!(parsed.quotas.storage_quota_mb, Some(1024));
-        assert_eq!(parsed.quotas.max_sessions, None);
-        assert_eq!(parsed.quotas.rate_read, None);
-        assert_eq!(parsed.quotas.rate_write, None);
-    }
-
-    #[test]
-    fn test_quotas_section_omitted_equals_default() {
-        // No [quotas] section at all — should produce all-unlimited defaults
-        let s = "";
-        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
-        assert_eq!(parsed.quotas, UserResourceQuota::default());
-    }
-
-    #[test]
-    fn test_quotas_invalid_rate_string_rejected() {
-        let s = r#"
-[quotas]
-rate_read = "rubbish"
-"#;
-        let result = ConfigToml::from_str_with_defaults(s);
-        assert!(
-            result.is_err(),
-            "Invalid rate string should fail config parsing"
-        );
-    }
-
-    #[test]
-    fn test_quotas_request_units_rejected() {
-        // BandwidthRate should reject request-count units like "100r/m"
-        let s = r#"
-[quotas]
-rate_read = "100r/m"
-"#;
-        let result = ConfigToml::from_str_with_defaults(s);
-        assert!(
-            result.is_err(),
-            "Request-unit rate strings should be rejected in [quotas]"
-        );
-    }
-
-    #[test]
-    fn test_quotas_with_deprecated_storage_both_set() {
-        // When both [general] user_storage_quota_mb and [quotas] storage_quota_mb are set,
-        // from_config should prefer [quotas]
-        let s = r#"
-[general]
-user_storage_quota_mb = 100
-
-[quotas]
-storage_quota_mb = 500
-"#;
-        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
-        let effective = UserResourceQuota::from_config(&parsed);
-        assert_eq!(
-            effective.storage_quota_mb,
-            Some(500),
-            "[quotas] should take precedence over deprecated [general] field"
-        );
-    }
-
-    #[test]
-    fn test_quotas_deprecated_fallback_when_quotas_omitted() {
-        // When only [general] user_storage_quota_mb is set, from_config should fall back to it
+    fn test_storage_quota_from_general_section() {
         let s = r#"
 [general]
 user_storage_quota_mb = 256
 "#;
         let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
-        let effective = UserResourceQuota::from_config(&parsed);
-        assert_eq!(
-            effective.storage_quota_mb,
-            Some(256),
-            "Should fall back to deprecated [general] field when [quotas] omits storage"
-        );
+        assert_eq!(parsed.general.user_storage_quota_mb, 256);
     }
 }

@@ -298,7 +298,8 @@ impl UserEntity {
     }
 
     /// Build a `UserResourceQuota` directly from the DB columns.
-    /// All-NULL columns produce an all-unlimited config (the DB is the source of truth).
+    /// Storage/sessions: NULL → None (no limit), positive → Some(n).
+    /// Rates: NULL → Default, "unlimited" → Unlimited, value → Value.
     pub fn resource_quota(&self) -> UserResourceQuota {
         UserResourceQuota::from_nullable_columns(
             self.quota_storage_mb,
@@ -306,7 +307,6 @@ impl UserEntity {
             self.quota_rate_read.clone(),
             self.quota_rate_write.clone(),
         )
-        .unwrap_or_default()
     }
 }
 
@@ -510,6 +510,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_set_resource_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::user_resource_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -518,15 +519,15 @@ mod tests {
             .await
             .unwrap();
 
-        // Initially all limits are unlimited (default)
+        // Initially all limits are default
         assert_eq!(user.resource_quota(), UserResourceQuota::default());
 
         // Set custom limits
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: Some(BandwidthRate::from_str("50mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
         };
         UserRepository::set_resource_quota(user.id, &config, &mut db.pool().into())
             .await
@@ -538,7 +539,7 @@ mod tests {
             .unwrap();
         assert_eq!(user.resource_quota(), config);
 
-        // Overwrite with all-unlimited via set_resource_quota
+        // Overwrite with all-default via set_resource_quota
         UserRepository::set_resource_quota(
             user.id,
             &UserResourceQuota::default(),
@@ -554,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn test_limits_all_null_returns_all_unlimited() {
+    fn test_limits_all_null_returns_all_default() {
         let user = UserEntity {
             id: 1,
             public_key: Keypair::random().public_key(),
@@ -571,13 +572,14 @@ mod tests {
         assert_eq!(limits, UserResourceQuota::default());
         assert_eq!(limits.storage_quota_mb, None);
         assert_eq!(limits.max_sessions, None);
-        assert_eq!(limits.rate_read, None);
-        assert_eq!(limits.rate_write, None);
+        assert!(limits.rate_read.is_default());
+        assert!(limits.rate_write.is_default());
     }
 
     #[test]
     fn test_limits_mixed_null_and_values() {
         use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::user_resource_quota::QuotaOverride;
         use std::str::FromStr;
 
         let user = UserEntity {
@@ -597,33 +599,38 @@ mod tests {
         assert_eq!(limits.max_sessions, None);
         assert_eq!(
             limits.rate_read,
-            Some(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
         );
-        assert_eq!(limits.rate_write, None);
+        assert_eq!(limits.rate_write, QuotaOverride::Default);
     }
 
     #[test]
-    fn test_limits_negative_values_treated_as_none() {
+    fn test_limits_unlimited_values() {
+        use crate::data_directory::user_resource_quota::QuotaOverride;
+
         let user = UserEntity {
             id: 1,
             public_key: Keypair::random().public_key(),
             created_at: sqlx::types::chrono::NaiveDateTime::default(),
             disabled: false,
             used_bytes: 0,
-            quota_storage_mb: Some(-1),
-            quota_max_sessions: Some(-5),
-            quota_rate_read: None,
-            quota_rate_write: None,
+            quota_storage_mb: None,
+            quota_max_sessions: None,
+            quota_rate_read: Some("unlimited".to_string()),
+            quota_rate_write: Some("unlimited".to_string()),
         };
 
         let limits = user.resource_quota();
-        // Negative values fail u64/u32 conversion → None (with warning logged)
         assert_eq!(limits.storage_quota_mb, None);
         assert_eq!(limits.max_sessions, None);
+        assert_eq!(limits.rate_read, QuotaOverride::Unlimited);
+        assert_eq!(limits.rate_write, QuotaOverride::Unlimited);
     }
 
     #[test]
-    fn test_limits_invalid_rate_string_treated_as_unlimited() {
+    fn test_limits_invalid_rate_string_treated_as_default() {
+        use crate::data_directory::user_resource_quota::QuotaOverride;
+
         let user = UserEntity {
             id: 1,
             public_key: Keypair::random().public_key(),
@@ -637,14 +644,15 @@ mod tests {
         };
 
         let limits = user.resource_quota();
-        // Invalid rate strings fail parse → None (with warning logged)
-        assert_eq!(limits.rate_read, None);
-        assert_eq!(limits.rate_write, None);
+        // Invalid rate strings → Default (with warning logged)
+        assert_eq!(limits.rate_read, QuotaOverride::Default);
+        assert_eq!(limits.rate_write, QuotaOverride::Default);
     }
 
     #[test]
     fn test_apply_resource_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::user_resource_quota::QuotaOverride;
         use std::str::FromStr;
 
         let mut user = UserEntity {
@@ -662,14 +670,14 @@ mod tests {
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: Some(BandwidthRate::from_str("50mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Unlimited,
         };
         user.apply_resource_quota(&config);
 
         assert_eq!(user.quota_storage_mb, Some(500));
         assert_eq!(user.quota_max_sessions, Some(10));
         assert_eq!(user.quota_rate_read, Some("100mb/m".to_string()));
-        assert_eq!(user.quota_rate_write, Some("50mb/s".to_string()));
+        assert_eq!(user.quota_rate_write, Some("unlimited".to_string()));
     }
 }

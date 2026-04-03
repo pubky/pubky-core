@@ -561,17 +561,17 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_generate_signup_token_with_limits() {
+        use crate::data_directory::user_resource_quota::QuotaOverride;
         use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
 
         let context = AppContext::test().await;
         let server = create_test_server(&context);
 
-        // POST with custom limits (all fields required — null = unlimited)
+        // POST with custom limits: null = Unlimited, absent = Default
         let body = serde_json::json!({
             "storage_quota_mb": 1024,
             "max_sessions": 5,
-            "rate_read": "200mb/m",
-            "rate_write": null
+            "rate_read": "200mb/m"
         });
         let response = server
             .post("/generate_signup_token")
@@ -588,10 +588,10 @@ mod tests {
         let code = SignupCodeRepository::get(&code_id, &mut context.sql_db.pool().into())
             .await
             .unwrap();
-        let limits = code.resource_quota().expect("should have custom limits");
+        let limits = code.resource_quota();
         assert_eq!(limits.storage_quota_mb, Some(1024));
         assert_eq!(limits.max_sessions, Some(5));
-        assert_eq!(limits.rate_read, Some(bw("200mb/m")));
-        assert_eq!(limits.rate_write, None);
+        assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));
+        assert_eq!(limits.rate_write, QuotaOverride::Default);
     }
 }

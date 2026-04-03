@@ -3,9 +3,8 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use pubky_common::crypto::PublicKey;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::config_toml::ConfigToml;
 use crate::data_directory::quota_config::BandwidthRate;
 
 /// How long a cached limit entry is considered fresh before re-resolving from DB.
@@ -22,6 +21,106 @@ pub const MAX_RATE_COLUMN_LEN: usize = 32;
 /// Maximum number of entries in the user limits cache. Prevents unbounded memory
 /// growth from requests for many distinct users between periodic cleanup sweeps.
 pub const MAX_CACHED_USER_RESOURCE_QUOTAS: usize = 100_000;
+
+/// A three-state override for per-user bandwidth rate limits (`rate_read`, `rate_write`).
+///
+/// - `Default`   — no override; the system-wide rate limit from config applies. DB: NULL.
+/// - `Unlimited` — explicitly bypass rate limiting for this user. DB: `"unlimited"`.
+/// - `Value(T)`  — a custom rate limit for this user. DB: rate string (e.g. `"100mb/m"`).
+///
+/// JSON encoding (via `UserResourceQuota`'s custom serde):
+/// - field absent           → `Default` (use system rate limit)
+/// - `"field": null`        → `Unlimited` (no rate limiting)
+/// - `"field": "100mb/m"`   → `Value(BandwidthRate)` (custom rate limit)
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum QuotaOverride<T> {
+    /// No override — the system-wide rate limit from config applies.
+    #[default]
+    Default,
+    /// Explicitly bypass rate limiting for this user.
+    Unlimited,
+    /// A custom rate limit for this user (e.g. `BandwidthRate` from `"100mb/m"`).
+    Value(T),
+}
+
+impl<T> QuotaOverride<T> {
+    /// Returns `true` if the field is `Default`.
+    pub fn is_default(&self) -> bool {
+        matches!(self, QuotaOverride::Default)
+    }
+
+    /// Returns `true` if the field is `Unlimited`.
+    pub fn is_unlimited(&self) -> bool {
+        matches!(self, QuotaOverride::Unlimited)
+    }
+
+    /// Returns the inner value if `Value(t)`, else `None`.
+    pub fn as_value(&self) -> Option<&T> {
+        match self {
+            QuotaOverride::Value(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
+/// Standalone serialize: Default/Unlimited → null, Value → T.
+///
+/// **Note:** `Default` and `Unlimited` both serialize as `null` — they are indistinguishable.
+/// The three-state serialization (Default → omit, Unlimited → null, Value → value) is
+/// handled by `UserResourceQuota`'s custom `Serialize` impl. This impl exists to satisfy
+/// the `Serialize` bound but is not independently round-trippable.
+impl<T: Serialize> Serialize for QuotaOverride<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            QuotaOverride::Default => serializer.serialize_none(),
+            QuotaOverride::Unlimited => serializer.serialize_none(),
+            QuotaOverride::Value(v) => v.serialize(serializer),
+        }
+    }
+}
+
+/// Standalone deserialize: null → Unlimited, value → Value(T).
+///
+/// **Note:** This impl cannot produce `Default` — it only sees values that are present.
+/// The three-state (absent → Default, null → Unlimited, value → Value) deserialization
+/// is handled by `UserResourceQuota`'s custom `Deserialize` impl using the double-Option
+/// pattern. This impl exists to satisfy the `Deserialize` bound but should not be used
+/// directly if you need to distinguish `Default` from `Unlimited`.
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for QuotaOverride<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let opt = Option::<T>::deserialize(deserializer)?;
+        match opt {
+            None => Ok(QuotaOverride::Unlimited),
+            Some(v) => Ok(QuotaOverride::Value(v)),
+        }
+    }
+}
+
+impl QuotaOverride<BandwidthRate> {
+    /// Encode to DB VARCHAR column: Default → NULL, Unlimited → "unlimited", Value → rate string.
+    pub fn to_db_varchar(&self) -> Option<String> {
+        match self {
+            QuotaOverride::Default => None,
+            QuotaOverride::Unlimited => Some("unlimited".to_string()),
+            QuotaOverride::Value(v) => Some(v.to_string()),
+        }
+    }
+
+    /// Decode from DB VARCHAR column: NULL → Default, "unlimited" → Unlimited, value → Value.
+    pub fn from_db_varchar(column: &str, val: Option<String>) -> Self {
+        match val {
+            None => QuotaOverride::Default,
+            Some(s) if s == "unlimited" => QuotaOverride::Unlimited,
+            Some(s) => match s.parse() {
+                Ok(rate) => QuotaOverride::Value(rate),
+                Err(e) => {
+                    tracing::warn!("Invalid {column} \"{s}\" in DB: {e}; treating as Default");
+                    QuotaOverride::Default
+                }
+            },
+        }
+    }
+}
 
 /// A cached user limit config with an expiry timestamp.
 #[derive(Debug, Clone)]
@@ -58,110 +157,151 @@ impl CachedUserResourceQuota {
 }
 
 /// Shared cache for resolved per-user limits.
-/// Used by both admin (for eviction on PUT/DELETE) and client (for resolution) servers.
-/// Entries expire after [`CACHE_TTL`] and are re-resolved from the database.
 pub type UserResourceQuotaCache = Arc<DashMap<PublicKey, CachedUserResourceQuota>>;
 
-/// Per-user resource quotas. `None` fields mean "unlimited / no quota".
+/// Per-user resource quotas.
 ///
-/// Used in three contexts:
-/// 1. **Deploy-time defaults** — the `[quotas]` section in `config.toml`, via [`UserResourceQuota::from_config`].
-/// 2. **Per-user config** — stored on the user row in the DB.
-/// 3. **Signup token config** — attached to a signup code; applied to the user on signup.
+/// `storage_quota_mb` and `max_sessions` use simple `Option`:
+/// - `None` — no limit (absent/null in JSON, NULL in DB)
+/// - `Some(n)` — explicit limit (value in JSON, positive value in DB)
 ///
-/// There is no merging: if a user has a custom config, it is used as-is. If not, deploy-time
-/// defaults apply. Within a config, each `None` field means "unlimited".
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// `rate_read` and `rate_write` use the three-state `QuotaOverride<BandwidthRate>`:
+/// - `Default` — use system default (absent in JSON, NULL in DB)
+/// - `Unlimited` — explicitly no limit (`null` in JSON, `"unlimited"` in DB)
+/// - `Value(T)` — explicit limit (value in JSON, rate string in DB)
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UserResourceQuota {
-    /// Maximum storage in MB. `None` = unlimited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Storage quota in MB. `None` = no limit.
     pub storage_quota_mb: Option<u64>,
-    /// Maximum concurrent sessions. `None` = unlimited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Maximum concurrent sessions. `None` = no limit.
     pub max_sessions: Option<u32>,
-    /// Per-user read speed limit override (e.g. "10mb/s"). `None` = unlimited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_read: Option<BandwidthRate>,
-    /// Per-user write speed limit override (e.g. "5mb/s"). `None` = unlimited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_write: Option<BandwidthRate>,
+    /// Per-user read speed limit override (e.g. "10mb/s").
+    pub rate_read: QuotaOverride<BandwidthRate>,
+    /// Per-user write speed limit override (e.g. "5mb/s").
+    pub rate_write: QuotaOverride<BandwidthRate>,
+}
+
+/// Custom Serialize: skip None/Default fields, serialize values directly.
+///
+/// - `storage_quota_mb` / `max_sessions`: `None` → omitted, `Some(n)` → value
+/// - `rate_read` / `rate_write`: `Default` → omitted, `Unlimited` → null, `Value` → value
+impl Serialize for UserResourceQuota {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let count = [
+            self.storage_quota_mb.is_some(),
+            self.max_sessions.is_some(),
+            !self.rate_read.is_default(),
+            !self.rate_write.is_default(),
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count();
+
+        let mut map = serializer.serialize_map(Some(count))?;
+        if let Some(v) = self.storage_quota_mb {
+            map.serialize_entry("storage_quota_mb", &v)?;
+        }
+        if let Some(v) = self.max_sessions {
+            map.serialize_entry("max_sessions", &v)?;
+        }
+        if !self.rate_read.is_default() {
+            map.serialize_entry("rate_read", &self.rate_read)?;
+        }
+        if !self.rate_write.is_default() {
+            map.serialize_entry("rate_write", &self.rate_write)?;
+        }
+        map.end()
+    }
+}
+
+/// Custom Deserialize:
+///
+/// - `storage_quota_mb` / `max_sessions`: absent or null → `None`, value → `Some(n)`
+/// - `rate_read` / `rate_write`: uses the double-Option pattern for three-state:
+///   absent → `Default`, null → `Unlimited`, value → `Value(T)`
+impl<'de> Deserialize<'de> for UserResourceQuota {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// Deserializer that maps null → Some(None), value → Some(Some(v)).
+        fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+        where
+            T: Deserialize<'de>,
+            D: Deserializer<'de>,
+        {
+            let inner = Option::<T>::deserialize(deserializer)?;
+            Ok(Some(inner))
+        }
+
+        fn to_quota<T>(v: Option<Option<T>>) -> QuotaOverride<T> {
+            match v {
+                None => QuotaOverride::Default,
+                Some(None) => QuotaOverride::Unlimited,
+                Some(Some(val)) => QuotaOverride::Value(val),
+            }
+        }
+
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(default)]
+            storage_quota_mb: Option<u64>,
+            #[serde(default)]
+            max_sessions: Option<u32>,
+            #[serde(default, deserialize_with = "double_option")]
+            rate_read: Option<Option<BandwidthRate>>,
+            #[serde(default, deserialize_with = "double_option")]
+            rate_write: Option<Option<BandwidthRate>>,
+        }
+
+        let h = Helper::deserialize(deserializer)?;
+        Ok(UserResourceQuota {
+            storage_quota_mb: h.storage_quota_mb,
+            max_sessions: h.max_sessions,
+            rate_read: to_quota(h.rate_read),
+            rate_write: to_quota(h.rate_write),
+        })
+    }
 }
 
 impl UserResourceQuota {
-    /// Construct deploy-time default quotas from the config file.
+    /// Construct from nullable DB columns.
     ///
-    /// Uses the `[quotas]` section directly. For backward compatibility, if
-    /// `storage_quota_mb` is not set in `[quotas]`, falls back to the deprecated
-    /// `[general] user_storage_quota_mb` (where `0` means unlimited).
-    ///
-    /// The result of this function is used both as the runtime default for new
-    /// users and as the backfill value in [`M20260327AddResourceQuotaColumnsMigration`],
-    /// which "freezes" these defaults onto existing user rows during the one-time
-    /// migration. See that migration's docs for details.
-    pub fn from_config(config: &ConfigToml) -> Self {
-        let mut quotas = config.quotas.clone();
-        // Backward compat: fall back to deprecated [general] user_storage_quota_mb
-        if quotas.storage_quota_mb.is_none() {
-            quotas.storage_quota_mb = match config.general.user_storage_quota_mb {
-                0 => None,
-                n => Some(n),
-            };
-        }
-        quotas
-    }
-
-    /// Convert nullable DB columns into an `Option<UserResourceQuota>`.
-    /// Returns `None` when all columns are NULL (user has no custom config; use defaults).
-    /// If any column is non-NULL, returns `Some` — NULL fields within that mean "unlimited".
+    /// `storage_quota_mb` / `max_sessions`: NULL → `None`, positive → `Some(n)`.
+    /// `rate_read` / `rate_write`: NULL → Default, "unlimited" → Unlimited, value → Value.
     pub fn from_nullable_columns(
         storage_quota_mb: Option<i64>,
         max_sessions: Option<i32>,
         rate_read: Option<String>,
         rate_write: Option<String>,
-    ) -> Option<Self> {
-        if storage_quota_mb.is_none()
-            && max_sessions.is_none()
-            && rate_read.is_none()
-            && rate_write.is_none()
-        {
-            return None;
+    ) -> Self {
+        Self {
+            storage_quota_mb: match storage_quota_mb {
+                None => None,
+                Some(v) if v >= 0 => Some(v as u64),
+                Some(v) => {
+                    tracing::warn!("Negative quota_storage_mb ({v}) in DB; treating as no limit");
+                    None
+                }
+            },
+            max_sessions: match max_sessions {
+                None => None,
+                Some(v) if v >= 0 => Some(v as u32),
+                Some(v) => {
+                    tracing::warn!("Negative quota_max_sessions ({v}) in DB; treating as no limit");
+                    None
+                }
+            },
+            rate_read: QuotaOverride::<BandwidthRate>::from_db_varchar("rate_read", rate_read),
+            rate_write: QuotaOverride::<BandwidthRate>::from_db_varchar("rate_write", rate_write),
         }
-        Some(Self {
-            storage_quota_mb: storage_quota_mb.and_then(|v| {
-                u64::try_from(v)
-                    .map_err(|_| {
-                        tracing::warn!(
-                            "Negative quota_storage_mb ({v}) in DB; treating as zero quota"
-                        );
-                    })
-                    .ok()
-            }),
-            max_sessions: max_sessions.and_then(|v| {
-                u32::try_from(v)
-                    .map_err(|_| {
-                        tracing::warn!("Negative quota_max_sessions ({v}) in DB; treating as zero");
-                    })
-                    .ok()
-            }),
-            rate_read: parse_rate_column("rate_read", rate_read),
-            rate_write: parse_rate_column("rate_write", rate_write),
-        })
     }
 
-    /// Serialise a rate field to the string representation stored in DB columns.
-    pub fn rate_str(budget: &Option<BandwidthRate>) -> Option<String> {
-        budget.as_ref().map(|v| v.to_string())
-    }
-
-    /// Storage quota as the DB-column type (`BIGINT`).
-    /// Saturates at `i64::MAX` instead of wrapping on overflow.
+    /// Storage quota as the DB-column type (`BIGINT`). `None` → NULL, `Some(n)` → n.
     pub fn storage_quota_mb_i64(&self) -> Option<i64> {
         self.storage_quota_mb
             .map(|v| i64::try_from(v).unwrap_or(i64::MAX))
     }
 
-    /// Max sessions as the DB-column type (`INTEGER`).
-    /// Saturates at `i32::MAX` instead of wrapping on overflow.
+    /// Max sessions as the DB-column type (`INTEGER`). `None` → NULL, `Some(n)` → n.
     pub fn max_sessions_i32(&self) -> Option<i32> {
         self.max_sessions
             .map(|v| i32::try_from(v).unwrap_or(i32::MAX))
@@ -169,24 +309,21 @@ impl UserResourceQuota {
 
     /// Rate-read as the DB-column type (`VARCHAR`).
     pub fn rate_read_str(&self) -> Option<String> {
-        Self::rate_str(&self.rate_read)
+        self.rate_read.to_db_varchar()
     }
 
     /// Rate-write as the DB-column type (`VARCHAR`).
     pub fn rate_write_str(&self) -> Option<String> {
-        Self::rate_str(&self.rate_write)
+        self.rate_write.to_db_varchar()
     }
 
     /// Validate that rate fields survive a Display → FromStr roundtrip.
-    ///
-    /// Defence-in-depth: callers already hold parsed `BandwidthRate` values,
-    /// but this check prevents corrupt data from reaching the database.
     pub fn validate_rate_roundtrips(&self) -> Result<(), String> {
-        for (label, budget) in [
+        for (label, field) in [
             ("rate_read", &self.rate_read),
             ("rate_write", &self.rate_write),
         ] {
-            if let Some(ref b) = budget {
+            if let QuotaOverride::Value(ref b) = field {
                 let s = b.to_string();
                 if s.len() > MAX_RATE_COLUMN_LEN {
                     return Err(format!(
@@ -199,19 +336,18 @@ impl UserResourceQuota {
         }
         Ok(())
     }
-}
 
-/// Parse a bandwidth rate string from a DB column into a [`BandwidthRate`].
-/// Logs a warning and returns `None` if the string is malformed (including
-/// legacy request-unit strings like `"100r/m"`).
-fn parse_rate_column(column: &str, value: Option<String>) -> Option<BandwidthRate> {
-    value.and_then(|s| {
-        s.parse()
-            .map_err(|e| {
-                tracing::warn!("Invalid {column} \"{s}\" in DB: {e}; treating as unlimited");
-            })
-            .ok()
-    })
+    /// Create a quota with only storage set from config value.
+    /// 0 → no limit, n > 0 → Some(n).
+    pub fn storage_default_from_config(user_storage_quota_mb: u64) -> Self {
+        Self {
+            storage_quota_mb: match user_storage_quota_mb {
+                0 => None,
+                n => Some(n),
+            },
+            ..Default::default()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -220,192 +356,219 @@ mod tests {
 
     use super::*;
 
-    /// Helper: build a `ConfigToml` with custom quotas and default everything else.
-    fn config_with_quotas(quotas: UserResourceQuota) -> ConfigToml {
-        ConfigToml {
-            quotas,
-            ..ConfigToml::default()
-        }
+    #[test]
+    fn test_quota_field_default() {
+        let field: QuotaOverride<BandwidthRate> = QuotaOverride::default();
+        assert!(field.is_default());
+        assert!(!field.is_unlimited());
+        assert_eq!(field.as_value(), None);
     }
 
     #[test]
-    fn test_from_config_quotas_section() {
-        let config = config_with_quotas(UserResourceQuota {
-            storage_quota_mb: Some(500),
-            max_sessions: Some(10),
-            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: Some(BandwidthRate::from_str("50mb/m").unwrap()),
-        });
-        let result = UserResourceQuota::from_config(&config);
-        assert_eq!(result.storage_quota_mb, Some(500));
-        assert_eq!(result.max_sessions, Some(10));
+    fn test_quota_field_unlimited() {
+        let field: QuotaOverride<BandwidthRate> = QuotaOverride::Unlimited;
+        assert!(!field.is_default());
+        assert!(field.is_unlimited());
+        assert_eq!(field.as_value(), None);
+    }
+
+    #[test]
+    fn test_quota_field_value() {
+        let rate = BandwidthRate::from_str("100mb/m").unwrap();
+        let field = QuotaOverride::Value(rate.clone());
+        assert!(!field.is_default());
+        assert!(!field.is_unlimited());
+        assert_eq!(field.as_value(), Some(&rate));
+    }
+
+    // ── DB encoding tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_varchar_roundtrip() {
         assert_eq!(
-            result.rate_read,
-            Some(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::<BandwidthRate>::from_db_varchar("rate_read", None),
+            QuotaOverride::Default
         );
         assert_eq!(
-            result.rate_write,
-            Some(BandwidthRate::from_str("50mb/m").unwrap())
+            QuotaOverride::<BandwidthRate>::from_db_varchar(
+                "rate_read",
+                Some("unlimited".to_string())
+            ),
+            QuotaOverride::Unlimited
+        );
+        assert_eq!(
+            QuotaOverride::<BandwidthRate>::from_db_varchar(
+                "rate_read",
+                Some("100mb/m".to_string())
+            ),
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+        );
+        // Invalid string treated as Default
+        assert_eq!(
+            QuotaOverride::<BandwidthRate>::from_db_varchar(
+                "rate_read",
+                Some("rubbish".to_string())
+            ),
+            QuotaOverride::Default
+        );
+
+        assert_eq!(
+            QuotaOverride::<BandwidthRate>::Default.to_db_varchar(),
+            None
+        );
+        assert_eq!(
+            QuotaOverride::<BandwidthRate>::Unlimited.to_db_varchar(),
+            Some("unlimited".to_string())
+        );
+        assert_eq!(
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()).to_db_varchar(),
+            Some("100mb/m".to_string())
         );
     }
 
-    #[test]
-    fn test_from_config_deprecated_storage_fallback() {
-        let mut config = ConfigToml::default();
-        config.general.user_storage_quota_mb = 1024;
-        let result = UserResourceQuota::from_config(&config);
-        assert_eq!(result.storage_quota_mb, Some(1024));
-    }
-
-    #[test]
-    fn test_from_config_quotas_section_takes_precedence() {
-        let mut config = config_with_quotas(UserResourceQuota {
-            storage_quota_mb: Some(500),
-            ..Default::default()
-        });
-        config.general.user_storage_quota_mb = 100; // deprecated, should be ignored
-        let result = UserResourceQuota::from_config(&config);
-        assert_eq!(result.storage_quota_mb, Some(500));
-    }
-
-    #[test]
-    fn test_from_config_deprecated_zero_is_unlimited() {
-        let mut config = ConfigToml::default();
-        config.general.user_storage_quota_mb = 0;
-        let result = UserResourceQuota::from_config(&config);
-        assert_eq!(result.storage_quota_mb, None);
-    }
-
-    #[test]
-    fn test_from_config_all_defaults_unlimited() {
-        let config = ConfigToml::default();
-        let result = UserResourceQuota::from_config(&config);
-        assert_eq!(result, UserResourceQuota::default());
-    }
+    // ── from_nullable_columns tests ────────────────────────────────────
 
     #[test]
     fn test_from_nullable_columns_all_null() {
-        assert_eq!(
-            UserResourceQuota::from_nullable_columns(None, None, None, None),
-            None
-        );
+        let q = UserResourceQuota::from_nullable_columns(None, None, None, None);
+        assert_eq!(q, UserResourceQuota::default());
     }
 
     #[test]
     fn test_from_nullable_columns_with_values() {
-        let config = UserResourceQuota::from_nullable_columns(
+        let q = UserResourceQuota::from_nullable_columns(
             Some(500),
             Some(10),
             Some("100mb/m".to_string()),
             None,
         );
+        assert_eq!(q.storage_quota_mb, Some(500));
+        assert_eq!(q.max_sessions, Some(10));
         assert_eq!(
-            config,
-            Some(UserResourceQuota {
-                storage_quota_mb: Some(500),
-                max_sessions: Some(10),
-                rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-                rate_write: None,
-            })
+            q.rate_read,
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
         );
+        assert_eq!(q.rate_write, QuotaOverride::Default);
     }
 
     #[test]
-    fn test_from_nullable_columns_all_negative() {
-        let config = UserResourceQuota::from_nullable_columns(Some(-1), Some(-5), None, None);
-        // Negative values fail try_from → None (unlimited), but a warning is logged.
-        assert_eq!(
-            config,
-            Some(UserResourceQuota {
-                storage_quota_mb: None,
-                max_sessions: None,
-                rate_read: None,
-                rate_write: None,
-            })
+    fn test_from_nullable_columns_unlimited_values() {
+        let q = UserResourceQuota::from_nullable_columns(
+            None,
+            None,
+            Some("unlimited".to_string()),
+            Some("unlimited".to_string()),
         );
+        assert_eq!(q.storage_quota_mb, None);
+        assert_eq!(q.max_sessions, None);
+        assert_eq!(q.rate_read, QuotaOverride::Unlimited);
+        assert_eq!(q.rate_write, QuotaOverride::Unlimited);
     }
 
     #[test]
-    fn test_from_nullable_columns_mixed_negative_and_positive() {
-        let config = UserResourceQuota::from_nullable_columns(Some(-1), Some(10), None, None);
-        assert_eq!(
-            config,
-            Some(UserResourceQuota {
-                storage_quota_mb: None, // negative → warning + None
-                max_sessions: Some(10),
-                rate_read: None,
-                rate_write: None,
-            })
-        );
+    fn test_from_nullable_columns_mixed() {
+        let q = UserResourceQuota::from_nullable_columns(None, Some(10), None, None);
+        assert_eq!(q.storage_quota_mb, None);
+        assert_eq!(q.max_sessions, Some(10));
+        assert_eq!(q.rate_read, QuotaOverride::Default);
+        assert_eq!(q.rate_write, QuotaOverride::Default);
     }
 
     #[test]
     fn test_from_nullable_columns_invalid_rate_string() {
-        let config = UserResourceQuota::from_nullable_columns(
+        let q = UserResourceQuota::from_nullable_columns(
             None,
             None,
             Some("rubbish".to_string()),
             Some("100mb/m".to_string()),
         );
+        assert_eq!(q.rate_read, QuotaOverride::Default);
         assert_eq!(
-            config,
-            Some(UserResourceQuota {
-                storage_quota_mb: None,
-                max_sessions: None,
-                rate_read: None, // invalid string → warning + None (unlimited)
-                rate_write: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-            })
+            q.rate_write,
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
         );
     }
 
     #[test]
-    fn test_from_nullable_columns_legacy_request_units_treated_as_unlimited() {
-        // Legacy "100r/m" strings fail BandwidthRate parse → None (with warning)
-        let config = UserResourceQuota::from_nullable_columns(
+    fn test_from_nullable_columns_legacy_request_units() {
+        let q = UserResourceQuota::from_nullable_columns(
             None,
             None,
             Some("100r/m".to_string()),
             Some("50r/s".to_string()),
         );
-        assert_eq!(
-            config,
-            Some(UserResourceQuota {
-                storage_quota_mb: None,
-                max_sessions: None,
-                rate_read: None,
-                rate_write: None,
-            })
-        );
+        assert_eq!(q.rate_read, QuotaOverride::Default);
+        assert_eq!(q.rate_write, QuotaOverride::Default);
     }
+
+    // ── Serde JSON tests ───────────────────────────────────────────────
 
     #[test]
     fn test_serde_roundtrip() {
-        let config = UserResourceQuota {
+        let q = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: None,
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Unlimited,
         };
-        let json = serde_json::to_string(&config).unwrap();
+        let json = serde_json::to_string(&q).unwrap();
         let deserialized: UserResourceQuota = serde_json::from_str(&json).unwrap();
-        assert_eq!(config, deserialized);
+        assert_eq!(q, deserialized);
+    }
+
+    #[test]
+    fn test_serde_default_fields_omitted() {
+        let q = UserResourceQuota {
+            storage_quota_mb: Some(500),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains("storage_quota_mb"));
+        assert!(!json.contains("max_sessions"));
+        assert!(!json.contains("rate_read"));
+        assert!(!json.contains("rate_write"));
+    }
+
+    #[test]
+    fn test_serde_empty_json_is_all_default() {
+        let q: UserResourceQuota = serde_json::from_str("{}").unwrap();
+        assert_eq!(q, UserResourceQuota::default());
+    }
+
+    #[test]
+    fn test_serde_null_is_none_for_storage_and_sessions() {
+        let json = r#"{"storage_quota_mb": null, "max_sessions": null}"#;
+        let q: UserResourceQuota = serde_json::from_str(json).unwrap();
+        // null and absent both map to None for these fields
+        assert_eq!(q.storage_quota_mb, None);
+        assert_eq!(q.max_sessions, None);
+        assert_eq!(q.rate_read, QuotaOverride::Default);
+        assert_eq!(q.rate_write, QuotaOverride::Default);
+    }
+
+    #[test]
+    fn test_serde_null_is_unlimited_for_rates() {
+        let json = r#"{"rate_read": null, "rate_write": null}"#;
+        let q: UserResourceQuota = serde_json::from_str(json).unwrap();
+        assert_eq!(q.rate_read, QuotaOverride::Unlimited);
+        assert_eq!(q.rate_write, QuotaOverride::Unlimited);
+    }
+
+    #[test]
+    fn test_serde_absent_is_none_or_default() {
+        let json = r#"{"storage_quota_mb": 500}"#;
+        let q: UserResourceQuota = serde_json::from_str(json).unwrap();
+        assert_eq!(q.storage_quota_mb, Some(500));
+        assert_eq!(q.max_sessions, None);
+        assert_eq!(q.rate_read, QuotaOverride::Default);
     }
 
     #[test]
     fn test_serde_none_fields_omitted() {
-        let config = UserResourceQuota {
-            storage_quota_mb: Some(500),
-            ..Default::default()
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        assert!(!json.contains("max_sessions"));
-        assert!(!json.contains("rate_read"));
-    }
-
-    #[test]
-    fn test_serde_empty_json_is_all_unlimited() {
-        let config: UserResourceQuota = serde_json::from_str("{}").unwrap();
-        assert_eq!(config, UserResourceQuota::default());
+        // None storage/sessions should be omitted from serialized JSON
+        let q = UserResourceQuota::default();
+        let json = serde_json::to_string(&q).unwrap();
+        assert_eq!(json, "{}");
     }
 
     #[test]
@@ -418,50 +581,46 @@ mod tests {
         );
     }
 
+    // ── Validate rate roundtrips ───────────────────────────────────────
+
     #[test]
-    fn test_validate_rate_roundtrips_valid_budgets_under_column_limit() {
-        // All realistic budget strings should be well under 32 characters.
+    fn test_validate_rate_roundtrips_valid_budgets() {
         let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
         for s in budgets {
-            let config = UserResourceQuota {
-                rate_read: Some(BandwidthRate::from_str(s).unwrap()),
-                rate_write: Some(BandwidthRate::from_str(s).unwrap()),
+            let q = UserResourceQuota {
+                rate_read: QuotaOverride::Value(BandwidthRate::from_str(s).unwrap()),
+                rate_write: QuotaOverride::Value(BandwidthRate::from_str(s).unwrap()),
                 ..Default::default()
             };
-            config.validate_rate_roundtrips().unwrap_or_else(|e| {
+            q.validate_rate_roundtrips().unwrap_or_else(|e| {
                 panic!("Budget \"{s}\" should pass validation but got: {e}");
             });
-            // Verify string repr fits within column limit
-            assert!(
-                s.len() <= MAX_RATE_COLUMN_LEN,
-                "Budget string \"{s}\" ({} chars) exceeds MAX_RATE_COLUMN_LEN ({MAX_RATE_COLUMN_LEN})",
-                s.len()
-            );
         }
     }
 
     #[test]
-    fn test_validate_rate_roundtrips_rejects_overlong_string() {
-        // Directly test the length-check logic by verifying the error message format.
-        // We construct a config with a valid budget and check it passes, then verify
-        // the const is correct and the check is wired up by examining the method output
-        // on a normal value.
-        assert_eq!(MAX_RATE_COLUMN_LEN, 32);
-
-        // A normal config should pass.
-        let config = UserResourceQuota {
-            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
+    fn test_validate_rate_roundtrips_skips_non_value() {
+        let q = UserResourceQuota {
+            rate_read: QuotaOverride::Default,
+            rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
-        assert!(config.validate_rate_roundtrips().is_ok());
+        assert!(q.validate_rate_roundtrips().is_ok());
+    }
 
-        // Verify that the string representation of all standard budgets is under the limit.
-        let budget = BandwidthRate::from_str("100mb/m").unwrap();
-        let s = budget.to_string();
-        assert!(
-            s.len() <= MAX_RATE_COLUMN_LEN,
-            "Expected \"{s}\" to be at most {MAX_RATE_COLUMN_LEN} chars, got {}",
-            s.len()
-        );
+    // ── storage_default_from_config ────────────────────────────────────
+
+    #[test]
+    fn test_storage_default_from_config_zero_is_no_limit() {
+        let q = UserResourceQuota::storage_default_from_config(0);
+        assert_eq!(q.storage_quota_mb, None);
+        assert_eq!(q.max_sessions, None);
+    }
+
+    #[test]
+    fn test_storage_default_from_config_nonzero() {
+        let q = UserResourceQuota::storage_default_from_config(1024);
+        assert_eq!(q.storage_quota_mb, Some(1024));
+        assert_eq!(q.max_sessions, None);
     }
 }

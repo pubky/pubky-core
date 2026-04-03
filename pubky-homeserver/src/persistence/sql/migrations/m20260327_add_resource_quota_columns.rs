@@ -1,27 +1,27 @@
 use async_trait::async_trait;
 use sqlx::Transaction;
 
-use crate::data_directory::user_resource_quota::UserResourceQuota;
 use crate::persistence::sql::migration::MigrationTrait;
 
 /// Adds per-user limit columns to both the `users` and `signup_codes` tables,
-/// then backfills existing rows with the deploy-time defaults.
+/// then backfills only `quota_storage_mb` on existing rows.
 ///
-/// **Users backfill:** Freezes the current deploy-time defaults onto every
-/// existing user row whose limit columns are all NULL. After this migration,
-/// changing the TOML config only affects *newly created* users. Use the admin
-/// API (`PUT /users/{pubkey}/resource-quotas`) to change existing users.
+/// The other three fields (`max_sessions`, `rate_read`, `rate_write`) are new
+/// concepts and start as NULL (= `Default`, meaning use system default).
 ///
-/// **Signup codes backfill:** Writes deploy-time defaults onto every *unused*
-/// token whose limit columns are all NULL. At signup time the token's limits
-/// are copied directly to the new user row — there is no fallback to
-/// deploy-time defaults — so pre-existing unused tokens must carry explicit
-/// values.
+/// **Users backfill:** Sets `quota_storage_mb` from the deploy-time config on
+/// every existing user whose column is NULL. After this migration, config
+/// changes only affect newly created users.
 ///
-/// The deploy-time defaults are read from `[quotas]` in `config.toml` via
-/// [`UserResourceQuota::from_config`].
+/// **Signup codes backfill:** Sets `quota_storage_mb` on unused tokens only.
+///
+/// `default_storage_quota_mb`:
+/// - `None` → config says unlimited → NULL (no limit)
+/// - `Some(n)` → store n as the value
 pub struct M20260327AddResourceQuotaColumnsMigration {
-    pub defaults: UserResourceQuota,
+    /// The storage default from `[general].user_storage_quota_mb`.
+    /// `None` means unlimited (0 in config → unlimited → NULL in DB).
+    pub default_storage_quota_mb: Option<i64>,
 }
 
 /// Add the four limit columns to the given table.
@@ -44,17 +44,14 @@ async fn add_resource_quota_columns(
     Ok(())
 }
 
-/// Bind the four limit values and execute an UPDATE statement.
-async fn backfill_resource_quotas(
+/// Backfill only `quota_storage_mb` using the deploy-time default.
+async fn backfill_storage_quota(
     tx: &mut Transaction<'static, sqlx::Postgres>,
     sql: &str,
-    defaults: &UserResourceQuota,
+    storage_val: Option<i64>,
 ) -> anyhow::Result<()> {
     sqlx::query(sql)
-        .bind(defaults.storage_quota_mb_i64())
-        .bind(defaults.max_sessions_i32())
-        .bind(defaults.rate_read_str())
-        .bind(defaults.rate_write_str())
+        .bind(storage_val)
         .execute(&mut **tx)
         .await?;
     Ok(())
@@ -67,32 +64,27 @@ impl MigrationTrait for M20260327AddResourceQuotaColumnsMigration {
         add_resource_quota_columns(tx, "users").await?;
         add_resource_quota_columns(tx, "signup_codes").await?;
 
-        // 2. Backfill existing users with the configured defaults.
-        backfill_resource_quotas(
+        // 2. Backfill existing users with only storage_quota_mb.
+        // Other columns stay NULL (= no limit).
+        // None → unlimited → NULL (no backfill needed), Some(n) → store n.
+        let storage_val = self.default_storage_quota_mb;
+        backfill_storage_quota(
             tx,
             "UPDATE users
-             SET quota_storage_mb = $1, quota_max_sessions = $2,
-                 quota_rate_read = $3, quota_rate_write = $4
-             WHERE quota_storage_mb IS NULL
-               AND quota_max_sessions IS NULL
-               AND quota_rate_read IS NULL
-               AND quota_rate_write IS NULL",
-            &self.defaults,
+             SET quota_storage_mb = $1
+             WHERE quota_storage_mb IS NULL",
+            storage_val,
         )
         .await?;
 
-        // 3. Backfill unused tokens with deploy-time defaults.
-        backfill_resource_quotas(
+        // 3. Backfill unused tokens with storage_quota_mb only.
+        backfill_storage_quota(
             tx,
             "UPDATE signup_codes
-             SET quota_storage_mb = $1, quota_max_sessions = $2,
-                 quota_rate_read = $3, quota_rate_write = $4
+             SET quota_storage_mb = $1
              WHERE used_by IS NULL
-               AND quota_storage_mb IS NULL
-               AND quota_max_sessions IS NULL
-               AND quota_rate_read IS NULL
-               AND quota_rate_write IS NULL",
-            &self.defaults,
+               AND quota_storage_mb IS NULL",
+            storage_val,
         )
         .await?;
 
@@ -106,10 +98,7 @@ impl MigrationTrait for M20260327AddResourceQuotaColumnsMigration {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
-    use crate::data_directory::user_resource_quota::UserResourceQuota;
     use crate::persistence::sql::entities::signup_code::{
         SignupCodeId, SignupCodeIden, SIGNUP_CODE_TABLE,
     };
@@ -126,7 +115,7 @@ mod tests {
     use sea_query_binder::SqlxBinder;
 
     /// Helper: run all prior migrations, optionally including the limit columns migration.
-    async fn run_migrations(db: &SqlDb, limit_defaults: Option<UserResourceQuota>) {
+    async fn run_migrations(db: &SqlDb, storage_default: Option<Option<i64>>) {
         let migrator = Migrator::new(db);
         let mut migrations: Vec<Box<dyn crate::persistence::sql::migration::MigrationTrait>> = vec![
             Box::new(M20250806CreateUserMigration),
@@ -136,9 +125,9 @@ mod tests {
             Box::new(M20250815CreateEntryMigration),
             Box::new(M20251014EventsTableIndexAndContentHashMigration),
         ];
-        if let Some(defaults) = limit_defaults {
+        if let Some(default_storage) = storage_default {
             migrations.push(Box::new(M20260327AddResourceQuotaColumnsMigration {
-                defaults,
+                default_storage_quota_mb: default_storage,
             }));
         }
         migrator
@@ -151,7 +140,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_adds_columns_to_users() {
         let db = SqlDb::test_without_migrations().await;
-        run_migrations(&db, Some(UserResourceQuota::default())).await;
+        run_migrations(&db, Some(None)).await;
 
         let pubkey = Keypair::random().public_key();
         let statement = Query::insert()
@@ -180,7 +169,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_adds_columns_to_signup_codes() {
         let db = SqlDb::test_without_migrations().await;
-        run_migrations(&db, Some(UserResourceQuota::default())).await;
+        run_migrations(&db, Some(None)).await;
 
         let code_id = SignupCodeId::random();
         let statement = Query::insert()
@@ -207,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_backfill_users_with_defaults() {
+    async fn test_backfill_users_with_storage_default() {
         let db = SqlDb::test_without_migrations().await;
         run_migrations(&db, None).await;
 
@@ -224,18 +213,11 @@ mod tests {
             .await
             .unwrap();
 
-        let defaults = UserResourceQuota {
-            storage_quota_mb: Some(500),
-            max_sessions: Some(10),
-            rate_read: Some(
-                crate::data_directory::quota_config::BandwidthRate::from_str("100mb/m").unwrap(),
-            ),
-            rate_write: None,
-        };
+        // Run migration with storage default = 500 MB
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
-                defaults,
+                default_storage_quota_mb: Some(500),
             })])
             .await
             .unwrap();
@@ -247,15 +229,16 @@ mod tests {
         .fetch_one(db.pool())
         .await
         .unwrap();
+        // Only storage_quota_mb should be backfilled; others stay NULL
         assert_eq!(row.0, Some(500));
-        assert_eq!(row.1, Some(10));
-        assert_eq!(row.2, Some("100mb/m".to_string()));
+        assert_eq!(row.1, None);
+        assert_eq!(row.2, None);
         assert_eq!(row.3, None);
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_backfill_users_with_unlimited_defaults_leaves_nulls() {
+    async fn test_backfill_users_unlimited_storage() {
         let db = SqlDb::test_without_migrations().await;
         run_migrations(&db, None).await;
 
@@ -272,10 +255,11 @@ mod tests {
             .await
             .unwrap();
 
+        // Run migration with storage default = None (unlimited → NULL)
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
-                defaults: UserResourceQuota::default(),
+                default_storage_quota_mb: None,
             })])
             .await
             .unwrap();
@@ -287,16 +271,19 @@ mod tests {
         .fetch_one(db.pool())
         .await
         .unwrap();
-        assert_eq!(row, (None, None, None, None));
+        // Unlimited → NULL in DB (no limit)
+        assert_eq!(row.0, None);
+        assert_eq!(row.1, None);
+        assert_eq!(row.2, None);
+        assert_eq!(row.3, None);
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_backfill_unused_signup_tokens_with_defaults() {
+    async fn test_backfill_unused_signup_tokens() {
         let db = SqlDb::test_without_migrations().await;
         run_migrations(&db, None).await;
 
-        // Insert an unused token and a used token before the limit migration
         let unused_code = SignupCodeId::random();
         let used_code = SignupCodeId::random();
         sqlx::query("INSERT INTO signup_codes (id) VALUES ($1)")
@@ -311,23 +298,15 @@ mod tests {
             .await
             .unwrap();
 
-        let defaults = UserResourceQuota {
-            storage_quota_mb: Some(500),
-            max_sessions: Some(10),
-            rate_read: Some(
-                crate::data_directory::quota_config::BandwidthRate::from_str("100mb/m").unwrap(),
-            ),
-            rate_write: None,
-        };
         let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
-                defaults,
+                default_storage_quota_mb: Some(500),
             })])
             .await
             .unwrap();
 
-        // Unused token should be backfilled
+        // Unused token should have storage backfilled
         let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
             "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM signup_codes WHERE id = $1",
         )
@@ -336,8 +315,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row.0, Some(500));
-        assert_eq!(row.1, Some(10));
-        assert_eq!(row.2, Some("100mb/m".to_string()));
+        assert_eq!(row.1, None);
+        assert_eq!(row.2, None);
         assert_eq!(row.3, None);
 
         // Used token should NOT be backfilled

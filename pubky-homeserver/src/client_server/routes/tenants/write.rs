@@ -44,6 +44,7 @@ pub async fn put(
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     // Check if the size hint exceeds the per-user quota so we can fail early.
+    // None = no limit; Some(mb) = enforce limit.
     let user_quota_bytes = user
         .resource_quota()
         .storage_quota_mb

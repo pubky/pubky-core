@@ -65,7 +65,8 @@ impl AppState {
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
-        self.default_user_resource_quota = UserResourceQuota::from_config(config);
+        self.default_user_resource_quota =
+            UserResourceQuota::storage_default_from_config(config.general.user_storage_quota_mb);
         self
     }
 }

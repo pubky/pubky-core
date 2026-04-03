@@ -5,96 +5,14 @@ use axum::{
     Json,
 };
 use pubky_common::crypto::PublicKey;
-use serde::Deserialize;
 
 use crate::{
-    data_directory::quota_config::BandwidthRate,
     data_directory::user_resource_quota::UserResourceQuota,
     persistence::sql::user::{UserEntity, UserRepository},
     shared::{HttpError, HttpResult},
 };
 
 use super::super::app_state::AppState;
-
-/// Admin API input for setting user limits.
-///
-/// Unlike [`UserResourceQuota`], every field is **required** — omitting a field
-/// causes a 422 deserialization error. Use explicit `null` to mean "unlimited".
-/// This prevents accidentally granting unlimited access by forgetting a field.
-///
-/// Example:
-/// ```json
-/// {
-///   "storage_quota_mb": 500,
-///   "max_sessions": 5,
-///   "rate_read": "500mb/d",
-///   "rate_write": null
-/// }
-/// ```
-#[derive(Debug, Clone)]
-pub(crate) struct ExplicitUserResourceQuota {
-    /// Maximum storage in MB. `null` = unlimited.
-    pub storage_quota_mb: Option<u64>,
-    /// Maximum concurrent sessions. `null` = unlimited.
-    pub max_sessions: Option<u32>,
-    /// Per-user read speed limit override (e.g. "10mb/s"). `null` = unlimited.
-    pub rate_read: Option<BandwidthRate>,
-    /// Per-user write speed limit override (e.g. "5mb/s"). `null` = unlimited.
-    pub rate_write: Option<BandwidthRate>,
-}
-
-impl<'de> Deserialize<'de> for ExplicitUserResourceQuota {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Required {
-            storage_quota_mb: Option<u64>,
-            max_sessions: Option<u32>,
-            rate_read: Option<BandwidthRate>,
-            rate_write: Option<BandwidthRate>,
-        }
-
-        // serde treats Option<T> as implicitly optional (absent → None).
-        // To detect missing keys we deserialize into a Value first and check keys.
-        let value = serde_json::Value::deserialize(deserializer)?;
-        let obj = value
-            .as_object()
-            .ok_or_else(|| serde::de::Error::custom("expected a JSON object"))?;
-
-        for field in [
-            "storage_quota_mb",
-            "max_sessions",
-            "rate_read",
-            "rate_write",
-        ] {
-            if !obj.contains_key(field) {
-                return Err(serde::de::Error::missing_field(field));
-            }
-        }
-
-        let r: Required = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-
-        Ok(ExplicitUserResourceQuota {
-            storage_quota_mb: r.storage_quota_mb,
-            max_sessions: r.max_sessions,
-            rate_read: r.rate_read,
-            rate_write: r.rate_write,
-        })
-    }
-}
-
-impl From<ExplicitUserResourceQuota> for UserResourceQuota {
-    fn from(e: ExplicitUserResourceQuota) -> Self {
-        Self {
-            storage_quota_mb: e.storage_quota_mb,
-            max_sessions: e.max_sessions,
-            rate_read: e.rate_read,
-            rate_write: e.rate_write,
-        }
-    }
-}
 
 /// Parse a z32 public key path param and fetch the corresponding user entity.
 async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEntity> {
@@ -112,9 +30,6 @@ async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEnti
 }
 
 /// GET /users/{pubkey}/resource-quotas — return the user's effective limits.
-///
-/// Every user row has explicit limit columns (set during signup or migration
-/// backfill), so `limits()` is always the source of truth.
 pub async fn get_user_resource_quota(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
@@ -126,14 +41,19 @@ pub async fn get_user_resource_quota(
 
 /// PUT /users/{pubkey}/resource-quotas — set per-user custom limits (replaces entirely).
 ///
-/// All four fields are **required**. Use `null` for unlimited.
-/// Omitting a field returns 422, preventing accidental unlimited grants.
+/// Accepts a partial JSON body:
+/// - `storage_quota_mb` / `max_sessions`: absent or null → no limit, value → explicit limit
+/// - `rate_read` / `rate_write`: absent → Default, null → Unlimited, value → explicit limit
 pub async fn put_user_resource_quota(
     State(state): State<AppState>,
     Path(pubkey_str): Path<String>,
-    Json(explicit): Json<ExplicitUserResourceQuota>,
+    Json(config): Json<UserResourceQuota>,
 ) -> HttpResult<impl IntoResponse> {
-    let config: UserResourceQuota = explicit.into();
+    // Validate rate strings before touching the DB — return 422 for bad values.
+    config
+        .validate_rate_roundtrips()
+        .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
+
     let user = resolve_user(&state, &pubkey_str).await?;
 
     UserRepository::set_resource_quota(user.id, &config, &mut state.sql_db.pool().into()).await?;
@@ -152,37 +72,10 @@ mod tests {
 
     use super::*;
     use crate::admin_server::app::create_app;
+    use crate::data_directory::quota_config::BandwidthRate;
+    use crate::data_directory::user_resource_quota::QuotaOverride;
     use crate::persistence::files::FileService;
     use crate::AppContext;
-
-    #[test]
-    fn test_explicit_config_requires_all_fields() {
-        let result: Result<ExplicitUserResourceQuota, _> =
-            serde_json::from_str(r#"{"storage_quota_mb": 500}"#);
-        assert!(result.is_err(), "Missing fields should be rejected");
-
-        let result: Result<ExplicitUserResourceQuota, _> = serde_json::from_str(r#"{}"#);
-        assert!(result.is_err(), "Empty object should be rejected");
-    }
-
-    #[test]
-    fn test_explicit_config_accepts_all_fields_with_nulls() {
-        let json = r#"{
-            "storage_quota_mb": 500,
-            "max_sessions": null,
-            "rate_read": "100mb/m",
-            "rate_write": null
-        }"#;
-        let explicit: ExplicitUserResourceQuota = serde_json::from_str(json).unwrap();
-        let config: UserResourceQuota = explicit.into();
-        assert_eq!(config.storage_quota_mb, Some(500));
-        assert_eq!(config.max_sessions, None);
-        assert_eq!(
-            config.rate_read,
-            Some(BandwidthRate::from_str("100mb/m").unwrap())
-        );
-        assert_eq!(config.rate_write, None);
-    }
 
     fn create_test_server(context: &AppContext) -> TestServer {
         TestServer::new(create_app(
@@ -197,16 +90,53 @@ mod tests {
     }
 
     #[test]
-    fn test_explicit_config_all_null_is_all_unlimited() {
+    fn test_partial_body_absent_fields_are_default() {
+        let json = r#"{"storage_quota_mb": 500}"#;
+        let config: UserResourceQuota = serde_json::from_str(json).unwrap();
+        assert_eq!(config.storage_quota_mb, Some(500));
+        assert_eq!(config.max_sessions, None);
+        assert_eq!(config.rate_read, QuotaOverride::Default);
+        assert_eq!(config.rate_write, QuotaOverride::Default);
+    }
+
+    #[test]
+    fn test_null_fields() {
         let json = r#"{
             "storage_quota_mb": null,
             "max_sessions": null,
             "rate_read": null,
             "rate_write": null
         }"#;
-        let explicit: ExplicitUserResourceQuota = serde_json::from_str(json).unwrap();
-        let config: UserResourceQuota = explicit.into();
+        let config: UserResourceQuota = serde_json::from_str(json).unwrap();
+        // null maps to None (no limit) for storage/sessions
+        assert_eq!(config.storage_quota_mb, None);
+        assert_eq!(config.max_sessions, None);
+        // null maps to Unlimited for rate fields
+        assert_eq!(config.rate_read, QuotaOverride::Unlimited);
+        assert_eq!(config.rate_write, QuotaOverride::Unlimited);
+    }
+
+    #[test]
+    fn test_empty_body_is_all_default() {
+        let config: UserResourceQuota = serde_json::from_str("{}").unwrap();
         assert_eq!(config, UserResourceQuota::default());
+    }
+
+    #[test]
+    fn test_mixed_fields() {
+        let json = r#"{
+            "storage_quota_mb": 500,
+            "max_sessions": null,
+            "rate_read": "100mb/m"
+        }"#;
+        let config: UserResourceQuota = serde_json::from_str(json).unwrap();
+        assert_eq!(config.storage_quota_mb, Some(500));
+        assert_eq!(config.max_sessions, None);
+        assert_eq!(
+            config.rate_read,
+            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+        );
+        assert_eq!(config.rate_write, QuotaOverride::Default);
     }
 
     #[tokio::test]
@@ -226,20 +156,22 @@ mod tests {
 
         let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
-        // GET defaults (no overrides set)
+        // GET defaults (all fields Default)
         let response = server
             .get(&url)
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;
         response.assert_status_ok();
+        // Default user should have empty JSON (all fields Default → omitted)
+        let json: serde_json::Value = response.json();
+        assert_eq!(json, serde_json::json!({}));
 
-        // PUT overrides (all fields required — null = unlimited)
+        // PUT with partial body (absent fields = Default)
         let body = serde_json::json!({
             "storage_quota_mb": 500,
             "max_sessions": 10,
-            "rate_read": "100mb/m",
-            "rate_write": null
+            "rate_read": "100mb/m"
         });
         let response = server
             .put(&url)
@@ -250,7 +182,7 @@ mod tests {
             .await;
         response.assert_status_ok();
 
-        // GET reflects the overrides
+        // GET reflects the overrides — Default fields should be absent
         let response = server
             .get(&url)
             .add_header("X-Admin-Password", "test")
@@ -261,8 +193,10 @@ mod tests {
         assert_eq!(json["storage_quota_mb"], 500);
         assert_eq!(json["max_sessions"], 10);
         assert_eq!(json["rate_read"], "100mb/m");
+        // rate_write was Default → should be absent from JSON
+        assert!(json.get("rate_write").is_none());
 
-        // PUT all-null to make unlimited
+        // PUT with null fields to make unlimited
         let body = serde_json::json!({
             "storage_quota_mb": null,
             "max_sessions": null,
@@ -278,7 +212,8 @@ mod tests {
             .await;
         response.assert_status_ok();
 
-        // GET after all-null PUT should show unlimited
+        // GET after all-null PUT: storage/sessions are None (omitted),
+        // rate fields are Unlimited (serialized as null)
         let response = server
             .get(&url)
             .add_header("X-Admin-Password", "test")
@@ -286,8 +221,12 @@ mod tests {
             .await;
         response.assert_status_ok();
         let json: serde_json::Value = response.json();
-        assert!(json["storage_quota_mb"].is_null());
-        assert!(json["max_sessions"].is_null());
+        // storage_quota_mb and max_sessions: null → None → omitted from JSON
+        assert!(json.get("storage_quota_mb").is_none());
+        assert!(json.get("max_sessions").is_none());
+        // rate fields: null → Unlimited → serialized as null
+        assert!(json["rate_read"].is_null());
+        assert!(json["rate_write"].is_null());
     }
 
     #[tokio::test]
@@ -307,62 +246,15 @@ mod tests {
 
         let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
-        // PUT with invalid rate string should be rejected (422 from serde validation)
+        // PUT with invalid rate string should be rejected
         let body = serde_json::json!({
-            "storage_quota_mb": null,
-            "max_sessions": null,
-            "rate_read": "rubbish",
-            "rate_write": null
+            "rate_read": "rubbish"
         });
         let response = server
             .put(&url)
             .add_header("X-Admin-Password", "test")
             .content_type("application/json")
             .bytes(serde_json::to_vec(&body).unwrap().into())
-            .expect_failure()
-            .await;
-        response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
-    /// Omitting a required field in the PUT body should return 422.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_user_resource_quota_missing_field_rejected() {
-        use crate::persistence::sql::user::UserRepository;
-        use pubky_common::crypto::Keypair;
-
-        let context = AppContext::test().await;
-        let server = create_test_server(&context);
-        let keypair = Keypair::random();
-        let pubkey = keypair.public_key();
-
-        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
-            .await
-            .unwrap();
-
-        let url = format!("/users/{}/resource-quotas", pubkey.z32());
-
-        // Missing rate_write field — should be rejected
-        let body = serde_json::json!({
-            "storage_quota_mb": 500,
-            "max_sessions": 10,
-            "rate_read": "100mb/m"
-        });
-        let response = server
-            .put(&url)
-            .add_header("X-Admin-Password", "test")
-            .content_type("application/json")
-            .bytes(serde_json::to_vec(&body).unwrap().into())
-            .expect_failure()
-            .await;
-        response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
-
-        // Empty body — also rejected
-        let response = server
-            .put(&url)
-            .add_header("X-Admin-Password", "test")
-            .content_type("application/json")
-            .bytes(b"{}".to_vec().into())
             .expect_failure()
             .await;
         response.assert_status(axum::http::StatusCode::UNPROCESSABLE_ENTITY);
@@ -385,8 +277,8 @@ mod tests {
         response.assert_status(axum::http::StatusCode::NOT_FOUND);
     }
 
-    /// PUT /users/{pubkey}/resource-quotas replaces the entire custom config.
-    /// Fields not included in the JSON body default to None (unlimited).
+    /// PUT /users/{pubkey}/resource-quotas replaces the entire config.
+    /// Absent fields become Default (NULL in DB).
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_put_user_resource_quota_replaces_all_fields() {
@@ -404,7 +296,7 @@ mod tests {
 
         let url = format!("/users/{}/resource-quotas", pubkey.z32());
 
-        // 1) PUT all four fields
+        // 1) PUT all four fields with values
         let body = serde_json::json!({
             "storage_quota_mb": 500,
             "max_sessions": 10,
@@ -419,12 +311,9 @@ mod tests {
             .expect_success()
             .await;
 
-        // 2) PUT with storage_quota_mb=200, others explicitly unlimited
+        // 2) PUT with only storage_quota_mb — others become Default
         let body = serde_json::json!({
-            "storage_quota_mb": 200,
-            "max_sessions": null,
-            "rate_read": null,
-            "rate_write": null
+            "storage_quota_mb": 200
         });
         server
             .put(&url)
@@ -434,7 +323,7 @@ mod tests {
             .expect_success()
             .await;
 
-        // 3) Verify: storage_quota_mb is 200, others are unlimited (null)
+        // 3) Verify: storage_quota_mb is 200, others are Default (absent from JSON)
         let response = server
             .get(&url)
             .add_header("X-Admin-Password", "test")
@@ -443,16 +332,68 @@ mod tests {
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 200);
         assert!(
-            json["max_sessions"].is_null(),
-            "max_sessions should be unlimited after PUT replace"
+            json.get("max_sessions").is_none(),
+            "max_sessions should be Default (absent) after PUT replace"
         );
         assert!(
-            json["rate_read"].is_null(),
-            "rate_read should be unlimited after PUT replace"
+            json.get("rate_read").is_none(),
+            "rate_read should be Default (absent) after PUT replace"
         );
         assert!(
-            json["rate_write"].is_null(),
-            "rate_write should be unlimited after PUT replace"
+            json.get("rate_write").is_none(),
+            "rate_write should be Default (absent) after PUT replace"
         );
+    }
+
+    /// Test that Default vs Unlimited are distinguishable for rate fields in GET response.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_default_vs_unlimited_distinguishable_for_rates() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let url = format!("/users/{}/resource-quotas", pubkey.z32());
+
+        // PUT: rate_read = null (Unlimited), rate_write absent (Default)
+        let body = serde_json::json!({
+            "rate_read": null
+        });
+        server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let json: serde_json::Value = response.json();
+        // Unlimited → present as null
+        assert!(
+            json.get("rate_read").is_some(),
+            "Unlimited rate field should be present in JSON"
+        );
+        assert!(json["rate_read"].is_null());
+        // Default → absent
+        assert!(
+            json.get("rate_write").is_none(),
+            "Default rate field should be absent from JSON"
+        );
+        // storage/sessions: null and absent both map to None → both omitted
+        assert!(json.get("storage_quota_mb").is_none());
+        assert!(json.get("max_sessions").is_none());
     }
 }

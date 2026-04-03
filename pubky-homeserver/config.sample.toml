@@ -10,47 +10,12 @@ database_url = "postgres://localhost:5432/pubky_homeserver"
 signup_mode = "token_required"
 
 # Maximum storage a single user may occupy (in MB).
-# Deprecated: use `quota_storage_mb` instead. Kept for backward compatibility.
-# Set it to 0 for unlimited.
+# Applied as the default for new users during signup and as
+# the backfill value for existing users when the migration runs.
+# After that, per-user quotas are managed via the admin API:
+#   PUT /users/{pubkey}/resource-quotas
+# Set to 0 for unlimited.
 user_storage_quota_mb = 0
-
-# --- Per-user default resource quotas ---
-#
-# These values serve as the deploy-time defaults for per-user resource quotas.
-# They are applied in two ways:
-#
-#   1. NEW USERS: Any user created after the server starts will inherit these
-#      defaults (unless a signup token carries its own custom quotas).
-#
-#   2. MIGRATION BACKFILL (one-time): When the m20260327_add_resource_quota_columns
-#      migration runs for the first time, these values are written ("frozen")
-#      into every existing user row. After that, changing these TOML values
-#      will NOT retroactively update existing users. To change an existing
-#      user's quotas, use the admin API:
-#        - PUT /users/{pubkey}/resource-quotas — set custom quotas (use null for unlimited)
-#
-# Within this section, omitted fields mean "unlimited".
-[quotas]
-
-# Default per-user storage quota in MB. Omit for unlimited.
-# Takes precedence over the deprecated `[general] user_storage_quota_mb` if both are set.
-#
-# IMPORTANT: 0 means "zero quota" (no storage allowed). Omit the field entirely for
-# unlimited storage.
-# storage_quota_mb = 1024
-
-# Default maximum concurrent sessions per user. Omit for unlimited.
-# max_sessions = 3
-
-# Default per-user read speed limit override. Omit for unlimited.
-# When set, overrides the global path-based speed limit for matching user-keyed
-# read limits.
-# Accepts bandwidth units (kb, mb, gb) with time units (s, m, h, d).
-# Example: "10mb/s" = throttle reads to 10 MB/s per user.
-# rate_read = "10mb/s"
-
-# Default per-user write speed limit override. Omit for unlimited.
-# rate_write = "5mb/s"
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.

@@ -3,10 +3,8 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use crate::{
     data_directory::user_resource_quota::UserResourceQuota,
     persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository},
-    shared::HttpResult,
+    shared::{HttpError, HttpResult},
 };
-
-use super::user_resource_quotas::ExplicitUserResourceQuota;
 
 use super::super::app_state::AppState;
 
@@ -26,19 +24,24 @@ async fn create_signup_code(
 
 /// GET /generate_signup_token — create a token with the server's deploy-time defaults.
 ///
-/// To create a token with explicit custom limits use the POST endpoint instead.
+/// The token carries `storage_quota_mb` from config, all other fields `Default`.
 pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
     create_signup_code(&state, &state.default_user_resource_quota).await
 }
 
 /// POST /generate_signup_token — create a token with explicit custom limits.
 ///
-/// All four fields are **required**. Use `null` for unlimited.
-/// Omitting a field returns 422, preventing accidental unlimited grants.
+/// Accepts a partial JSON body:
+/// - Absent fields → `Default` (use system default)
+/// - `null` fields → `Unlimited` (explicitly no limit)
+/// - Value fields → `Value(T)` (explicit limit)
 pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,
-    Json(explicit): Json<ExplicitUserResourceQuota>,
+    Json(config): Json<UserResourceQuota>,
 ) -> HttpResult<impl IntoResponse> {
-    let config: UserResourceQuota = explicit.into();
+    // Validate rate strings before touching the DB — return 422 for bad values.
+    config
+        .validate_rate_roundtrips()
+        .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
     create_signup_code(&state, &config).await
 }

@@ -16,18 +16,19 @@ use opendal::Result;
 pub(crate) const FILE_METADATA_SIZE: u64 = 256;
 
 /// Check that adding `bytes_delta` to the current usage would not exceed the
-/// per-user storage quota. `quota_mb` of `None` means unlimited.
+/// per-user storage quota.
+///
+/// - `None` → no limit, skip check (Ok)
+/// - `Some(mb)` → enforce limit
 fn check_quota_not_exceeded(
     current_bytes: u64,
     bytes_delta: i64,
-    quota_mb: Option<i64>,
+    quota: Option<u64>,
 ) -> opendal::Result<()> {
-    let quota_bytes = quota_mb
-        .and_then(|mb| u64::try_from(mb).ok())
-        .map(|mb| mb.saturating_mul(1024 * 1024));
-    if let Some(quota) = quota_bytes {
+    if let Some(mb) = quota {
+        let quota_bytes = mb.saturating_mul(1024 * 1024);
         let new_total = current_bytes as i128 + bytes_delta as i128;
-        if new_total > 0 && (new_total as u64) > quota {
+        if new_total > 0 && (new_total as u64) > quota_bytes {
             return Err(opendal::Error::new(
                 opendal::ErrorKind::RateLimited,
                 "User quota exceeded",
@@ -212,7 +213,11 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             self.bytes_count as i64 - current_file_size as i64 + FILE_METADATA_SIZE as i64
         };
 
-        check_quota_not_exceeded(user.used_bytes, bytes_delta, user.quota_storage_mb)?;
+        check_quota_not_exceeded(
+            user.used_bytes,
+            bytes_delta,
+            user.resource_quota().storage_quota_mb,
+        )?;
 
         let metadata = self.inner.close().await?;
         user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);

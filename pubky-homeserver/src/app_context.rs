@@ -5,10 +5,10 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
+use crate::data_directory::user_resource_quota::UserResourceQuotaCache;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
-    data_directory::user_resource_quota::UserResourceQuotaCache,
     metrics_server::routes::metrics::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
@@ -109,13 +109,15 @@ impl AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let sql_db = Self::connect_to_sql_db(&conf).await?;
-        let default_user_resource_quota =
-            crate::data_directory::user_resource_quota::UserResourceQuota::from_config(&conf);
-        default_user_resource_quota
-            .validate_rate_roundtrips()
-            .map_err(|e| AppContextConversionError::Config(anyhow::anyhow!(e)))?;
+        // Compute storage default from config: 0 → None (unlimited), n → Some(n)
+        let storage_mb = conf.general.user_storage_quota_mb;
+        let default_storage_quota_mb = if storage_mb == 0 {
+            None
+        } else {
+            Some(storage_mb as i64)
+        };
         Migrator::new(&sql_db)
-            .run(default_user_resource_quota)
+            .run(default_storage_quota_mb)
             .await
             .map_err(AppContextConversionError::Migrations)?;
 

@@ -33,13 +33,15 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
-use crate::data_directory::user_resource_quota::UserResourceQuota;
+use crate::data_directory::user_resource_quota::{CachedUserResourceQuota, UserResourceQuota};
 
 /// How long a session cookie is valid before expiring.
 const SESSION_EXPIRY_DAYS: i64 = 365;
 
-/// Create a user record with explicit limits and commit the transaction.
+/// Create a user record with explicit limits, commit the transaction, and
+/// populate the shared rate-limiter cache so the new user is seen immediately.
 async fn create_user_with_resource_quota(
+    state: &AppState,
     public_key: &PublicKey,
     limits: &UserResourceQuota,
     mut tx: sqlx::Transaction<'static, sqlx::Postgres>,
@@ -48,6 +50,14 @@ async fn create_user_with_resource_quota(
     UserRepository::set_resource_quota(user.id, limits, uexecutor!(tx)).await?;
     user.apply_resource_quota(limits);
     tx.commit().await?;
+
+    // Populate cache so the rate limiter sees the new user immediately
+    // (evicts any negative cache entry from pre-signup lookups).
+    state.user_resource_quota_cache.insert(
+        public_key.clone(),
+        CachedUserResourceQuota::new(user.resource_quota()),
+    );
+
     Ok(user)
 }
 
@@ -127,15 +137,16 @@ pub async fn signup(
         SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
 
         // 4) Create the new user record with the token's limits.
-        let limits = code.resource_quota().unwrap_or_default();
-        let user = create_user_with_resource_quota(public_key, &limits, tx).await?;
+        let limits = code.resource_quota();
+        let user = create_user_with_resource_quota(&state, public_key, &limits, tx).await?;
         return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities())
             .await;
     }
 
     // 4) Create the new user record (open signup, no token).
     let user =
-        create_user_with_resource_quota(public_key, &state.default_user_resource_quota, tx).await?;
+        create_user_with_resource_quota(&state, public_key, &state.default_user_resource_quota, tx)
+            .await?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
@@ -172,6 +183,8 @@ async fn create_session_and_cookie(
 ) -> HttpResult<impl IntoResponse> {
     let mut tx = state.sql_db.pool().begin().await?;
 
+    // Only enforce session cap when an explicit limit is set.
+    // None = no limit, allowing unbounded sessions.
     if let Some(max) = user.resource_quota().max_sessions {
         // Lock the user row for the duration of this transaction to serialize
         // concurrent session creation attempts for the same user.

@@ -120,7 +120,10 @@ impl ClientServer {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
-            default_user_resource_quota: UserResourceQuota::from_config(&context.config_toml),
+            default_user_resource_quota: UserResourceQuota::storage_default_from_config(
+                context.config_toml.general.user_storage_quota_mb,
+            ),
+            user_resource_quota_cache: context.user_resource_quota_cache.clone(),
         };
         super::create_app(state.clone(), context)
     }

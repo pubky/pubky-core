@@ -121,6 +121,14 @@ impl<S> Layer<S> for RateLimiterLayer {
     }
 }
 
+/// Per-user rate override resolved from `QuotaOverride<BandwidthRate>`.
+enum RateOverride<'a> {
+    /// User has `Unlimited` — bypass throttling entirely.
+    Bypass,
+    /// User has `Value(rate)` — use a custom rate limiter.
+    Custom(&'a BandwidthRate),
+}
+
 /// A tuple of a path limit and the actual governor rate limiter.
 #[derive(Debug, Clone)]
 struct LimitTuple {
@@ -175,34 +183,44 @@ impl LimitTuple {
             .clone()
     }
 
-    /// Resolve which rate limiter to use: per-user override or default.
+    /// Resolve which rate limiter to use: per-user override, bypass, or default.
     ///
     /// For user-keyed speed limits where the user has a custom `BandwidthRate`,
-    /// returns a shared override limiter. Otherwise returns the default limiter.
+    /// returns a shared override limiter. If the user's rate is `Unlimited`,
+    /// returns `None` to bypass throttling entirely. Otherwise returns the
+    /// default limiter.
     fn resolve_effective_limiter(
         &self,
         user_quota: Option<&UserResourceQuota>,
-    ) -> Arc<KeyedRateLimiter> {
-        user_quota
-            .and_then(|q| self.user_rate_override(q))
-            .map(|rate| self.get_or_create_override_limiter(rate))
-            .unwrap_or_else(|| self.limiter.clone())
+    ) -> Option<Arc<KeyedRateLimiter>> {
+        match user_quota.and_then(|q| self.user_rate_override(q)) {
+            Some(RateOverride::Bypass) => None,
+            Some(RateOverride::Custom(rate)) => Some(self.get_or_create_override_limiter(rate)),
+            None => Some(self.limiter.clone()),
+        }
     }
 
     /// Determine the per-user rate override for this limit, if applicable.
     ///
-    /// Returns `Some(rate)` only for user-keyed speed limits where the user
-    /// has a custom bandwidth rate for the matching direction (read/write).
-    fn user_rate_override<'a>(&self, quota: &'a UserResourceQuota) -> Option<&'a BandwidthRate> {
+    /// Returns `Some(Bypass)` for Unlimited, `Some(Custom(rate))` for Value,
+    /// and `None` for Default or non-applicable limits.
+    fn user_rate_override<'a>(&self, quota: &'a UserResourceQuota) -> Option<RateOverride<'a>> {
+        use crate::data_directory::user_resource_quota::QuotaOverride;
+
         // Only applies to user-keyed speed limits
         if !self.limit.quota.rate_unit.is_speed_rate_unit() || self.limit.key != LimitKeyType::User
         {
             return None;
         }
-        match self.limit.method.0 {
-            Method::PUT | Method::POST | Method::PATCH => quota.rate_write.as_ref(),
-            Method::GET | Method::HEAD => quota.rate_read.as_ref(),
-            _ => None,
+        let field = match self.limit.method.0 {
+            Method::PUT | Method::POST | Method::PATCH => &quota.rate_write,
+            Method::GET | Method::HEAD => &quota.rate_read,
+            _ => return None,
+        };
+        match field {
+            QuotaOverride::Unlimited => Some(RateOverride::Bypass),
+            QuotaOverride::Value(rate) => Some(RateOverride::Custom(rate)),
+            QuotaOverride::Default => None,
         }
     }
 
@@ -235,6 +253,14 @@ impl LimitTuple {
 /// Resolve limits for a single user: check cache, fall back to DB on miss.
 ///
 /// Returns `Some(config)` for known users, `None` for unknown or on error.
+///
+/// ## Cache capacity behaviour
+///
+/// The cache is bounded by [`MAX_CACHED_USER_RESOURCE_QUOTAS`]. When a miss
+/// occurs at capacity, expired entries are evicted first. If the cache is
+/// still full after eviction, a random entry is evicted to make room.
+/// This ensures new entries are always cached, avoiding repeated DB hits
+/// for the same user during high-traffic bursts.
 async fn resolve_limits(
     pubkey: &PublicKey,
     cache: &UserResourceQuotaCache,
@@ -253,9 +279,18 @@ async fn resolve_limits(
     // Cache miss or expired — query DB.
     cache.remove(pubkey);
 
-    // Evict expired entries if at capacity to prevent unbounded growth.
+    // Make room if at capacity: evict expired entries first, then a random
+    // entry if still full.
     if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
         cache.retain(|_, entry| !entry.is_expired());
+
+        if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
+            // Evict a random entry. DashMap iteration order is arbitrary
+            // (hash-bucket based), which provides sufficient randomness here.
+            if let Some(entry) = cache.iter().next() {
+                cache.remove(entry.key());
+            }
+        }
     }
 
     match UserRepository::get(pubkey, &mut sql_db.pool().into()).await {
@@ -444,7 +479,9 @@ where
             };
 
             // Collect the resolved limiter for each speed limit (for download throttling later).
-            let mut speed_limit_entries: Vec<(LimitTuple, Arc<KeyedRateLimiter>)> = Vec::new();
+            // `None` limiter means the user has Unlimited — bypass throttling.
+            let mut speed_limit_entries: Vec<(LimitTuple, Option<Arc<KeyedRateLimiter>>)> =
+                Vec::new();
 
             // Go through all the limits and check if we need to throttle or reject the request.
             for limit in &limits_owned {
@@ -473,7 +510,9 @@ where
                     RateUnit::SpeedRateUnit(_) => {
                         let effective_limiter =
                             limit.resolve_effective_limiter(user_quota.as_ref());
-                        req = Self::throttle_upload(req, &key, &effective_limiter);
+                        if let Some(ref limiter) = effective_limiter {
+                            req = Self::throttle_upload(req, &key, limiter);
+                        }
                         speed_limit_entries.push((limit.clone(), effective_limiter));
                     }
                     RateUnit::Request => {
@@ -507,9 +546,10 @@ where
 
             // Rate limit the download speed using the same resolved limiters.
             for (limit, effective_limiter) in &speed_limit_entries {
-                if let Ok(key) = limit.extract_key(&req_clone) {
-                    response = Self::throttle_download(response, &key, effective_limiter);
-                };
+                if let (Ok(key), Some(limiter)) = (limit.extract_key(&req_clone), effective_limiter)
+                {
+                    response = Self::throttle_download(response, &key, limiter);
+                }
             }
 
             Ok(response)
@@ -765,43 +805,71 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_direction_detection() {
+        use crate::data_directory::user_resource_quota::QuotaOverride;
+
         let write_limit = pub_limit(Method::PUT, "1mb/s", LimitKeyType::User);
         let read_limit = pub_limit(Method::GET, "1mb/s", LimitKeyType::User);
         let ip_limit = pub_limit(Method::PUT, "1mb/s", LimitKeyType::Ip);
         let request_limit = pub_limit(Method::PUT, "10r/m", LimitKeyType::User);
 
+        let write_rate: BandwidthRate = "5mb/s".parse().unwrap();
+        let read_rate: BandwidthRate = "10mb/s".parse().unwrap();
         let quota = UserResourceQuota {
-            rate_write: Some("5mb/s".parse().unwrap()),
-            rate_read: Some("10mb/s".parse().unwrap()),
+            rate_write: QuotaOverride::Value(write_rate.clone()),
+            rate_read: QuotaOverride::Value(read_rate.clone()),
             ..Default::default()
         };
 
-        // User-keyed PUT speed limit → should return rate_write
-        assert_eq!(
+        // User-keyed PUT speed limit → should return Custom(rate_write)
+        assert!(matches!(
             write_limit.user_rate_override(&quota),
-            quota.rate_write.as_ref()
-        );
+            Some(RateOverride::Custom(r)) if *r == write_rate
+        ));
 
-        // User-keyed GET speed limit → should return rate_read
-        assert_eq!(
+        // User-keyed GET speed limit → should return Custom(rate_read)
+        assert!(matches!(
             read_limit.user_rate_override(&quota),
-            quota.rate_read.as_ref()
-        );
+            Some(RateOverride::Custom(r)) if *r == read_rate
+        ));
 
         // IP-keyed speed limit → no override
-        assert_eq!(ip_limit.user_rate_override(&quota), None);
+        assert!(ip_limit.user_rate_override(&quota).is_none());
 
         // Request-count limit → no override
-        assert_eq!(request_limit.user_rate_override(&quota), None);
+        assert!(request_limit.user_rate_override(&quota).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_user_rate_override_unlimited_bypass() {
+        use crate::data_directory::user_resource_quota::QuotaOverride;
+
+        let write_limit = pub_limit(Method::PUT, "1mb/s", LimitKeyType::User);
+        let quota = UserResourceQuota {
+            rate_write: QuotaOverride::Unlimited,
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            write_limit.user_rate_override(&quota),
+            Some(RateOverride::Bypass)
+        ));
+
+        // resolve_effective_limiter returns None for bypass
+        assert!(write_limit
+            .resolve_effective_limiter(Some(&quota))
+            .is_none());
     }
 
     #[tokio::test]
     async fn test_user_without_override_uses_default() {
         let limit = pub_limit(Method::PUT, "1mb/s", LimitKeyType::User);
 
-        // User with no rate overrides
+        // User with no rate overrides (all Default)
         let quota = UserResourceQuota::default();
-        assert_eq!(limit.user_rate_override(&quota), None);
+        assert!(limit.user_rate_override(&quota).is_none());
+
+        // resolve_effective_limiter returns Some (the default limiter)
+        assert!(limit.resolve_effective_limiter(Some(&quota)).is_some());
     }
 
     #[tokio::test]

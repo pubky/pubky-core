@@ -231,8 +231,8 @@ pub struct SignupCodeEntity {
 }
 
 impl SignupCodeEntity {
-    /// Extract custom limits, returning `None` if all limit columns are NULL.
-    pub fn resource_quota(&self) -> Option<UserResourceQuota> {
+    /// Extract resource quota from the DB columns.
+    pub fn resource_quota(&self) -> UserResourceQuota {
         UserResourceQuota::from_nullable_columns(
             self.quota_storage_mb,
             self.quota_max_sessions,
@@ -305,7 +305,8 @@ mod tests {
         .unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
-        assert_eq!(code.resource_quota(), None);
+        // All-default quota: all fields should be Default
+        assert_eq!(code.resource_quota(), UserResourceQuota::default());
 
         // Test get code
         let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
@@ -313,13 +314,14 @@ mod tests {
             .unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
-        assert_eq!(code.resource_quota(), None);
+        assert_eq!(code.resource_quota(), UserResourceQuota::default());
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_with_resource_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::user_resource_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -328,20 +330,20 @@ mod tests {
         let config = UserResourceQuota {
             storage_quota_mb: Some(500),
             max_sessions: Some(10),
-            rate_read: Some(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: None,
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Default,
         };
 
         let code = SignupCodeRepository::create(&signup_code_id, &config, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(code.resource_quota(), Some(config.clone()));
+        assert_eq!(code.resource_quota(), config.clone());
 
         // Verify get also returns the config
         let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(code.resource_quota(), Some(config));
+        assert_eq!(code.resource_quota(), config);
     }
 
     #[tokio::test]
@@ -448,6 +450,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_signup_token_limits_applied_to_user() {
         use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::user_resource_quota::QuotaOverride;
         use crate::persistence::sql::user::UserRepository;
         use std::str::FromStr;
 
@@ -461,8 +464,8 @@ mod tests {
         let resource_quota = UserResourceQuota {
             storage_quota_mb: Some(1024),
             max_sessions: Some(5),
-            rate_read: Some(bw("200mb/m")),
-            rate_write: None,
+            rate_read: QuotaOverride::Value(bw("200mb/m")),
+            rate_write: QuotaOverride::Default,
         };
         let code_id = SignupCodeId::random();
         let code = SignupCodeRepository::create(&code_id, &resource_quota, &mut db.pool().into())
@@ -479,12 +482,11 @@ mod tests {
         SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())
             .await
             .unwrap();
-        if let Some(token_limits) = &code.resource_quota() {
-            UserRepository::set_resource_quota(user.id, token_limits, &mut (&mut tx).into())
-                .await
-                .unwrap();
-            user.apply_resource_quota(token_limits);
-        }
+        let token_limits = code.resource_quota();
+        UserRepository::set_resource_quota(user.id, &token_limits, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        user.apply_resource_quota(&token_limits);
         tx.commit().await.unwrap();
 
         // 3) Re-read from DB and verify limits were persisted
@@ -494,7 +496,10 @@ mod tests {
         let user_resource_quota = user.resource_quota();
         assert_eq!(user_resource_quota.storage_quota_mb, Some(1024));
         assert_eq!(user_resource_quota.max_sessions, Some(5));
-        assert_eq!(user_resource_quota.rate_read, Some(bw("200mb/m")));
-        assert_eq!(user_resource_quota.rate_write, None);
+        assert_eq!(
+            user_resource_quota.rate_read,
+            QuotaOverride::Value(bw("200mb/m"))
+        );
+        assert_eq!(user_resource_quota.rate_write, QuotaOverride::Default);
     }
 }

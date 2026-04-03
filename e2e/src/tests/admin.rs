@@ -162,15 +162,24 @@ async fn per_user_quota_via_admin_api() {
 
 /// Test that per-user write speed override set via admin API throttles uploads.
 ///
-/// The default path limit for PUT /pub/** is 1mb/s. We override a specific user
-/// to 1kb/s via admin API, then upload 3 KB. At 1kb/s the upload should take >2s
-/// (same pattern as `test_limit_upload` in rate_limiting.rs).
+/// We configure a base PUT /pub/** speed limit of 1mb/s (user-keyed), then
+/// override a specific user to 1kb/s via admin API. A 3 KB upload at 1kb/s
+/// should take >2s (same pattern as `test_limit_upload` in rate_limiting.rs).
 #[tokio::test]
 #[pubky_testnet::test]
 async fn per_user_speed_override_throttles_via_admin_api() {
+    use pubky_testnet::pubky_homeserver::quota_config::{GlobPattern, LimitKeyType, PathLimit};
     use std::time::{Duration, Instant};
 
-    let config = ConfigToml::default_test_config();
+    let mut config = ConfigToml::default_test_config();
+    // Add a base user-keyed speed limit for PUT /pub/** — required for per-user overrides.
+    config.drive.rate_limits.push(PathLimit::new(
+        GlobPattern::new("/pub/**"),
+        Method::PUT,
+        "1mb/s".parse().unwrap(),
+        LimitKeyType::User,
+        None,
+    ));
     let admin_password = config.admin.admin_password.clone();
 
     let mut testnet = Testnet::new().await.unwrap();
