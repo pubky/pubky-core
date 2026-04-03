@@ -4,10 +4,6 @@
 //! authentication. It is inserted into request extensions by the authentication
 //! middleware and extracted by route handlers.
 
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 
@@ -42,21 +38,3 @@ impl AuthSession {
     }
 }
 
-impl<S> FromRequestParts<S> for AuthSession
-where
-    S: Send + Sync,
-{
-    type Rejection = axum::response::Response;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts
-            .extensions
-            .get::<AuthSession>()
-            .cloned()
-            .ok_or((
-                StatusCode::UNAUTHORIZED,
-                "No authenticated session found",
-            ))
-            .map_err(|e| e.into_response())
-    }
-}

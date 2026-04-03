@@ -9,13 +9,39 @@
 //! - **No Authorization header** → forwards without an identity (never rejects).
 //! - **Non-Bearer Authorization scheme** → rejects with 401.
 
-use crate::client_server::auth::jwt::auth::{authenticate_bearer, extract_bearer_token};
+use crate::client_server::auth::jwt::auth::authenticate_bearer;
+use crate::client_server::auth::jwt::crypto::jws_crypto::JwsCompact;
 use crate::client_server::auth::AuthState;
+use crate::shared::HttpError;
+use axum::http::header;
 use axum::response::IntoResponse;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
+
+// ── Bearer token extraction ────────────────────────────────────────────────
+
+/// Extract and parse Bearer token from the Authorization header.
+///
+/// - `Ok(Some(token))` — valid Bearer token found.
+/// - `Ok(None)` — no Authorization header present.
+/// - `Err(HttpError)` — Authorization header present but not a valid Bearer token.
+fn extract_bearer_token(req: &Request<Body>) -> Result<Option<JwsCompact>, HttpError> {
+    let Some(value) = req.headers().get(header::AUTHORIZATION) else {
+        return Ok(None);
+    };
+    let value = value
+        .to_str()
+        .map_err(|_| HttpError::unauthorized_with_message("Malformed Authorization header"))?;
+
+    let Some(raw_token) = value.strip_prefix("Bearer ") else {
+        return Err(HttpError::unauthorized_with_message("Malformed Authorization header"));
+    };
+    let token = JwsCompact::parse(raw_token)
+        .map_err(|_| HttpError::unauthorized_with_message("Malformed Bearer token"))?;
+    Ok(Some(token))
+}
 
 // ── Layer ───────────────────────────────────────────────────────────────────
 
@@ -265,5 +291,50 @@ mod tests {
 
         let resp = svc.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── extract_bearer_token unit tests ────────────────────────────────
+
+    #[test]
+    fn extract_bearer_no_auth_header() {
+        let req = Request::builder().body(Body::empty()).unwrap();
+        assert!(matches!(extract_bearer_token(&req), Ok(None)));
+    }
+
+    #[test]
+    fn extract_bearer_basic_auth_rejected() {
+        let req = Request::builder()
+            .header("Authorization", "Basic dXNlcjpwYXNz")
+            .body(Body::empty())
+            .unwrap();
+        assert!(extract_bearer_token(&req).is_err());
+    }
+
+    #[test]
+    fn extract_bearer_malformed_token() {
+        let req = Request::builder()
+            .header("Authorization", "Bearer not-a-jws")
+            .body(Body::empty())
+            .unwrap();
+        assert!(extract_bearer_token(&req).is_err());
+    }
+
+    #[test]
+    fn extract_bearer_empty_token() {
+        let req = Request::builder()
+            .header("Authorization", "Bearer ")
+            .body(Body::empty())
+            .unwrap();
+        assert!(extract_bearer_token(&req).is_err());
+    }
+
+    #[test]
+    fn extract_bearer_valid_jws_format() {
+        let req = Request::builder()
+            .header("Authorization", "Bearer aaa.bbb.ccc")
+            .body(Body::empty())
+            .unwrap();
+        let result = extract_bearer_token(&req).unwrap();
+        assert!(result.is_some());
     }
 }
