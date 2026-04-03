@@ -99,10 +99,10 @@ pub async fn get_session(
     State(state): State<AuthState>,
     auth: AuthSession,
 ) -> HttpResult<impl IntoResponse> {
-    let AuthSession::Bearer(bearer) = auth else {
+    let AuthSession::Grant(session) = auth else {
         return Err(HttpError::unauthorized());
     };
-    let info = state.auth_service.get_bearer_session_info(&bearer).await?;
+    let info = state.auth_service.get_grant_session_info(&session).await?;
     Ok(Json(info))
 }
 
@@ -111,10 +111,10 @@ pub async fn signout(
     State(state): State<AuthState>,
     auth: AuthSession,
 ) -> HttpResult<impl IntoResponse> {
-    let AuthSession::Bearer(bearer) = auth else {
+    let AuthSession::Grant(session) = auth else {
         return Err(HttpError::unauthorized());
     };
-    state.auth_service.signout_bearer(&bearer).await?;
+    state.auth_service.signout_grant_session(&session).await?;
     Ok(StatusCode::OK)
 }
 
@@ -168,11 +168,11 @@ mod tests {
         crypto::Keypair,
     };
 
-    use crate::client_server::auth::jwt::auth::BearerSession;
+    use crate::client_server::auth::jwt::auth::GrantSession;
 
     fn bearer_auth(caps: Capabilities) -> AuthSession {
         let now = chrono::Utc::now().timestamp() as u64;
-        AuthSession::Bearer(BearerSession {
+        AuthSession::Grant(GrantSession {
             user_key: Keypair::random().public_key(),
             capabilities: caps,
             grant_id: GrantId::generate(),

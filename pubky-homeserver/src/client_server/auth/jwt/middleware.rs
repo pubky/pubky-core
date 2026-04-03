@@ -4,7 +4,7 @@
 //! `Authorization` header. On success it inserts an [`AuthSession`] into
 //! request extensions.
 //!
-//! - **Bearer token present and valid** → inserts `AuthSession::Bearer`.
+//! - **Bearer token present and valid** → inserts `AuthSession::Grant`.
 //! - **Bearer token present but invalid** → rejects with 401.
 //! - **No Authorization header** → forwards without an identity (never rejects).
 //! - **Non-Bearer Authorization scheme** → rejects with 401.

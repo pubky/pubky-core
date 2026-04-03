@@ -4,7 +4,7 @@
 //! single layer. JWT runs first; cookie only activates when no Bearer token
 //! was present.
 //!
-//! - **Bearer token present and valid** → `AuthSession::Bearer` (cookie skipped).
+//! - **Bearer token present and valid** → `AuthSession::Grant` (cookie skipped).
 //! - **Bearer token present but invalid** → rejects with 401 (cookie never runs).
 //! - **No Bearer, valid cookie** → `AuthSession::Cookie`.
 //! - **No credentials** → forwards without an identity.

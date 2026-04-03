@@ -12,9 +12,9 @@ use crate::client_server::auth::AuthSession;
 use crate::client_server::auth::AuthState;
 use crate::shared::HttpError;
 
-/// Grant-based JWT Bearer token session data.
+/// Grant-based JWT session data.
 #[derive(Clone, Debug)]
-pub struct BearerSession {
+pub struct GrantSession {
     /// User public key.
     pub user_key: PublicKey,
     /// Capabilities from the underlying grant.
@@ -38,11 +38,11 @@ pub async fn authenticate_bearer(
     let jwt = verify_access_jwt(token, &state.auth_service.homeserver_public_key())
         .map_err(|_| HttpError::unauthorized_with_message("Invalid or expired JWT"))?;
 
-    let bearer = state
+    let session = state
         .auth_service
-        .resolve_bearer_session(&jwt)
+        .resolve_grant_session(&jwt)
         .await
         .map_err(HttpError::from)?;
 
-    Ok(AuthSession::Bearer(bearer))
+    Ok(AuthSession::Grant(session))
 }

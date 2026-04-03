@@ -8,7 +8,7 @@ use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 
 use super::cookie::persistence::SessionEntity;
-use super::jwt::auth::BearerSession;
+use super::jwt::auth::GrantSession;
 
 /// Resolved authentication context — inserted into request extensions by the
 /// authentication middleware. Handlers just add `auth: AuthSession` as a parameter.
@@ -16,8 +16,8 @@ use super::jwt::auth::BearerSession;
 pub enum AuthSession {
     /// Deprecated cookie-based session.
     Cookie(SessionEntity),
-    /// Grant-based JWT Bearer token session.
-    Bearer(BearerSession),
+    /// Grant-based JWT Grant token session.
+    Grant(GrantSession),
 }
 
 impl AuthSession {
@@ -25,7 +25,7 @@ impl AuthSession {
     pub fn capabilities(&self) -> &Capabilities {
         match self {
             AuthSession::Cookie(c) => &c.capabilities,
-            AuthSession::Bearer(b) => &b.capabilities,
+            AuthSession::Grant(b) => &b.capabilities,
         }
     }
 
@@ -33,7 +33,7 @@ impl AuthSession {
     pub fn user_key(&self) -> &PublicKey {
         match self {
             AuthSession::Cookie(c) => &c.user_pubkey,
-            AuthSession::Bearer(b) => &b.user_key,
+            AuthSession::Grant(b) => &b.user_key,
         }
     }
 }

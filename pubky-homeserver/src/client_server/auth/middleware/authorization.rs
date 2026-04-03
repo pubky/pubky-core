@@ -100,7 +100,7 @@ fn check_capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client_server::auth::jwt::auth::BearerSession;
+    use crate::client_server::auth::jwt::auth::GrantSession;
     use axum::body::Body;
     use axum::http::Request;
     use pubky_common::auth::jws::{GrantId, TokenId};
@@ -112,7 +112,7 @@ mod tests {
     }
 
     fn bearer_session_with_caps(capabilities: Capabilities) -> AuthSession {
-        AuthSession::Bearer(BearerSession {
+        AuthSession::Grant(GrantSession {
             user_key: dummy_pk(),
             capabilities,
             grant_id: GrantId::generate(),
