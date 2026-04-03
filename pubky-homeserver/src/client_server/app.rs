@@ -5,7 +5,6 @@ use crate::MockDataDir;
 
 use crate::{
     app_context::{AppContext, AppContextConversionError},
-    data_directory::user_resource_quota::UserResourceQuota,
     PersistentDataDir,
 };
 use anyhow::Result;
@@ -120,9 +119,10 @@ impl ClientServer {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
-            default_user_resource_quota: UserResourceQuota::storage_default_from_config(
-                context.config_toml.general.user_storage_quota_mb,
-            ),
+            default_storage_quota_mb: match context.config_toml.general.user_storage_quota_mb {
+                0 => None,
+                n => Some(n),
+            },
             user_resource_quota_cache: context.user_resource_quota_cache.clone(),
         };
         super::create_app(state.clone(), context)

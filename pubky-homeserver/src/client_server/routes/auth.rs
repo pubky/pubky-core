@@ -144,9 +144,11 @@ pub async fn signup(
     }
 
     // 4) Create the new user record (open signup, no token).
-    let user =
-        create_user_with_resource_quota(&state, public_key, &state.default_user_resource_quota, tx)
-            .await?;
+    let default_quota = UserResourceQuota {
+        storage_quota_mb: state.default_storage_quota_mb,
+        ..Default::default()
+    };
+    let user = create_user_with_resource_quota(&state, public_key, &default_quota, tx).await?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await

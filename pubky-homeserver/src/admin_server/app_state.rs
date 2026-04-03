@@ -3,7 +3,7 @@ use dav_server_opendalfs::OpendalFs;
 
 use std::sync::Arc;
 
-use crate::data_directory::user_resource_quota::{UserResourceQuota, UserResourceQuotaCache};
+use crate::data_directory::user_resource_quota::UserResourceQuotaCache;
 use crate::persistence::{files::FileService, sql::SqlDb};
 use crate::ConfigToml;
 
@@ -22,8 +22,8 @@ pub(crate) struct AppState {
     pub(crate) admin_password: String,
     pub(crate) inner_dav_handler: DavHandler,
     pub(crate) metadata: AdminMetadata,
-    /// Deploy-time default user limits.
-    pub(crate) default_user_resource_quota: UserResourceQuota,
+    /// Deploy-time default storage quota (MB). `None` = no limit.
+    pub(crate) default_storage_quota_mb: Option<u64>,
     /// Shared cache for resolved user limits
     pub(crate) user_resource_quota_cache: UserResourceQuotaCache,
 }
@@ -43,7 +43,7 @@ impl AppState {
             admin_password: admin_password.to_string(),
             inner_dav_handler,
             metadata: AdminMetadata::default(),
-            default_user_resource_quota: UserResourceQuota::default(),
+            default_storage_quota_mb: None,
             user_resource_quota_cache: Arc::new(dashmap::DashMap::new()),
         }
     }
@@ -53,20 +53,17 @@ impl AppState {
         self
     }
 
-    pub fn with_metadata_from_config(
-        mut self,
-        public_key: String,
-        config: &ConfigToml,
-        version: &str,
-    ) -> Self {
+    pub fn with_config(mut self, public_key: String, config: &ConfigToml, version: &str) -> Self {
         self.metadata = AdminMetadata {
             public_key,
             pkarr_pubky_address: pkarr_pubky_tls_address(config),
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
-        self.default_user_resource_quota =
-            UserResourceQuota::storage_default_from_config(config.general.user_storage_quota_mb);
+        self.default_storage_quota_mb = match config.general.user_storage_quota_mb {
+            0 => None,
+            n => Some(n),
+        };
         self
     }
 }

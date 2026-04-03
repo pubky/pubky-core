@@ -8,7 +8,10 @@ use pubky_common::crypto::PublicKey;
 
 use crate::{
     data_directory::user_resource_quota::UserResourceQuotaPatch,
-    persistence::sql::user::{UserEntity, UserRepository},
+    persistence::sql::{
+        uexecutor,
+        user::{UserEntity, UserRepository},
+    },
     shared::{HttpError, HttpResult},
 };
 
@@ -53,16 +56,37 @@ pub async fn patch_user_resource_quota(
         .validate_rate_roundtrips()
         .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
-    let user = resolve_user(&state, &pubkey_str).await?;
+    let pubkey = PublicKey::try_from_z32(&pubkey_str)
+        .map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid public key"))?;
 
-    // Read current config, apply the patch, and write back.
+    // Use a transaction with FOR UPDATE to serialize concurrent patches on the same user.
+    let mut tx = state.sql_db.pool().begin().await?;
+
+    // Lock the user row to prevent concurrent read-modify-write races.
+    let user: UserEntity = sqlx::query_as(
+        "SELECT id, public_key, created_at, disabled, used_bytes, \
+         quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write \
+         FROM users WHERE public_key = $1 FOR UPDATE",
+    )
+    .bind(pubkey.z32())
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::RowNotFound => {
+            HttpError::new_with_message(StatusCode::NOT_FOUND, "User not found")
+        }
+        other => other.into(),
+    })?;
+
+    // Read current config, apply the patch, and write back — all under the row lock.
     let mut config = user.resource_quota();
     config.merge(&patch);
 
-    UserRepository::set_resource_quota(user.id, &config, &mut state.sql_db.pool().into()).await?;
+    UserRepository::set_resource_quota(user.id, &config, uexecutor!(tx)).await?;
+    tx.commit().await?;
 
     // Evict from shared cache so the next request re-resolves from DB
-    state.user_resource_quota_cache.remove(&user.public_key);
+    state.user_resource_quota_cache.remove(&pubkey);
 
     Ok(StatusCode::OK)
 }

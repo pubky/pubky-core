@@ -26,7 +26,11 @@ async fn create_signup_code(
 ///
 /// The token carries `storage_quota_mb` from config, all other fields `Default`.
 pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
-    create_signup_code(&state, &state.default_user_resource_quota).await
+    let default_quota = UserResourceQuota {
+        storage_quota_mb: state.default_storage_quota_mb,
+        ..Default::default()
+    };
+    create_signup_code(&state, &default_quota).await
 }
 
 /// POST /generate_signup_token — create a token with explicit custom limits.

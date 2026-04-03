@@ -337,18 +337,6 @@ impl UserResourceQuota {
         Ok(())
     }
 
-    /// Create a quota with only storage set from config value.
-    /// 0 → no limit, n > 0 → Some(n).
-    pub fn storage_default_from_config(user_storage_quota_mb: u64) -> Self {
-        Self {
-            storage_quota_mb: match user_storage_quota_mb {
-                0 => None,
-                n => Some(n),
-            },
-            ..Default::default()
-        }
-    }
-
     /// Merge a patch into this quota: only fields present in the patch are updated.
     pub fn merge(&mut self, patch: &UserResourceQuotaPatch) {
         if let Some(v) = patch.storage_quota_mb {
@@ -486,8 +474,6 @@ mod tests {
         assert_eq!(field.as_value(), Some(&rate));
     }
 
-    // ── DB encoding tests ──────────────────────────────────────────────
-
     #[test]
     fn test_varchar_roundtrip() {
         assert_eq!(
@@ -530,8 +516,6 @@ mod tests {
             Some("100mb/m".to_string())
         );
     }
-
-    // ── from_nullable_columns tests ────────────────────────────────────
 
     #[test]
     fn test_from_nullable_columns_all_null() {
@@ -605,8 +589,6 @@ mod tests {
         assert_eq!(q.rate_read, QuotaOverride::Default);
         assert_eq!(q.rate_write, QuotaOverride::Default);
     }
-
-    // ── Serde JSON tests ───────────────────────────────────────────────
 
     #[test]
     fn test_serde_roundtrip() {
@@ -686,8 +668,6 @@ mod tests {
         );
     }
 
-    // ── Validate rate roundtrips ───────────────────────────────────────
-
     #[test]
     fn test_validate_rate_roundtrips_valid_budgets() {
         let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
@@ -712,24 +692,6 @@ mod tests {
         };
         assert!(q.validate_rate_roundtrips().is_ok());
     }
-
-    // ── storage_default_from_config ────────────────────────────────────
-
-    #[test]
-    fn test_storage_default_from_config_zero_is_no_limit() {
-        let q = UserResourceQuota::storage_default_from_config(0);
-        assert_eq!(q.storage_quota_mb, None);
-        assert_eq!(q.max_sessions, None);
-    }
-
-    #[test]
-    fn test_storage_default_from_config_nonzero() {
-        let q = UserResourceQuota::storage_default_from_config(1024);
-        assert_eq!(q.storage_quota_mb, Some(1024));
-        assert_eq!(q.max_sessions, None);
-    }
-
-    // ── Patch deserialization ────────────────────────────────────────
 
     #[test]
     fn test_patch_empty_body_changes_nothing() {

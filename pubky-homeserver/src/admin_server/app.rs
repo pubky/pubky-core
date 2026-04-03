@@ -119,7 +119,7 @@ impl AdminServer {
             &password,
         )
         .with_user_resource_quota_cache(context.user_resource_quota_cache.clone())
-        .with_metadata_from_config(
+        .with_config(
             context.keypair.public_key().z32(),
             &context.config_toml,
             env!("CARGO_PKG_VERSION"),
