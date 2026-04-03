@@ -7,8 +7,8 @@
 use chrono::{DateTime, Utc};
 use pubky_common::{
     auth::access_jwt::AccessJwtClaims,
-    crypto::{Keypair, PublicKey},
     auth::jws::{GrantId, TokenId},
+    crypto::{Keypair, PublicKey},
 };
 
 use super::jws_crypto::{self, JwsCompact};
@@ -45,12 +45,17 @@ impl AccessJwt {
     /// 2. Token has not expired
     pub fn verify(compact: &JwsCompact, homeserver_pubkey: &PublicKey) -> Result<Self, Error> {
         let raw = verify_signature(compact.as_str(), homeserver_pubkey)?;
-        check_expiry(&raw)?;
+        if raw.is_expired(Utc::now().timestamp() as u64) {
+            return Err(Error::Expired);
+        };
         parse_verified_jwt(raw)
     }
 }
 
-fn verify_signature(compact: &str, homeserver_pubkey: &PublicKey) -> Result<AccessJwtClaims, Error> {
+fn verify_signature(
+    compact: &str,
+    homeserver_pubkey: &PublicKey,
+) -> Result<AccessJwtClaims, Error> {
     let decoding_key = jws_crypto::decoding_key(homeserver_pubkey);
     let validation = jws_crypto::eddsa_validation();
     let token_data = jsonwebtoken::decode::<AccessJwtClaims>(compact, &decoding_key, &validation)
@@ -58,19 +63,9 @@ fn verify_signature(compact: &str, homeserver_pubkey: &PublicKey) -> Result<Acce
     Ok(token_data.claims)
 }
 
-fn check_expiry(raw: &AccessJwtClaims) -> Result<(), Error> {
-    let now = Utc::now().timestamp() as u64;
-    if raw.exp <= now {
-        return Err(Error::Expired);
-    }
-    Ok(())
-}
-
 fn parse_verified_jwt(raw: AccessJwtClaims) -> Result<AccessJwt, Error> {
-    let issued_at =
-        DateTime::from_timestamp(raw.iat as i64, 0).ok_or(Error::InvalidTimestamp)?;
-    let expires_at =
-        DateTime::from_timestamp(raw.exp as i64, 0).ok_or(Error::InvalidTimestamp)?;
+    let issued_at = DateTime::from_timestamp(raw.iat as i64, 0).ok_or(Error::InvalidTimestamp)?;
+    let expires_at = DateTime::from_timestamp(raw.exp as i64, 0).ok_or(Error::InvalidTimestamp)?;
 
     Ok(AccessJwt {
         user_key: raw.sub,

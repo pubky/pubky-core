@@ -2,57 +2,30 @@
 //!
 //! Verifies a Grant JWS compact string, extracting and validating all claims.
 //! Homeserver-only — the SDK only decodes grants without verification.
-//! 
+//!
 //! Pubky Ring creates these grants to give the SDKs the necessary information to authenticate and authorize requests to the homeserver.
 //! The homesserver verifies the grant and returns a short-lived access token for API calls.
 
-use chrono::{DateTime, Utc};
 use pubky_common::{
-    capabilities::Capabilities,
     crypto::PublicKey,
     auth::grant::GrantClaims,
-    auth::jws::{ClientId, GrantId},
 };
 
 use super::jws_crypto::{self, JwsCompact};
 
-/// Verified and parsed grant — the type the homeserver works with.
+/// Verify a Grant JWS Compact Serialization string.
 ///
-/// All timestamps are converted from JWT Unix seconds to [`DateTime<Utc>`],
-/// consistent with the codebase's use of chrono throughout.
-#[derive(Clone, Debug)]
-pub struct Grant {
-    /// User public key (grant signer).
-    pub issuer_key: PublicKey,
-    /// Client public key for Proof-of-Possession.
-    pub cnf_key: PublicKey,
-    /// Authorized capabilities.
-    pub capabilities: Capabilities,
-    /// Application identifier.
-    pub client_id: ClientId,
-    /// Grant ID (revocation target).
-    pub grant_id: GrantId,
-    /// When the grant was issued.
-    pub issued_at: DateTime<Utc>,
-    /// When the grant expires.
-    pub expires_at: DateTime<Utc>,
-}
-
-impl Grant {
-    /// Verify a Grant JWS Compact Serialization string.
-    ///
-    /// Checks:
-    /// 1. Header `typ` is `"pubky-grant"` and `alg` is `EdDSA`
-    /// 2. Ed25519 signature is valid against the `iss` public key
-    /// 3. Grant has not expired
-    /// 4. All required fields are present and valid
-    pub fn verify(compact: &JwsCompact) -> Result<Self, Error> {
-        let issuer_key = extract_issuer_key(compact.as_str())?;
-        let raw = verify_signature(compact.as_str(), &issuer_key)?;
-        check_header_type(compact.as_str())?;
-        check_expiry(&raw)?;
-        parse_verified_grant(raw, issuer_key)
-    }
+/// Checks:
+/// 1. Header `typ` is `"pubky-grant"` and `alg` is `EdDSA`
+/// 2. Ed25519 signature is valid against the `iss` public key
+/// 3. Grant has not expired
+/// 4. All required fields are present and valid
+pub fn verify_grant(compact: &JwsCompact) -> Result<GrantClaims, Error> {
+    let issuer_key = extract_issuer_key(compact.as_str())?;
+    let claims = verify_signature(compact.as_str(), &issuer_key)?;
+    check_header_type(compact.as_str())?;
+    check_expiry(&claims)?;
+    Ok(claims)
 }
 
 /// Extract the `iss` claim from the JWT payload without verifying the signature.
@@ -82,29 +55,11 @@ fn check_header_type(compact: &str) -> Result<(), Error> {
 
 /// Check that the grant has not expired.
 fn check_expiry(raw: &GrantClaims) -> Result<(), Error> {
-    let now = Utc::now().timestamp() as u64;
+    let now = chrono::Utc::now().timestamp() as u64;
     if raw.exp <= now {
         return Err(Error::Expired);
     }
     Ok(())
-}
-
-/// Convert raw claims into a verified [`Grant`] with parsed types.
-fn parse_verified_grant(raw: GrantClaims, issuer_key: PublicKey) -> Result<Grant, Error> {
-    let issued_at =
-        DateTime::from_timestamp(raw.iat as i64, 0).ok_or(Error::InvalidTimestamp)?;
-    let expires_at =
-        DateTime::from_timestamp(raw.exp as i64, 0).ok_or(Error::InvalidTimestamp)?;
-
-    Ok(Grant {
-        issuer_key,
-        cnf_key: raw.cnf,
-        capabilities: raw.caps.into(),
-        client_id: raw.client_id,
-        grant_id: raw.jti,
-        issued_at,
-        expires_at,
-    })
 }
 
 /// Errors from Grant verification.
@@ -125,18 +80,15 @@ pub enum Error {
     /// The grant has expired (`exp` is in the past).
     #[error("grant has expired")]
     Expired,
-
-    /// A timestamp could not be converted to a valid datetime.
-    #[error("invalid timestamp in grant")]
-    InvalidTimestamp,
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
     use pubky_common::{
         capabilities::Capability,
         crypto::Keypair,
-        auth::jws::GrantId,
+        auth::jws::{ClientId, GrantId},
     };
 
     use super::*;
@@ -169,11 +121,11 @@ mod tests {
         let raw = make_valid_raw_grant(&user_kp, &client_kp);
         let compact = sign_raw_grant(&user_kp, &raw);
 
-        let grant = Grant::verify(&compact).unwrap();
-        assert_eq!(grant.issuer_key, user_kp.public_key());
-        assert_eq!(grant.cnf_key, client_kp.public_key());
-        assert_eq!(grant.client_id, raw.client_id);
-        assert_eq!(grant.grant_id, raw.jti);
+        let claims = verify_grant(&compact).unwrap();
+        assert_eq!(claims.iss, user_kp.public_key());
+        assert_eq!(claims.cnf, client_kp.public_key());
+        assert_eq!(claims.client_id, raw.client_id);
+        assert_eq!(claims.jti, raw.jti);
     }
 
     #[test]
@@ -185,7 +137,7 @@ mod tests {
 
         // Sign with wrong key but claim iss is user_kp
         let compact = sign_raw_grant(&wrong_kp, &raw);
-        let result = Grant::verify(&compact);
+        let result = verify_grant(&compact);
         assert!(matches!(result, Err(Error::InvalidSignature)));
     }
 
@@ -197,7 +149,7 @@ mod tests {
         raw.exp = 1000; // far in the past
 
         let compact = sign_raw_grant(&user_kp, &raw);
-        let result = Grant::verify(&compact);
+        let result = verify_grant(&compact);
         assert!(matches!(result, Err(Error::Expired)));
     }
 
@@ -212,7 +164,7 @@ mod tests {
         let enc = jws_crypto::encoding_key(&user_kp);
         let compact = JwsCompact::parse(&jsonwebtoken::encode(&header, &raw, &enc).unwrap()).unwrap();
 
-        let result = Grant::verify(&compact);
+        let result = verify_grant(&compact);
         assert!(matches!(result, Err(Error::InvalidHeaderType)));
     }
 }

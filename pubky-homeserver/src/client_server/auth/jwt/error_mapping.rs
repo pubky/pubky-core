@@ -87,10 +87,6 @@ mod tests {
             AuthServiceError::InvalidGrant(grant_verifier::Error::InvalidHeaderType),
             StatusCode::BAD_REQUEST,
         );
-        assert_status(
-            AuthServiceError::InvalidGrant(grant_verifier::Error::InvalidTimestamp),
-            StatusCode::BAD_REQUEST,
-        );
     }
 
     #[test]

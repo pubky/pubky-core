@@ -6,6 +6,7 @@
 use chrono::Utc;
 use pubky_common::{
     auth::access_jwt::AccessJwtClaims,
+    auth::grant::GrantClaims,
     auth::grant_session::{GrantSessionInfo, GrantSessionResponse},
     auth::jws::GrantId,
     auth::jws::TokenId,
@@ -24,7 +25,7 @@ use crate::{
 use super::auth::BearerSession;
 use super::crypto::{
     access_jwt_issuer::AccessJwt,
-    grant_verifier::Grant,
+    grant_verifier::verify_grant,
     jws_crypto::JwsCompact,
     pop_verifier::{PopProof, PopVerificationContext, POP_NONCE_GC_THRESHOLD_SECS},
 };
@@ -84,7 +85,7 @@ impl AuthService {
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         let grant = self.verify_grant_and_pop(grant_jws, pop_jws).await?;
         let mut tx = self.sql_db.pool().begin().await?;
-        let user = Self::create_user_in_tx(&grant.issuer_key, signup_mode, signup_token, &mut tx).await?;
+        let user = Self::create_user_in_tx(&grant.iss, signup_mode, signup_token, &mut tx).await?;
         Self::store_grant(&grant, &user, uexecutor!(tx)).await?;
         let response = self.mint_session(&grant, uexecutor!(tx)).await?;
         tx.commit().await?;
@@ -185,7 +186,7 @@ impl AuthService {
         &self,
         grant_jws: &JwsCompact,
         pop_jws: &JwsCompact,
-    ) -> Result<Grant, AuthServiceError> {
+    ) -> Result<GrantClaims, AuthServiceError> {
         let grant = self.verify_grant(grant_jws)?;
         self.check_grant_not_revoked(&grant).await?;
         let pop = self.verify_pop_proof(pop_jws, &grant)?;
@@ -197,7 +198,7 @@ impl AuthService {
     /// No tx needed because store_grant is idempotent and mint_session only creates a session row.
     async fn store_and_mint(
         &self,
-        grant: &Grant,
+        grant: &GrantClaims,
         user: &UserEntity,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         Self::store_grant(grant, user, &mut self.sql_db.pool().into()).await?;
@@ -213,14 +214,14 @@ impl AuthService {
     }
 
     /// Verify the grant JWS signature, type header, and expiry.
-    fn verify_grant(&self, compact: &JwsCompact) -> Result<Grant, AuthServiceError> {
-        Ok(Grant::verify(compact)?)
+    fn verify_grant(&self, compact: &JwsCompact) -> Result<GrantClaims, AuthServiceError> {
+        Ok(verify_grant(compact)?)
     }
 
     /// Look up the user identified by the grant's `iss` claim. Returns error if not found.
-    async fn find_user(&self, grant: &Grant) -> Result<UserEntity, AuthServiceError> {
+    async fn find_user(&self, grant: &GrantClaims) -> Result<UserEntity, AuthServiceError> {
         map_not_found(
-            UserRepository::get(&grant.issuer_key, &mut self.sql_db.pool().into()).await,
+            UserRepository::get(&grant.iss, &mut self.sql_db.pool().into()).await,
             AuthServiceError::UserNotFound,
         )
     }
@@ -290,13 +291,13 @@ impl AuthService {
     fn verify_pop_proof(
         &self,
         compact: &JwsCompact,
-        grant: &Grant,
+        grant: &GrantClaims,
     ) -> Result<PopProof, AuthServiceError> {
         let hs_pubkey_z32 = self.homeserver_keypair.public_key().z32();
         let context = PopVerificationContext {
-            cnf_key: &grant.cnf_key,
+            cnf_key: &grant.cnf,
             expected_audience: &hs_pubkey_z32,
-            expected_grant_id: &grant.grant_id,
+            expected_grant_id: &grant.jti,
         };
         Ok(PopProof::verify(compact, &context)?)
     }
@@ -318,8 +319,8 @@ impl AuthService {
     }
 
     /// Verify the grant has not been revoked. A not-yet-stored grant passes (first use).
-    async fn check_grant_not_revoked(&self, grant: &Grant) -> Result<(), AuthServiceError> {
-        let is_revoked = GrantRepository::is_revoked(&grant.grant_id, &mut self.sql_db.pool().into())
+    async fn check_grant_not_revoked(&self, grant: &GrantClaims) -> Result<(), AuthServiceError> {
+        let is_revoked = GrantRepository::is_revoked(&grant.jti, &mut self.sql_db.pool().into())
             .await
             .or_else(|e| match e {
                 sqlx::Error::RowNotFound => Ok(false),
@@ -333,18 +334,18 @@ impl AuthService {
 
     /// Persist the grant idempotently (ON CONFLICT DO NOTHING).
     async fn store_grant<'a>(
-        grant: &Grant,
+        grant: &GrantClaims,
         user: &UserEntity,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), AuthServiceError> {
         let new_grant = NewGrant {
-            grant_id: grant.grant_id.clone(),
+            grant_id: grant.jti.clone(),
             user_id: user.id,
             client_id: grant.client_id.clone(),
-            client_cnf_key: grant.cnf_key.z32(),
-            capabilities: grant.capabilities.clone(),
-            issued_at: grant.issued_at.timestamp() as u64,
-            expires_at: grant.expires_at.timestamp() as u64,
+            client_cnf_key: grant.cnf.z32(),
+            capabilities: grant.caps.clone().into(),
+            issued_at: grant.iat,
+            expires_at: grant.exp,
         };
         GrantRepository::create(&new_grant, executor).await?;
         Ok(())
@@ -353,7 +354,7 @@ impl AuthService {
     /// Mint a new access JWT and persist the session row.
     async fn mint_session<'a>(
         &self,
-        grant: &Grant,
+        grant: &GrantClaims,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         let now = Utc::now().timestamp() as u64;
@@ -363,7 +364,7 @@ impl AuthService {
         let claims = build_access_jwt_claims(&self.homeserver_keypair, grant, &token_id, now, jwt_exp);
         let token = AccessJwt::mint(&self.homeserver_keypair, &claims);
 
-        let new_session = NewGrantSession { token_id, grant_id: grant.grant_id.clone(), expires_at: jwt_exp };
+        let new_session = NewGrantSession { token_id, grant_id: grant.jti.clone(), expires_at: jwt_exp };
         GrantSessionRepository::create(&new_session, executor).await?;
 
         Ok(build_session_response(token.to_string(), grant, self.homeserver_keypair.public_key(), jwt_exp, now))
@@ -372,15 +373,15 @@ impl AuthService {
 
 fn build_access_jwt_claims(
     keypair: &Keypair,
-    grant: &Grant,
+    grant: &GrantClaims,
     token_id: &TokenId,
     now: u64,
     jwt_exp: u64,
 ) -> AccessJwtClaims {
     AccessJwtClaims {
         iss: keypair.public_key(),
-        sub: grant.issuer_key.clone(),
-        gid: grant.grant_id.clone(),
+        sub: grant.iss.clone(),
+        gid: grant.jti.clone(),
         jti: token_id.clone(),
         iat: now,
         exp: jwt_exp,
@@ -402,7 +403,6 @@ fn map_not_found<T>(
 mod tests {
     use super::*;
     use pubky_common::{
-        auth::grant::GrantClaims,
         auth::jws::{ClientId, GrantId, PopNonce},
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
@@ -757,7 +757,7 @@ mod tests {
 
 fn build_session_response(
     token: String,
-    grant: &Grant,
+    grant: &GrantClaims,
     homeserver: PublicKey,
     jwt_exp: u64,
     now: u64,
@@ -766,12 +766,12 @@ fn build_session_response(
         token,
         session: GrantSessionInfo {
             homeserver,
-            pubky: grant.issuer_key.clone(),
+            pubky: grant.iss.clone(),
             client_id: grant.client_id.clone(),
-            capabilities: grant.capabilities.to_vec(),
-            grant_id: grant.grant_id.clone(),
+            capabilities: grant.caps.clone(),
+            grant_id: grant.jti.clone(),
             token_expires_at: jwt_exp,
-            grant_expires_at: grant.expires_at.timestamp() as u64,
+            grant_expires_at: grant.exp,
             created_at: now,
         },
     }

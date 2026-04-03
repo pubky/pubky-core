@@ -53,6 +53,11 @@ impl AccessJwtClaims {
     pub fn decode(compact: &str) -> Result<Self, jws::Error> {
         jws::decode_jws_payload(compact)
     }
+
+    /// Check if the token is expired at a given time.
+    pub fn is_expired(&self, now: u64) -> bool {
+        self.exp <= now
+    }
 }
 
 #[cfg(test)]
