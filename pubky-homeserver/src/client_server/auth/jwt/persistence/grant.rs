@@ -193,6 +193,26 @@ pub struct GrantEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
 }
 
+/// Why a grant is no longer active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GrantStatus {
+    Revoked,
+    Expired,
+}
+
+impl GrantEntity {
+    /// Check that this grant is active (not revoked, not expired).
+    pub fn require_active(&self, now_unix: i64) -> Result<(), GrantStatus> {
+        if self.revoked_at.is_some() {
+            return Err(GrantStatus::Revoked);
+        }
+        if self.expires_at <= now_unix {
+            return Err(GrantStatus::Expired);
+        }
+        Ok(())
+    }
+}
+
 impl FromRow<'_, PgRow> for GrantEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let (id, grant_id, user_id, user_pubkey, client_id, client_cnf_key) =
@@ -395,5 +415,51 @@ mod tests {
             .await
             .unwrap();
         assert!(list.is_empty());
+    }
+
+    fn make_grant_entity(expires_at: i64, revoked_at: Option<i64>) -> GrantEntity {
+        GrantEntity {
+            id: 1,
+            grant_id: GrantId::generate(),
+            user_id: 1,
+            user_pubkey: Keypair::random().public_key(),
+            client_id: ClientId::new("test.app").unwrap(),
+            client_cnf_key: Keypair::random().public_key().z32(),
+            capabilities: Capabilities::builder().cap(Capability::root()).finish(),
+            issued_at: 1000,
+            expires_at,
+            revoked_at,
+            created_at: chrono::Utc::now().naive_utc(),
+        }
+    }
+
+    #[test]
+    fn require_active_passes_for_active_grant() {
+        let grant = make_grant_entity(2000, None);
+        assert!(grant.require_active(1500).is_ok());
+    }
+
+    #[test]
+    fn require_active_returns_revoked() {
+        let grant = make_grant_entity(2000, Some(1500));
+        assert_eq!(grant.require_active(1500).unwrap_err(), GrantStatus::Revoked);
+    }
+
+    #[test]
+    fn require_active_returns_expired() {
+        let grant = make_grant_entity(1000, None);
+        assert_eq!(grant.require_active(1500).unwrap_err(), GrantStatus::Expired);
+    }
+
+    #[test]
+    fn require_active_boundary_expires_at_equals_now() {
+        let grant = make_grant_entity(1000, None);
+        assert_eq!(grant.require_active(1000).unwrap_err(), GrantStatus::Expired);
+    }
+
+    #[test]
+    fn require_active_revoked_takes_precedence_over_expired() {
+        let grant = make_grant_entity(1000, Some(900));
+        assert_eq!(grant.require_active(1500).unwrap_err(), GrantStatus::Revoked);
     }
 }

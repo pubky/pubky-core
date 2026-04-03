@@ -4,6 +4,7 @@
 //! The HTTP status code mapping lives in [`error_mapping`](super::error_mapping).
 
 use super::crypto::{grant_verifier, pop_verifier};
+use super::persistence::grant::GrantStatus;
 
 /// Domain errors from auth service operations.
 #[derive(Debug, thiserror::Error)]
@@ -67,4 +68,13 @@ pub enum AuthServiceError {
     /// Database or infrastructure error.
     #[error("Internal error: {0}")]
     Internal(#[from] sqlx::Error),
+}
+
+impl From<GrantStatus> for AuthServiceError {
+    fn from(status: GrantStatus) -> Self {
+        match status {
+            GrantStatus::Revoked => Self::GrantRevoked,
+            GrantStatus::Expired => Self::GrantExpired,
+        }
+    }
 }

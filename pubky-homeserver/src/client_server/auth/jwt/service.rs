@@ -140,24 +140,14 @@ impl AuthService {
         &self,
         jwt: &AccessJwt,
     ) -> Result<BearerSession, AuthServiceError> {
-        let session =
+        let session = map_not_found(
             GrantSessionRepository::get_by_token_id(&jwt.token_id, &mut self.sql_db.pool().into())
-                .await
-                .map_err(|e| match e {
-                    sqlx::Error::RowNotFound => AuthServiceError::SessionNotFound,
-                    other => AuthServiceError::Internal(other),
-                })?;
+                .await,
+            AuthServiceError::SessionNotFound,
+        )?;
 
         let grant = self.get_grant(&jwt.grant_id).await?;
-
-        if grant.revoked_at.is_some() {
-            return Err(AuthServiceError::GrantRevoked);
-        }
-
-        let now = chrono::Utc::now().timestamp();
-        if grant.expires_at <= now {
-            return Err(AuthServiceError::GrantExpired);
-        }
+        grant.require_active(Utc::now().timestamp())?;
 
         Ok(BearerSession {
             user_key: jwt.user_key.clone(),
@@ -216,11 +206,10 @@ impl AuthService {
 
     /// Look up a grant by ID. Returns `GrantNotFound` if missing.
     async fn get_grant(&self, grant_id: &GrantId) -> Result<GrantEntity, AuthServiceError> {
-        match GrantRepository::get_by_grant_id(grant_id, &mut self.sql_db.pool().into()).await {
-            Ok(grant) => Ok(grant),
-            Err(sqlx::Error::RowNotFound) => Err(AuthServiceError::GrantNotFound),
-            Err(e) => Err(AuthServiceError::Internal(e)),
-        }
+        map_not_found(
+            GrantRepository::get_by_grant_id(grant_id, &mut self.sql_db.pool().into()).await,
+            AuthServiceError::GrantNotFound,
+        )
     }
 
     /// Verify the grant JWS signature, type header, and expiry.
@@ -230,11 +219,10 @@ impl AuthService {
 
     /// Look up the user identified by the grant's `iss` claim. Returns error if not found.
     async fn find_user(&self, grant: &Grant) -> Result<UserEntity, AuthServiceError> {
-        match UserRepository::get(&grant.issuer_key, &mut self.sql_db.pool().into()).await {
-            Ok(user) => Ok(user),
-            Err(sqlx::Error::RowNotFound) => Err(AuthServiceError::UserNotFound),
-            Err(e) => Err(AuthServiceError::Internal(e)),
-        }
+        map_not_found(
+            UserRepository::get(&grant.issuer_key, &mut self.sql_db.pool().into()).await,
+            AuthServiceError::UserNotFound,
+        )
     }
 
     /// Create a new user with optional signup token validation, all in one transaction.
@@ -273,7 +261,7 @@ impl AuthService {
         match UserRepository::get(public_key, uexecutor!(*tx)).await {
             Ok(_) => Err(AuthServiceError::UserAlreadyExists),
             Err(sqlx::Error::RowNotFound) => Ok(()),
-            Err(e) => Err(AuthServiceError::Internal(e)),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -331,12 +319,16 @@ impl AuthService {
 
     /// Verify the grant has not been revoked. A not-yet-stored grant passes (first use).
     async fn check_grant_not_revoked(&self, grant: &Grant) -> Result<(), AuthServiceError> {
-        match GrantRepository::is_revoked(&grant.grant_id, &mut self.sql_db.pool().into()).await {
-            Ok(true) => Err(AuthServiceError::GrantRevoked),
-            Ok(false) => Ok(()),
-            Err(sqlx::Error::RowNotFound) => Ok(()),
-            Err(e) => Err(AuthServiceError::Internal(e)),
+        let is_revoked = GrantRepository::is_revoked(&grant.grant_id, &mut self.sql_db.pool().into())
+            .await
+            .or_else(|e| match e {
+                sqlx::Error::RowNotFound => Ok(false),
+                other => Err(AuthServiceError::Internal(other)),
+            })?;
+        if is_revoked {
+            return Err(AuthServiceError::GrantRevoked);
         }
+        Ok(())
     }
 
     /// Persist the grant idempotently (ON CONFLICT DO NOTHING).
@@ -392,6 +384,374 @@ fn build_access_jwt_claims(
         jti: token_id.clone(),
         iat: now,
         exp: jwt_exp,
+    }
+}
+
+/// Map a `sqlx::Error::RowNotFound` to a specific domain error.
+fn map_not_found<T>(
+    result: Result<T, sqlx::Error>,
+    not_found_err: AuthServiceError,
+) -> Result<T, AuthServiceError> {
+    result.map_err(|e| match e {
+        sqlx::Error::RowNotFound => not_found_err,
+        other => AuthServiceError::Internal(other),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pubky_common::{
+        auth::grant::GrantClaims,
+        auth::jws::{ClientId, GrantId, PopNonce},
+        capabilities::{Capabilities, Capability},
+        crypto::Keypair,
+    };
+    use super::super::crypto::{
+        jws_crypto,
+        pop_verifier::PopProofClaims,
+    };
+    use crate::persistence::sql::SqlDb;
+
+    // ── Helpers ─────────────────────────────────────────────────────
+
+    async fn test_service() -> AuthService {
+        let db = SqlDb::test().await;
+        let hs_kp = Keypair::random();
+        AuthService::new(db, hs_kp)
+    }
+
+    async fn create_test_user(service: &AuthService) -> (Keypair, i32) {
+        let kp = Keypair::random();
+        let user = UserRepository::create(&kp.public_key(), &mut service.sql_db.pool().into())
+            .await
+            .unwrap();
+        (kp, user.id)
+    }
+
+    fn sign_grant(user_kp: &Keypair, client_kp: &Keypair, hs_pubkey: &PublicKey) -> (JwsCompact, JwsCompact, GrantClaims) {
+        let now = Utc::now().timestamp() as u64;
+        let raw_grant = GrantClaims {
+            iss: user_kp.public_key(),
+            client_id: ClientId::new("test.app").unwrap(),
+            caps: vec![Capability::root()],
+            cnf: client_kp.public_key(),
+            jti: GrantId::generate(),
+            iat: now,
+            exp: now + 3600,
+        };
+        let grant_jws = sign_jws(user_kp, "pubky-grant", &raw_grant);
+
+        let pop_claims = PopProofClaims {
+            aud: hs_pubkey.clone(),
+            gid: raw_grant.jti.clone(),
+            nonce: PopNonce::generate(),
+            iat: now,
+        };
+        let pop_jws = sign_jws(client_kp, "pubky-pop", &pop_claims);
+
+        (grant_jws, pop_jws, raw_grant)
+    }
+
+    fn sign_jws<T: serde::Serialize>(kp: &Keypair, typ: &str, claims: &T) -> JwsCompact {
+        let header = jws_crypto::eddsa_header(typ);
+        let enc = jws_crypto::encoding_key(kp);
+        let token = jsonwebtoken::encode(&header, claims, &enc).unwrap();
+        JwsCompact::parse(&token).unwrap()
+    }
+
+    // ── create_grant_session ────────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn create_grant_session_happy_path() {
+        let service = test_service().await;
+        let (user_kp, _user_id) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+        assert!(!response.token.is_empty());
+        assert_eq!(response.session.pubky, user_kp.public_key());
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn create_grant_session_user_not_found() {
+        let service = test_service().await;
+        let user_kp = Keypair::random(); // user not created
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let err = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap_err();
+        assert!(matches!(err, AuthServiceError::UserNotFound));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn create_grant_session_invalid_grant_signature() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let wrong_signer = Keypair::random();
+
+        // Sign grant with wrong key
+        let (_, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+        let now = Utc::now().timestamp() as u64;
+        let raw_grant = GrantClaims {
+            iss: user_kp.public_key(),
+            client_id: ClientId::new("test.app").unwrap(),
+            caps: vec![Capability::root()],
+            cnf: client_kp.public_key(),
+            jti: GrantId::generate(),
+            iat: now,
+            exp: now + 3600,
+        };
+        let bad_grant_jws = sign_jws(&wrong_signer, "pubky-grant", &raw_grant);
+
+        let err = service.create_grant_session(&bad_grant_jws, &pop_jws).await.unwrap_err();
+        assert!(matches!(err, AuthServiceError::InvalidGrant(_)));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn create_grant_session_nonce_replay() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let hs_pubkey = service.homeserver_public_key();
+
+        // Create a shared PoP nonce for replay
+        let now = Utc::now().timestamp() as u64;
+        let grant_id = GrantId::generate();
+        let shared_nonce = PopNonce::generate();
+
+        let raw_grant = GrantClaims {
+            iss: user_kp.public_key(),
+            client_id: ClientId::new("test.app").unwrap(),
+            caps: vec![Capability::root()],
+            cnf: client_kp.public_key(),
+            jti: grant_id.clone(),
+            iat: now,
+            exp: now + 3600,
+        };
+        let grant_jws = sign_jws(&user_kp, "pubky-grant", &raw_grant);
+
+        let pop_claims = PopProofClaims {
+            aud: hs_pubkey.clone(),
+            gid: grant_id.clone(),
+            nonce: shared_nonce.clone(),
+            iat: now,
+        };
+        let pop_jws = sign_jws(&client_kp, "pubky-pop", &pop_claims);
+
+        // First call succeeds
+        service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+
+        // Second call with same nonce fails
+        let err = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap_err();
+        assert!(matches!(err, AuthServiceError::NonceReplay));
+    }
+
+    // ── signup_grant_session ────────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_open_mode() {
+        let service = test_service().await;
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service
+            .signup_grant_session(&grant_jws, &pop_jws, &SignupMode::Open, None)
+            .await
+            .unwrap();
+        assert_eq!(response.session.pubky, user_kp.public_key());
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_user_already_exists() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let err = service
+            .signup_grant_session(&grant_jws, &pop_jws, &SignupMode::Open, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AuthServiceError::UserAlreadyExists));
+    }
+
+    // ── revoke_grant + resolve_bearer_session ───────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn resolve_bearer_session_happy_path() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, raw_grant) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+
+        // Verify the minted JWT and resolve
+        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
+        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
+
+        assert_eq!(bearer.user_key, user_kp.public_key());
+        assert_eq!(bearer.grant_id, raw_grant.jti);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn resolve_bearer_session_after_revoke() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, raw_grant) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+        service.revoke_grant(&raw_grant.jti).await.unwrap();
+
+        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
+        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let err = service.resolve_bearer_session(&jwt).await.unwrap_err();
+        // Session was deleted by revoke_grant, so SessionNotFound (or GrantRevoked depending on timing)
+        assert!(matches!(err, AuthServiceError::SessionNotFound | AuthServiceError::GrantRevoked));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn resolve_bearer_session_missing_session() {
+        let service = test_service().await;
+        let hs_kp_pub = service.homeserver_public_key();
+
+        // Create a valid JWT that points to a non-existent session
+        let user_kp = Keypair::random();
+        let now = Utc::now().timestamp() as u64;
+        let claims = AccessJwtClaims {
+            iss: hs_kp_pub.clone(),
+            sub: user_kp.public_key(),
+            gid: GrantId::generate(),
+            jti: TokenId::generate(),
+            iat: now,
+            exp: now + 3600,
+        };
+        let token = AccessJwt::mint(&service.homeserver_keypair, &claims);
+        let jwt = AccessJwt::verify(&token, &hs_kp_pub).unwrap();
+
+        let err = service.resolve_bearer_session(&jwt).await.unwrap_err();
+        assert!(matches!(err, AuthServiceError::SessionNotFound));
+    }
+
+    // ── get_bearer_session_info ─────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn get_bearer_session_info_happy_path() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
+        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
+
+        let info = service.get_bearer_session_info(&bearer).await.unwrap();
+        assert_eq!(info.pubky, user_kp.public_key());
+        assert_eq!(info.homeserver, service.homeserver_public_key());
+    }
+
+    // ── list_active_grants ──────────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn list_active_grants_happy_path() {
+        let service = test_service().await;
+        let (user_kp, user_id) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+
+        let grants = service.list_active_grants(user_id).await.unwrap();
+        assert_eq!(grants.len(), 1);
+    }
+
+    // ── signout_bearer ──────────────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signout_bearer_revokes_grant() {
+        let service = test_service().await;
+        let (user_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
+        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
+
+        service.signout_bearer(&bearer).await.unwrap();
+
+        // Session should be gone
+        let err = service.resolve_bearer_session(&jwt).await.unwrap_err();
+        assert!(matches!(err, AuthServiceError::SessionNotFound | AuthServiceError::GrantRevoked));
+    }
+
+    // ── resolve_user_id ─────────────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn resolve_user_id_bearer() {
+        let service = test_service().await;
+        let (user_kp, user_id) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) = sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let response = service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
+        let jwt = AccessJwt::verify(&jwt_compact, &service.homeserver_public_key()).unwrap();
+        let bearer = service.resolve_bearer_session(&jwt).await.unwrap();
+
+        let resolved = service.resolve_user_id(&AuthSession::Bearer(bearer)).await.unwrap();
+        assert_eq!(resolved, user_id);
+    }
+
+    // ── require_root_capability ─────────────────────────────────────
+
+    #[test]
+    fn require_root_capability_passes_with_root() {
+        let bearer = BearerSession {
+            user_key: Keypair::random().public_key(),
+            capabilities: Capabilities::builder().cap(Capability::root()).finish(),
+            grant_id: GrantId::generate(),
+            token_id: TokenId::generate(),
+            token_expires_at: 0,
+        };
+        assert!(AuthService::require_root_capability(&AuthSession::Bearer(bearer)).is_ok());
+    }
+
+    #[test]
+    fn require_root_capability_fails_without_root() {
+        let bearer = BearerSession {
+            user_key: Keypair::random().public_key(),
+            capabilities: Capabilities::builder().cap(Capability::read("/")).finish(),
+            grant_id: GrantId::generate(),
+            token_id: TokenId::generate(),
+            token_expires_at: 0,
+        };
+        let err = AuthService::require_root_capability(&AuthSession::Bearer(bearer)).unwrap_err();
+        assert!(matches!(err, AuthServiceError::RootCapabilityRequired));
     }
 }
 
