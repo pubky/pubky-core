@@ -6,7 +6,66 @@
 use postgresql_embedded::{PostgreSQL, Settings, VersionReq};
 use pubky_homeserver::ConnectionString;
 use rand::Rng;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use tokio::sync::OnceCell;
+
+/// Shared embedded postgres instance, initialized once per process.
+static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
+
+/// A clone of the shared `PostgreSQL` handle, used solely for atexit cleanup.
+/// Wrapped in `Mutex<Option<…>>` so the atexit handler can `take()` it,
+/// which triggers `PostgreSQL::Drop` → `pg_ctl stop`.
+static SHARED_PG_HANDLE: OnceLock<Mutex<Option<PostgreSQL>>> = OnceLock::new();
+
+/// PID of the shared PostgreSQL child process, used by signal handlers.
+/// Signal handlers cannot safely lock a mutex or spawn processes, so they
+/// send SIGTERM to this PID directly. Set to 0 when no instance is running.
+static SHARED_PG_PID: AtomicI32 = AtomicI32::new(0);
+
+extern "C" {
+    fn atexit(func: extern "C" fn()) -> std::ffi::c_int;
+}
+
+/// Atexit handler that stops the shared embedded postgres instance.
+///
+/// Rust does not run `Drop` for `static` values at process exit.
+/// This handler takes the cloned `PostgreSQL` out of the static and drops it,
+/// which triggers `PostgreSQL::Drop` — the library's own shutdown logic
+/// (`pg_ctl stop`, temp directory cleanup).
+extern "C" fn stop_shared_postgres() {
+    // Clear PID so signal handlers don't race with this cleanup.
+    SHARED_PG_PID.store(0, Ordering::Relaxed);
+
+    let Some(mutex) = SHARED_PG_HANDLE.get() else {
+        return;
+    };
+    let Ok(mut guard) = mutex.lock() else {
+        return;
+    };
+    // Dropping the `PostgreSQL` value triggers `pg_ctl stop` synchronously.
+    drop(guard.take());
+}
+
+/// Signal handler for SIGINT/SIGTERM that kills the shared postgres process.
+///
+/// Uses only async-signal-safe functions (`kill`, `signal`, `raise`).
+/// After killing postgres, restores the default handler and re-raises so the
+/// process terminates with the expected signal status.
+extern "C" fn signal_handler(sig: libc::c_int) {
+    let pid = SHARED_PG_PID.load(Ordering::Relaxed);
+    if pid > 0 {
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+    }
+    // Restore the default handler and re-raise to get normal exit behavior.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
+    }
+}
 
 /// An embedded PostgreSQL instance for testing.
 ///
@@ -18,25 +77,15 @@ use std::time::Duration;
 /// # Sharing Across Tests (Recommended)
 ///
 /// Each `EmbeddedPostgres::start()` downloads and starts a **separate** PostgreSQL server.
-/// The recommended pattern is to start **one** instance and share its connection string:
+/// Use [`EmbeddedPostgres::shared()`] to start **one** instance and share it across tests:
 ///
 /// ```ignore
 /// use pubky_testnet::embedded_postgres::EmbeddedPostgres;
-/// use tokio::sync::OnceCell;
-///
-/// static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
-///
-/// async fn shared_postgres() -> &'static EmbeddedPostgres {
-///     SHARED_PG
-///         .get_or_init(|| async {
-///             EmbeddedPostgres::start().await.expect("Failed to start embedded postgres")
-///         })
-///         .await
-/// }
+/// use pubky_testnet::EphemeralTestnet;
 ///
 /// #[tokio::test]
 /// async fn my_test() {
-///     let pg = shared_postgres().await;
+///     let pg = EmbeddedPostgres::shared().await;
 ///     let testnet = EphemeralTestnet::builder()
 ///         .postgres(pg.connection_string().unwrap())
 ///         .build()
@@ -51,6 +100,62 @@ pub struct EmbeddedPostgres {
 }
 
 impl EmbeddedPostgres {
+    /// Return a shared embedded PostgreSQL instance, starting it on first call.
+    ///
+    /// This is the recommended way to share a single PostgreSQL server across
+    /// multiple tests. Cleanup handlers are registered to prevent orphaned
+    /// PostgreSQL child processes:
+    ///
+    /// - **atexit**: performs full `pg_ctl stop` and temp directory cleanup on
+    ///   normal process exit.
+    /// - **SIGINT / SIGTERM**: sends `SIGTERM` to the postgres PID so it shuts
+    ///   down even if the test runner is interrupted (e.g. Ctrl+C).
+    ///
+    /// Note: `SIGKILL` cannot be caught, so a `kill -9` on the test process
+    /// will still leave postgres orphaned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded PostgreSQL instance fails to start.
+    pub async fn shared() -> &'static EmbeddedPostgres {
+        SHARED_PG
+            .get_or_init(|| async {
+                let pg = EmbeddedPostgres::start()
+                    .await
+                    .expect("Failed to start shared embedded postgres");
+
+                // Store a clone of the PostgreSQL handle for the atexit handler.
+                // PostgreSQL is Clone (just settings/paths) — cheap to clone.
+                // Note: dropping the clone runs `pg_ctl stop` against the same
+                // data_dir, which is the desired cleanup behavior.
+                let _ = SHARED_PG_HANDLE.set(Mutex::new(Some(pg.pg.clone())));
+
+                // Read the postgres PID for signal-handler cleanup.
+                let pid_file = pg.data_dir().join("postmaster.pid");
+                if let Ok(contents) = std::fs::read_to_string(&pid_file) {
+                    if let Some(pid) = contents
+                        .lines()
+                        .next()
+                        .and_then(|line| line.trim().parse::<i32>().ok())
+                    {
+                        SHARED_PG_PID.store(pid, Ordering::Relaxed);
+                    }
+                }
+
+                // Register cleanup handlers to prevent orphaned postgres processes.
+                // - atexit: runs on normal exit, performs full `pg_ctl stop` + temp dir cleanup
+                // - SIGINT/SIGTERM: sends SIGTERM to postgres PID (async-signal-safe)
+                unsafe {
+                    atexit(stop_shared_postgres);
+                    libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
+                    libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
+                }
+
+                pg
+            })
+            .await
+    }
+
     /// Start a new embedded PostgreSQL instance.
     ///
     /// This will:
@@ -87,6 +192,11 @@ impl EmbeddedPostgres {
         pg.create_database(&database_name).await?;
 
         Ok(Self { pg, database_name })
+    }
+
+    /// Get the data directory of the embedded PostgreSQL instance.
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.pg.settings().data_dir
     }
 
     /// Get the connection string for this embedded PostgreSQL instance.
@@ -203,5 +313,91 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Test that concurrent calls to `shared()` all return the same instance.
+    #[tokio::test]
+    async fn test_shared_returns_same_instance_concurrently() {
+        use super::EmbeddedPostgres;
+
+        // Spawn multiple concurrent calls to shared().
+        // Cast to usize to make the future Send-safe (raw pointers aren't Send).
+        let handles: Vec<_> = (0..5)
+            .map(|_| {
+                tokio::spawn(async {
+                    EmbeddedPostgres::shared().await as *const EmbeddedPostgres as usize
+                })
+            })
+            .collect();
+
+        let mut addrs = Vec::new();
+        for handle in handles {
+            addrs.push(handle.await.expect("task panicked"));
+        }
+
+        // All addresses should be identical — same &'static instance.
+        let first = addrs[0];
+        for (i, addr) in addrs.iter().enumerate().skip(1) {
+            assert_eq!(
+                first, *addr,
+                "shared() call {i} returned a different instance"
+            );
+        }
+    }
+
+    /// Test that `SHARED_PG_PID` gracefully stays at 0 when the PID file is
+    /// missing or unparseable, rather than panicking.
+    #[test]
+    fn test_pid_parsing_graceful_on_missing_file() {
+        use std::sync::atomic::Ordering;
+
+        // Ensure the static is at its default (0) or was previously set.
+        // We can't reset the OnceCell, but we can verify the parsing logic
+        // in isolation by testing the same code path directly.
+        let tmp = std::env::temp_dir().join("nonexistent_postmaster.pid");
+        // File doesn't exist — read_to_string should fail, PID stays unchanged.
+        let before = super::SHARED_PG_PID.load(Ordering::Relaxed);
+        if let Ok(contents) = std::fs::read_to_string(&tmp) {
+            if let Some(pid) = contents
+                .lines()
+                .next()
+                .and_then(|line| line.trim().parse::<i32>().ok())
+            {
+                super::SHARED_PG_PID.store(pid, Ordering::Relaxed);
+            }
+        }
+        let after = super::SHARED_PG_PID.load(Ordering::Relaxed);
+        assert_eq!(before, after, "PID should not change when file is missing");
+    }
+
+    /// Test that PID parsing handles a malformed PID file without panicking.
+    #[test]
+    fn test_pid_parsing_graceful_on_bad_content() {
+        use std::io::Write;
+        use std::sync::atomic::Ordering;
+
+        let tmp = std::env::temp_dir().join("bad_postmaster.pid");
+        {
+            let mut f = std::fs::File::create(&tmp).expect("create temp file");
+            writeln!(f, "not_a_number").expect("write temp file");
+        }
+
+        let before = super::SHARED_PG_PID.load(Ordering::Relaxed);
+        if let Ok(contents) = std::fs::read_to_string(&tmp) {
+            if let Some(pid) = contents
+                .lines()
+                .next()
+                .and_then(|line| line.trim().parse::<i32>().ok())
+            {
+                super::SHARED_PG_PID.store(pid, Ordering::Relaxed);
+            }
+        }
+        let after = super::SHARED_PG_PID.load(Ordering::Relaxed);
+        assert_eq!(
+            before, after,
+            "PID should not change when file content is not a valid PID"
+        );
+
+        let _ = std::fs::remove_file(&tmp);
     }
 }

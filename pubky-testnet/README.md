@@ -134,30 +134,17 @@ async fn main() {
 
 When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts a **separate** PostgreSQL instance.
 
-The recommended pattern is to start **one** embedded postgres instance and share its connection string across all tests:
+Use [`EmbeddedPostgres::shared()`] to start **one** instance and share its connection string across all tests.
+This method registers an atexit handler that stops the PostgreSQL child process when the test process exits,
+preventing orphaned processes.
 
 ```rust
 use pubky_testnet::EphemeralTestnet;
 use pubky_testnet::embedded_postgres::EmbeddedPostgres;
-use tokio::sync::OnceCell;
-
-// Shared embedded postgres instance for all tests in this module.
-// Started once, reused by every test via its connection string.
-static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
-
-async fn shared_postgres() -> &'static EmbeddedPostgres {
-    SHARED_PG
-        .get_or_init(|| async {
-            EmbeddedPostgres::start()
-                .await
-                .expect("Failed to start embedded postgres")
-        })
-        .await
-}
 
 #[tokio::test]
 async fn test_one() {
-    let pg = shared_postgres().await;
+    let pg = EmbeddedPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
@@ -168,7 +155,7 @@ async fn test_one() {
 
 #[tokio::test]
 async fn test_two() {
-    let pg = shared_postgres().await;
+    let pg = EmbeddedPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
