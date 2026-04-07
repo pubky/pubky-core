@@ -15,7 +15,7 @@ pub mod reserved_param_keys {
 ///
 /// These hosts need an explicit [`reserved_param_keys::HTTP_PORT`] in their
 /// SVCB record so clients know which port to connect to over HTTP.
-/// 
+///
 /// TODO: This should live in pkarr crate with all other SVCB/HTTPS record logic.
 pub fn requires_http_port(domain: &str) -> bool {
     domain == "localhost" || domain.parse::<IpAddr>().is_ok()
