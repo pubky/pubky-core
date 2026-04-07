@@ -219,7 +219,7 @@ const session = await flow.awaitApproval();
 
 #### Resume an auth flow after page refresh
 
-Auth flows are resumable. See [`pubky.resumeAuthFlow()`](https://github.com/pubky/pubky-core/blob/main/pubky-sdk/bindings/js/src/pubky.rs) for usage and security guidance.
+Auth flows are resumable. See [`pubky.resumeAuthFlow()`](https://github.com/pubky/pubky-core/blob/main/pubky-sdk/bindings/js/src/pubky.rs#L110-L147) for usage and security guidance.
 
 #### Validate and normalize capabilities
 
