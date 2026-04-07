@@ -25,12 +25,18 @@ pub fn mint_access_jwt(homeserver_keypair: &Keypair, claims: &AccessJwtClaims) -
 ///
 /// Checks:
 /// 1. EdDSA signature is valid against the homeserver's public key
-/// 2. Token has not expired
+/// 2. Header `typ` is `"JWT"`
+/// 3. `iss` claim matches the homeserver's public key
+/// 4. Token has not expired
 pub fn verify_access_jwt(
     compact: &JwsCompact,
     homeserver_pubkey: &PublicKey,
 ) -> Result<AccessJwtClaims, Error> {
     let claims = verify_signature(compact.as_str(), homeserver_pubkey)?;
+    check_header_type(compact.as_str())?;
+    if claims.iss != *homeserver_pubkey {
+        return Err(Error::IssuerMismatch);
+    }
     if claims.is_expired(Utc::now().timestamp() as u64) {
         return Err(Error::Expired);
     }
@@ -48,12 +54,32 @@ fn verify_signature(
     Ok(token_data.claims)
 }
 
+fn check_header_type(compact: &str) -> Result<(), Error> {
+    let header = jsonwebtoken::decode_header(compact).map_err(|_| Error::InvalidFormat)?;
+    match header.typ.as_deref() {
+        Some("JWT") => Ok(()),
+        _ => Err(Error::InvalidHeaderType),
+    }
+}
+
 /// Errors from Access JWT operations.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    /// The JWS is not valid compact serialization.
+    #[error("invalid JWT format")]
+    InvalidFormat,
+
+    /// The JWS header `typ` is not `"JWT"`.
+    #[error("invalid access JWT header type, expected JWT")]
+    InvalidHeaderType,
+
     /// The EdDSA signature does not match the homeserver's public key.
     #[error("invalid JWT signature")]
     InvalidSignature,
+
+    /// The `iss` claim does not match the homeserver's public key.
+    #[error("JWT issuer does not match homeserver key")]
+    IssuerMismatch,
 
     /// The JWT has expired.
     #[error("JWT has expired")]
@@ -120,5 +146,34 @@ mod tests {
         let token = mint_access_jwt(&hs_kp, &raw);
         let result = verify_access_jwt(&token, &hs_kp.public_key());
         assert!(matches!(result, Err(Error::Expired)));
+    }
+
+    #[test]
+    fn reject_wrong_header_type() {
+        let hs_kp = Keypair::random();
+        let user_kp = Keypair::random();
+        let raw = make_raw_jwt(&hs_kp, &user_kp);
+
+        // Sign with typ "pubky-grant" instead of "JWT"
+        let header = jws_crypto::eddsa_header("pubky-grant");
+        let enc = jws_crypto::encoding_key(&hs_kp);
+        let token_str = jsonwebtoken::encode(&header, &raw, &enc).unwrap();
+        let token = JwsCompact::from_trusted(token_str);
+
+        let result = verify_access_jwt(&token, &hs_kp.public_key());
+        assert!(matches!(result, Err(Error::InvalidHeaderType)));
+    }
+
+    #[test]
+    fn reject_iss_mismatch() {
+        let hs_kp = Keypair::random();
+        let user_kp = Keypair::random();
+        let mut raw = make_raw_jwt(&hs_kp, &user_kp);
+        // Set iss to a different key than the signer
+        raw.iss = Keypair::random().public_key();
+
+        let token = mint_access_jwt(&hs_kp, &raw);
+        let result = verify_access_jwt(&token, &hs_kp.public_key());
+        assert!(matches!(result, Err(Error::IssuerMismatch)));
     }
 }

@@ -154,7 +154,7 @@ pub async fn revoke_grant(
         HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid grant ID format")
     })?;
 
-    state.auth_service.revoke_grant(&grant_id).await?;
+    state.auth_service.revoke_user_grant(&grant_id, &auth).await?;
     Ok(StatusCode::OK)
 }
 

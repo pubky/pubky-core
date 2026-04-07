@@ -9,6 +9,7 @@
 //! Bearer tokens.
 
 use crate::client_server::auth::AuthSession;
+use crate::client_server::middleware::pubky_host::PubkyHost;
 use crate::shared::HttpError;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -54,6 +55,18 @@ where
             .get::<AuthSession>()
             .cloned()
             .ok_or_else(|| HttpError::unauthorized().into_response())?;
+
+        let pubky_host = parts
+            .extensions
+            .get::<PubkyHost>()
+            .ok_or_else(|| HttpError::internal_server().into_response())?;
+
+        if session.user_key() != pubky_host.public_key() {
+            return Err(HttpError::forbidden_with_message(
+                "Session user does not match target tenant",
+            )
+            .into_response());
+        }
 
         let path = parts.uri.path();
 
@@ -111,14 +124,18 @@ mod tests {
         Keypair::random().public_key()
     }
 
-    fn bearer_session_with_caps(capabilities: Capabilities) -> AuthSession {
+    fn bearer_session_with_key(pk: PublicKey, capabilities: Capabilities) -> AuthSession {
         AuthSession::Grant(GrantSession {
-            user_key: dummy_pk(),
+            user_key: pk,
             capabilities,
             grant_id: GrantId::generate(),
             token_id: TokenId::generate(),
             token_expires_at: 9999999999,
         })
+    }
+
+    fn bearer_session_with_caps(capabilities: Capabilities) -> AuthSession {
+        bearer_session_with_key(dummy_pk(), capabilities)
     }
 
     fn root_caps() -> Capabilities {
@@ -133,7 +150,7 @@ mod tests {
         Capabilities(vec![Capability::read("/")])
     }
 
-    /// Build request parts with an optional AuthSession in extensions.
+    /// Build request parts with an optional AuthSession and matching PubkyHost.
     fn parts_with_auth(uri: &str, auth: Option<AuthSession>) -> Parts {
         let (mut parts, _body) = Request::builder()
             .uri(uri)
@@ -141,8 +158,23 @@ mod tests {
             .unwrap()
             .into_parts();
         if let Some(a) = auth {
+            // Insert a PubkyHost matching the session's user key.
+            parts.extensions.insert(PubkyHost(a.user_key().clone()));
             parts.extensions.insert(a);
         }
+        parts
+    }
+
+    /// Build request parts with a session targeting a different tenant.
+    fn parts_with_cross_tenant(uri: &str, auth: AuthSession) -> Parts {
+        let (mut parts, _body) = Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap()
+            .into_parts();
+        // PubkyHost is a DIFFERENT user than the session user.
+        parts.extensions.insert(PubkyHost(dummy_pk()));
+        parts.extensions.insert(auth);
         parts
     }
 
@@ -209,6 +241,31 @@ mod tests {
         let mut parts = parts_with_auth("/pub/file.txt", Some(auth));
         let result = WriteAccess::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());
+    }
+
+    // --- Cross-tenant authorization tests ---
+
+    #[tokio::test]
+    async fn extractor_rejects_cross_tenant_write() {
+        let auth = bearer_session_with_caps(root_caps());
+        let mut parts = parts_with_cross_tenant("/pub/file.txt", auth);
+        let result = WriteAccess::from_request_parts(&mut parts, &()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn extractor_allows_same_tenant_write() {
+        let pk = dummy_pk();
+        let auth = bearer_session_with_key(pk.clone(), root_caps());
+        let (mut parts, _body) = Request::builder()
+            .uri("/pub/file.txt")
+            .body(Body::empty())
+            .unwrap()
+            .into_parts();
+        parts.extensions.insert(PubkyHost(pk));
+        parts.extensions.insert(auth);
+        let result = WriteAccess::from_request_parts(&mut parts, &()).await;
+        assert!(result.is_ok());
     }
 
     // --- check_writable_path unit tests ---

@@ -92,8 +92,22 @@ impl AuthService {
         Ok(response)
     }
 
+    /// Revoke a grant after verifying it belongs to the authenticated user.
+    pub async fn revoke_user_grant(
+        &self,
+        grant_id: &GrantId,
+        auth: &AuthSession,
+    ) -> Result<(), AuthServiceError> {
+        let user_id = self.resolve_user_id(auth).await?;
+        let grant = self.get_grant(grant_id).await?;
+        if grant.user_id != user_id {
+            return Err(AuthServiceError::GrantOwnershipMismatch);
+        }
+        self.revoke_grant(grant_id).await
+    }
+
     /// Revoke a grant and delete all its sessions atomically.
-    pub async fn revoke_grant(&self, grant_id: &GrantId) -> Result<(), AuthServiceError> {
+    async fn revoke_grant(&self, grant_id: &GrantId) -> Result<(), AuthServiceError> {
         let mut tx = self.sql_db.pool().begin().await?;
         GrantRepository::revoke(grant_id, uexecutor!(tx)).await?;
         GrantSessionRepository::delete_all_for_grant(grant_id, uexecutor!(tx)).await?;
@@ -668,6 +682,35 @@ mod tests {
         let info = service.get_grant_session_info(&session).await.unwrap();
         assert_eq!(info.pubky, user_kp.public_key());
         assert_eq!(info.homeserver, service.homeserver_public_key());
+    }
+
+    // ── revoke_user_grant ─────────────────────────────────────────
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn revoke_user_grant_ownership_mismatch() {
+        let service = test_service().await;
+        let (user_a_kp, _) = create_test_user(&service).await;
+        let (user_b_kp, _) = create_test_user(&service).await;
+        let client_kp = Keypair::random();
+
+        // User A creates a grant session
+        let (grant_jws, pop_jws, raw_grant) =
+            sign_grant(&user_a_kp, &client_kp, &service.homeserver_public_key());
+        service.create_grant_session(&grant_jws, &pop_jws).await.unwrap();
+
+        // User B tries to revoke User A's grant
+        let client_b_kp = Keypair::random();
+        let (grant_b_jws, pop_b_jws, _) =
+            sign_grant(&user_b_kp, &client_b_kp, &service.homeserver_public_key());
+        let response_b = service.create_grant_session(&grant_b_jws, &pop_b_jws).await.unwrap();
+        let jwt_b = JwsCompact::parse(&response_b.token).unwrap();
+        let claims_b = verify_access_jwt(&jwt_b, &service.homeserver_public_key()).unwrap();
+        let session_b = service.resolve_grant_session(&claims_b).await.unwrap();
+        let auth_b = AuthSession::Grant(session_b);
+
+        let err = service.revoke_user_grant(&raw_grant.jti, &auth_b).await.unwrap_err();
+        assert!(matches!(err, AuthServiceError::GrantOwnershipMismatch));
     }
 
     // ── list_active_grants ──────────────────────────────────────────

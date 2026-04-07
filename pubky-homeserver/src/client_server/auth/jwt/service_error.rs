@@ -61,6 +61,10 @@ pub enum AuthServiceError {
     #[error("Session not found")]
     SessionNotFound,
 
+    /// Grant does not belong to the authenticated user.
+    #[error("Grant does not belong to authenticated user")]
+    GrantOwnershipMismatch,
+
     /// Session lacks root capability.
     #[error("Root capability required")]
     RootCapabilityRequired,

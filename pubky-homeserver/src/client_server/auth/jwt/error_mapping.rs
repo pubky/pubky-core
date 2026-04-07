@@ -48,6 +48,9 @@ impl From<AuthServiceError> for HttpError {
             AuthServiceError::SessionNotFound => {
                 HttpError::unauthorized_with_message("Session not found")
             }
+            AuthServiceError::GrantOwnershipMismatch => {
+                HttpError::forbidden_with_message("Grant does not belong to authenticated user")
+            }
             AuthServiceError::RootCapabilityRequired => {
                 HttpError::forbidden_with_message("Root capability required")
             }
@@ -129,6 +132,7 @@ mod tests {
         assert_status(AuthServiceError::GrantRevoked, StatusCode::UNAUTHORIZED);
         assert_status(AuthServiceError::GrantExpired, StatusCode::UNAUTHORIZED);
         assert_status(AuthServiceError::SessionNotFound, StatusCode::UNAUTHORIZED);
+        assert_status(AuthServiceError::GrantOwnershipMismatch, StatusCode::FORBIDDEN);
         assert_status(AuthServiceError::RootCapabilityRequired, StatusCode::FORBIDDEN);
     }
 }
