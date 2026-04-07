@@ -219,38 +219,7 @@ const session = await flow.awaitApproval();
 
 #### Resume an auth flow after page refresh
 
-If the user refreshes or navigates away mid-flow, WASM memory is lost and the
-original `AuthFlow` object is gone. You can reconnect to the same relay channel
-by saving the `authorizationUrl` beforehand and calling `resumeAuthFlow()` after
-reload. The relay inbox retains messages for **~5 minutes**; after that window
-you must start a fresh flow.
-
-```js
-import { Pubky, AuthFlowKind } from "@synonymdev/pubky";
-
-const pubky = new Pubky();
-
-// 1) Start a flow and persist the URL before a potential refresh.
-const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin());
-sessionStorage.setItem("pubky-auth-url", flow.authorizationUrl);
-renderQr(flow.authorizationUrl);
-
-// 2) After a page reload, resume from the saved URL.
-const savedUrl = sessionStorage.getItem("pubky-auth-url");
-if (savedUrl) {
-  const resumed = pubky.resumeAuthFlow(savedUrl);
-
-  // If the signer already approved, this resolves immediately.
-  const session = await resumed.awaitApproval();
-
-  // Clean up once done.
-  sessionStorage.removeItem("pubky-auth-url");
-}
-```
-
-> **Security:** `authorizationUrl` contains the `client_secret` in plaintext.
-> Store it in `sessionStorage` (scoped to the tab), **not** `localStorage`,
-> and delete it as soon as the flow completes or is abandoned.
+Auth flows are resumable. See [`pubky.resumeAuthFlow()`](https://github.com/pubky/pubky-core/blob/main/pubky-sdk/bindings/js/src/pubky.rs) for usage and security guidance.
 
 #### Validate and normalize capabilities
 
