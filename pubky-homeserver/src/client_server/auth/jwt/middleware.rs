@@ -9,9 +9,9 @@
 //! - **No Authorization header** → forwards without an identity (never rejects).
 //! - **Non-Bearer Authorization scheme** → rejects with 401.
 
-use crate::client_server::auth::jwt::auth::authenticate_bearer;
+use crate::client_server::auth::jwt::crypto::access_jwt_issuer::verify_access_jwt;
 use crate::client_server::auth::jwt::crypto::jws_crypto::JwsCompact;
-use crate::client_server::auth::AuthState;
+use crate::client_server::auth::{AuthSession, AuthState};
 use crate::shared::HttpError;
 use axum::http::header;
 use axum::response::IntoResponse;
@@ -102,11 +102,22 @@ where
                 Err(e) => return Ok(e.into_response()),
             };
 
-            match authenticate_bearer(&state, &token).await {
-                Ok(session) => {
-                    req.extensions_mut().insert(session);
+            // Verify JWT signature/expiry, then resolve the session via AuthService.
+            let jwt = match verify_access_jwt(&token, &state.auth_service.homeserver_public_key())
+            {
+                Ok(jwt) => jwt,
+                Err(_) => {
+                    return Ok(
+                        HttpError::unauthorized_with_message("Invalid or expired JWT")
+                            .into_response(),
+                    )
                 }
-                Err(e) => return Ok(e.into_response()),
+            };
+            match state.auth_service.resolve_grant_session(&jwt).await {
+                Ok(session) => {
+                    req.extensions_mut().insert(AuthSession::Grant(session));
+                }
+                Err(e) => return Ok(HttpError::from(e).into_response()),
             }
 
             inner.call(req).await.map_err(|e| match e {})

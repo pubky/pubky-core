@@ -22,7 +22,7 @@ use crate::{
     SignupMode,
 };
 
-use super::auth::GrantSession;
+use super::session::GrantSession;
 use super::crypto::{
     access_jwt_issuer::{mint_access_jwt, verify_access_jwt},
     grant_verifier::verify_grant,
@@ -379,7 +379,8 @@ impl AuthService {
         let token = mint_access_jwt(&self.homeserver_keypair, &claims);
 
         let new_session = NewGrantSession { token_id, grant_id: grant.jti.clone(), expires_at: jwt_exp };
-        GrantSessionRepository::create(&new_session, executor).await?;
+        // Enforces MAX_SESSIONS_PER_GRANT: atomically replaces any prior session row for this grant.
+        GrantSessionRepository::replace_for_grant(&new_session, executor).await?;
 
         Ok(build_session_response(token.to_string(), grant, self.homeserver_keypair.public_key(), jwt_exp, now))
     }

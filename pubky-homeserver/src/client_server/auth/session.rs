@@ -8,7 +8,7 @@ use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 
 use super::cookie::persistence::SessionEntity;
-use super::jwt::auth::GrantSession;
+use super::jwt::session::GrantSession;
 
 /// Resolved authentication context — inserted into request extensions by the
 /// authentication middleware. Handlers just add `auth: AuthSession` as a parameter.

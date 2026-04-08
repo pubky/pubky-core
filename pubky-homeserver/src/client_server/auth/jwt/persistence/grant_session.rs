@@ -14,12 +14,16 @@ use crate::persistence::sql::{
 pub struct GrantSessionRepository;
 
 impl GrantSessionRepository {
-    /// Create a new session, atomically evicting all previous sessions for the grant.
+    /// Atomically replace any existing session for this grant with the new one.
     ///
-    /// Uses a CTE to DELETE + INSERT in a single statement, preventing race
-    /// conditions where concurrent requests could temporarily exceed the
-    /// one-session-per-grant limit.
-    pub async fn create<'a>(
+    /// Enforces the "1 session per grant" invariant. Implemented as a CTE
+    /// (DELETE + INSERT) in a single statement so that two concurrent
+    /// `mint_session` calls for the same grant cannot both observe 0 prior
+    /// sessions and produce 2 rows. Do **not** split into `delete_all_for_grant`
+    /// + insert — `mint_session` is called outside a transaction in
+    /// `AuthService::create_grant_session`, so the atomicity must come from
+    /// the SQL statement itself.
+    pub async fn replace_for_grant<'a>(
         session: &NewGrantSession,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), sqlx::Error> {
@@ -191,7 +195,7 @@ mod tests {
         let token_id = new_session.token_id.clone();
         let expires_at = new_session.expires_at;
 
-        GrantSessionRepository::create(&new_session, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&new_session, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -213,14 +217,14 @@ mod tests {
         // With MAX_SESSIONS_PER_GRANT = 1, each new session evicts the previous one.
         let s1 = make_new_session(&grant_id);
         let s1_token = s1.token_id.clone();
-        GrantSessionRepository::create(&s1, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&s1, &mut db.pool().into())
             .await
             .unwrap();
 
         // s2 evicts s1
         let s2 = make_new_session(&grant_id);
         let s2_token = s2.token_id.clone();
-        GrantSessionRepository::create(&s2, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&s2, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -231,7 +235,7 @@ mod tests {
         // s3 evicts s2
         let s3 = make_new_session(&grant_id);
         let s3_token = s3.token_id.clone();
-        GrantSessionRepository::create(&s3, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&s3, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -274,22 +278,22 @@ mod tests {
         // With MAX_SESSIONS_PER_GRANT = 1, each grant independently holds 1 session.
         // sa2 evicts sa1, sb2 evicts sb1.
         let sa1 = make_new_session(&grant_a);
-        GrantSessionRepository::create(&sa1, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&sa1, &mut db.pool().into())
             .await
             .unwrap();
         let sa2 = make_new_session(&grant_a);
         let sa2_token = sa2.token_id.clone();
-        GrantSessionRepository::create(&sa2, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&sa2, &mut db.pool().into())
             .await
             .unwrap();
 
         let sb1 = make_new_session(&grant_b_id);
-        GrantSessionRepository::create(&sb1, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&sb1, &mut db.pool().into())
             .await
             .unwrap();
         let sb2 = make_new_session(&grant_b_id);
         let sb2_token = sb2.token_id.clone();
-        GrantSessionRepository::create(&sb2, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&sb2, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -310,13 +314,13 @@ mod tests {
 
         let s1 = make_new_session(&grant_id);
         let s1_token = s1.token_id.clone();
-        GrantSessionRepository::create(&s1, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&s1, &mut db.pool().into())
             .await
             .unwrap();
 
         let s2 = make_new_session(&grant_id);
         let s2_token = s2.token_id.clone();
-        GrantSessionRepository::create(&s2, &mut db.pool().into())
+        GrantSessionRepository::replace_for_grant(&s2, &mut db.pool().into())
             .await
             .unwrap();
 

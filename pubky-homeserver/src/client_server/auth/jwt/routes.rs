@@ -168,7 +168,7 @@ mod tests {
         crypto::Keypair,
     };
 
-    use crate::client_server::auth::jwt::auth::GrantSession;
+    use crate::client_server::auth::jwt::session::GrantSession;
 
     fn bearer_auth(caps: Capabilities) -> AuthSession {
         let now = chrono::Utc::now().timestamp() as u64;
