@@ -129,22 +129,23 @@ impl Capability {
 
     /// Whether this capability's scope covers the given path.
     ///
-    /// Segment-based scope matching: every segment in `parent` must match
-    /// the corresponding segment in `child`, and `parent` must not be
-    /// more specific (deeper) than `child`. `/pub/app` covers `/pub/app/file.txt`
-    /// but NOT `/pub/app-evil/file`. Trailing slashes are ignored.
+    /// The trailing `/` on a scope is significant — it distinguishes a
+    /// *directory* scope from a *file* scope:
+    ///
+    /// - **Directory scope** (ends in `/`): covers the directory itself and
+    ///   any path inside it. `/pub/app/` covers `/pub/app/`, `/pub/app/foo`,
+    ///   and `/pub/app/sub/bar`, but NOT `/pub/app` or `/pub/app-evil/foo`.
+    /// - **File scope** (no trailing `/`): covers only the exact path.
+    ///   `/pub/app` covers `/pub/app` and nothing else — not `/pub/app/foo`
+    ///   (that's inside the *directory* `/pub/app/`, a different resource)
+    ///   and not `/pub/app-evil` (no prefix-as-string matching).
     pub fn scope_covers_path(&self, path: &str) -> bool {
-        let parent_parts: Vec<&str> = self.scope.split('/').filter(|s| !s.is_empty()).collect();
-        let child_parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-
-        if parent_parts.len() > child_parts.len() {
-            return false;
+        if self.scope == path {
+            return true;
         }
-
-        parent_parts
-            .iter()
-            .zip(child_parts.iter())
-            .all(|(p, c)| p == c)
+        // Only directory scopes (trailing `/`) cover descendant paths.
+        // For a file scope, only exact-match (handled above) is allowed.
+        self.scope.ends_with('/') && path.starts_with(&self.scope)
     }
 
     /// Whether this capability fully covers `other` — i.e. the scope is equal or
@@ -861,5 +862,78 @@ mod tests {
 
         let back: Capabilities = serde_json::from_str(&json).unwrap();
         assert_eq!(back, caps);
+    }
+
+    // --- scope_covers_path: trailing slash semantics ---
+    //
+    // The trailing `/` on a scope is significant. A directory scope
+    // (`/pub/app/`) covers itself and any path inside it. A file scope
+    // (`/pub/app`) covers only the exact path — never descendants and never
+    // string-prefix neighbours like `/pub/app-evil`. Regression coverage
+    // for the e2e auth tests, which grant `/pub/pubky.app/:rw` and require
+    // `PUT /pub/pubky.app` to be denied.
+
+    fn dir(scope: &str) -> Capability {
+        Capability::write(scope)
+    }
+
+    #[test]
+    fn directory_scope_covers_itself() {
+        assert!(dir("/pub/app/").scope_covers_path("/pub/app/"));
+    }
+
+    #[test]
+    fn directory_scope_covers_descendants() {
+        assert!(dir("/pub/app/").scope_covers_path("/pub/app/foo"));
+        assert!(dir("/pub/app/").scope_covers_path("/pub/app/sub/bar.txt"));
+    }
+
+    #[test]
+    fn directory_scope_does_not_cover_parent_path_without_trailing_slash() {
+        // Regression: `/pub/app/` (the directory) is a different resource
+        // from `/pub/app` (a file at the parent level). The e2e auth tests
+        // grant `/pub/pubky.app/:rw` and expect `PUT /pub/pubky.app` to 403.
+        assert!(!dir("/pub/app/").scope_covers_path("/pub/app"));
+        assert!(!dir("/pub/pubky.app/").scope_covers_path("/pub/pubky.app"));
+    }
+
+    #[test]
+    fn directory_scope_does_not_cover_sibling() {
+        assert!(!dir("/pub/app/").scope_covers_path("/pub/other/file"));
+    }
+
+    #[test]
+    fn directory_scope_does_not_cover_string_prefix_sibling() {
+        // Even with a directory scope, a string-prefix sibling like
+        // `/pub/app-evil/...` is not inside `/pub/app/`.
+        assert!(!dir("/pub/app/").scope_covers_path("/pub/app-evil/file"));
+    }
+
+    #[test]
+    fn file_scope_covers_only_exact_path() {
+        assert!(dir("/pub/file.txt").scope_covers_path("/pub/file.txt"));
+    }
+
+    #[test]
+    fn file_scope_does_not_cover_descendants() {
+        // A file scope is not a namespace prefix — granting `/pub/app:rw`
+        // does not grant access to `/pub/app/inside`. To grant the directory,
+        // use `/pub/app/`.
+        assert!(!dir("/pub/app").scope_covers_path("/pub/app/inside"));
+    }
+
+    #[test]
+    fn file_scope_rejects_prefix_attack() {
+        // The original motivation for moving away from `path.starts_with(scope)`.
+        assert!(!dir("/pub/app").scope_covers_path("/pub/app-evil/file"));
+        assert!(!dir("/pub/app").scope_covers_path("/pub/appended"));
+    }
+
+    #[test]
+    fn root_scope_covers_any_path() {
+        let root = Capability::root();
+        assert!(root.scope_covers_path("/"));
+        assert!(root.scope_covers_path("/pub/anything"));
+        assert!(root.scope_covers_path("/dav/some/file.txt"));
     }
 }

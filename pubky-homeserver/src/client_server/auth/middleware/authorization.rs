@@ -326,4 +326,22 @@ mod tests {
         let caps = scoped_caps("/pub/app");
         assert!(check_capabilities(&caps, "/pub/app").is_ok());
     }
+
+    #[test]
+    fn directory_scope_denies_write_to_directory_path_without_trailing_slash() {
+        // Regression for the e2e auth tests (`tests::auth::authz`,
+        // `signup_authz`, `authz_timeout_reconnect`): a capability granted
+        // for `/pub/pubky.app/` (the directory) must NOT cover a write to
+        // `/pub/pubky.app` (treated as a file at the parent level).
+        let caps = scoped_caps("/pub/pubky.app/");
+        assert!(check_capabilities(&caps, "/pub/pubky.app").is_err());
+    }
+
+    #[test]
+    fn file_scope_denies_write_to_descendant() {
+        // A file scope (no trailing `/`) is not a directory namespace —
+        // granting `/pub/app:rw` does not authorize writes to `/pub/app/foo`.
+        let caps = scoped_caps("/pub/app");
+        assert!(check_capabilities(&caps, "/pub/app/foo").is_err());
+    }
 }
