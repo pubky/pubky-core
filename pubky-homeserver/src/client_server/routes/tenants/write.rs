@@ -8,10 +8,8 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     client_server::{
-        err_if_user_is_invalid::get_user_or_http_error,
-        auth::WriteAccess,
-        middleware::pubky_host::PubkyHost,
-        AppState,
+        auth::WriteAccess, err_if_user_is_invalid::get_user_or_http_error,
+        middleware::pubky_host::PubkyHost, AppState,
     },
     persistence::{
         files::WriteStreamError,

@@ -91,11 +91,7 @@ impl AuthVerifier {
 
 #[cfg(test)]
 mod tests {
-    use pubky_common::{
-        capabilities::Capability,
-        crypto::Keypair,
-        timestamp::Timestamp,
-    };
+    use pubky_common::{capabilities::Capability, crypto::Keypair, timestamp::Timestamp};
 
     use super::*;
 

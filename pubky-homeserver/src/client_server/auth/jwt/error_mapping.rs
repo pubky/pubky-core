@@ -117,13 +117,22 @@ mod tests {
         assert_status(AuthServiceError::UserNotFound, StatusCode::NOT_FOUND);
         assert_status(AuthServiceError::GrantNotFound, StatusCode::NOT_FOUND);
         assert_status(AuthServiceError::UserAlreadyExists, StatusCode::CONFLICT);
-        assert_status(AuthServiceError::SignupTokenRequired, StatusCode::BAD_REQUEST);
+        assert_status(
+            AuthServiceError::SignupTokenRequired,
+            StatusCode::BAD_REQUEST,
+        );
         assert_status(
             AuthServiceError::InvalidSignupTokenFormat("bad".into()),
             StatusCode::BAD_REQUEST,
         );
-        assert_status(AuthServiceError::InvalidSignupToken, StatusCode::UNAUTHORIZED);
-        assert_status(AuthServiceError::SignupTokenAlreadyUsed, StatusCode::UNAUTHORIZED);
+        assert_status(
+            AuthServiceError::InvalidSignupToken,
+            StatusCode::UNAUTHORIZED,
+        );
+        assert_status(
+            AuthServiceError::SignupTokenAlreadyUsed,
+            StatusCode::UNAUTHORIZED,
+        );
     }
 
     #[test]
@@ -132,7 +141,13 @@ mod tests {
         assert_status(AuthServiceError::GrantRevoked, StatusCode::UNAUTHORIZED);
         assert_status(AuthServiceError::GrantExpired, StatusCode::UNAUTHORIZED);
         assert_status(AuthServiceError::SessionNotFound, StatusCode::UNAUTHORIZED);
-        assert_status(AuthServiceError::GrantOwnershipMismatch, StatusCode::FORBIDDEN);
-        assert_status(AuthServiceError::RootCapabilityRequired, StatusCode::FORBIDDEN);
+        assert_status(
+            AuthServiceError::GrantOwnershipMismatch,
+            StatusCode::FORBIDDEN,
+        );
+        assert_status(
+            AuthServiceError::RootCapabilityRequired,
+            StatusCode::FORBIDDEN,
+        );
     }
 }

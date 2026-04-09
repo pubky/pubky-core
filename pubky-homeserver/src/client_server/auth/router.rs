@@ -31,10 +31,7 @@ pub fn base_router(auth_state: AuthState) -> Router<()> {
         .route("/session", post(cookie::routes::signin))
         // JWT
         .route("/auth/jwt/signup", post(jwt::routes::signup))
-        .route(
-            "/auth/jwt/session",
-            post(jwt::routes::create_grant_session),
-        )
+        .route("/auth/jwt/session", post(jwt::routes::create_grant_session))
         .with_state(auth_state)
 }
 
@@ -56,13 +53,8 @@ pub fn tenant_router(auth_state: AuthState) -> Router<()> {
             get(jwt::routes::get_session).delete(jwt::routes::signout),
         )
         .route("/auth/jwt/sessions", get(jwt::routes::list_grants))
-        .route(
-            "/auth/jwt/session/{gid}",
-            delete(jwt::routes::revoke_grant),
-        )
+        .route("/auth/jwt/session/{gid}", delete(jwt::routes::revoke_grant))
         .layer(JwtAuthenticationLayer::new(auth_state.clone()));
 
-    cookie_routes
-        .merge(jwt_routes)
-        .with_state(auth_state)
+    cookie_routes.merge(jwt_routes).with_state(auth_state)
 }

@@ -5,10 +5,7 @@
 
 use crate::persistence::sql::user::{UserEntity, UserRepository};
 use crate::shared::{HttpError, HttpResult};
-use crate::{
-    client_server::auth::AuthState,
-    client_server::middleware::pubky_host::PubkyHost,
-};
+use crate::{client_server::auth::AuthState, client_server::middleware::pubky_host::PubkyHost};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -120,11 +117,7 @@ pub async fn signout(
         return Err(HttpError::unauthorized());
     };
 
-    SessionRepository::delete(
-        &cookie_session.secret,
-        &mut state.sql_db.pool().into(),
-    )
-    .await?;
+    SessionRepository::delete(&cookie_session.secret, &mut state.sql_db.pool().into()).await?;
 
     let mut removal = Cookie::new(pubky.public_key().z32(), String::new());
     removal.make_removal();

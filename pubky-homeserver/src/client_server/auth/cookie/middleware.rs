@@ -105,14 +105,18 @@ where
             let cookies = match req.extensions().get::<Cookies>().cloned() {
                 Some(cookies) => cookies,
                 None => {
-                    tracing::trace!("No cookies found in request extensions. Skip cookie authentication.");
+                    tracing::trace!(
+                        "No cookies found in request extensions. Skip cookie authentication."
+                    );
                     return inner.call(req).await.map_err(|e| match e {});
                 }
             };
             let pubky = match req.extensions().get::<PubkyHost>().cloned() {
                 Some(pubky) => pubky,
                 None => {
-                    tracing::trace!("No pubky host found in request extensions. Skip cookie authentication.");
+                    tracing::trace!(
+                        "No pubky host found in request extensions. Skip cookie authentication."
+                    );
                     return inner.call(req).await.map_err(|e| match e {});
                 }
             };

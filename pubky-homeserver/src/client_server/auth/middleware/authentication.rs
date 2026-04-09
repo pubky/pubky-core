@@ -53,12 +53,12 @@ impl<S> Layer<S> for AuthenticationLayer {
 mod tests {
     use super::*;
     use crate::app_context::AppContext;
+    use crate::client_server::auth::cookie::verifier::AuthVerifier;
     use crate::client_server::auth::AuthSession;
     use crate::client_server::middleware::pubky_host::PubkyHost;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use axum::response::IntoResponse;
-    use crate::client_server::auth::cookie::verifier::AuthVerifier;
     use pubky_common::crypto::Keypair;
     use std::convert::Infallible;
     use std::sync::Arc;

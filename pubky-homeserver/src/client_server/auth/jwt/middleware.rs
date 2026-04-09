@@ -36,7 +36,9 @@ fn extract_bearer_token(req: &Request<Body>) -> Result<Option<JwsCompact>, HttpE
         .map_err(|_| HttpError::unauthorized_with_message("Malformed Authorization header"))?;
 
     let Some(raw_token) = value.strip_prefix("Bearer ") else {
-        return Err(HttpError::unauthorized_with_message("Malformed Authorization header"));
+        return Err(HttpError::unauthorized_with_message(
+            "Malformed Authorization header",
+        ));
     };
     let token = JwsCompact::parse(raw_token)
         .map_err(|_| HttpError::unauthorized_with_message("Malformed Bearer token"))?;
@@ -103,8 +105,7 @@ where
             };
 
             // Verify JWT signature/expiry, then resolve the session via AuthService.
-            let jwt = match verify_access_jwt(&token, &state.auth_service.homeserver_public_key())
-            {
+            let jwt = match verify_access_jwt(&token, &state.auth_service.homeserver_public_key()) {
                 Ok(jwt) => jwt,
                 Err(_) => {
                     return Ok(
@@ -129,6 +130,7 @@ where
 mod tests {
     use super::*;
     use crate::app_context::AppContext;
+    use crate::client_server::auth::cookie::verifier::AuthVerifier;
     use crate::client_server::auth::jwt::crypto::access_jwt_issuer::mint_access_jwt;
     use crate::client_server::auth::AuthSession;
     use crate::client_server::auth::AuthState;
@@ -136,7 +138,6 @@ mod tests {
     use axum::response::IntoResponse;
     use pubky_common::auth::access_jwt::AccessJwtClaims;
     use pubky_common::auth::jws::{GrantId, TokenId};
-    use crate::client_server::auth::cookie::verifier::AuthVerifier;
     use pubky_common::crypto::Keypair;
     use std::sync::Arc;
     use tower::ServiceExt;

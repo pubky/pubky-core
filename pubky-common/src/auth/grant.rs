@@ -7,9 +7,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::jws::{self, ClientId, GrantId},
     capabilities::Capability,
     crypto::PublicKey,
-    auth::jws::{self, ClientId, GrantId},
 };
 
 /// Grant JWS claims — the serializable JWT body.

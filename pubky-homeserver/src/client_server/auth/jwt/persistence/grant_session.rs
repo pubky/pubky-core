@@ -1,7 +1,9 @@
 //! Repository for grant-based session entities.
 
 use pubky_common::auth::jws::{GrantId, TokenId};
-use sea_query::{Alias, CommonTableExpression, Expr, Iden, PostgresQueryBuilder, Query, WithClause, WithQuery};
+use sea_query::{
+    Alias, CommonTableExpression, Expr, Iden, PostgresQueryBuilder, Query, WithClause, WithQuery,
+};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
@@ -124,11 +126,9 @@ impl FromRow<'_, PgRow> for GrantSessionEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id: i32 = row.try_get(GrantSessionIden::Id.to_string().as_str())?;
         let token_id: String = row.try_get(GrantSessionIden::TokenId.to_string().as_str())?;
-        let token_id =
-            TokenId::parse(&token_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
+        let token_id = TokenId::parse(&token_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let grant_id: String = row.try_get(GrantSessionIden::GrantId.to_string().as_str())?;
-        let grant_id =
-            GrantId::parse(&grant_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
+        let grant_id = GrantId::parse(&grant_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let expires_at: i64 = row.try_get(GrantSessionIden::ExpiresAt.to_string().as_str())?;
         let created_at = row.try_get(GrantSessionIden::CreatedAt.to_string().as_str())?;
 
@@ -146,9 +146,9 @@ impl FromRow<'_, PgRow> for GrantSessionEntity {
 mod tests {
     use super::*;
     use pubky_common::{
+        auth::jws::{ClientId, GrantId, TokenId},
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
-        auth::jws::{ClientId, GrantId, TokenId},
     };
 
     use crate::client_server::auth::jwt::persistence::grant::{GrantRepository, NewGrant};
@@ -344,11 +344,9 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_get_nonexistent_session() {
         let db = SqlDb::test().await;
-        let result = GrantSessionRepository::get_by_token_id(
-            &TokenId::generate(),
-            &mut db.pool().into(),
-        )
-        .await;
+        let result =
+            GrantSessionRepository::get_by_token_id(&TokenId::generate(), &mut db.pool().into())
+                .await;
         assert!(result.is_err());
     }
 }

@@ -41,8 +41,7 @@ impl PopNonceRepository {
         max_age_secs: u64,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<u64, sqlx::Error> {
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::seconds(max_age_secs as i64);
+        let cutoff = chrono::Utc::now() - chrono::Duration::seconds(max_age_secs as i64);
 
         let statement = Query::delete()
             .from_table(POP_NONCES_TABLE)

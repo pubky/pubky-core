@@ -1,9 +1,9 @@
 //! Repository for Grant entities (grant auth).
 
 use pubky_common::{
+    auth::jws::{ClientId, GrantId},
     capabilities::Capabilities,
     crypto::PublicKey,
-    auth::jws::{ClientId, GrantId},
 };
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
@@ -83,9 +83,7 @@ impl GrantRepository {
                 Expr::col((GRANTS_TABLE, GrantIden::User))
                     .eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
-            .and_where(
-                Expr::col((GRANTS_TABLE, GrantIden::GrantId)).eq(grant_id.to_string()),
-            )
+            .and_where(Expr::col((GRANTS_TABLE, GrantIden::GrantId)).eq(grant_id.to_string()))
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -220,8 +218,17 @@ impl FromRow<'_, PgRow> for GrantEntity {
         let (capabilities, issued_at, expires_at, revoked_at, created_at) =
             parse_grant_metadata(row)?;
         Ok(GrantEntity {
-            id, grant_id, user_id, user_pubkey, client_id, client_cnf_key,
-            capabilities, issued_at, expires_at, revoked_at, created_at,
+            id,
+            grant_id,
+            user_id,
+            user_pubkey,
+            client_id,
+            client_cnf_key,
+            capabilities,
+            issued_at,
+            expires_at,
+            revoked_at,
+            created_at,
         })
     }
 }
@@ -240,12 +247,28 @@ fn parse_identity_fields(
     let client_id: String = row.try_get(GrantIden::ClientId.to_string().as_str())?;
     let client_id = ClientId::new(&client_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
     let client_cnf_key: String = row.try_get(GrantIden::ClientCnfKey.to_string().as_str())?;
-    Ok((id, grant_id, user_id, user_pubkey, client_id, client_cnf_key))
+    Ok((
+        id,
+        grant_id,
+        user_id,
+        user_pubkey,
+        client_id,
+        client_cnf_key,
+    ))
 }
 
 fn parse_grant_metadata(
     row: &PgRow,
-) -> Result<(Capabilities, i64, i64, Option<i64>, sqlx::types::chrono::NaiveDateTime), sqlx::Error> {
+) -> Result<
+    (
+        Capabilities,
+        i64,
+        i64,
+        Option<i64>,
+        sqlx::types::chrono::NaiveDateTime,
+    ),
+    sqlx::Error,
+> {
     let capabilities: String = row.try_get(GrantIden::Capabilities.to_string().as_str())?;
     let capabilities: Capabilities = capabilities
         .as_str()
@@ -262,9 +285,9 @@ fn parse_grant_metadata(
 mod tests {
     use super::*;
     use pubky_common::{
+        auth::jws::{ClientId, GrantId},
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
-        auth::jws::{ClientId, GrantId},
     };
 
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
@@ -348,13 +371,21 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(!GrantRepository::is_revoked(&grant_id, &mut db.pool().into()).await.unwrap());
+        assert!(
+            !GrantRepository::is_revoked(&grant_id, &mut db.pool().into())
+                .await
+                .unwrap()
+        );
 
         GrantRepository::revoke(&grant_id, &mut db.pool().into())
             .await
             .unwrap();
 
-        assert!(GrantRepository::is_revoked(&grant_id, &mut db.pool().into()).await.unwrap());
+        assert!(
+            GrantRepository::is_revoked(&grant_id, &mut db.pool().into())
+                .await
+                .unwrap()
+        );
 
         let entity = GrantRepository::get_by_grant_id(&grant_id, &mut db.pool().into())
             .await
@@ -442,24 +473,36 @@ mod tests {
     #[test]
     fn require_active_returns_revoked() {
         let grant = make_grant_entity(2000, Some(1500));
-        assert_eq!(grant.require_active(1500).unwrap_err(), GrantStatus::Revoked);
+        assert_eq!(
+            grant.require_active(1500).unwrap_err(),
+            GrantStatus::Revoked
+        );
     }
 
     #[test]
     fn require_active_returns_expired() {
         let grant = make_grant_entity(1000, None);
-        assert_eq!(grant.require_active(1500).unwrap_err(), GrantStatus::Expired);
+        assert_eq!(
+            grant.require_active(1500).unwrap_err(),
+            GrantStatus::Expired
+        );
     }
 
     #[test]
     fn require_active_boundary_expires_at_equals_now() {
         let grant = make_grant_entity(1000, None);
-        assert_eq!(grant.require_active(1000).unwrap_err(), GrantStatus::Expired);
+        assert_eq!(
+            grant.require_active(1000).unwrap_err(),
+            GrantStatus::Expired
+        );
     }
 
     #[test]
     fn require_active_revoked_takes_precedence_over_expired() {
         let grant = make_grant_entity(1000, Some(900));
-        assert_eq!(grant.require_active(1500).unwrap_err(), GrantStatus::Revoked);
+        assert_eq!(
+            grant.require_active(1500).unwrap_err(),
+            GrantStatus::Revoked
+        );
     }
 }

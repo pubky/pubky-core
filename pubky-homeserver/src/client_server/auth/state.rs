@@ -1,9 +1,9 @@
 //! Auth-specific sub-state for the auth module.
 
+use super::cookie::verifier::AuthVerifier;
 use crate::app_context::AppContext;
 use crate::persistence::sql::SqlDb;
 use crate::SignupMode;
-use super::cookie::verifier::AuthVerifier;
 
 use super::AuthService;
 
@@ -21,10 +21,7 @@ pub struct AuthState {
 impl AuthState {
     pub fn new(context: &AppContext) -> Self {
         Self {
-            auth_service: AuthService::new(
-                context.sql_db.clone(),
-                context.keypair.clone(),
-            ),
+            auth_service: AuthService::new(context.sql_db.clone(), context.keypair.clone()),
             sql_db: context.sql_db.clone(),
             verifier: AuthVerifier::default(),
             signup_mode: context.config_toml.general.signup_mode.clone(),

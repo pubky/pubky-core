@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use sea_query::{ColumnDef, Expr, ForeignKey, ForeignKeyAction, Iden, PostgresQueryBuilder, Table};
 use sqlx::Transaction;
 
-use crate::persistence::{
-    sql::{entities::user::UserIden, migration::MigrationTrait, user::USER_TABLE},
+use crate::persistence::sql::{
+    entities::user::UserIden, migration::MigrationTrait, user::USER_TABLE,
 };
 
 pub const GRANTS_TABLE: &str = "grants";
@@ -57,16 +57,8 @@ impl M20260325CreateGrantSessionsMigration {
                     .string_len(52)
                     .not_null(),
             )
-            .col(
-                ColumnDef::new(GrantIden::Capabilities)
-                    .text()
-                    .not_null(),
-            )
-            .col(
-                ColumnDef::new(GrantIden::IssuedAt)
-                    .big_integer()
-                    .not_null(),
-            )
+            .col(ColumnDef::new(GrantIden::Capabilities).text().not_null())
+            .col(ColumnDef::new(GrantIden::IssuedAt).big_integer().not_null())
             .col(
                 ColumnDef::new(GrantIden::ExpiresAt)
                     .big_integer()

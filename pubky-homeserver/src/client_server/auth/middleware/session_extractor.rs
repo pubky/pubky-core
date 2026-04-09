@@ -22,10 +22,7 @@ where
             .extensions
             .get::<AuthSession>()
             .cloned()
-            .ok_or((
-                StatusCode::UNAUTHORIZED,
-                "No authenticated session found",
-            ))
+            .ok_or((StatusCode::UNAUTHORIZED, "No authenticated session found"))
             .map_err(|e| e.into_response())
     }
 }

@@ -8,11 +8,7 @@
 //! Write handlers use the [`WriteAccess`] extractor for capability-based
 //! write access control.
 
-use axum::{
-    extract::DefaultBodyLimit,
-    routing::get,
-    Router,
-};
+use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
 use crate::client_server::{auth::AuthenticationLayer, AppState};
 

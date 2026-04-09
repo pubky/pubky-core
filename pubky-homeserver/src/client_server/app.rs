@@ -14,10 +14,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{routing::get, Router};
 use axum_server::{
     tls_rustls::{RustlsAcceptor, RustlsConfig},
     Handle,
@@ -26,10 +23,10 @@ use std::{net::SocketAddr, sync::Arc};
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
+use super::auth;
 use super::middleware::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
 };
-use super::auth;
 use super::routes::{events, root, signup_tokens, tenants};
 
 /// Errors that can occur when building a `HomeserverCore`.

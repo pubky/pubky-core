@@ -21,7 +21,7 @@ mod state;
 pub use middleware::authentication::AuthenticationLayer;
 pub use middleware::authorization::WriteAccess;
 
-pub use router::{base_router, tenant_router};
 pub use jwt::service::AuthService;
+pub use router::{base_router, tenant_router};
 pub use session::AuthSession;
 pub use state::AuthState;
