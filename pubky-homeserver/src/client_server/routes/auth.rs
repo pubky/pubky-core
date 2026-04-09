@@ -181,10 +181,8 @@ async fn create_session_and_cookie(
 
     // Lock the user row to serialize concurrent session creation and
     // re-read the quota so we never use a stale max_sessions value.
-    let fresh_user: UserEntity = sqlx::query_as("SELECT * FROM users WHERE id = $1 FOR UPDATE")
-        .bind(user.id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let fresh_user =
+        UserRepository::get_for_update(&user.public_key, &mut (&mut tx).into()).await?;
 
     // Only enforce session cap when an explicit value is set.
     // Default and Unlimited both mean no limit.

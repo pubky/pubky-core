@@ -1,5 +1,7 @@
 use std::fmt;
+use std::num::NonZeroU32;
 use std::str::FromStr;
+use std::time::Duration;
 
 use super::rate_unit::RateUnit;
 use super::QuotaValue;
@@ -19,9 +21,36 @@ use super::QuotaValue;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BandwidthRate(QuotaValue);
 
+impl BandwidthRate {
+    /// Convert to a `governor::Quota`, optionally overriding the burst.
+    ///
+    /// - `burst_override = None` → default behaviour (burst = rate).
+    /// - `burst_override = Some(n)` → burst is `n` in the rate's natural unit
+    ///   (MB for `"…mb/s"`, KB for `"…kb/s"`, etc.).
+    pub fn to_governor_quota(&self, burst_override: Option<u32>) -> governor::Quota {
+        let qv = &self.0;
+        let rate_unit_mult = qv.rate_unit.multiplier().get();
+        let rate_cells = NonZeroU32::new(qv.rate.get() * rate_unit_mult)
+            .expect("always non-zero: rate and multiplier are non-zero");
+        let time_unit = Duration::from_secs(qv.time_unit.multiplier_in_seconds().get() as u64);
+        let replenish_1_per = time_unit / rate_cells.get();
+        let base = governor::Quota::with_period(replenish_1_per)
+            .expect("always non-zero: replenish_1_per is non-zero");
+
+        match burst_override {
+            Some(b) => {
+                let burst_cells =
+                    NonZeroU32::new(b * rate_unit_mult).expect("burst must be > 0 when provided");
+                base.allow_burst(burst_cells)
+            }
+            None => base.allow_burst(rate_cells),
+        }
+    }
+}
+
 impl From<BandwidthRate> for governor::Quota {
     fn from(value: BandwidthRate) -> Self {
-        value.0.into()
+        value.to_governor_quota(None)
     }
 }
 

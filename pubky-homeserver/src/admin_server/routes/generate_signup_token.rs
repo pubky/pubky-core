@@ -31,6 +31,7 @@ pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<
 /// Accepts a partial JSON body:
 /// - Absent fields → `Default` (use system default)
 /// - `null` fields → `Default` (use system default)
+/// - `"unlimited"` → `Unlimited` (no limit)
 /// - Value fields → `Value(T)` (explicit limit)
 pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,

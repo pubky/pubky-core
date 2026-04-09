@@ -5,7 +5,10 @@ use pubky_common::crypto::PublicKey;
 
 use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::sql::SqlDb;
-use crate::persistence::sql::{uexecutor, user::{UserEntity, UserRepository}};
+use crate::persistence::sql::{
+    uexecutor,
+    user::{UserEntity, UserRepository},
+};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
@@ -210,18 +213,15 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         // Lock the user row to serialize concurrent writes and prevent quota bypass.
-        let mut user: UserEntity = sqlx::query_as(
-            "SELECT * FROM users WHERE public_key = $1 FOR UPDATE",
-        )
-        .bind(self.entry_path.pubkey().z32())
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            opendal::Error::new(
-                opendal::ErrorKind::Unexpected,
-                format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
-            )
-        })?;
+        let mut user: UserEntity =
+            UserRepository::get_for_update(self.entry_path.pubkey(), &mut (&mut tx).into())
+                .await
+                .map_err(|e| {
+                    opendal::Error::new(
+                        opendal::ErrorKind::Unexpected,
+                        format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
+                    )
+                })?;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;
         let bytes_delta = if file_already_exists {

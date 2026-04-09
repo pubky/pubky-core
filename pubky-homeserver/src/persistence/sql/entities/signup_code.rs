@@ -38,6 +38,8 @@ impl SignupCodeRepository {
                 SignupCodeIden::QuotaMaxSessions,
                 SignupCodeIden::QuotaRateRead,
                 SignupCodeIden::QuotaRateWrite,
+                SignupCodeIden::QuotaRateReadBurst,
+                SignupCodeIden::QuotaRateWriteBurst,
             ])
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
@@ -45,6 +47,8 @@ impl SignupCodeRepository {
                 SimpleExpr::Value(limits.max_sessions_i32().into()),
                 SimpleExpr::Value(limits.rate_read_str().into()),
                 SimpleExpr::Value(limits.rate_write_str().into()),
+                SimpleExpr::Value(limits.rate_read_burst_i32().into()),
+                SimpleExpr::Value(limits.rate_write_burst_i32().into()),
             ])
             .unwrap()
             .returning_all()
@@ -72,6 +76,8 @@ impl SignupCodeRepository {
                 SignupCodeIden::QuotaMaxSessions,
                 SignupCodeIden::QuotaRateRead,
                 SignupCodeIden::QuotaRateWrite,
+                SignupCodeIden::QuotaRateReadBurst,
+                SignupCodeIden::QuotaRateWriteBurst,
             ])
             .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
             .to_owned();
@@ -151,6 +157,8 @@ pub enum SignupCodeIden {
     QuotaMaxSessions,
     QuotaRateRead,
     QuotaRateWrite,
+    QuotaRateReadBurst,
+    QuotaRateWriteBurst,
 }
 
 /// Signup code id in the format of "JZY0-D6MY-ZFNG".
@@ -228,6 +236,10 @@ pub struct SignupCodeEntity {
     pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_write: Option<String>,
+    /// Per-user read rate burst override. `None` = default (burst = rate).
+    pub quota_rate_read_burst: Option<i32>,
+    /// Per-user write rate burst override. `None` = default (burst = rate).
+    pub quota_rate_write_burst: Option<i32>,
 }
 
 impl SignupCodeEntity {
@@ -238,6 +250,8 @@ impl SignupCodeEntity {
             self.quota_max_sessions,
             self.quota_rate_read.clone(),
             self.quota_rate_write.clone(),
+            self.quota_rate_read_burst,
+            self.quota_rate_write_burst,
         )
     }
 }
@@ -269,6 +283,10 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             row.try_get(SignupCodeIden::QuotaRateRead.to_string().as_str())?;
         let quota_rate_write: Option<String> =
             row.try_get(SignupCodeIden::QuotaRateWrite.to_string().as_str())?;
+        let quota_rate_read_burst: Option<i32> =
+            row.try_get(SignupCodeIden::QuotaRateReadBurst.to_string().as_str())?;
+        let quota_rate_write_burst: Option<i32> =
+            row.try_get(SignupCodeIden::QuotaRateWriteBurst.to_string().as_str())?;
 
         Ok(SignupCodeEntity {
             id,
@@ -278,6 +296,8 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             quota_max_sessions,
             quota_rate_read,
             quota_rate_write,
+            quota_rate_read_burst,
+            quota_rate_write_burst,
         })
     }
 }
@@ -332,6 +352,7 @@ mod tests {
             max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Default,
+            ..Default::default()
         };
 
         let code = SignupCodeRepository::create(&signup_code_id, &config, &mut db.pool().into())
@@ -454,6 +475,7 @@ mod tests {
             max_sessions: QuotaOverride::Value(5),
             rate_read: QuotaOverride::Value(bw("200mb/m")),
             rate_write: QuotaOverride::Default,
+            ..Default::default()
         };
         let code_id = SignupCodeId::random();
         let code = SignupCodeRepository::create(&code_id, &user_quota, &mut db.pool().into())
@@ -464,7 +486,7 @@ mod tests {
         let keypair = Keypair::random();
         let pubkey = keypair.public_key();
         let mut tx = db.pool().begin().await.unwrap();
-        let mut user = UserRepository::create(&pubkey, &mut (&mut tx).into())
+        let user = UserRepository::create(&pubkey, &mut (&mut tx).into())
             .await
             .unwrap();
         SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())

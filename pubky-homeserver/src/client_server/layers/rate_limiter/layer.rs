@@ -135,9 +135,9 @@ impl<S> Layer<S> for RateLimiterLayer {
             .map(|path| LimitTuple::new(path.clone()))
             .collect();
 
-        let user_read_limiters: Arc<DashMap<BandwidthRate, Arc<KeyedRateLimiter>>> =
+        let user_read_limiters: Arc<DashMap<SpeedLimitKey, Arc<KeyedRateLimiter>>> =
             Arc::new(DashMap::new());
-        let user_write_limiters: Arc<DashMap<BandwidthRate, Arc<KeyedRateLimiter>>> =
+        let user_write_limiters: Arc<DashMap<SpeedLimitKey, Arc<KeyedRateLimiter>>> =
             Arc::new(DashMap::new());
 
         // Spawn periodic cleanup for per-user limiter pools.
@@ -228,15 +228,19 @@ impl LimitTuple {
     }
 }
 
-/// Get or create a keyed rate limiter for a specific bandwidth rate from a shared pool.
-/// Users with the same effective rate share a limiter instance.
+/// Pool key for per-user speed limiters: rate + optional burst override.
+/// Users with the same (rate, burst) share a limiter instance.
+type SpeedLimitKey = (BandwidthRate, Option<u32>);
+
+/// Get or create a keyed rate limiter for a specific bandwidth rate + burst from a shared pool.
 fn get_or_create_limiter(
-    pool: &DashMap<BandwidthRate, Arc<KeyedRateLimiter>>,
+    pool: &DashMap<SpeedLimitKey, Arc<KeyedRateLimiter>>,
     rate: &BandwidthRate,
+    burst: Option<u32>,
 ) -> Arc<KeyedRateLimiter> {
-    pool.entry(rate.clone())
+    pool.entry((rate.clone(), burst))
         .or_insert_with(|| {
-            let quota: Quota = rate.clone().into();
+            let quota: Quota = rate.to_governor_quota(burst);
             Arc::new(RateLimiter::keyed(quota))
         })
         .clone()
@@ -311,10 +315,10 @@ pub struct RateLimiterMiddleware<S> {
     limits: Vec<LimitTuple>,
     cache: UserQuotaCache,
     sql_db: SqlDb,
-    /// Shared pool of per-user read speed limiters. Users with the same effective rate share an instance.
-    user_read_limiters: Arc<DashMap<BandwidthRate, Arc<KeyedRateLimiter>>>,
-    /// Shared pool of per-user write speed limiters. Users with the same effective rate share an instance.
-    user_write_limiters: Arc<DashMap<BandwidthRate, Arc<KeyedRateLimiter>>>,
+    /// Shared pool of per-user read speed limiters. Users with the same (rate, burst) share an instance.
+    user_read_limiters: Arc<DashMap<SpeedLimitKey, Arc<KeyedRateLimiter>>>,
+    /// Shared pool of per-user write speed limiters. Users with the same (rate, burst) share an instance.
+    user_write_limiters: Arc<DashMap<SpeedLimitKey, Arc<KeyedRateLimiter>>>,
 }
 
 impl<S> RateLimiterMiddleware<S> {
@@ -356,15 +360,10 @@ impl<S> RateLimiterMiddleware<S> {
                 // When the rate limit is exceeded, we wait between 25ms and 500ms before retrying.
                 // This is to avoid overwhelming the server with requests when the rate limit is exceeded.
                 // Randomization is used to avoid thundering herd problem.
-                let jitter = Jitter::new(
-                    Duration::from_millis(25),
-                    Duration::from_millis(500),
-                );
+                let jitter = Jitter::new(Duration::from_millis(25), Duration::from_millis(500));
                 async move {
                     let bytes = match chunk {
-                        Ok(actual_chunk) => {
-                            actual_chunk
-                        }
+                        Ok(actual_chunk) => actual_chunk,
                         Err(e) => return Err(e),
                     };
 
@@ -392,14 +391,15 @@ impl<S> RateLimiterMiddleware<S> {
                                 NonZero::new(1).expect("1 is always non zero"),
                                 jitter,
                             )
-                            .await.is_err()
+                            .await
+                            .is_err()
                         {
                             // Requested rate (1 KB) exceeds the configured limit.
                             // This should not happen in practice since limits are in KB.
-                            tracing::error!("Rate limiter rejected a 1 KB cell — limit may be misconfigured");
-                            return Err(axum::Error::new(
-                                "Rate limit exceeded",
-                            ));
+                            tracing::error!(
+                                "Rate limiter rejected a 1 KB cell — limit may be misconfigured"
+                            );
+                            return Err(axum::Error::new("Rate limit exceeded"));
                         };
                     }
                     Ok(bytes)
@@ -445,7 +445,7 @@ where
             .extensions()
             .get::<PubkyHost>()
             .map(|pk| pk.public_key().clone());
-        
+
         if path_limits.is_empty() && user_pubkey.is_none() {
             // No limits matched and no user to resolve, skip entirely.
             return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
@@ -552,24 +552,27 @@ where
 
                 // Determine direction from HTTP method.
                 let method = req.method().clone();
-                let (rate_field, limiter_pool) = match method {
-                    Method::PUT | Method::POST | Method::PATCH | Method::DELETE => {
-                        (&quota.rate_write, &user_write_limiters)
-                    }
-                    _ => (&quota.rate_read, &user_read_limiters),
+                let (rate_field, burst_field, limiter_pool) = match method {
+                    Method::PUT | Method::POST | Method::PATCH | Method::DELETE => (
+                        &quota.rate_write,
+                        quota.rate_write_burst,
+                        &user_write_limiters,
+                    ),
+                    _ => (&quota.rate_read, quota.rate_read_burst, &user_read_limiters),
                 };
 
                 // Find the matching global user-keyed speed LimitTuple for Default fallback.
-                let global_user_speed_limit: Option<&LimitTuple> = path_limits_owned.iter().find(|lt| {
-                    lt.limit.key == LimitKeyType::User
-                        && lt.limit.quota.rate_unit.is_speed_rate_unit()
-                });
+                let global_user_speed_limit: Option<&LimitTuple> =
+                    path_limits_owned.iter().find(|lt| {
+                        lt.limit.key == LimitKeyType::User
+                            && lt.limit.quota.rate_unit.is_speed_rate_unit()
+                    });
 
                 // Resolve effective rate: per-user override > global PathLimit default.
                 match rate_field {
                     QuotaOverride::Value(rate) => {
-                        // User has a custom rate — use a shared per-rate limiter.
-                        let limiter = get_or_create_limiter(limiter_pool, rate);
+                        // User has a custom rate — use a shared per-(rate, burst) limiter.
+                        let limiter = get_or_create_limiter(limiter_pool, rate, burst_field);
                         req = Self::throttle_upload(req, &user_key, &limiter);
                         download_throttlers.push((user_key, limiter));
                     }
@@ -825,7 +828,9 @@ mod tests {
             })
         }
 
-        // Spawn in the background to test 2 uploads in parallel
+        // Spawn two parallel requests for user1 and one for user2. Exactly one
+        // of user1's requests should be rejected, but which one wins the race
+        // is non-deterministic, so sort the two statuses before asserting.
         let user1_pubkey = Keypair::random().public_key();
         let handle1 = send_request(socket, user1_pubkey.clone());
         let handle2 = send_request(socket, user1_pubkey.clone());
@@ -834,8 +839,14 @@ mod tests {
 
         // Wait for the uploads to finish
         let (res1, res2, res3) = tokio::try_join!(handle1, handle2, handle3).unwrap();
-        assert_eq!(res1.status(), StatusCode::CREATED);
-        assert_eq!(res2.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        let mut user1_statuses = [res1.status(), res2.status()];
+        user1_statuses.sort_by_key(|s| s.as_u16());
+        assert_eq!(
+            user1_statuses,
+            [StatusCode::CREATED, StatusCode::TOO_MANY_REQUESTS],
+            "user1 should have exactly one success and one rate-limited response"
+        );
         assert_eq!(res3.status(), StatusCode::CREATED);
     }
 
@@ -886,19 +897,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_limiter_pool_creation() {
-        // Test the shared per-rate limiter pool (get_or_create_limiter).
-        let pool: DashMap<BandwidthRate, Arc<KeyedRateLimiter>> = DashMap::new();
+        // Test the shared per-(rate, burst) limiter pool (get_or_create_limiter).
+        let pool: DashMap<SpeedLimitKey, Arc<KeyedRateLimiter>> = DashMap::new();
 
         let rate: BandwidthRate = "5mb/s".parse().unwrap();
-        let limiter1 = get_or_create_limiter(&pool, &rate);
-        let limiter2 = get_or_create_limiter(&pool, &rate);
+        let limiter1 = get_or_create_limiter(&pool, &rate, None);
+        let limiter2 = get_or_create_limiter(&pool, &rate, None);
 
-        // Same rate should return the same limiter instance
+        // Same rate + burst should return the same limiter instance
         assert!(Arc::ptr_eq(&limiter1, &limiter2));
 
         // Different rate should return a different limiter
         let other_rate: BandwidthRate = "10mb/s".parse().unwrap();
-        let limiter3 = get_or_create_limiter(&pool, &other_rate);
+        let limiter3 = get_or_create_limiter(&pool, &other_rate, None);
         assert!(!Arc::ptr_eq(&limiter1, &limiter3));
+
+        // Same rate but different burst should return a different limiter
+        let limiter4 = get_or_create_limiter(&pool, &rate, Some(50));
+        assert!(!Arc::ptr_eq(&limiter1, &limiter4));
+
+        // Same rate + same burst should share
+        let limiter5 = get_or_create_limiter(&pool, &rate, Some(50));
+        assert!(Arc::ptr_eq(&limiter4, &limiter5));
     }
 }

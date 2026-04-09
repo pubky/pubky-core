@@ -8,14 +8,21 @@ use pubky_common::crypto::PublicKey;
 
 use crate::{
     data_directory::user_quota::UserQuotaPatch,
-    persistence::sql::{
-        uexecutor,
-        user::{UserEntity, UserRepository},
-    },
+    persistence::sql::user::{UserEntity, UserRepository},
     shared::{HttpError, HttpResult},
 };
 
 use super::super::app_state::AppState;
+
+/// Map a sqlx error to an HTTP error, turning `RowNotFound` into 404.
+fn map_user_not_found(e: sqlx::Error) -> HttpError {
+    match e {
+        sqlx::Error::RowNotFound => {
+            HttpError::new_with_message(StatusCode::NOT_FOUND, "User not found")
+        }
+        other => other.into(),
+    }
+}
 
 /// Parse a z32 public key path param and fetch the corresponding user entity.
 async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEntity> {
@@ -24,12 +31,7 @@ async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEnti
 
     UserRepository::get(&pubkey, &mut state.sql_db.pool().into())
         .await
-        .map_err(|e| match e {
-            sqlx::Error::RowNotFound => {
-                HttpError::new_with_message(StatusCode::NOT_FOUND, "User not found")
-            }
-            other => other.into(),
-        })
+        .map_err(map_user_not_found)
 }
 
 /// GET /users/{pubkey}/quota — return the user's effective limits.
@@ -62,31 +64,9 @@ pub async fn patch_user_quota(
     let pubkey = PublicKey::try_from_z32(&pubkey_str)
         .map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid public key"))?;
 
-    // Use a transaction with FOR UPDATE to serialize concurrent patches on the same user.
-    let mut tx = state.sql_db.pool().begin().await?;
-
-    // Lock the user row to prevent concurrent read-modify-write races.
-    let user: UserEntity = sqlx::query_as(
-        "SELECT id, public_key, created_at, disabled, used_bytes, \
-         quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write \
-         FROM users WHERE public_key = $1 FOR UPDATE",
-    )
-    .bind(pubkey.z32())
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| match e {
-        sqlx::Error::RowNotFound => {
-            HttpError::new_with_message(StatusCode::NOT_FOUND, "User not found")
-        }
-        other => other.into(),
-    })?;
-
-    // Read current config, apply the patch, and write back — all under the row lock.
-    let mut config = user.quota();
-    config.merge(&patch);
-
-    UserRepository::set_quota(user.id, &config, uexecutor!(tx)).await?;
-    tx.commit().await?;
+    UserRepository::patch_quota(&pubkey, &patch, state.sql_db.pool())
+        .await
+        .map_err(map_user_not_found)?;
 
     // Evict from shared cache so the next request re-resolves from DB
     state.user_quota_cache.remove(&pubkey);
@@ -269,7 +249,7 @@ mod tests {
 
         let url = format!("/users/{}/quota", pubkey.z32());
 
-        // PUT with invalid rate string should be rejected
+        // PATCH with invalid rate string should be rejected
         let body = serde_json::json!({
             "rate_read": "rubbish"
         });

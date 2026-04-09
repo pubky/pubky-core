@@ -19,6 +19,8 @@ async fn add_quota_columns(
         ("quota_max_sessions", "INTEGER"),
         ("quota_rate_read", "VARCHAR(32)"),
         ("quota_rate_write", "VARCHAR(32)"),
+        ("quota_rate_read_burst", "INTEGER"),
+        ("quota_rate_write_burst", "INTEGER"),
     ] {
         sqlx::query(&format!(
             "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"
@@ -97,15 +99,15 @@ mod tests {
             .await
             .unwrap();
 
-        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM users WHERE public_key = $1",
+        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
         .fetch_one(db.pool())
         .await
         .unwrap();
         // All columns should be NULL (= Default)
-        assert_eq!(row, (None, None, None, None));
+        assert_eq!(row, (None, None, None, None, None, None));
     }
 
     #[tokio::test]
@@ -127,15 +129,15 @@ mod tests {
             .await
             .unwrap();
 
-        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM signup_codes WHERE id = $1",
+        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())
         .fetch_one(db.pool())
         .await
         .unwrap();
         // All columns should be NULL (= Default)
-        assert_eq!(row, (None, None, None, None));
+        assert_eq!(row, (None, None, None, None, None, None));
     }
 
     /// Existing rows should have NULL for all quota columns after migration
@@ -187,23 +189,23 @@ mod tests {
             .unwrap();
 
         // Existing user should have all NULLs (= Default)
-        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM users WHERE public_key = $1",
+        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
         .fetch_one(db.pool())
         .await
         .unwrap();
-        assert_eq!(row, (None, None, None, None));
+        assert_eq!(row, (None, None, None, None, None, None));
 
         // Existing signup code should have all NULLs (= Default)
-        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write FROM signup_codes WHERE id = $1",
+        let row: (Option<i64>, Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+            "SELECT quota_storage_mb, quota_max_sessions, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())
         .fetch_one(db.pool())
         .await
         .unwrap();
-        assert_eq!(row, (None, None, None, None));
+        assert_eq!(row, (None, None, None, None, None, None));
     }
 }

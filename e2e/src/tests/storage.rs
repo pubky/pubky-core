@@ -149,7 +149,7 @@ async fn put_quota_applied() {
     let pubky = testnet.sdk().unwrap();
 
     let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
+    mock_dir.config_toml.storage.default_quota_mb = Some(1); // 1 MB
     let server = testnet
         .create_homeserver_app_with_mock(mock_dir)
         .await

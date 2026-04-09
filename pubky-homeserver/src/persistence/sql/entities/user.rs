@@ -3,7 +3,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
-use crate::data_directory::user_quota::UserQuota;
+use crate::data_directory::user_quota::{UserQuota, UserQuotaPatch};
 use crate::persistence::sql::UnifiedExecutor;
 
 pub const USER_TABLE: &str = "users";
@@ -50,8 +50,41 @@ impl UserRepository {
                 UserIden::QuotaMaxSessions,
                 UserIden::QuotaRateRead,
                 UserIden::QuotaRateWrite,
+                UserIden::QuotaRateReadBurst,
+                UserIden::QuotaRateWriteBurst,
             ])
             .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
+        Ok(user)
+    }
+
+    /// Get a user by their public key with a `FOR UPDATE` row lock.
+    ///
+    /// Must be called within a transaction to hold the lock.
+    pub async fn get_for_update<'a>(
+        public_key: &PublicKey,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<UserEntity, sqlx::Error> {
+        let statement = Query::select()
+            .from(USER_TABLE)
+            .columns([
+                UserIden::Id,
+                UserIden::PublicKey,
+                UserIden::CreatedAt,
+                UserIden::Disabled,
+                UserIden::UsedBytes,
+                UserIden::QuotaStorageMb,
+                UserIden::QuotaMaxSessions,
+                UserIden::QuotaRateRead,
+                UserIden::QuotaRateWrite,
+                UserIden::QuotaRateReadBurst,
+                UserIden::QuotaRateWriteBurst,
+            ])
+            .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
+            .lock(sea_query::LockType::Update)
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -94,6 +127,8 @@ impl UserRepository {
                 UserIden::QuotaMaxSessions,
                 UserIden::QuotaRateRead,
                 UserIden::QuotaRateWrite,
+                UserIden::QuotaRateReadBurst,
+                UserIden::QuotaRateWriteBurst,
             ])
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -207,6 +242,14 @@ impl UserRepository {
                     UserIden::QuotaRateWrite,
                     SimpleExpr::Value(config.rate_write_str().into()),
                 ),
+                (
+                    UserIden::QuotaRateReadBurst,
+                    SimpleExpr::Value(config.rate_read_burst_i32().into()),
+                ),
+                (
+                    UserIden::QuotaRateWriteBurst,
+                    SimpleExpr::Value(config.rate_write_burst_i32().into()),
+                ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
             .returning_all()
@@ -216,6 +259,27 @@ impl UserRepository {
         let con = executor.get_con().await?;
         let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(user)
+    }
+
+    /// Atomically apply a partial quota update to a user.
+    ///
+    /// Opens a transaction, locks the row with `FOR UPDATE`, merges the patch
+    /// into the current quota, and writes the result back.
+    pub async fn patch_quota(
+        public_key: &PublicKey,
+        patch: &UserQuotaPatch,
+        pool: &sqlx::PgPool,
+    ) -> Result<UserEntity, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+
+        let user = Self::get_for_update(public_key, &mut (&mut tx).into()).await?;
+
+        let mut config = user.quota();
+        config.merge(patch);
+
+        let updated = Self::set_quota(user.id, &config, &mut (&mut tx).into()).await?;
+        tx.commit().await?;
+        Ok(updated)
     }
 
     /// Delete a user by their public key.
@@ -271,6 +335,8 @@ pub enum UserIden {
     QuotaMaxSessions,
     QuotaRateRead,
     QuotaRateWrite,
+    QuotaRateReadBurst,
+    QuotaRateWriteBurst,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -288,6 +354,10 @@ pub struct UserEntity {
     pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_write: Option<String>,
+    /// Per-user read rate burst override. `None` = default (burst = rate).
+    pub quota_rate_read_burst: Option<i32>,
+    /// Per-user write rate burst override. `None` = default (burst = rate).
+    pub quota_rate_write_burst: Option<i32>,
 }
 
 impl UserEntity {
@@ -300,6 +370,8 @@ impl UserEntity {
             self.quota_max_sessions,
             self.quota_rate_read.clone(),
             self.quota_rate_write.clone(),
+            self.quota_rate_read_burst,
+            self.quota_rate_write_burst,
         )
     }
 }
@@ -330,6 +402,10 @@ impl FromRow<'_, PgRow> for UserEntity {
             row.try_get(UserIden::QuotaRateRead.to_string().as_str())?;
         let quota_rate_write: Option<String> =
             row.try_get(UserIden::QuotaRateWrite.to_string().as_str())?;
+        let quota_rate_read_burst: Option<i32> =
+            row.try_get(UserIden::QuotaRateReadBurst.to_string().as_str())?;
+        let quota_rate_write_burst: Option<i32> =
+            row.try_get(UserIden::QuotaRateWriteBurst.to_string().as_str())?;
         Ok(UserEntity {
             id,
             public_key,
@@ -340,6 +416,8 @@ impl FromRow<'_, PgRow> for UserEntity {
             quota_max_sessions,
             quota_rate_read,
             quota_rate_write,
+            quota_rate_read_burst,
+            quota_rate_write_burst,
         })
     }
 }
@@ -522,6 +600,7 @@ mod tests {
             max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
+            ..Default::default()
         };
         UserRepository::set_quota(user.id, &config, &mut db.pool().into())
             .await
@@ -556,6 +635,8 @@ mod tests {
             quota_max_sessions: None,
             quota_rate_read: None,
             quota_rate_write: None,
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
         };
 
         let limits = user.quota();
@@ -582,6 +663,8 @@ mod tests {
             quota_max_sessions: None,
             quota_rate_read: Some("100mb/m".to_string()),
             quota_rate_write: None,
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
         };
 
         let limits = user.quota();
@@ -608,6 +691,8 @@ mod tests {
             quota_max_sessions: Some(-1),
             quota_rate_read: Some("unlimited".to_string()),
             quota_rate_write: Some("unlimited".to_string()),
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
         };
 
         let limits = user.quota();
@@ -631,6 +716,8 @@ mod tests {
             quota_max_sessions: None,
             quota_rate_read: Some("rubbish".to_string()),
             quota_rate_write: Some("also_rubbish".to_string()),
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
         };
 
         let limits = user.quota();
