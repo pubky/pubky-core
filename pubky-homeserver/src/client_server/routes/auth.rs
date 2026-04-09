@@ -46,9 +46,8 @@ async fn create_user_with_quota(
     limits: &UserQuota,
     mut tx: sqlx::Transaction<'static, sqlx::Postgres>,
 ) -> HttpResult<UserEntity> {
-    let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-    UserRepository::set_quota(user.id, limits, uexecutor!(tx)).await?;
-    user.apply_quota(limits);
+    let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
+    let user = UserRepository::set_quota(user.id, limits, uexecutor!(tx)).await?;
     tx.commit().await?;
 
     // Populate cache so the rate limiter sees the new user immediately
@@ -180,21 +179,21 @@ async fn create_session_and_cookie(
 ) -> HttpResult<impl IntoResponse> {
     let mut tx = state.sql_db.pool().begin().await?;
 
+    // Lock the user row to serialize concurrent session creation and
+    // re-read the quota so we never use a stale max_sessions value.
+    let fresh_user: UserEntity = sqlx::query_as("SELECT * FROM users WHERE id = $1 FOR UPDATE")
+        .bind(user.id)
+        .fetch_one(&mut *tx)
+        .await?;
+
     // Only enforce session cap when an explicit value is set.
     // Default and Unlimited both mean no limit.
-    if let QuotaOverride::Value(max) = user.quota().max_sessions {
-        // Lock the user row for the duration of this transaction to serialize
-        // concurrent session creation attempts for the same user.
-        sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
-            .bind(user.id)
-            .fetch_one(&mut *tx)
-            .await?;
-
+    if let QuotaOverride::Value(max) = fresh_user.quota().max_sessions {
         let count = SessionRepository::count_by_user_id(user.id, uexecutor!(tx)).await?;
         if count >= i64::from(max) {
             // Explicitly rollback to release the FOR UPDATE lock immediately,
             // rather than waiting for `tx` to be dropped when the future completes.
-            tx.rollback().await?;
+            tx.rollback().await.ok();
             return Err(HttpError::new_with_message(
                 StatusCode::TOO_MANY_REQUESTS,
                 format!("Maximum sessions ({max}) reached"),

@@ -118,7 +118,7 @@ impl AdminServer {
             &password,
         )
         .with_user_quota_cache(context.user_quota_cache.clone())
-        .with_config(
+        .with_metadata_from_config(
             context.keypair.public_key().z32(),
             &context.config_toml,
             env!("CARGO_PKG_VERSION"),
@@ -566,7 +566,7 @@ mod tests {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
 
-        // POST with custom limits: null = Unlimited, absent = Default
+        // POST with custom limits: null = Default, absent = Default, value = Value(T)
         let body = serde_json::json!({
             "storage_quota_mb": 1024,
             "max_sessions": 5,
@@ -588,8 +588,8 @@ mod tests {
             .await
             .unwrap();
         let limits = code.quota();
-        assert_eq!(limits.storage_quota_mb, Some(1024));
-        assert_eq!(limits.max_sessions, Some(5));
+        assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(1024));
+        assert_eq!(limits.max_sessions, QuotaOverride::Value(5));
         assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));
         assert_eq!(limits.rate_write, QuotaOverride::Default);
     }

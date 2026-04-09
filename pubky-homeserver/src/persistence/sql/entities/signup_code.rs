@@ -28,7 +28,7 @@ impl SignupCodeRepository {
     ) -> Result<SignupCodeEntity, sqlx::Error> {
         limits
             .validate_rate_roundtrips()
-            .map_err(sqlx::Error::Protocol)?;
+            .map_err(sqlx::Error::InvalidArgument)?;
 
         let statement = Query::insert()
             .into_table(SIGNUP_CODE_TABLE)
@@ -474,7 +474,6 @@ mod tests {
         UserRepository::set_quota(user.id, &token_limits, &mut (&mut tx).into())
             .await
             .unwrap();
-        user.apply_quota(&token_limits);
         tx.commit().await.unwrap();
 
         // 3) Re-read from DB and verify limits were persisted

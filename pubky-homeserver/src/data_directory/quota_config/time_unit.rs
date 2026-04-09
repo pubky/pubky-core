@@ -53,9 +53,8 @@ const SECONDS_PER_HOUR: u32 = 60 * 60;
 const SECONDS_PER_DAY: u32 = 24 * 60 * 60;
 
 impl TimeUnit {
-    /// Returns the number of seconds for each unit.
+    /// Returns the number of seconds for each unit
     pub const fn multiplier_in_seconds(&self) -> NonZeroU32 {
-        // SAFETY (const): all values are non-zero literals.
         match self {
             TimeUnit::Second => NonZeroU32::new(1).expect("non-zero"),
             TimeUnit::Minute => NonZeroU32::new(SECONDS_PER_MINUTE).expect("non-zero"),

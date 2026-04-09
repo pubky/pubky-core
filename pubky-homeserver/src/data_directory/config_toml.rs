@@ -321,7 +321,8 @@ mod tests {
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits.len(), 1);
         assert_eq!(c.drive.rate_limits[0].path.0, "/signup_tokens/*");
-        assert_eq!(c.storage, StorageConfigToml::FileSystem);
+        assert_eq!(c.storage.backend, StorageConfigToml::FileSystem);
+        assert_eq!(c.storage.default_quota_mb, None);
         assert_eq!(
             c.logging,
             Some(LoggingToml {

@@ -5,7 +5,7 @@ use pubky_common::crypto::PublicKey;
 
 use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::sql::SqlDb;
-use crate::persistence::sql::{uexecutor, user::UserRepository};
+use crate::persistence::sql::{uexecutor, user::{UserEntity, UserRepository}};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
@@ -209,14 +209,19 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             .begin()
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
-        let mut user = UserRepository::get(self.entry_path.pubkey(), uexecutor!(tx))
-            .await
-            .map_err(|e| {
-                opendal::Error::new(
-                    opendal::ErrorKind::Unexpected,
-                    format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
-                )
-            })?;
+        // Lock the user row to serialize concurrent writes and prevent quota bypass.
+        let mut user: UserEntity = sqlx::query_as(
+            "SELECT * FROM users WHERE public_key = $1 FOR UPDATE",
+        )
+        .bind(self.entry_path.pubkey().z32())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            opendal::Error::new(
+                opendal::ErrorKind::Unexpected,
+                format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
+            )
+        })?;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;
         let bytes_delta = if file_already_exists {
@@ -608,110 +613,89 @@ mod tests {
             .expect_err("Should fail because the user quota is exceeded");
     }
 
-    /// Verify that per-user storage quota from DB column is enforced.
+    /// Verify all `QuotaOverride` variants resolve correctly for storage enforcement.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_per_user_storage_quota_enforced() {
-        let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone(), None);
-        let operator = get_memory_operator().layer(layer);
+    async fn test_quota_override_variants() {
+        use crate::data_directory::user_quota::QuotaOverride;
 
-        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user_raw = user_pubkey.z32();
-
-        // Create user with 1 MB storage quota
-        UserRepository::create_with_quota_mb(&db, &user_pubkey, 1).await;
-
-        // Small write should succeed (well within 1 MB)
-        operator
-            .write(format!("{user_raw}/small.txt").as_str(), vec![0; 31])
-            .await
-            .expect("Should succeed: within per-user limit (1 MB)");
-        let usage = get_user_data_usage(&db, &user_pubkey).await.unwrap();
-        assert_eq!(usage, 31 + FILE_METADATA_SIZE);
-
-        // Write > 1 MB should fail
-        operator
-            .write(format!("{user_raw}/huge.txt").as_str(), vec![0; 1_048_576])
-            .await
-            .expect_err("Should fail: exceeds per-user limit of 1 MB");
-    }
-
-    /// Verify that `quota_storage_mb = Default` with no system default means unlimited storage.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_default_quota_no_system_default_means_unlimited() {
-        let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone(), None);
-        let operator = get_memory_operator().layer(layer);
-
-        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user_raw = user_pubkey.z32();
-
-        // Create user without custom limits (all NULL = Default)
-        UserRepository::create(&user_pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-
-        // Even a large write should succeed (Default resolves to None = unlimited)
-        operator
-            .write(
-                format!("{user_raw}/big.txt").as_str(),
-                vec![0; 2 * 1024 * 1024],
-            )
-            .await
-            .expect("Should succeed: Default with no system default = unlimited");
-    }
-
-    /// Verify that `quota_storage_mb = Default` with a system default enforces the config limit.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_default_quota_resolves_to_system_default() {
         let db = SqlDb::test().await;
         // System default: 1 MB
         let layer = UserQuotaLayer::new(db.clone(), Some(1));
         let operator = get_memory_operator().layer(layer);
 
-        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user_raw = user_pubkey.z32();
+        // ── Value(1) — explicit 1 MB limit ──
+        let pk_value = pubky_common::crypto::Keypair::random().public_key();
+        let raw_value = pk_value.z32();
+        UserRepository::create_with_quota_mb(&db, &pk_value, 1).await;
 
-        // Create user without custom limits — quota_storage_mb = Default
-        UserRepository::create(&user_pubkey, &mut db.pool().into())
+        operator
+            .write(format!("{raw_value}/small.txt").as_str(), vec![0; 31])
+            .await
+            .expect("Value(1): small write within 1 MB");
+        let usage = get_user_data_usage(&db, &pk_value).await.unwrap();
+        assert_eq!(usage, 31 + FILE_METADATA_SIZE);
+
+        operator
+            .write(format!("{raw_value}/huge.txt").as_str(), vec![0; 1_048_576])
+            .await
+            .expect_err("Value(1): >1 MB write should fail");
+
+        // ── Value(0) — zero storage ──
+        let pk_zero = pubky_common::crypto::Keypair::random().public_key();
+        let raw_zero = pk_zero.z32();
+        UserRepository::create_with_quota_mb(&db, &pk_zero, 0).await;
+
+        operator
+            .write(format!("{raw_zero}/file.txt").as_str(), vec![0; 1])
+            .await
+            .expect_err("Value(0): even 1 byte should fail");
+
+        // ── Default — resolves to system default (1 MB) ──
+        let pk_default = pubky_common::crypto::Keypair::random().public_key();
+        let raw_default = pk_default.z32();
+        UserRepository::create(&pk_default, &mut db.pool().into())
             .await
             .unwrap();
 
-        // Small write should succeed (within the 1 MB system default)
         operator
-            .write(format!("{user_raw}/small.txt").as_str(), vec![0; 31])
+            .write(format!("{raw_default}/small.txt").as_str(), vec![0; 31])
             .await
-            .expect("Should succeed: within 1 MB system default");
+            .expect("Default: small write within 1 MB system default");
 
-        // Write > 1 MB should fail (Default resolves to system default of 1 MB)
         operator
-            .write(format!("{user_raw}/huge.txt").as_str(), vec![0; 1_048_576])
+            .write(
+                format!("{raw_default}/huge.txt").as_str(),
+                vec![0; 1_048_576],
+            )
             .await
-            .expect_err("Should fail: exceeds system default of 1 MB");
-    }
+            .expect_err("Default: >1 MB write should fail against system default");
 
-    /// Verify that `quota_storage_mb = Unlimited` bypasses the system default.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_unlimited_quota_bypasses_system_default() {
-        use crate::data_directory::user_quota::QuotaOverride;
+        // ── Default with no system default — unlimited ──
+        let db2 = SqlDb::test().await;
+        let layer_no_default = UserQuotaLayer::new(db2.clone(), None);
+        let op_no_default = get_memory_operator().layer(layer_no_default);
 
-        let db = SqlDb::test().await;
-        // System default: 1 MB — but user is explicitly Unlimited
-        let layer = UserQuotaLayer::new(db.clone(), Some(1));
-        let operator = get_memory_operator().layer(layer);
-
-        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user_raw = user_pubkey.z32();
-
-        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+        let pk_no_default = pubky_common::crypto::Keypair::random().public_key();
+        let raw_no_default = pk_no_default.z32();
+        UserRepository::create(&pk_no_default, &mut db2.pool().into())
             .await
             .unwrap();
 
-        // Set storage to Unlimited
+        op_no_default
+            .write(
+                format!("{raw_no_default}/big.txt").as_str(),
+                vec![0; 2 * 1024 * 1024],
+            )
+            .await
+            .expect("Default + no system default = unlimited");
+
+        // ── Unlimited — bypasses system default ──
+        let pk_unlimited = pubky_common::crypto::Keypair::random().public_key();
+        let raw_unlimited = pk_unlimited.z32();
+        let user = UserRepository::create(&pk_unlimited, &mut db.pool().into())
+            .await
+            .unwrap();
         let config = UserQuota {
             storage_quota_mb: QuotaOverride::Unlimited,
             ..Default::default()
@@ -720,35 +704,13 @@ mod tests {
             .await
             .unwrap();
 
-        // Large write should succeed despite 1 MB system default
         operator
             .write(
-                format!("{user_raw}/big.txt").as_str(),
+                format!("{raw_unlimited}/big.txt").as_str(),
                 vec![0; 2 * 1024 * 1024],
             )
             .await
-            .expect("Should succeed: Unlimited bypasses system default");
-    }
-
-    /// Verify that `storage_quota_mb = Some(0)` means zero quota (no storage), not unlimited.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_per_user_storage_quota_zero_means_no_storage() {
-        let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone(), None);
-        let operator = get_memory_operator().layer(layer);
-
-        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let user_raw = user_pubkey.z32();
-
-        // Create user with 0 MB quota = zero storage allowed
-        UserRepository::create_with_quota_mb(&db, &user_pubkey, 0).await;
-
-        // Even a small write should be rejected
-        operator
-            .write(format!("{user_raw}/file.txt").as_str(), vec![0; 1])
-            .await
-            .expect_err("Should fail: custom limit 0 = zero quota");
+            .expect("Unlimited: bypasses 1 MB system default");
     }
 
     /// Verify that changing a user's quota takes effect on the next write.

@@ -25,17 +25,17 @@ use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, W
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
 pub fn build_storage_operator(
-    storage: &StorageToml,
+    storage_config: &StorageToml,
     data_directory: &Path,
     db: &SqlDb,
     events_service: EventsService,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(db.clone(), storage.default_quota_mb);
+    let user_quota_layer = UserQuotaLayer::new(db.clone(), storage_config.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
     // With current layer order (events_layer outermost), when close() is called the entry_layer.close() has already completed, guaranteeing the file is written before the Event is created.
-    let builder = match &storage.backend {
+    let builder = match &storage_config.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
                 Some(path) => path.to_string(),
@@ -107,12 +107,12 @@ pub struct OpendalService {
 
 impl OpendalService {
     pub fn new_from_config(
-        storage: &StorageToml,
+        storage_config: &StorageToml,
         data_directory: &Path,
         db: &SqlDb,
         events_service: EventsService,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(storage, data_directory, db, events_service)?;
+        let operator = build_storage_operator(storage_config, data_directory, db, events_service)?;
         Ok(Self { operator })
     }
 

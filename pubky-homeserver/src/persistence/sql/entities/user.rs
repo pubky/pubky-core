@@ -183,10 +183,10 @@ impl UserRepository {
         user_id: i32,
         config: &UserQuota,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<UserEntity, sqlx::Error> {
         config
             .validate_rate_roundtrips()
-            .map_err(sqlx::Error::Protocol)?;
+            .map_err(sqlx::Error::InvalidArgument)?;
 
         let statement = Query::update()
             .table(USER_TABLE)
@@ -209,12 +209,13 @@ impl UserRepository {
                 ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
+            .returning_all()
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
-        sqlx::query_with(&query, values).execute(con).await?;
-        Ok(())
+        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
+        Ok(user)
     }
 
     /// Delete a user by their public key.
@@ -290,14 +291,6 @@ pub struct UserEntity {
 }
 
 impl UserEntity {
-    /// Apply a custom limit config to this in-memory entity.
-    pub fn apply_quota(&mut self, config: &UserQuota) {
-        self.quota_storage_mb = config.storage_quota_mb_i64();
-        self.quota_max_sessions = config.max_sessions_i32();
-        self.quota_rate_read = config.rate_read_str();
-        self.quota_rate_write = config.rate_write_str();
-    }
-
     /// Build a `UserQuota` directly from the DB columns.
     /// Integer columns: NULL → Default, -1 → Unlimited, positive → Value.
     /// VARCHAR columns: NULL → Default, "unlimited" → Unlimited, value → Value.
@@ -644,37 +637,5 @@ mod tests {
         // Invalid rate strings → Default (with warning logged)
         assert_eq!(limits.rate_read, QuotaOverride::Default);
         assert_eq!(limits.rate_write, QuotaOverride::Default);
-    }
-
-    #[test]
-    fn test_apply_quota() {
-        use crate::data_directory::quota_config::BandwidthRate;
-        use crate::data_directory::user_quota::QuotaOverride;
-        use std::str::FromStr;
-
-        let mut user = UserEntity {
-            id: 1,
-            public_key: Keypair::random().public_key(),
-            created_at: sqlx::types::chrono::NaiveDateTime::default(),
-            disabled: false,
-            used_bytes: 0,
-            quota_storage_mb: None,
-            quota_max_sessions: None,
-            quota_rate_read: None,
-            quota_rate_write: None,
-        };
-
-        let config = UserQuota {
-            storage_quota_mb: QuotaOverride::Value(500),
-            max_sessions: QuotaOverride::Value(10),
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: QuotaOverride::Unlimited,
-        };
-        user.apply_quota(&config);
-
-        assert_eq!(user.quota_storage_mb, Some(500));
-        assert_eq!(user.quota_max_sessions, Some(10));
-        assert_eq!(user.quota_rate_read, Some("100mb/m".to_string()));
-        assert_eq!(user.quota_rate_write, Some("unlimited".to_string()));
     }
 }

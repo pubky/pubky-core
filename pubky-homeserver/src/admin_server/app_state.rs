@@ -50,7 +50,12 @@ impl AppState {
         self
     }
 
-    pub fn with_config(mut self, public_key: String, config: &ConfigToml, version: &str) -> Self {
+    pub fn with_metadata_from_config(
+        mut self,
+        public_key: String,
+        config: &ConfigToml,
+        version: &str,
+    ) -> Self {
         self.metadata = AdminMetadata {
             public_key,
             pkarr_pubky_address: pkarr_pubky_tls_address(config),
